@@ -216,166 +216,166 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 <div class="toast" id="toast"><span class="i">✅</span><span id="toastMsg"></span></div>
 <script>
 /* ===== 数据层：多项目（优化点：解决写死随州）===== */
-var PROJECTS={
-  sz:{id:'sz',city:'随州',org:'随州市招商促进局',who:'张主任',topic:'氢能专用车补链',stage:1,
-    kb:[
-      {icon:'🏭',t:'主导产业与产业链',sub:'专用汽车整车/改装集群，氢能整车已有量产',tag:'今日更新',
-       known:['新楚风已量产49T氢重卡（百公里氢耗7.1kg，续航1000km）',
-              '程力/齐星整车改装能力强，2025年专汽应急产值703亿，出口+71%全省第一',
-              '本地配套率仅41%（十堰75%+），电堆/储氢等核心系统几乎全部外购'],
-       calls:['随州市专汽产业链图谱','重点企业公开资料','今日行业公开信息']},
-      {icon:'🏢',t:'园区与承载条件',sub:'高新区（国家级）、曾都经开区、专汽产业园',tag:'2项待补',
-       known:['随州高新区为国家级，拥有移动应急装备国家创新型产业集群牌子',
-              '专汽产业园已有整车/改装入驻，可分区承接核心部件制造',
-              '具体厂房面积与能耗指标仍需政府授权材料补充'],
-       calls:['园区基础资料','载体清单','政府授权材料']},
-      {icon:'🏗️',t:'链主与存量企业',sub:'程力·新楚风·齐星及配套零部件企业',tag:'97家资质企业已梳理',
-       known:['程力×成都壹为（新能源底盘，2.7-31吨）、程力×杭州时代电动（3万台新能源中重卡）',
-              '泰晶科技（车规级晶振AEC-Q200）、犇星（电解液/六氟磷酸锂）等配套已有',
-              '电堆/储氢/空压机/循环泵/膜电极等氢能核心零部件本地仍属空白'],
-       calls:['企业公开信息','园区企业清单','产业调研材料']},
-      {icon:'📜',t:'政策、规划与领导关注',sub:'湖北省氢能走廊、随州专汽升级方向',tag:'待补领导发言',
-       known:['湖北省已明确氢能走廊布局，武汉-十堰-随州-襄阳沿线为重点',
-              '随州将氢能专用车列为专汽产业升级主攻方向',
-              '专项资金额度与首选承接园区待干部确认'],
-       calls:['政府工作报告','专项产业规划','领导讲话与会议纪要']}
-    ],
-    report:{title:'随州氢能专用车补链招商策略与需求报告',
-      lead:'随州是全国专用汽车之都，新楚风49T氢重卡已量产，程力/齐星整车改装能力完备。但电堆占整车成本53%、储氢瓶占14%，两项关键系统全部外购，是从传统专用车向氢能场景跨越的核心瓶颈。以下为产业缺口与建议招引方向，部分事项仍需干部与领导确认。',
-      sections:[
-        {h:'产业基础判断',p:'新楚风49T氢重卡已量产，百公里氢耗7.1kg续航1000km。程力/齐星构成整车/改装主力，2025年专汽应急产值703亿，出口+71%全省第一，年产约16万辆（资质企业97家/零部件企业220家），链主技术路线氢能化方向明确。',ev:'随州市专汽产业链图谱、重点企业公开资料',type:'real',chk:''},
-        {h:'关键链条缺口',p:'氢燃料电池电堆占整车成本53%、储氢瓶占14%，两项关键系统全部外购（无本地供给）。空压机、氢气循环泵、膜电极、质子交换膜同样为零。本地配套率仅41%，远低于十堰75%+和梁山65%。',ev:'随州市专汽产业链图谱、今日行业公开信息',type:'real',chk:'是否已有在谈的电堆或储氢项目'},
-        {h:'建议招引方向',p:'优先研判三个细分方向：①燃料电池电堆（补53%成本缺口，与新楚风/程力形成核心配套）②高压储氢瓶阀与管路（补14%成本缺口，落地专汽产业园）③氢气空压机/循环泵（补平衡零部件缺口，配套链主降本）。',ev:'专项产业规划、氢能商用车行业动态',type:'real',chk:''},
-        {h:'政府氢能支持表述需核实落地细则',p:'湖北省氢能走廊方向已明确，随州将氢能专用车列为升级主攻方向，但本地专项资金额度、首选承接园区及地块尚未见具体文件，需向领导确认。',ev:'2026年政府工作报告',type:'virt',chk:'专项资金额度与首选承接园区地块'}
-      ],
-      footnote:'公开信息仅用于辅助研判；园区承载、企业采购、领导任务及配套政策仍需政府授权材料确认。',
-      summary:[['材料完整度','4/6 份'],['确认状态','待双确认'],['候选线索','3 条']]},
-    clues:[
-      {name:'脱敏企业 A（氢驰动力·代号）',dir:'商用车燃料电池系统集成商 · 长三角',tag:'amber',tagt:'待核验',
-       why:'补随州最大缺口（电堆占整车成本53%），与新楚风/程力整车可形成直接配套，共享随州16万辆/年专汽产能出货。',
-       signal:'公开信息显示其正在拓展商用车氢能示范应用场景；具体投资窗口与决策层触达可能性由资源团队核验。',
-       src:'企业公开信息（更新至 2026-07-20）',
-       qs:['未来三年产能规划与异地建厂时间表','对落地城市整车配套伙伴的具体要求','与新楚风联合开发的技术路线可行性']},
-      {name:'脱敏企业 B（势通氢能·代号）',dir:'燃料电池电堆研发与制造企业 · 华南',tag:'amber',tagt:'待核验',
-       why:'直补最核心的电堆制造环节，与本地整车（49T重卡产品线）形成上下游，可依托随州专汽出口+71%的渠道优势出海。',
-       signal:'公开渠道显示其有异地扩厂意向；真实意向与关键人触达需资源团队核验。',
-       src:'企业公开信息（更新至 2026-07-20）',
-       qs:['金属双极板/膜电极工艺路线与商用车功率段','首批产能规模与达产周期','与本地整车企业配套采购的合作框架']},
-      {name:'脱敏企业 C（瀚海高压·代号）',dir:'储氢瓶阀与高压管路配套企业 · 华东',tag:'slate',tagt:'待接触',
-       why:'补储氢瓶14%成本缺口，随州整车产量大（16万辆/年）可提供稳定采购量，与电堆企业联合落地可降低配套物流成本。',
-       signal:'公开信息显示其在扩产；可达性与沟通窗口由资源团队核验。',
-       src:'企业公开信息（更新至 2026-07-20）',
-       qs:['35MPa/70MPa储氢瓶的产能与交付周期','对落地城市用地/能耗的具体诉求','扩产投资规模与分期节奏']}
-    ]},
-  sq:{id:'sq',city:'随州',org:'随州市招商促进局',who:'张主任',topic:'智慧应急装备补链',stage:2,
-    kb:[
-      {icon:'🏭',t:'主导产业与产业链',sub:'移动应急装备集群，整机能力强，智能感知层空白',tag:'今日更新',
-       known:['移动应急装备2023产值324亿，江南专汽泡沫消防车/通信指挥车600-1000万/台',
-              '博利特高空系留无人机消防车、齐星无人机指挥车（可调度6架无人机+机器狗）',
-              '传感器/5G通信模块/AI算法/应急机器人/无人机本体全部外购或依赖外部合作'],
-       calls:['随州市产业链图谱','重点企业公开资料','今日行业公开信息']},
-      {icon:'🏢',t:'园区与承载条件',sub:'曾都区国家安全应急产业示范基地',tag:'待补',
-       known:['曾都区为国家安全应急产业示范基地，国字号背书强',
-              '随州高新区已有移动应急装备国家创新型产业集群',
-              '智慧应急配套所需的洁净/测试厂房条件待补充'],
-       calls:['园区基础资料','载体清单','政府授权材料']},
-      {icon:'🏗️',t:'链主与存量企业',sub:'江南专汽·博利特·金龙新材料·齐星',tag:'骨干企业已梳理',
-       known:['金龙新材料：软体材料/充气艇/蓄水池（篷布占全国30%）',
-              '江南专汽依赖启灵合作机器人、依迅北斗合作无人机，核心技术无自主',
-              '博利特系留无人机平台已形成，缺自主载荷（传感/通信）系统'],
-       calls:['企业公开信息','园区企业清单','产业调研材料']},
-      {icon:'📜',t:'政策、规划与领导关注',sub:'国家"十四五"安全应急产业规划、随州示范基地升级',tag:'待补领导发言',
-       known:['国家"十四五"安全应急产业规划将智慧应急列为升级重点',
-              '随州凭借示范基地资质有望争取国家级应急智慧化补贴',
-              '领导最新关于智慧应急的具体交办尚待上传确认'],
-       calls:['政府工作报告','专项产业规划','领导讲话与会议纪要']}
-    ],
-    report:{title:'随州智慧应急装备补链招商策略与需求报告',
-      lead:'随州移动应急装备2023产值324亿，江南专汽、博利特、齐星构成整机主力，但传感器/通信模块/AI算法/机器人本体/无人机本体均靠外购，智慧感知层完全空白。补链既能强化自主能力，也能支撑曾都区国家安全应急产业示范基地升级。',
-      sections:[
-        {h:'产业基础判断',p:'移动应急装备2023产值324亿，江南专汽泡沫消防车/通信指挥车单台600-1000万，博利特系留无人机消防车、齐星6架无人机+机器狗指挥车均已量产；软体材料（金龙篷布）占全国30%，整机集成能力强。',ev:'随州市产业链图谱、重点企业公开资料',type:'real',chk:''},
-        {h:'关键链条缺口',p:'应急机器人本体（启灵外采）、无人机本体（迅北斗外采）、5G/卫星应急通信模块、环境传感器/探测载荷全部无本地供给；AI应急调度算法亦依赖外部合作，智慧感知/计算层形成空心化。',ev:'随州市产业链图谱、今日行业公开信息',type:'real',chk:'启灵/迅北斗合作续签状态与自主化意愿'},
-        {h:'建议招引方向',p:'优先研判三个细分方向：①应急机器人集成（替代启灵，形成本地自主配套）②无人机系统（替代迅北斗，含载荷+地面站）③5G/卫星应急通信模块（补感知层，与博利特/齐星平台深度集成）。',ev:'专项产业规划、安全应急行业动态',type:'real',chk:''},
-        {h:'国家补贴政策需核实到账口径',p:'"十四五"应急产业政策方向明确，但随州本地专项补贴额度和智慧化改造补贴口径尚无具体文件，需向领导确认承接园区与兑现节奏。',ev:'2026年政府工作报告',type:'virt',chk:'智慧化改造专项补贴额度与申请条件'}
-      ],
-      footnote:'公开信息仅用于辅助研判；园区承载、企业采购、领导任务及配套政策仍需政府授权材料确认。',
-      summary:[['材料完整度','3/6 份'],['确认状态','研判中'],['候选线索','2 条']]},
-    clues:[
-      {name:'脱敏企业 D（灵动应急·代号）',dir:'应急机器人整机集成商 · 华中/华南',tag:'amber',tagt:'待核验',
-       why:'直接替代江南专汽/齐星对启灵的外采依赖，落地后可形成本地主配套，与整机厂建立稳定采购关系。',
-       signal:'公开信息显示其在拓展应急机器人应用场景；具体落地意向由资源团队核验。',
-       src:'企业公开信息（更新至 2026-07-20）',
-       qs:['消防/救援场景机器人产品线与交付能力','与本地整机厂深度集成的技术对接路径','落地城市对应用场景开放度的要求']},
-      {name:'脱敏企业 E（天目无人机·代号）',dir:'无人机系统集成商（含载荷+地面站）· 华东/长三角',tag:'slate',tagt:'待接触',
-       why:'替代迅北斗外采，与博利特系留无人机平台及齐星指挥车形成本地闭环配套。',
-       signal:'公开渠道显示其有异地合作/落地意向；可达性需资源团队核验。',
-       src:'企业公开信息（更新至 2026-07-20）',
-       qs:['应急无人机载荷（传感/通信/消防）产品线','与博利特平台的适配技术路线','政策诉求与落地规模']}
-    ]},
-  py:{id:'py',city:'随州',org:'随州市招商促进局',who:'张主任',topic:'香菇深加工补链',stage:3,
-    kb:[
-      {icon:'🏭',t:'主导产业与产业链',sub:'全球白花菇约50%产自随州，初加工出口第一',tag:'今日更新',
-       known:['2024全产业链产值超500亿，区域品牌价值205.8亿（连续3年全国食药用菌第一）',
-              '年种植近4亿袋，产量约70万吨，出口60+国家，精深加工出口60.8亿占农产品出口80.1%',
-              '品源"菇的辣克"香菇辣酱2024签1亿美元+2025续签3亿美元，已进沃尔玛/Costco'],
-       calls:['随州市产业链图谱','重点企业公开资料','今日行业公开信息']},
-      {icon:'🏢',t:'园区与承载条件',sub:'随县香菇产业园、农产品精深加工园区',tag:'2项待补',
-       known:['随县香菇产业园已有初加工入驻，具备食品加工基础配套',
-              '精深加工（生物医药/功能成分提取）需要更高洁净度厂房与能耗条件，待补充',
-              '冷链仓储与保鲜物流配套条件待政府授权材料确认'],
-       calls:['园区基础资料','载体清单','政府授权材料']},
-      {icon:'🏗️',t:'链主与存量企业',sub:'品源·裕国药业·肽源等精深加工企业',tag:'骨干企业已梳理',
-       known:['品源（出口辣酱，国际订单4亿美元+）、裕国药业（香菇多糖提取）、肽源（多肽提取）',
-              '无限极以代工模式生产保健品，随州无自有品牌高附加值产品主权',
-              '精深加工30余种产品，但香菇多糖/多肽提取仅2家布局，化妆品原料零布局'],
-       calls:['企业公开信息','园区企业清单','产业调研材料']},
-      {icon:'📜',t:'政策、规划与领导关注',sub:'政府工作报告与精深加工升级导向',tag:'待补领导发言',
-       known:['随州已将香菇精深加工与品牌化列为农业升级重点',
-              '菌种国外垄断（7925/7917老品种）与栎木原料年缺口超20万m³是两大战略短板',
-              '领导关于菌种自主化与生物医药方向的具体交办待上传'],
-       calls:['政府工作报告','专项产业规划','领导讲话与会议纪要']}
-    ],
-    report:{title:'随州香菇深加工补链招商策略与需求报告',
-      lead:'随州香菇全产业链产值超500亿，占全球白花菇约50%，品牌价值205.8亿连续3年全国第一。品源"菇的辣克"验证了高附加值出口路径（4亿美元+订单），但香菇多糖/多肽功能成分提取、生物医药原料、化妆品原料仍属空白，菌种长期依赖国外垄断品种，是向价值链上移的关键瓶颈。',
-      sections:[
-        {h:'产业基础判断',p:'年种植近4亿袋产约70万吨，全球白花菇约50%产自随州；精深加工出口60.8亿元占全部农产品出口80.1%；品源"菇的辣克"2024签1亿美元+2025续签3亿美元，入驻沃尔玛/Costco，证明高附加值国际化路径可行。',ev:'随州市产业链图谱、重点企业公开资料',type:'real',chk:''},
-        {h:'关键链条缺口',p:'香菇多糖/多肽功能成分提取仅裕国药业/肽源2家布局，产能有限；保健品依赖无限极代工、无自有品牌产品主权；化妆品原料（香菇活性成分）本地零布局；菌种长期依赖国外7925/7917品种，栎木原料年缺口超20万m³。',ev:'随州市产业链图谱、今日行业公开信息',type:'real',chk:'是否已有功能成分提取或菌种研发在谈项目'},
-        {h:'建议招引方向',p:'优先研判三个细分方向：①香菇多糖/多肽提取与功能性食品（填高附加值提取空白，与裕国/肽源形成产能扩张）②生物医药与化妆品活性原料（开拓香菇活性成分工业化路径）③自主菌种研发与种质保护（解决7925/7917品种垄断，年缺口超20万m³原料问题同步缓解）。',ev:'专项产业规划、食品/生物医药行业动态',type:'real',chk:''},
-        {h:'政府精深加工升级政策需核实落地细则',p:'随州将精深加工与品牌化列为升级重点，但专项资金额度、洁净厂房/冷链仓储配套用地指标，以及菌种研发基地的具体承接方案尚无文件，需向领导确认。',ev:'2026年政府工作报告',type:'virt',chk:'精深加工专项资金额度与洁净厂房用地条件'}
-      ],
-      footnote:'公开信息仅用于辅助研判；园区承载、企业采购、领导任务及配套政策仍需政府授权材料确认。',
-      summary:[['材料完整度','4/6 份'],['确认状态','待领导确认'],['候选线索','2 条']]},
-    clues:[
-      {name:'脱敏企业 F（菌芯生物·代号）',dir:'香菇多糖/多肽功能成分提取与功能性食品企业 · 华东',tag:'amber',tagt:'待核验',
-       why:'填补随州最缺的高附加值提取环节，可就近使用70万吨/年本地原料，降低原料采购成本40%+。',
-       signal:'公开信息显示其在寻求中部原料产地落地；具体投资意向由资源团队核验。',
-       src:'企业公开信息（更新至 2026-07-20）',
-       qs:['香菇多糖/多肽产能规模与达产周期','对原料质量标准与供应稳定性的要求','落地城市洁净厂房与能耗的具体需求']},
-      {name:'脱敏企业 G（种源科技·代号）',dir:'食用菌菌种研发与生物育种企业 · 长三角',tag:'slate',tagt:'待接触',
-       why:'解决7925/7917品种国外垄断痛点，随州菌种基地占全国15%，合作可形成全国最大自主菌种基地。',
-       signal:'公开渠道显示其有产地合作/落地意向；可达性与决策层需资源团队核验。',
-       src:'企业公开信息（更新至 2026-07-20）',
-       qs:['自主品种知识产权保护现状','与随州菌种基地（全省60%）合作的具体模式','研发中心落地的政策诉求']}
-    ]}
-};
+var PROJECTS={};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 var STAGES=[['资料准备','上传与授权材料'],['AI 研判','生成缺口与方向'],['确认需求','干部与领导双确认'],['资源匹配','资源端核验匹配'],['政企对接','安排正式沟通']];
 
 /* ===== 运营端（周总·全局）：跨城市需求池 ===== */
-var DEMANDS=[
-  {id:'d1',city:'随州',gov:'随州市招商促进局·张主任',topic:'智慧应急装备补链',need:'应急机器人集成 + 无人机系统 + 5G/卫星应急通信模块',submit:'今天 11:20',res:'matched',resLabel:'已匹配',clues:2,note:'长三角一家应急无人机集成商具备可对接窗口，建议本周安排沟通。'},
-  {id:'d2',city:'随州',gov:'随州市招商促进局·张主任',topic:'氢能专用车补链',need:'燃料电池电堆 / 系统集成 / 高压储氢瓶阀',submit:'昨天 16:40',res:'checking',resLabel:'核验中',clues:3,note:'华南电堆企业有异地设厂意向，正在核验真实意向与决策层触达。'},
-  {id:'d3',city:'随州',gov:'随州市招商促进局·张主任',topic:'香菇深加工补链',need:'香菇多糖/多肽功能成分提取 + 菌种研发',submit:'2天前',res:'none',resLabel:'暂无资源',clues:0,note:'现有资源库暂无直接匹配的生物提取企业，建议纳入长期跟踪或对接外部渠道。'},
-  {id:'d4',city:'随州',gov:'随州市招商促进局·张主任',topic:'香菇深加工补链',need:'高附加值香菇辣酱/保健品代工升级 + 化妆品原料',submit:'3天前',res:'checking',resLabel:'核验中',clues:1,note:'华东某功能成分提取企业在寻求中部原料产地，正在核验落地意向。'}
-];
+var DEMANDS=[];
+
+
+
+
+
 var RES_COLOR={matched:{bg:'#e4f5f3',c:'#006d70'},checking:{bg:'#ebf3fd',c:'#013582'},none:{bg:'#fff0de',c:'#a34c09'}};
 
 var role='gov';   // gov=政府端  ops=运营端
-var cur='sz',view='home',detailOpen=true,detailData=null,curKb=null,curDemand=null,curSub=null;
+var cur=null,view='setup',detailOpen=false,detailData=null,curKb=null,curDemand=null,curSub=null;
 // 报告版本迭代状态（每项目一份）：{ver, finalized, patches:[补充意见], edits:{结论index:新文字}}
 var REPORTSTATE={};
 function rs(){var k=cur;if(!REPORTSTATE[k])REPORTSTATE[k]={ver:1,finalized:false,patches:[],edits:{}};return REPORTSTATE[k];}
-function P(){return PROJECTS[cur]}
+function P(){return cur&&PROJECTS[cur]||{}}
 /* ===== 渲染骨架：用雷总真实DOM结构 ===== */
 var $=function(s){return document.querySelector(s)};
 function toast(t){var e=$('#toast');$('#toastMsg').textContent=t;e.classList.add('show');setTimeout(function(){e.classList.remove('show')},2200)}
@@ -391,6 +391,7 @@ function closeModal(){var l=$('#modalLayer');if(l)l.remove()}
 var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','研判需求','出报告·可来回优化'],['home','📋','项目管理','报告派生项目·对接需求'],['docking','🤝','政企对接','资源匹配与对接进度'],['settings','⚙️','设置','账号与提醒']];
 
 function render(){
+  if(view==='setup'||!cur||!PROJECTS[cur]){return ($('#root').innerHTML='<div class="app-shell" style="height:100vh">'+setupPage()+'</div>'),bind();}
   if(role==='ops')return renderOps();
   var p=P();
   $('#root').innerHTML=
@@ -409,6 +410,89 @@ function render(){
   bind();
 }
 /* 顶栏角色切换按钮（政府端 ⇄ 运营端）*/
+
+/* ===== 空白引导页（用户首次进入 / 无项目时） ===== */
+function opsTopbarEmpty(){
+  return '<div class="top-bar"><div class="top-brand"><div class="brand-icon">慧</div><span style="font-weight:700;font-size:15px;color:#0b183b">慧小招</span></div>'+
+    '<div style="flex:1"></div><span style="font-size:12px;color:#9aa5b5">运营端</span></div>';
+}
+function setupPage(){
+  return '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#f5f7fb">'+
+    '<div style="background:#fff;border-radius:18px;padding:44px 48px;max-width:520px;width:92%;box-shadow:0 4px 32px rgba(11,24,59,.08)">'+
+      '<div style="font-size:28px;margin-bottom:8px">慧</div>'+
+      '<h1 style="font-size:22px;font-weight:750;color:#0b183b;margin:0 0 6px">开始一个新的招商研判</h1>'+
+      '<p style="font-size:13.5px;color:#667590;margin:0 0 28px;line-height:1.7">填写城市与产业方向，AI 将基于城市智库与公开信息进行初步分析，生成研判框架供你确认与补充。</p>'+
+      '<div style="display:flex;flex-direction:column;gap:16px">'+
+        '<div>'+
+          '<label style="font-size:12px;font-weight:650;color:#556;display:block;margin-bottom:6px">城市</label>'+
+          '<input id="setupCity" placeholder="例如：随州、宿迁、濮阳" style="width:100%;padding:11px 14px;border:1.5px solid #dde3ef;border-radius:10px;font-size:14px;outline:none;box-sizing:border-box" oninput="setupValidate()" />'+
+        '</div>'+
+        '<div>'+
+          '<label style="font-size:12px;font-weight:650;color:#556;display:block;margin-bottom:6px">产业方向 / 补链诉求</label>'+
+          '<input id="setupTopic" placeholder="例如：氢能专用车补链、智慧应急装备、香菇深加工" style="width:100%;padding:11px 14px;border:1.5px solid #dde3ef;border-radius:10px;font-size:14px;outline:none;box-sizing:border-box" oninput="setupValidate()" />'+
+        '</div>'+
+        '<div>'+
+          '<label style="font-size:12px;font-weight:650;color:#556;display:block;margin-bottom:6px">联系人（可选）</label>'+
+          '<input id="setupWho" placeholder="例如：张主任、李科长" style="width:100%;padding:11px 14px;border:1.5px solid #dde3ef;border-radius:10px;font-size:14px;outline:none;box-sizing:border-box" />'+
+        '</div>'+
+        '<button id="setupBtn" class="primary-button" style="margin-top:8px;opacity:.4;pointer-events:none" onclick="createProject()">'+
+          '<i class="i">✨</i> 开始 AI 研判分析'+
+        '</button>'+
+      '</div>'+
+      '<p style="font-size:11.5px;color:#9aa5b5;margin:20px 0 0;text-align:center;line-height:1.6">AI 仅做初步研判框架，产业判断需结合实际政府材料与授权信息确认</p>'+
+    '</div>'+
+  '</div>';
+}
+function setupValidate(){
+  var city=document.getElementById('setupCity');
+  var topic=document.getElementById('setupTopic');
+  var btn=document.getElementById('setupBtn');
+  if(!btn)return;
+  var ok=city&&city.value.trim()&&topic&&topic.value.trim();
+  btn.style.opacity=ok?'1':'.4';
+  btn.style.pointerEvents=ok?'auto':'none';
+}
+function createProject(){
+  var city=(document.getElementById('setupCity')||{}).value.trim();
+  var topic=(document.getElementById('setupTopic')||{}).value.trim();
+  var who=(document.getElementById('setupWho')||{}).value.trim()||'负责人';
+  if(!city||!topic)return;
+  // 生成 key
+  var key='p'+Date.now().toString(36);
+  // 创建空骨架项目
+  PROJECTS[key]={
+    id:key, city:city, org:city+'市招商局', who:who, topic:topic, stage:1,
+    kb:[
+      {icon:'🏭',t:'主导产业与产业链',sub:'待分析',tag:'待补充',known:[],calls:['政府工作报告','产业链图谱']},
+      {icon:'🏢',t:'园区与承载条件',sub:'待分析',tag:'待补充',known:[],calls:['园区基础资料','载体清单']},
+      {icon:'🏗️',t:'链主与存量企业',sub:'待分析',tag:'待补充',known:[],calls:['企业名录','园区企业清单']},
+      {icon:'📜',t:'政策、规划与领导关注',sub:'待分析',tag:'待补充',known:[],calls:['政府工作报告','领导发言稿']}
+    ],
+    report:null,
+    clues:[]
+  };
+  cur=key; view='home';
+  // 加入需求池
+  DEMANDS.push({id:'d'+key,city:city,gov:city+'市招商局·'+who,topic:topic,domain:topic.replace('补链','').replace('升级','').replace('智能化',''),need:'待进一步分析',submit:'刚刚',res:'none',resLabel:'待研判',clues:0,note:'',ai:''});
+  render();
+  // 延迟触发 AI 欢迎语和初步分析
+  setTimeout(function(){
+    var p=PROJECTS[key];
+    addA('<p>好的，我来围绕 <strong>'+city+'·'+topic+'</strong> 做初步研判框架。</p>'+
+      '<p>当前城市智库尚空，我会基于你提供的方向给出需要补充的关键信息清单，以及我能从公开信息初步判断的内容。请先上传你能提供的城市材料（政府工作报告、产业链图谱、园区资料等），我来结合实际内容推进分析。</p>');
+    setTimeout(function(){
+      addA('<div class="report" style="margin-top:6px"><div class="rbody" style="padding:12px 14px;font-size:12.5px;line-height:1.9;color:#33415a">'+
+        '<b>需要你提供 / 确认的信息：</b><br>'+
+        '① <b>产业现状</b>：'+city+'目前「'+topic+'」方向的存量产值、主要企业名单<br>'+
+        '② <b>链条缺口</b>：你认为最需要补的核心环节（上游零部件/系统集成/其他）<br>'+
+        '③ <b>园区承接</b>：计划承接在哪个园区，厂房/能耗/用地有无限制<br>'+
+        '④ <b>领导关注</b>：领导近期对「'+topic+'」方向有哪些具体交办<br>'+
+        '可以直接上传材料，也可以文字告诉我以上任何一点，我来逐步填充研判内容。'+
+      '</div></div>');
+    },800);
+  },400);
+}
+
 function roleSwitch(){
   // 角色切换暂时隐藏——先专注做好政府端（运营端代码保留，后续再启用）
   return '';
@@ -416,6 +500,7 @@ function roleSwitch(){
 function setRole(r){role=r;view='home';render();toast(r==='ops'?'已切换到运营端（周总·全局）':'已切换到政府端（随州·张主任）')}
 /* ===== 运营端：跨城市需求池（沿用政府端三栏结构）===== */
 function renderOps(){
+  if(!DEMANDS.length){$('#root').innerHTML='<div class="app-shell">'+opsTopbarEmpty()+'<div style="display:flex;align-items:center;justify-content:center;height:80vh;flex-direction:column;gap:16px"><div style="font-size:32px">📭</div><div style="font-weight:650;color:#0b183b">暂无需求</div><div style="color:#667590;font-size:13px">切换到政府端，完成第一个研判后需求会出现在这里。</div><button class="primary-button" style="margin-top:8px" onclick="setRole(\'gov\')">去政府端开始研判</button></div></div>';return;}
   if(curDemand===null)curDemand=DEMANDS[0].id;
   $('#root').innerHTML=
    '<div class="app-shell">'+
@@ -518,7 +603,7 @@ function topbar(p){
     '<div class="brand-block"><img src="data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"50\"><rect width=\"50\" height=\"50\" rx=\"25\" fill=\"%230757ad\"/><text x=\"25\" y=\"33\" font-size=\"22\" fill=\"white\" text-anchor=\"middle\" font-family=\"sans-serif\">慧</text></svg>')+'"><div><strong>慧小招</strong><span>AI 招商智能体</span></div></div>'+
     // 机构与身份固定（账号绑定，不可切换）；当前方向只读展示，切换在「项目管理」进行
     '<div class="org-block"><i class="i">🏛️</i>'+
-      '<strong style="font-weight:650">'+p.org+' · '+p.who+'</strong>'+
+      '<strong style="font-weight:650">'+p.org+' · '+(p&&p.who||'—')+'</strong>'+
       '<span style="margin:0 10px;color:#cbd7e6">/</span>'+
       '<strong style="color:var(--blue-dark)">'+p.topic+'</strong>'+
     '</div>'+
@@ -539,6 +624,7 @@ function sidebar(){
     '<div class="system-status"><span></span>系统运行正常</div></div>';
 }
 function progressFooter(p){
+  if(!cur||!PROJECTS[cur])return '';
   return '<div class="progress-footer"><div class="progress-track">'+
     STAGES.map(function(s,i){var n=i+1;var cls=n<p.stage?' done':n===p.stage?' current':'';
       return '<div class="progress-step'+cls+'"><div class="progress-node">'+(n<p.stage?'<i class="i">✓</i>':n)+'</div>'+
@@ -876,7 +962,8 @@ function homePage(p){
     ctxBar('📝','研判需求 · '+p.city,p.topic)+
     '<div class="conversation-scroll" id="conv">'+
       '<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble">'+
-        '<p>'+p.who+'，当前研判方向：<strong>'+p.topic+'</strong>。我已结合'+p.city+'城市智库（产业/园区/链主/政策四大板块）与最新公开信息备料，可以直接生成完整招商策略报告，也可以先从某个细分环节或候选企业切入研判。</p>'+
+        '<p>'+p.who+'，当前研判方向：<strong>'+p.topic+'</strong>。城市智库已就位，随时可以提问或上传材料。</p>'+
+
         '<p>如需精准分析，建议补充：政府工作报告、领导近期产业发言或园区承接材料，可进一步提升判断完整度。</p></div></div>'+
       '<div class="prompt-list">'+
         promptRow('📊','直接查看研判报告','随州三大产业方向已预置完整报告（氢能/应急/香菇）',"showReport()")+
@@ -1522,19 +1609,19 @@ var RESOURCES=[];
 var leaderFilter='all';
 var RES_COLOR={matched:{bg:'#e4f5f3',c:'#006d70'},checking:{bg:'#ebf3fd',c:'#013582'},none:{bg:'#fff0de',c:'#a34c09'}};
 var MATCH_CHAT=[{who:'ai',text:'我是招商匹配助手。可以问我：这条需求针对随州这条需求该找哪类企业？有哪些渠道能为随州找源（电堆/机器人/香菇提取方向）？如何写面向随州产业背景的定向招募话术？'}];
-var RES_SEED=[
-  {alias:'华南某燃料电池电堆企业',real:'（内部可见真名）',tag:'燃料电池电堆',domain:'燃料电池电堆',loc:'华南',intent:'有异地设厂意向',status:'可用'},
-  {alias:'长三角某应急无人机集成商',real:'（内部可见真名）',tag:'应急机器人与无人机',domain:'应急机器人与无人机',loc:'长三角',intent:'具备可对接窗口',status:'可用'},
-  {alias:'华东某香菇功能成分提取企业',real:'（内部可见真名）',tag:'香菇功能成分提取',domain:'香菇功能成分提取',loc:'华东',intent:'寻求中部原料产地合作',status:'可用'}
-];
+var RES_SEED=[];
+
+
+
+
 /* ===== 管理端扩展：数据 + 新模块 ===== */
-var LEADER_DOCS=[
-  {city:'随州',who:'张主任',type:'产业链图谱',name:'随州氢能专用车产业链图谱2026.pdf',time:'今天 09:10',topic:'氢能专用车补链',sum:'新楚风49T氢重卡已量产，电堆占整车成本53%、储氢占14%，两项全部外购；本地配套率41%。'},
-  {city:'随州',who:'张主任',type:'政策文件',name:'随州智慧应急装备产业扶持政策.docx',time:'昨天 15:40',topic:'智慧应急装备补链',sum:'对落地应急机器人/无人机系统集成企业有曾都区安全应急示范基地配套奖补。'},
-  {city:'随州',who:'张主任',type:'企业名录',name:'随州香菇产业链骨干企业清单.xlsx',time:'2天前',topic:'香菇深加工补链',sum:'品源4亿美元出口订单+裕国/肽源提取布局，菌种国外垄断与精深加工空白待破局。'},
-  {city:'随州',who:'张主任',type:'园区资料',name:'随县香菇产业园与专汽产业园承接条件.pdf',time:'3天前',topic:'香菇深加工补链',sum:'香菇产业园已有初加工入驻；精深加工洁净厂房与冷链仓储条件待补充。'},
-  {city:'随州',who:'张主任',type:'授权书',name:'随州应急装备招商专项授权书.pdf',time:'3天前',topic:'智慧应急装备补链',sum:'授权对接应急机器人/无人机/5G通信模块集成商，优先引入曾都区安全应急示范基地。'}
-];
+var LEADER_DOCS=[];
+
+
+
+
+
+
 var RESOURCES=[]; // 冷启动：空库
 var MATCH_CHAT=[{who:'ai',text:'我是招商匹配助手。可以问我：这条需求该找哪类企业？有哪些外部渠道能找源？如何写定向招募话术？'}];
 var RES_SEED=[
@@ -1551,20 +1638,20 @@ var RES_SEED=[
    why:'随州年产香菇约70万吨（全球白花菇约50%），就近落地可将原料采购成本降低40%+；与裕国药业/肽源形成产能协作，共同做大提取环节。',
    risk:'需核实洁净厂房等级与能耗是否符合GMP要求，以及随州现有产业园是否有配套条件。'}
 ];
-var DOCK_ITEMS=[
-  {id:'k1',city:'随州',topic:'智慧应急装备补链',company:'长三角某应急无人机集成商',stage:'对接中',contact:'张主任 / 集成商王总',next:'本周实地走访曾都区安全应急示范基地 + 政企座谈'},
-  {id:'k2',city:'随州',topic:'氢能专用车补链',company:'华南某燃料电池电堆企业',stage:'匹配中',contact:'张主任 / 待确认',next:'核验决策层触达与异地设厂时间表',alert:'已 3 天无更新，建议跟进电堆企业决策层触达进度'}
-];
-var CITY_FUNNEL=[
-  {city:'随州·氢能专用车',submit:3,confirm:3,match:2,dock:1,sign:0},
-  {city:'随州·智慧应急装备',submit:2,confirm:2,match:1,dock:1,sign:0},
-  {city:'随州·香菇深加工',submit:2,confirm:1,match:0,dock:0,sign:0}
-];
-var OPEN_ACCOUNTS=[
-  {city:'随州',org:'随州市招商促进局',who:'张主任',role:'干部',status:'已开通',crawl:'每日00:00 运行中'},
-  {city:'随州',org:'随州市招商促进局（氢能专项）',who:'李副主任',role:'干部',status:'已开通',crawl:'每日00:00 运行中'},
-  {city:'随州',org:'随州市农业农村局（香菇专项）',who:'王科长',role:'干部',status:'已开通',crawl:'每日00:00 运行中'}
-];
+var DOCK_ITEMS=[];
+
+
+
+var CITY_FUNNEL=[];
+
+
+
+
+var OPEN_ACCOUNTS=[];
+
+
+
+
 function render(){
   if(role==='ops')return renderOps();
   document.body.classList.remove('ops-mode');
