@@ -391,7 +391,7 @@ function closeModal(){var l=$('#modalLayer');if(l)l.remove()}
 var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','研判需求','出报告·可来回优化'],['home','📋','项目管理','报告派生项目·对接需求'],['docking','🤝','政企对接','资源匹配与对接进度'],['settings','⚙️','设置','账号与提醒']];
 
 function render(){
-  if(view==='setup'||!cur||!PROJECTS[cur]){return ($('#root').innerHTML='<div class="app-shell" style="height:100vh">'+setupPage()+'</div>'),bind();}
+  if(view==='setup'||!cur||!PROJECTS[cur]){var _root=$('#root');if(_root){_root.innerHTML='<div style="height:100vh;background:#f5f7fb">'+setupPage()+'</div>';bind();} return;}
   if(role==='ops')return renderOps();
   var p=P();
   $('#root').innerHTML=
@@ -1597,12 +1597,12 @@ function doCreateProj(){
 }
 
 /* ================= 整合联动层：管理端(ops) ================= */
-var DEMANDS=[
-  {id:'d1',city:'随州',gov:'随州市招商促进局·张主任',topic:'智慧应急装备补链',domain:'应急机器人与无人机',need:'应急机器人集成 + 无人机系统 + 5G/卫星应急通信模块',submit:'今天 11:20',res:'matched',resLabel:'已匹配',clues:2,note:'长三角一家应急无人机集成商具备可对接窗口，建议本周安排实地走访。',ai:'整机能力强但感知层空心，应急机器人/无人机外购依赖已明确，资源库已有 1 家高匹配集成商。'},
-  {id:'d2',city:'随州',gov:'随州市招商促进局·张主任',topic:'氢能专用车补链',domain:'燃料电池电堆',need:'燃料电池电堆 / 系统集成 / 高压储氢瓶阀',submit:'昨天 16:40',res:'checking',resLabel:'核验中',clues:3,note:'华南电堆企业有异地设厂意向，正在核验真实意向与决策层触达。',ai:'电堆占整车成本53%是最大缺口，已匹配 1 家华南企业，正核验异地设厂真实意向。'},
-  {id:'d3',city:'随州',gov:'随州市招商促进局·张主任',topic:'香菇深加工补链',domain:'香菇功能成分提取',need:'香菇多糖/多肽功能成分提取 + 自主菌种研发',submit:'2天前',res:'none',resLabel:'暂无资源',clues:0,note:'现有资源库暂无生物提取类企业，建议补录或对接华东渠道。',ai:'全产业链500亿基础强，但提取/菌种环节只有2家本地，是向价值链上移的最大瓶颈。'},
-  {id:'d4',city:'随州',gov:'随州市招商促进局·张主任',topic:'香菇深加工补链',domain:'香菇功能成分提取',need:'高附加值香菇多糖/保健品/化妆品原料提取',submit:'3天前',res:'checking',resLabel:'核验中',clues:1,note:'华东某功能成分提取企业在寻求中部原料产地合作，正在核验落地意向与规模。',ai:'品源4亿美元出口订单验证了市场，功能成分提取是最具附加值的下一步。'}
-];
+// DEMANDS 已在上方初始化
+
+
+
+
+
 var matchDemandId=null;
 var opsView='pool';
 var RESOURCES=[];
@@ -1652,25 +1652,25 @@ var OPEN_ACCOUNTS=[];
 
 
 
-function render(){
-  if(role==='ops')return renderOps();
-  document.body.classList.remove('ops-mode');
-  var p=P();
-  $('#root').innerHTML=
-   '<div class="app-shell">'+
-    topbar(p)+
-    '<div class="app-content">'+sidebar()+
-      '<div class="pane-divider"><span class="divider-grip"><i class="i">⋮</i></span></div>'+
-      '<div class="content-column"><div class="workspace">'+
-        '<div class="main-pane">'+mainPane(p)+'</div>'+
-        (detailOpen?('<div class="detail-pane">'+detailPane(p)+'</div>')
-                   :('<button class="reopen-detail" onclick="toggleDetail()"><i class="i">🧾</i>展开详情</button>'))+
-      '</div></div>'+
-    '</div>'+
-    progressFooter(p)+
-   '</div>';
-  bind();
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 function renderOps(){
   document.body.classList.add('ops-mode');
   if(curDemand===null)curDemand=DEMANDS[0].id;
