@@ -5599,12 +5599,56 @@ function saveResAdd(){
   toast('✓ 已录入「'+alias+'」→ 已推送至「'+p.city+'·'+p.topic.substring(0,15)+'」项目线索');
 }
 function resAdd(){
-  var body='<p class="modal-intro">新增可对接主体，真名仅内部可见，政府端只见脱敏名。</p>'+
-    '<div class="form-stack"><label>脱敏名（对政府端展示）<input placeholder="如：华南某燃料电池电堆企业"></label>'+
-    '<label>企业真名（内部）<input placeholder="内部可见"></label>'+
-    '<label>产业链标签<input placeholder="如：燃料电池电堆"></label>'+
-    '<label>所在地 / 设厂意向<input placeholder="如：华南 · 有异地设厂意向"></label></div>';
-  openModal('录入企业',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="resSeed()">保存并入库</button>');
+  var projKeys=Object.keys(PROJECTS);
+  var projOptions=projKeys.map(function(k){
+    return '<option value="'+k+'">'+PROJECTS[k].city+' · '+PROJECTS[k].topic.substring(0,20)+'</option>';
+  }).join('');
+  var body=
+    '<p style="font-size:13px;color:#4a5568;margin:0 0 16px;line-height:1.7">以下内容仅管理端可见，政府端只展示脱敏名称和公开信号。</p>'+
+    '<div style="display:flex;flex-direction:column;gap:12px">'+
+      '<div>'+
+        '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">关联项目</label>'+
+        '<select id="ra-proj" style="width:100%;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none">'+
+          '<option value="">-- 选择项目 --</option>'+
+          projOptions+
+        '</select>'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+        '<div>'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">企业脱敏代号（政府端可见）</label>'+
+          '<input id="ra-alias" placeholder="如：脱敏企业X（电堆集成商）" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/>'+
+        '</div>'+
+        '<div>'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">企业真名（仅内部）</label>'+
+          '<input id="ra-real" placeholder="内部可见，不对外" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/>'+
+        '</div>'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+        '<div>'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">补链方向</label>'+
+          '<input id="ra-gap" placeholder="如：燃料电池电堆" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/>'+
+        '</div>'+
+        '<div>'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">企业类型与区域</label>'+
+          '<input id="ra-kind" placeholder="如：系统集成商 · 华南" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/>'+
+        '</div>'+
+      '</div>'+
+      '<div>'+
+        '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">扩张/落地信号（必填，需有可查证来源）</label>'+
+        '<textarea id="ra-signal" placeholder="如：2025年7月与湖北省政府签署备忘录，明确布局中部生产基地（来源：港交所公告2025-07-15）" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none;resize:vertical;min-height:68px;line-height:1.6"></textarea>'+
+      '</div>'+
+      '<div>'+
+        '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">为什么值得招引（可见政府端）</label>'+
+        '<textarea id="ra-reason" placeholder="如：直补随州电堆53%最大缺口，与新楚风/程力形成直接配套" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none;resize:vertical;min-height:56px;line-height:1.6"></textarea>'+
+      '</div>'+
+      '<div>'+
+        '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">核验问题（逗号分隔）</label>'+
+        '<input id="ra-qs" placeholder="是否有湖北建厂计划，与本地整车厂技术路线匹配度" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/>'+
+      '</div>'+
+    '</div>';
+  openModal('📝 录入慧小招推荐企业', body,
+    '<button class="secondary-button" onclick="closeModal()">取消</button>'+
+    '<button class="primary-button" onclick="saveResAdd()">保存并推送给政府端</button>');
 }
 function resSeed(){RESOURCES=RES_SEED.slice();closeModal();toast('已入库随州种子企业 '+RESOURCES.length+' 家（电堆/无人机/香菇提取各1家），可去智能匹配');render()}
 function matchDemand(){
