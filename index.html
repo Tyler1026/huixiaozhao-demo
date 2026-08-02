@@ -3061,20 +3061,43 @@ function reportHtml(p){
   var rs=REPORTSTATE[cur]; if(!rs) return '';
   var r=kbReadiness();
   function renderMd(md){
-    return md.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-      .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
-      .replace(/⚠️/g,'<span style="color:#d97706">⚠️</span>')
-      .replace(/^#{1,3}\s(.+)$/gm,'<div style="font-weight:700;color:#0b183b;margin:12px 0 4px">$1</div>')
-      .replace(/^[-•]\s(.+)$/gm,'<li style="margin:4px 0">$1</li>')
-      .replace(/(<li[\s\S]*?<\/li>)+/g,'<ul style="margin:6px 0;padding:0 0 0 18px">$&</ul>')
-      .replace(/\n{2,}/g,'</p><p style="margin:8px 0">')
-      .replace(/\n/g,'<br>');
+    md=md.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    md=md.replace(/\*\*([^*\n]+)\*\*/g,'<strong style="color:#0b183b">$1</strong>');
+    md=md.replace(/⚠️/g,'<span style="color:#d97706;font-weight:600">⚠️</span>');
+    md=md.replace(/✅/g,'<span style="color:#16a34a">✅</span>');
+    md=md.replace(/❌/g,'<span style="color:#dc2626">❌</span>');
+    md=md.replace(/★+/g,function(m){return '<span style="color:#f59e0b">'+m+'</span>';});
+    md=md.replace(/^#{0,3}\s*([一二三四五六七八九十]+)[、]\s*(.+)$/gm,
+      '<div style="display:flex;align-items:center;gap:10px;margin:18px 0 8px;padding-bottom:6px;border-bottom:2px solid #1a56db">'+
+        '<span style="display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;background:#1a56db;color:#fff;border-radius:50%;font-size:12px;font-weight:700">$1</span>'+
+        '<span style="font-size:14px;font-weight:750;color:#0b183b">$2</span></div>');
+    md=md.replace(/^###\s(.+)$/gm,'<div style="font-size:13px;font-weight:700;color:#4a5568;margin:10px 0 4px;padding-left:10px;border-left:3px solid #6366f1">$1</div>');
+    md=md.replace(/^##\s(.+)$/gm,'<div style="font-size:13.5px;font-weight:750;color:#0b183b;margin:12px 0 6px;padding:5px 12px;background:#f8faff;border-radius:8px;border-left:4px solid #1a56db">$1</div>');
+    // 表格
+    var outLines=[]; var inTbl=false;
+    md.split('\n').forEach(function(line){
+      var tr=line.trim();
+      if(tr.charAt(0)==='|'&&tr.charAt(tr.length-1)==='|'){
+        if(tr.slice(1,-1).split('|').every(function(c){return /^[\s\-:]+$/.test(c);})) return;
+        var cells=tr.slice(1,-1).split('|').map(function(c){return c.trim();});
+        if(!inTbl){inTbl=true;outLines.push('<div style="overflow-x:auto;margin:10px 0"><table style="width:100%;border-collapse:collapse;font-size:12.5px">');
+          outLines.push('<thead><tr>'+cells.map(function(c){return '<th style="padding:7px 10px;background:#f0f4ff;border:1px solid #dbeafe;font-weight:700;color:#1e3a8a;text-align:left">'+c+'</th>';}).join('')+'</tr></thead><tbody>');}
+        else outLines.push('<tr>'+cells.map(function(c,ci){return '<td style="padding:7px 10px;border:1px solid #e8edf5;color:#1e293b;background:'+(ci===0?'#fafbff':'#fff')+'">'+c+'</td>';}).join('')+'</tr>');
+      } else {if(inTbl){outLines.push('</tbody></table></div>');inTbl=false;} outLines.push(line);}
+    });
+    if(inTbl)outLines.push('</tbody></table></div>');
+    md=outLines.join('\n');
+    md=md.replace(/^[-•]\s(.+)$/gm,'<li style="margin:4px 0;color:#1e293b">$1</li>');
+    var parts=md.split('\n\n');
+    md=parts.map(function(chunk){var c=chunk.trim();if(!c)return '';if(/^<(div|table|ul)/.test(c))return c;return '<p style="margin:5px 0;line-height:1.85;color:#1e293b">'+c.replace(/\n/g,'<br>')+'</p>';}).filter(Boolean).join('\n');
+    return md;
   }
   return '<div style="border-radius:14px;border:1.5px solid #e8edf5;overflow:hidden;margin-bottom:8px">'+
     '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
       '<span style="font-size:12px;font-weight:650;color:#1a56db">📋 研判报告</span>'+
       '<span style="font-size:11.5px;color:#4a5568">'+rs.topic+'</span>'+
       '<span style="margin-left:auto;font-size:11px;color:'+(rs.score>=80?'#22c55e':'#f59e0b')+'">置信度 '+rs.score+'%</span>'+
+      '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
     '</div>'+
     '<div style="padding:16px 18px;font-size:13px;color:#1e293b;line-height:1.8">'+
       '<p style="margin:0">'+renderMd(rs.text||'')+'</p>'+
@@ -3208,10 +3231,15 @@ function homePage(p){
     '</div>'+
     // 底部行动栏（替代 composer）
     '<div class="report-bottom-bar" style="border-top:1px solid #f0f4ff;background:#fff;padding:12px 22px;display:flex;gap:10px;align-items:center">'+
-      '<button id="generateBtn" onclick="triggerReport(1)" '+
-        'style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">'+
-        '🔍 开始初步研判'+
-      '</button>'+
+      (REPORTSTATE[cur]&&REPORTSTATE[cur].phase===2
+        ? ('<button onclick="viewCurrentReport()" '+
+            'style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">📊 查看完整报告</button>'+
+           '<button onclick="downloadReport(\'full\')" style="padding:13px 16px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;font-size:13px;color:#1a56db;cursor:pointer;font-weight:600">⬇ 下载</button>'+
+           '<button onclick="triggerReport(1)" style="padding:13px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:12.5px;color:#4a5568;cursor:pointer">🔄 重新研判</button>')
+        : ('<button id="generateBtn" onclick="triggerReport(1)" '+
+            'style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">'+
+            '🔍 开始初步研判'+
+      '</button>'))+
       '<button onclick="doUpload()" style="padding:13px 16px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>'+
       (REPORTSTATE[cur]
         ? '<button onclick="submitDemand()" style="padding:13px 16px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;font-size:13px;color:#166534;cursor:pointer;font-weight:600">提交招引需求 →</button>'
