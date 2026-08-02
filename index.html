@@ -223,6 +223,129 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 <div id="root"></div>
 <div class="toast" id="toast"><span class="i">✅</span><span id="toastMsg"></span></div>
 <script>
+
+/* ══════════════════════════════════════════════════════════════
+   报告查看 & 下载 & 政企对接页面重建
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── 查看报告：把 REPORTSTATE[cur].text 渲染到 reportArea ── */
+function viewCurrentReport(){
+  var rs = REPORTSTATE[cur];
+  if(!rs || !rs.text){ toast('暂无报告，请先在研判需求页生成'); return; }
+  var area = document.getElementById('reportArea');
+  if(!area){
+    // 不在研判需求页，跳转过去再显示
+    view='report'; render();
+    setTimeout(function(){ viewCurrentReport(); }, 200);
+    return;
+  }
+  // renderMd 是 triggerReport 内的局部函数，这里内联一个简化版
+  function md(t){
+    return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/\*\*([^*\n]+)\*\*/g,'<strong>$1</strong>')
+      .replace(/⚠️/g,'<span style="color:#d97706;font-weight:600">⚠️</span>')
+      .replace(/✅/g,'<span style="color:#16a34a">✅</span>')
+      .replace(/❌/g,'<span style="color:#dc2626">❌</span>')
+      .replace(/★+/g,function(m){return '<span style="color:#f59e0b">'+m+'</span>';})
+      .replace(/^#{0,3}\s*([一二三四五六七八九十]+)[、]\s*(.+)$/gm,
+        '<div style="display:flex;align-items:center;gap:10px;margin:20px 0 8px;padding-bottom:7px;border-bottom:2px solid #1a56db">'+
+        '<span style="display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;background:#1a56db;color:#fff;border-radius:50%;font-size:12px;font-weight:700">$1</span>'+
+        '<span style="font-size:14px;font-weight:750;color:#0b183b">$2</span></div>')
+      .replace(/^\|(.+)\|$/gm,function(m,inner){
+        var cells=inner.split('|').map(function(c){return c.trim();});
+        if(cells.every(function(c){return /^[\s\-:]+$/.test(c);})) return '';
+        return '<tr>'+cells.map(function(c,ci){
+          return ci===0
+            ? '<th style="padding:8px 12px;background:#f0f4ff;border:1px solid #dbeafe;font-weight:700;color:#1e3a8a;text-align:left">'+c+'</th>'
+            : '<td style="padding:8px 12px;border:1px solid #e8edf5;color:#1e293b">'+c+'</td>';
+        }).join('')+'</tr>';
+      })
+      .replace(/(<tr>[\s\S]+?<\/tr>)+/g,'<table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:12.5px">$&</table>')
+      .replace(/^[-•]\s(.+)$/gm,'<li style="margin:4px 0;color:#1e293b">$1</li>')
+      .replace(/\n{2,}/g,'</p><p style="margin:6px 0;line-height:1.85;color:#1e293b">')
+      .replace(/\n/g,'<br>');
+  }
+
+  area.innerHTML=
+    '<div style="border-radius:14px;border:1.5px solid #bfdbfe;overflow:hidden;margin-bottom:8px">'+
+      '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
+        '<span style="font-size:13px;font-weight:700;color:#1d4ed8">📊 研判报告（完整版）</span>'+
+        '<span style="font-size:11.5px;color:#8492a6">'+rs.topic+'</span>'+
+        '<span style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f0fdf4;color:#166534">置信度 '+rs.score+'%</span>'+
+        '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
+      '</div>'+
+      '<div style="padding:18px 20px;font-size:13px;line-height:1.85;color:#1e293b">'+
+        '<p style="margin:0">'+md(rs.text)+'</p>'+
+      '</div>'+
+      '<div style="padding:10px 16px;background:#f9fafb;border-top:1px solid #f0f4ff;font-size:11px;color:#9aa5b5">'+
+        '生成时间：'+new Date(rs.ts).toLocaleDateString('zh-CN')+' · '+
+        '数据来源：慧小招实测报告+DeepSeek分析 · 置信度'+rs.score+'%'+
+      '</div>'+
+    '</div>';
+
+  // 更新底部操作栏
+  var bar = document.querySelector('.report-bottom-bar');
+  if(bar){
+    bar.innerHTML=
+      '<button onclick="triggerReport(1)" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">🔄 重新生成</button>'+
+      '<button onclick="downloadReport(\'full\')" style="padding:12px 14px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;font-size:13px;color:#1a56db;cursor:pointer;font-weight:600">⬇ 下载完整版</button>'+
+      '<button onclick="downloadReport(\'short\')" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">⬇ 下载精简版</button>'+
+      '<button onclick="submitDemand()" style="flex:1;padding:12px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer">✓ 确认方向，提交招引需求</button>';
+  }
+}
+
+/* ── 下载报告 ── */
+function downloadReport(mode){
+  var rs=REPORTSTATE[cur]; var p=P();
+  if(!rs||!rs.text){ toast('暂无报告'); return; }
+  var city=p?p.city:'';
+  var topic=rs.topic||'';
+  var date=new Date(rs.ts).toLocaleDateString('zh-CN');
+
+  var content, filename;
+  if(mode==='full'){
+    content=[
+      city+' · '+topic+' 招商研判报告（完整版）',
+      '生成时间：'+date+'  |  置信度：'+rs.score+'%',
+      '数据来源：慧小招实测报告 + DeepSeek AI分析',
+      '════════════════════════════════',
+      '',
+      rs.text,
+      '',
+      '════════════════════════════════',
+      '⚠ 本报告为AI辅助研判，正式招商决策需结合政府授权材料与领导确认。',
+    ].join('\n');
+    filename=city+'_'+topic+'_研判报告_完整版.txt';
+  } else {
+    // 精简版：提取每章第一句
+    var sections=[];
+    rs.text.split('\n').forEach(function(l){
+      var m=l.match(/^[一二三四五六七八九十]+[、]/);
+      if(m) sections.push(l.replace(/^#+ */,'').trim());
+    });
+    content=[
+      city+' · '+topic+' 招商研判报告（精简版）',
+      '生成时间：'+date+'  |  置信度：'+rs.score+'%',
+      '────────────────────',
+      '',
+    ].concat(sections.map(function(s,i){return '['+(i+1)+'] '+s;})).concat([
+      '',
+      '详细内容请查看完整版报告。',
+      '⚠ 以上为AI初判，需干部结合实际材料确认。',
+    ]).join('\n');
+    filename=city+'_'+topic+'_研判报告_精简版.txt';
+  }
+
+  var blob=new Blob([content],{type:'text/plain;charset=utf-8'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a'); a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){URL.revokeObjectURL(url);a.remove();},300);
+  toast('✓ 报告已下载：'+filename);
+}
+
+
+
 /* ===== 数据层：多项目（优化点：解决写死随州）===== */
 var PROJECTS={};
 
@@ -1961,40 +2084,258 @@ function exportSub(){
   toast('已导出项目卡：'+s.name.split(' · ')[0]);
 }
 // 政企对接：独立tab，展示所有项目的对接进度
+/* ══════════════════════════════════════════════════════════════
+   政企对接页面重建
+   ══════════════════════════════════════════════════════════════ */
+
+/* 对接记录存储 {projKey: [{ts, note, type}]} */
+var DOCK_LOGS = DOCK_LOGS || {};
+
 function dockingPage(p){
-  if(!window.__dockPick)window.__dockPick=Object.keys(PROJECTS)[0];
-  var rows=Object.keys(PROJECTS).map(function(k){var x=PROJECTS[k];var sc=stColor(x.stage);
-    var st = x.stage>=5?'对接中':x.stage>=4?'资源匹配中':'尚未递交';
-    var on=k===window.__dockPick;
-    return '<button onclick="pickDock(\''+k+'\')" style="width:100%;text-align:left;padding:13px 16px;border:1px solid '+(on?'var(--blue)':'var(--line)')+';border-radius:10px;background:'+(on?'#f3f7fd':'#fff')+';margin-bottom:9px;cursor:pointer">'+
-      '<div style="display:flex;align-items:center;gap:12px"><i class="i" style="font-size:20px">🤝</i>'+
-      '<span style="flex:1;min-width:0"><strong style="font-size:14.5px">'+x.topic+'</strong>'+
-      '<small style="display:block;color:var(--muted);font-size:12px;margin-top:2px">'+x.city+' · '+st+'</small></span>'+
-      '<span class="status-tag" style="color:'+sc.c+';background:'+sc.bg+'">'+STAGES[x.stage-1][0]+'</span></div></button>';
+  var projKeys=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k].stage>=3;});
+
+  if(!projKeys.length){
+    return '<div class="page">'+
+      '<div class="page-header"><div><span class="eyebrow">DOCKING</span><h1>政企对接</h1>'+
+      '<p>招引需求提交后，资源核验与对接进度会出现在这里。</p></div></div>'+
+      '<div class="knowledge-scroll"><div style="text-align:center;padding:60px 20px">'+
+        '<div style="font-size:36px;margin-bottom:12px">🤝</div>'+
+        '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">尚未提交招引需求</div>'+
+        '<div style="font-size:13px;color:#8492a6;line-height:1.7;margin-bottom:20px">'+
+          '在「项目管理」中提交招引需求后，<br>候选线索的资源核验与对接进度会出现在这里'+
+        '</div>'+
+        '<button onclick="go(\'home\')" style="padding:10px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:650;cursor:pointer">前往项目管理 →</button>'+
+      '</div></div></div>';
+  }
+
+  if(!window.__dockPick || !PROJECTS[window.__dockPick]) window.__dockPick=projKeys[0];
+  var pk=window.__dockPick;
+  var px=PROJECTS[pk];
+  var clues=px.clues||[];
+  var logs=DOCK_LOGS[pk]||[];
+
+  // ── 左侧项目列表 ──
+  var projectList=projKeys.map(function(k){
+    var x=PROJECTS[k];
+    var sc=stColor(x.stage);
+    var xClues=x.clues||[];
+    var teal=xClues.filter(function(c){return c.tone==='teal';}).length;
+    var amber=xClues.filter(function(c){return c.tone==='amber';}).length;
+    var isOn=(k===pk);
+    return '<button onclick="pickDock(\''+k+'\')" style="width:100%;text-align:left;padding:12px 14px;border:1.5px solid '+(isOn?'#1a56db':'#e8edf5')+';border-radius:12px;background:'+(isOn?'#f0f4ff':'#fff')+';cursor:pointer;margin-bottom:8px">'+
+      '<div style="display:flex;align-items:center;gap:10px">'+
+        '<span style="font-size:18px;flex-shrink:0">🎯</span>'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:13px;font-weight:700;color:#0b183b;margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+x.topic+'</div>'+
+          '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+            (teal?'<span style="padding:1px 7px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:11px">'+teal+'条可沟通</span>':'')+
+            (amber?'<span style="padding:1px 7px;background:#fffbeb;color:#92400e;border-radius:10px;font-size:11px">'+amber+'条核验中</span>':'')+
+            (!teal&&!amber?'<span style="padding:1px 7px;background:#f5f7fb;color:#6b7280;border-radius:10px;font-size:11px">'+xClues.length+'条待接触</span>':'')+
+          '</div>'+
+        '</div>'+
+        '<span style="padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;background:'+sc.bg+';color:'+sc.c+';flex-shrink:0">'+STAGES[x.stage-1][0]+'</span>'+
+      '</div>'+
+    '</button>';
   }).join('');
-  var pk=window.__dockPick;var px=PROJECTS[pk];
+
+  // ── 右侧：时间线 + 候选线索状态 + 对接记录 ──
+
+  // 递交时间线
+  var submitTime=logs.length?new Date(logs[0].ts).toLocaleString('zh-CN'):new Date().toLocaleString('zh-CN');
+  var timeline=
+    '<div style="margin-bottom:20px">'+
+      '<div style="font-size:12px;font-weight:650;color:#4a5568;letter-spacing:.3px;margin-bottom:12px">递交时间线</div>'+
+      '<div style="display:flex;flex-direction:column;gap:0">'+
+        // 节点1：需求已递交
+        '<div style="display:flex;gap:12px">'+
+          '<div style="display:flex;flex-direction:column;align-items:center">'+
+            '<div style="width:28px;height:28px;border-radius:50%;background:#1a56db;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;flex-shrink:0">✓</div>'+
+            '<div style="width:2px;flex:1;background:#e8edf5;margin:4px 0"></div>'+
+          '</div>'+
+          '<div style="padding:2px 0 16px">'+
+            '<div style="font-size:13px;font-weight:650;color:#0b183b">需求已递交</div>'+
+            '<div style="font-size:12px;color:#8492a6;margin-top:2px">已同步招商需求、承接区域与报告证据链</div>'+
+          '</div>'+
+        '</div>'+
+        // 节点2：资源核验
+        (px.stage>=4?
+          '<div style="display:flex;gap:12px">'+
+            '<div style="display:flex;flex-direction:column;align-items:center">'+
+              '<div style="width:28px;height:28px;border-radius:50%;background:'+(px.stage>=5?'#22c55e':'#f59e0b')+';display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;flex-shrink:0">'+(px.stage>=5?'✓':'◔')+'</div>'+
+              '<div style="width:2px;flex:1;background:#e8edf5;margin:4px 0"></div>'+
+            '</div>'+
+            '<div style="padding:2px 0 16px">'+
+              '<div style="font-size:13px;font-weight:650;color:#0b183b">资源可达性核验中</div>'+
+              '<div style="font-size:12px;color:#8492a6;margin-top:2px">资源团队正在核验企业真实意向与决策层触达路径</div>'+
+            '</div>'+
+          '</div>'
+        :'<div style="display:flex;gap:12px">'+
+            '<div style="display:flex;flex-direction:column;align-items:center">'+
+              '<div style="width:28px;height:28px;border-radius:50%;background:#f0f4ff;border:2px solid #e8edf5;display:flex;align-items:center;justify-content:center;color:#9aa5b5;font-size:12px;flex-shrink:0">2</div>'+
+              '<div style="width:2px;flex:1;background:#e8edf5;margin:4px 0"></div>'+
+            '</div>'+
+            '<div style="padding:2px 0 16px">'+
+              '<div style="font-size:13px;font-weight:650;color:#9aa5b5">资源可达性核验</div>'+
+              '<div style="font-size:12px;color:#b0bac8;margin-top:2px">待候选线索核验启动</div>'+
+            '</div>'+
+          '</div>')+
+        // 节点3：首次沟通
+        (px.stage>=5?
+          '<div style="display:flex;gap:12px">'+
+            '<div style="display:flex;flex-direction:column;align-items:center">'+
+              '<div style="width:28px;height:28px;border-radius:50%;background:#22c55e;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;flex-shrink:0">✓</div>'+
+            '</div>'+
+            '<div style="padding:2px 0">'+
+              '<div style="font-size:13px;font-weight:650;color:#0b183b">可安排首次沟通</div>'+
+              '<div style="font-size:12px;color:#8492a6;margin-top:2px">核验通过，请准备承接材料与可用时段</div>'+
+            '</div>'+
+          '</div>'
+        :'<div style="display:flex;gap:12px">'+
+            '<div style="width:28px;height:28px;border-radius:50%;background:#f0f4ff;border:2px solid #e8edf5;display:flex;align-items:center;justify-content:center;color:#9aa5b5;font-size:12px;flex-shrink:0">3</div>'+
+            '<div style="padding:2px 0">'+
+              '<div style="font-size:13px;font-weight:650;color:#9aa5b5">首次沟通</div>'+
+              '<div style="font-size:12px;color:#b0bac8;margin-top:2px">核验通过后安排</div>'+
+            '</div>'+
+          '</div>')+
+      '</div>'+
+    '</div>';
+
+  // 候选企业状态
+  var clueStatus=clues.length
+    ? '<div style="margin-bottom:20px">'+
+        '<div style="font-size:12px;font-weight:650;color:#4a5568;letter-spacing:.3px;margin-bottom:10px">候选企业线索</div>'+
+        clues.map(function(c){
+          var toneMap={slate:{bg:'#f5f7fb',dot:'#9aa5b5',label:'待接触'},amber:{bg:'#fffbeb',dot:'#f59e0b',label:'核验中'},teal:{bg:'#f0fdf4',dot:'#22c55e',label:'可安排沟通'}};
+          var t=toneMap[c.tone]||toneMap.slate;
+          return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:'+t.bg+';border-radius:10px;margin-bottom:6px">'+
+            '<span style="width:8px;height:8px;border-radius:50%;background:'+t.dot+';flex-shrink:0"></span>'+
+            '<div style="flex:1;min-width:0">'+
+              '<div style="font-size:13px;font-weight:650;color:#0b183b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.name+'</div>'+
+              '<div style="font-size:11.5px;color:#8492a6">'+c.kind+'</div>'+
+            '</div>'+
+            '<span style="padding:2px 8px;background:'+t.bg+';color:'+t.dot+';border:1px solid;border-radius:20px;font-size:11px;font-weight:600;flex-shrink:0">'+t.label+'</span>'+
+          '</div>';
+        }).join('')+
+      '</div>'
+    : '<div style="margin-bottom:20px;padding:14px;background:#f9fafb;border-radius:10px;font-size:13px;color:#9aa5b5;text-align:center">'+
+        '尚无候选线索 · 在「项目管理」中发起资源核验后出现'+
+      '</div>';
+
+  // 对接记录
+  var dockLogs=
+    '<div>'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'+
+        '<span style="font-size:12px;font-weight:650;color:#4a5568;letter-spacing:.3px">对接记录</span>'+
+        '<span style="font-size:11px;color:#9aa5b5">'+logs.length+'条</span>'+
+      '</div>'+
+      (logs.length
+        ? logs.map(function(l){
+            var typeIcon={visit:'🤝',call:'📞',email:'📧',material:'📎'}[l.type]||'📝';
+            return '<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid #f0f4ff">'+
+              '<span style="font-size:16px;flex-shrink:0">'+typeIcon+'</span>'+
+              '<div style="flex:1">'+
+                '<div style="font-size:12.5px;color:#1e293b;line-height:1.6">'+l.note+'</div>'+
+                '<div style="font-size:11px;color:#9aa5b5;margin-top:3px">'+new Date(l.ts).toLocaleString('zh-CN')+'</div>'+
+              '</div>'+
+            '</div>';
+          }).join('')
+        : '<div style="font-size:12.5px;color:#9aa5b5;padding:8px 0">暂无对接记录</div>'
+      )+
+      // 录入区
+      '<div style="margin-top:12px">'+
+        '<div style="display:flex;gap:6px;margin-bottom:8px">'+
+          ['visit:🤝拜访','call:📞电话','email:📧邮件','material:📎材料'].map(function(s){
+            var parts=s.split(':'), val=parts[0], label=parts[1];
+            return '<button onclick="setDockType(\''+pk+'\',\''+val+'\')" id="dtype-'+pk+'-'+val+'" '+
+              'style="padding:5px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:12px;cursor:pointer;background:#f5f7fb;color:#4a5568">'+label+'</button>';
+          }).join('')+
+        '</div>'+
+        '<textarea id="dock-note-'+pk+'" placeholder="记录本次沟通内容、关键信息或待跟进事项…" '+
+          'style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;resize:vertical;min-height:72px;outline:none;line-height:1.6" '+
+          'onfocus="this.style.border=\'1.5px solid #6366f1\'" onblur="this.style.border=\'1.5px solid #e8edf5\'"></textarea>'+
+        '<button onclick="saveDockLog(\''+pk+'\')" '+
+          'style="width:100%;margin-top:8px;padding:9px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:650;cursor:pointer">'+
+          '保存对接记录</button>'+
+      '</div>'+
+    '</div>';
+
+  // 下一步政府待办
+  var nextStep='';
+  if(px.stage===3){
+    nextStep='<div style="padding:12px 14px;background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;margin-bottom:16px">'+
+      '<div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">⏳ 等待资源核验启动</div>'+
+      '<div style="font-size:12px;color:#4a5568;line-height:1.7">候选线索已录入，等待资源团队判断可触达路径。可在「项目管理」中点「请资源团队核验」推进。</div>'+
+    '</div>';
+  } else if(px.stage===4){
+    nextStep='<div style="padding:12px 14px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;margin-bottom:16px">'+
+      '<div style="font-size:12px;font-weight:700;color:#c2410c;margin-bottom:6px">🔍 资源核验进行中（预计2个工作日）</div>'+
+      '<div style="font-size:12px;color:#4a5568;line-height:1.7">政府侧待办：准备<strong>园区承接条件说明</strong>（可用厂房/能耗指标）和<strong>可用时段</strong>，核验通过后即可安排首次沟通。</div>'+
+    '</div>';
+  } else if(px.stage>=5){
+    nextStep='<div style="padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;margin-bottom:16px">'+
+      '<div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:6px">✓ 可安排首次沟通</div>'+
+      '<div style="font-size:12px;color:#4a5568;line-height:1.7">政府侧待办：确认<strong>接待时段</strong>、准备<strong>承接方案</strong>（园区/政策/配套）。在下方填写对接记录跟踪进展。</div>'+
+    '</div>';
+  }
+
+  // 查看/下载报告
+  var reportActions=REPORTSTATE[pk]
+    ? '<div style="display:flex;gap:8px;margin-bottom:16px">'+
+        '<button onclick="cur=\''+pk+'\';viewCurrentReport()" style="flex:1;padding:9px;background:#f8faff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer;font-weight:600">📋 查看研判报告</button>'+
+        '<button onclick="cur=\''+pk+'\';downloadReport(\'full\')" style="padding:9px 14px;background:#f8faff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer">⬇ 下载</button>'+
+      '</div>'
+    : '';
+
   return '<div class="page">'+
     '<div class="page-header"><div><span class="eyebrow">DOCKING</span><h1>政企对接</h1>'+
-    '<p>各项目递交后的资源匹配与对接进度，点项目查看时间线（资源端处理，此处只读）。</p></div></div>'+
-    '<div class="knowledge-scroll"><div style="width:100%">'+rows+'</div>'+
-    '<div style="margin-top:16px"><div style="font-size:13px;font-weight:650;color:#0b183b;margin-bottom:10px">📡 '+px.topic+' · 对接进度</div>'+dockPanel()+'</div>'+
+    '<p>已递交需求的核验进度与对接记录。候选企业信息均为脱敏展示，资源细节由资源团队掌握。</p></div></div>'+
+    '<div style="display:grid;grid-template-columns:280px 1fr;gap:16px;height:calc(100vh - 130px);padding:0 22px 16px;overflow:hidden">'+
+      // 左列
+      '<div style="overflow-y:auto;padding-right:8px">'+
+        '<div style="font-size:11px;font-weight:650;color:#9aa5b5;letter-spacing:.5px;margin-bottom:10px;padding-top:2px">已提交项目</div>'+
+        projectList+
+      '</div>'+
+      // 右列
+      '<div style="overflow-y:auto;padding-left:8px;border-left:1px solid #f0f4ff">'+
+        nextStep+
+        reportActions+
+        timeline+
+        clueStatus+
+        dockLogs+
+        '<div style="margin-top:14px;padding:10px 12px;background:#f9fafb;border-radius:8px;font-size:11.5px;color:#9aa5b5;line-height:1.6">'+
+          'ⓘ 政府端展示边界：仅展示脱敏状态与下一步；企业真实名称、联系方式由资源团队保管。系统不会自动联系企业。'+
+        '</div>'+
+      '</div>'+
     '</div></div>';
 }
-function pickDock(k){window.__dockPick=k;render()}
-function needsPage(p){
-  var rows=Object.keys(PROJECTS).map(function(k){var x=PROJECTS[k];var sc=stColor(x.stage);
-    return '<button onclick="switchProj(\''+k+'\')" style="width:100%;display:flex;align-items:center;gap:14px;padding:14px 18px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer;text-align:left">'+
-      '<i class="i" style="font-size:22px;flex:0 0 auto">📍</i>'+
-      '<span style="flex:1;min-width:0;display:grid;gap:3px"><strong style="font-size:15px">'+x.topic+'</strong>'+
-      '<small style="color:var(--muted);font-size:12px">'+x.city+' · 研判进度到「'+STAGES[x.stage-1][0]+'」</small></span>'+
-      '<span class="status-tag" style="flex:0 0 auto;color:'+sc.c+';background:'+sc.bg+'">'+STAGES[x.stage-1][0]+'</span></button>';
-  }).join('');
-  return '<div class="page">'+
-    '<div class="page-header"><div><span class="eyebrow">MY NEEDS</span><h1>我的需求</h1>'+
-    '<p>'+p.org+' · '+p.who+' 在本市开展的多个产业研判，点击任意条目切换。</p></div></div>'+
-    '<div class="knowledge-scroll"><div class="prompt-list" style="margin-left:0;width:100%">'+rows+'</div>'+
-    '<div class="boundary-note" style="margin-top:18px"><i class="i">ℹ</i>每个产业方向是一条独立研判线，进度、报告、证据互不干扰；资源对接进度由资源端回传。</div>'+
-    '</div></div>';
+
+/* ── 对接记录辅助函数 ── */
+var __dockType = {};
+function setDockType(projKey, type){
+  __dockType[projKey] = type;
+  // 更新按钮样式
+  ['visit','call','email','material'].forEach(function(t){
+    var btn=document.getElementById('dtype-'+projKey+'-'+t);
+    if(!btn) return;
+    btn.style.background = t===type ? '#eff6ff' : '#f5f7fb';
+    btn.style.borderColor = t===type ? '#bfdbfe' : '#e8edf5';
+    btn.style.color = t===type ? '#1a56db' : '#4a5568';
+  });
+}
+
+function saveDockLog(projKey){
+  var ta=document.getElementById('dock-note-'+projKey);
+  if(!ta||!ta.value.trim()){toast('请填写对接记录内容');return;}
+  if(!DOCK_LOGS[projKey]) DOCK_LOGS[projKey]=[];
+  DOCK_LOGS[projKey].unshift({
+    ts: Date.now(),
+    note: ta.value.trim(),
+    type: __dockType[projKey]||'visit'
+  });
+  persist();
+  ta.value='';
+  render();
+  toast('✓ 对接记录已保存');
 }
 function ctxBar(icon,strong,span){
   return '<div class="context-bar"><div class="context-icon"><i class="i">'+icon+'</i></div>'+
@@ -3038,7 +3379,11 @@ function detailReport(p){
         ? '<ul class="source-list">'+ups.map(function(u){return '<li><i class="i"></i>'+u.name+'<small style="color:#9aa5b5;margin-left:6px">'+Math.round(u.size/1024)+'KB</small></li>';}).join('')+'</ul>'
         : '<div style="font-size:12.5px;color:#9aa5b5">暂无上传材料</div>'      )+'</div>'+
       (st&&st.phase===2
-        ? '<div class="detail-block"><button onclick="go(\'report\')" style="width:100%;padding:9px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer;font-weight:600">查看完整报告</button></div>'
+        ? '<div class="detail-block">'+
+      '<div style="display:flex;gap:8px">'+
+      '<button onclick="viewCurrentReport()" style="flex:1;padding:9px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer;font-weight:600">📋 查看完整报告</button>'+
+      '<button onclick="downloadReport(\'full\')" style="padding:9px 14px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer">⬇ 下载</button>'+
+      '</div></div>'
         : ''
       )+
       '<div class="detail-block"><div class="boundary-note" style="margin-top:0"><i class="i">ℹ</i>报告为AI辅助草稿，关键判断需人工确认；定稿后正式递交。</div></div>'+
@@ -3128,7 +3473,8 @@ function persist(){
       KB_FILE_CHUNKS:KB_FILE_CHUNKS,
       KB_UNLOCKED:KB_UNLOCKED,
       REPORTSTATE:REPORTSTATE,
-      PENDING_CONFIRMS:PENDING_CONFIRMS
+      PENDING_CONFIRMS:PENDING_CONFIRMS,
+      DOCK_LOGS:DOCK_LOGS
     };
     localStorage.setItem(LS_KEY, JSON.stringify(data));
   }catch(e){ console.warn('[persist] failed:',e.message); }
@@ -3149,6 +3495,7 @@ function restore(){
       KB_UNLOCKED=data.KB_UNLOCKED||{};
       REPORTSTATE=data.REPORTSTATE||{};
       PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
+      DOCK_LOGS=data.DOCK_LOGS||{};
       console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
       return true;
     }
