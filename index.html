@@ -1678,6 +1678,243 @@ function selectTopic(val, isCustom){
 }
 
 // 触发生成报告
+/* ══════════════════════════════════════════════════════════════
+   研判需求 — 待确认事项结构化面板
+   流程：进入页面自动触发草稿 → 解析⚠️ → 渲染确认面板 → 全部确认后解锁完整报告
+   ══════════════════════════════════════════════════════════════ */
+
+// 待确认事项状态 {projKey: [{text, status:'pending'|'confirmed'|'edited', editedText, files:[]}]}
+var PENDING_CONFIRMS = PENDING_CONFIRMS || {};
+
+/* 解析草稿文本，提取⚠️条目 */
+function parsePendingItems(text){
+  var items = [];
+  var lines = text.split('\n');
+  lines.forEach(function(line){
+    var clean = line.replace(/^[\s\-•*]+/, '').trim();
+    if(!clean) return;
+    // 含⚠️的行
+    if(clean.indexOf('⚠️') >= 0 || clean.indexOf('⚠') >= 0){
+      var t = clean.replace('⚠️','').replace('⚠','').replace(/^[\s:：]+/,'').trim();
+      if(t.length > 5) items.push({text: t, status:'pending', editedText:'', files:[]});
+    }
+  });
+  return items;
+}
+
+/* 渲染待确认面板（插在草稿下方） */
+function renderConfirmPanel(items, projKey){
+  if(!items || !items.length) return '';
+
+  var rows = items.map(function(item, idx){
+    var isDone = item.status === 'confirmed' || item.status === 'edited';
+    var displayText = item.editedText || item.text;
+    var filesBadge = item.files && item.files.length
+      ? '<span style="margin-left:6px;padding:1px 7px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:10.5px;border:1px solid #86efac">'+item.files.length+' 个附件</span>'
+      : '';
+
+    if(isDone){
+      return '<div id="ci-'+projKey+'-'+idx+'" style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px">'+
+        '<span style="color:#22c55e;font-size:16px;flex-shrink:0;margin-top:1px">✓</span>'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
+          (item.status==='edited'?'<div style="font-size:11px;color:#22c55e;margin-top:3px">已修改并确认</div>':'<div style="font-size:11px;color:#22c55e;margin-top:3px">已确认</div>')+
+        '</div>'+
+        '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#22c55e;cursor:pointer;flex-shrink:0">撤回</button>'+
+      '</div>';
+    }
+
+    return '<div id="ci-'+projKey+'-'+idx+'" style="border-radius:12px;background:#fffbeb;border:1.5px solid #fde68a;overflow:hidden">'+
+      '<div style="padding:12px 14px">'+
+        '<div style="display:flex;gap:8px;align-items:flex-start">'+
+          '<span style="color:#d97706;font-size:14px;flex-shrink:0;margin-top:1px">⚠</span>'+
+          '<div id="ci-text-'+projKey+'-'+idx+'" style="flex:1;font-size:13px;color:#78350f;line-height:1.65">'+displayText+'</div>'+
+        '</div>'+
+        // 编辑框（默认隐藏）
+        '<div id="ci-edit-'+projKey+'-'+idx+'" style="display:none;margin-top:10px">'+
+          '<textarea id="ci-ta-'+projKey+'-'+idx+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #6366f1;border-radius:8px;font-size:13px;color:#1e293b;resize:vertical;min-height:64px;outline:none;line-height:1.6">'+displayText+'</textarea>'+
+          // 附件上传
+          '<div id="ci-drop-'+projKey+'-'+idx+'" '+
+            'onclick="ciPickFile(\''+projKey+'\','+idx+')" '+
+            'ondragover="event.preventDefault();this.style.background=\'#eef2ff\'" '+
+            'ondragleave="this.style.background=\'#f8faff\'" '+
+            'ondrop="ciDropFile(event,\''+projKey+'\','+idx+')" '+
+            'style="margin-top:8px;padding:10px;border:1.5px dashed #c7d2fe;border-radius:8px;text-align:center;cursor:pointer;background:#f8faff;font-size:12px;color:#6366f1">'+
+            '<span id="ci-file-hint-'+projKey+'-'+idx+'">📎 上传附件（可选，拖拽或点击）</span>'+
+          '</div>'+
+          '<input id="ci-finp-'+projKey+'-'+idx+'" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.csv" style="display:none" onchange="ciFileSelected(this,\''+projKey+'\','+idx+')"/>'+
+          '<div style="display:flex;gap:8px;margin-top:8px">'+
+            '<button onclick="ciSave(\''+projKey+'\','+idx+')" style="flex:1;padding:7px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer">✓ 保存修改</button>'+
+            '<button onclick="ciCancelEdit(\''+projKey+'\','+idx+')" style="padding:7px 12px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;color:#4a5568;cursor:pointer">取消</button>'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+      // 操作栏
+      '<div style="padding:8px 14px;background:#fef9c3;border-top:1px solid #fde68a;display:flex;gap:8px">'+
+        '<button onclick="cfmItem(\''+projKey+'\','+idx+')" style="flex:1;padding:7px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12.5px;font-weight:650;color:#166534;cursor:pointer">✓ 领导确认</button>'+
+        '<button onclick="ciShowEdit(\''+projKey+'\','+idx+')" style="flex:1;padding:7px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12.5px;font-weight:600;color:#6d28d9;cursor:pointer">✎ 修改内容</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+
+  var total = items.length;
+  var done = items.filter(function(x){return x.status==='confirmed'||x.status==='edited';}).length;
+  var allDone = done === total;
+
+  return '<div id="confirmPanel-'+projKey+'" style="margin-top:16px">'+
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'+
+      '<span style="font-size:12px;font-weight:700;color:#92400e;letter-spacing:.3px">待确认事项</span>'+
+      '<span id="cp-progress-'+projKey+'" style="font-size:11px;color:#f59e0b;font-weight:600">'+done+' / '+total+' 已确认</span>'+
+      '<div style="flex:1;height:4px;background:#fef9c3;border-radius:2px;overflow:hidden;margin-left:4px">'+
+        '<div id="cp-bar-'+projKey+'" style="height:100%;width:'+(total?Math.round(done/total*100):0)+'%;background:linear-gradient(90deg,#f59e0b,#22c55e);border-radius:2px;transition:width .4s"></div>'+
+      '</div>'+
+    '</div>'+
+    '<div style="display:flex;flex-direction:column;gap:8px" id="cp-items-'+projKey+'">'+rows+'</div>'+
+    '<div id="cp-unlock-'+projKey+'" style="margin-top:14px;padding:12px 16px;background:'+(allDone?'#f0fdf4':'#f9fafb')+';border:1.5px solid '+(allDone?'#86efac':'#e8edf5')+';border-radius:12px;text-align:center">'+
+      (allDone
+        ? '<span style="font-size:13px;font-weight:650;color:#166534">✓ 所有事项已确认，可生成完整报告</span>'
+        : '<span style="font-size:13px;color:#9aa5b5">请确认以上 '+(total-done)+' 条待确认事项后，才可生成完整研判报告</span>'
+      )+
+    '</div>'+
+  '</div>';
+}
+
+/* 更新进度条和解锁状态 */
+function updateConfirmProgress(projKey){
+  var items = PENDING_CONFIRMS[projKey] || [];
+  var total = items.length;
+  var done = items.filter(function(x){return x.status==='confirmed'||x.status==='edited';}).length;
+  var allDone = done === total && total > 0;
+
+  var prog = document.getElementById('cp-progress-'+projKey);
+  if(prog) prog.textContent = done+' / '+total+' 已确认';
+
+  var bar = document.getElementById('cp-bar-'+projKey);
+  if(bar) bar.style.width = (total?Math.round(done/total*100):0)+'%';
+
+  var unlock = document.getElementById('cp-unlock-'+projKey);
+  if(unlock){
+    unlock.style.background = allDone ? '#f0fdf4' : '#f9fafb';
+    unlock.style.borderColor = allDone ? '#86efac' : '#e8edf5';
+    unlock.innerHTML = allDone
+      ? '<span style="font-size:13px;font-weight:650;color:#166534">✓ 所有事项已确认，可生成完整报告</span>'
+      : '<span style="font-size:13px;color:#9aa5b5">请确认以上 '+(total-done)+' 条待确认事项后，才可生成完整研判报告</span>';
+  }
+
+  // 更新底部「生成完整报告」按钮
+  var bar2 = document.querySelector('.report-bottom-bar');
+  if(bar2 && allDone){
+    var confirmBtn = bar2.querySelector('button[onclick*="triggerReport(2)"]');
+    if(!confirmBtn){
+      bar2.innerHTML =
+        '<div style="flex:1;font-size:12.5px;color:#166534;background:#f0fdf4;padding:10px 14px;border-radius:10px;border:1px solid #86efac;line-height:1.6">'+
+          '✓ 所有待确认事项已完成，可生成完整报告'+
+        '</div>'+
+        '<button onclick="triggerReport(2)" style="padding:12px 20px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:13.5px;font-weight:650;cursor:pointer;white-space:nowrap">生成完整报告 →</button>'+
+        '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>';
+    }
+  }
+
+  persist();
+}
+
+/* 确认一条 */
+function cfmItem(projKey, idx){
+  if(!PENDING_CONFIRMS[projKey]) return;
+  PENDING_CONFIRMS[projKey][idx].status = 'confirmed';
+  var card = document.getElementById('ci-'+projKey+'-'+idx);
+  if(card){
+    var item = PENDING_CONFIRMS[projKey][idx];
+    var displayText = item.editedText || item.text;
+    var filesBadge = item.files&&item.files.length?'<span style="margin-left:6px;padding:1px 7px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:10.5px;border:1px solid #86efac">'+item.files.length+' 个附件</span>':'';
+    card.style.cssText='display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px';
+    card.innerHTML=
+      '<span style="color:#22c55e;font-size:16px;flex-shrink:0;margin-top:1px">✓</span>'+
+      '<div style="flex:1;min-width:0"><div style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
+      '<div style="font-size:11px;color:#22c55e;margin-top:3px">已确认</div></div>'+
+      '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#22c55e;cursor:pointer;flex-shrink:0">撤回</button>';
+  }
+  updateConfirmProgress(projKey);
+}
+
+/* 撤回确认 */
+function uncfmItem(projKey, idx){
+  if(!PENDING_CONFIRMS[projKey]) return;
+  PENDING_CONFIRMS[projKey][idx].status = 'pending';
+  // 重新渲染整个面板
+  var panel = document.getElementById('confirmPanel-'+projKey);
+  if(panel){
+    var tmp = document.createElement('div');
+    tmp.innerHTML = renderConfirmPanel(PENDING_CONFIRMS[projKey], projKey);
+    panel.replaceWith(tmp.firstChild);
+  }
+  updateConfirmProgress(projKey);
+}
+
+/* 显示编辑框 */
+function ciShowEdit(projKey, idx){
+  var edit = document.getElementById('ci-edit-'+projKey+'-'+idx);
+  var ta   = document.getElementById('ci-ta-'+projKey+'-'+idx);
+  var item = PENDING_CONFIRMS[projKey] && PENDING_CONFIRMS[projKey][idx];
+  if(edit){ edit.style.display='block'; }
+  if(ta && item){ ta.value = item.editedText || item.text; ta.focus(); ta.select(); }
+}
+
+/* 取消编辑 */
+function ciCancelEdit(projKey, idx){
+  var edit = document.getElementById('ci-edit-'+projKey+'-'+idx);
+  if(edit) edit.style.display='none';
+}
+
+/* 保存修改 */
+function ciSave(projKey, idx){
+  var ta = document.getElementById('ci-ta-'+projKey+'-'+idx);
+  if(!ta||!ta.value.trim()) return;
+  var item = PENDING_CONFIRMS[projKey][idx];
+  item.editedText = ta.value.trim();
+  item.status = 'edited';
+  var card = document.getElementById('ci-'+projKey+'-'+idx);
+  if(card){
+    var displayText = item.editedText;
+    var filesBadge = item.files&&item.files.length?'<span style="margin-left:6px;padding:1px 7px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:10.5px;border:1px solid #86efac">'+item.files.length+' 个附件</span>':'';
+    card.style.cssText='display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px';
+    card.innerHTML=
+      '<span style="color:#22c55e;font-size:16px;flex-shrink:0;margin-top:1px">✓</span>'+
+      '<div style="flex:1;min-width:0"><div style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
+      '<div style="font-size:11px;color:#22c55e;margin-top:3px">已修改并确认</div></div>'+
+      '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#22c55e;cursor:pointer;flex-shrink:0">撤回</button>';
+  }
+  updateConfirmProgress(projKey);
+  toast('✓ 修改已保存');
+}
+
+/* 附件相关 */
+function ciPickFile(projKey, idx){
+  var inp = document.getElementById('ci-finp-'+projKey+'-'+idx);
+  if(inp) inp.click();
+}
+function ciDropFile(e, projKey, idx){
+  e.preventDefault();
+  var files = Array.from(e.dataTransfer&&e.dataTransfer.files||[]);
+  if(files.length) ciAttachFiles(files, projKey, idx);
+}
+function ciFileSelected(inp, projKey, idx){
+  var files = Array.from(inp&&inp.files||[]);
+  if(files.length) ciAttachFiles(files, projKey, idx);
+}
+function ciAttachFiles(files, projKey, idx){
+  var item = PENDING_CONFIRMS[projKey] && PENDING_CONFIRMS[projKey][idx];
+  if(!item) return;
+  if(!item.files) item.files = [];
+  files.forEach(function(f){ item.files.push({name:f.name, size:f.size, ts:Date.now()}); });
+  ingestFiles(files, null);  // 加入城市智库 corpus
+  var hint = document.getElementById('ci-file-hint-'+projKey+'-'+idx);
+  if(hint) hint.innerHTML = '✅ 已上传 '+item.files.length+' 个附件：'+item.files.map(function(f){return f.name;}).join('、');
+  persist();
+  toast('📎 已上传 '+files.length+' 个附件并加入知识库');
+}
+
+
 function triggerReport(phase){
   phase=phase||1;
   var p=P(); if(!p) return;
@@ -1779,11 +2016,31 @@ function triggerReport(phase){
           var bottomBar=document.querySelector('.report-bottom-bar');
           if(bottomBar){
             if(phase===1){
+              // 解析⚠️ → 渲染确认面板
+              var pendingItems=parsePendingItems(accText);
+              if(pendingItems.length>0){
+                if(!PENDING_CONFIRMS[cur]) PENDING_CONFIRMS[cur]=[];
+                // 保留已有确认状态，追加新条目
+                var existTexts=PENDING_CONFIRMS[cur].map(function(x){return x.text;});
+                pendingItems.forEach(function(it){
+                  if(existTexts.indexOf(it.text)<0) PENDING_CONFIRMS[cur].push(it);
+                });
+                persist();
+                // 把确认面板插到报告区下方
+                var reportArea=document.getElementById('reportArea');
+                var panelHtml=renderConfirmPanel(PENDING_CONFIRMS[cur],cur);
+                var panelDiv=document.createElement('div');
+                panelDiv.innerHTML=panelHtml;
+                if(reportArea) reportArea.appendChild(panelDiv.firstChild);
+              }
+              // 底部：根据是否有待确认项决定按钮状态
+              var hasPending=PENDING_CONFIRMS[cur]&&PENDING_CONFIRMS[cur].length>0;
+              var allDone=hasPending&&PENDING_CONFIRMS[cur].every(function(x){return x.status==='confirmed'||x.status==='edited';});
               bottomBar.innerHTML=
                 '<div style="flex:1;font-size:12.5px;color:#92400e;background:#fffbeb;padding:10px 14px;border-radius:10px;border:1px solid #fde68a;line-height:1.6">'+
-                  '以上为初步研判草稿，确认方向后生成完整五章报告'+
+                  (hasPending&&!allDone?'请确认上方待确认事项后，才可生成完整报告':'以上为初步研判草稿，确认方向后生成完整五章报告')+
                 '</div>'+
-                '<button onclick="triggerReport(2)" style="padding:12px 20px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:13.5px;font-weight:650;cursor:pointer;white-space:nowrap">确认，生成完整报告 →</button>'+
+                '<button onclick="triggerReport(2)" '+(allDone||!hasPending?'':'disabled style="opacity:.4;cursor:not-allowed;"')+' style="padding:12px 20px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:13.5px;font-weight:650;cursor:pointer;white-space:nowrap">' +(allDone||!hasPending?'生成完整报告 →':'待确认后生成 →')+'</button>'+
                 '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>';
             } else {
               bottomBar.innerHTML=
@@ -1957,17 +2214,26 @@ function homePage(p){
     '</div>';
 
   // ── 报告区 ──
+  // 进入研判需求页时清除旧报告状态，强制重新分析
+  if(REPORTSTATE[cur]&&REPORTSTATE[cur].phase===1){
+    // 保留 Phase 2 完整报告，但草稿不缓存展示
+  }
   var reportArea=
     '<div id="reportArea">'+
-      (REPORTSTATE[cur]
-        ? reportHtml(p)
-        : '<div style="text-align:center;padding:48px 20px">'+
-            '<div style="font-size:40px;margin-bottom:12px">📋</div>'+
-            '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:6px">点击「生成研判报告」</div>'+
-            '<div style="font-size:13px;color:#8492a6;line-height:1.7">AI 将基于城市智库数据（'+r.score+'% 置信度）<br>输出产业链缺口分析与招引方向建议</div>'+
+      (REPORTSTATE[cur]&&REPORTSTATE[cur].phase===2
+        ? reportHtml(p)  // 只有完整报告才展示缓存
+        : '<div style="text-align:center;padding:40px 20px">'+
+            '<div style="font-size:36px;margin-bottom:10px">📋</div>'+
+            '<div style="font-size:14px;font-weight:700;color:#0b183b;margin-bottom:6px">正在初步研判「'+p.topic+'」</div>'+
+            '<div style="font-size:12.5px;color:#8492a6;line-height:1.7">AI 将基于城市智库数据（'+r.score+'% 置信度）<br>自动输出产业链缺口与待确认事项，约10秒</div>'+
+            '<div style="margin-top:12px;width:32px;height:32px;border:3px solid #e8edf5;border-top-color:#1a56db;border-radius:50%;animation:spin 1s linear infinite;margin:12px auto 0"></div>'+
           '</div>'
       )+
     '</div>';
+  // 自动触发 Phase 1（若非完整报告）
+  if(!(REPORTSTATE[cur]&&REPORTSTATE[cur].phase===2)){
+    setTimeout(function(){ triggerReport(1); }, 150);
+  }
 
   return '<div class="page">'+
     reliabilityBanner+
@@ -2227,7 +2493,8 @@ function persist(){
       KB_CONFIRMS:KB_CONFIRMS,
       KB_FILE_CHUNKS:KB_FILE_CHUNKS,
       KB_UNLOCKED:KB_UNLOCKED,
-      REPORTSTATE:REPORTSTATE
+      REPORTSTATE:REPORTSTATE,
+      PENDING_CONFIRMS:PENDING_CONFIRMS
     };
     localStorage.setItem(LS_KEY, JSON.stringify(data));
   }catch(e){ console.warn('[persist] failed:',e.message); }
@@ -2247,6 +2514,7 @@ function restore(){
       KB_FILE_CHUNKS=data.KB_FILE_CHUNKS||{};
       KB_UNLOCKED=data.KB_UNLOCKED||{};
       REPORTSTATE=data.REPORTSTATE||{};
+      PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
       console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
       return true;
     }
