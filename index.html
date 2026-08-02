@@ -212,6 +212,9 @@ body.ops-mode .cand-line .cl-v{color:#3a4a63}
 body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 
 /* kb-rag-styles */
+.kb-confirm-btn:hover{transform:translateY(-1px);box-shadow:0 2px 8px rgba(34,197,94,.2);}
+.kb-edit-btn:hover{transform:translateY(-1px);box-shadow:0 2px 8px rgba(109,40,217,.2);}
+
 .kb-thinking-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#1a56db;animation:kbPulse 1s ease-in-out infinite;}
 @keyframes kbPulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1.2)}}
 .topic-grid .topic-row{cursor:pointer;transition:box-shadow .15s,border-color .15s;}
@@ -706,7 +709,8 @@ function generateKbConclusions(city){
           '安全应急：2023年总产值502亿，其中移动应急装备(专用车)324亿；篷布产量占全国30%，风机0.9万台/年',
           '香菇：2024年全产业链产值超500亿，区域品牌价值205.8亿(连续3年全国食药用菌第一)，年产约70万吨(全球白花菇约50%)',
           '链主企业：程力(整车)、新楚风(氢能整车·49T氢重卡已量产)、齐星(整车/无人机指挥车)、江南专汽(消防车)、品源("菇的辣克"4亿美元出口订单)',
-          '核心缺口：氢燃料电池电堆(占整车成本53%全部外购)、储氢瓶(14%)、应急机器人/无人机本体(依赖外采)、香菇多糖提取(仅2家)、菌种自主权(国外垄断)'
+          '核心缺口：氢燃料电池电堆(占整车成本53%全部外购)、储氢瓶(14%)、应急机器人/无人机本体(依赖外采)、香菇多糖提取(仅2家)、菌种自主权(国外垄断)',
+          '⚠️ 2026年各产业链方向优先招引顺序、重点突破的细分环节，请领导确认'
         ]
       },
       park:{
@@ -717,7 +721,8 @@ function generateKbConclusions(city){
           '曾都区：国家安全应急产业示范基地，移动应急装备整机与改装主要承载区',
           '专汽产业园：30公里专汽长廊核心区，已有程力/齐星等整车及改装企业入驻',
           '随县香菇产业园：已有初加工入驻，精深加工(生物提取/GMP洁净)厂房条件需进一步核实',
-          '区位优势：汉十高铁随州南站至武汉50分钟/至襄阳30分钟；"汉孝随襄十"万亿汽车走廊节点'
+          '区位优势：汉十高铁随州南站至武汉50分钟/至襄阳30分钟；"汉孝随襄十"万亿汽车走廊节点',
+          '⚠️ 首选承接园区与地块、可用厂房面积及能耗配额，请领导确认'
         ]
       },
       firm:{
@@ -728,7 +733,8 @@ function generateKbConclusions(city){
           '已有本地配套：车身驾驶室(齐星)、车规级晶振(泰晶AEC-Q200)、电解液/六氟磷酸锂(犇星)、铜箔(昱通)、负极材料(斯诺/犇星多孔硅)',
           '严重外采依赖：底盘/动力总成(十堰潍柴/法士特/汉德·占整车成本50%)、氢电堆(53%)、储氢瓶(14%)、应急机器人(启灵)、无人机(迅北斗)',
           '香菇链主：品源(辣酱出口·2024签1亿美元+2025签3亿美元)、裕国药业(多糖提取)、肽源(多肽提取)；精深加工仅2家布局',
-          '本地配套率仅41%(梁山65%/十堰75%+)，补链招引窗口期明确且需求方牵引力强'
+          '本地配套率仅41%(梁山65%/十堰75%+)，补链招引窗口期明确且需求方牵引力强',
+          '⚠️ 拟优先对接的企业名单与采购规模数据，请领导提供或确认'
         ]
       },
       policy:{
@@ -1724,7 +1730,8 @@ function backToAnalysis(){detailData=null;var dp=$('.detail-pane');
 function saveReportState(){try{localStorage.setItem('hxz_reportstate',JSON.stringify(REPORTSTATE))}catch(e){}}
 function loadReportState(){try{var d=localStorage.getItem('hxz_reportstate');if(d)REPORTSTATE=JSON.parse(d)}catch(e){}}
 var UPLOADS={};
-var KB_FILE_CHUNKS={};  // {projKey:[{id,topic,tags,text,cite}]}
+var KB_FILE_CHUNKS={};
+var KB_CONFIRMS={};  // {projKey:{kbIdx:{itemIdx:{status,text,ts}}}}
 // 招引方向派生的项目（方案A三层：产业方向→报告→招引方向项目）{产业key:[{name,stage,from}]}
 var SUBPROJ={};
 function saveSubproj(){try{localStorage.setItem('hxz_subproj',JSON.stringify(SUBPROJ))}catch(e){}}
@@ -2363,6 +2370,84 @@ function kbAsk(q,k){
     c.scrollTop=c.scrollHeight;
   },400);
 }
+
+/* ── 领导确认/修改 known 条目 ── */
+function confirmKbItem(kbIdx,itemIdx){
+  var p=P();if(!p)return;
+  if(!KB_CONFIRMS[cur])KB_CONFIRMS[cur]={};
+  if(!KB_CONFIRMS[cur][kbIdx])KB_CONFIRMS[cur][kbIdx]={};
+  var k=p.kb[kbIdx];if(!k)return;
+  var orig=k.known[itemIdx]||'';
+  var clean=orig.replace('\u26a0\ufe0f ','');
+  // 写回 known：去掉 ⚠️，前缀改为 ✅
+  k.known[itemIdx]='\u2705 '+clean;
+  KB_CONFIRMS[cur][kbIdx][itemIdx]={status:'confirmed',text:clean,ts:Date.now()};
+  // 刷新 corpus（确认项从待核实变为已确认）
+  if(KB_FILE_CHUNKS[cur]){
+    KB_FILE_CHUNKS[cur]=KB_FILE_CHUNKS[cur].filter(function(c){return c.id!=='pin:'+kbIdx+':'+itemIdx;});
+  }
+  // 重新渲染 modal
+  kbDetail(kbIdx);
+  toast('已确认：'+clean.slice(0,20)+'…');
+}
+
+function editKbItem(kbIdx,itemIdx){
+  // 把对应条目替换为 inline 编辑框
+  var cardId='kb-card-'+kbIdx+'-'+itemIdx;
+  var card=document.getElementById(cardId);
+  if(!card)return;
+  var p=P();if(!p)return;
+  var k=p.kb[kbIdx];if(!k)return;
+  var orig=(k.known[itemIdx]||'').replace('\u26a0\ufe0f ','').replace('\u2705 ','');
+  card.innerHTML=
+    '<div style="padding:10px 13px">'+
+      '<div style="font-size:11px;color:#6366f1;font-weight:650;margin-bottom:6px">修改内容（领导确认后写入知识库）</div>'+
+      '<textarea id="kb-edit-'+kbIdx+'-'+itemIdx+'" '+
+        'style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #6366f1;border-radius:8px;font-size:13px;line-height:1.6;color:#1e293b;resize:vertical;min-height:72px;outline:none" '+
+        'onkeydown="if(event.key===\'Enter\'&&event.metaKey)saveKbEdit('+kbIdx+','+itemIdx+')">'+orig+'</textarea>'+
+      '<div style="display:flex;gap:8px;margin-top:8px">'+
+        '<button onclick="saveKbEdit('+kbIdx+','+itemIdx+')" '+
+          'style="flex:1;padding:8px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer">',
+          '\u2713 保存修改</button>'+
+        '<button onclick="kbDetail('+kbIdx+')" '+
+          'style="padding:8px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;color:#4a5568;cursor:pointer">取消</button>'+
+      '</div>'+
+    '</div>';
+  card.style.border='1.5px solid #6366f1';
+  card.style.background='#faf5ff';
+  var ta=document.getElementById('kb-edit-'+kbIdx+'-'+itemIdx);
+  if(ta){ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}
+}
+
+function saveKbEdit(kbIdx,itemIdx){
+  var ta=document.getElementById('kb-edit-'+kbIdx+'-'+itemIdx);
+  if(!ta)return;
+  var newText=ta.value.trim();
+  if(!newText){toast('内容不能为空');return;}
+  var p=P();if(!p)return;
+  var k=p.kb[kbIdx];if(!k)return;
+  // 写回 known，添加 ✅ 已确认标记
+  k.known[itemIdx]='\u2705 '+newText;
+  if(!KB_CONFIRMS[cur])KB_CONFIRMS[cur]={};
+  if(!KB_CONFIRMS[cur][kbIdx])KB_CONFIRMS[cur][kbIdx]={};
+  KB_CONFIRMS[cur][kbIdx][itemIdx]={status:'edited',text:newText,ts:Date.now()};
+  // 更新 corpus 里该 chunk
+  buildKBCorpus(p.city);  // 下次查询时自动用新文本
+  kbDetail(kbIdx);
+  toast('\u2705 已更新并写入知识库');
+}
+
+function addKbItem(kbIdx){
+  // 领导手动新增一条 known 条目
+  var p=P();if(!p)return;
+  var k=p.kb[kbIdx];if(!k)return;
+  var newEntry='\u26a0\ufe0f 请在此输入补充内容（保存后写入知识库）';
+  k.known.push(newEntry);
+  kbDetail(kbIdx);
+  // 自动触发最后一条的编辑
+  setTimeout(function(){editKbItem(kbIdx,k.known.length-1);},50);
+}
+
 function kbDetail(i){
   var k=P().kb[i]; if(!k) return;
   curKb=i;
@@ -2386,7 +2471,35 @@ function kbDetail(i){
           var bd=warn?'#fde68a':isFile?'#bbf7d0':'#e8edf5';
           var icon=warn?'⚠':isFile?'📎':xi===0?'★':'•';
           var txtColor=warn?'#78350f':isFile?'#14532d':'#1e293b';
-          return '<div style="border-radius:12px;background:'+bg+';border:1.5px solid '+bd+';overflow:hidden">'+
+          // 检查是否已确认
+          var confirmed=KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][i]&&KB_CONFIRMS[cur][i][xi];
+          var isConfirmed=!!confirmed;
+          // 已确认条目：绿色样式
+          if(isConfirmed){
+            bg='#f0fdf4';bd='#86efac';accent='#22c55e';icon='\u2705';txtColor='#14532d';
+          }
+          // ⚠️ 条目的操作按钮
+          var actionBtns='';
+          if(warn&&!isConfirmed){
+            actionBtns='<div style="display:flex;gap:6px;margin-top:8px">'+
+              '<button onclick="confirmKbItem('+i+','+xi+')" '+
+                'style="flex:1;padding:6px 0;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12px;color:#166534;cursor:pointer;font-weight:600" '+
+                'onmouseover="this.style.background=\'#dcfce7\'" onmouseout="this.style.background=\'#f0fdf4\'">'+
+                '\u2713 领导确认'+
+              '</button>'+
+              '<button onclick="editKbItem('+i+','+xi+')" '+
+                'style="flex:1;padding:6px 0;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600" '+
+                'onmouseover="this.style.background=\'#ede9fe\'" onmouseout="this.style.background=\'#f5f3ff\'">'+
+                '\u270e 修改内容'+
+              '</button>'+
+            '</div>';
+          } else if(isConfirmed){
+            actionBtns='<div style="margin-top:6px;font-size:11px;color:#22c55e;display:flex;align-items:center;gap:4px">'+
+              '<span>\u2713 已由领导确认</span>'+
+              '<button onclick="editKbItem('+i+','+xi+')" style="background:none;border:none;color:#94a3b8;font-size:11px;cursor:pointer;margin-left:6px">修改</button>'+
+            '</div>';
+          }
+          return '<div id="kb-card-'+i+'-'+xi+'" style="border-radius:12px;background:'+bg+';border:1.5px solid '+bd+';overflow:hidden;transition:border-color .15s">'+
             '<div style="display:flex">'+
               '<div style="width:4px;background:'+accent+';flex-shrink:0"></div>'+
               '<div style="padding:10px 13px;flex:1">'+
@@ -2395,6 +2508,7 @@ function kbDetail(i){
                   '<div style="flex:1">'+
                     '<span style="font-size:13px;color:'+txtColor+';line-height:1.7">'+highlightKeyData(clean)+'</span>'+
                     badgeHtml+
+                    actionBtns+
                   '</div>'+
                 '</div>'+
               '</div>'+
@@ -2448,18 +2562,33 @@ function kbDetail(i){
           '</div>'+
         '</div>'+
 
-        // 底部操作
-        '<div style="padding:14px 22px 18px;border-top:1px solid #f0f4ff;flex:0 0 auto;display:flex;gap:8px">'+
-          '<button onclick="closeKbDetail();askAboutKb('+i+')" '+
-            'style="flex:1;padding:11px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer">'+
+        // 确认进度条
+        +(function(){
+          var warns=k.known.filter(function(x){return x.indexOf('\u26a0\ufe0f')>=0;});
+          var total=warns.length;
+          var done=(KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][i])?Object.keys(KB_CONFIRMS[cur][i]).length:0;
+          if(!total)return '';
+          return '<div style="padding:0 22px 12px">'+
+            '<div style="display:flex;justify-content:space-between;font-size:11px;color:#9aa5b5;margin-bottom:5px">'+
+              '<span>领导确认进度</span><span>'+done+' / '+total+'</span>'+
+            '</div>'+
+            '<div style="height:5px;background:#f0f4ff;border-radius:3px;overflow:hidden">'+
+              '<div style="height:100%;width:'+(total?Math.round(done/total*100):0)+'%;background:linear-gradient(90deg,#22c55e,#16a34a);border-radius:3px;transition:width .4s"></div>'+
+            '</div></div>';
+        })()+
+        '<div style="padding:14px 22px 18px;border-top:1px solid #f0f4ff;flex:0 0 auto;display:flex;flex-wrap:wrap;gap:8px">'+
+          '<button onclick="closeKbDetail();askAboutKb('+i+')" style="flex:1;min-width:120px;padding:11px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer">'+
             '基于此主题提问 →'+
           '</button>'+
-          '<button onclick="pickLocalFile('+i+')" '+
-            'style="padding:11px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer">'+
-            '补充材料'+
+          '<button onclick="addKbItem('+i+')" style="padding:11px 13px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;font-size:13px;color:#166534;cursor:pointer;font-weight:600">'+
+            '+ 补充结论'+
+          '</button>'+
+          '<button onclick="pickLocalFile('+i+')" style="padding:11px 13px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer">'+
+            '\U0001f4ce 上传材料'+
           '</button>'+
         '</div>'+
       '</div>'+
+    '</div>';
     '</div>';
 
   // 注入 slideIn keyframe（只注一次）
