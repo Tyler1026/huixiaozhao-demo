@@ -2047,26 +2047,64 @@ function importToProject(gap, city, topic){
 function showImportConfirm(projKey, gap){
   var old=document.getElementById('importConfirmLayer');
   if(old) old.remove();
+
+  // 注入 fadeUp keyframe（只注一次）
+  if(!document.getElementById('fadeUpStyle')){
+    var st=document.createElement('style');st.id='fadeUpStyle';
+    st.textContent='@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}';
+    document.head.appendChild(st);
+  }
+
   var layer=document.createElement('div');
   layer.id='importConfirmLayer';
-  layer.style.cssText='position:fixed;inset:0;background:rgba(11,24,59,.45);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+  // 点遮罩关闭
+  layer.onclick=function(e){ if(e.target===layer) layer.remove(); };
+  layer.style.cssText='position:fixed;inset:0;background:rgba(11,24,59,.4);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);padding:20px;box-sizing:border-box';
+
+  var safeGap=gap.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
   layer.innerHTML=
-    '<div style="background:#fff;border-radius:20px;padding:32px 32px 24px;max-width:420px;width:92%;box-shadow:0 8px 48px rgba(11,24,59,.18);animation:fadeUp .3s ease">'+
-      '<div style="font-size:28px;margin-bottom:10px">🏁</div>'+
-      '<h2 style="font-size:18px;font-weight:750;color:#0b183b;margin:0 0 8px">项目已创建</h2>'+
-      '<p style="font-size:13px;color:#4a5568;margin:0 0 20px;line-height:1.7">'+
-        '「<strong>'+gap+'</strong>」已立项，城市智库数据已同步到新项目。<br>',
-        '你可以继续在当前研判页操作，或前往项目管理。'+
-      '</p>'+
-      '<div style="display:flex;gap:10px">'+
+    '<div style="background:#fff;border-radius:24px;width:100%;max-width:440px;overflow:hidden;box-shadow:0 24px 80px rgba(11,24,59,.18);animation:fadeUp .3s ease">'+
+
+      // ── 顶部彩条 ──
+      '<div style="background:linear-gradient(135deg,#1a56db,#6366f1);padding:28px 28px 24px;position:relative">'+
         '<button onclick="document.getElementById(\'importConfirmLayer\').remove()" '+
-          'style="flex:1;padding:11px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer">',
-          '继续当前研判</button>'+
-        '<button onclick="(function(){document.getElementById(\'importConfirmLayer\').remove();cur=\''+projKey+'\';view=\'home\';render();})()" '+
-          'style="flex:1;padding:11px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer">',
-          '前往项目管理 →</button>'+
+          'style="position:absolute;top:14px;right:14px;width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.2);border:none;color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1" '+
+          'onmouseover="this.style.background=\'rgba(255,255,255,.35)\'" onmouseout="this.style.background=\'rgba(255,255,255,.2)\'">✕</button>'+
+        '<div style="font-size:32px;margin-bottom:10px">🏁</div>'+
+        '<div style="font-size:18px;font-weight:750;color:#fff;margin-bottom:4px">立项成功</div>'+
+        '<div style="font-size:13px;color:rgba(255,255,255,.75)">已自动生成招商项目</div>'+
+      '</div>'+
+
+      // ── 内容区 ──
+      '<div style="padding:24px 28px">'+
+        '<div style="display:flex;align-items:flex-start;gap:12px;padding:14px 16px;background:#f8faff;border-radius:12px;border:1.5px solid #dbeafe;margin-bottom:18px">'+
+          '<span style="font-size:20px;flex-shrink:0;margin-top:2px">📋</span>'+
+          '<div>'+
+            '<div style="font-size:13.5px;font-weight:700;color:#0b183b;margin-bottom:3px">'+safeGap+'</div>'+
+            '<div style="font-size:12px;color:#8492a6;line-height:1.6">城市智库数据已同步 · 处于「确认需求」阶段</div>'+
+          '</div>'+
+        '</div>'+
+        '<p style="font-size:13px;color:#4a5568;margin:0 0 20px;line-height:1.7">'+
+          '你可以继续完善当前研判报告，或前往项目管理查看新项目。'+
+        '</p>'+
+
+        // ── 按钮 ──
+        '<div style="display:flex;flex-direction:column;gap:8px">'+
+          '<button onclick="(function(){document.getElementById(\'importConfirmLayer\').remove();cur=\''+projKey+'\';view=\'home\';render();})()" '+
+            'style="width:100%;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px" '+
+            'onmouseover="this.style.opacity=\'0.92\'" onmouseout="this.style.opacity=\'1\'">'+
+            '前往项目管理 →'+
+          '</button>'+
+          '<button onclick="document.getElementById(\'importConfirmLayer\').remove()" '+
+            'style="width:100%;padding:12px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13.5px;color:#4a5568;cursor:pointer" '+
+            'onmouseover="this.style.background=\'#eef2ff\'" onmouseout="this.style.background=\'#f5f7fb\'">'+
+            '继续当前研判'+
+          '</button>'+
+        '</div>'+
       '</div>'+
     '</div>';
+
   document.body.appendChild(layer);
 }
 
