@@ -518,15 +518,16 @@ function analysisPage(city, fileName){
     steps.splice(1,0,{icon:'📎', label:'解析上传材料：'+fileName, dur:1200});
   }
   var rows=steps.map(function(s,i){
-    return '<div id="astep'+i+'" style="display:flex;align-items:center;gap:14px;padding:12px 0;opacity:0;transform:translateY(8px);transition:opacity .4s,transform .4s">'+
-      '<div style="width:36px;height:36px;border-radius:50%;background:#f0f4ff;display:flex;align-items:center;justify-content:center;font-size:16px;flex:0 0 auto">'+s.icon+'</div>'+
-      '<div style="flex:1">'+
+    return '<div id="astep'+i+'" style="display:flex;align-items:flex-start;gap:14px;padding:12px 0;opacity:0;transform:translateY(8px);transition:opacity .4s,transform .4s">'+
+      '<div style="width:36px;height:36px;border-radius:50%;background:#f0f4ff;display:flex;align-items:center;justify-content:center;font-size:16px;flex:0 0 auto;margin-top:2px">'+s.icon+'</div>'+
+      '<div style="flex:1;min-width:0">'+
         '<div style="font-size:13.5px;color:#0b183b;font-weight:550">'+s.label+'</div>'+
-        '<div id="abar'+i+'" style="height:3px;background:#e8edf5;border-radius:2px;margin-top:6px;overflow:hidden">'+
+        '<div id="atick'+i+'" style="font-size:10.5px;color:#b0bac8;margin-top:3px;height:14px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;transition:opacity .2s"> </div>'+
+        '<div id="abar'+i+'" style="height:3px;background:#e8edf5;border-radius:2px;margin-top:5px;overflow:hidden">'+
           '<div id="aprog'+i+'" style="height:100%;width:0%;background:linear-gradient(90deg,#1a56db,#6366f1);border-radius:2px;transition:width linear"></div>'+
         '</div>'+
       '</div>'+
-      '<div id="acheck'+i+'" style="font-size:16px;opacity:0;transition:opacity .3s">✓</div>'+
+      '<div id="acheck'+i+'" style="font-size:16px;opacity:0;transition:opacity .3s;margin-top:2px">✓</div>'+
     '</div>';
   }).join('');
 
@@ -554,13 +555,22 @@ function analysisPage(city, fileName){
 
 /* 运行分析动画 */
 function runAnalysisAnim(city, fileName, stepsCount, onDone){
+  // 数据来源 ticker 内容（每步）
+  var SOURCES=[
+    ['百度百科','政府官网','统计年鉴','国家企查查','巨潮资讯','中国工业信息网'],
+    ['A股上市公司公告','省级产业规划','工商注册信息','行业协会年报','高新区官网','规上企业名录'],
+    ['全国产业园区数据库','土地出让公告','园区官网','招商引资政策','厂房租赁信息','能耗公告'],
+    ['政府工作报告全文','五年规划纲要','专项产业规划','领导讲话公开报道','政策文件数据库'],
+    ['产业链图谱数据库','进出口贸易数据','企业采购公告','供应链分析模型','外资进入记录'],
+    ['城市智库知识图谱','招商案例库','专家评审系统','研判模型输出'],
+  ];
   var steps=[
-    {icon:'🌐', label:'检索'+city+'城市公开信息与产业背景',  dur:2800},
-    {icon:'🏭', label:'识别主导产业与上下游链条结构',         dur:3200},
-    {icon:'🏢', label:'扫描园区承载条件与链主企业',           dur:2600},
-    {icon:'📜', label:'解析政策方向与领导关注重点',           dur:2400},
-    {icon:'🔍', label:'测绘产业链缺口与可招引环节',           dur:2800},
-    {icon:'✨', label:'生成城市智库与研判框架',               dur:2000},
+    {icon:'🌐', label:'检索'+city+'城市公开信息与产业背景',  dur:4800, si:0},
+    {icon:'🏭', label:'识别主导产业与上下游链条结构',         dur:5500, si:1},
+    {icon:'🏢', label:'扫描园区承载条件与链主企业',           dur:4800, si:2},
+    {icon:'📜', label:'解析政策方向与领导关注重点',           dur:4500, si:3},
+    {icon:'🔍', label:'测绘产业链缺口与可招引环节',           dur:5200, si:4},
+    {icon:'✨', label:'生成城市智库与研判框架',               dur:4600, si:5},
   ];
   if(fileName){
     steps.splice(1,0,{icon:'📎', label:'解析上传材料：'+fileName, dur:1200});
@@ -587,13 +597,9 @@ function runAnalysisAnim(city, fileName, stepsCount, onDone){
           '</div>';
         }).join('')+
       '</div>';
-      var sumEl=document.getElementById('analysisSummary');
-      if(sumEl){sumEl.innerHTML=sumHtml;setTimeout(function(){sumEl.style.opacity='1';},100);}
-      var done=document.getElementById('analysisDone');
-      if(done)setTimeout(function(){done.style.opacity='1';},500);
-      // 4 秒后自动进入城市智库（无需点按钮）
-      setTimeout(function(){enterWorkspace();},4000);
       if(onDone)setTimeout(onDone,800);
+      // 弹出 summary modal，10s 倒计时自动进入
+      setTimeout(function(){ showSummaryModal(city2,sectors); },400);
       return;
     }
     var s=steps[idx];
@@ -601,11 +607,28 @@ function runAnalysisAnim(city, fileName, stepsCount, onDone){
     var prog=document.getElementById('aprog'+idx);
     var check=document.getElementById('acheck'+idx);
     if(el){el.style.opacity='1';el.style.transform='translateY(0)';}
+    // ticker: 快速闪回数据来源
+    var tickEl=document.getElementById('atick'+idx);
+    var srcs=SOURCES[s.si]||[];
+    var ti=0;
+    var tickTimer=null;
+    if(tickEl&&srcs.length){
+      tickTimer=setInterval(function(){
+        tickEl.style.opacity='0';
+        setTimeout(function(){
+          tickEl.textContent='数据源：'+srcs[ti%srcs.length];
+          tickEl.style.opacity='1';
+          ti++;
+        },150);
+      },600);
+    }
     if(prog){
       prog.style.transition='width '+s.dur+'ms linear';
       setTimeout(function(){prog.style.width='100%';},50);
     }
     setTimeout(function(){
+      if(tickTimer)clearInterval(tickTimer);
+      if(tickEl){tickEl.style.opacity='0.4';tickEl.textContent=srcs.length+'个来源已扫描';}
       if(check){check.style.opacity='1';check.style.color='#1a56db';}
       idx++;
       setTimeout(runStep, 180);
@@ -696,6 +719,171 @@ function generateKbConclusions(city){
   };
 }
 
+
+/* ── Summary Modal: 分析完成弹窗，10s 倒计时 ── */
+var _summaryTimer=null;
+
+/* ── 下载分析报告 Modal ── */
+function showDownloadReport(){
+  var p=P();
+  if(!p||!p.city){toast('请先完成城市分析');return;}
+  var city=p.city;
+  var c=generateKbConclusions(city);
+
+  // 完整版内容（基于 generateKbConclusions 真实数据）
+  var fullLines=[
+    city+'城市智库 · 招商研判报告（完整版）',
+    '生成时间：'+new Date().toLocaleDateString('zh-CN')+'  |  数据来源：公开信息 AI 初判',
+    '════════════════════════════════',
+    '',
+    '一、主导产业与产业链',
+    c.industry.known.map(function(x){return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
+    '',
+    '二、园区与承载条件',
+    c.park.known.map(function(x){return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
+    '',
+    '三、链主与存量企业',
+    c.firm.known.map(function(x){return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
+    '',
+    '四、政策方向与领导关注',
+    c.policy.known.map(function(x){return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
+    '',
+    '════════════════════════════════',
+    '研判建议：',
+    '  1. 优先补链方向：链主外采依赖最集中的核心零部件/系统集成环节',
+    '  2. 推荐承接园区：'+city+'国家级/省级开发区（具体园区需向招商局确认）',
+    '  3. 招引目标画像：具备落地意向、产品与缺口直接匹配的细分领域龙头',
+    '  4. 待确认事项：专项资金额度、首选地块、领导最新交办口径',
+    '',
+    '⚠ 本报告为 AI 基于公开信息的初判，正式招商决策需结合政府授权材料与领导确认。',
+  ].join('\n');
+
+  // 精简版内容
+  var shortLines=[
+    city+'招商研判报告 · 精简版',
+    '生成时间：'+new Date().toLocaleDateString('zh-CN'),
+    '────────────────────',
+    '',
+    '【产业基础】'+c.industry.known[0],
+    '【园区承载】'+c.park.known[0],
+    '【链主缺口】'+c.firm.known[2],
+    '【政策方向】'+c.policy.known[0],
+    '',
+    '【核心建议】优先招引链主外采依赖最重的关键环节企业，结合园区政策争取一事一议。',
+    '',
+    '⚠ 以上为 AI 初判，需干部结合实际材料确认。',
+  ].join('\n');
+
+  function dlFile(content, filename){
+    var blob=new Blob([content],{type:'text/plain;charset=utf-8'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');a.href=url;a.download=filename;
+    document.body.appendChild(a);a.click();
+    setTimeout(function(){URL.revokeObjectURL(url);a.remove();},300);
+  }
+
+  var modal='<div id="dlReportModal" style="position:fixed;inset:0;background:rgba(11,24,59,.45);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)" onclick="if(event.target.id===\'dlReportModal\')this.remove()">'+
+    '<div style="background:#fff;border-radius:22px;padding:36px;max-width:480px;width:92%;box-shadow:0 8px 60px rgba(11,24,59,.18);animation:fadeUp .3s ease">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">'+
+        '<div>'+
+          '<div style="font-size:12px;font-weight:650;color:#8492a6;letter-spacing:.5px;margin-bottom:4px">分析报告下载</div>'+
+          '<h2 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">'+city+' 城市智库报告</h2>'+
+        '</div>'+
+        '<button onclick="document.getElementById(\'dlReportModal\').remove()" style="background:none;border:none;font-size:18px;color:#9aa5b5;cursor:pointer;padding:4px">✕</button>'+
+      '</div>'+
+      '<div style="display:flex;flex-direction:column;gap:12px">'+
+        '<div style="border:1.5px solid #e8edf5;border-radius:14px;padding:18px 20px">'+
+          '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'+
+            '<span style="font-size:20px">📄</span>'+
+            '<div><div style="font-size:13.5px;font-weight:650;color:#0b183b">完整版报告</div>'+
+            '<div style="font-size:11.5px;color:#8492a6;margin-top:1px">四大主题全部内容 · 含核心研判建议</div></div>'+
+          '</div>'+
+          '<button onclick="(function(){var c=generateKbConclusions(\''+city+'\');var lines=[\''+city+'城市智库 · 招商研判报告（完整版）\',\'生成时间：\'+new Date().toLocaleDateString(\'zh-CN\')+\'  |  数据来源：公开信息 AI 初判\',\'════════════════════════\',\'\',\'一、主导产业与产业链\'].concat(c.industry.known.map(function(x){return (x.indexOf(\'⚠️\')>=0?\'  ⚠ \':\'  • \')+x.replace(\'⚠️ \',\'\');})).concat([\'\',\'二、园区与承载条件\']).concat(c.park.known.map(function(x){return (x.indexOf(\'⚠️\')>=0?\'  ⚠ \':\'  • \')+x.replace(\'⚠️ \',\'\');})).concat([\'\',\'三、链主与存量企业\']).concat(c.firm.known.map(function(x){return (x.indexOf(\'⚠️\')>=0?\'  ⚠ \':\'  • \')+x.replace(\'⚠️ \',\'\');})).concat([\'\',\'四、政策方向与领导关注\']).concat(c.policy.known.map(function(x){return (x.indexOf(\'⚠️\')>=0?\'  ⚠ \':\'  • \')+x.replace(\'⚠️ \',\'\');})).concat([\'\',\'════════════════════════\',\'研判建议：\',\'  1. 优先补链：链主外采依赖最集中的核心零部件/系统集成环节\',\'  2. 承接园区：\'+\''+city+'\'+\'国家级/省级开发区（具体地块需确认）\',\'  3. 招引画像：产品与缺口直接匹配的细分领域龙头，有落地意向\',\'  4. 待确认：专项资金、首选地块、领导最新交办\',\'\',\'⚠ 本报告为 AI 基于公开信息的初判，正式决策需结合授权材料确认。\']);var blob=new Blob([lines.join(\'\\n\')],{type:\'text/plain;charset=utf-8\'});var u=URL.createObjectURL(blob);var a=document.createElement(\'a\');a.href=u;a.download=\''+city+'_招商研判报告_完整版.txt\';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(u);a.remove();},300);})()" style="width:100%;padding:10px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer">下载完整版 (.txt)</button>'+
+        '</div>'+
+        '<div style="border:1.5px solid #e8edf5;border-radius:14px;padding:18px 20px">'+
+          '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'+
+            '<span style="font-size:20px">📋</span>'+
+            '<div><div style="font-size:13.5px;font-weight:650;color:#0b183b">精简版报告</div>'+
+            '<div style="font-size:11.5px;color:#8492a6;margin-top:1px">一句话摘要 · 适合快速分享</div></div>'+
+          '</div>'+
+          '<button onclick="(function(){var c=generateKbConclusions(\''+city+'\');var lines=[\''+city+' 招商研判 · 精简版\',\'生成时间：\'+new Date().toLocaleDateString(\'zh-CN\'),\'────────────────────\',\'\',\'【产业基础】\'+c.industry.known[0],\'【园区承载】\'+c.park.known[0],\'【链主缺口】\'+c.firm.known[2],\'【政策方向】\'+c.policy.known[0],\'\',\'【核心建议】优先招引链主外采依赖最重的关键环节企业，结合园区政策争取一事一议。\',\'\',\'⚠ 以上为 AI 初判，需干部结合实际材料确认。\'];var blob=new Blob([lines.join(\'\\n\')],{type:\'text/plain;charset=utf-8\'});var u=URL.createObjectURL(blob);var a=document.createElement(\'a\');a.href=u;a.download=\''+city+'_招商研判报告_精简版.txt\';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(u);a.remove();},300);})()" style="width:100%;padding:10px;background:#f5f7fb;color:#0b183b;border:1.5px solid #e8edf5;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer">下载精简版 (.txt)</button>'+
+        '</div>'+
+      '</div>'+
+      '<p style="font-size:11px;color:#b0bac8;margin:16px 0 0;text-align:center;line-height:1.7">报告内容为 AI 基于公开信息的初步研判，正式招商决策需结合政府授权材料与领导确认</p>'+
+    '</div>'+
+  '</div>';
+
+  var wrap=document.createElement('div');
+  wrap.innerHTML=modal;
+  document.body.appendChild(wrap.firstChild);
+}
+
+function showSummaryModal(city2,sectors){
+  // 生成kb一句话摘要
+  var p=cur&&PROJECTS[cur];
+  var insights=[
+    p&&p.city?p.city+'现有工业基础具备承接基础，上游核心零部件本地配套率偏低，存在明显补链空间':'主导产业集群已识别，链条缺口待明确',
+    '已识别国家级/省级园区载体，厂房与能耗条件可满足主流制造业落地需求',
+    '本地链主存在外采依赖，上游供应商招引有直接采购牵引力',
+    '政策方向明确，专项资金口径与首选承接园区待干部上传领导最新发言确认',
+  ];
+  var rows=(sectors||[]).map(function(s,i){
+    return '<div style="display:flex;gap:14px;padding:14px 0;border-bottom:1px solid #f0f4ff;align-items:flex-start">'+
+      '<span style="font-size:20px;flex:0 0 28px;text-align:center;margin-top:2px">'+s.icon+'</span>'+
+      '<div style="flex:1">'+
+        '<div style="font-size:13px;font-weight:650;color:#0b183b;margin-bottom:3px">'+s.name+'</div>'+
+        '<div style="font-size:12px;color:#4a5568;line-height:1.65">'+insights[i]+'</div>'+
+      '</div>'+
+      '<span style="font-size:11px;color:#22c55e;background:#f0fdf4;padding:2px 8px;border-radius:20px;flex:0 0 auto;margin-top:2px;white-space:nowrap">已就位</span>'+
+    '</div>';
+  }).join('');
+
+  var modal='<div id="summaryModal" style="position:fixed;inset:0;background:rgba(11,24,59,.45);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)">'+
+    '<div style="background:#fff;border-radius:22px;padding:36px 36px 28px;max-width:520px;width:92%;box-shadow:0 8px 60px rgba(11,24,59,.18);animation:fadeUp .35s ease">'+
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">'+
+        '<div style="width:10px;height:10px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.2)"></div>'+
+        '<span style="font-size:12px;font-weight:650;color:#22c55e;letter-spacing:.5px">分析完成</span>'+
+      '</div>'+
+      '<h2 style="font-size:20px;font-weight:750;color:#0b183b;margin:0 0 4px">'+city2+' 城市智库已就位</h2>'+
+      '<p style="font-size:13px;color:#8492a6;margin:0 0 20px">以下为 AI 基于公开信息的初步研判结论，⚠️ 标注项需结合政府材料确认</p>'+
+      rows+
+      '<div style="margin-top:22px;display:flex;gap:10px;align-items:center">'+
+        '<button onclick="enterWorkspaceFromModal()" style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">进入城市智库 →</button>'+
+        '<div id="summaryCountdown" style="font-size:12px;color:#9aa5b5;white-space:nowrap">10s 后自动进入</div>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+
+  // 注入动画 keyframe（只注一次）
+  if(!document.getElementById('fadeUpStyle')){
+    var st=document.createElement('style');st.id='fadeUpStyle';
+    st.textContent='@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}';
+    document.head.appendChild(st);
+  }
+  var wrap=document.createElement('div');
+  wrap.id='summaryModalWrap';
+  wrap.innerHTML=modal;
+  document.body.appendChild(wrap);
+
+  // 10s 倒计时
+  var remaining=10;
+  _summaryTimer=setInterval(function(){
+    remaining--;
+    var cd=document.getElementById('summaryCountdown');
+    if(cd)cd.textContent=remaining+'s 后自动进入';
+    if(remaining<=0){
+      clearInterval(_summaryTimer);
+      enterWorkspaceFromModal();
+    }
+  },1000);
+}
+function enterWorkspaceFromModal(){
+  if(_summaryTimer)clearInterval(_summaryTimer);
+  var wrap=document.getElementById('summaryModalWrap');
+  if(wrap)wrap.remove();
+  enterWorkspace();
+}
+
 function enterWorkspace(){
   if(!cur||!PROJECTS[cur])return;
   // 填充城市智库核心结论
@@ -711,6 +899,7 @@ function enterWorkspace(){
   });
   p.topic=p.city+'主导产业补链招引';
   view='knowledge';
+  detailOpen=false;  // 城市智库首页不展开右侧面板
   render();
   // 延迟写入 AI 首条消息
   setTimeout(function(){
@@ -1217,8 +1406,12 @@ function aiAvatar(){return 'data:image/svg+xml;utf8,'+encodeURIComponent('<svg x
 function kbPage(p){
   return '<div class="page">'+
     '<div class="page-header"><div><span class="eyebrow">CITY INTELLIGENCE</span><h1>城市智库 · 招商问答</h1>'+
-    '<p>从产业、园区、企业或政策切入提问。我会标明使用了哪些材料、哪些结论仍需干部确认。</p></div>'+
-    '<button class="ghost-button" onclick="downloadSummary()"><i class="i">📄</i>下载智库摘要</button></div>'+
+    '<p>点击主题卡展开详细结论，或直接在下方对话框提问。</p></div>'+
+    '<div style="display:flex;gap:8px">'+
+    '<button class="ghost-button" onclick="showDownloadReport()"><i class="i">📥</i>下载分析报告</button>'+
+    '</div></div>'+
+
+
     '<div class="knowledge-scroll"><div class="topic-grid">'+
       p.kb.map(function(k,i){
         var tagColor=k.known&&k.known.length?
@@ -1227,7 +1420,10 @@ function kbPage(p){
         var dot=k.known&&k.known.length?'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:5px;vertical-align:middle"></span>':'';
         return '<button class="topic-row" onclick="kbDetail('+i+')"><i class="i">'+k.icon+'</i>'+
           '<span><strong>'+k.t+'</strong><small>'+k.sub+'</small></span>'+
-          '<em style="'+tagColor+'">'+dot+k.tag+'</em></button>';
+          '<em style="'+tagColor+'">'+dot+k.tag+'</em>'+
+          (k.known&&k.known.length?'<div style="font-size:11.5px;color:#667590;margin-top:4px;padding:0 4px;line-height:1.6;border-top:1px solid #f0f4ff;padding-top:6px">'+
+            k.known.filter(function(x){return x.indexOf('⚠️')<0;})[0]+'</div>':'')+
+        '</button>';
       }).join('')+
     '</div>'+
     '<div class="suggestion-strip">可以这样问：'+
