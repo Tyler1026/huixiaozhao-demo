@@ -399,6 +399,11 @@ function closeModal(){var l=$('#modalLayer');if(l)l.remove()}
 var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','研判需求','出报告·可来回优化'],['home','📋','项目管理','报告派生项目·对接需求'],['docking','🤝','政企对接','资源匹配与对接进度'],['settings','⚙️','设置','账号与提醒']];
 
 function render(){
+  // 尝试从 localStorage 恢复（非 ?demo 模式）
+  if(location.search.indexOf('demo')<0&&!cur&&!render._restored){
+    render._restored=true;
+    if(restore()){return render();}
+  }
   // ?demo 模式：直接注入随州演示数据，跳过 onboarding（测试用）
   if(location.search.indexOf('demo')>=0&&!cur){
     var _dk='demo_'+Date.now().toString(36);
@@ -687,6 +692,7 @@ function createProject(){
   };
   cur=key;
   DEMANDS.push({id:'d'+key,city:city,gov:city+'市招商局·负责人',topic:city+'产业链招引',domain:'待确认',need:'待分析',submit:'刚刚',res:'none',resLabel:'待研判',clues:0,note:'',ai:''});
+  persist();
 
   // 启动动画，动画结束后自动进入（autoEnter=true 时跳过按钮）
   runAnalysisAnim(city, fileName, 0, null);
@@ -983,8 +989,9 @@ function enterWorkspace(){
     }
   });
   p.topic=p.city+'主导产业补链招引';
+  persist();
   view='knowledge';
-  detailOpen=false;  // 城市智库首页不展开右侧面板
+  detailOpen=false;
   render();
   // 延迟写入 AI 首条消息
   setTimeout(function(){
@@ -1729,6 +1736,47 @@ function backToAnalysis(){detailData=null;var dp=$('.detail-pane');
 // localStorage 持久化：报告版本状态 + 上传材料历史（关掉页面第二天还在）
 function saveReportState(){try{localStorage.setItem('hxz_reportstate',JSON.stringify(REPORTSTATE))}catch(e){}}
 function loadReportState(){try{var d=localStorage.getItem('hxz_reportstate');if(d)REPORTSTATE=JSON.parse(d)}catch(e){}}
+
+/* ── localStorage 持久化 ── */
+var LS_KEY='huixiaozhao_kb_v1';
+
+function persist(){
+  try{
+    var data={
+      cur:cur, view:view,
+      PROJECTS:PROJECTS,
+      UPLOADS:UPLOADS,
+      KB_CONFIRMS:KB_CONFIRMS,
+      KB_FILE_CHUNKS:KB_FILE_CHUNKS
+    };
+    localStorage.setItem(LS_KEY, JSON.stringify(data));
+  }catch(e){ console.warn('[persist] failed:',e.message); }
+}
+
+function restore(){
+  try{
+    var raw=localStorage.getItem(LS_KEY);
+    if(!raw) return false;
+    var data=JSON.parse(raw);
+    if(data.PROJECTS&&Object.keys(data.PROJECTS).length){
+      PROJECTS=data.PROJECTS;
+      cur=data.cur||null;
+      view=data.view||'setup';
+      UPLOADS=data.UPLOADS||{};
+      KB_CONFIRMS=data.KB_CONFIRMS||{};
+      KB_FILE_CHUNKS=data.KB_FILE_CHUNKS||{};
+      console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
+      return true;
+    }
+  }catch(e){ console.warn('[restore] failed:',e.message); }
+  return false;
+}
+
+function clearPersist(){
+  localStorage.removeItem(LS_KEY);
+  toast('已清除本地存储');
+}
+
 var UPLOADS={};
 var KB_FILE_CHUNKS={};
 var KB_CONFIRMS={};  // {projKey:{kbIdx:{itemIdx:{status,text,ts}}}}
@@ -2382,6 +2430,7 @@ function confirmKbItem(kbIdx,itemIdx){
   // 写回 known：去掉 ⚠️，前缀改为 ✅
   k.known[itemIdx]='\u2705 '+clean;
   KB_CONFIRMS[cur][kbIdx][itemIdx]={status:'confirmed',text:clean,ts:Date.now()};
+  persist();
   // 刷新 corpus（确认项从待核实变为已确认）
   if(KB_FILE_CHUNKS[cur]){
     KB_FILE_CHUNKS[cur]=KB_FILE_CHUNKS[cur].filter(function(c){return c.id!=='pin:'+kbIdx+':'+itemIdx;});
@@ -2389,6 +2438,63 @@ function confirmKbItem(kbIdx,itemIdx){
   // 重新渲染 modal
   kbDetail(kbIdx);
   toast('已确认：'+clean.slice(0,20)+'…');
+}
+
+
+/* 编辑框附件上传：读取文本内容填充 textarea */
+function editPickFile(kbIdx,itemIdx){
+  var inp=document.createElement('input');
+  inp.type='file'; inp.multiple=true;
+  inp.accept='.txt,.md,.csv,.pdf,.doc,.docx,.xls,.xlsx';
+  inp.onchange=function(){
+    var files=Array.from(inp.files||[]);
+    if(!files.length)return;
+    processEditFiles(files,kbIdx,itemIdx);
+  };
+  inp.click();
+}
+
+function editDropFile(e,kbIdx,itemIdx){
+  e.preventDefault();
+  var files=Array.from(e.dataTransfer&&e.dataTransfer.files||[]);
+  if(!files.length)return;
+  processEditFiles(files,kbIdx,itemIdx);
+}
+
+function processEditFiles(files,kbIdx,itemIdx){
+  var hint=document.getElementById('kb-file-hint-'+kbIdx+'-'+itemIdx);
+  var ta=document.getElementById('kb-edit-'+kbIdx+'-'+itemIdx);
+  // 先触发全局 ingestFiles（更新 corpus）
+  ingestFiles(files, kbIdx);
+  // 然后读取文本文件内容追加到 textarea
+  var textFiles=files.filter(function(f){return /\.(txt|md|csv|json)$/i.test(f.name);});
+  var binary=files.filter(function(f){return !/\.(txt|md|csv|json)$/i.test(f.name);});
+  // 更新 hint 文本
+  if(hint)hint.textContent='✅ 已上传 '+files.length+' 个文件：'+files.map(function(f){return f.name;}).join('、');
+  // binary 文件只记录名称到 textarea
+  if(binary.length&&ta){
+    ta.value+=(ta.value?'\n':'')+'[已上传文件：'+binary.map(function(f){return f.name;}).join('、')+'，内容已加入知识库]';
+  }
+  if(!textFiles.length)return;
+  // 读取纯文本文件，提取摘要追加到 textarea
+  var done=0;
+  textFiles.forEach(function(f){
+    var reader=new FileReader();
+    reader.onload=function(e){
+      var text=(e.target.result||'').trim();
+      // 取前 500 字作为摘要
+      var summary=text.slice(0,500).replace(/\n+/g,' ').trim();
+      if(ta&&summary){
+        ta.value+=(ta.value?'\n':'')+'['+f.name+'] '+summary;
+      }
+      done++;
+      if(done===textFiles.length&&ta){
+        ta.focus();
+        ta.setSelectionRange(ta.value.length,ta.value.length);
+      }
+    };
+    reader.readAsText(f,'utf-8');
+  });
 }
 
 function editKbItem(kbIdx,itemIdx){
@@ -2405,12 +2511,22 @@ function editKbItem(kbIdx,itemIdx){
       '<textarea id="kb-edit-'+kbIdx+'-'+itemIdx+'" '+
         'style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #6366f1;border-radius:8px;font-size:13px;line-height:1.6;color:#1e293b;resize:vertical;min-height:72px;outline:none" '+
         'onkeydown="if(event.key===\'Enter\'&&event.metaKey)saveKbEdit('+kbIdx+','+itemIdx+')">'+orig+'</textarea>'+
+      '<div style="margin:8px 0 0;padding:8px 10px;background:#f8faff;border:1.5px dashed #c7d2fe;border-radius:8px;cursor:pointer;text-align:center;font-size:12px;color:#4f46e5" '+
+        'onclick="editPickFile('+kbIdx+','+itemIdx+')" '+
+        'ondragover="event.preventDefault();this.style.background=\'#eef2ff\'" '+
+        'ondragleave="this.style.background=\'#f8faff\'" '+
+        'ondrop="editDropFile(event,'+kbIdx+','+itemIdx+')">'+
+        '<span id="kb-file-hint-'+kbIdx+'-'+itemIdx+'">📎 上传附件辅助修改（PDF/Word/TXT · 拖拽或点击）</span>'+
+      '</div>'+
       '<div style="display:flex;gap:8px;margin-top:8px">'+
         '<button onclick="saveKbEdit('+kbIdx+','+itemIdx+')" '+
-          'style="flex:1;padding:8px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer">',
+          'style="flex:1;padding:8px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer">'+
           '\u2713 保存修改</button>'+
+        '<button onclick="pickLocalFile('+kbIdx+')" '+
+          'style="padding:8px 12px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12.5px;color:#166534;cursor:pointer;font-weight:600">'+
+          '\U0001f4ce 更多文件</button>'+
         '<button onclick="kbDetail('+kbIdx+')" '+
-          'style="padding:8px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;color:#4a5568;cursor:pointer">取消</button>'+
+          'style="padding:8px 12px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;color:#4a5568;cursor:pointer">取消</button>'+
       '</div>'+
     '</div>';
   card.style.border='1.5px solid #6366f1';
@@ -2431,8 +2547,8 @@ function saveKbEdit(kbIdx,itemIdx){
   if(!KB_CONFIRMS[cur])KB_CONFIRMS[cur]={};
   if(!KB_CONFIRMS[cur][kbIdx])KB_CONFIRMS[cur][kbIdx]={};
   KB_CONFIRMS[cur][kbIdx][itemIdx]={status:'edited',text:newText,ts:Date.now()};
-  // 更新 corpus 里该 chunk
-  buildKBCorpus(p.city);  // 下次查询时自动用新文本
+  persist();
+  buildKBCorpus(p.city);
   kbDetail(kbIdx);
   toast('\u2705 已更新并写入知识库');
 }
@@ -2750,6 +2866,7 @@ function finalizeIngest(chunks, files, kbTopicIdx, p){
       if(k.known.indexOf(entry)<0) k.known.push(entry);
     });
     k.tag='已补充材料';
+    persist();
     // 更新卡片标签
     var rows=document.querySelectorAll('.topic-row');
     if(rows[kbTopicIdx]){
