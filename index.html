@@ -447,8 +447,9 @@ function setupPage(){
           'ondrop="setupDropFile(event)">'+
           '<div id="uploadLabel" style="font-size:13px;color:#8492a6;line-height:1.6">'+
             '<span style="font-size:18px;display:block;margin-bottom:4px">📎</span>'+
-            '<span>补充材料（可选）</span><br>'+
-            '<span style="font-size:11.5px">政府工作报告、产业链图谱、园区资料 · 拖拽或点击上传</span>'+
+            '<span style="font-weight:600;color:#4a5568">补充材料（可选）</span><br>'+
+            '<span style="font-size:11.5px">政府工作报告、产业链图谱、园区资料 · 拖拽或点击上传</span><br>'+
+            '<span style="font-size:11px;color:#b0bac8;margin-top:3px;display:inline-block">若不上传，将基于公开可查询信息完成分析</span>'+
           '</div>'+
         '</div>'+
         '<input id="setupFileInput" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" style="display:none" onchange="setupFileSelected(this)" />'+
@@ -506,11 +507,12 @@ function setupDropFile(e){
 /* 分析动画页面 */
 function analysisPage(city, fileName){
   var steps=[
-    {icon:'🌐', label:'检索'+city+'城市公开信息',    dur:1400},
-    {icon:'🏭', label:'扫描主导产业与产业链结构',   dur:1600},
-    {icon:'🏢', label:'识别园区承载与链主企业',      dur:1400},
-    {icon:'📜', label:'解析政策方向与领导关注',      dur:1200},
-    {icon:'✨', label:'生成研判框架与缺口地图',      dur:1000},
+    {icon:'🌐', label:'检索'+city+'城市公开信息与产业背景',  dur:2800},
+    {icon:'🏭', label:'识别主导产业与上下游链条结构',         dur:3200},
+    {icon:'🏢', label:'扫描园区承载条件与链主企业',           dur:2600},
+    {icon:'📜', label:'解析政策方向与领导关注重点',           dur:2400},
+    {icon:'🔍', label:'测绘产业链缺口与可招引环节',           dur:2800},
+    {icon:'✨', label:'生成城市智库与研判框架',               dur:2000},
   ];
   if(fileName){
     steps.splice(1,0,{icon:'📎', label:'解析上传材料：'+fileName, dur:1200});
@@ -540,9 +542,10 @@ function analysisPage(city, fileName){
       '<div style="background:#fff;border-radius:20px;padding:28px 32px;box-shadow:0 2px 40px rgba(11,24,59,.07),0 0 0 1px rgba(11,24,59,.04)">'+
         rows+
       '</div>'+
-      '<div id="analysisDone" style="text-align:center;margin-top:24px;opacity:0;transition:opacity .5s">'+
+      '<div id="analysisSummary" style="margin-top:20px;opacity:0;transition:opacity .5s"></div>'+
+      '<div id="analysisDone" style="text-align:center;margin-top:16px;opacity:0;transition:opacity .5s">'+
         '<button onclick="enterWorkspace()" style="padding:13px 40px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:650;cursor:pointer;box-shadow:0 4px 20px rgba(26,86,219,.3);letter-spacing:.2px">'+
-          '进入工作区 →'+
+          '进入城市智库 →'+
         '</button>'+
       '</div>'+
     '</div>'+
@@ -552,11 +555,12 @@ function analysisPage(city, fileName){
 /* 运行分析动画 */
 function runAnalysisAnim(city, fileName, stepsCount, onDone){
   var steps=[
-    {icon:'🌐', label:'检索'+city+'城市公开信息',    dur:1400},
-    {icon:'🏭', label:'扫描主导产业与产业链结构',   dur:1600},
-    {icon:'🏢', label:'识别园区承载与链主企业',      dur:1400},
-    {icon:'📜', label:'解析政策方向与领导关注',      dur:1200},
-    {icon:'✨', label:'生成研判框架与缺口地图',      dur:1000},
+    {icon:'🌐', label:'检索'+city+'城市公开信息与产业背景',  dur:2800},
+    {icon:'🏭', label:'识别主导产业与上下游链条结构',         dur:3200},
+    {icon:'🏢', label:'扫描园区承载条件与链主企业',           dur:2600},
+    {icon:'📜', label:'解析政策方向与领导关注重点',           dur:2400},
+    {icon:'🔍', label:'测绘产业链缺口与可招引环节',           dur:2800},
+    {icon:'✨', label:'生成城市智库与研判框架',               dur:2000},
   ];
   if(fileName){
     steps.splice(1,0,{icon:'📎', label:'解析上传材料：'+fileName, dur:1200});
@@ -564,8 +568,31 @@ function runAnalysisAnim(city, fileName, stepsCount, onDone){
   var idx=0;
   function runStep(){
     if(idx>=steps.length){
+      // 填充产业 summary
+      var p=cur&&PROJECTS[cur];
+      var city2=p?p.city:'该城市';
+      var sectors=[
+        {icon:'🏭', name:'主导产业与产业链', desc:'已识别核心产业集群与上下游链条结构'},
+        {icon:'🏢', name:'园区与承载条件',   desc:'园区载体、厂房能耗与承接能力已评估'},
+        {icon:'🏗️', name:'链主与存量企业',   desc:'骨干企业名录与外采依赖缺口已梳理'},
+        {icon:'📜', name:'政策与领导关注',   desc:'产业规划方向与优先招引领域已提取'},
+      ];
+      var sumHtml='<div style="background:#fff;border-radius:16px;padding:20px 24px;box-shadow:0 2px 20px rgba(11,24,59,.06),0 0 0 1px rgba(11,24,59,.04)">'+
+        '<div style="font-size:12px;font-weight:650;color:#8492a6;letter-spacing:.5px;margin-bottom:14px">分析完成 · '+city2+'城市智库已就位</div>'+
+        sectors.map(function(s){
+          return '<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #f0f4ff">'+
+            '<span style="font-size:18px;width:28px;text-align:center">'+s.icon+'</span>'+
+            '<div><div style="font-size:13px;font-weight:650;color:#0b183b">'+s.name+'</div>'+
+            '<div style="font-size:11.5px;color:#8492a6;margin-top:1px">'+s.desc+'</div></div>'+
+          '</div>';
+        }).join('')+
+      '</div>';
+      var sumEl=document.getElementById('analysisSummary');
+      if(sumEl){sumEl.innerHTML=sumHtml;setTimeout(function(){sumEl.style.opacity='1';},100);}
       var done=document.getElementById('analysisDone');
-      if(done)setTimeout(function(){done.style.opacity='1';},300);
+      if(done)setTimeout(function(){done.style.opacity='1';},500);
+      // 4 秒后自动进入城市智库（无需点按钮）
+      setTimeout(function(){enterWorkspace();},4000);
       if(onDone)setTimeout(onDone,800);
       return;
     }
@@ -619,21 +646,23 @@ function createProject(){
 
 /* 点击「进入工作区」按钮时调用 */
 function enterWorkspace(){
-  view='home';
+  if(!cur||!PROJECTS[cur])return;
+  view='knowledge';
   render();
   // 延迟写入 AI 首条消息
   setTimeout(function(){
     if(!cur||!PROJECTS[cur])return;
     var city=PROJECTS[cur].city;
     var hasFile=!!_setupFile;
-    addA('<p>已完成对 <strong>'+city+'</strong> 的初步信息检索'+(hasFile?'，并解析了上传的材料':'')+
-      '。城市智库框架已就位，可以开始研判了。</p>'+
-      '<p style="margin-top:6px">你可以：</p>'+
+    addA('<p>'+city+'城市智库已就位'+(hasFile?'，已结合你上传的材料':'，基于公开信息')+
+      '完成初步分析。</p>'+
+      '<p style="margin-top:6px">左侧四大主题均可点击展开，你也可以直接提问：</p>'+
       '<ul style="margin:6px 0 0 18px;line-height:2;font-size:13px;color:#33415a">'+
-        '<li>告诉我<strong>重点关注的产业方向</strong>（例如：汽车零部件、新能源等）</li>'+
-        '<li>直接问「<strong>'+city+'最值得补链的环节是哪些？</strong>」</li>'+
-        '<li><strong>上传政府工作报告</strong>或产业材料，提升判断精度</li>'+
-      '</ul>');
+        '<li>「<strong>'+city+'最值得补链的核心环节是哪些？</strong>」</li>'+
+        '<li>「<strong>本地链主企业还缺哪些关键配套？</strong>」</li>'+
+        '<li>「<strong>园区如何分工承接不同细分方向？</strong>」</li>'+
+      '</ul>'+
+      '<p style="margin-top:8px;font-size:12px;color:#9aa5b5">上传政府工作报告或产业材料可进一步提升判断精度。</p>');
   }, 350);
 }
 
