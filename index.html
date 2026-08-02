@@ -396,6 +396,19 @@ function closeModal(){var l=$('#modalLayer');if(l)l.remove()}
 var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','研判需求','出报告·可来回优化'],['home','📋','项目管理','报告派生项目·对接需求'],['docking','🤝','政企对接','资源匹配与对接进度'],['settings','⚙️','设置','账号与提醒']];
 
 function render(){
+  // ?demo 模式：直接注入随州演示数据，跳过 onboarding（测试用）
+  if(location.search.indexOf('demo')>=0&&!cur){
+    var _dk='demo_'+Date.now().toString(36);
+    var _dc=generateKbConclusions('随州');
+    PROJECTS[_dk]={id:_dk,city:'随州',org:'随州市招商局',who:'张主任',topic:'随州主导产业补链招引',stage:1,
+      kb:[
+        {icon:'🏭',t:'主导产业与产业链',sub:_dc.industry.sub,tag:_dc.industry.tag,known:_dc.industry.known,calls:['产业链缺口测绘报告']},
+        {icon:'🏢',t:'园区与承载条件',sub:_dc.park.sub,tag:_dc.park.tag,known:_dc.park.known,calls:['产业链缺口测绘报告']},
+        {icon:'🏗️',t:'链主与存量企业',sub:_dc.firm.sub,tag:_dc.firm.tag,known:_dc.firm.known,calls:['产业链缺口测绘报告']},
+        {icon:'📜',t:'政策、规划与领导关注',sub:_dc.policy.sub,tag:_dc.policy.tag,known:_dc.policy.known,calls:['政策规划研究']}
+      ],report:null,clues:[]};
+    cur=_dk; view='knowledge'; detailOpen=false;
+  }
   if(view==='setup'||!cur||!PROJECTS[cur]){var _root=$('#root');if(_root){_root.innerHTML='<div style="height:100vh;background:#f5f7fb">'+setupPage()+'</div>';bind();} return;}
   if(role==='ops')return renderOps();
   var p=P();
@@ -2288,37 +2301,109 @@ function kbAsk(q,k){
     c.scrollTop=c.scrollHeight;
   },400);
 }
-function kbDetail(i){var k=P().kb[i];detailData=null;detailOpen=true;curKb=i;
-  var dp=$('.detail-pane');
-  var html='<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button><div class="detail-page">'+
-    '<div class="detail-header"><div><span class="eyebrow">KNOWLEDGE SCOPE</span><h2>'+k.t+'</h2><p>'+k.sub+'</p></div></div>'+
-    '<div class="detail-scroll">'+
-      '<div class="detail-block"><h3>当前已知 <span style="font-size:11px;font-weight:400;color:#9aa5b5;margin-left:6px">AI初判 · ⚠️ 标注项需确认</span></h3>'+
-      (k.known&&k.known.length?
-        '<ul class="check-list">'+k.known.map(function(x){
-          var isWarn=x.indexOf('⚠️')>=0;
-          return '<li style="'+(isWarn?'color:#92400e;background:#fffbeb;border-radius:6px;padding:4px 8px;margin:2px 0':'')+'">'+'<i class="i" style="color:'+(isWarn?'#d97706':'#22c55e')+'">'+(isWarn?'⚠':'✔')+'</i> '+x.replace('⚠️ ','')+'</li>';
-        }).join('')+'</ul>':
-        '<div style="color:#9aa5b5;font-size:12.5px;padding:8px 0">暂无已知内容，点击下方「基于这个主题提问」开始分析。</div>')+
+function kbDetail(i){
+  var k=P().kb[i]; if(!k) return;
+  curKb=i;
+
+  // 已知条目列表
+  var knownHtml=(k.known&&k.known.length)
+    ? '<ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px">'+
+        k.known.map(function(x){
+          var warn=x.indexOf('⚠️')>=0;
+          return '<li style="display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border-radius:10px;background:'+(warn?'#fffbeb':'#f8faff')+';border:1px solid '+(warn?'#fde68a':'#e8edf5')+'">'+
+            '<span style="flex:0 0 auto;margin-top:1px;color:'+(warn?'#d97706':'#22c55e')+'">'+
+              (warn?'⚠':'✓')+'</span>'+
+            '<span style="font-size:13px;color:'+(warn?'#92400e':'#1a202c')+';line-height:1.65">'+
+              x.replace('⚠️ ','')+'</span>'+
+          '</li>';
+        }).join('')+
+      '</ul>'
+    : '<div style="color:#9aa5b5;font-size:13px;padding:12px 0">暂无已知内容，点击下方按钮基于此主题提问。</div>';
+
+  // 数据来源标签
+  var callsHtml=(k.calls&&k.calls.length)
+    ? '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">'+
+        k.calls.map(function(c){
+          return '<span style="padding:3px 10px;background:#f0f4ff;color:#1a56db;border-radius:12px;font-size:11.5px">'+c+'</span>';
+        }).join('')+'</div>'
+    : '';
+
+  var modalHtml=
+    '<div id="kbDetailModal" onclick="if(event.target.id===\'kbDetailModal\')closeKbDetail()" '+
+      'style="position:fixed;inset:0;background:rgba(11,24,59,.4);z-index:8888;display:flex;align-items:flex-start;justify-content:flex-end;padding:16px;backdrop-filter:blur(2px)">'+
+      '<div style="background:#fff;border-radius:18px;width:420px;max-width:95vw;max-height:calc(100vh - 32px);overflow:hidden;display:flex;flex-direction:column;box-shadow:0 8px 48px rgba(11,24,59,.16);animation:slideIn .22s ease">'+
+
+        // 顶栏
+        '<div style="padding:20px 22px 16px;border-bottom:1px solid #f0f4ff;flex:0 0 auto">'+
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'+
+            '<span style="font-size:11px;font-weight:650;color:#6366f1;letter-spacing:.5px">KNOWLEDGE SCOPE</span>'+
+            '<button onclick="closeKbDetail()" style="background:none;border:none;font-size:18px;color:#9aa5b5;cursor:pointer;padding:2px 6px;border-radius:6px" onmouseover="this.style.background=\'#f5f7fb\'" onmouseout="this.style.background=\'none\'">✕</button>'+
+          '</div>'+
+          '<h2 style="font-size:17px;font-weight:750;color:#0b183b;margin:0 0 4px">'+k.icon+' '+k.t+'</h2>'+
+          '<p style="font-size:12.5px;color:#8492a6;margin:0">'+k.sub+'</p>'+
+        '</div>'+
+
+        // 内容区（可滚动）
+        '<div style="flex:1;overflow-y:auto;padding:18px 22px">'+
+
+          '<div style="margin-bottom:18px">'+
+            '<h3 style="font-size:12px;font-weight:650;color:#4a5568;letter-spacing:.3px;margin:0 0 10px">当前已知'+
+              '<span style="font-weight:400;color:#b0bac8;margin-left:6px">⚠ 标注项需政府确认</span>'+
+            '</h3>'+
+            knownHtml+
+          '</div>'+
+
+          (callsHtml?
+          '<div style="margin-bottom:16px">'+
+            '<h3 style="font-size:12px;font-weight:650;color:#4a5568;letter-spacing:.3px;margin:0 0 8px">本次回答可调用来源</h3>'+
+            callsHtml+
+          '</div>':'')+
+
+          '<div style="padding:10px 12px;background:#f8faff;border-radius:10px;font-size:11.5px;color:#9aa5b5;line-height:1.6">'+
+            '公开信息仅用于辅助研判；园区承载、企业采购和领导任务仍需政府授权材料确认。'+
+          '</div>'+
+        '</div>'+
+
+        // 底部操作
+        '<div style="padding:14px 22px 18px;border-top:1px solid #f0f4ff;flex:0 0 auto;display:flex;gap:8px">'+
+          '<button onclick="closeKbDetail();askAboutKb('+i+')" '+
+            'style="flex:1;padding:11px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer">'+
+            '基于此主题提问 →'+
+          '</button>'+
+          '<button onclick="pickLocalFile()" '+
+            'style="padding:11px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer">'+
+            '补充材料'+
+          '</button>'+
+        '</div>'+
       '</div>'+
-      '<div class="detail-block"><h3>本次回答可调用（可追溯）</h3><ul class="source-list">'+k.calls.map(function(c){return '<li><i class="i">📄</i>'+c+'<small>可追溯</small></li>'}).join('')+'</ul></div>'+
-      '<div class="info-callout">公开信息只用于辅助研判；园区承载、企业采购和领导任务仍需政府授权材料确认。</div>'+
-    '</div>'+
-    '<div class="detail-actions-stack" style="gap:8px;padding:12px 22px 16px">'+
-      '<button class="primary-button" onclick="askAboutKb('+i+')"><i class="i">💬</i>基于这个主题提问</button>'+
-      '<button class="secondary-button" onclick="pickLocalFile()"><i class="i">📎</i>补充本地材料</button>'+
-    '</div></div>';
-  if(dp)dp.innerHTML=html;else{detailOpen=true;render();setTimeout(function(){var d=$('.detail-pane');if(d)d.innerHTML=html},50)}
+    '</div>';
+
+  // 注入 slideIn keyframe（只注一次）
+  if(!document.getElementById('kbDetailStyle')){
+    var st=document.createElement('style');st.id='kbDetailStyle';
+    st.textContent='@keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}';
+    document.head.appendChild(st);
+  }
+
+  closeKbDetail(); // 清掉旧的
+  var wrap=document.createElement('div');
+  wrap.innerHTML=modalHtml;
+  document.body.appendChild(wrap.firstChild);
+}
+
+function closeKbDetail(){
+  var m=document.getElementById('kbDetailModal');
+  if(m)m.remove();
 }
 // 「基于这个主题提问」→ 在城市智库对话区直接问答（回复对应 + 底部调用来源）
 function askAboutKb(i){var k=P().kb[i];
   // 基于该主题的 known[] 生成精准提问
   var _kqMain=(k.known&&k.known[0])||'';
   var _kqDefaults={
-    '主导产业与产业链':'围绕随州「'+P().topic+'」，最值得优先补链的核心缺口环节是哪些？',
-    '园区与承载条件':'随州各园区如何分工承接「'+P().topic+'」方向的企业？厂房/能耗条件是否满足？',
-    '链主与存量企业':'随州本地链主（程力/新楚风/齐星/江南专汽/品源等）还缺哪些核心上下游配套？',
-    '政策、规划与领导关注':'结合随州领导近期产业关注，「'+P().topic+'」方向哪些事项最需要优先推进？'
+    '主导产业与产业链':P().city+'最值得优先补链的核心环节是哪些？',
+    '园区与承载条件':P().city+'各园区如何分工承接，厂房与能耗条件是否满足？',
+    '链主与存量企业':P().city+'本地链主企业还缺哪些关键上游配套？',
+    '政策、规划与领导关注':P().city+'「'+P().topic+'」方向，哪些政策事项需要优先推进？'
   };
   var q=_kqDefaults[k.t]||('关于「'+k.t+'」在随州「'+P().topic+'」方向的研判建议，请分析现状与缺口。');
   fillComposer(q);
