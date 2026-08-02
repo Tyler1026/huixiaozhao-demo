@@ -1649,24 +1649,36 @@ function cancelTopicEdit(){
 
 // 选择研判方向（卡片点击 or 自定义输入）
 function selectTopic(val, isCustom){
-  var p=P(); if(!p||!val.trim()) return;
+  var p=P(); if(!p||!val||!val.trim()) return;
   p.topic=val.trim();
   persist();
-  // 刷新方向 badge
   var badge=document.getElementById('currentTopicBadge');
   if(badge) badge.textContent=p.topic;
-  // 如果是卡片点击，清空自定义输入框
   if(!isCustom){
     var inp=document.getElementById('topicCustomInput');
     if(inp) inp.value='';
   }
-  // 刷新卡片高亮（重新渲染方向卡）
-  var cards=document.querySelectorAll('.report-topic-card');
-  cards.forEach(function(c){
-    var isActive=c.getAttribute('data-topic')===p.topic;
-    c.style.border='2px solid '+(isActive?'#1a56db':'#e8edf5');
-    c.style.background=isActive?'linear-gradient(135deg,#eff6ff,#f0f9ff)':'#fff';
-  });
+  // 重渲染卡片高亮
+  var cardGrid=document.getElementById('topicCardGrid');
+  if(!cardGrid) return;
+  var topics=[
+    {label:'氢能专用车补链',   icon:'⚡', desc:'电堆53%外购，新楚风已量产'},
+    {label:'智慧应急装备补链', icon:'🚨', desc:'机器人/无人机靠外采'},
+    {label:'香菇深加工补链',   icon:'🍄', desc:'功能成分提取仅2家布局'},
+  ];
+  cardGrid.innerHTML=topics.map(function(t){
+    var act=p.topic===t.label;
+    return '<button onclick="selectTopic(this.getAttribute(\'data-v\'))" data-v="'+t.label+'" style="'+
+      'display:flex;flex-direction:column;align-items:flex-start;padding:14px 16px;'+
+      'background:'+(act?'linear-gradient(135deg,#eff6ff,#f0f9ff)':'#fff')+';'+
+      'border:2px solid '+(act?'#1a56db':'#e8edf5')+';'+
+      'border-radius:14px;cursor:pointer;text-align:left;flex:1;min-width:0">'+
+      '<span style="font-size:20px;margin-bottom:6px">'+t.icon+'</span>'+
+      '<span style="font-size:13px;font-weight:700;color:#0b183b;display:block;margin-bottom:4px">'+t.label+'</span>'+
+      '<span style="font-size:11.5px;color:#8492a6;line-height:1.4">'+t.desc+'</span>'+
+      (act?'<div style="margin-top:8px;width:8px;height:8px;border-radius:50%;background:#1a56db"></div>':'')+
+    '</button>';
+  }).join('');
 }
 
 // 触发生成报告
@@ -1883,7 +1895,7 @@ function homePage(p){
   var topicSelector=
     '<div style="padding:0 0 20px">'+
       '<div style="font-size:12px;font-weight:650;color:#4a5568;margin-bottom:10px;letter-spacing:.3px">选择研判方向</div>'+
-      '<div style="display:flex;gap:10px;margin-bottom:12px">'+topicCards+'</div>'+
+      '<div id="topicCardGrid" style="display:flex;gap:10px;margin-bottom:12px">'+topicCards+'</div>'+
       '<div style="display:flex;align-items:center;gap:8px">'+
         '<div style="flex:1;position:relative">'+
           '<input id="topicCustomInput" placeholder="或输入自定义方向…" value="'+(recommendedTopics.some(function(t){return t.label===p.topic;})?'':p.topic)+'" '+
