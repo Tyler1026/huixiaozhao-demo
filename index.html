@@ -1134,19 +1134,88 @@ function topbar(p){
   '</div>';
 }
 function stColor(s){return s>=4?{bg:'#e4f5f3',c:'#006d70'}:s>=3?{bg:'#ebf3fd',c:'#013582'}:{bg:'#fff0de',c:'#a34c09'}}
+
+/* kb lock/readiness */
+var KB_UNLOCKED={};
+
+function kbReadiness(){
+  var p=P(); if(!p||!p.kb) return {score:0,total:0,confirmed:0,files:0,label:'未开始',color:'#9aa5b5'};
+  var totalItems=0, confirmedItems=0;
+  p.kb.forEach(function(k,ki){
+    (k.known||[]).forEach(function(x,xi){
+      totalItems++;
+      var conf=KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][ki]&&KB_CONFIRMS[cur][ki][xi];
+      if(conf||x.indexOf('\u2705')===0) confirmedItems++;
+    });
+  });
+  var uploads=(UPLOADS[cur]||[]).length;
+  var confirmRate=totalItems>0?confirmedItems/totalItems:0;
+  var uploadBonus=Math.min(40, uploads*10);
+  var score=Math.round(confirmRate*60 + uploadBonus);
+  var label=score>=80?'已就绪':score>=50?'基本完整':score>=20?'待补充':'未开始';
+  var color=score>=80?'#22c55e':score>=50?'#f59e0b':score>=20?'#3b82f6':'#9aa5b5';
+  return {score:score,total:totalItems,confirmed:confirmedItems,files:uploads,label:label,color:color};
+}
+
+function isLocked(v){
+  if(['report','home','docking'].indexOf(v)<0) return false;
+  if(!cur) return true;
+  if(KB_UNLOCKED[cur]&&KB_UNLOCKED[cur][v]) return false;
+  return kbReadiness().score<80;
+}
+
+function unlockView(v){
+  if(!cur) return;
+  if(!KB_UNLOCKED[cur]) KB_UNLOCKED[cur]={};
+  KB_UNLOCKED[cur][v]=true;
+  persist();
+  closeModal();
+  go(v);
+}
+
 function sidebar(){
   return '<div class="sidebar"><div class="nav-list">'+
-    NAV.map(function(n){var on=view===n[0]?' active':'';
-      return '<button class="nav-item'+on+'" onclick="go(\''+n[0]+'\')"><i class="i">'+n[1]+'</i><span class="nav-copy"><strong>'+n[2]+'</strong><small>'+n[3]+'</small></span></button>';
+    NAV.map(function(n){
+      var on=view===n[0]?' active':'';
+      var locked=isLocked(n[0]);
+      var lockBadge=locked?'<span style="font-size:10px;margin-left:auto;opacity:.5">&#128274;</span>':'';
+      var dimCss=locked&&view!==n[0]?'opacity:.55;':'';
+      return '<button class="nav-item'+on+'" onclick="go(\''+n[0]+'\')" style="'+dimCss+'">'+
+        '<i class="i">'+n[1]+'</i>'+
+        '<span class="nav-copy"><strong>'+n[2]+'</strong><small>'+n[3]+'</small></span>'+
+        lockBadge+
+      '</button>';
     }).join('')+'</div>'+
+    (function(){
+      if(!cur)return '';
+      var r=kbReadiness();
+      return '<div style="padding:10px 14px 8px;border-top:1px solid #f0f4ff">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">'+
+          '<span style="font-size:10.5px;color:#9aa5b5;letter-spacing:.3px">城市智库完成度</span>'+
+          '<span style="font-size:11px;font-weight:700;color:'+r.color+'">'+r.score+'%</span>'+
+        '</div>'+
+        '<div style="height:4px;background:#f0f4ff;border-radius:2px;overflow:hidden">'+
+          '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:2px;transition:width .4s"></div>'+
+        '</div>'+
+        '<div style="font-size:10.5px;color:'+r.color+';margin-top:4px">'+r.label+
+          (r.files>0?' &middot; '+r.files+'份材料':'')+'</div>'+
+      '</div>';
+    })()+
     '<div class="system-status"><span></span>系统运行正常</div></div>';
 }
 function progressFooter(p){
   if(!cur||!PROJECTS[cur])return '';
   return '<div class="progress-footer"><div class="progress-track">'+
-    STAGES.map(function(s,i){var n=i+1;var cls=n<p.stage?' done':n===p.stage?' current':'';
-      return '<div class="progress-step'+cls+'"><div class="progress-node">'+(n<p.stage?'<i class="i">✓</i>':n)+'</div>'+
-        '<div class="progress-copy"><strong>'+s[0]+'</strong><small>'+s[1]+'</small></div></div>'+(n<STAGES.length?'<div class="progress-line"></div>':'');
+    STAGES.map(function(s,si){var n=si+1;var cls=n<p.stage?' done':n===p.stage?' current':'';
+      var sv=[null,'report','home','docking',null][si];
+      var locked=sv&&isLocked(sv);
+      var nodeContent=n<p.stage?'<i class="i">\u2713</i>':locked?'&#128274;':n;
+      var dimStyle=locked&&n!==p.stage?'opacity:.55':'';;
+      return '<div class="progress-step'+cls+'" style="'+dimStyle+'" '+
+        (sv?'onclick="go(\''+sv+'\')" style="cursor:pointer"':'')+'>'+
+        '<div class="progress-node">'+nodeContent+'</div>'+
+        '<div class="progress-copy"><strong>'+s[0]+(locked?' &#128274;':'')+'</strong><small>'+s[1]+'</small></div></div>'+
+        (n<STAGES.length?'<div class="progress-line"></div>':'');
     }).join('')+'</div><div class="progress-mobile">📂 '+p.topic+' · 当前「'+STAGES[p.stage-1][0]+'」· 第 '+p.stage+'/'+STAGES.length+' 步（进度跟随所选产业方向）</div></div>';
 }
 /* ===== 通知：铃铛 + 面板 + 点击落回对应研判 ===== */
@@ -1204,7 +1273,44 @@ function gotoProjFromNotif(pk){cur=pk;view='home';detailData=null;render();toast
 function toggleSw(e){e.stopPropagation();var m=$('#swMenu');m.style.display=m.style.display==='none'?'block':'none'}
 function switchProj(k){cur=k;view='report';detailData=null;render();toast('已进入「'+PROJECTS[k].topic+'」研判工作区')}
 function newProj(){var m=$('#swMenu');if(m)m.style.display='none';newProjModal()}
-function go(v){view=v;detailData=null;detailOpen=true;render()}
+function go(v){
+  if(isLocked(v)){
+    var r=kbReadiness();
+    var vnames={report:'\u7814\u5224\u9700\u6c42',home:'\u9879\u76ee\u7ba1\u7406',docking:'\u653f\u4f01\u5bf9\u63a5'};
+    var vn=vnames[v]||v;
+    var tips=[];
+    if(r.confirmed<r.total) tips.push('\u786e\u8ba4\u5269\u4f59 '+(r.total-r.confirmed)+' \u6761\u5f85\u786e\u8ba4\u7ed3\u8bba');
+    if(r.files<2) tips.push('\u5728\u57ce\u5e02\u667a\u5e93\u4e0a\u4f20\u81f3\u5c11 2 \u4efd\u653f\u5e9c\u6750\u6599');
+    if(r.files<1) tips.push('\u4e0a\u4f20\u9886\u5bfc\u6700\u65b0\u4ea7\u4e1a\u53d1\u8a00\u7a3f');
+    var tipsHtml=tips.slice(0,3).map(function(t){
+      return '<li style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid #f0f4ff">'+
+        '<span style="color:#f59e0b;flex:0 0 auto">\u2192</span>'+
+        '<span style="font-size:13px;color:#1e293b">'+t+'</span></li>';
+    }).join('');
+    var body=
+      '<div style="margin-bottom:14px">'+
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'+
+          '<div style="flex:1;background:#f0f4ff;border-radius:6px;height:8px;overflow:hidden">'+
+            '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:6px;transition:width .3s"></div>'+
+          '</div>'+
+          '<span style="font-size:13px;font-weight:700;color:'+r.color+'">'+r.score+'%</span>'+
+        '</div>'+
+        '<p style="font-size:13px;color:#4a5568;margin:0 0 12px;line-height:1.7">'+
+          '&#128274; <strong>'+vn+'</strong>\u9700\u8981\u57ce\u5e02\u667a\u5e93\u5b8c\u6210\u5ea6\u8fbe\u5230 <strong>80%</strong>\u540e\u81ea\u52a8\u89e3\u9501\u3002\u5f53\u524d <strong style="color:'+r.color+'">'+r.score+'%</strong>\u3002</p>'+
+        '<p style="font-size:12px;color:#6366f1;margin:0 0 10px">\u{1f4a1} \u4e0a\u4f20\u8d8a\u591a\u6750\u6599\u3001\u9886\u5bfc\u786e\u8ba4\u8d8a\u591a\u7ed3\u8bba\uff0c\u7814\u5224\u6570\u636e\u53ef\u9760\u6027\u8d8a\u9ad8\u3002</p>'+
+        (tipsHtml?'<div style="margin-bottom:10px">'+
+          '<div style="font-size:11.5px;font-weight:650;color:#6366f1;margin-bottom:6px">\u5feb\u901f\u63d0\u5347\u5b8c\u6210\u5ea6\uff1a</div>'+
+          '<ul style="margin:0;padding:0;list-style:none">'+tipsHtml+'</ul></div>':'');
+    var foot=
+      '<button class="secondary-button" onclick="closeModal()">\u7ee7\u7eed\u5b8c\u5584\u57ce\u5e02\u667a\u5e93</button>'+
+      '<button onclick="unlockView(\''+v+'\')" '+
+        'style="padding:10px 18px;background:#f5f7fb;color:#64748b;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;cursor:pointer">'+
+        '\u5f3a\u5236\u89e3\u9501\uff08\u6570\u636e\u53ef\u9760\u6027\u8f83\u4f4e\uff09</button>';
+    openModal('&#128274; '+vn+' \u5c1a\u672a\u89e3\u9501', body, foot);
+    return;
+  }
+  view=v;detailData=null;detailOpen=true;render();
+}
 function bind(){
   document.addEventListener('click',function(e){
     var m=$('#swMenu');if(m&&m.style.display==='block'){var o=$('#orgName');if(o&&!o.contains(e.target)&&!m.contains(e.target))m.style.display='none'}
@@ -1531,7 +1637,24 @@ function promptRow(icon,strong,small,fn){
 function aiAvatar(){return 'data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="46" height="46"><rect width="46" height="46" rx="23" fill="#ebf3fd"/><text x="23" y="30" font-size="18" fill="#0757ad" text-anchor="middle" font-family="sans-serif">慧</text></svg>')}
 function kbPage(p){
   return '<div class="page">'+
-    '<div class="page-header"><div><span class="eyebrow">CITY INTELLIGENCE</span><h1>城市智库 · 招商问答</h1>'+
+    (function(){
+      var r=kbReadiness();
+      return '<div class="page-header"><div>'+
+        '<span class="eyebrow">CITY INTELLIGENCE</span><h1>城市智库 · 招商问答</h1>'+
+        '<p>点击主题卡展开详细结论，或直接在下方对话框提问。</p>'+
+        '<div style="display:flex;align-items:center;gap:10px;margin-top:8px">'+
+          '<div style="flex:1;background:#f0f4ff;border-radius:4px;height:6px;overflow:hidden">'+
+            '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:4px;transition:width .4s"></div>'+
+          '</div>'+
+          '<span style="font-size:12px;font-weight:700;color:'+r.color+'">'+r.score+'%</span>'+
+          '<span style="font-size:11px;color:'+r.color+'">'+r.label+'</span>'+
+        '</div>'+
+        (r.score<80?'<p style="font-size:11.5px;color:#f59e0b;margin:5px 0 0">'+          '⚡ 上传越多材料、领导确认越多结论，研判数据可靠性越高（差 '+(80-r.score)+'% 自动解锁后续步骤）</p>':'')+
+        '</div>'+
+        '<div style="display:flex;gap:8px">'+
+        '<button class="ghost-button" onclick="showDownloadReport()"><i class="i"></i>下载分析报告</button>'+
+        '</div></div>';
+    })()+
     '<p>点击主题卡展开详细结论，或直接在下方对话框提问。</p></div>'+
     '<div style="display:flex;gap:8px">'+
     '<button class="ghost-button" onclick="showDownloadReport()"><i class="i">📥</i>下载分析报告</button>'+
@@ -1747,7 +1870,8 @@ function persist(){
       PROJECTS:PROJECTS,
       UPLOADS:UPLOADS,
       KB_CONFIRMS:KB_CONFIRMS,
-      KB_FILE_CHUNKS:KB_FILE_CHUNKS
+      KB_FILE_CHUNKS:KB_FILE_CHUNKS,
+      KB_UNLOCKED:KB_UNLOCKED
     };
     localStorage.setItem(LS_KEY, JSON.stringify(data));
   }catch(e){ console.warn('[persist] failed:',e.message); }
@@ -1765,6 +1889,7 @@ function restore(){
       UPLOADS=data.UPLOADS||{};
       KB_CONFIRMS=data.KB_CONFIRMS||{};
       KB_FILE_CHUNKS=data.KB_FILE_CHUNKS||{};
+      KB_UNLOCKED=data.KB_UNLOCKED||{};
       console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
       return true;
     }
