@@ -1689,7 +1689,8 @@ function backToAnalysis(){detailData=null;var dp=$('.detail-pane');
 // localStorage 持久化：报告版本状态 + 上传材料历史（关掉页面第二天还在）
 function saveReportState(){try{localStorage.setItem('hxz_reportstate',JSON.stringify(REPORTSTATE))}catch(e){}}
 function loadReportState(){try{var d=localStorage.getItem('hxz_reportstate');if(d)REPORTSTATE=JSON.parse(d)}catch(e){}}
-var UPLOADS={}; // {项目key:[文件名...]}
+var UPLOADS={};
+var KB_FILE_CHUNKS={};  // {projKey:[{id,topic,tags,text,cite}]}
 // 招引方向派生的项目（方案A三层：产业方向→报告→招引方向项目）{产业key:[{name,stage,from}]}
 var SUBPROJ={};
 function saveSubproj(){try{localStorage.setItem('hxz_subproj',JSON.stringify(SUBPROJ))}catch(e){}}
@@ -1948,6 +1949,8 @@ function buildKBCorpus(city){
       });
     });
   }
+  var fc=(cur&&KB_FILE_CHUNKS[cur])||[];
+  if(fc.length){ chunks=chunks.concat(fc); console.log('[RAG] +'+fc.length+' file chunks'); }
   // 追加竞争格局数据（随州专项）
   if(isSZ){
     var compChunks=[
@@ -2268,6 +2271,21 @@ function kbSendQuestion(btn, q){
   kbRAGQuery(q, c);
 }
 
+function kbRAGQueryWithHint(query, container, kbTopic){
+  var p=P(); if(!p) return;
+  var corpus=buildKBCorpus(p.city);
+  var chunks=kbSearch(query,corpus,4);
+  if(kbTopic&&kbTopic.known){
+    var pinned=kbTopic.known.map(function(t,i){
+      return {id:'pin:'+i,topic:kbTopic.t,tags:topicTags(kbTopic.t),text:t,cite:kbTopic.t+'(置顶)'};
+    });
+    var seen=chunks.map(function(c){return c.text;});
+    pinned.forEach(function(pc){if(seen.indexOf(pc.text)<0)chunks.unshift(pc);});
+    chunks=chunks.slice(0,7);
+  }
+  kbAnswerRender(container,query,chunks,p.city);
+}
+
 function kbRAGQuery(query, container){
   var p=P(); if(!p) return;
   var corpus=buildKBCorpus(p.city);
@@ -2370,7 +2388,7 @@ function kbDetail(i){
             'style="flex:1;padding:11px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer">'+
             '基于此主题提问 →'+
           '</button>'+
-          '<button onclick="pickLocalFile()" '+
+          '<button onclick="pickLocalFile('+i+')" '+
             'style="padding:11px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer">'+
             '补充材料'+
           '</button>'+
@@ -2396,24 +2414,150 @@ function closeKbDetail(){
   if(m)m.remove();
 }
 // 「基于这个主题提问」→ 在城市智库对话区直接问答（回复对应 + 底部调用来源）
-function askAboutKb(i){var k=P().kb[i];
-  // 基于该主题的 known[] 生成精准提问
-  var _kqMain=(k.known&&k.known[0])||'';
-  var _kqDefaults={
-    '主导产业与产业链':P().city+'最值得优先补链的核心环节是哪些？',
-    '园区与承载条件':P().city+'各园区如何分工承接，厂房与能耗条件是否满足？',
-    '链主与存量企业':P().city+'本地链主企业还缺哪些关键上游配套？',
-    '政策、规划与领导关注':P().city+'「'+P().topic+'」方向，哪些政策事项需要优先推进？'
+function askAboutKb(i){
+  var k=P().kb[i]; if(!k) return;
+  var qMap={
+    '主导产业与产业链':P().city+'主导产业链上最值得优先补链的核心缺口是哪些？结合配套率和链主外采情况分析。',
+    '园区与承载条件':P().city+'各园区如何分工承接不同细分产业？厂房、能耗与用地条件是否满足？',
+    '链主与存量企业':P().city+'本地链主企业的外采依赖集中在哪些核心环节？招引上游配套的优先级如何？',
+    '政策、规划与领导关注':P().city+'在「'+P().topic+'」方向，政策支持最强、待干部确认的关键事项有哪些？'
   };
-  var q=_kqDefaults[k.t]||('关于「'+k.t+'」在随州「'+P().topic+'」方向的研判建议，请分析现状与缺口。');
-  fillComposer(q);
+  var q=qMap[k.t]||('请结合「'+k.t+'」主题数据，分析'+P().city+'的现状与最值得优先推进的招引方向。');
+  closeKbDetail();
+  if(view!=='knowledge'){view='knowledge';render();}
+  var c=document.getElementById('kbConv');
+  if(!c){setTimeout(function(){askAboutKb(i);},100);return;}
+  var ud=document.createElement('div');ud.className='message is-user';
+  ud.innerHTML='<div class="message-bubble"><p>'+q+'</p></div>';
+  c.appendChild(ud);c.scrollTop=c.scrollHeight;
+  kbRAGQueryWithHint(q,c,k);
 }
 // 真实文件选择器：弹系统文件夹
-function pickLocalFile(){
-  var inp=document.createElement('input');inp.type='file';inp.accept='.pdf,.doc,.docx,.xls,.xlsx,.txt';
-  inp.onchange=function(){var f=inp.files&&inp.files[0];if(!f)return;kbFileParsed(f.name);};
+function pickLocalFile(kbTopicIdx){
+  var inp=document.createElement('input');
+  inp.type='file';inp.multiple=true;
+  inp.accept='.txt,.md,.csv,.pdf,.doc,.docx,.xls,.xlsx';
+  inp.onchange=function(){
+    var files=Array.from(inp.files||[]);
+    if(!files.length)return;
+    closeKbDetail();
+    ingestFiles(files,kbTopicIdx);
+  };
   inp.click();
 }
+
+/* ── 文件摄取：读取 → 切 chunk → 存 KB_FILE_CHUNKS → 更新 kb.known ── */
+function ingestFiles(files, kbTopicIdx){
+  var p=P(); if(!p) return;
+  var total=files.length, done=0, allChunks=[];
+
+  var c=document.getElementById('kbConv');
+  if(c){
+    var nd=document.createElement('div'); nd.className='message is-user';
+    nd.innerHTML='<div class="message-bubble"><p>📎 已上传 '+total+' 个文件：'+
+      files.map(function(f){return f.name;}).join('、')+'</p></div>';
+    c.appendChild(nd); c.scrollTop=c.scrollHeight;
+  }
+
+  files.forEach(function(file){
+    var canRead=/\.(txt|md|csv|json)$/i.test(file.name);
+    if(canRead){
+      var reader=new FileReader();
+      reader.onload=function(e){
+        var chunks=textToChunks(e.target.result||'', file.name, p, kbTopicIdx);
+        allChunks=allChunks.concat(chunks);
+        done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
+      };
+      reader.onerror=function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p); };
+      reader.readAsText(file,'utf-8');
+    } else {
+      allChunks.push({
+        id:'file:'+file.name+':0',
+        topic: kbTopicIdx!=null&&p.kb[kbTopicIdx] ? p.kb[kbTopicIdx].t : '上传材料',
+        tags:['上传','材料'],
+        text:'用户已上传文件「'+file.name+'」('+Math.round(file.size/1024)+'KB)，该文件包含与'+p.city+'招商研判相关的材料。',
+        cite:file.name
+      });
+      done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
+    }
+  });
+}
+
+/* 文本切 chunk — 按段落，每块约150字 */
+function textToChunks(text, fname, p, kbTopicIdx){
+  var topic=kbTopicIdx!=null&&p&&p.kb[kbTopicIdx] ? p.kb[kbTopicIdx].t : '上传材料';
+  text=text.replace(/\r\n/g,'\n').trim();
+  var paras=text.split(/\n{2,}/), chunks=[], buf='', ci=0;
+  paras.forEach(function(para){
+    para=para.trim(); if(!para) return;
+    buf+=(buf?' ':'')+para;
+    if(buf.length>=120){
+      chunks.push({id:'file:'+fname+':'+ci, topic:topic,
+        tags:topicTags(topic).concat([fname.replace(/\.[^.]+$/,''),'上传']),
+        text:buf.slice(0,300), cite:fname});
+      buf=''; ci++;
+    }
+  });
+  if(buf.trim()) chunks.push({id:'file:'+fname+':'+ci, topic:topic,
+    tags:topicTags(topic).concat(['上传']), text:buf.slice(0,300), cite:fname});
+  return chunks.slice(0,30);
+}
+
+/* 摄取完成 — 存 KB_FILE_CHUNKS，更新 kb.known，触发 RAG 摘要 */
+function finalizeIngest(chunks, files, kbTopicIdx, p){
+  if(!cur) return;
+  if(!KB_FILE_CHUNKS[cur]) KB_FILE_CHUNKS[cur]=[];
+  KB_FILE_CHUNKS[cur]=KB_FILE_CHUNKS[cur].concat(chunks);
+
+  if(!UPLOADS[cur]) UPLOADS[cur]=[];
+  files.forEach(function(f){
+    UPLOADS[cur].push({name:f.name, size:f.size, ts:Date.now(),
+      chunks:chunks.filter(function(c){return c.cite===f.name;}).length,
+      kbIdx:kbTopicIdx});
+  });
+
+  if(kbTopicIdx!=null && p.kb && p.kb[kbTopicIdx]){
+    var k=p.kb[kbTopicIdx];
+    files.forEach(function(f){
+      var entry='📎 '+f.name+' 已解析（'+chunks.filter(function(c){return c.cite===f.name;}).length+' 片段）';
+      if(k.known.indexOf(entry)<0) k.known.push(entry);
+    });
+    k.tag='已补充材料';
+    // 更新卡片标签
+    var rows=document.querySelectorAll('.topic-row');
+    if(rows[kbTopicIdx]){
+      var em=rows[kbTopicIdx].querySelector('em');
+      if(em){em.textContent='已补充材料';em.style.color='#006d70';em.style.background='#e4f5f3';}
+    }
+  }
+
+  var c=document.getElementById('kbConv'); if(!c) return;
+  var totalChunks=KB_FILE_CHUNKS[cur].length;
+  var topicLabel=kbTopicIdx!=null&&p.kb&&p.kb[kbTopicIdx] ? p.kb[kbTopicIdx].t : '城市智库';
+  var nd=document.createElement('div'); nd.className='message';
+  nd.innerHTML='<img src="'+aiAvatar()+'"><div class="message-bubble">'+
+    '<p>✅ 已摄取 <strong>'+files.length+' 个文件</strong>，提取 <strong>'+chunks.length+' 个知识片段</strong>，追加至「'+topicLabel+'」。</p>'+
+    '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">'+
+    files.map(function(f){
+      var n=chunks.filter(function(c){return c.cite===f.name;}).length;
+      return '<span style="padding:3px 10px;background:#f0fdf4;color:#166534;border-radius:12px;font-size:11.5px;border:1px solid #bbf7d0">'+f.name+' · '+n+' 片段</span>';
+    }).join('')+
+    '</div><p style="margin-top:8px;font-size:12px;color:#8492a6">知识库现有 '+totalChunks+' 个片段，提问时自动检索最相关内容。</p>'+
+    '</div>';
+  c.appendChild(nd); c.scrollTop=c.scrollHeight;
+
+  if(chunks.length>0){
+    setTimeout(function(){
+      var autoQ='根据刚才上传的材料，'+p.city+'在「'+topicLabel+'」方向有哪些关键发现？请补充分析。';
+      var qd=document.createElement('div'); qd.className='message is-user';
+      qd.innerHTML='<div class="message-bubble"><p>'+autoQ+'</p></div>';
+      c.appendChild(qd); c.scrollTop=c.scrollHeight;
+      var kHint=kbTopicIdx!=null&&p.kb ? p.kb[kbTopicIdx] : null;
+      kbRAGQueryWithHint(autoQ, c, kHint);
+    },800);
+  }
+}
+
 function kbFileParsed(fname){
   var c=$('#kbConv');if(!c)return;
   c.insertAdjacentHTML('beforeend','<div class="message is-user" style="margin-top:14px"><div class="message-bubble"><p>[已上传本地材料] '+fname+'</p></div></div>');
@@ -2492,8 +2636,15 @@ function uploadHint(){
 // 真实动作：弹系统文件夹选择文件，选完后在对话里出现「已上传文件 + 解析结果」
 function doUpload(){
   closeModal();
-  var inp=document.createElement('input');inp.type='file';inp.accept='.pdf,.doc,.docx,.xls,.xlsx,.txt';
-  inp.onchange=function(){var f=inp.files&&inp.files[0];if(f)uploadParsed(f.name);};
+  var inp=document.createElement('input');
+  inp.type='file';inp.multiple=true;
+  inp.accept='.pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.csv';
+  inp.onchange=function(){
+    var files=Array.from(inp.files||[]);
+    if(!files.length)return;
+    if(view!=='knowledge'){view='knowledge';render();}
+    setTimeout(function(){ingestFiles(files,null);},100);
+  };
   inp.click();
 }
 function uploadParsed(fname){
