@@ -416,82 +416,227 @@ function opsTopbarEmpty(){
   return '<div class="top-bar"><div class="top-brand"><div class="brand-icon">慧</div><span style="font-weight:700;font-size:15px;color:#0b183b">慧小招</span></div>'+
     '<div style="flex:1"></div><span style="font-size:12px;color:#9aa5b5">运营端</span></div>';
 }
+
+/* ===== ONBOARDING v2: 城市 → 可选上传 → 分析动画 → 工作区 ===== */
+var _setupFile=null;  // 可选上传文件
+
 function setupPage(){
-  return '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#f5f7fb">'+
-    '<div style="background:#fff;border-radius:18px;padding:44px 48px;max-width:520px;width:92%;box-shadow:0 4px 32px rgba(11,24,59,.08)">'+
-      '<div style="font-size:28px;margin-bottom:8px">慧</div>'+
-      '<h1 style="font-size:22px;font-weight:750;color:#0b183b;margin:0 0 6px">开始一个新的招商研判</h1>'+
-      '<p style="font-size:13.5px;color:#667590;margin:0 0 28px;line-height:1.7">填写城市与产业方向，AI 将基于城市智库与公开信息进行初步分析，生成研判框架供你确认与补充。</p>'+
-      '<div style="display:flex;flex-direction:column;gap:16px">'+
-        '<div>'+
-          '<label style="font-size:12px;font-weight:650;color:#556;display:block;margin-bottom:6px">城市</label>'+
-          '<input id="setupCity" placeholder="例如：随州、宿迁、濮阳" style="width:100%;padding:11px 14px;border:1.5px solid #dde3ef;border-radius:10px;font-size:14px;outline:none;box-sizing:border-box" oninput="setupValidate()" />'+
+  return '<div id="onboardingWrap" style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#f0f4ff 0%,#fafbff 60%,#f5f0ff 100%)">'+
+    '<div style="width:100%;max-width:480px;padding:0 20px">'+
+      '<div style="text-align:center;margin-bottom:40px">'+
+        '<div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;background:linear-gradient(135deg,#1a56db,#6366f1);border-radius:16px;margin-bottom:16px;box-shadow:0 8px 24px rgba(26,86,219,.25)">'+
+          '<span style="color:#fff;font-size:22px;font-weight:800;letter-spacing:-1px">慧</span>'+
         '</div>'+
-        '<div>'+
-          '<label style="font-size:12px;font-weight:650;color:#556;display:block;margin-bottom:6px">产业方向 / 补链诉求</label>'+
-          '<input id="setupTopic" placeholder="例如：氢能专用车补链、智慧应急装备、香菇深加工" style="width:100%;padding:11px 14px;border:1.5px solid #dde3ef;border-radius:10px;font-size:14px;outline:none;box-sizing:border-box" oninput="setupValidate()" />'+
+        '<h1 style="font-size:26px;font-weight:780;color:#0b183b;margin:0 0 8px;letter-spacing:-.5px">慧小招</h1>'+
+        '<p style="font-size:14px;color:#8492a6;margin:0;line-height:1.6">AI 招商研判智能体 · 输入城市即可开始</p>'+
+      '</div>'+
+      '<div style="background:#fff;border-radius:20px;padding:36px 36px 28px;box-shadow:0 2px 40px rgba(11,24,59,.07),0 0 0 1px rgba(11,24,59,.04)">'+
+        '<div style="margin-bottom:20px">'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:8px;letter-spacing:.3px">目标城市</label>'+
+          '<input id="setupCity" type="text" placeholder="输入城市名称，例如：随州" autocomplete="off" '+
+            'style="width:100%;padding:13px 16px;border:1.5px solid #e8edf5;border-radius:12px;font-size:15px;color:#0b183b;outline:none;box-sizing:border-box;transition:border .15s,box-shadow .15s" '+
+            'oninput="setupValidate()" '+
+            'onfocus="this.style.border=\'1.5px solid #1a56db\';this.style.boxShadow=\'0 0 0 3px rgba(26,86,219,.1)\'" '+
+            'onblur="this.style.border=\'1.5px solid #e8edf5\';this.style.boxShadow=\'none\'" '+
+            'onkeydown="if(event.key===\'Enter\'){var b=document.getElementById(\'setupBtn\');if(b&&b.style.pointerEvents!==\'none\')createProject();}" />'+
         '</div>'+
-        '<div>'+
-          '<label style="font-size:12px;font-weight:650;color:#556;display:block;margin-bottom:6px">联系人（可选）</label>'+
-          '<input id="setupWho" placeholder="例如：张主任、李科长" style="width:100%;padding:11px 14px;border:1.5px solid #dde3ef;border-radius:10px;font-size:14px;outline:none;box-sizing:border-box" />'+
+        '<div id="uploadZone" style="border:1.5px dashed #d1dce8;border-radius:12px;padding:16px;text-align:center;cursor:pointer;transition:all .15s;margin-bottom:20px" '+
+          'onclick="setupPickFile()" '+
+          'ondragover="event.preventDefault();this.style.background=\'#f0f4ff\';this.style.borderColor=\'#1a56db\'" '+
+          'ondragleave="this.style.background=\'\';this.style.borderColor=\'#d1dce8\'" '+
+          'ondrop="setupDropFile(event)">'+
+          '<div id="uploadLabel" style="font-size:13px;color:#8492a6;line-height:1.6">'+
+            '<span style="font-size:18px;display:block;margin-bottom:4px">📎</span>'+
+            '<span>补充材料（可选）</span><br>'+
+            '<span style="font-size:11.5px">政府工作报告、产业链图谱、园区资料 · 拖拽或点击上传</span>'+
+          '</div>'+
         '</div>'+
-        '<button id="setupBtn" class="primary-button" style="margin-top:8px;opacity:.4;pointer-events:none" onclick="createProject()">'+
-          '<i class="i">✨</i> 开始 AI 研判分析'+
+        '<input id="setupFileInput" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" style="display:none" onchange="setupFileSelected(this)" />'+
+        '<button id="setupBtn" onclick="createProject()" '+
+          'style="width:100%;padding:14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:650;cursor:pointer;opacity:.4;pointer-events:none;transition:opacity .15s,transform .1s;letter-spacing:.2px" '+
+          'onmousedown="this.style.transform=\'scale(.98)\'" onmouseup="this.style.transform=\'\'">'+
+          '开始分析 →'+
         '</button>'+
       '</div>'+
-      '<p style="font-size:11.5px;color:#9aa5b5;margin:20px 0 0;text-align:center;line-height:1.6">AI 仅做初步研判框架，产业判断需结合实际政府材料与授权信息确认</p>'+
+      '<p style="text-align:center;font-size:11.5px;color:#b0bac8;margin:20px 0 0;line-height:1.7">分析结果仅作研判参考，正式招商需结合政府授权材料确认</p>'+
     '</div>'+
   '</div>';
 }
+
 function setupValidate(){
   var city=document.getElementById('setupCity');
-  var topic=document.getElementById('setupTopic');
   var btn=document.getElementById('setupBtn');
   if(!btn)return;
-  var ok=city&&city.value.trim()&&topic&&topic.value.trim();
+  var ok=city&&city.value.trim().length>=1;
   btn.style.opacity=ok?'1':'.4';
   btn.style.pointerEvents=ok?'auto':'none';
 }
-function createProject(){
-  var city=(document.getElementById('setupCity')||{}).value.trim();
-  var topic=(document.getElementById('setupTopic')||{}).value.trim();
-  var who=(document.getElementById('setupWho')||{}).value.trim()||'负责人';
-  if(!city||!topic)return;
-  // 生成 key
-  var key='p'+Date.now().toString(36);
-  // 创建空骨架项目
-  PROJECTS[key]={
-    id:key, city:city, org:city+'市招商局', who:who, topic:topic, stage:1,
-    kb:[
-      {icon:'🏭',t:'主导产业与产业链',sub:'待分析',tag:'待补充',known:[],calls:['政府工作报告','产业链图谱']},
-      {icon:'🏢',t:'园区与承载条件',sub:'待分析',tag:'待补充',known:[],calls:['园区基础资料','载体清单']},
-      {icon:'🏗️',t:'链主与存量企业',sub:'待分析',tag:'待补充',known:[],calls:['企业名录','园区企业清单']},
-      {icon:'📜',t:'政策、规划与领导关注',sub:'待分析',tag:'待补充',known:[],calls:['政府工作报告','领导发言稿']}
-    ],
-    report:null,
-    clues:[]
-  };
-  cur=key; view='home';
-  // 加入需求池
-  DEMANDS.push({id:'d'+key,city:city,gov:city+'市招商局·'+who,topic:topic,domain:topic.replace('补链','').replace('升级','').replace('智能化',''),need:'待进一步分析',submit:'刚刚',res:'none',resLabel:'待研判',clues:0,note:'',ai:''});
-  render();
-  // 延迟触发 AI 欢迎语和初步分析
-  setTimeout(function(){
-    var p=PROJECTS[key];
-    addA('<p>好的，我来围绕 <strong>'+city+'·'+topic+'</strong> 做初步研判框架。</p>'+
-      '<p>当前城市智库尚空，我会基于你提供的方向给出需要补充的关键信息清单，以及我能从公开信息初步判断的内容。请先上传你能提供的城市材料（政府工作报告、产业链图谱、园区资料等），我来结合实际内容推进分析。</p>');
-    setTimeout(function(){
-      addA('<div class="report" style="margin-top:6px"><div class="rbody" style="padding:12px 14px;font-size:12.5px;line-height:1.9;color:#33415a">'+
-        '<b>需要你提供 / 确认的信息：</b><br>'+
-        '① <b>产业现状</b>：'+city+'目前「'+topic+'」方向的存量产值、主要企业名单<br>'+
-        '② <b>链条缺口</b>：你认为最需要补的核心环节（上游零部件/系统集成/其他）<br>'+
-        '③ <b>园区承接</b>：计划承接在哪个园区，厂房/能耗/用地有无限制<br>'+
-        '④ <b>领导关注</b>：领导近期对「'+topic+'」方向有哪些具体交办<br>'+
-        '可以直接上传材料，也可以文字告诉我以上任何一点，我来逐步填充研判内容。'+
-      '</div></div>');
-    },800);
-  },400);
+
+function setupPickFile(){
+  var inp=document.getElementById('setupFileInput');
+  if(inp)inp.click();
 }
+
+function setupFileSelected(inp){
+  var f=inp&&inp.files&&inp.files[0];
+  if(!f)return;
+  _setupFile=f;
+  var lbl=document.getElementById('uploadLabel');
+  if(lbl)lbl.innerHTML='<span style="font-size:18px;display:block;margin-bottom:4px">✅</span>'+
+    '<span style="color:#1a56db;font-weight:600">'+f.name+'</span><br>'+
+    '<span style="font-size:11.5px;color:#8492a6">点击重新选择</span>';
+  var zone=document.getElementById('uploadZone');
+  if(zone){zone.style.borderColor='#1a56db';zone.style.background='#f0f4ff';}
+}
+
+function setupDropFile(e){
+  e.preventDefault();
+  var zone=document.getElementById('uploadZone');
+  if(zone){zone.style.background='';zone.style.borderColor='#d1dce8';}
+  var f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];
+  if(!f)return;
+  _setupFile=f;
+  var lbl=document.getElementById('uploadLabel');
+  if(lbl)lbl.innerHTML='<span style="font-size:18px;display:block;margin-bottom:4px">✅</span>'+
+    '<span style="color:#1a56db;font-weight:600">'+f.name+'</span><br>'+
+    '<span style="font-size:11.5px;color:#8492a6">点击重新选择</span>';
+  if(zone){zone.style.borderColor='#1a56db';zone.style.background='#f0f4ff';}
+}
+
+/* 分析动画页面 */
+function analysisPage(city, fileName){
+  var steps=[
+    {icon:'🌐', label:'检索'+city+'城市公开信息',    dur:1400},
+    {icon:'🏭', label:'扫描主导产业与产业链结构',   dur:1600},
+    {icon:'🏢', label:'识别园区承载与链主企业',      dur:1400},
+    {icon:'📜', label:'解析政策方向与领导关注',      dur:1200},
+    {icon:'✨', label:'生成研判框架与缺口地图',      dur:1000},
+  ];
+  if(fileName){
+    steps.splice(1,0,{icon:'📎', label:'解析上传材料：'+fileName, dur:1200});
+  }
+  var rows=steps.map(function(s,i){
+    return '<div id="astep'+i+'" style="display:flex;align-items:center;gap:14px;padding:12px 0;opacity:0;transform:translateY(8px);transition:opacity .4s,transform .4s">'+
+      '<div style="width:36px;height:36px;border-radius:50%;background:#f0f4ff;display:flex;align-items:center;justify-content:center;font-size:16px;flex:0 0 auto">'+s.icon+'</div>'+
+      '<div style="flex:1">'+
+        '<div style="font-size:13.5px;color:#0b183b;font-weight:550">'+s.label+'</div>'+
+        '<div id="abar'+i+'" style="height:3px;background:#e8edf5;border-radius:2px;margin-top:6px;overflow:hidden">'+
+          '<div id="aprog'+i+'" style="height:100%;width:0%;background:linear-gradient(90deg,#1a56db,#6366f1);border-radius:2px;transition:width linear"></div>'+
+        '</div>'+
+      '</div>'+
+      '<div id="acheck'+i+'" style="font-size:16px;opacity:0;transition:opacity .3s">✓</div>'+
+    '</div>';
+  }).join('');
+
+  return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#f0f4ff 0%,#fafbff 60%,#f5f0ff 100%)">'+
+    '<div style="width:100%;max-width:480px;padding:0 20px">'+
+      '<div style="text-align:center;margin-bottom:36px">'+
+        '<div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;background:linear-gradient(135deg,#1a56db,#6366f1);border-radius:16px;margin-bottom:16px;box-shadow:0 8px 24px rgba(26,86,219,.25)">'+
+          '<span style="color:#fff;font-size:22px;font-weight:800;letter-spacing:-1px">慧</span>'+
+        '</div>'+
+        '<h2 style="font-size:20px;font-weight:720;color:#0b183b;margin:0 0 6px">正在分析'+city+'</h2>'+
+        '<p style="font-size:13px;color:#8492a6;margin:0">AI 正在构建城市智库与研判框架</p>'+
+      '</div>'+
+      '<div style="background:#fff;border-radius:20px;padding:28px 32px;box-shadow:0 2px 40px rgba(11,24,59,.07),0 0 0 1px rgba(11,24,59,.04)">'+
+        rows+
+      '</div>'+
+      '<div id="analysisDone" style="text-align:center;margin-top:24px;opacity:0;transition:opacity .5s">'+
+        '<button onclick="enterWorkspace()" style="padding:13px 40px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:650;cursor:pointer;box-shadow:0 4px 20px rgba(26,86,219,.3);letter-spacing:.2px">'+
+          '进入工作区 →'+
+        '</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+}
+
+/* 运行分析动画 */
+function runAnalysisAnim(city, fileName, stepsCount, onDone){
+  var steps=[
+    {icon:'🌐', label:'检索'+city+'城市公开信息',    dur:1400},
+    {icon:'🏭', label:'扫描主导产业与产业链结构',   dur:1600},
+    {icon:'🏢', label:'识别园区承载与链主企业',      dur:1400},
+    {icon:'📜', label:'解析政策方向与领导关注',      dur:1200},
+    {icon:'✨', label:'生成研判框架与缺口地图',      dur:1000},
+  ];
+  if(fileName){
+    steps.splice(1,0,{icon:'📎', label:'解析上传材料：'+fileName, dur:1200});
+  }
+  var idx=0;
+  function runStep(){
+    if(idx>=steps.length){
+      var done=document.getElementById('analysisDone');
+      if(done)setTimeout(function(){done.style.opacity='1';},300);
+      if(onDone)setTimeout(onDone,800);
+      return;
+    }
+    var s=steps[idx];
+    var el=document.getElementById('astep'+idx);
+    var prog=document.getElementById('aprog'+idx);
+    var check=document.getElementById('acheck'+idx);
+    if(el){el.style.opacity='1';el.style.transform='translateY(0)';}
+    if(prog){
+      prog.style.transition='width '+s.dur+'ms linear';
+      setTimeout(function(){prog.style.width='100%';},50);
+    }
+    setTimeout(function(){
+      if(check){check.style.opacity='1';check.style.color='#1a56db';}
+      idx++;
+      setTimeout(runStep, 180);
+    }, s.dur+100);
+  }
+  setTimeout(runStep, 200);
+}
+
+/* 创建项目 + 进入动画 */
+function createProject(){
+  var city=(document.getElementById('setupCity')||{}).value;
+  if(!city||!city.trim())return;
+  city=city.trim();
+  var fileName=_setupFile?_setupFile.name:null;
+
+  // 渲染分析动画页
+  var wrap=document.getElementById('onboardingWrap')||document.getElementById('root');
+  if(wrap)wrap.outerHTML='<div id="root"><div style="min-height:100vh;background:linear-gradient(135deg,#f0f4ff 0%,#fafbff 60%,#f5f0ff 100%)">'+analysisPage(city,fileName)+'</div></div>';
+
+  // 构建项目骨架
+  var key='p'+Date.now().toString(36);
+  PROJECTS[key]={
+    id:key, city:city, org:city+'市招商局', who:'负责人', topic:city+'产业链招引', stage:1,
+    kb:[
+      {icon:'🏭',t:'主导产业与产业链',sub:'分析中',tag:'AI初判',known:[],calls:['城市公开信息','产业链图谱']},
+      {icon:'🏢',t:'园区与承载条件',sub:'分析中',tag:'AI初判',known:[],calls:['园区基础资料','政府官网']},
+      {icon:'🏗️',t:'链主与存量企业',sub:'分析中',tag:'AI初判',known:[],calls:['企业名录','工商信息']},
+      {icon:'📜',t:'政策、规划与领导关注',sub:'分析中',tag:'AI初判',known:[],calls:['政府工作报告','领导发言']}
+    ],
+    report:null, clues:[]
+  };
+  cur=key;
+  DEMANDS.push({id:'d'+key,city:city,gov:city+'市招商局·负责人',topic:city+'产业链招引',domain:'待确认',need:'待分析',submit:'刚刚',res:'none',resLabel:'待研判',clues:0,note:'',ai:''});
+
+  // 启动动画，动画结束后自动进入（autoEnter=true 时跳过按钮）
+  runAnalysisAnim(city, fileName, 0, null);
+}
+
+/* 点击「进入工作区」按钮时调用 */
+function enterWorkspace(){
+  view='home';
+  render();
+  // 延迟写入 AI 首条消息
+  setTimeout(function(){
+    if(!cur||!PROJECTS[cur])return;
+    var city=PROJECTS[cur].city;
+    var hasFile=!!_setupFile;
+    addA('<p>已完成对 <strong>'+city+'</strong> 的初步信息检索'+(hasFile?'，并解析了上传的材料':'')+
+      '。城市智库框架已就位，可以开始研判了。</p>'+
+      '<p style="margin-top:6px">你可以：</p>'+
+      '<ul style="margin:6px 0 0 18px;line-height:2;font-size:13px;color:#33415a">'+
+        '<li>告诉我<strong>重点关注的产业方向</strong>（例如：汽车零部件、新能源等）</li>'+
+        '<li>直接问「<strong>'+city+'最值得补链的环节是哪些？</strong>」</li>'+
+        '<li><strong>上传政府工作报告</strong>或产业材料，提升判断精度</li>'+
+      '</ul>');
+  }, 350);
+}
+
 
 function roleSwitch(){
   // 角色切换暂时隐藏——先专注做好政府端（运营端代码保留，后续再启用）
