@@ -501,7 +501,7 @@ var DEMANDS=[];
 
 var RES_COLOR={matched:{bg:'#e4f5f3',c:'#006d70'},checking:{bg:'#ebf3fd',c:'#013582'},none:{bg:'#fff0de',c:'#a34c09'}};
 
-var role='gov';   // gov=政府端  ops=运营端
+var role='gov';   // 政府端固定，ops端在 localhost:5051
 var cur=null,view='setup',detailOpen=false,detailData=null,curKb=null,curDemand=null,curSub=null;
 // 报告版本迭代状态（每项目一份）：{ver, finalized, patches:[补充意见], edits:{结论index:新文字}}
 var REPORTSTATE={};
@@ -1174,7 +1174,7 @@ function opsTopbar(){
     '<div class="brand-block"><img src="'+brandLogo()+'"><div><strong>慧小招</strong><span>运营端 · 资源调度</span></div></div>'+
     '<div class="org-block"><i class="i">🧭</i><strong style="font-weight:650">周总 · 资源调度中心</strong>'+
       '<span style="margin:0 10px;color:#cbd7e6">/</span><strong style="color:var(--blue-dark)">全国需求池</strong></div>'+
-    roleSwitch()+
+    /* roleSwitch removed — ops runs on separate port 5051 */
     '<div class="top-meta"><span><i class="i">🏙️</i>覆盖 3 个试点城市</span><span><i class="i">📥</i>'+DEMANDS.length+' 条在办需求</span></div>'+
   '</div>';
 }
@@ -3913,6 +3913,27 @@ function clearPersist(){
   localStorage.removeItem(LS_KEY);
   toast('已清除本地存储');
 }
+
+/* 管理端写入时，政府端自动同步内存状态 */
+window.addEventListener('storage', function(e){
+  if(e.key !== LS_KEY || !e.newValue) return;
+  try{
+    var data=JSON.parse(e.newValue);
+    if(!data.PROJECTS) return;
+    // 同步关键数据（保留当前 view/cur）
+    PROJECTS=data.PROJECTS;
+    DEMANDS=data.DEMANDS||[];
+    REPORTSTATE=data.REPORTSTATE||{};
+    KB_FILE_CHUNKS=data.KB_FILE_CHUNKS||{};
+    KB_CONFIRMS=data.KB_CONFIRMS||{};
+    PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
+    DOCK_LOGS=data.DOCK_LOGS||{};
+    KB_UNLOCKED=data.KB_UNLOCKED||{};
+    // 重渲染（仅影响当前视图）
+    render();
+    console.log('[sync] 已同步管理端数据');
+  }catch(ex){ console.warn('[sync] parse error', ex); }
+});
 
 var UPLOADS={};
 var KB_FILE_CHUNKS={};
