@@ -211,6 +211,11 @@ body.ops-mode .cand-line .cl-k{color:#8490a5;font-weight:500;white-space:nowrap}
 body.ops-mode .cand-line .cl-v{color:#3a4a63}
 body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 
+/* kb-rag-styles */
+.kb-thinking-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#1a56db;animation:kbPulse 1s ease-in-out infinite;}
+@keyframes kbPulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1.2)}}
+.topic-grid .topic-row{cursor:pointer;transition:box-shadow .15s,border-color .15s;}
+.topic-grid .topic-row:hover{box-shadow:0 2px 16px rgba(26,86,219,.1);border-color:#c7d2fe;}
 </style></head><body>
 <div id="root"></div>
 <div class="toast" id="toast"><span class="i">✅</span><span id="toastMsg"></span></div>
@@ -1496,7 +1501,16 @@ function kbPage(p){
     '<button onclick="askKB(\''+P().city+'各园区如何分工承接不同细分产业？\')">园区分工承接方案</button>'+
     '<button onclick="askKB(\'本地链主企业还缺哪些关键上游配套？\')">链主缺口分析</button>'+
     '</div>'+
-    '<div id="kbConv"></div></div>'+composer()+'</div>';
+    '<div id="kbConv" style="padding:0 0 8px">'+
+      '<div class="message" style="margin-top:0"><img src="'+aiAvatar()+'">'+
+      '<div class="message-bubble"><p>'+p.city+'城市智库已就位，你可以直接提问——例如：</p>'+
+      '<ul style="margin:6px 0 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px">'+
+      '<li style="font-size:12.5px;color:#4a5568">• '+p.city+'最值得补链的核心缺口是哪些？</li>'+
+      '<li style="font-size:12.5px;color:#4a5568">• 本地链主企业还缺哪些关键上游配套？</li>'+
+      '<li style="font-size:12.5px;color:#4a5568">• 各园区如何分工承接不同细分产业？</li>'+
+      '<li style="font-size:12.5px;color:#4a5568">• 随州与十堰/荆门的竞争差异化空间在哪里？</li>'+
+      '</ul></div></div>'+
+    '</div></div>'+composer()+'</div>';
 }
 function settingsPage(p){
   return '<div class="page">'+
@@ -1888,13 +1902,305 @@ function dockPanel(){
     '</div>';
 }
 // 城市智库快捷提问（顶部"可以这样问"）→ 填入输入框，由用户点发送
-function askKB(q){fillComposer(q)}
+function askKB(q){
+  var c=document.getElementById('kbConv');
+  if(!c){fillComposer(q);return;}
+  var ud=document.createElement('div');
+  ud.className='message is-user';
+  ud.innerHTML='<div class="message-bubble"><p>'+q+'</p></div>';
+  c.appendChild(ud);c.scrollTop=c.scrollHeight;
+  kbRAGQuery(q,c);
+}
 // 把问题填进输入框并聚焦（不自动发送）
 function fillComposer(q){
   var ta=$('#composerTa');
   if(ta){ta.value=q;ta.focus();ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,120)+'px';toast('已填入输入框，点发送即可提问');}
 }
 // 统一的城市智库问答：回复对应主题 + 底部列出调用来源
+/* ══ RAG ENGINE START ══ */
+/* ══════════════════════════════════════════════════════════════
+   KB RAG ENGINE — 纯前端 BM25-style 检索 + 结构化生成
+   数据来源：慧小招2026-07实测报告（随州专项）
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── 1. 知识语料库 buildKBCorpus(city) ── */
+function buildKBCorpus(city){
+  var p=P(); var isSZ=city&&city.indexOf('随州')>=0;
+  // 每条 chunk: {id, topic, tags:[], text, cite}
+  var chunks=[];
+  if(p&&p.kb){
+    p.kb.forEach(function(k){
+      (k.known||[]).forEach(function(t,i){
+        chunks.push({id:k.t+':'+i, topic:k.t, tags:topicTags(k.t), text:t, cite:k.t});
+      });
+    });
+  }
+  // 追加竞争格局数据（随州专项）
+  if(isSZ){
+    var compChunks=[
+      {id:'comp:gdp',   topic:'竞争格局', tags:['GDP','经济','总量','对比'],
+       text:'随州2024年GDP 1442.35亿元，全省第12/13位，规上工业增速+9.9%，人均GDP 71981元',cite:'竞争格局分析'},
+      {id:'comp:sz',    topic:'竞争格局', tags:['竞争','十堰','对手','商用车'],
+       text:'十堰是最直接竞争对手：2023年汽车产业产值960亿，整车12家+零部件3167家，目标2026年破2500亿，主攻新能源商用车+高端应急装备车，正抢应急专用车赛道',cite:'竞争格局分析'},
+      {id:'comp:jm',    topic:'竞争格局', tags:['竞争','荆门','锂电','电池'],
+       text:'荆门是锂电领域碾压性对手：亿纬动力212GWh占全省50%，长城汽车整车300亿；随州不宜正面竞争锂电赛道',cite:'竞争格局分析'},
+      {id:'comp:xg',    topic:'竞争格局', tags:['竞争','孝感','应急','产业园'],
+       text:'孝感中能华中应急智能制造低碳产业园42.8亿，省唯一应急装备智造先导区，直接对标随州应急产业',cite:'竞争格局分析'},
+      {id:'comp:diff',  topic:'竞争格局', tags:['差异化','机会','氢能','低空','香菇'],
+       text:'随州差异化空间：氢能专用车(全国唯一已量产49T氢重卡)、应急软体新材料(金龙篷布全国30%)、低空经济+专汽融合、香菇/银杏农产品加工(全国唯一性)',cite:'竞争格局分析'},
+      {id:'sz:ind1',    topic:'主导产业', tags:['专用汽车','产值','规模','整车'],
+       text:'专用汽车：2025年专汽应急产业产值703亿元(+12.1%)，年产约16万辆，全国占比>10%，专汽出口+71%全省第一，资质企业97家/零部件企业220家，整体目标2026年破千亿',cite:'产业链缺口测绘报告'},
+      {id:'sz:ind2',    topic:'主导产业', tags:['新能源','配套率','缺口','外购'],
+       text:'本地配套率仅41%，远低于山东梁山65%和十堰75%+；底盘/动力总成(占整车成本50%)几乎全外购十堰潍柴/法士特/汉德；新能源占比仅3-5%(2024年新能源专车5247辆)',cite:'产业链缺口测绘报告'},
+      {id:'sz:h2',      topic:'氢能专用车', tags:['氢能','电堆','储氢','新楚风','补链'],
+       text:'氢燃料电池电堆占整车成本53%、储氢瓶占14%，两项核心系统全部外购；新楚风49T氢重卡已量产(百公里氢耗7.1kg/续航1000km)；空压机、氢气循环泵、膜电极、质子交换膜同为本地空白',cite:'产业链缺口测绘报告'},
+      {id:'sz:emg',     topic:'安全应急', tags:['应急','消防','无人机','机器人','智慧'],
+       text:'应急装备2023年总产值502亿，移动应急装备324亿；江南专汽泡沫消防车/通信指挥车600-1000万/台；博利特高空系留无人机消防车；但应急机器人依赖启灵外采、无人机依赖迅北斗外采，5G通信模块本地零布局',cite:'产业链缺口测绘报告'},
+      {id:'sz:mush',    topic:'香菇产业', tags:['香菇','精深加工','品种','提取','品源'],
+       text:'香菇2024年全产业链产值超500亿，区域品牌价值205.8亿(连续3年全国食药用菌第一)；品源"菇的辣克"2024签1亿美元+2025续签3亿美元，进沃尔玛/Costco；但菌种长期依赖国外7925/7917老品种，多糖/多肽提取仅裕国/肽源2家布局',cite:'产业链缺口测绘报告'},
+      {id:'sz:park1',   topic:'园区', tags:['高新区','国家级','园区','曾都'],
+       text:'随州高新区2015年升级国家级，拥有国字号11块，含"移动应急装备国家创新型产业集群"牌子；曾都区为国家安全应急产业示范基地',cite:'产业链缺口测绘报告'},
+      {id:'sz:park2',   topic:'园区', tags:['专汽','产业园','香菇','随县','承接'],
+       text:'30公里专汽长廊是整车/改装承载主区，已有程力/齐星等入驻；随县香菇产业园已有初加工企业入驻，精深加工GMP洁净厂房条件待核实；区位：汉十高铁至武汉50分钟/至襄阳30分钟',cite:'产业链缺口测绘报告'},
+      {id:'sz:pol1',    topic:'政策', tags:['氢能走廊','政策','省级','补贴'],
+       text:'湖北省氢能走廊：武汉-十堰-随州-襄阳沿线布局，随州以氢能专用车为主攻，专项支持方向已明确；但专项资金具体额度需向主管部门确认',cite:'政策规划研究'},
+      {id:'sz:pol2',    topic:'政策', tags:['应急示范','基地','政策','机器人'],
+       text:'曾都区国家安全应急产业示范基地政策支持智慧应急装备落地，对机器人/无人机/5G通信模块有专项引导；孝感应急产业园42.8亿为直接竞争对手，需尽快锁定差异化方向',cite:'政策规划研究'},
+      {id:'sz:pol3',    topic:'政策', tags:['香菇','农业','精深加工','政策'],
+       text:'随州将香菇精深加工与品牌化列为农业升级重点；但菌种自主研发基地、洁净厂房用地指标、首选承接园区等具体事项须向领导确认',cite:'政策规划研究'},
+    ];
+    chunks=chunks.concat(compChunks);
+  }
+  return chunks;
+}
+
+function topicTags(t){
+  if(t.indexOf('产业')>=0) return ['产业','主导','集群','链条','规模','产值'];
+  if(t.indexOf('园区')>=0) return ['园区','承接','厂房','能耗','载体','开发区'];
+  if(t.indexOf('链主')>=0||t.indexOf('企业')>=0) return ['企业','链主','配套','采购','缺口','外购'];
+  if(t.indexOf('政策')>=0) return ['政策','规划','资金','补贴','领导','交办'];
+  return [];
+}
+
+/* ── 2. BM25-style 检索 ── */
+function kbSearch(query, chunks, topK){
+  topK=topK||4;
+  // 分词：中文按字/词切割，英文按空格
+  function tokenize(s){
+    var tokens=[];
+    // 提取所有2-4字中文词组 + 数字+单位
+    var m; var re=/[\u4e00-\u9fff]{2,4}|[A-Za-z0-9]+[%亿万辆元]/g;
+    while((m=re.exec(s))!==null) tokens.push(m[0]);
+    // 单字 fallback
+    s.replace(/[\u4e00-\u9fff]/g,function(c){tokens.push(c);});
+    return tokens;
+  }
+  var qTokens=tokenize(query);
+
+  // IDF: log(N/df+1), TF: count/len
+  var N=chunks.length;
+  var df={};
+  chunks.forEach(function(c){
+    var seen={};
+    tokenize(c.text+' '+c.topic+' '+(c.tags||[]).join(' ')).forEach(function(t){
+      if(!seen[t]){df[t]=(df[t]||0)+1; seen[t]=1;}
+    });
+  });
+
+  var scored=chunks.map(function(c){
+    var doc=c.text+' '+c.topic+' '+(c.tags||[]).join(' ');
+    var docTokens=tokenize(doc);
+    var len=Math.max(docTokens.length,1);
+    var score=0;
+    qTokens.forEach(function(qt){
+      var tf=0;
+      docTokens.forEach(function(dt){ if(dt===qt||dt.indexOf(qt)>=0||qt.indexOf(dt)>=0) tf++; });
+      var idf=Math.log((N+1)/((df[qt]||0)+1));
+      // BM25 k1=1.5 b=0.75 avgdl=50
+      var bm25=(tf*(1.5+1))/(tf+1.5*(1-0.75+0.75*len/50));
+      score+=bm25*idf;
+    });
+    // boost: tag 精确匹配
+    (c.tags||[]).forEach(function(tag){
+      if(query.indexOf(tag)>=0) score+=2.5;
+    });
+    return {chunk:c, score:score};
+  });
+
+  scored.sort(function(a,b){return b.score-a.score;});
+  return scored.slice(0,topK).filter(function(x){return x.score>0;}).map(function(x){return x.chunk;});
+}
+
+/* ── 3. 结构化 Answer 生成 ── */
+function generateKBAnswer(query, chunks, city){
+  if(!chunks||!chunks.length){
+    return {
+      html:'<p>暂未找到与「'+query+'」直接相关的已知内容。建议补充政府工作报告或产业链图谱后重新提问，或切换到「研判需求」页生成完整报告。</p>',
+      cites:[], followups:[]
+    };
+  }
+
+  var isSZ=city&&city.indexOf('随州')>=0;
+  var q=query;
+
+  // ── intent 识别 ──
+  var isGap=/缺口|缺什么|缺哪|补链|外购|外采|空白/.test(q);
+  var isPark=/园区|承接|厂房|能耗|载体|开发区|高新区/.test(q);
+  var isFirm=/链主|企业|采购|配套|哪些企业|供应商/.test(q);
+  var isPol=/政策|资金|补贴|领导|规划|交办|支持/.test(q);
+  var isComp=/竞争|对手|差异化|机会|优势|十堰|荆门|孝感/.test(q);
+  var isRec=/建议|推荐|优先|应该怎么|怎么做|如何招/.test(q);
+
+  // ── 构建回答段落 ──
+  var paragraphs=[];
+  var cites=[];
+
+  // 主体：把检索到的 chunks 按 topic 分组
+  var byTopic={};
+  chunks.forEach(function(c){
+    if(!byTopic[c.topic]) byTopic[c.topic]=[];
+    byTopic[c.topic].push(c);
+    if(cites.indexOf(c.cite)<0) cites.push(c.cite);
+  });
+
+  Object.keys(byTopic).forEach(function(topic){
+    var items=byTopic[topic];
+    var bullets=items.map(function(c){
+      var isWarn=c.text.indexOf('⚠️')>=0||c.text.indexOf('待确认')>=0||c.text.indexOf('待领导')>=0;
+      return '<li style="'+(isWarn?'color:#92400e':'color:#1a202c')+'">'+
+        (isWarn?'<span style="color:#d97706;margin-right:4px">⚠</span>':
+                '<span style="color:#22c55e;margin-right:4px">•</span>')+
+        c.text.replace('⚠️ ','')+'</li>';
+    }).join('');
+    paragraphs.push(
+      '<div style="margin-bottom:14px">'+
+        '<div style="font-size:12px;font-weight:650;color:#6366f1;letter-spacing:.4px;margin-bottom:6px">'+topic.toUpperCase()+'</div>'+
+        '<ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px">'+bullets+'</ul>'+
+      '</div>'
+    );
+  });
+
+  // ── 结论段 ──
+  var conclusion='';
+  if(isGap&&isSZ){
+    conclusion='<div style="background:#f0f9ff;border-left:3px solid #1a56db;padding:10px 14px;border-radius:0 8px 8px 0;margin-top:12px;font-size:12.5px;color:#1e3a5f;line-height:1.75">'+
+      '<strong>补链优先级建议：</strong>①燃料电池电堆（整车成本53%，新楚风/程力有稳定采购需求）→②应急机器人/无人机系统（替代启灵/迅北斗外采依赖）→③香菇多糖/多肽提取（70万吨/年原料红利，就近落地降成本40%+）'+
+    '</div>';
+  } else if(isPark&&isSZ){
+    conclusion='<div style="background:#f0fdf4;border-left:3px solid #22c55e;padding:10px 14px;border-radius:0 8px 8px 0;margin-top:12px;font-size:12.5px;color:#14532d;line-height:1.75">'+
+      '<strong>承接建议：</strong>氢能专用车→专汽产业园/随州高新区；智慧应急→曾都经开区（安全应急示范基地）；香菇精深加工→随县香菇产业园（洁净厂房条件需向管委会确认）'+
+    '</div>';
+  } else if(isComp&&isSZ){
+    conclusion='<div style="background:#fffbeb;border-left:3px solid #f59e0b;padding:10px 14px;border-radius:0 8px 8px 0;margin-top:12px;font-size:12.5px;color:#78350f;line-height:1.75">'+
+      '<strong>差异化窗口：</strong>锂电/新能源乘用车让给荆门/襄阳；氢能专用车（全国唯一已量产）+低空经济+应急软体新材料+香菇（全国唯一性）是随州真正的护城河。'+
+    '</div>';
+  } else if(isRec){
+    conclusion='<div style="background:#f5f3ff;border-left:3px solid #6366f1;padding:10px 14px;border-radius:0 8px 8px 0;margin-top:12px;font-size:12.5px;color:#3730a3;line-height:1.75">'+
+      '<strong>行动建议：</strong>将以上分析转化为正式招商需求，递交资源端核验企业可达性；同时向领导确认专项资金额度与首选承接园区，形成完整对接方案。'+
+    '</div>';
+  }
+  if(conclusion) paragraphs.push(conclusion);
+
+  // ── 追问建议 ──
+  var followups=[];
+  if(isSZ){
+    if(!isGap) followups.push(city+'最值得优先补链的核心缺口是哪些？');
+    if(!isPark) followups.push('各园区如何分工承接不同细分方向？');
+    if(!isComp) followups.push('随州与十堰/荆门的竞争差异化空间在哪里？');
+    if(!isFirm) followups.push('本地链主企业还缺哪些关键上游配套？');
+  } else {
+    followups=['最值得优先补链的核心缺口是哪些？','各园区如何分工承接不同细分产业？','本地链主企业还缺哪些关键上游配套？'];
+  }
+  followups=followups.slice(0,3);
+
+  var body=paragraphs.join('');
+  var warn='<div style="margin-top:10px;padding:8px 12px;background:#f9fafb;border-radius:8px;font-size:11px;color:#9aa5b5;line-height:1.6">⚠ 以上内容基于公开信息与慧小招2026-07实测数据；园区承载、企业采购规模与领导具体交办仍需政府授权材料确认</div>';
+
+  return {html:body+warn, cites:cites, followups:followups};
+}
+
+/* ── 4. 打字机渲染 + 来源引用 + 追问按钮 ── */
+function kbAnswerRender(container, query, result, elapsed){
+  // 思考动画节点
+  var thinking=document.createElement('div');
+  thinking.className='message';
+  thinking.innerHTML='<img src="'+aiAvatar()+'"><div class="message-bubble" style="display:flex;align-items:center;gap:8px;color:#9aa5b5;font-size:13px">'+
+    '<span class="kb-thinking-dot"></span>正在检索城市智库…</div>';
+  container.appendChild(thinking);
+  container.scrollTop=container.scrollHeight;
+
+  setTimeout(function(){
+    thinking.remove();
+
+    // 来源标签
+    var citeTags=result.cites.map(function(c){
+      return '<span style="display:inline-block;padding:2px 8px;background:#f0f4ff;color:#1a56db;border-radius:12px;font-size:11px;margin:2px 3px">📌 '+c+'</span>';
+    }).join('');
+
+    // 追问按钮
+    var followHtml=result.followups.length?
+      '<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">'+
+        result.followups.map(function(f){
+          return '<button onclick="kbSendQuestion(this,\''+f.replace(/'/g,"\\'")+'\')" '+
+            'style="padding:5px 10px;background:#f5f7fb;border:1px solid #e8edf5;border-radius:20px;font-size:12px;color:#0b183b;cursor:pointer">'+f+'</button>';
+        }).join('')+
+      '</div>':'';
+
+    var statsHtml='<div style="font-size:10.5px;color:#b0bac8;margin-top:6px">'+
+      '检索到 '+result.cites.length+' 个来源 · 响应 '+elapsed+'ms</div>';
+
+    var node=document.createElement('div');
+    node.className='message';
+    node.innerHTML='<img src="'+aiAvatar()+'"><div class="message-bubble" id="kbTyping">'+
+      '<div class="kb-answer-body"></div>'+
+      (citeTags?'<div style="margin-top:8px">'+citeTags+'</div>':'')+
+      statsHtml+followHtml+
+    '</div>';
+    container.appendChild(node);
+
+    // 打字机逐字渲染
+    var body=node.querySelector('.kb-answer-body');
+    var tmp=document.createElement('div');
+    tmp.innerHTML=result.html;
+    var fullText=tmp.innerHTML;
+    var idx=0; var charsPerTick=8;
+    var timer=setInterval(function(){
+      idx=Math.min(idx+charsPerTick, fullText.length);
+      // 安全截断至最近完整标签
+      var partial=fullText.slice(0,idx);
+      var lastClose=partial.lastIndexOf('>');
+      body.innerHTML=lastClose>=0?partial.slice(0,lastClose+1):partial;
+      container.scrollTop=container.scrollHeight;
+      if(idx>=fullText.length){ clearInterval(timer); body.innerHTML=fullText; }
+    },30);
+  }, 600);
+}
+
+/* 追问按钮点击 */
+function kbSendQuestion(btn, q){
+  if(btn){ btn.style.opacity='0.5'; btn.disabled=true; }
+  var c=document.getElementById('kbConv')||document.getElementById('conv');
+  if(!c)return;
+  var ud=document.createElement('div');
+  ud.className='message is-user';
+  ud.innerHTML='<div class="message-bubble"><p>'+q+'</p></div>';
+  c.appendChild(ud); c.scrollTop=c.scrollHeight;
+  kbRAGQuery(q, c);
+}
+
+/* ── 5. 主入口：doSend 里的 knowledge 分支替换目标 ── */
+function kbRAGQuery(query, container){
+  var p=P(); if(!p) return;
+  var t0=Date.now();
+  var corpus=buildKBCorpus(p.city);
+  var chunks=kbSearch(query, corpus, 5);
+  var result=generateKBAnswer(query, chunks, p.city);
+  var elapsed=Date.now()-t0;
+  kbAnswerRender(container, query, result, elapsed);
+}
+
+/* ══ RAG ENGINE END ══ */
+
 function kbAsk(q,k){
   var c=$('#kbConv');if(!c)return;
   c.insertAdjacentHTML('beforeend','<div class="message is-user" style="margin-top:14px"><div class="message-bubble"><p>'+q+'</p></div></div>');
@@ -1977,11 +2283,15 @@ function sendMsg(){var ta=$('#composerTa');if(!ta)return;var v=ta.value.trim();i
   if(view!=='home'){view='home';render();setTimeout(function(){var t=$('#composerTa');if(t)t.value=v;doSend(v)},60);return;}
   doSend(v);ta.value='';}
 function doSend(v){
-  // 城市智库页：回答显示在 kbConv，带调用来源
+  // 城市智库页：走 RAG 检索引擎
   if(view==='knowledge'){
-    var kb=P().kb;
-    var k=/园区|开发区|承接|厂房|能耗|载体/.test(v)?kb[1]:/企业|链主|名单|采购|配套/.test(v)?kb[2]:/政策|规划|领导|报告|交办/.test(v)?kb[3]:kb[0];
-    kbAsk(v,k);return;
+    var _kbC=document.getElementById('kbConv');
+    if(!_kbC)return;
+    var _ud=document.createElement('div');
+    _ud.className='message is-user';
+    _ud.innerHTML='<div class="message-bubble"><p>'+v+'</p></div>';
+    _kbC.appendChild(_ud);_kbC.scrollTop=_kbC.scrollHeight;
+    kbRAGQuery(v,_kbC);return;
   }
   // 项目工作区：结合项目上下文自由问答，命中快捷意图则走 subReply
   if(view==='subwork'){
