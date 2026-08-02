@@ -6268,6 +6268,88 @@ function opsEntSave(){
 }
 
 /* 文件导入：读取 TXT/CSV/MD，按行解析企业名+方向 */
+/* 解析结构化表格（CSV/带表头多列）：一行一家企业 */
+function parseEntTable(text){
+  var rows=text.split(/\r?\n/).map(function(l){return l.trim();}).filter(Boolean);
+  if(!rows.length) return 0;
+  // 表头映射
+  var header=rows[0].split(/[,\t，]/).map(function(s){return s.trim();});
+  function col(names){ for(var i=0;i<header.length;i++){ for(var n=0;n<names.length;n++){ if(header[i].indexOf(names[n])>=0) return i; } } return -1; }
+  var ci={name:col(['企业名称','名称','company','name']), ind:col(['行业']), prod:col(['产品','主营']),
+    region:col(['所在地','地区','区域']), scale:col(['规模']), signal:col(['信号','扩张']),
+    src:col(['来源']), match:col(['匹配','环节','方向'])};
+  if(ci.name<0) ci.name=0;
+  var added=0;
+  for(var r=1;r<rows.length;r++){
+    var p=rows[r].split(/[,\t，]/).map(function(s){return s.trim();});
+    var name=p[ci.name]||'';
+    if(name.length<2||name.length>40) continue;
+    if(OPS_ENT.find(function(e){return e.name===name;})) continue;
+    var signal=ci.signal>=0?(p[ci.signal]||''):'';
+    var hasSig=!!signal && !/无(信号|公开)/.test(signal) && signal!=='-';
+    OPS_ENT.push({
+      id:'ent_'+Date.now().toString(36)+'_'+added,
+      name:name,
+      industry:ci.ind>=0?p[ci.ind]||'':'',
+      product:ci.prod>=0?p[ci.prod]||'':'',
+      region:ci.region>=0?p[ci.region]||'':'',
+      scale:ci.scale>=0?p[ci.scale]||'':'',
+      kind:ci.ind>=0?p[ci.ind]||'待扫描确认':'待扫描确认',
+      gap:ci.match>=0?p[ci.match]||'':'',
+      signal:hasSig?signal:'（无扩张信号）',
+      signalSrc:ci.src>=0?p[ci.src]||'':'',
+      hasMoveSignal:hasSig, status:'manual', matches:[]
+    });
+    added++;
+  }
+  return added;
+}
+
+/* 解析单个企业档案（多行 txt/md）：整个文件=一家企业，按「字段：值」提取 */
+function parseEntProfile(text, fname){
+  var lines=text.split(/\r?\n/).map(function(l){return l.trim();}).filter(Boolean);
+  function field(labels){
+    for(var i=0;i<lines.length;i++){
+      var ln=lines[i];
+      var ci=ln.indexOf('：'); if(ci<0) ci=ln.indexOf(':');
+      if(ci<=0) continue;
+      var label=ln.slice(0,ci).trim();
+      for(var j=0;j<labels.length;j++){
+        if(label===labels[j]||label.indexOf(labels[j])>=0){
+          return ln.slice(ci+1).trim().replace(/[。.\s]+$/,'');
+        }
+      }
+    }
+    return '';
+  }
+  var name=field(['企业名称','企业名','名称']);
+  if(!name){
+    var tm=text.match(/企业档案[:：]\s*([^\n（(]+)/);
+    if(tm) name=tm[1].trim();
+  }
+  if(!name){ name=(fname||'').replace(/\.(txt|md|csv)$/i,'').replace(/^企业[-_]?/,''); }
+  name=name.trim();
+  if(name.length<2) return 0;
+  if(OPS_ENT.find(function(e){return e.name===name;})) return 0;
+  var signal=field(['扩张/迁址信号','扩张信号','迁址信号','信号']);
+  var industry=field(['所属行业','行业']);
+  var product=field(['主营产品','产品']);
+  var region=field(['所在地','地区','区域']);
+  var scale=field(['规模']);
+  var src=field(['信号来源','来源']);
+  var match=field(['匹配环节','匹配','环节']);
+  var noSig=/无(任何)?(公开)?(的)?(扩张|迁址|新建)/.test(text) || /信号来源[:：]\s*无/.test(text);
+  var hasSig=!!signal && !noSig;
+  OPS_ENT.push({
+    id:'ent_'+Date.now().toString(36)+'_'+Math.floor(Math.random()*1000),
+    name:name, industry:industry, product:product, region:region, scale:scale,
+    kind:industry||'待扫描确认', gap:match,
+    signal:hasSig?signal:'（无扩张信号）', signalSrc:src,
+    hasMoveSignal:hasSig, status:'manual', matches:[]
+  });
+  return 1;
+}
+
 function opsEntImport(){
   var inp=document.createElement('input');
   inp.type='file'; inp.multiple=true;
@@ -6286,27 +6368,277 @@ function opsEntImport(){
       var reader=new FileReader();
       reader.onload=function(e){
         var text=e.target.result||'';
-        var lines=text.split(/\n/).map(function(l){return l.trim();}).filter(Boolean);
         var added=0;
-        lines.forEach(function(line){
-          // 跳过表头行
-          if(/^(企业|名称|序号|name|company)/i.test(line)) return;
-          // 解析：名称, 方向, 区域 (逗号或Tab分隔)
-          var parts=line.split(/[,\t，]+/).map(function(s){return s.trim();});
-          var name=parts[0]||'';
-          var gap =parts[1]||'';
-          var region=parts[2]||'';
-          if(name.length<2||name.length>40) return;  // 过滤噪音行
-          var exists=OPS_ENT.find(function(e){return e.name===name;});
-          if(exists) return;
-          OPS_ENT.push({
-            id:'ent_'+Date.now().toString(36)+'_'+added,
-            name:name, kind:gap||'待扫描确认', gap:gap, scale:'',
-            region:region, signal:'（文件导入，信号待补充）',
-            hasMoveSignal:false, status:'manual', matches:[]
-          });
-          added++;
+        var isCsv=/\.csv$/i.test(f.name);
+        // 判定：CSV 或 带表头的多列文本 → 结构化逐行；否则 → 整个文件=一家企业档案
+        var firstLine=(text.split(/\n/)[0]||'').trim();
+        var looksTabular=isCsv || (/[,\t，]/.test(firstLine) && /企业名称|名称|company|name/i.test(firstLine));
+        if(looksTabular){
+          added+=parseEntTable(text);
+        } else {
+          added+=parseEntProfile(text, f.name);
+        }
+        total+=added;
+        done++;
+        if(done===files.length){
+          opsTab='enterprises'; renderOpsV2();
+          toast('✓ 已导入 '+total+' 家企业，点「全局扫描」评估匹配方向');
+        }
+      };
+      reader.readAsText(f,'utf-8');
+    });
+  };
+  inp.click();
+}
+
+/* 扫描单家企业：匹配所有城市的缺口方向 */
+function opsEntScanOne(idx, silent){
+  var e=OPS_ENT[idx]; if(!e) return;
+  var matches=[];
+  var gapKw=(e.gap||e.kind||'').toLowerCase();
+  Object.keys(PROJECTS).forEach(function(k){
+    var p=PROJECTS[k];
+    var rs=REPORTSTATE[k];
+    if(!rs||!rs.text) return;
+    // 从报告文本里找 ❌缺失 行，和企业 gap 做关键词匹配
+    var gaps=[];
+    rs.text.split('\n').forEach(function(l){
+      if(l.indexOf('❌')>=0){
+        var clean=l.replace(/[❌*#|]/g,'').replace(/\s+/g,' ').trim();
+        if(clean.length>3&&clean.length<60) gaps.push(clean);
+      }
+    });
+    gaps.forEach(function(gapTxt){
+      var gapLow=gapTxt.toLowerCase();
+      // 关键词命中打分
+      var kws=(e.gap||'').toLowerCase().split(/[/、，,\s]+/).filter(Boolean);
+      var hit=kws.some(function(kw){return kw.length>1&&gapLow.indexOf(kw)>=0;});
+      if(!hit){
+        // 反向：报告缺口词出现在企业 kind 里
+        var gapWords=gapLow.split(/[/、，,\s]+/).filter(function(w){return w.length>1;});
+        hit=gapWords.some(function(w){
+          return (e.kind||'').toLowerCase().indexOf(w)>=0 ||
+                 (e.name||'').toLowerCase().indexOf(w)>=0 ||
+                 gapKw.indexOf(w)>=0;
         });
+      }
+      if(hit){
+        matches.push({projKey:k, city:p.city, gap:gapTxt.slice(0,25), pushed:false});
+      }
+    });
+  });
+  // 去重
+  var seen={};
+  matches=matches.filter(function(m){
+    var key=m.projKey+':'+m.gap;
+    if(seen[key]) return false;
+    seen[key]=true; return true;
+  }).slice(0,5);
+  OPS_ENT[idx].matches=matches;
+  OPS_ENT[idx].status=matches.length>0?'scanned':'manual';
+  if(!silent){
+    renderOpsV2();
+    toast(matches.length>0?'✓ 扫描完成，找到 '+matches.length+' 个匹配方向':'未找到匹配方向，请检查企业方向填写');
+  }
+}
+
+/* 全局扫描所有企业 */
+function opsEntScanAll(){
+  var btn=document.getElementById('scanAllBtn');
+  if(btn){btn.textContent='⏳ 扫描中…';btn.disabled=true;}
+  var count=0;
+  OPS_ENT.forEach(function(e,i){
+    opsEntScanOne(i, true);
+    count+=(e.matches||[]).length;
+  });
+  renderOpsV2();
+  toast('✓ 全局扫描完成，共找到 '+count+' 个匹配方向，可逐条推送');
+}
+
+/* 推送弹窗 */
+function opsEntPushModal(idx){
+  var e=OPS_ENT[idx]; if(!e) return;
+  var matches=(e.matches||[]).filter(function(m){return !m.pushed;});
+  if(!matches.length){toast('所有匹配方向已推送');return;}
+  var rows=matches.map(function(m,mi){
+    return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f9fafb;border-radius:10px;margin-bottom:8px">'+
+      '<input type="checkbox" id="pm-'+mi+'" checked style="width:16px;height:16px;cursor:pointer"/>'+
+      '<label for="pm-'+mi+'" style="flex:1;cursor:pointer">'+
+        '<div style="font-size:13px;font-weight:650;color:#0b183b">'+m.city+'</div>'+
+        '<div style="font-size:12px;color:#8492a6">缺口方向：'+m.gap+'</div>'+
+      '</label>'+
+    '</div>';
+  }).join('');
+  var body=
+    '<p style="font-size:13px;color:#4a5568;margin:0 0 14px">将「'+e.name+'」推送到选中的城市项目，政府端「慧小招团队推荐」区会立即出现该企业（脱敏名）。</p>'+
+    rows+
+    '<div style="padding:10px 12px;background:#fffbeb;border-radius:8px;border:1px solid #fde68a;font-size:12px;color:#92400e">'+
+    '推送后政府端可见：脱敏名称、扩张信号、匹配理由，不可见企业真实联系方式。</div>';
+  openModal('📤 推送「'+e.name.substring(0,20)+'」', body,
+    '<button class="secondary-button" onclick="closeModal()">取消</button>'+
+    '<button class="primary-button" onclick="opsEntDoPush('+idx+','+JSON.stringify(matches.map(function(m,mi){return mi;}))+')">'+'确认推送</button>');
+}
+
+function opsEntDoPush(entIdx, miArr){
+  var e=OPS_ENT[entIdx]; if(!e) return;
+  var pushed=0;
+  miArr.forEach(function(mi){
+    var chk=document.getElementById('pm-'+mi);
+    if(chk&&!chk.checked) return;
+    var m=(e.matches||[])[mi]; if(!m||m.pushed) return;
+    var p=PROJECTS[m.projKey]; if(!p) return;
+    if(!p.clues) p.clues=[];
+    // 避免重复推送
+    var exists=p.clues.find(function(c){return c.id===e.id+'_to_'+m.projKey;});
+    if(exists) return;
+    p.clues.push({
+      id: e.id+'_to_'+m.projKey,
+      name: e.name+'（脱敏）',
+      kind: e.kind, gap: m.gap.slice(0,30),
+      region: e.region||'',
+      signal: e.signal,
+      signalSrc: '慧小招管理端扫描推送',
+      reason: '系统扫描发现该企业方向与贵市「'+m.gap+'」缺口高度匹配',
+      questions:['企业落地意向与时间表','与本地链主的配套合作方案','落地规模与政策诉求'],
+      tone:'amber', status:'ops_rec',
+      priority:4, localAttr:'A', hasMoveSignal:e.hasMoveSignal,
+      addedBy:'ops_scan'
+    });
+    m.pushed=true;
+    pushed++;
+  });
+  e.status=pushed>0?'pushed':'scanned';
+  persist();
+  closeModal();
+  renderOpsV2();
+  toast('✓ 已推送至 '+pushed+' 个城市，政府端「慧小招团队推荐」区即时更新');
+}
+
+/* 删除企业 */
+function opsEntDelete(idx){
+  if(!confirm('确认删除该企业？')) return;
+  OPS_ENT.splice(idx,1);
+  renderOpsV2();
+  toast('已删除');
+}
+
+/* 推送到指定城市（从城市概览页触发）*/
+function opsPushEntToCity(projKey){
+  var available=OPS_ENT.filter(function(e){return (e.matches||[]).some(function(m){return m.projKey===projKey&&!m.pushed;});});
+  if(!available.length){
+    toast('暂无未推送的匹配企业，请先在「企业资源库」录入企业并扫描');
+    return;
+  }
+  var p=PROJECTS[projKey];
+  var rows=available.map(function(e,ei){
+    var m=(e.matches||[]).find(function(m){return m.projKey===projKey;});
+    return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f9fafb;border-radius:10px;margin-bottom:8px">'+
+      '<input type="checkbox" id="ptc-'+ei+'" checked style="width:16px;height:16px;cursor:pointer"/>'+
+      '<label for="ptc-'+ei+'" style="flex:1;cursor:pointer">'+
+        '<div style="font-size:13px;font-weight:650;color:#0b183b">'+e.name+'</div>'+
+        '<div style="font-size:12px;color:#8492a6">'+(m?'缺口方向：'+m.gap:e.kind)+'</div>'+
+      '</label>'+
+    '</div>';
+  }).join('');
+  var body='<p style="font-size:13px;color:#4a5568;margin:0 0 14px">将以下企业推送到「'+p.city+'·'+p.topic.substring(0,15)+'」：</p>'+rows;
+  openModal('📤 推送企业到 '+p.city, body,
+    '<button class="secondary-button" onclick="closeModal()">取消</button>'+
+    '<button class="primary-button" onclick="opsDoPushToCity(\''+projKey+'\','+available.length+')">确认推送</button>');
+}
+
+function opsDoPushToCity(projKey, count){
+  var p=PROJECTS[projKey]; if(!p) return;
+  if(!p.clues) p.clues=[];
+  var pushed=0;
+  OPS_ENT.forEach(function(e,ei){
+    var chk=document.getElementById('ptc-'+ei);
+    if(chk&&!chk.checked) return;
+    var m=(e.matches||[]).find(function(m){return m.projKey===projKey;});
+    if(!m||m.pushed) return;
+    var exists=p.clues.find(function(c){return c.id===e.id+'_to_'+projKey;});
+    if(exists) return;
+    p.clues.push({
+      id:e.id+'_to_'+projKey, name:e.name+'（脱敏）',
+      kind:e.kind, gap:(m?m.gap:e.gap||e.kind).slice(0,30),
+      region:e.region||'', signal:e.signal,
+      signalSrc:'慧小招管理端推送', tone:'amber', status:'ops_rec',
+      reason:'系统扫描发现该企业与贵市缺口高度匹配',
+      questions:['落地意向与时间表','与本地链主配套方案','政策诉求'],
+      priority:4, localAttr:'A', hasMoveSignal:e.hasMoveSignal, addedBy:'ops_scan'
+    });
+    m.pushed=true; pushed++;
+  });
+  persist();
+  closeModal();
+  renderOpsV2();
+  toast('✓ 已推送 '+pushed+' 家企业到「'+p.city+'」，政府端即时更新');
+}
+</script>
+</body>
+</html>));
+        if(m) return m[1].trim().replace(/[。.\s]+$/,'');
+      }
+    }
+    return '';
+  }
+  // 企业名：优先「企业档案：X」「企业名称：X」标题，否则用文件名
+  var name=field(['企业名称','企业名','名称']);
+  if(!name){
+    var tm=text.match(/企业档案[:：]\s*([^\n（(]+)/);
+    if(tm) name=tm[1].trim();
+  }
+  if(!name){ name=(fname||'').replace(/\.(txt|md|csv)$/i,'').replace(/^企业[-_]?/,''); }
+  name=name.trim();
+  if(name.length<2) return 0;
+  if(OPS_ENT.find(function(e){return e.name===name;})) return 0;
+  var signal=field(['扩张/迁址信号','扩张信号','迁址信号','信号']);
+  var industry=field(['所属行业','行业']);
+  var product=field(['主营产品','产品']);
+  var region=field(['所在地','地区','区域']);
+  var scale=field(['规模']);
+  var src=field(['信号来源','来源']);
+  var match=field(['匹配环节','匹配','环节']);
+  // 判定是否有扩张信号：档案里明确“无信号/无扩张”则 false
+  var noSig=/无(任何)?(公开)?(的)?(扩张|迁址|新建)/.test(text) || /信号来源[:：]\s*无/.test(text) || /扩张\/迁址信号[\s\S]{0,20}无/.test(text);
+  var hasSig=!!signal && !noSig;
+  OPS_ENT.push({
+    id:'ent_'+Date.now().toString(36)+'_'+Math.floor(Math.random()*1000),
+    name:name, industry:industry, product:product, region:region, scale:scale,
+    kind:industry||'待扫描确认', gap:match,
+    signal:hasSig?signal:'（无扩张信号）', signalSrc:src,
+    hasMoveSignal:hasSig, status:'manual', matches:[]
+  });
+  return 1;
+}
+
+function opsEntImport(){
+  var inp=document.createElement('input');
+  inp.type='file'; inp.multiple=true;
+  inp.accept='.txt,.csv,.md,.xlsx,.xls';
+  inp.onchange=function(){
+    var files=Array.from(inp.files||[]);
+    if(!files.length)return;
+    var total=0;
+    var done=0;
+    files.forEach(function(f){
+      if(/\.(xlsx|xls)$/i.test(f.name)){
+        // Excel: 只记录文件名提示，提醒用另存为 CSV
+        toast('请将 '+f.name+' 另存为 CSV 格式后重新导入');
+        done++; return;
+      }
+      var reader=new FileReader();
+      reader.onload=function(e){
+        var text=e.target.result||'';
+        var added=0;
+        var isCsv=/\.csv$/i.test(f.name);
+        // 判定：CSV 或 带表头的多列文本 → 结构化逐行；否则 → 整个文件=一家企业档案
+        var firstLine=(text.split(/\n/)[0]||'').trim();
+        var looksTabular=isCsv || (/[,\t，]/.test(firstLine) && /企业名称|名称|company|name/i.test(firstLine));
+        if(looksTabular){
+          added+=parseEntTable(text);
+        } else {
+          added+=parseEntProfile(text, f.name);
+        }
         total+=added;
         done++;
         if(done===files.length){
