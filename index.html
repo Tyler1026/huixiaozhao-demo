@@ -1721,6 +1721,23 @@ function projMgmtPage(p){
         '</div>';
       }
 
+      // stage=2 引导：前往研判需求生成本方向报告
+      var stageGuide = '';
+      if(x.stage===2){
+        stageGuide=
+          '<div style="margin-bottom:16px;padding:14px 16px;background:linear-gradient(135deg,#eff6ff,#f0f9ff);border:1.5px solid #bfdbfe;border-radius:12px">'+
+            '<div style="display:flex;align-items:center;gap:10px">'+
+              '<span style="font-size:24px">🎯</span>'+
+              '<div style="flex:1">'+
+                '<div style="font-size:13.5px;font-weight:700;color:#1d4ed8;margin-bottom:3px">下一步：生成「'+x.topic+'」研判报告</div>'+
+                '<div style="font-size:12px;color:#4a5568;line-height:1.6">前往研判需求页，选择「'+x.topic+'」方向，生成产业链缺口分析与候选企业线索。</div>'+
+              '</div>'+
+              '<button onclick="(function(){cur=\''+k+'\';view=\'report\';render();})()" '+
+                'style="padding:9px 18px;background:#1a56db;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer;white-space:nowrap;flex-shrink:0">'+
+                '前往研判 →</button>'+
+            '</div>'+
+          '</div>';
+      }
       // 线索列表
       var cluesList = '<div>'+
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'+
@@ -1748,6 +1765,7 @@ function projMgmtPage(p){
 
       expandedContent = '<div style="padding:0 16px 16px">'+
         stageBar+
+        stageGuide+
         reportHist+
         cluesList+
       '</div>';
@@ -2399,6 +2417,12 @@ function importToProject(gap, city, topic){
     } : null,
     clues:[]
   };
+  // 把父项目的报告复制给新项目（让研判需求页可以直接使用）
+  if(cur && REPORTSTATE[cur] && !REPORTSTATE[key]){
+    REPORTSTATE[key]=JSON.parse(JSON.stringify(REPORTSTATE[cur]));
+    REPORTSTATE[key].topic=gap;  // 更新 topic 为新方向
+    REPORTSTATE[key].phase=1;    // 标记为草稿，需重新生成
+  }
   // 不切换 cur — 保留当前研判页所有状态
   persist();
   // 弹出确认浮层，让用户主动跳转
@@ -2667,9 +2691,11 @@ function submitDemand(){
     submit:'刚刚', res:'none', resLabel:'待研判', clues:0,
     note:rs.text?rs.text.slice(0,120)+'…':'', ai:''
   });
-  p.stage=Math.max(p.stage,3); // 推进到「确认需求」阶段
+  p.stage=Math.max(p.stage,3);
+  // 立即派生线索（如果有报告）
+  deriveCluesFromReport(cur);
   persist();
-  toast('✓ 招引需求已提交到管理端需求池');
+  toast('✓ 招引需求已提交，候选线索已自动派生');
 }
 
 // REPORTSTATE: 存储已生成的报告
