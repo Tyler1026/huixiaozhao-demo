@@ -1613,21 +1613,136 @@ function renderComposer(){
   bind();
 }
 
-function homePage(p){
-  return '<div class="page">'+
-    '<div style="display:flex;align-items:center;gap:10px;padding:10px 22px 0"><div style="flex:1"></div>'+
-      '<button class="ghost-button" onclick="openHistory()"><i class="i">🗂️</i>历史报告 / 材料</button></div>'+
-    ctxBar('📝','研判需求 · '+p.city,p.topic)+
-    '<div class="conversation-scroll" id="conv">'+
-      '<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble">'+
-        '<p>'+p.who+'，当前研判方向：<strong>'+p.topic+'</strong>。城市智库已就位，随时可以提问或上传材料。</p>'+
+/* topic helpers */
+function editTopic(){
+  var d=document.getElementById('topicDisplay');
+  var e=document.getElementById('topicEdit');
+  var inp=document.getElementById('topicInput');
+  if(d)d.style.display='none';
+  if(e)e.style.display='block';
+  if(inp){inp.focus();inp.select();}
+}
+function saveTopic(){
+  var inp=document.getElementById('topicInput');
+  var t=inp&&inp.value.trim();
+  if(!t)return;
+  var p=P();if(!p)return;
+  p.topic=t; persist();
+  var txt=document.getElementById('topicText');
+  if(txt)txt.textContent=t;
+  cancelTopicEdit();
+  toast('\u2713 \u7814\u5224\u65b9\u5411\u5df2\u66f4\u65b0\u4e3a\u300c'+t+'\u300d');
+}
+function cancelTopicEdit(){
+  var d=document.getElementById('topicDisplay');
+  var e=document.getElementById('topicEdit');
+  if(d)d.style.display='flex';
+  if(e)e.style.display='none';
+}
 
-        '<p>如需精准分析，建议补充：政府工作报告、领导近期产业发言或园区承接材料，可进一步提升判断完整度。</p></div></div>'+
+function homePage(p){
+  var r=kbReadiness();
+  var contrastBar=
+    '<div style="margin:0 0 16px;border-radius:14px;overflow:hidden;border:1.5px solid #e8edf5">'+
+      '<div style="display:grid;grid-template-columns:1fr 1px 1fr">'+
+        '<div style="padding:16px 18px;background:#f8faff">'+
+          '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">'+
+            '<span style="font-size:16px">\U0001f4da</span>'+
+            '<span style="font-size:12px;font-weight:700;color:#1a56db;letter-spacing:.3px">\u57ce\u5e02\u667a\u5e93</span>'+
+            '<span style="margin-left:auto;font-size:11px;color:#22c55e;font-weight:600">'+r.score+'%</span>'+
+          '</div>'+
+          '<div style="font-size:12px;color:#4a5568;line-height:1.7">'+
+            '<div style="margin-bottom:4px">\U0001f4cd <strong>\u63cf\u8ff0\u4e8b\u5b9e</strong>\uff1a\u8fd9\u4e2a\u57ce\u5e02\u6709\u4ec0\u4e48</div>'+
+            '<div style="margin-bottom:4px;color:#8492a6">\u4ea7\u4e1a\u96c6\u7fa4\u00b7\u94fe\u4e3b\u4f01\u4e1a\u00b7\u56ed\u533a\u6761\u4ef6\u00b7\u653f\u7b56\u65b9\u5411</div>'+
+            '<div style="font-size:11px;color:#9aa5b5;margin-top:6px;border-top:1px solid #e8edf5;padding-top:6px">'+
+              r.confirmed+'/'+r.total+' \u6761\u5df2\u786e\u8ba4'+
+              (r.files>0?' \u00b7 '+r.files+'\u4efd\u6750\u6599':' \u00b7 \u5f85\u4e0a\u4f20\u6750\u6599')+
+            '</div>'+
+          '</div>'+
+        '</div>'+
+        '<div style="background:#e8edf5"></div>'+
+        '<div style="padding:16px 18px;background:#fffbf5">'+
+          '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">'+
+            '<span style="font-size:16px">\U0001f3af</span>'+
+            '<span style="font-size:12px;font-weight:700;color:#d97706;letter-spacing:.3px">\u7814\u5224\u9700\u6c42</span>'+
+            '<span style="margin-left:auto;font-size:11px;color:'+(r.score>=80?'#22c55e':'#f59e0b')+';font-weight:600">'+
+              (r.score>=80?'\u53ef\u9760':'\u6570\u636e\u5f85\u8865\u5145')+
+            '</span>'+
+          '</div>'+
+          '<div style="font-size:12px;color:#4a5568;line-height:1.7">'+
+            '<div style="margin-bottom:4px">\U0001f50d <strong>\u7ed9\u51fa\u5224\u65ad</strong>\uff1a\u8fd9\u4e2a\u57ce\u5e02\u7f3a\u4ec0\u4e48</div>'+
+            '<div style="margin-bottom:4px;color:#8492a6">\u4ea7\u4e1a\u94fe\u7f3a\u53e3\u00b7\u62db\u5f15\u65b9\u5411\u00b7\u76ee\u6807\u4f01\u4e1a\u753b\u50cf</div>'+
+            '<div style="font-size:11px;color:#9aa5b5;margin-top:6px;border-top:1px solid #fde68a;padding-top:6px">'+
+              '\u4ece\u57ce\u5e02\u667a\u5e93\u7ee7\u627f'+r.score+'%\u6570\u636e'+
+              (r.score<80?' \u00b7 \u5efa\u8bae\u5148\u5b8c\u5584\u57ce\u5e02\u667a\u5e93':' \u00b7 \u53ef\u5f00\u59cb\u7814\u5224')+
+            '</div>'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+      '<div style="background:#f5f7fb;padding:8px 18px;display:flex;align-items:center;gap:6px;font-size:11.5px;color:#667590">'+
+        '<span style="color:#1a56db">\U0001f4da \u57ce\u5e02\u667a\u5e93</span><span>\u2500\u2500</span>'+
+        '<span style="color:#9aa5b5">\u8f93\u5165</span><span>\u2500\u2500\u2192</span>'+
+        '<span style="color:#d97706">\U0001f3af \u7814\u5224\u9700\u6c42</span>'+
+        '<span style="margin-left:auto;color:'+(r.score>=80?'#22c55e':'#f59e0b')+'">'+
+          (r.score>=80?'\u2713 \u6570\u636e\u5df2\u5c31\u7eea\uff0c\u53ef\u76f4\u63a5\u751f\u6210\u7814\u5224':'\u26a1 \u57ce\u5e02\u667a\u5e93\u5b8c\u6210\u5ea6 '+r.score+'%\uff0c\u7814\u5224\u7ed3\u8bba\u7f6e\u4fe1\u5ea6\u8f83\u4f4e')+
+        '</span>'+
+      '</div>'+
+    '</div>';
+
+  var topicSelector=
+    '<div style="margin-bottom:16px;padding:14px 16px;background:#fff;border:1.5px solid #e8edf5;border-radius:12px">'+
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'+
+        '<span style="font-size:12px;font-weight:650;color:#4a5568">\u7814\u5224\u65b9\u5411</span>'+
+        '<span style="font-size:11px;color:#9aa5b5">\u00b7 \u51b3\u5b9a\u672c\u6b21\u62db\u5f15\u7684\u6838\u5fc3\u805a\u7126\u70b9</span>'+
+      '</div>'+
+      '<div id="topicDisplay" style="display:flex;align-items:center;gap:8px">'+
+        '<span id="topicText" style="font-size:14px;font-weight:700;color:#0b183b">'+p.topic+'</span>'+
+        '<button onclick="editTopic()" style="padding:3px 10px;background:#f0f4ff;border:1.5px solid #bfdbfe;border-radius:20px;font-size:11.5px;color:#1d4ed8;cursor:pointer">\u270e \u4fee\u6539</button>'+
+      '</div>'+
+      '<div id="topicEdit" style="display:none">'+
+        '<input id="topicInput" value="'+p.topic+'" '+
+          'style="width:100%;padding:8px 12px;border:1.5px solid #6366f1;border-radius:8px;font-size:14px;color:#0b183b;box-sizing:border-box;outline:none" '+
+          'onkeydown="if(event.key===\'Enter\')saveTopic()" />'+
+        '<div style="display:flex;gap:8px;margin-top:8px">'+
+          '<button onclick="saveTopic()" style="flex:1;padding:7px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer">\u786e\u8ba4\u65b9\u5411</button>'+
+          '<button onclick="cancelTopicEdit()" style="padding:7px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;color:#4a5568;cursor:pointer">\u53d6\u6d88</button>'+
+        '</div>'+
+        '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">'+
+          ['\u6c22\u80fd\u4e13\u7528\u8f66\u8865\u94fe','\u667a\u6167\u5e94\u6025\u88c5\u5907\u8865\u94fe','\u9999\u83c7\u6df1\u52a0\u5de5\u8865\u94fe','\u65b0\u80fd\u6e90\u96f6\u90e8\u4ef6\u914d\u5957','\u9ad8\u7aef\u88c5\u5907\u5236\u9020\u8865\u94fe'].map(function(t){
+            return '<button onclick="document.getElementById(\'topicInput\').value=\''+t+'\'" '+
+              'style="padding:3px 10px;background:#f8faff;border:1.5px solid #e8edf5;border-radius:20px;font-size:11.5px;color:#4a5568;cursor:pointer">'+t+'</button>';
+          }).join('')+
+        '</div>'+
+      '</div>'+
+    '</div>';
+
+  return '<div class="page">'+
+    '<div style="padding:10px 22px 0;display:flex;align-items:center;gap:8px">'+
+      '<span style="font-size:12px;font-weight:650;color:#4a5568">'+p.city+' \u00b7 \u7814\u5224\u9700\u6c42</span>'+
+      '<span style="font-size:11px;color:#9aa5b5">\u57ce\u5e02\u667a\u5e93\u5b8c\u6210\u5ea6 '+r.score+'%</span>'+
+      '<div style="flex:1"></div>'+
+      '<button class="ghost-button" onclick="openHistory()"><i class="i">\U0001f5c2</i>\u5386\u53f2\u62a5\u544a</button>'+
+    '</div>'+
+    '<div class="conversation-scroll" id="conv">'+
+      contrastBar+
+      topicSelector+
+      '<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble">'+
+        '<p>'+p.who+'\uff0c\u7814\u5224\u65b9\u5411\u5df2\u8bbe\u4e3a\u300c<strong>'+p.topic+'</strong>\u300d\u3002</p>'+
+        '<p style="margin-top:6px;font-size:12.5px;color:#4a5568">'+
+          '\u4ece\u57ce\u5e02\u667a\u5e93\u7ee7\u627f\u4e86 <strong>'+r.confirmed+'</strong> \u6761\u5df2\u786e\u8ba4\u7ed3\u8bba'+
+          (r.files>0?'\u548c <strong>'+r.files+'</strong> \u4efd\u4e0a\u4f20\u6750\u6599':'')+
+          '\uff0c\u7814\u5224\u7f6e\u4fe1\u5ea6 <strong style="color:'+(r.score>=80?'#22c55e':'#f59e0b')+'">'+r.score+'%</strong>\u3002'+
+          (r.score<80?'\u5efa\u8bae\u5148\u56de\u57ce\u5e02\u667a\u5e93\u8865\u5145\u66f4\u591a\u6750\u6599\uff0c\u4ee5\u63d0\u9ad8\u5206\u6790\u53ef\u9760\u6027\u3002':'\u53ef\u4ee5\u76f4\u63a5\u5f00\u59cb\u751f\u6210\u7814\u5224\u62a5\u544a\u3002')+
+        '</p>'+
+      '</div></div>'+
       '<div class="prompt-list">'+
-        promptRow('📊','直接查看研判报告','随州三大产业方向已预置完整报告（氢能/应急/香菇）',"showReport()")+
-        promptRow('🎯','从产业方向开始研判','围绕随州氢能专用车/智慧应急/香菇深加工，分析上下游缺口',"startFlow('direction')")+
-        promptRow('📎','上传城市材料补充研判','政府工作报告、领导发言稿、产业及园区报告',"doUpload()")+
-        promptRow('🔍','核验候选企业',P().city+'·'+P().topic+'方向候选企业可达性评估',"startFlow('verify')")+
+        (r.score>=80
+          ? promptRow('\U0001f4ca','\u751f\u6210\u5b8c\u6574\u7814\u5224\u62a5\u544a','\u57fa\u4e8e\u57ce\u5e02\u667a\u5e93\u6570\u636e\uff0c\u8f93\u51fa\u4ea7\u4e1a\u7f3a\u53e3\u4e0e\u62db\u5f15\u65b9\u5411','showReport()')
+          : promptRow('\u26a1','\u5148\u5b8c\u5584\u57ce\u5e02\u667a\u5e93','\u6570\u636e\u7f6e\u4fe1\u5ea6'+r.score+'%\uff0c\u5efa\u8bae\u5148\u786e\u8ba4\u66f4\u591a\u7ed3\u8bba','\'go(\\\'knowledge\\\')\'  ')
+        )+
+        promptRow('\U0001f3af','\u4ece\u4ea7\u4e1a\u7f3a\u53e3\u5207\u5165\u7814\u5224','\u5206\u6790\u300c'+p.topic+'\u300d\u7684\u4e0a\u4e0b\u6e38\u94fe\u6761\u7f3a\u53e3','\'startFlow(\\\'direction\\\')\'' )+
+        promptRow('\U0001f4ce','\u4e0a\u4f20\u653f\u5e9c\u6750\u6599','\u5de5\u4f5c\u62a5\u544a/\u4ea7\u4e1a\u89c4\u5212/\u56ed\u533a\u8d44\u6599\u63d0\u5347\u7f6e\u4fe1\u5ea6','doUpload()')+
+        promptRow('\U0001f50d','\u6838\u9a8c\u5019\u9009\u4f01\u4e1a',p.city+'\u00b7'+p.topic+'\u65b9\u5411\u4f01\u4e1a\u53ef\u8fbe\u6027\u8bc4\u4f30','\'startFlow(\\\'verify\\\')\'' )+
       '</div>'+
     '</div>'+composer()+'</div>';
 }
