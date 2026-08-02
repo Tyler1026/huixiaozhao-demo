@@ -1255,7 +1255,7 @@ function sidebar(){
     '<div class="system-status"><span></span>系统运行正常</div></div>';
 }
 function progressFooter(p){
-  if(!cur||!PROJECTS[cur])return '';
+  p=p||P(); if(!cur||!PROJECTS[cur]||!p||!p.stage)return '';
   return '<div class="progress-footer"><div class="progress-track">'+
     STAGES.map(function(s,si){var n=si+1;var cls=n<p.stage?' done':n===p.stage?' current':'';
       var sv=[null,'report','home','docking',null][si];
@@ -2980,19 +2980,27 @@ function detailSub(s){
 }
 // 研判需求页 → 右侧：本次研判（版本/进度/待核实/已传材料）
 function detailReport(p){
-  var st=REPORTSTATE[cur];var ups=(UPLOADS[cur]||[]);
-  var r=p.report;
-  var chks=r?r.sections.filter(function(s){return s.chk}).map(function(s){return s.chk}):[];
+  var st=REPORTSTATE[cur]; var ups=(UPLOADS[cur]||[]);
   return '<div class="detail-header"><div><span class="eyebrow">CURRENT STUDY</span><h2>本次研判</h2><p>'+p.topic+'</p></div></div>'+
     '<div class="detail-scroll">'+
-      '<div class="detail-block"><h3>报告状态</h3>'+(st?
-        '<ul class="check-list"><li><i class="i">'+(st.finalized?'✅':'✎')+'</i>当前版本 v'+st.ver+(st.finalized?'（已定稿）':'（草稿，可继续优化）')+'</li>'+
-        (st.patches.length?'<li><i class="i">🔄</i>已迭代 '+st.patches.length+' 次</li>':'')+'</ul>':
-        '<div class="info-callout" style="margin-top:0">尚未生成报告。在中间描述产业方向或上传材料即可生成。</div>')+'</div>'+
-      '<div class="detail-block"><h3>当前阶段</h3><div class="info-callout" style="margin-top:0">'+STAGES[p.stage-1][0]+' · '+STAGES[p.stage-1][1]+'</div></div>'+
-      (chks.length?'<div class="detail-block"><h3>待核实事项</h3><ul class="check-list">'+chks.map(function(c){return '<li style="color:#a34c09"><i class="i">⚠</i>'+c+'</li>'}).join('')+'</ul></div>':'')+
-      '<div class="detail-block"><h3>已上传材料</h3>'+(ups.length?('<ul class="source-list">'+ups.map(function(u){return '<li><i class="i">📎</i>'+u.name+'<small>'+u.at+'</small></li>'}).join('')+'</ul>'):'<div class="info-callout" style="margin-top:0">暂无。可上传政府工作报告、领导发言等补充研判。</div>')+'</div>'+
-      '<div class="detail-block"><div class="boundary-note" style="margin-top:0"><i class="i">🔒</i>报告为AI辅助草稿，关键判断需人工确认；定稿后方可递交。</div></div>'+
+      '<div class="detail-block"><h3>报告状态</h3>'+(st
+        ? '<ul class="check-list">'+
+            '<li><i class="i">'+(st.phase===2?'✅':'✎')+'</i>'+(st.phase===2?'完整报告已生成':'初步草稿')+' · 置信度 '+st.score+'%</li>'+
+            '<li><i class="i"></i>研判方向：'+st.topic+'</li>'+
+            '<li><i class="i"></i>生成时间：'+new Date(st.ts).toLocaleDateString('zh-CN')+'</li>'+
+          '</ul>'
+        : '<div class="info-callout" style="margin-top:0">尚未生成报告。请先在「研判需求」选择方向并点击生成。</div>'      )+'</div>'+
+      '<div class="detail-block"><h3>当前阶段</h3>'+
+        '<div class="info-callout" style="margin-top:0">'+(STAGES[p.stage-1]?STAGES[p.stage-1][0]:'未知')+' · '+(STAGES[p.stage-1]?STAGES[p.stage-1][1]:'')+'</div>'+
+      '</div>'+
+      '<div class="detail-block"><h3>已上传材料</h3>'+(ups.length
+        ? '<ul class="source-list">'+ups.map(function(u){return '<li><i class="i"></i>'+u.name+'<small style="color:#9aa5b5;margin-left:6px">'+Math.round(u.size/1024)+'KB</small></li>';}).join('')+'</ul>'
+        : '<div style="font-size:12.5px;color:#9aa5b5">暂无上传材料</div>'      )+'</div>'+
+      (st&&st.phase===2
+        ? '<div class="detail-block"><button onclick="go(\'report\')" style="width:100%;padding:9px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer;font-weight:600">查看完整报告</button></div>'
+        : ''
+      )+
+      '<div class="detail-block"><div class="boundary-note" style="margin-top:0"><i class="i">ℹ</i>报告为AI辅助草稿，关键判断需人工确认；定稿后正式递交。</div></div>'+
     '</div>';
 }
 // 政企对接页 → 右侧：对接概览
