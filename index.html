@@ -1645,117 +1645,294 @@ function cancelTopicEdit(){
   if(e)e.style.display='none';
 }
 
+/* ── 研判需求页辅助函数 ── */
+
+// 选择研判方向（卡片点击 or 自定义输入）
+function selectTopic(val, isCustom){
+  var p=P(); if(!p||!val.trim()) return;
+  p.topic=val.trim();
+  persist();
+  // 刷新方向 badge
+  var badge=document.getElementById('currentTopicBadge');
+  if(badge) badge.textContent=p.topic;
+  // 如果是卡片点击，清空自定义输入框
+  if(!isCustom){
+    var inp=document.getElementById('topicCustomInput');
+    if(inp) inp.value='';
+  }
+  // 刷新卡片高亮（重新渲染方向卡）
+  var cards=document.querySelectorAll('.report-topic-card');
+  cards.forEach(function(c){
+    var isActive=c.getAttribute('data-topic')===p.topic;
+    c.style.border='2px solid '+(isActive?'#1a56db':'#e8edf5');
+    c.style.background=isActive?'linear-gradient(135deg,#eff6ff,#f0f9ff)':'#fff';
+  });
+}
+
+// 触发生成报告
+function triggerReport(){
+  var p=P(); if(!p) return;
+  // 保存自定义输入（如果有）
+  var inp=document.getElementById('topicCustomInput');
+  if(inp&&inp.value.trim()) p.topic=inp.value.trim();
+  persist();
+
+  var area=document.getElementById('reportArea');
+  if(!area) return;
+
+  // 加载动画
+  area.innerHTML=
+    '<div style="padding:32px 0;text-align:center">'+
+      '<div style="display:inline-flex;flex-direction:column;gap:12px;align-items:center">'+
+        '<div id="reportSpinner" style="width:32px;height:32px;border:3px solid #e8edf5;border-top-color:#1a56db;border-radius:50%;animation:spin 1s linear infinite"></div>'+
+        '<div style="font-size:13px;color:#8492a6" id="reportStatusTxt">正在分析「'+p.topic+'」产业链缺口…</div>'+
+      '</div>'+
+    '</div>';
+  if(!document.getElementById('spinStyle')){
+    var s=document.createElement('style'); s.id='spinStyle';
+    s.textContent='@keyframes spin{to{transform:rotate(360deg)}}';
+    document.head.appendChild(s);
+  }
+
+  // 用 kbRAGQuery 生成报告内容
+  var r=kbReadiness();
+  var corpus=buildKBCorpus(p.city);
+  var query='请基于'+p.city+'城市智库数据，针对「'+p.topic+'」方向，输出：①产业链核心缺口（具体数据支撑）②优先招引环节排序 ③目标企业画像 ④可靠性不足的待确认事项';
+  var chunks=kbSearch(query, corpus, 7);
+
+  // 直接调 DeepSeek 生成
+  var t0=Date.now();
+  var accText='';
+
+  // 先把气泡容器设好
+  area.innerHTML=
+    '<div style="border-radius:14px;border:1.5px solid #e8edf5;overflow:hidden;margin-bottom:8px">'+
+      '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
+        '<span style="font-size:12px;font-weight:650;color:#1a56db">📋 研判报告</span>'+
+        '<span style="font-size:11px;color:#9aa5b5">·</span>'+
+        '<span style="font-size:11.5px;color:#4a5568">'+p.topic+'</span>'+
+        '<span style="margin-left:auto;font-size:11px;color:'+(r.score>=80?'#22c55e':'#f59e0b')+'">置信度 '+r.score+'%</span>'+
+      '</div>'+
+      '<div id="reportContent" style="padding:16px 18px;font-size:13px;color:#1e293b;line-height:1.8;min-height:80px">'+
+        '<span style="color:#9aa5b5">生成中…</span>'+
+      '</div>'+
+      '<div id="reportFooter" style="display:none;padding:10px 16px;background:#f9fafb;border-top:1px solid #f0f4ff;font-size:11px;color:#9aa5b5">'+
+      '</div>'+
+    '</div>';
+
+  var content=document.getElementById('reportContent');
+
+  function renderMd(md){
+    return md.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+      .replace(/⚠️/g,'<span style="color:#d97706">⚠️</span>')
+      .replace(/^#{1,3}\s(.+)$/gm,'<div style="font-weight:700;color:#0b183b;margin:12px 0 4px">$1</div>')
+      .replace(/^[-•]\s(.+)$/gm,'<li style="margin:4px 0">$1</li>')
+      .replace(/(<li[\s\S]*?<\/li>)+/g,'<ul style="margin:6px 0;padding:0 0 0 18px">$&</ul>')
+      .replace(/\n{2,}/g,'</p><p style="margin:8px 0">')
+      .replace(/\n/g,'<br>');
+  }
+
+  fetch('http://localhost:5050/api/kb-chat',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question:query, chunks:chunks, city:p.city, stream:true})
+  }).then(function(resp){
+    if(!resp.ok){
+      if(content) content.innerHTML='<span style="color:#ef4444">服务错误：'+resp.status+'<br><small>请确认 kb-server 已在 localhost:5050 运行</small></span>';
+      return;
+    }
+    var reader=resp.body.getReader(); var decoder=new TextDecoder(); var buf='';
+    function pump(){
+      reader.read().then(function(d){
+        if(d.done){
+          // 完成：记录报告、显示底部
+          REPORTSTATE[cur]={text:accText, topic:p.topic, ts:Date.now(), score:r.score};
+          persist();
+          var elapsed=Date.now()-t0;
+          var footer=document.getElementById('reportFooter');
+          if(footer){
+            var cites=[...new Set(chunks.map(function(c){return c.cite;}).filter(Boolean))];
+            footer.innerHTML='数据来源：'+cites.map(function(c){return '<span style="padding:1px 6px;background:#f0f4ff;color:#1a56db;border-radius:4px;font-size:10.5px">'+c+'</span>';}).join(' ')+
+              ' · DeepSeek · '+elapsed+'ms · 置信度 '+r.score+'%';
+            footer.style.display='block';
+          }
+          // 刷新底部操作栏（加「提交招引需求」按钮）
+          var bottomBar=document.querySelector('.report-bottom-bar');
+          if(bottomBar){
+            bottomBar.innerHTML=
+              '<button onclick="triggerReport()" style="padding:12px 16px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">🔄 重新生成</button>'+
+              '<button onclick="doUpload()" style="padding:12px 16px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>'+
+              '<button onclick="submitDemand()" style="flex:1;padding:12px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">✓ 确认方向，提交招引需求</button>';
+          }
+          return;
+        }
+        buf+=decoder.decode(d.value,{stream:true});
+        var lines2=buf.split('\n'); buf=lines2.pop();
+        lines2.forEach(function(line){
+          if(!line.startsWith('data:')) return;
+          var data=line.slice(5).trim(); if(data==='[DONE]') return;
+          try{
+            var j=JSON.parse(data);
+            var delta=j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content||'';
+            if(delta){ accText+=delta; if(content) content.innerHTML='<p style="margin:0">'+renderMd(accText)+'</p>'; }
+          }catch(e){}
+        });
+        pump();
+      });
+    }
+    pump();
+  }).catch(function(err){
+    if(content) content.innerHTML='<span style="color:#ef4444">连接失败：'+err.message+'<br><small>请确认 kb-server 已在 localhost:5050 运行</small></span>';
+  });
+}
+
+// 提交招引需求到管理端需求池
+function submitDemand(){
+  var p=P(); if(!p) return;
+  var rs=REPORTSTATE[cur];
+  if(!rs){toast('请先生成研判报告'); return;}
+  // 检查是否已提交
+  var existing=DEMANDS.find(function(d){return d.projKey===cur;});
+  if(existing){toast('该方向已提交需求池'); return;}
+  DEMANDS.push({
+    id:'d'+Date.now().toString(36),
+    projKey:cur,
+    city:p.city, gov:p.org+'·'+p.who,
+    topic:p.topic, domain:p.topic.replace('补链','').replace('升级',''),
+    need:'基于研判报告（置信度'+rs.score+'%），见报告全文',
+    submit:'刚刚', res:'none', resLabel:'待研判', clues:0,
+    note:rs.text?rs.text.slice(0,120)+'…':'', ai:''
+  });
+  p.stage=Math.max(p.stage,3); // 推进到「确认需求」阶段
+  persist();
+  toast('✓ 招引需求已提交到管理端需求池');
+}
+
+// REPORTSTATE: 存储已生成的报告
+
+// reportHtml: 如果已有报告，直接渲染
+function reportHtml(p){
+  var rs=REPORTSTATE[cur]; if(!rs) return '';
+  var r=kbReadiness();
+  function renderMd(md){
+    return md.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+      .replace(/⚠️/g,'<span style="color:#d97706">⚠️</span>')
+      .replace(/^#{1,3}\s(.+)$/gm,'<div style="font-weight:700;color:#0b183b;margin:12px 0 4px">$1</div>')
+      .replace(/^[-•]\s(.+)$/gm,'<li style="margin:4px 0">$1</li>')
+      .replace(/(<li[\s\S]*?<\/li>)+/g,'<ul style="margin:6px 0;padding:0 0 0 18px">$&</ul>')
+      .replace(/\n{2,}/g,'</p><p style="margin:8px 0">')
+      .replace(/\n/g,'<br>');
+  }
+  return '<div style="border-radius:14px;border:1.5px solid #e8edf5;overflow:hidden;margin-bottom:8px">'+
+    '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
+      '<span style="font-size:12px;font-weight:650;color:#1a56db">📋 研判报告</span>'+
+      '<span style="font-size:11.5px;color:#4a5568">'+rs.topic+'</span>'+
+      '<span style="margin-left:auto;font-size:11px;color:'+(rs.score>=80?'#22c55e':'#f59e0b')+'">置信度 '+rs.score+'%</span>'+
+    '</div>'+
+    '<div style="padding:16px 18px;font-size:13px;color:#1e293b;line-height:1.8">'+
+      '<p style="margin:0">'+renderMd(rs.text||'')+'</p>'+
+    '</div>'+
+  '</div>';
+}
+
 function homePage(p){
   var r=kbReadiness();
 
-  var contrastBar=
-    '<div style="margin:0 0 16px;border-radius:14px;overflow:hidden;border:1.5px solid #e8edf5">'+
-      '<div style="display:grid;grid-template-columns:1fr 1px 1fr">'+
-
-        '<div style="padding:16px 18px;background:#f8faff">'+
-          '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">'+
-            '<span style="font-size:16px">📚</span>'+
-            '<span style="font-size:12px;font-weight:700;color:#1a56db;letter-spacing:.3px">城市智库</span>'+
-            '<span style="margin-left:auto;font-size:11px;color:#22c55e;font-weight:600">'+r.score+'%</span>'+
-          '</div>'+
-          '<div style="font-size:12px;color:#4a5568;line-height:1.8">'+
-            '<div style="margin-bottom:3px">📍 <strong>描述事实</strong>：这个城市有什么</div>'+
-            '<div style="color:#8492a6;margin-bottom:6px">产业集群 · 链主企业 · 园区条件 · 政策方向</div>'+
-            '<div style="font-size:11px;color:#9aa5b5;border-top:1px solid #e8edf5;padding-top:6px">'+
-              r.confirmed+' / '+r.total+' 条已确认'+
-              (r.files>0?' · '+r.files+' 份材料已上传':' · 待上传材料')+
-            '</div>'+
-          '</div>'+
+  // ── 可靠性横幅 ──
+  var reliabilityBanner=
+    '<div style="display:flex;align-items:center;gap:12px;padding:12px 18px;background:'+(r.score>=80?'#f0fdf4':'#fffbeb')+';border-bottom:1px solid '+(r.score>=80?'#86efac':'#fde68a')+'">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'+
+          '<span style="font-size:12px;font-weight:650;color:'+(r.score>=80?'#166534':'#92400e')+'">从城市智库继承数据</span>'+
+          '<span style="font-size:11px;color:'+(r.score>=80?'#22c55e':'#f59e0b')+';font-weight:700">'+r.score+'%</span>'+
+          '<span style="font-size:11px;color:'+(r.score>=80?'#22c55e':'#f59e0b')+'">'+r.label+'</span>'+
         '</div>'+
-
-        '<div style="background:#e8edf5"></div>'+
-
-        '<div style="padding:16px 18px;background:#fffbf5">'+
-          '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">'+
-            '<span style="font-size:16px">🎯</span>'+
-            '<span style="font-size:12px;font-weight:700;color:#d97706;letter-spacing:.3px">研判需求</span>'+
-            '<span style="margin-left:auto;font-size:11px;color:'+(r.score>=80?'#22c55e':'#f59e0b')+';font-weight:600">'+
-              (r.score>=80?'可靠':'数据待补充')+
-            '</span>'+
-          '</div>'+
-          '<div style="font-size:12px;color:#4a5568;line-height:1.8">'+
-            '<div style="margin-bottom:3px">🔍 <strong>给出判断</strong>：这个城市缺什么</div>'+
-            '<div style="color:#8492a6;margin-bottom:6px">产业链缺口 · 招引方向 · 目标企业画像</div>'+
-            '<div style="font-size:11px;color:#9aa5b5;border-top:1px solid #fde68a;padding-top:6px">'+
-              '从城市智库继承 '+r.score+'% 数据'+
-              (r.score<80?' · 建议先完善城市智库':' · 可开始研判')+
-            '</div>'+
-          '</div>'+
+        '<div style="height:4px;background:'+(r.score>=80?'#dcfce7':'#fef3c7')+';border-radius:2px;overflow:hidden">'+
+          '<div style="height:100%;width:'+r.score+'%;background:'+(r.score>=80?'#22c55e':'#f59e0b')+';border-radius:2px;transition:width .4s"></div>'+
         '</div>'+
-
       '</div>'+
-      '<div style="background:#f5f7fb;padding:8px 18px;display:flex;align-items:center;gap:6px;font-size:11.5px;color:#667590">'+
-        '<span style="color:#1a56db">📚 城市智库</span>'+
-        '<span style="margin:0 4px">──输入──→</span>'+
-        '<span style="color:#d97706">🎯 研判需求</span>'+
-        '<span style="margin-left:auto;font-weight:600;color:'+(r.score>=80?'#22c55e':'#f59e0b')+'">'+
-          (r.score>=80?'✓ 数据已就绪，可直接生成研判':'⚡ 城市智库 '+r.score+'%，研判置信度较低')+
-        '</span>'+
+      (r.score<80
+        ? '<button onclick="go(\'knowledge\')" style="flex-shrink:0;padding:6px 12px;background:#fff;border:1.5px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e;cursor:pointer;font-weight:600">补充城市智库 →</button>'
+        : '<span style="flex-shrink:0;font-size:12px;color:#22c55e">✓ 可直接生成研判</span>'
+      )+
+    '</div>';
+
+  // ── 推荐方向卡片 ──
+  var recommendedTopics=[
+    {label:'氢能专用车补链',    icon:'⚡', desc:'电堆53%外购，新楚风已量产'},
+    {label:'智慧应急装备补链',  icon:'🚨', desc:'机器人/无人机靠外采'},
+    {label:'香菇深加工补链',    icon:'🍄', desc:'功能成分提取仅2家布局'},
+  ];
+
+  var topicCards=recommendedTopics.map(function(t){
+    var isActive=p.topic===t.label;
+    return '<button onclick="selectTopic(\''+t.label+'\')" style="'+
+      'display:flex;flex-direction:column;align-items:flex-start;padding:14px 16px;'+
+      'background:'+(isActive?'linear-gradient(135deg,#eff6ff,#f0f9ff)':'#fff')+';'+
+      'border:2px solid '+(isActive?'#1a56db':'#e8edf5')+';'+
+      'border-radius:14px;cursor:pointer;text-align:left;transition:all .15s;flex:1;min-width:0">'+
+      '<div style="font-size:20px;margin-bottom:6px">'+t.icon+'</div>'+
+      '<div style="font-size:13px;font-weight:700;color:#0b183b;margin-bottom:4px">'+t.label+'</div>'+
+      '<div style="font-size:11.5px;color:#8492a6;line-height:1.4">'+t.desc+'</div>'+
+      (isActive?'<div style="margin-top:8px;width:8px;height:8px;border-radius:50%;background:#1a56db"></div>':'')+
+    '</button>';
+  }).join('');
+
+  var topicSelector=
+    '<div style="padding:0 0 20px">'+
+      '<div style="font-size:12px;font-weight:650;color:#4a5568;margin-bottom:10px;letter-spacing:.3px">选择研判方向</div>'+
+      '<div style="display:flex;gap:10px;margin-bottom:12px">'+topicCards+'</div>'+
+      '<div style="display:flex;align-items:center;gap:8px">'+
+        '<div style="flex:1;position:relative">'+
+          '<input id="topicCustomInput" placeholder="或输入自定义方向…" value="'+(recommendedTopics.some(function(t){return t.label===p.topic;})?'':p.topic)+'" '+
+            'style="width:100%;box-sizing:border-box;padding:10px 14px;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#0b183b;outline:none;transition:border .15s" '+
+            'onfocus="this.style.border=\'1.5px solid #6366f1\'" '+
+            'onblur="this.style.border=\'1.5px solid #e8edf5\'" '+
+            'oninput="selectTopic(this.value,true)" '+
+            'onkeydown="if(event.key===\'Enter\')triggerReport()" />'+
+        '</div>'+
+        '<div id="currentTopicBadge" style="flex-shrink:0;padding:6px 12px;background:#f0f4ff;border-radius:8px;font-size:12px;color:#1a56db;font-weight:600;white-space:nowrap">'+
+          p.topic+
+        '</div>'+
       '</div>'+
     '</div>';
 
-  var topicSelector=
-    '<div style="margin-bottom:16px;padding:14px 16px;background:#fff;border:1.5px solid #e8edf5;border-radius:12px">'+
-      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'+
-        '<span style="font-size:12px;font-weight:650;color:#4a5568">研判方向</span>'+
-        '<span style="font-size:11px;color:#9aa5b5">· 决定本次招引的核心聚焦点</span>'+
-      '</div>'+
-      '<div id="topicDisplay" style="display:flex;align-items:center;gap:8px">'+
-        '<span id="topicText" style="font-size:14px;font-weight:700;color:#0b183b">'+p.topic+'</span>'+
-        '<button onclick="editTopic()" style="padding:3px 10px;background:#f0f4ff;border:1.5px solid #bfdbfe;border-radius:20px;font-size:11.5px;color:#1d4ed8;cursor:pointer">✎ 修改</button>'+
-      '</div>'+
-      '<div id="topicEdit" style="display:none">'+
-        '<input id="topicInput" value="'+p.topic+'" '+
-          'style="width:100%;padding:8px 12px;border:1.5px solid #6366f1;border-radius:8px;font-size:14px;color:#0b183b;box-sizing:border-box;outline:none" '+
-          'onkeydown="if(event.key===\'Enter\')saveTopic()" />'+
-        '<div style="display:flex;gap:8px;margin-top:8px">'+
-          '<button onclick="saveTopic()" style="flex:1;padding:7px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer">确认方向</button>'+
-          '<button onclick="cancelTopicEdit()" style="padding:7px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;color:#4a5568;cursor:pointer">取消</button>'+
-        '</div>'+
-        '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">'+
-          ['氢能专用车补链','智慧应急装备补链','香菇深加工补链','新能源零部件配套','高端装备制造补链'].map(function(t){
-            return '<button onclick="document.getElementById(\'topicInput\').value=\''+t+'\'" '+
-              'style="padding:3px 10px;background:#f8faff;border:1.5px solid #e8edf5;border-radius:20px;font-size:11.5px;color:#4a5568;cursor:pointer">'+t+'</button>';
-          }).join('')+
-        '</div>'+
-      '</div>'+
+  // ── 报告区 ──
+  var reportArea=
+    '<div id="reportArea">'+
+      (REPORTSTATE[cur]
+        ? reportHtml(p)
+        : '<div style="text-align:center;padding:48px 20px">'+
+            '<div style="font-size:40px;margin-bottom:12px">📋</div>'+
+            '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:6px">点击「生成研判报告」</div>'+
+            '<div style="font-size:13px;color:#8492a6;line-height:1.7">AI 将基于城市智库数据（'+r.score+'% 置信度）<br>输出产业链缺口分析与招引方向建议</div>'+
+          '</div>'
+      )+
     '</div>';
 
   return '<div class="page">'+
-    '<div style="padding:10px 22px 0;display:flex;align-items:center;gap:8px">'+
-      '<span style="font-size:12px;font-weight:650;color:#4a5568">'+p.city+' · 研判需求</span>'+
-      '<span style="font-size:11px;color:#9aa5b5">城市智库完成度 '+r.score+'%</span>'+
-      '<div style="flex:1"></div>'+
-      '<button class="ghost-button" onclick="openHistory()"><i class="i">🗂</i>历史报告</button>'+
-    '</div>'+
-    '<div class="conversation-scroll" id="conv">'+
-      contrastBar+
+    reliabilityBanner+
+    '<div class="conversation-scroll" style="padding:16px 22px 0">'+
       topicSelector+
-      '<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble">'+
-        '<p>'+p.who+'，研判方向已设为「<strong>'+p.topic+'</strong>」。</p>'+
-        '<p style="margin-top:6px;font-size:12.5px;color:#4a5568">'+
-          '从城市智库继承了 <strong>'+r.confirmed+'</strong> 条已确认结论'+
-          (r.files>0?'和 <strong>'+r.files+'</strong> 份上传材料':'')+
-          '，研判置信度 <strong style="color:'+(r.score>=80?'#22c55e':'#f59e0b')+'">'+r.score+'%</strong>。'+
-          (r.score<80?'建议先回城市智库补充更多材料，以提高分析可靠性。':'可以直接开始生成研判报告。')+
-        '</p>'+
-      '</div></div>'+
-      '<div class="prompt-list">'+
-        (r.score>=80
-          ? promptRow('📊','生成完整研判报告','基于城市智库数据，输出产业缺口与招引方向','showReport()')
-          : promptRow('⚡','先完善城市智库','数据置信度'+r.score+'%，建议先确认更多结论','go(\'knowledge\')')
-        )+
-        promptRow('🎯','从产业缺口切入研判','分析「'+p.topic+'」的上下游链条缺口','startFlow(\'direction\')')+
-        promptRow('📎','上传政府材料','工作报告/产业规划/园区资料提升置信度','doUpload()')+
-        promptRow('🔍','核验候选企业',p.city+'·'+p.topic+'方向企业可达性评估','startFlow(\'verify\')')+
-      '</div>'+
-    '</div>'+composer()+'</div>';
+      reportArea+
+    '</div>'+
+    // 底部行动栏（替代 composer）
+    '<div class="report-bottom-bar" style="border-top:1px solid #f0f4ff;background:#fff;padding:12px 22px;display:flex;gap:10px;align-items:center">'+
+      '<button id="generateBtn" onclick="triggerReport()" '+
+        'style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">'+
+        '✨ 生成研判报告'+
+      '</button>'+
+      '<button onclick="doUpload()" style="padding:13px 16px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>'+
+      (REPORTSTATE[cur]
+        ? '<button onclick="submitDemand()" style="padding:13px 16px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;font-size:13px;color:#166534;cursor:pointer;font-weight:600">提交招引需求 →</button>'
+        : ''
+      )+
+    '</div>'+
+  '</div>';
 }
+
 
 function promptRow(icon,strong,small,fn){
   return '<button class="prompt-row" onclick="'+fn+'"><i class="i">'+icon+'</i><span><strong>'+strong+'</strong><small>'+small+'</small></span><i class="i">➜</i></button>';
@@ -1992,7 +2169,8 @@ function persist(){
       UPLOADS:UPLOADS,
       KB_CONFIRMS:KB_CONFIRMS,
       KB_FILE_CHUNKS:KB_FILE_CHUNKS,
-      KB_UNLOCKED:KB_UNLOCKED
+      KB_UNLOCKED:KB_UNLOCKED,
+      REPORTSTATE:REPORTSTATE
     };
     localStorage.setItem(LS_KEY, JSON.stringify(data));
   }catch(e){ console.warn('[persist] failed:',e.message); }
@@ -2011,6 +2189,7 @@ function restore(){
       KB_CONFIRMS=data.KB_CONFIRMS||{};
       KB_FILE_CHUNKS=data.KB_FILE_CHUNKS||{};
       KB_UNLOCKED=data.KB_UNLOCKED||{};
+      REPORTSTATE=data.REPORTSTATE||{};
       console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
       return true;
     }
