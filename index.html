@@ -1724,17 +1724,32 @@ function projMgmtPage(p){
       // stage=2 引导：前往研判需求生成本方向报告
       var stageGuide = '';
       if(x.stage===2){
+        // stage=2：报告已从父项目继承，直接引导确认方向
         stageGuide=
           '<div style="margin-bottom:16px;padding:14px 16px;background:linear-gradient(135deg,#eff6ff,#f0f9ff);border:1.5px solid #bfdbfe;border-radius:12px">'+
             '<div style="display:flex;align-items:center;gap:10px">'+
               '<span style="font-size:24px">🎯</span>'+
               '<div style="flex:1">'+
-                '<div style="font-size:13.5px;font-weight:700;color:#1d4ed8;margin-bottom:3px">下一步：生成「'+x.topic+'」研判报告</div>'+
-                '<div style="font-size:12px;color:#4a5568;line-height:1.6">前往研判需求页，选择「'+x.topic+'」方向，生成产业链缺口分析与候选企业线索。</div>'+
+                '<div style="font-size:13.5px;font-weight:700;color:#1d4ed8;margin-bottom:3px">下一步：确认「'+x.topic+'」研判方向</div>'+
+                '<div style="font-size:12px;color:#4a5568;line-height:1.6">研判报告已从母项目继承，可直接确认方向并提交招引需求。</div>'+
               '</div>'+
               '<button onclick="(function(){cur=\''+k+'\';view=\'report\';render();})()" '+
                 'style="padding:9px 18px;background:#1a56db;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer;white-space:nowrap;flex-shrink:0">'+
-                '前往研判 →</button>'+
+                '查看并确认 →</button>'+
+            '</div>'+
+          '</div>';
+      } else if(x.stage===3){
+        stageGuide=
+          '<div style="margin-bottom:16px;padding:14px 16px;background:linear-gradient(135deg,#f0fdf4,#f0f9ff);border:1.5px solid #86efac;border-radius:12px">'+
+            '<div style="display:flex;align-items:center;gap:10px">'+
+              '<span style="font-size:24px">📤</span>'+
+              '<div style="flex:1">'+
+                '<div style="font-size:13.5px;font-weight:700;color:#166534;margin-bottom:3px">下一步：正式提交招引需求</div>'+
+                '<div style="font-size:12px;color:#4a5568;line-height:1.6">研判已完成。提交后候选企业线索自动派生，可发起资源核验。</div>'+
+              '</div>'+
+              '<button onclick="cur=\''+k+'\';submitDemand()" '+
+                'style="padding:9px 18px;background:#22c55e;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer;white-space:nowrap;flex-shrink:0">'+
+                '提交招引需求 →</button>'+
             '</div>'+
           '</div>';
       }
@@ -2407,7 +2422,7 @@ function importToProject(gap, city, topic){
   var p=P();
   PROJECTS[key]={
     id:key, city:city||p.city, org:(city||p.city)+'市招商局', who:p?p.who:'负责人',
-    topic:gap, stage:2,
+    topic:gap, stage:3,  // 立项即跳过研判，直接到「确认需求」
     kb: p ? JSON.parse(JSON.stringify(p.kb)) : [],
     report: REPORTSTATE[cur] ? {
       title:(city||p.city)+'·'+gap+'招商研判报告',
@@ -2420,8 +2435,8 @@ function importToProject(gap, city, topic){
   // 把父项目的报告复制给新项目（让研判需求页可以直接使用）
   if(cur && REPORTSTATE[cur] && !REPORTSTATE[key]){
     REPORTSTATE[key]=JSON.parse(JSON.stringify(REPORTSTATE[cur]));
-    REPORTSTATE[key].topic=gap;  // 更新 topic 为新方向
-    REPORTSTATE[key].phase=1;    // 标记为草稿，需重新生成
+    REPORTSTATE[key].topic=gap;   // 更新 topic 为新方向
+    REPORTSTATE[key].phase=2;     // 保留完整报告（研判已完成）
   }
   // 不切换 cur — 保留当前研判页所有状态
   persist();
