@@ -1179,21 +1179,56 @@ function unlockView(v){
 }
 
 function sidebar(){
+  var p=P();
+  var r=kbReadiness();
+  // 动态副标题：反映实际进度
+  var navMeta={
+    knowledge: (function(){
+      if(!p) return '完善材料·产业/园区/企业/政策';
+      var conf=KB_CONFIRMS[cur]?Object.keys(KB_CONFIRMS[cur]).reduce(function(n,ki){return n+Object.keys(KB_CONFIRMS[cur][ki]).length;},0):0;
+      var uploads=(UPLOADS[cur]||[]).length;
+      if(r.score>=80) return '✓ 已就绪 '+r.score+'% · '+conf+'条已确认';
+      return conf>0?(conf+'条已确认 · '+uploads+'份材料 · '+r.score+'%'):'待完善 · 产业/园区/企业/政策';
+    })(),
+    report: (function(){
+      if(!p) return '生成缺口分析与招引方向';
+      var rs=REPORTSTATE[cur];
+      if(!rs) return '待研判 · 选方向后点击生成';
+      if(rs.phase===1){
+        var pc=PENDING_CONFIRMS[cur]||[];
+        var done=pc.filter(function(x){return x.status==='confirmed'||x.status==='edited';}).length;
+        return done+'/'+pc.length+' 待确认 · 草稿已生成';
+      }
+      return '✓ 完整报告已生成 · '+rs.score+'%置信度';
+    })(),
+    home: (function(){
+      if(!p) return '报告派生项目·对接需求';
+      var stage=p.stage||1;
+      var stageNames=['资料准备','AI研判','确认需求','资源匹配','政企对接'];
+      var nProjects=Object.keys(PROJECTS).length;
+      return nProjects+'个项目 · 当前「'+(stageNames[stage-1]||'进行中')+'」';
+    })(),
+    docking: (function(){
+      if(!p||!p.clues||!p.clues.length) return '候选企业·可达性核验';
+      var amber=p.clues.filter(function(c){return c.tag==='amber';}).length;
+      return p.clues.length+'条线索 · '+amber+'条待核验';
+    })()
+  };
   return '<div class="sidebar"><div class="nav-list">'+
     NAV.map(function(n){
       var on=view===n[0]?' active':'';
       var locked=isLocked(n[0]);
       var lockBadge=locked?'<span style="font-size:10px;margin-left:auto;opacity:.5">&#128274;</span>':'';
       var dimCss=locked&&view!==n[0]?'opacity:.55;':'';
+      var sub=navMeta[n[0]]||n[3]||'';
       return '<button class="nav-item'+on+'" onclick="go(\''+n[0]+'\')" style="'+dimCss+'">'+
         '<i class="i">'+n[1]+'</i>'+
-        '<span class="nav-copy"><strong>'+n[2]+'</strong><small>'+n[3]+'</small></span>'+
+        '<span class="nav-copy"><strong>'+n[2]+'</strong><small>'+sub+'</small></span>'+
         lockBadge+
       '</button>';
     }).join('')+'</div>'+
     (function(){
       if(!cur)return '';
-      var r=kbReadiness();
       return '<div style="padding:10px 14px 8px;border-top:1px solid #f0f4ff">'+
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">'+
           '<span style="font-size:10.5px;color:#9aa5b5;letter-spacing:.3px">城市智库完成度</span>'+
@@ -1203,7 +1238,7 @@ function sidebar(){
           '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:2px;transition:width .4s"></div>'+
         '</div>'+
         '<div style="font-size:10.5px;color:'+r.color+';margin-top:4px">'+r.label+
-          (r.files>0?' &middot; '+r.files+'份材料':'')+'</div>'+
+          ((UPLOADS[cur]||[]).length>0?' &middot; '+(UPLOADS[cur]||[]).length+'份材料':'')+'</div>'+
       '</div>';
     })()+
     '<div class="system-status"><span></span>系统运行正常</div></div>';
@@ -1911,6 +1946,105 @@ function ciAttachFiles(files, projKey, idx){
 }
 
 
+/* 立项卡片 */
+function renderActionItems(text, p, r){
+  if(!text||!p) return;
+  var area=document.getElementById('reportArea');
+  if(!area) return;
+
+  var items=[];
+  var tlines=text.split('\n');
+  var inTop5=false;
+  for(var i=0;i<tlines.length;i++){
+    var l=tlines[i];
+    if(l.indexOf('补链优先级')>=0||l.indexOf('TOP5')>=0||l.indexOf('优先级清单')>=0) inTop5=true;
+    if(inTop5&&l.trim().charAt(0)==='|'){
+      var cells=l.trim().slice(1,-1).split('|').map(function(c){return c.replace(/[*★<>]/g,'').trim();});
+      if(cells.length>=2){
+        var isSep=cells.every(function(c){return /^[\s\-:]+$/.test(c);});
+        if(isSep||cells[0]==='排名'||cells[0]==='缺口节点'||cells[0]==='缺口') continue;
+        var rank=parseInt(cells[0]);
+        if(!isNaN(rank)&&rank>=1&&rank<=3&&cells[1]){
+          items.push({rank:rank,gap:cells[1],attr:cells[2]||'',score:cells[cells.length-1]||''});
+        }
+      }
+    }
+    if(inTop5&&items.length>=3) break;
+  }
+
+  if(!items.length){
+    tlines.forEach(function(l){
+      if((l.indexOf('❌')>=0||l.indexOf('缺失')>=0||l.indexOf('全部外购')>=0)&&items.length<3){
+        var clean=l.replace(/^[*\-•|#\s]+/,'').replace(/❌|\*\*/g,'').trim();
+        if(clean.length>4&&clean.length<60) items.push({rank:items.length+1,gap:clean,attr:'',score:''});
+      }
+    });
+  }
+  if(!items.length) return;
+
+  var colors=['#1a56db','#6366f1','#0891b2'];
+  var icons=['🥇','🥈','🥉'];
+
+  var cards=items.map(function(it,idx){
+    var color=colors[idx%3];
+    var safeGap=it.gap.replace(/"/g,'&quot;');
+    var safeCity=p.city.replace(/"/g,'&quot;');
+    var safeTopic=p.topic.replace(/"/g,'&quot;');
+    return '<div style="border-radius:14px;border:2px solid '+color+';overflow:hidden;background:#fff;margin-bottom:2px">'+
+      '<div style="padding:12px 16px;background:'+color+';display:flex;align-items:center;gap:8px">'+
+        '<span style="font-size:18px">'+icons[idx]+'</span>'+
+        '<span style="font-size:13px;font-weight:700;color:#fff;flex:1">'+it.gap+'</span>'+
+        (it.attr?'<span style="padding:2px 8px;background:rgba(255,255,255,.2);color:#fff;border-radius:20px;font-size:11px">'+it.attr+'</span>':'')+
+      '</div>'+
+      '<div style="padding:12px 16px;display:flex;align-items:center;gap:10px">'+
+        '<div style="flex:1;font-size:12px;color:#4a5568;line-height:1.6">'+
+          '<strong>'+p.city+'</strong> · '+p.topic+'<br>'+
+          '置信度 '+r.score+'% · 来源：慧小招实测报告'+
+        '</div>'+
+        '<button data-gap="'+safeGap+'" data-city="'+safeCity+'" data-topic="'+safeTopic+'"'+
+          ' onclick="importToProject(this.getAttribute(\'data-gap\'),this.getAttribute(\'data-city\'),this.getAttribute(\'data-topic\'))"'+
+          ' style="padding:8px 16px;background:'+color+';color:#fff;border:none;border-radius:10px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap;flex-shrink:0">'+
+          '立项导入 →'+
+        '</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+
+  var wrapper=document.createElement('div');
+  wrapper.innerHTML=
+    '<div style="margin-top:20px;padding:16px;background:#f8faff;border-radius:14px;border:1.5px solid #e8edf5">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'+
+        '<span style="font-size:13px;font-weight:750;color:#0b183b;letter-spacing:.2px">🏁 可立项招引方向</span>'+
+        '<span style="font-size:11px;color:#9aa5b5">· 点击「立项导入」自动生成招商项目，进入项目管理</span>'+
+      '</div>'+
+      '<div>'+cards+'</div>'+
+    '</div>';
+  area.appendChild(wrapper);
+}
+
+/* 立项导入 */
+function importToProject(gap, city, topic){
+  var key='proj_'+Date.now().toString(36);
+  var p=P();
+  PROJECTS[key]={
+    id:key, city:city||p.city, org:(city||p.city)+'市招商局', who:p?p.who:'负责人',
+    topic:gap, stage:2,
+    kb: p ? JSON.parse(JSON.stringify(p.kb)) : [],
+    report: REPORTSTATE[cur] ? {
+      title:(city||p.city)+'·'+gap+'招商研判报告',
+      lead:gap+'方向招引，基于慧小招实测报告',
+      sections:[{h:'研判依据',p:(REPORTSTATE[cur].text||'').substring(0,300)+'…',type:'real',ev:'慧小招研判报告',chk:''}],
+      summary:[['数据来源','慧小招实测'],['置信度',(REPORTSTATE[cur].score||0)+'%'],['生成时间',new Date().toLocaleDateString('zh-CN')]]
+    } : null,
+    clues:[]
+  };
+  persist();
+  cur=key;
+  toast('✓ 「'+gap+'」已立项');
+  setTimeout(function(){ view='home'; render(); }, 300);
+}
+
+
 function triggerReport(phase){
   phase=phase||1;
   var p=P(); if(!p) return;
@@ -1946,6 +2080,7 @@ function triggerReport(phase){
     '</div>';
   var content=document.getElementById('reportContent');
   function renderMd(md){
+    md=md.replace(/\n{3,}/g,'\n\n');
     md=md.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     md=md.replace(/\*\*([^*\n]+)\*\*/g,'<strong style="color:#0b183b">$1</strong>');
     md=md.replace(/`([^`]+)`/g,'<code style="background:#f0f4ff;color:#1a56db;padding:1px 5px;border-radius:4px;font-size:11.5px">$1</code>');
@@ -1953,46 +2088,58 @@ function triggerReport(phase){
     md=md.replace(/✅/g,'<span style="color:#16a34a">✅</span>');
     md=md.replace(/❌/g,'<span style="color:#dc2626">❌</span>');
     md=md.replace(/★+/g,function(m){return '<span style="color:#f59e0b;letter-spacing:1px">'+m+'</span>';});
-    // 一、二、三、章节标题
-    md=md.replace(/^([一二三四五六七八九十]+[、．.])\s*(.+)$/gm,
-      '<div style="display:flex;align-items:center;gap:10px;margin:22px 0 10px;padding-bottom:8px;border-bottom:2px solid #1a56db">'+
-        '<span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;background:#1a56db;color:#fff;border-radius:50%;font-size:12px;font-weight:700;flex-shrink:0">$1</span>'+
-        '<span style="font-size:14.5px;font-weight:750;color:#0b183b;letter-spacing:.2px">$2</span>'+
-      '</div>');
-    md=md.replace(/^###\s(.+)$/gm,'<div style="font-size:13px;font-weight:700;color:#4a5568;margin:12px 0 5px;padding-left:10px;border-left:3px solid #6366f1">$1</div>');
-    md=md.replace(/^##\s(.+)$/gm,'<div style="font-size:13.5px;font-weight:750;color:#0b183b;margin:16px 0 8px;padding:6px 12px;background:#f8faff;border-radius:8px;border-left:4px solid #1a56db">$1</div>');
-    md=md.replace(/^#\s(.+)$/gm,'<div style="font-size:15px;font-weight:800;color:#0b183b;margin:20px 0 10px">$1</div>');
-    // 本地化属性标签
-    md=md.replace(/A[=＝]必须本地化/g,'<span style="padding:1px 6px;background:#fee2e2;color:#991b1b;border-radius:4px;font-size:11px;font-weight:600">A 必须本地化</span>');
-    md=md.replace(/B[=＝]可跨区域/g,'<span style="padding:1px 6px;background:#dbeafe;color:#1e3a8a;border-radius:4px;font-size:11px;font-weight:600">B 可跨区域</span>');
-    md=md.replace(/C[=＝]优先本地化/g,'<span style="padding:1px 6px;background:#d1fae5;color:#064e3b;border-radius:4px;font-size:11px;font-weight:600">C 优先本地化</span>');
-    // 表格（逐行解析）
-    var outLines=[]; var inTbl=false; var mdLines=md.split('\n');
+    md=md.replace(/A[=]必须本地化/g,'<span style="padding:1px 6px;background:#fee2e2;color:#991b1b;border-radius:4px;font-size:11px;font-weight:600">A 必须本地化</span>');
+    md=md.replace(/B[=]可跨区域/g,'<span style="padding:1px 6px;background:#dbeafe;color:#1e3a8a;border-radius:4px;font-size:11px;font-weight:600">B 可跨区域</span>');
+    md=md.replace(/C[=]优先本地化/g,'<span style="padding:1px 6px;background:#d1fae5;color:#064e3b;border-radius:4px;font-size:11px;font-weight:600">C 优先本地化</span>');
+    // 章节标题：## 一、格式 和 纯 一、格式，统一渲染，防止双重
+    md=md.replace(/^#{0,3}\s*([一二三四五六七八九十]+)[、]\s*(.+)$/gm,function(m,num,title){
+      return '<div style="display:flex;align-items:center;gap:10px;margin:20px 0 8px;padding-bottom:7px;border-bottom:2px solid #1a56db">'+
+        '<span style="display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;background:#1a56db;color:#fff;border-radius:50%;font-size:12px;font-weight:700;flex-shrink:0">'+num+'</span>'+
+        '<span style="font-size:14px;font-weight:750;color:#0b183b">'+title+'</span>'+
+      '</div>';
+    });
+    md=md.replace(/^###\s(.+)$/gm,'<div style="font-size:13px;font-weight:700;color:#4a5568;margin:10px 0 4px;padding-left:10px;border-left:3px solid #6366f1">$1</div>');
+    md=md.replace(/^##\s(.+)$/gm,'<div style="font-size:13.5px;font-weight:750;color:#0b183b;margin:12px 0 6px;padding:5px 12px;background:#f8faff;border-radius:8px;border-left:4px solid #1a56db">$1</div>');
+    md=md.replace(/^#\s(.+)$/gm,'<div style="font-size:15px;font-weight:800;color:#0b183b;margin:14px 0 8px">$1</div>');
+    // 表格逐行解析（正确跳过分隔行）
+    var outLines=[]; var inTbl=false;
+    var mdLines=md.split('\n');
     for(var li=0;li<mdLines.length;li++){
       var line=mdLines[li];
-      if(/^\|.+\|$/.test(line.trim())){
-        if(/^\|[\s\-:]+\|$/.test(line.trim())) continue;
-        var cells=line.trim().slice(1,-1).split('|').map(function(c){return c.trim();});
+      var tr=line.trim();
+      if(tr.charAt(0)==='|'&&tr.charAt(tr.length-1)==='|'){
+        var isSep=tr.slice(1,-1).split('|').every(function(c){return /^[\s\-:]+$/.test(c);});
+        if(isSep) continue;
+        var cells=tr.slice(1,-1).split('|').map(function(c){return c.trim();});
         if(!inTbl){
           inTbl=true;
-          outLines.push('<div style="overflow-x:auto;margin:12px 0"><table style="width:100%;border-collapse:collapse;font-size:12.5px">');
-          outLines.push('<thead><tr>'+cells.map(function(c){return '<th style="padding:8px 12px;background:#f8faff;border:1px solid #e8edf5;font-weight:700;color:#0b183b;text-align:left;white-space:nowrap">'+c+'</th>';}).join('')+'</tr></thead><tbody>');
+          outLines.push('<div style="overflow-x:auto;margin:10px 0"><table style="width:100%;border-collapse:collapse;font-size:12.5px">');
+          outLines.push('<thead><tr>'+cells.map(function(c){
+            return '<th style="padding:8px 12px;background:#f0f4ff;border:1px solid #dbeafe;font-weight:700;color:#1e3a8a;text-align:left;white-space:nowrap">'+c+'</th>';
+          }).join('')+'</tr></thead><tbody>');
         } else {
-          outLines.push('<tr>'+cells.map(function(c,ci){return '<td style="padding:8px 12px;border:1px solid #e8edf5;color:#1e293b;vertical-align:top;background:'+(ci===0?'#fafbff':'#fff')+'">'+c+'</td>';}).join('')+'</tr>');
+          outLines.push('<tr>'+cells.map(function(c,ci){
+            return '<td style="padding:8px 12px;border:1px solid #e8edf5;color:#1e293b;vertical-align:top;background:'+(ci===0?'#fafbff':'#fff')+'">'+c+'</td>';
+          }).join('')+'</tr>');
         }
       } else {
-        if(inTbl){ outLines.push('</tbody></table></div>'); inTbl=false; }
+        if(inTbl){outLines.push('</tbody></table></div>');inTbl=false;}
         outLines.push(line);
       }
     }
-    if(inTbl) outLines.push('</tbody></table></div>');
+    if(inTbl)outLines.push('</tbody></table></div>');
     md=outLines.join('\n');
     // 列表
-    md=md.replace(/^[-•]\s(.+)$/gm,'<li style="margin:5px 0;color:#1e293b">$1</li>');
-    md=md.replace(/^(\d+)\.\s(.+)$/gm,'<li style="margin:5px 0;color:#1e293b" value="$1">$2</li>');
-    // 段落
-    md=md.replace(/\n{2,}/g,'</p><p style="margin:8px 0;line-height:1.85;color:#1e293b">');
-    md=md.replace(/\n/g,'<br>');
+    md=md.replace(/^[-•]\s(.+)$/gm,'<li style="margin:4px 0;color:#1e293b">$1</li>');
+    md=md.replace(/^\d+\.\s(.+)$/gm,'<li style="margin:4px 0;color:#1e293b">$1</li>');
+    // 段落：空行分隔，block 元素不再包裹
+    var parts=md.split('\n\n');
+    md=parts.map(function(chunk){
+      var c=chunk.trim();
+      if(!c) return '';
+      if(/^<(div|table|ul|ol|li|thead|tbody|tr)/.test(c)) return c;
+      return '<p style="margin:5px 0;line-height:1.85;color:#1e293b">'+c.replace(/\n/g,'<br>')+'</p>';
+    }).filter(Boolean).join('\n');
     return md;
   }
   fetch('http://localhost:5050/api/kb-chat',{
@@ -2053,6 +2200,7 @@ function triggerReport(phase){
                 '<button onclick="triggerReport(1)" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">🔄 重新生成</button>'+
                 '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>'+
                 '<button onclick="submitDemand()" style="flex:1;padding:12px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer">✓ 确认方向，提交招引需求</button>';
+            setTimeout(function(){renderActionItems(accText,p,r);},300);
             }
           }
           return;
