@@ -1140,21 +1140,26 @@ var KB_UNLOCKED={};
 
 function kbReadiness(){
   var p=P(); if(!p||!p.kb) return {score:0,total:0,confirmed:0,files:0,label:'未开始',color:'#9aa5b5'};
-  var totalItems=0, confirmedItems=0;
+  // 只统计 ⚠️ 条目作为「待确认」分母
+  // 普通事实性条目（AI 从报告提取）默认已确认，不要求领导操作
+  var warnTotal=0, warnConfirmed=0;
   p.kb.forEach(function(k,ki){
     (k.known||[]).forEach(function(x,xi){
-      totalItems++;
+      var isWarn=x.indexOf('\u26a0\ufe0f')>=0;
+      if(!isWarn) return;  // 非⚠️直接跳过，视为已确认
+      warnTotal++;
       var conf=KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][ki]&&KB_CONFIRMS[cur][ki][xi];
-      if(conf||x.indexOf('\u2705')===0) confirmedItems++;
+      if(conf||x.indexOf('\u2705')===0) warnConfirmed++;
     });
   });
   var uploads=(UPLOADS[cur]||[]).length;
-  var confirmRate=totalItems>0?confirmedItems/totalItems:0;
+  // 评分：⚠️确认率×60 + 上传加分×40
+  var warnRate=warnTotal>0?warnConfirmed/warnTotal:1; // 无⚠️时视为全部完成
   var uploadBonus=Math.min(40, uploads*10);
-  var score=Math.round(confirmRate*60 + uploadBonus);
+  var score=Math.round(warnRate*60 + uploadBonus);
   var label=score>=80?'已就绪':score>=50?'基本完整':score>=20?'待补充':'未开始';
   var color=score>=80?'#22c55e':score>=50?'#f59e0b':score>=20?'#3b82f6':'#9aa5b5';
-  return {score:score,total:totalItems,confirmed:confirmedItems,files:uploads,label:label,color:color};
+  return {score:score,total:warnTotal,confirmed:warnConfirmed,files:uploads,label:label,color:color};
 }
 
 function isLocked(v){
