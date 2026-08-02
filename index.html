@@ -51,8 +51,8 @@
 .page-header h1{font-size:20px;line-height:27px}
 .page-header p{font-size:12.5px;margin-top:4px}
 .knowledge-scroll{padding:20px 24px}
-.topic-grid{gap:9px;margin:0 0 18px 0}
-.topic-row{min-height:64px;padding:11px 13px}
+.topic-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 18px 0}
+.topic-row{min-height:80px;padding:14px 16px;display:flex;flex-direction:column;align-items:flex-start;text-align:left;height:auto}
 .topic-row strong{font-size:13.5px}
 /* 详情栏紧凑 */
 .detail-header{min-height:64px;padding:18px 44px 14px 22px}
@@ -401,8 +401,8 @@ function render(){
       '<div class="pane-divider"><span class="divider-grip"><i class="i">⋮</i></span></div>'+
       '<div class="content-column"><div class="workspace">'+
         '<div class="main-pane">'+mainPane(p)+'</div>'+
-        (detailOpen?('<div class="detail-pane">'+detailPane(p)+'</div>')
-                   :('<button class="reopen-detail" onclick="toggleDetail()"><i class="i">🧾</i>展开详情</button>'))+
+        (detailOpen&&view!=='knowledge'?('<div class="detail-pane">'+detailPane(p)+'</div>')
+                   :(view==='knowledge'?'':('<button class="reopen-detail" onclick="toggleDetail()"><i class="i"></i>展开详情</button>')))+
       '</div></div>'+
     '</div>'+
     progressFooter(p)+
@@ -418,7 +418,7 @@ function opsTopbarEmpty(){
 }
 
 /* ===== ONBOARDING v2: 城市 → 可选上传 → 分析动画 → 工作区 ===== */
-var _setupFile=null;  // 可选上传文件
+var _setupFiles=[];  // 可选上传文件（多文件）
 
 function setupPage(){
   return '<div id="onboardingWrap" style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#f0f4ff 0%,#fafbff 60%,#f5f0ff 100%)">'+
@@ -452,7 +452,7 @@ function setupPage(){
             '<span style="font-size:11px;color:#b0bac8;margin-top:3px;display:inline-block">若不上传，将基于公开可查询信息完成分析</span>'+
           '</div>'+
         '</div>'+
-        '<input id="setupFileInput" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" style="display:none" onchange="setupFileSelected(this)" />'+
+        '<input id="setupFileInput" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" multiple style="display:none" onchange="setupFileSelected(this)" />'+
         '<button id="setupBtn" onclick="createProject()" '+
           'style="width:100%;padding:14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:650;cursor:pointer;opacity:.4;pointer-events:none;transition:opacity .15s,transform .1s;letter-spacing:.2px" '+
           'onmousedown="this.style.transform=\'scale(.98)\'" onmouseup="this.style.transform=\'\'">'+
@@ -479,13 +479,14 @@ function setupPickFile(){
 }
 
 function setupFileSelected(inp){
-  var f=inp&&inp.files&&inp.files[0];
-  if(!f)return;
-  _setupFile=f;
+  var files=inp&&inp.files?Array.from(inp.files):[];
+  if(!files.length)return;
+  _setupFiles=files;
   var lbl=document.getElementById('uploadLabel');
   if(lbl)lbl.innerHTML='<span style="font-size:18px;display:block;margin-bottom:4px">✅</span>'+
-    '<span style="color:#1a56db;font-weight:600">'+f.name+'</span><br>'+
-    '<span style="font-size:11.5px;color:#8492a6">点击重新选择</span>';
+    '<span style="color:#1a56db;font-weight:600">已选 '+files.length+' 个文件</span><br>'+
+    '<span style="font-size:11.5px;color:#8492a6">'+files.map(function(f){return f.name;}).join('、')+'</span><br>'+
+    '<span style="font-size:11px;color:#b0bac8;margin-top:3px;display:inline-block">点击重新选择</span>';
   var zone=document.getElementById('uploadZone');
   if(zone){zone.style.borderColor='#1a56db';zone.style.background='#f0f4ff';}
 }
@@ -494,13 +495,14 @@ function setupDropFile(e){
   e.preventDefault();
   var zone=document.getElementById('uploadZone');
   if(zone){zone.style.background='';zone.style.borderColor='#d1dce8';}
-  var f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];
-  if(!f)return;
-  _setupFile=f;
+  var files=e.dataTransfer&&e.dataTransfer.files?Array.from(e.dataTransfer.files):[];
+  if(!files.length)return;
+  _setupFiles=files;
   var lbl=document.getElementById('uploadLabel');
   if(lbl)lbl.innerHTML='<span style="font-size:18px;display:block;margin-bottom:4px">✅</span>'+
-    '<span style="color:#1a56db;font-weight:600">'+f.name+'</span><br>'+
-    '<span style="font-size:11.5px;color:#8492a6">点击重新选择</span>';
+    '<span style="color:#1a56db;font-weight:600">已选 '+files.length+' 个文件</span><br>'+
+    '<span style="font-size:11.5px;color:#8492a6">'+files.map(function(f){return f.name;}).join('、')+'</span><br>'+
+    '<span style="font-size:11px;color:#b0bac8;margin-top:3px;display:inline-block">点击重新选择</span>';
   if(zone){zone.style.borderColor='#1a56db';zone.style.background='#f0f4ff';}
 }
 
@@ -581,11 +583,13 @@ function runAnalysisAnim(city, fileName, stepsCount, onDone){
       // 填充产业 summary
       var p=cur&&PROJECTS[cur];
       var city2=p?p.city:'该城市';
+      var p0=cur&&PROJECTS[cur];
+      var isSZ=p0&&p0.city&&p0.city.indexOf('随州')>=0;
       var sectors=[
-        {icon:'🏭', name:'主导产业与产业链', desc:'已识别核心产业集群与上下游链条结构'},
-        {icon:'🏢', name:'园区与承载条件',   desc:'园区载体、厂房能耗与承接能力已评估'},
-        {icon:'🏗️', name:'链主与存量企业',   desc:'骨干企业名录与外采依赖缺口已梳理'},
-        {icon:'📜', name:'政策与领导关注',   desc:'产业规划方向与优先招引领域已提取'},
+        {icon:'🏭', name:'主导产业与产业链', desc:isSZ?'专用汽车703亿+安全应急502亿+香菇500亿，三大集群均已识别':'主导产业集群已识别，具体产值待材料确认'},
+        {icon:'🏢', name:'园区与承载条件',   desc:isSZ?'随州高新区(国家级)+曾都经开区+专汽/香菇产业园，四大载体已评估':'主要工业园区载体与承接条件已梳理'},
+        {icon:'🏗️', name:'链主与存量企业',   desc:isSZ?'程力/新楚风/齐星/江南专汽/品源均已梳理，电堆+机器人+提取三大外采缺口明确':'骨干链主与核心外采依赖已梳理'},
+        {icon:'📜', name:'政策与领导关注',   desc:isSZ?'氢能走廊+安全应急示范基地+香菇精深加工三条主线，口径待领导确认':'政策主线已提取，专项资金待确认'},
       ];
       var sumHtml='<div style="background:#fff;border-radius:16px;padding:20px 24px;box-shadow:0 2px 20px rgba(11,24,59,.06),0 0 0 1px rgba(11,24,59,.04)">'+
         '<div style="font-size:12px;font-weight:650;color:#8492a6;letter-spacing:.5px;margin-bottom:14px">分析完成 · '+city2+'城市智库已就位</div>'+
@@ -642,7 +646,7 @@ function createProject(){
   var city=(document.getElementById('setupCity')||{}).value;
   if(!city||!city.trim())return;
   city=city.trim();
-  var fileName=_setupFile?_setupFile.name:null;
+  var fileName=_setupFiles&&_setupFiles.length?_setupFiles.map(function(f){return f.name;}).join('、'):null;
 
   // 渲染分析动画页
   var wrap=document.getElementById('onboardingWrap')||document.getElementById('root');
@@ -671,54 +675,105 @@ function createProject(){
 
 /* 根据城市名生成城市智库四大主题的核心结论（公开信息初判） */
 function generateKbConclusions(city){
+  // 随州专项真实数据（源自慧小招2026-07报告）
+  // 通用城市走通用骨架；随州走完整真实数据
+  var isSuizhou=(city.indexOf('随州')>=0);
+  if(isSuizhou){
+    return {
+      industry:{
+        sub:'专用汽车·安全应急·香菇三大主导产业集群',
+        tag:'慧小招实测 · 2026-07',
+        known:[
+          '专用汽车：2025年产值703亿元(+12.1%)，年产16万辆，全国占比>10%，出口+71%全省第一，资质企业97家/零部件企业220家',
+          '安全应急：2023年总产值502亿，其中移动应急装备(专用车)324亿；篷布产量占全国30%，风机0.9万台/年',
+          '香菇：2024年全产业链产值超500亿，区域品牌价值205.8亿(连续3年全国食药用菌第一)，年产约70万吨(全球白花菇约50%)',
+          '链主企业：程力(整车)、新楚风(氢能整车·49T氢重卡已量产)、齐星(整车/无人机指挥车)、江南专汽(消防车)、品源("菇的辣克"4亿美元出口订单)',
+          '核心缺口：氢燃料电池电堆(占整车成本53%全部外购)、储氢瓶(14%)、应急机器人/无人机本体(依赖外采)、香菇多糖提取(仅2家)、菌种自主权(国外垄断)'
+        ]
+      },
+      park:{
+        sub:'随州高新区(国家级)·曾都经开区·专汽产业园·随县香菇产业园',
+        tag:'慧小招实测 · 2026-07',
+        known:[
+          '随州高新区：2015年升级国家级，拥有"移动应急装备国家创新型产业集群"等国字号11块',
+          '曾都区：国家安全应急产业示范基地，移动应急装备整机与改装主要承载区',
+          '专汽产业园：30公里专汽长廊核心区，已有程力/齐星等整车及改装企业入驻',
+          '随县香菇产业园：已有初加工入驻，精深加工(生物提取/GMP洁净)厂房条件需进一步核实',
+          '区位优势：汉十高铁随州南站至武汉50分钟/至襄阳30分钟；"汉孝随襄十"万亿汽车走廊节点'
+        ]
+      },
+      firm:{
+        sub:'97家资质整车/改装企业 + 220家零部件企业；外采依赖显著',
+        tag:'慧小招实测 · 2026-07',
+        known:[
+          '整车/改装链主：程力(×成都壹为新能源底盘/×杭州时代电动3万台)、新楚风(49T氢重卡·百公里氢耗7.1kg·续航1000km)、齐星(含无人机指挥车)',
+          '已有本地配套：车身驾驶室(齐星)、车规级晶振(泰晶AEC-Q200)、电解液/六氟磷酸锂(犇星)、铜箔(昱通)、负极材料(斯诺/犇星多孔硅)',
+          '严重外采依赖：底盘/动力总成(十堰潍柴/法士特/汉德·占整车成本50%)、氢电堆(53%)、储氢瓶(14%)、应急机器人(启灵)、无人机(迅北斗)',
+          '香菇链主：品源(辣酱出口·2024签1亿美元+2025签3亿美元)、裕国药业(多糖提取)、肽源(多肽提取)；精深加工仅2家布局',
+          '本地配套率仅41%(梁山65%/十堰75%+)，补链招引窗口期明确且需求方牵引力强'
+        ]
+      },
+      policy:{
+        sub:'氢能走廊+应急示范基地+香菇精深加工升级三条政策主线',
+        tag:'慧小招实测 · 待领导确认口径',
+        known:[
+          '湖北省氢能走廊：武汉-十堰-随州-襄阳沿线布局，随州以氢能专用车为主攻方向，专项支持方向已明确',
+          '国家安全应急产业示范基地(曾都区)：支持智慧应急装备落地，对机器人/无人机/5G通信模块有专项引导',
+          '香菇产业升级：随州将精深加工与品牌化列为农业升级重点，菌种自主研发与生物医药方向已有政策导向',
+          '竞争压力：十堰(高端应急车)+孝感(中能应急产业园42.8亿)双面夹击应急赛道；荆门碾压锂电；差异化空间在氢能专用车/低空经济/香菇',
+          '⚠️ 专项资金额度、首选承接地块与领导最新交办须向主管部门确认'
+        ]
+      }
+    };
+  }
+  // 通用骨架（非随州城市）
   return {
     industry:{
-      sub: city+'主导产业集群与链条结构',
-      tag: 'AI初判 · 待补充',
+      sub:city+'主导产业集群与链条结构（公开信息初判）',
+      tag:'AI初判 · 待补充',
       known:[
-        city+'现有工业基础以传统制造业为主，正向高端制造、新能源、数字经济等方向转型升级',
-        '主导产业集群在当地GDP中占据核心地位，规上工业企业数量可反映产业密度',
-        '上游原材料与核心零部件本地配套率普遍偏低，存在补链切入空间',
-        '新兴方向（智能装备/绿色化工/现代农业加工等）处于快速增长期，招引窗口期较好',
-        '⚠️ 具体产值数字与链条缺口需结合政府工作报告与产业链图谱确认'
+        city+'工业基础以传统制造业为核心，正向高端制造/新能源/数字经济方向升级',
+        '主导产业贡献当地规上工业主要产值，需查阅统计年鉴获取具体数字',
+        '上游核心零部件与关键材料本地配套率偏低，外采依赖是主要补链切入点',
+        '新兴方向(智能装备/绿色化工/现代农业加工)处于增长期，招引窗口较好',
+        '⚠️ 具体产业名称、产值与缺口明细需结合政府工作报告与产业链图谱确认'
       ]
     },
     park:{
-      sub: city+'园区承载与厂房能耗条件',
-      tag: 'AI初判 · 待核实',
+      sub:city+'主要工业园区承载条件（公开信息初判）',
+      tag:'AI初判 · 待核实',
       known:[
-        city+'已建立国家级/省级经济开发区或高新区，具备基础产业承载能力',
-        '主要工业园区已配备标准化厂房、公共配套及道路基础设施',
-        '能耗指标与用地条件因细分方向不同存在差异，精密制造类对洁净度要求更高',
-        '部分园区设有专项扶持政策（首年租金减免/设备补贴/人才落户等），具体口径需核实',
-        '⚠️ 具体可用地块、厂房面积与招商联系方式需向园区管委会或招商局确认'
+        city+'已建立国家级或省级经济开发区/高新区，具备基础工业承载能力',
+        '主要园区已配备标准化厂房、市政配套与交通基础设施',
+        '部分园区设有专项政策（租金减免/设备补贴/人才落户），具体口径需确认',
+        '精密制造/生物提取等高要求方向需确认洁净厂房与能耗配额是否满足',
+        '⚠️ 可用地块、厂房面积与园区联系方式需向招商局确认'
       ]
     },
     firm:{
-      sub: city+'链主企业与供应链缺口',
-      tag: 'AI初判 · 待补充',
+      sub:city+'链主企业与供应链缺口（公开信息初判）',
+      tag:'AI初判 · 待补充',
       known:[
-        city+'本地存在若干规上工业龙头企业，是产业链配套采购的核心需求方',
-        '链主企业在核心零部件、系统集成、检测认证等环节存在明显的外采依赖',
-        '本地零部件供应商体系不完整，外地采购占总成本比例较高（估算30-60%）',
-        '部分链主已表达本地化配套诉求，是招引上游企业的重要牵引力',
+        city+'本地存在若干规上工业龙头（整车/总装/终端品牌），是配套采购主要需求方',
+        '链主在核心零部件、系统集成、检测认证等环节存在明显外采依赖',
+        '外地采购占总成本比例估算30-60%，本地配套率提升空间大',
+        '部分链主已表达本地化配套诉求，是招引上游企业的直接牵引力',
         '⚠️ 具体企业名单、采购规模与技术路线需通过企业走访或授权材料确认'
       ]
     },
     policy:{
-      sub: city+'政策方向与领导关注重点',
-      tag: 'AI初判 · 待领导确认',
+      sub:city+'政策方向与领导关注重点（公开信息初判）',
+      tag:'AI初判 · 待领导确认',
       known:[
-        city+'近年政府工作报告将制造业升级、招商引资列为重点工作，产业政策支持力度较强',
-        '对符合主导方向的新落地企业，通常有土地优惠、税收减免、人才补贴等配套政策',
-        '重点招引方向与领导最新交办口径是核心决策依据，需干部上传最新发言确认',
-        '营商环境改善（审批提速/一事一议）是近年招商重点配套方向',
+        city+'近年政府工作报告将制造业升级与招商引资列为重点，产业政策支持力度较强',
+        '符合主导方向的落地企业通常可获土地优惠/税收减免/人才补贴等配套政策',
+        '重点招引方向与领导最新交办口径是核心决策依据，需干部上传确认',
+        '营商环境改善（审批提速/一事一议）是近年招商重点配套',
         '⚠️ 专项资金额度、首选承接园区与具体交办须向领导及主管部门确认'
       ]
     }
   };
 }
-
 
 /* ── Summary Modal: 分析完成弹窗，10s 倒计时 ── */
 var _summaryTimer=null;
@@ -821,11 +876,17 @@ function showDownloadReport(){
 function showSummaryModal(city2,sectors){
   // 生成kb一句话摘要
   var p=cur&&PROJECTS[cur];
-  var insights=[
-    p&&p.city?p.city+'现有工业基础具备承接基础，上游核心零部件本地配套率偏低，存在明显补链空间':'主导产业集群已识别，链条缺口待明确',
-    '已识别国家级/省级园区载体，厂房与能耗条件可满足主流制造业落地需求',
+  var _isSZ2=p&&p.city&&p.city.indexOf('随州')>=0;
+  var insights=_isSZ2?[
+    '专用汽车703亿+安全应急502亿+香菇500亿三大集群，本地配套率仅41%，氢电堆53%/底盘50%全靠外购',
+    '随州高新区(国家级)·曾都经开区·专汽/香菇产业园四大载体，汉十高铁至武汉50分钟',
+    '程力/新楚风/齐星/江南专汽/品源均有明确外采诉求；电堆·机器人·香菇提取三大缺口可直接对接',
+    '氢能走廊+安全应急示范基地+香菇精深加工三条政策主线，专项资金口径待领导确认',
+  ]:[
+    p&&p.city?p.city+'工业基础可承接，上游核心零部件本地配套率偏低，存在明显补链空间':'主导产业集群已识别，链条缺口待明确',
+    '主要工业园区载体已梳理，厂房与能耗条件可满足主流制造业落地需求',
     '本地链主存在外采依赖，上游供应商招引有直接采购牵引力',
-    '政策方向明确，专项资金口径与首选承接园区待干部上传领导最新发言确认',
+    '政策方向已提取，专项资金口径与首选承接园区待干部上传领导最新发言确认',
   ];
   var rows=(sectors||[]).map(function(s,i){
     return '<div style="display:flex;gap:14px;padding:14px 0;border-bottom:1px solid #f0f4ff;align-items:flex-start">'+
@@ -905,7 +966,7 @@ function enterWorkspace(){
   setTimeout(function(){
     if(!cur||!PROJECTS[cur])return;
     var city=PROJECTS[cur].city;
-    var hasFile=!!_setupFile;
+    var hasFile=!!(_setupFiles&&_setupFiles.length);
     addA('<p>'+city+'城市智库已就位'+(hasFile?'，已结合你上传的材料':'，基于公开信息')+
       '完成初步分析。</p>'+
       '<p style="margin-top:6px">左侧四大主题均可点击展开，你也可以直接提问：</p>'+
@@ -1418,11 +1479,15 @@ function kbPage(p){
           (k.tag.indexOf('待')>=0?'color:#c08a2a;background:#fff8e6':'color:#006d70;background:#e4f5f3'):
           'color:#9aa5b5;background:#f5f7fb';
         var dot=k.known&&k.known.length?'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:5px;vertical-align:middle"></span>':'';
-        return '<button class="topic-row" onclick="kbDetail('+i+')"><i class="i">'+k.icon+'</i>'+
-          '<span><strong>'+k.t+'</strong><small>'+k.sub+'</small></span>'+
-          '<em style="'+tagColor+'">'+dot+k.tag+'</em>'+
-          (k.known&&k.known.length?'<div style="font-size:11.5px;color:#667590;margin-top:4px;padding:0 4px;line-height:1.6;border-top:1px solid #f0f4ff;padding-top:6px">'+
-            k.known.filter(function(x){return x.indexOf('⚠️')<0;})[0]+'</div>':'')+
+        var firstKnown=k.known&&k.known.length?k.known.filter(function(x){return x.indexOf('⚠️')<0;})[0]:'';
+        return '<button class="topic-row" onclick="kbDetail('+i+')">'+
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
+            '<span style="font-size:20px">'+k.icon+'</span>'+
+            '<strong style="font-size:13px;color:#0b183b">'+k.t+'</strong>'+
+            '<em style="'+tagColor+';margin-left:auto;flex-shrink:0">'+dot+k.tag+'</em>'+
+          '</div>'+
+          '<small style="display:block;font-size:11.5px;color:#8492a6;margin-bottom:6px;line-height:1.4">'+k.sub+'</small>'+
+          (firstKnown?'<div style="font-size:12px;color:#33415a;line-height:1.65;border-top:1px solid #f0f4ff;padding-top:8px;margin-top:auto">'+firstKnown+'</div>':'')+
         '</button>';
       }).join('')+
     '</div>'+
