@@ -645,8 +645,71 @@ function createProject(){
 }
 
 /* 点击「进入工作区」按钮时调用 */
+
+/* 根据城市名生成城市智库四大主题的核心结论（公开信息初判） */
+function generateKbConclusions(city){
+  return {
+    industry:{
+      sub: city+'主导产业集群与链条结构',
+      tag: 'AI初判 · 待补充',
+      known:[
+        city+'现有工业基础以传统制造业为主，正向高端制造、新能源、数字经济等方向转型升级',
+        '主导产业集群在当地GDP中占据核心地位，规上工业企业数量可反映产业密度',
+        '上游原材料与核心零部件本地配套率普遍偏低，存在补链切入空间',
+        '新兴方向（智能装备/绿色化工/现代农业加工等）处于快速增长期，招引窗口期较好',
+        '⚠️ 具体产值数字与链条缺口需结合政府工作报告与产业链图谱确认'
+      ]
+    },
+    park:{
+      sub: city+'园区承载与厂房能耗条件',
+      tag: 'AI初判 · 待核实',
+      known:[
+        city+'已建立国家级/省级经济开发区或高新区，具备基础产业承载能力',
+        '主要工业园区已配备标准化厂房、公共配套及道路基础设施',
+        '能耗指标与用地条件因细分方向不同存在差异，精密制造类对洁净度要求更高',
+        '部分园区设有专项扶持政策（首年租金减免/设备补贴/人才落户等），具体口径需核实',
+        '⚠️ 具体可用地块、厂房面积与招商联系方式需向园区管委会或招商局确认'
+      ]
+    },
+    firm:{
+      sub: city+'链主企业与供应链缺口',
+      tag: 'AI初判 · 待补充',
+      known:[
+        city+'本地存在若干规上工业龙头企业，是产业链配套采购的核心需求方',
+        '链主企业在核心零部件、系统集成、检测认证等环节存在明显的外采依赖',
+        '本地零部件供应商体系不完整，外地采购占总成本比例较高（估算30-60%）',
+        '部分链主已表达本地化配套诉求，是招引上游企业的重要牵引力',
+        '⚠️ 具体企业名单、采购规模与技术路线需通过企业走访或授权材料确认'
+      ]
+    },
+    policy:{
+      sub: city+'政策方向与领导关注重点',
+      tag: 'AI初判 · 待领导确认',
+      known:[
+        city+'近年政府工作报告将制造业升级、招商引资列为重点工作，产业政策支持力度较强',
+        '对符合主导方向的新落地企业，通常有土地优惠、税收减免、人才补贴等配套政策',
+        '重点招引方向与领导最新交办口径是核心决策依据，需干部上传最新发言确认',
+        '营商环境改善（审批提速/一事一议）是近年招商重点配套方向',
+        '⚠️ 专项资金额度、首选承接园区与具体交办须向领导及主管部门确认'
+      ]
+    }
+  };
+}
+
 function enterWorkspace(){
   if(!cur||!PROJECTS[cur])return;
+  // 填充城市智库核心结论
+  var p=PROJECTS[cur];
+  var c=generateKbConclusions(p.city);
+  var mapping=[c.industry,c.park,c.firm,c.policy];
+  p.kb.forEach(function(k,i){
+    if(mapping[i]&&(!k.known||!k.known.length)){
+      k.known=mapping[i].known;
+      k.sub=mapping[i].sub;
+      k.tag=mapping[i].tag;
+    }
+  });
+  p.topic=p.city+'主导产业补链招引';
   view='knowledge';
   render();
   // 延迟写入 AI 首条消息
@@ -1157,13 +1220,20 @@ function kbPage(p){
     '<p>从产业、园区、企业或政策切入提问。我会标明使用了哪些材料、哪些结论仍需干部确认。</p></div>'+
     '<button class="ghost-button" onclick="downloadSummary()"><i class="i">📄</i>下载智库摘要</button></div>'+
     '<div class="knowledge-scroll"><div class="topic-grid">'+
-      p.kb.map(function(k,i){return '<button class="topic-row" onclick="kbDetail('+i+')"><i class="i">'+k.icon+'</i>'+
-        '<span><strong>'+k.t+'</strong><small>'+k.sub+'</small></span><em>'+k.tag+'</em></button>';}).join('')+
+      p.kb.map(function(k,i){
+        var tagColor=k.known&&k.known.length?
+          (k.tag.indexOf('待')>=0?'color:#c08a2a;background:#fff8e6':'color:#006d70;background:#e4f5f3'):
+          'color:#9aa5b5;background:#f5f7fb';
+        var dot=k.known&&k.known.length?'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:5px;vertical-align:middle"></span>':'';
+        return '<button class="topic-row" onclick="kbDetail('+i+')"><i class="i">'+k.icon+'</i>'+
+          '<span><strong>'+k.t+'</strong><small>'+k.sub+'</small></span>'+
+          '<em style="'+tagColor+'">'+dot+k.tag+'</em></button>';
+      }).join('')+
     '</div>'+
     '<div class="suggestion-strip">可以这样问：'+
-    '<button onclick="askKB(\''+P().city+'「'+P().topic+'」最值得补链的核心缺口是什么？\')">最值得补链的核心缺口</button>'+
-    '<button onclick="askKB(\'随州各园区如何分工承接「'+P().topic+'」？\')">园区分工承接方案</button>'+
-    '<button onclick="askKB(\'本地链主还缺哪些核心配套企业？\')">链主缺失配套</button>'+
+    '<button onclick="askKB(\''+P().city+'最值得补链的核心环节是哪些？\')">最值得补链的核心环节</button>'+
+    '<button onclick="askKB(\''+P().city+'各园区如何分工承接不同细分产业？\')">园区分工承接方案</button>'+
+    '<button onclick="askKB(\'本地链主企业还缺哪些关键上游配套？\')">链主缺口分析</button>'+
     '</div>'+
     '<div id="kbConv"></div></div>'+composer()+'</div>';
 }
@@ -1592,7 +1662,14 @@ function kbDetail(i){var k=P().kb[i];detailData=null;detailOpen=true;curKb=i;
   var html='<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button><div class="detail-page">'+
     '<div class="detail-header"><div><span class="eyebrow">KNOWLEDGE SCOPE</span><h2>'+k.t+'</h2><p>'+k.sub+'</p></div></div>'+
     '<div class="detail-scroll">'+
-      '<div class="detail-block"><h3>当前已知</h3><ul class="check-list">'+k.known.map(function(x){return '<li><i class="i">✔</i>'+x+'</li>'}).join('')+'</ul></div>'+
+      '<div class="detail-block"><h3>当前已知 <span style="font-size:11px;font-weight:400;color:#9aa5b5;margin-left:6px">AI初判 · ⚠️ 标注项需确认</span></h3>'+
+      (k.known&&k.known.length?
+        '<ul class="check-list">'+k.known.map(function(x){
+          var isWarn=x.indexOf('⚠️')>=0;
+          return '<li style="'+(isWarn?'color:#92400e;background:#fffbeb;border-radius:6px;padding:4px 8px;margin:2px 0':'')+'">'+'<i class="i" style="color:'+(isWarn?'#d97706':'#22c55e')+'">'+(isWarn?'⚠':'✔')+'</i> '+x.replace('⚠️ ','')+'</li>';
+        }).join('')+'</ul>':
+        '<div style="color:#9aa5b5;font-size:12.5px;padding:8px 0">暂无已知内容，点击下方「基于这个主题提问」开始分析。</div>')+
+      '</div>'+
       '<div class="detail-block"><h3>本次回答可调用（可追溯）</h3><ul class="source-list">'+k.calls.map(function(c){return '<li><i class="i">📄</i>'+c+'<small>可追溯</small></li>'}).join('')+'</ul></div>'+
       '<div class="info-callout">公开信息只用于辅助研判；园区承载、企业采购和领导任务仍需政府授权材料确认。</div>'+
     '</div>'+
