@@ -1161,7 +1161,7 @@ function enterWorkspace(){
 }
 
 
-function roleSwitch(){
+function roleSwitchLegacy(){
   // 角色切换暂时隐藏——先专注做好政府端（运营端代码保留，后续再启用）
   return '';
 }
@@ -1275,7 +1275,7 @@ function topbar(p){
       '<span style="margin:0 10px;color:#cbd7e6">/</span>'+
       '<strong style="color:var(--blue-dark)">'+p.topic+'</strong>'+
     '</div>'+
-    roleSwitch()+
+    /* removed */+
     '<div class="top-meta"><span><i class="i">🛰️</i>'+p.city+'城市智库已连接</span><span><i class="i">🕒</i>随州产业信息更新至 7月20日 06:00</span>'+
       '<span style="position:relative;cursor:pointer" onclick="toggleNotif(event)"><i class="i">🔔</i>'+
         (unreadCount()>0?'<b style="position:absolute;top:-4px;right:-6px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:#c85b09;color:#fff;font-size:9px;line-height:15px;text-align:center;font-weight:700">'+unreadCount()+'</b>':'')+
@@ -5355,7 +5355,7 @@ function opsTopbar(){
   return '<div class="topbar">'+
     '<div class="brand-block"><img src="'+brandLogo()+'"><div><strong>慧小招</strong><span>管理端 · 资源调度</span></div></div>'+
     opsCrumb()+
-    roleSwitch()+
+    /* removed */+
     '<div class="top-meta"><span><i class="i">🏙️</i>覆盖 '+OPEN_ACCOUNTS.length+' 个试点城市</span><span><i class="i">📥</i>'+DEMANDS.length+' 条在办需求</span></div>'+
   '</div>';
 }
@@ -5836,7 +5836,7 @@ function opsBoard(){
     table+'</div></div></div>';
 }
 function roleSwitch(){
-  return '<button class="role-switch" onclick="setRole(\''+(role==='ops'?'gov':'ops')+'\')" title="切换视角(演示用)"><i class="i">'+(role==='ops'?'👤':'🛰️')+'</i>'+(role==='ops'?'切到政府端':'切到管理端')+'</button>';
+  return '';
 }
 /* ================= /整合联动层 ================= */
 

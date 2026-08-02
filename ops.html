@@ -5928,7 +5928,7 @@ function opsBoard(){
     table+'</div></div></div>';
 }
 function roleSwitch(){
-  return '<button class="role-switch" onclick="setRole(\''+(role==='ops'?'gov':'ops')+'\')" title="切换视角(演示用)"><i class="i">'+(role==='ops'?'👤':'🛰️')+'</i>'+(role==='ops'?'切到政府端':'切到管理端')+'</button>';
+  return ''/* removed */ + '<button style="display:none" onclick="setRole(\''+(role==='ops'?'gov':'ops')+'\')" title="切换视角(演示用)"><i class="i">'+(role==='ops'?'👤':'🛰️')+'</i>'+(role==='ops'?'切到政府端':'切到管理端')+'</button>';
 }
 /* ================= /整合联动层 ================= */
 
@@ -5980,7 +5980,7 @@ function opsTopbarV2(){
       '<span style="font-size:12px;color:#94a3b8">' + OPS_ENT.length + ' 家企业</span>' +
     '</div>' +
     '<div style="flex:1"></div>' +
-    '<a href="http://localhost:5050/?demo" target="_blank" style="padding:5px 12px;background:rgba(255,255,255,.1);border-radius:8px;font-size:12px;color:#94a3b8;text-decoration:none;transition:background .15s" onmouseover="this.style.background=\'rgba(255,255,255,.2)\'" onmouseout="this.style.background=\'rgba(255,255,255,.1)\'">← 政府端</a>' +
+    '' +
   '</div>';
 }
 
