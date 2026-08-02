@@ -1505,7 +1505,7 @@ function kbPage(p){
             '<em style="'+tagColor+';margin-left:auto;flex-shrink:0">'+dot+k.tag+'</em>'+
           '</div>'+
           '<small style="display:block;font-size:11.5px;color:#8492a6;margin-bottom:6px;line-height:1.4">'+k.sub+'</small>'+
-          (firstKnown?'<div style="font-size:12px;color:#33415a;line-height:1.65;border-top:1px solid #f0f4ff;padding-top:8px;margin-top:auto">'+firstKnown+'</div>':'')+
+          (firstKnown?'<div style="font-size:12px;color:#33415a;line-height:1.65;border-top:1px solid #f0f4ff;padding-top:8px;margin-top:auto">'+highlightKeyData(firstKnown)+'</div>':'')+
         '</button>';
       }).join('')+
     '</div>'+
@@ -1990,6 +1990,16 @@ function buildKBCorpus(city){
   return chunks;
 }
 
+/* 关键数据高亮 */
+function highlightKeyData(text){
+  if(!text) return text;
+  return text.replace(/(\d+[\d,.]*)\s*(亿元|亿|万辆|万吨|万m³|万㎡|万顶|万台|GWh|km|kg)/g,'<strong style=\"color:#1a56db;font-weight:700\">$1$2</strong>')
+    .replace(/(\d+[\d.]*%)/g,'<strong style=\"color:#1a56db;font-weight:700\">$1</strong>')
+    .replace(/(程力|新楚风|齐星|江南专汽|博利特|金龙新材料|品源|裕国药业|肽源|泰晶科技|犇星|昱通)/g,'<strong style=\"color:#6d28d9;font-weight:650\">$1</strong>')
+    .replace(/(燃料电池电堆|储氢瓶|质子交换膜|膜电极|应急机器人|无人机本体|菌种自主权|香菇多糖|多肽提取)/g,'<em style=\"background:#fef3c7;color:#92400e;border-radius:3px;padding:0 3px;font-style:normal\">$1</em>')
+    .replace(/(全部外购|靠外采|本地空白|国外垄断|待领导确认|待核实)/g,'<span style=\"color:#dc2626;font-weight:600\">$1</span>');
+}
+
 function topicTags(t){
   if(t.indexOf('产业')>=0) return ['产业','主导','集群','链条','规模','产值'];
   if(t.indexOf('园区')>=0) return ['园区','承接','厂房','能耗','载体','开发区'];
@@ -2332,7 +2342,7 @@ function kbDetail(i){
             '<span style="flex:0 0 auto;margin-top:1px;color:'+(warn?'#d97706':'#22c55e')+'">'+
               (warn?'⚠':'✓')+'</span>'+
             '<span style="font-size:13px;color:'+(warn?'#92400e':'#1a202c')+';line-height:1.65">'+
-              x.replace('⚠️ ','')+'</span>'+
+              highlightKeyData(x.replace('⚠️ ',''))+'</span>'+
           '</li>';
         }).join('')+
       '</ul>'
@@ -2413,6 +2423,35 @@ function closeKbDetail(){
   var m=document.getElementById('kbDetailModal');
   if(m)m.remove();
 }
+
+function setKbActiveTopic(idx,k,conv){
+  var rows=document.querySelectorAll('.topic-row');
+  rows.forEach(function(r,ri){
+    r.style.boxShadow=ri===idx?'0 0 0 2.5px #1a56db,0 4px 18px rgba(26,86,219,.15)':'';
+    r.style.borderColor=ri===idx?'#1a56db':'';
+    r.style.background=ri===idx?'#f0f4ff':'';
+  });
+  var old=document.getElementById('kbTopicBadge');if(old)old.remove();
+  var CM={'主导产业与产业链':{bg:'#eff6ff',br:'#bfdbfe',tx:'#1d4ed8',dt:'#3b82f6'},
+    '园区与承载条件':{bg:'#f0fdf4',br:'#bbf7d0',tx:'#166534',dt:'#22c55e'},
+    '链主与存量企业':{bg:'#fdf4ff',br:'#e9d5ff',tx:'#6b21a8',dt:'#a855f7'},
+    '政策、规划与领导关注':{bg:'#fffbeb',br:'#fde68a',tx:'#92400e',dt:'#f59e0b'}};
+  var c=CM[k.t]||{bg:'#f5f7fb',br:'#e8edf5',tx:'#4a5568',dt:'#9aa5b5'};
+  var badge=document.createElement('div');badge.id='kbTopicBadge';
+  badge.style.cssText='margin:0 0 12px;padding:10px 14px;background:'+c.bg+';border:1.5px solid '+c.br+';border-radius:12px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:10';
+  badge.innerHTML='<span style="width:8px;height:8px;border-radius:50%;background:'+c.dt+';flex:0 0 auto"></span>'
+    +'<div style="flex:1"><div style="font-size:11px;font-weight:650;color:'+c.tx+';letter-spacing:.4px">当前提问主题</div>'
+    +'<div style="font-size:13px;font-weight:700;color:'+c.tx+'">'+k.icon+' '+k.t+'</div></div>'
+    +'<button onclick="clearKbActiveTopic()" style="background:none;border:none;color:'+c.tx+';opacity:.5;cursor:pointer;font-size:15px;padding:2px 6px">✕</button>';
+  if(conv){conv.insertBefore(badge,conv.children[1]||null);}
+}
+function clearKbActiveTopic(){
+  document.querySelectorAll('.topic-row').forEach(function(r){
+    r.style.boxShadow='';r.style.borderColor='';r.style.background='';
+  });
+  var b=document.getElementById('kbTopicBadge');if(b)b.remove();
+}
+
 // 「基于这个主题提问」→ 在城市智库对话区直接问答（回复对应 + 底部调用来源）
 function askAboutKb(i){
   var k=P().kb[i]; if(!k) return;
@@ -2430,6 +2469,7 @@ function askAboutKb(i){
   var ud=document.createElement('div');ud.className='message is-user';
   ud.innerHTML='<div class="message-bubble"><p>'+q+'</p></div>';
   c.appendChild(ud);c.scrollTop=c.scrollHeight;
+  setKbActiveTopic(i,k,c);
   kbRAGQueryWithHint(q,c,k);
 }
 // 真实文件选择器：弹系统文件夹
