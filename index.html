@@ -1450,16 +1450,50 @@ function ctxBar(icon,strong,span){
 }
 function composer(){
   var sub=view==='subwork';
-  var ph=sub?'针对本项目：让我起草对接方案、列核验清单、写领导汇报，或补充招引环节…':'可直接描述产业方向、细分环节、目标企业或领导交办任务，我会结合城市智库与最新公开信息研判…';
-  return '<div class="composer-wrap"><div class="composer">'+
+  var isKb=view==='knowledge';
+  var activeTopic=null;
+  if(isKb){var b=document.getElementById('kbTopicBadge');
+    if(b){var tel=b.querySelectorAll('div>div');tel.forEach(function(d){if(d.style&&d.fontSize==='13px')activeTopic=d.textContent.trim();});
+      if(!activeTopic){var els=b.querySelectorAll('div');els.forEach(function(d){if(d.textContent&&d.textContent.length>4&&d.textContent.length<20)activeTopic=d.textContent.trim();});}
+    }
+  }
+  var pillColors={'主导产业与产业链':'background:#eff6ff;color:#1d4ed8;border:1.5px solid #bfdbfe',
+    '园区与承载条件':'background:#f0fdf4;color:#166534;border:1.5px solid #bbf7d0',
+    '链主与存量企业':'background:#fdf4ff;color:#6b21a8;border:1.5px solid #e9d5ff',
+    '政策、规划与领导关注':'background:#fffbeb;color:#92400e;border:1.5px solid #fde68a'};
+  var topicPill='';
+  if(isKb&&activeTopic){
+    var ps=pillColors[activeTopic]||'background:#f5f7fb;color:#4a5568;border:1.5px solid #e8edf5';
+    topicPill='<div style="display:flex;align-items:center;gap:6px;padding:6px 14px 2px">'+
+      '<span style="font-size:11px;color:#9aa5b5">正在询问：</span>'+
+      '<span style="padding:2px 10px;border-radius:20px;font-size:12px;font-weight:600;'+ps+'">'+activeTopic+'</span>'+
+      '<button onclick="clearKbActiveTopic()" style="background:none;border:none;color:#b0bac8;font-size:13px;cursor:pointer;padding:0 3px" title="取消">✕</button>'+
+    '</div>';
+  }
+  var ph=isKb&&activeTopic?'针对「'+activeTopic+'」提问，我会优先检索该主题数据…':
+      isKb?'直接输入问题，例如：'+P().city+'最值得补链的核心缺口是哪些？':
+      sub?'针对本项目：让我起草对接方案、列核验清单、写领导汇报，或补充招引环节…':
+      '可直接描述产业方向、细分环节、目标企业或领导交办任务，我会结合城市智库与最新公开信息研判…';
+  return '<div class="composer-wrap">'+topicPill+'<div class="composer">'+
     '<div class="composer-tools">'+
-      '<button onclick="uploadHint()"><i class="i">📎</i>上传材料</button>'+
-      '<button onclick="go(\'knowledge\')"><i class="i">📚</i>'+P().city+'城市智库</button></div>'+
+      '<button onclick="uploadHint()"><i class="i"></i>上传材料</button>'+
+      (isKb&&activeTopic?'<button onclick="clearKbActiveTopic()"><i class="i">⌂</i>全局问答</button>':'')+
+      '<button onclick="go(\'knowledge\')"><i class="i"></i>'+P().city+'城市智库</button></div>'+
     '<textarea id="composerTa" placeholder="'+ph+'"></textarea>'+
     '<button class="send-button" onclick="sendMsg()"><i class="i">➤</i></button></div>'+
-    '<div class="composer-helper"><span>支持上传：政府工作报告 / 领导经济发言稿 / 产业报告 / 园区资料 / 企业名单</span>'+
+    '<div class="composer-helper"><span>支持上传：政府工作报告 / 领导发言稿 / 产业报告 / 园区资料 / 企业名单</span>'+
     '<button onclick="uploadHint()">查看建议材料清单</button></div></div>';
 }
+
+function renderComposer(){
+  var wrap=document.querySelector('.composer-wrap');
+  if(!wrap)return;
+  var tmp=document.createElement('div');
+  tmp.innerHTML=composer();
+  wrap.replaceWith(tmp.firstChild);
+  bind();
+}
+
 function homePage(p){
   return '<div class="page">'+
     '<div style="display:flex;align-items:center;gap:10px;padding:10px 22px 0"><div style="flex:1"></div>'+
@@ -2335,17 +2369,39 @@ function kbDetail(i){
 
   // 已知条目列表
   var knownHtml=(k.known&&k.known.length)
-    ? '<ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px">'+
-        k.known.map(function(x){
+    ? '<div style="display:flex;flex-direction:column;gap:8px">'+
+        k.known.map(function(x,xi){
           var warn=x.indexOf('⚠️')>=0;
-          return '<li style="display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border-radius:10px;background:'+(warn?'#fffbeb':'#f8faff')+';border:1px solid '+(warn?'#fde68a':'#e8edf5')+'">'+
-            '<span style="flex:0 0 auto;margin-top:1px;color:'+(warn?'#d97706':'#22c55e')+'">'+
-              (warn?'⚠':'✓')+'</span>'+
-            '<span style="font-size:13px;color:'+(warn?'#92400e':'#1a202c')+';line-height:1.65">'+
-              highlightKeyData(x.replace('⚠️ ',''))+'</span>'+
-          '</li>';
+          var isFile=x.indexOf('📎')===0;
+          var clean=x.replace('⚠️ ','');
+          var badges=[];
+          clean.replace(/(\d+[\d,.]*)(亿元|亿|万辆|万吨|万m³|万㎡|GWh|%)/g,function(m){badges.push(m);return m;});
+          var badgeHtml=badges.length
+            ?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:7px">'+
+               badges.map(function(b){
+                 return '<span style="padding:2px 8px;background:#dbeafe;color:#1e40af;border-radius:6px;font-size:11.5px;font-weight:700;letter-spacing:.3px">'+b+'</span>';
+               }).join('')+'</div>':'';
+          var accent=warn?'#f59e0b':isFile?'#22c55e':xi===0?'#6366f1':'#94a3b8';
+          var bg=warn?'#fffbeb':isFile?'#f0fdf4':'#f8faff';
+          var bd=warn?'#fde68a':isFile?'#bbf7d0':'#e8edf5';
+          var icon=warn?'⚠':isFile?'📎':xi===0?'★':'•';
+          var txtColor=warn?'#78350f':isFile?'#14532d':'#1e293b';
+          return '<div style="border-radius:12px;background:'+bg+';border:1.5px solid '+bd+';overflow:hidden">'+
+            '<div style="display:flex">'+
+              '<div style="width:4px;background:'+accent+';flex-shrink:0"></div>'+
+              '<div style="padding:10px 13px;flex:1">'+
+                '<div style="display:flex;gap:8px;align-items:flex-start">'+
+                  '<span style="font-size:12px;flex-shrink:0;margin-top:2px;color:'+accent+'">'+icon+'</span>'+
+                  '<div style="flex:1">'+
+                    '<span style="font-size:13px;color:'+txtColor+';line-height:1.7">'+highlightKeyData(clean)+'</span>'+
+                    badgeHtml+
+                  '</div>'+
+                '</div>'+
+              '</div>'+
+            '</div>'+
+          '</div>';
         }).join('')+
-      '</ul>'
+      '</div>'
     : '<div style="color:#9aa5b5;font-size:13px;padding:12px 0">暂无已知内容，点击下方按钮基于此主题提问。</div>';
 
   // 数据来源标签
@@ -2444,12 +2500,14 @@ function setKbActiveTopic(idx,k,conv){
     +'<div style="font-size:13px;font-weight:700;color:'+c.tx+'">'+k.icon+' '+k.t+'</div></div>'
     +'<button onclick="clearKbActiveTopic()" style="background:none;border:none;color:'+c.tx+';opacity:.5;cursor:pointer;font-size:15px;padding:2px 6px">✕</button>';
   if(conv){conv.insertBefore(badge,conv.children[1]||null);}
+  setTimeout(renderComposer,0);
 }
 function clearKbActiveTopic(){
   document.querySelectorAll('.topic-row').forEach(function(r){
     r.style.boxShadow='';r.style.borderColor='';r.style.background='';
   });
   var b=document.getElementById('kbTopicBadge');if(b)b.remove();
+  renderComposer();
 }
 
 // 「基于这个主题提问」→ 在城市智库对话区直接问答（回复对应 + 底部调用来源）
