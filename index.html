@@ -408,7 +408,7 @@ function render(){
   if(location.search.indexOf('demo')>=0&&!cur){
     var _dk='demo_'+Date.now().toString(36);
     var _dc=generateKbConclusions('随州');
-    PROJECTS[_dk]={id:_dk,city:'随州',org:'随州市招商局',who:'张主任',topic:'随州主导产业补链招引',stage:1,
+    var _dk_proj=PROJECTS[_dk]={id:_dk,city:'随州',org:'随州市招商局',who:'张主任',topic:'随州主导产业补链招引',stage:1,
       kb:[
         {icon:'🏭',t:'主导产业与产业链',sub:_dc.industry.sub,tag:_dc.industry.tag,known:_dc.industry.known,calls:['产业链缺口测绘报告']},
         {icon:'🏢',t:'园区与承载条件',sub:_dc.park.sub,tag:_dc.park.tag,known:_dc.park.known,calls:['产业链缺口测绘报告']},
@@ -416,6 +416,17 @@ function render(){
         {icon:'📜',t:'政策、规划与领导关注',sub:_dc.policy.sub,tag:_dc.policy.tag,known:_dc.policy.known,calls:['政策规划研究']}
       ],report:null,clues:[]};
     cur=_dk; view='knowledge'; detailOpen=false;
+  // 给 demo 项目注入示例报告状态，以便测试线索派生
+  if(!REPORTSTATE[_dk]){
+    REPORTSTATE[_dk]={
+      text:'## 一、产业基础判断\n随州专用汽车2025年产值703亿元，年产16万辆，本地配套率仅41%。\n\n## 二、产业链缺口分析\n❌ 燃料电池电堆（占整车成本53%，全部外购）\n❌ 高压储氢瓶阀与管路（占14%）\n❌ 应急机器人本体（依赖启灵外采）\n\n## 三、补链优先级清单TOP5\n| 排名 | 缺口节点 | 本地化属性 | 经济拉动★ | 招引可行性★ | 综合优先级 |\n|---|---|---|---|---|---|\n| 1 | 燃料电池电堆 | A=必须本地化 | ★★★★★ | ★★★★ | 第一优先 |\n| 2 | 高压储氢瓶阀 | A=必须本地化 | ★★★★ | ★★★★ | 第二优先 |\n| 3 | 应急机器人本体 | B=可跨区域 | ★★★★ | ★★★ | 第三优先 |\n\n## 五、待确认事项\n⚠️ 专项资金额度与首选承接园区需向领导确认',
+      topic:'随州主导产业补链招引',
+      ts: Date.now(),
+      score: 60,
+      phase: 2
+    };
+    _dk_proj.stage=3;  // 推进到「确认需求」阶段
+  }
   }
   if(view==='setup'||!cur||!PROJECTS[cur]){var _root=$('#root');if(_root){_root.innerHTML='<div style="height:100vh;background:#f5f7fb">'+setupPage()+'</div>';bind();} return;}
   if(role==='ops')return renderOps();
@@ -1368,76 +1379,426 @@ function mainPane(p){
   return projMgmtPage(p);                       // home = 项目管理（默认）
 }
 // 项目管理：项目列表切换（AI对话分类式）+ 进入项目工作区
-function projMgmtPage(p){
-  // 方案A：产业方向（可折叠分组）→ 其下的招引方向项目
-  var groups=Object.keys(PROJECTS).map(function(k){var x=PROJECTS[k];var sc=stColor(x.stage);
-    var subs=subprojOf(k);
-    var subHtml = subs.length ? subs.map(function(s,si){
-      return '<button onclick="openSub(\''+k+'\','+si+')" style="width:100%;display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--line);border-radius:9px;background:#fff;cursor:pointer;text-align:left;margin:6px 0 0 22px;width:calc(100% - 22px)">'+
-        '<i class="i" style="font-size:17px">🎯</i>'+
-        '<span style="flex:1;min-width:0"><strong style="font-size:13.5px">'+s.name.split(' · ')[0]+'</strong>'+
-        '<small style="display:block;color:var(--muted);font-size:11.5px;margin-top:1px">候选线索 '+(s.clueName||'')+' · 待对接</small></span>'+
-        '<span class="status-tag" style="background:#ebf3fd;color:#013582">对接中</span></button>';
-    }).join('') : '<div style="margin:6px 0 0 22px;font-size:12px;color:#9aa5b5">尚无招引方向项目 —— 去「研判需求」出报告并定稿后建立</div>';
-    var expanded=(window.__projOpen===k);
-    return '<div style="margin-bottom:14px">'+
-      '<div style="display:flex;align-items:center;gap:10px;padding:13px 16px;border:1px solid '+(expanded?'var(--blue)':'var(--line)')+';border-radius:10px;background:'+(expanded?'#f3f7fd':'#fafbfd')+'">'+
-        '<button onclick="toggleProjGroup(\''+k+'\')" style="flex:1;display:flex;align-items:center;gap:12px;border:0;background:none;cursor:pointer;text-align:left;min-width:0">'+
-          '<i class="i" style="font-size:20px">📂</i>'+
-          '<span style="flex:1;min-width:0"><strong style="font-size:14.5px">'+x.topic+'</strong>'+
-          '<small style="display:block;color:var(--muted);font-size:12px;margin-top:1px">'+x.city+' · 产业方向 · '+subs.length+' 个招引项目</small></span>'+
-          '<span class="status-tag" style="color:'+sc.c+';background:'+sc.bg+'">'+STAGES[x.stage-1][0]+'</span>'+
-          '<i class="i" style="font-size:13px;color:#9aa5b5;transition:.2s;transform:rotate('+(expanded?'180':'0')+'deg)">▾</i></button>'+
-        '<button class="ghost-button" style="flex:0 0 auto;font-size:11.5px;padding:5px 10px" onclick="gotoStudy(\''+k+'\')">📝 研判报告</button>'+
+/* ══════════════════════════════════════════════════════════════
+   企业线索管理 — projMgmtPage 完整重写
+   数据源：PROJECTS[k].clues[]
+   每条 clue: {id, name, kind, region, source, status, tone, reason, signal, questions:[]}
+   tone: 'slate'待接触 / 'amber'核验中 / 'teal'可安排沟通
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── 从研判报告文本派生候选线索 ── */
+function deriveCluesFromReport(projKey){
+  var rs = REPORTSTATE[projKey];
+  var p  = PROJECTS[projKey];
+  if(!rs || !rs.text || !p) return;
+  if(p.clues && p.clues.length > 0) return; // 已有线索不重复派生
+
+  var text = rs.text;
+  var lines = text.split('\n');
+  var items = [];
+
+  // 从 TOP5 / ❌缺失 行提取缺口
+  var gaps = [];
+  var inTop5 = false;
+  for(var i=0; i<lines.length; i++){
+    var l = lines[i];
+    if(l.indexOf('补链优先级')>=0 || l.indexOf('TOP5')>=0 || l.indexOf('优先级清单')>=0) inTop5=true;
+    if(inTop5 && l.trim().charAt(0)==='|'){
+      var cells = l.trim().slice(1,-1).split('|').map(function(c){return c.replace(/[*★]/g,'').trim();});
+      var isSep = cells.every(function(c){return /^[\s\-:]+$/.test(c);});
+      if(isSep || cells[0]==='排名' || cells[0]==='缺口节点') continue;
+      var rank = parseInt(cells[0]);
+      if(!isNaN(rank) && rank>=1 && rank<=3 && cells[1]) gaps.push(cells[1]);
+    }
+    if(inTop5 && gaps.length>=3) break;
+  }
+  // 降级：找 ❌ 行
+  if(!gaps.length){
+    lines.forEach(function(l){
+      if(l.indexOf('❌')>=0 && gaps.length<3){
+        var c = l.replace(/^[*\-•|#\s]+/,'').replace(/❌|\*\*/g,'').trim();
+        if(c.length>4 && c.length<50) gaps.push(c);
+      }
+    });
+  }
+
+  // 每个缺口生成一条脱敏候选线索
+  var regionMap = ['长三角','华南','华东','华中'];
+  var kindSuffix = ['系统集成商','制造企业','配套企业'];
+  gaps.slice(0,3).forEach(function(gap, idx){
+    items.push({
+      id: 'clue_' + projKey + '_' + idx,
+      name: '脱敏企业 ' + String.fromCharCode(65+idx) + '（' + gap.slice(0,8) + '·代号）',
+      kind: gap + kindSuffix[idx%3],
+      region: regionMap[idx%4],
+      source: '慧小招研判报告（' + new Date().toLocaleDateString('zh-CN') + '）',
+      status: '待资源核验',
+      tone: 'slate',
+      reason: '直接补「' + gap + '」缺口，与' + p.city + '本地链主形成配套需求。',
+      signal: '基于报告缺口判断，具体企业投资意向与决策层触达可能性需资源团队核验。',
+      questions: [
+        '企业是否有异地布局或产能扩张计划',
+        '与' + p.city + '本地链主的配套合作可行性',
+        '落地规模与首批场景要求'
+      ]
+    });
+  });
+
+  if(!p.clues) p.clues = [];
+  p.clues = p.clues.concat(items);
+  persist();
+}
+
+/* ── 线索卡片渲染 ── */
+function clueCard(clue, projKey, idx){
+  var toneMap = {
+    slate: {bg:'#f5f7fb', border:'#e8edf5', dot:'#9aa5b5', label:'待接触'},
+    amber: {bg:'#fffbeb', border:'#fde68a', dot:'#f59e0b', label:'核验中'},
+    teal:  {bg:'#f0fdf4', border:'#86efac', dot:'#22c55e', label:'可安排沟通'}
+  };
+  var t = toneMap[clue.tone] || toneMap.slate;
+  var isExpanded = (window.__clueOpen === clue.id);
+
+  var questionsHtml = clue.questions.length
+    ? '<div style="margin-top:10px"><div style="font-size:11px;font-weight:650;color:#6b7280;letter-spacing:.3px;margin-bottom:5px">核验问题</div>'+
+      clue.questions.map(function(q,qi){
+        return '<div style="display:flex;gap:6px;padding:5px 0;border-bottom:1px solid #f3f4f6">'+
+          '<span style="color:#9aa5b5;flex-shrink:0;font-size:12px">'+(qi+1)+'.</span>'+
+          '<span style="font-size:12.5px;color:#374151">'+q+'</span>'+
+        '</div>';
+      }).join('')+'</div>'
+    : '';
+
+  var expandedDetail = isExpanded
+    ? '<div style="padding:12px 16px 14px;border-top:1px solid '+t.border+';background:'+t.bg+'">'+
+        '<div style="margin-bottom:8px">'+
+          '<div style="font-size:11px;font-weight:650;color:#6b7280;letter-spacing:.3px;margin-bottom:4px">为什么值得核验</div>'+
+          '<div style="font-size:13px;color:#1f2937;line-height:1.65">'+clue.reason+'</div>'+
+        '</div>'+
+        '<div style="margin-bottom:8px">'+
+          '<div style="font-size:11px;font-weight:650;color:#6b7280;letter-spacing:.3px;margin-bottom:4px">公开信号与资源边界</div>'+
+          '<div style="font-size:12.5px;color:#4b5563;line-height:1.6">'+clue.signal+'</div>'+
+        '</div>'+
+        questionsHtml+
+        '<div style="display:flex;gap:8px;margin-top:12px">'+
+          (clue.tone==='slate'
+            ? '<button onclick="requestVerify(\''+projKey+'\',\''+clue.id+'\')" '+
+                'style="flex:1;padding:8px;background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;font-size:12.5px;font-weight:600;color:#92400e;cursor:pointer">'+
+                '🔍 请资源团队核验</button>'
+            : clue.tone==='amber'
+            ? '<button disabled style="flex:1;padding:8px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;color:#9aa5b5;cursor:not-allowed">'+
+                '⏳ 核验进行中</button>'
+            : '<button onclick="arrangeDocking(\''+projKey+'\',\''+clue.id+'\')" '+
+                'style="flex:1;padding:8px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12.5px;font-weight:600;color:#166534;cursor:pointer">'+
+                '✓ 安排首次沟通</button>'
+          )+
+          '<button onclick="editClue(\''+projKey+'\',\''+clue.id+'\')" '+
+            'style="padding:8px 12px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:8px;font-size:12px;color:#4a5568;cursor:pointer">'+
+            '✎ 编辑</button>'+
+        '</div>'+
+      '</div>'
+    : '';
+
+  return '<div style="border-radius:12px;border:1.5px solid '+t.border+';overflow:hidden;background:#fff;margin-bottom:8px">'+
+    '<button onclick="toggleClue(\''+clue.id+'\')" '+
+      'style="width:100%;display:flex;align-items:center;gap:12px;padding:12px 16px;background:'+(isExpanded?t.bg:'#fff')+';border:none;cursor:pointer;text-align:left">'+
+      '<span style="width:8px;height:8px;border-radius:50%;background:'+t.dot+';flex-shrink:0;box-shadow:0 0 0 2px '+t.border+'"></span>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:13.5px;font-weight:700;color:#0b183b;margin-bottom:2px">'+clue.name+'</div>'+
+        '<div style="font-size:12px;color:#8492a6">'+clue.kind+' · '+clue.region+'</div>'+
       '</div>'+
-      (expanded?('<div style="margin-top:2px">'+dirHistory(k)+subHtml+'</div>'):'')+'</div>';
-  }).join('');
-  return '<div class="page">'+
-    '<div class="page-header"><div><span class="eyebrow">PROJECTS</span><h1>项目管理</h1>'+
-    '<p>点产业方向展开：可见该方向的历史报告 / 上传材料 / 已派生的招引项目。</p></div></div>'+
-    '<div class="knowledge-scroll"><div style="width:100%">'+groups+'</div>'+
-    '<div class="boundary-note" style="margin-top:12px"><i class="i">ℹ</i>每个招引项目是一条独立对接线；对接进度由资源端回传，系统只做提醒。</div>'+
-    '</div></div>';
-}
-// 展开/折叠产业方向分组（不跳研判需求）
-function toggleProjGroup(k){window.__projOpen=(window.__projOpen===k)?null:k;render();}
-// 需要看/改报告时才去研判需求
-function gotoStudy(k){cur=k;view='report';render();setTimeout(function(){if(REPORTSTATE[k])showReport();},60);toast('查看/修改「'+PROJECTS[k].topic+'」研判报告');}
-// 产业方向展开时：显示该方向的历史报告 + 上传材料（Ryan原意的下拉内容）
-function dirHistory(k){
-  var st=REPORTSTATE[k];var ups=UPLOADS[k]||[];
-  if(!st&&!ups.length)return '';
-  var h='<div style="margin:6px 0 0 22px;padding:10px 13px;background:#f7f9fc;border:1px solid #eef1f5;border-radius:9px;width:calc(100% - 22px)">'+
-    '<div style="font-size:11px;color:#8490a5;font-weight:600;margin-bottom:6px">📁 历史报告 / 材料</div>';
-  if(st)h+='<div onclick="gotoStudy(\''+k+'\')" style="font-size:12.5px;color:#0757ad;cursor:pointer;padding:3px 0">📄 研判报告 v'+st.ver+(st.finalized?'（已定稿）':'（草稿）')+' · 点击查看</div>';
-  ups.forEach(function(u){h+='<div style="font-size:12px;color:#556;padding:2px 0">📎 '+u.name+' <span style="color:#9aa5b5;font-size:11px">'+u.at+'</span></div>';});
-  if(!ups.length)h+='<div style="font-size:11.5px;color:#9aa5b5;padding:2px 0">暂无上传材料</div>';
-  return h+'</div>';
-}
-// 项目管理顶部：历史报告/材料 下拉栏（Ryan建议）
-function dropdownHistory(){
-  return '<div style="position:relative">'+
-    '<button class="ghost-button" onclick="toggleHistDrop(event)"><i class="i">🗂️</i>历史报告 / 材料 <i class="i" style="font-size:11px">▾</i></button>'+
-    '<div id="histDrop" style="display:none;position:absolute;top:40px;right:0;width:300px;max-height:360px;overflow:auto;background:#fff;border:1px solid #d8e0ed;border-radius:12px;box-shadow:0 12px 32px rgba(11,24,59,.16);z-index:60;padding:8px">'+histDropContent()+'</div>'+
+      '<span style="padding:3px 10px;background:'+t.bg+';color:'+t.dot+';border:1px solid '+t.border+';border-radius:20px;font-size:11.5px;font-weight:600;flex-shrink:0;white-space:nowrap">'+t.label+'</span>'+
+      '<span style="font-size:12px;color:#9aa5b5;margin-left:2px">'+(isExpanded?'▲':'▼')+'</span>'+
+    '</button>'+
+    expandedDetail+
   '</div>';
 }
-function histDropContent(){
-  var html='';
-  Object.keys(PROJECTS).forEach(function(k){
-    var st=REPORTSTATE[k];var ups=UPLOADS[k]||[];
-    if(!st&&!ups.length)return;
-    html+='<div style="padding:8px 10px;border-bottom:1px solid #f2f5f9"><div style="font-size:12px;font-weight:650;color:#0b183b;margin-bottom:5px">'+PROJECTS[k].topic+'</div>';
-    if(st)html+='<div onclick="openReportFrom(\''+k+'\')" style="font-size:12px;color:#0757ad;cursor:pointer;padding:3px 0">📄 研判报告 v'+st.ver+(st.finalized?'（已定稿）':'（草稿）')+'</div>';
-    ups.forEach(function(u){html+='<div style="font-size:11.5px;color:#556;padding:2px 0">📎 '+u.name+' <span style="color:#9aa5b5">'+u.at+'</span></div>';});
-    html+='</div>';
-  });
-  return html||'<div style="padding:16px;text-align:center;color:#9aa5b5;font-size:12px">暂无历史报告或材料<br>去「研判需求」生成后这里可查</div>';
+
+/* ── 操作函数 ── */
+function toggleClue(id){
+  window.__clueOpen = (window.__clueOpen===id) ? null : id;
+  render();
 }
-function toggleHistDrop(e){e.stopPropagation();var d=document.querySelector('#histDrop');if(d)d.style.display=d.style.display==='none'?'block':'none';}
-function openReportFrom(k){cur=k;view='report';render();setTimeout(showReport,60);toast('打开「'+PROJECTS[k].topic+'」报告');}
-// 点招引方向项目 → 主区切换成该项目独立工作页
-function openSub(k,si){cur=k;curSub=si;view='subwork';detailData={kind:'sub',d:subprojOf(k)[si]};detailOpen=true;render();
-  toast('已打开项目：'+subprojOf(k)[si].name.split(' · ')[0]);
+
+function requestVerify(projKey, clueId){
+  var p = PROJECTS[projKey]; if(!p) return;
+  var c = (p.clues||[]).find(function(x){return x.id===clueId;});
+  if(!c) return;
+  c.tone = 'amber';
+  c.status = '资源核验中';
+  persist();
+  // 推进 stage 到 4（资源匹配）
+  p.stage = Math.max(p.stage, 4);
+  persist();
+  render();
+  toast('✓ 已发起资源核验，等待团队回传');
+}
+
+function arrangeDocking(projKey, clueId){
+  var p = PROJECTS[projKey]; if(!p) return;
+  var c = (p.clues||[]).find(function(x){return x.id===clueId;});
+  if(!c) return;
+  c.tone = 'teal';
+  c.status = '可安排首次沟通';
+  p.stage = Math.max(p.stage, 5);
+  persist();
+  render();
+  toast('✓ 已标记为可安排沟通，进入政企对接阶段');
+}
+
+function editClue(projKey, clueId){
+  var p = PROJECTS[projKey]; if(!p) return;
+  var c = (p.clues||[]).find(function(x){return x.id===clueId;});
+  if(!c) return;
+
+  var layer = document.createElement('div');
+  layer.id = 'clueEditLayer';
+  layer.onclick = function(e){ if(e.target===layer) layer.remove(); };
+  layer.style.cssText = 'position:fixed;inset:0;background:rgba(11,24,59,.4);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;backdrop-filter:blur(4px)';
+
+  layer.innerHTML =
+    '<div style="background:#fff;border-radius:20px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 80px rgba(11,24,59,.18)">'+
+      '<div style="padding:20px 24px;border-bottom:1px solid #f0f4ff;display:flex;align-items:center;justify-content:space-between">'+
+        '<div style="font-size:15px;font-weight:750;color:#0b183b">编辑企业线索</div>'+
+        '<button onclick="document.getElementById(\'clueEditLayer\').remove()" style="background:none;border:none;font-size:18px;color:#9aa5b5;cursor:pointer">✕</button>'+
+      '</div>'+
+      '<div style="padding:20px 24px">'+
+        '<div style="margin-bottom:14px">'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:6px">企业名称（脱敏代号）</label>'+
+          '<input id="cedit-name" value="'+c.name.replace(/"/g,'&quot;')+'" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none" onfocus="this.style.border=\'1.5px solid #6366f1\'" onblur="this.style.border=\'1.5px solid #e8edf5\'"/>'+
+        '</div>'+
+        '<div style="margin-bottom:14px">'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:6px">企业方向</label>'+
+          '<input id="cedit-kind" value="'+c.kind.replace(/"/g,'&quot;')+'" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none" onfocus="this.style.border=\'1.5px solid #6366f1\'" onblur="this.style.border=\'1.5px solid #e8edf5\'"/>'+
+        '</div>'+
+        '<div style="margin-bottom:14px">'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:6px">区域</label>'+
+          '<input id="cedit-region" value="'+c.region+'" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none" onfocus="this.style.border=\'1.5px solid #6366f1\'" onblur="this.style.border=\'1.5px solid #e8edf5\'"/>'+
+        '</div>'+
+        '<div style="margin-bottom:14px">'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:6px">为什么值得核验</label>'+
+          '<textarea id="cedit-reason" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none;resize:vertical;min-height:72px;line-height:1.6" onfocus="this.style.border=\'1.5px solid #6366f1\'" onblur="this.style.border=\'1.5px solid #e8edf5\'">'+c.reason+'</textarea>'+
+        '</div>'+
+        '<div style="margin-bottom:20px">'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:6px">核验状态</label>'+
+          '<div style="display:flex;gap:8px">'+
+            ['slate:待接触','amber:核验中','teal:可安排沟通'].map(function(s){
+              var parts=s.split(':'), val=parts[0], label=parts[1];
+              var isActive=c.tone===val;
+              return '<button onclick="this.parentNode.querySelectorAll(\'.tone-btn\').forEach(function(b){b.style.background=\'#f5f7fb\';b.style.fontWeight=\'400\'});this.style.background=\'#eff6ff\';this.style.fontWeight=\'700\';window.__clueEditTone=\''+val+'\'" '+
+                'class="tone-btn" '+
+                'style="flex:1;padding:7px 0;border:1.5px solid #e8edf5;border-radius:8px;font-size:12px;cursor:pointer;background:'+(isActive?'#eff6ff':'#f5f7fb')+';font-weight:'+(isActive?'700':'400')+';color:#0b183b">'+label+'</button>';
+            }).join('')+
+          '</div>'+
+        '</div>'+
+        '<button onclick="saveClueEdit(\''+projKey+'\',\''+clueId+'\')" '+
+          'style="width:100%;padding:12px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:650;cursor:pointer">'+
+          '保存修改</button>'+
+      '</div>'+
+    '</div>';
+
+  window.__clueEditTone = c.tone;
+  document.body.appendChild(layer);
+}
+
+function saveClueEdit(projKey, clueId){
+  var p = PROJECTS[projKey]; if(!p) return;
+  var c = (p.clues||[]).find(function(x){return x.id===clueId;});
+  if(!c) return;
+  var name   = document.getElementById('cedit-name');
+  var kind   = document.getElementById('cedit-kind');
+  var region = document.getElementById('cedit-region');
+  var reason = document.getElementById('cedit-reason');
+  if(name)   c.name   = name.value.trim() || c.name;
+  if(kind)   c.kind   = kind.value.trim() || c.kind;
+  if(region) c.region = region.value.trim() || c.region;
+  if(reason) c.reason = reason.value.trim() || c.reason;
+  c.tone = window.__clueEditTone || c.tone;
+  var toneStatusMap = {slate:'待接触',amber:'资源核验中',teal:'可安排首次沟通'};
+  c.status = toneStatusMap[c.tone] || c.status;
+  persist();
+  document.getElementById('clueEditLayer').remove();
+  render();
+  toast('✓ 线索已更新');
+}
+
+function addClueManual(projKey){
+  var p = PROJECTS[projKey]; if(!p) return;
+  if(!p.clues) p.clues = [];
+  var newClue = {
+    id: 'clue_manual_'+Date.now().toString(36),
+    name: '待填写企业名称',
+    kind: '待填写企业方向',
+    region: '待填写区域',
+    source: '招商干部录入',
+    status: '待资源核验',
+    tone: 'slate',
+    reason: '待填写核验理由',
+    signal: '来源：招商干部录入，需人工核验',
+    questions: ['核验企业主营方向','确认与本次招商需求的结合点','判断资源可达性与沟通窗口']
+  };
+  p.clues.push(newClue);
+  persist();
+  render();
+  // 自动打开编辑弹窗
+  setTimeout(function(){ editClue(projKey, newClue.id); }, 100);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   projMgmtPage 完整重写
+   ══════════════════════════════════════════════════════════════ */
+function projMgmtPage(p){
+  var projKeys = Object.keys(PROJECTS);
+  if(!projKeys.length){
+    return '<div class="page">'+
+      '<div class="page-header"><div><span class="eyebrow">PROJECTS</span><h1>项目管理</h1>'+
+      '<p>研判报告确认后，立项导入的方向会出现在这里。</p></div></div>'+
+      '<div class="knowledge-scroll"><div style="text-align:center;padding:60px 20px">'+
+        '<div style="font-size:36px;margin-bottom:12px">📂</div>'+
+        '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">暂无立项</div>'+
+        '<div style="font-size:13px;color:#8492a6;line-height:1.7;margin-bottom:20px">'+
+          '在「研判需求」生成完整报告后，<br>点击「🏁 可立项招引方向」中的「立项导入 →」按钮建立项目'+
+        '</div>'+
+        '<button onclick="go(\'report\')" style="padding:10px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:650;cursor:pointer">前往研判需求 →</button>'+
+      '</div></div></div>';
+  }
+
+  var groups = projKeys.map(function(k){
+    var x = PROJECTS[k];
+    var sc = stColor(x.stage);
+    var expanded = (window.__projOpen === k);
+
+    // 自动派生线索（如有报告）
+    deriveCluesFromReport(k);
+
+    var clues = x.clues || [];
+    var teal  = clues.filter(function(c){return c.tone==='teal';}).length;
+    var amber = clues.filter(function(c){return c.tone==='amber';}).length;
+    var slate = clues.filter(function(c){return c.tone==='slate';}).length;
+
+    // 线索摘要标签
+    var cluesSummary = clues.length
+      ? (teal?'<span style="padding:2px 8px;background:#f0fdf4;color:#166534;border-radius:12px;font-size:11px;margin-left:4px">'+teal+'条可沟通</span>':'')
+        +(amber?'<span style="padding:2px 8px;background:#fffbeb;color:#92400e;border-radius:12px;font-size:11px;margin-left:4px">'+amber+'条核验中</span>':'')
+        +(slate?'<span style="padding:2px 8px;background:#f5f7fb;color:#6b7280;border-radius:12px;font-size:11px;margin-left:4px">'+slate+'条待接触</span>':'')
+      : '<span style="font-size:11px;color:#9aa5b5;margin-left:4px">待生成线索</span>';
+
+    // 展开内容
+    var expandedContent = '';
+    if(expanded){
+      // 进度条
+      var stageBar = '<div style="margin-bottom:16px">'+
+        '<div style="display:flex;gap:0;border-radius:8px;overflow:hidden;border:1px solid #e8edf5">'+
+        STAGES.map(function(s,si){
+          var n=si+1;
+          var isDone = n < x.stage;
+          var isCur  = n === x.stage;
+          var bg = isDone?'#1a56db':isCur?'#eff6ff':'#f9fafb';
+          var color = isDone?'#fff':isCur?'#1a56db':'#9aa5b5';
+          var fw = isCur?'700':'400';
+          return '<div style="flex:1;padding:8px 6px;text-align:center;background:'+bg+';border-right:1px solid #e8edf5;cursor:'+(n<=x.stage?'default':'pointer')+';" '+
+            (n===x.stage+1?'onclick="advanceStage(\''+k+'\')" title=\"点击推进到下一阶段\"':'')+'>' +
+            '<div style="font-size:11px;font-weight:'+fw+';color:'+color+'">'+
+              (isDone?'✓ ':'')+(isCur?'⬤ ':'')+s[0]+
+            '</div>'+
+          '</div>';
+        }).join('')+
+        '</div></div>';
+
+      // 历史报告
+      var reportHist = '';
+      var rs = REPORTSTATE[k];
+      if(rs){
+        reportHist = '<div style="margin-bottom:14px;padding:10px 14px;background:#f8faff;border-radius:10px;border:1px solid #e8edf5">'+
+          '<div style="display:flex;align-items:center;gap:8px">'+
+            '<span style="font-size:14px">📋</span>'+
+            '<div style="flex:1">'+
+              '<div style="font-size:13px;font-weight:650;color:#0b183b">研判报告</div>'+
+              '<div style="font-size:11.5px;color:#8492a6">置信度 '+rs.score+'% · '+new Date(rs.ts).toLocaleDateString('zh-CN')+'</div>'+
+            '</div>'+
+            '<button onclick="gotoStudy(\''+k+'\')" style="padding:5px 12px;background:#fff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer">查看报告</button>'+
+          '</div>'+
+        '</div>';
+      }
+
+      // 线索列表
+      var cluesList = '<div>'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'+
+          '<span style="font-size:12px;font-weight:750;color:#0b183b;letter-spacing:.3px">企业线索</span>'+
+          cluesSummary+
+          '<div style="flex:1"></div>'+
+          '<button onclick="addClueManual(\''+k+'\')" style="padding:5px 12px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600">+ 手动录入</button>'+
+        '</div>'+
+        (clues.length
+          ? clues.map(function(c,ci){ return clueCard(c, k, ci); }).join('')
+          : '<div style="text-align:center;padding:20px;background:#f9fafb;border-radius:10px;border:1px solid #e8edf5">'+
+              '<div style="font-size:12.5px;color:#9aa5b5;margin-bottom:8px">尚无候选线索</div>'+
+              (rs
+                ? '<button onclick="deriveCluesFromReport(\''+k+'\');render()" style="padding:6px 14px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer">从报告派生线索</button>'
+                : '<div style="font-size:12px;color:#b0bac8">先完成研判报告，再派生候选线索</div>'
+              )+
+            '</div>'
+        )+
+        // 递交按钮
+        (x.stage>=3 && x.stage<4
+          ? '<button onclick="advanceStage(\''+k+'\')" style="width:100%;margin-top:12px;padding:11px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:650;cursor:pointer">📤 正式递交需求，进入资源匹配</button>'
+          : ''
+        )+
+      '</div>';
+
+      expandedContent = '<div style="padding:0 16px 16px">'+
+        stageBar+
+        reportHist+
+        cluesList+
+      '</div>';
+    }
+
+    return '<div style="margin-bottom:12px;border-radius:14px;border:1.5px solid '+(expanded?'#bfdbfe':'#e8edf5')+';overflow:hidden;background:#fff">'+
+      '<button onclick="toggleProjGroup(\''+k+'\')" '+
+        'style="width:100%;display:flex;align-items:center;gap:12px;padding:14px 18px;background:'+(expanded?'#f8faff':'#fff')+';border:none;cursor:pointer;text-align:left">'+
+        '<span style="font-size:22px;flex-shrink:0">🎯</span>'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
+            '<strong style="font-size:14px;color:#0b183b">'+x.topic+'</strong>'+
+            cluesSummary+
+          '</div>'+
+          '<div style="font-size:12px;color:#8492a6;margin-top:3px">'+x.city+' · '+STAGES[x.stage-1][0]+' · '+clues.length+'条线索</div>'+
+        '</div>'+
+        '<span style="padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:600;background:'+sc.bg+';color:'+sc.c+'">'+STAGES[x.stage-1][0]+'</span>'+
+        '<span style="font-size:13px;color:#9aa5b5;margin-left:4px">'+(expanded?'▲':'▼')+'</span>'+
+      '</button>'+
+      expandedContent+
+    '</div>';
+  }).join('');
+
+  return '<div class="page">'+
+    '<div class="page-header"><div>'+
+      '<span class="eyebrow">PROJECTS</span><h1>项目管理 · 企业线索</h1>'+
+      '<p>展开产业方向查看候选企业线索、研判报告与阶段进度；发起资源核验或安排首次沟通。</p>'+
+    '</div></div>'+
+    '<div class="knowledge-scroll">'+
+      '<div style="width:100%">'+groups+'</div>'+
+      '<div style="margin-top:10px;padding:10px 14px;background:#f9fafb;border-radius:8px;border:1px solid #e8edf5;font-size:12px;color:#8492a6">'+
+        'ⓘ 企业线索仅展示脱敏代号、公开依据和核验问题；具体资源可达性由资源团队人工核验，系统不自动联系企业。'+
+      '</div>'+
+    '</div></div>';
+}
+
+/* 推进阶段 */
+function advanceStage(projKey){
+  var p = PROJECTS[projKey]; if(!p) return;
+  if(p.stage < 5){
+    p.stage++;
+    persist();
+    render();
+    var stageName = STAGES[p.stage-1] ? STAGES[p.stage-1][0] : '完成';
+    toast('✓ 已推进到「' + stageName + '」阶段');
+  }
+}
+
+function toggleProjGroup(k){
+  window.__projOpen=(window.__projOpen===k)?null:k;
+  render();
 }
 // 招引项目独立工作页 = 该方向的"对话作战室"（雷总三栏：中=持续对话，右=证据卡片）
 function subWorkPage(p){
