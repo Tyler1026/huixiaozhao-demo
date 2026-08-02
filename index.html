@@ -527,7 +527,23 @@ function render(){
     render._restored=true;
     if(restore()){return render();}
   }
-  // ?demo 模式：直接注入随州演示数据，跳过 onboarding（测试用）
+  // ?demo 模式：先尝试从 localStorage 恢复已有数据（管理端可能已写入）
+  if(location.search.indexOf('demo')>=0&&!cur){
+    // 如果 localStorage 已有项目数据，直接 restore 而不新建 demo
+    if(!render._restored){
+      render._restored=true;
+      var _raw=localStorage.getItem(LS_KEY);
+      if(_raw){
+        try{
+          var _data=JSON.parse(_raw);
+          if(_data.PROJECTS&&Object.keys(_data.PROJECTS).length>0){
+            restore();
+            KB_UNLOCKED[cur]=KB_UNLOCKED[cur]||{report:true,home:true,docking:true};
+            return render();
+          }
+        }catch(e){}
+      }
+    }
   if(location.search.indexOf('demo')>=0&&!cur){
     var _dk='demo_'+Date.now().toString(36);
     var _dc=generateKbConclusions('随州');
@@ -549,7 +565,7 @@ function render(){
       phase: 2
     };
     _dk_proj.stage=3;  // 推进到「确认需求」阶段
-  }
+  }}
   }
   if(view==='setup'||!cur||!PROJECTS[cur]){var _root=$('#root');if(_root){_root.innerHTML='<div style="height:100vh;background:#f5f7fb">'+setupPage()+'</div>';bind();} return;}
   if(role==='ops')return renderOps();
