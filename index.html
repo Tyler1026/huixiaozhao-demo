@@ -2120,65 +2120,132 @@ function generateKBAnswer(query, chunks, city){
 }
 
 /* ── 4. 打字机渲染 + 来源引用 + 追问按钮 ── */
-function kbAnswerRender(container, query, result, elapsed){
-  // 思考动画节点
-  var thinking=document.createElement('div');
-  thinking.className='message';
-  thinking.innerHTML='<img src="'+aiAvatar()+'"><div class="message-bubble" style="display:flex;align-items:center;gap:8px;color:#9aa5b5;font-size:13px">'+
-    '<span class="kb-thinking-dot"></span>正在检索城市智库…</div>';
+
+/* ── KB RAG: 流式渲染 + 追问按钮 ── */
+var KB_API = 'http://localhost:5050/api/kb-chat';
+
+function kbAnswerRender(container, query, chunks, city){
+  // 1. 思考气泡
+  var thinking = document.createElement('div');
+  thinking.className = 'message';
+  thinking.innerHTML = '<img src="'+aiAvatar()+'">'+
+    '<div class="message-bubble" style="display:flex;align-items:center;gap:8px;color:#9aa5b5;font-size:13px">'+
+    '<span class="kb-thinking-dot"></span>正在调用 AI 分析…</div>';
   container.appendChild(thinking);
-  container.scrollTop=container.scrollHeight;
+  container.scrollTop = container.scrollHeight;
 
-  setTimeout(function(){
+  // 2. 创建回答气泡（流式填充）
+  var ansNode = document.createElement('div');
+  ansNode.className = 'message';
+  ansNode.style.display = 'none';
+  var bodyDiv = document.createElement('div');
+  bodyDiv.className = 'kb-stream-body';
+  ansNode.innerHTML = '<img src="'+aiAvatar()+'">';
+  var bubble = document.createElement('div');
+  bubble.className = 'message-bubble';
+  bubble.appendChild(bodyDiv);
+  ansNode.appendChild(bubble);
+  container.appendChild(ansNode);
+
+  var accText = '';
+  var t0 = Date.now();
+
+  function renderMarkdown(md){
+    // 简单 markdown: **bold**, - list, \n段落
+    return md
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+      .replace(/⚠️/g,'<span style="color:#d97706">⚠️</span>')
+      .replace(/^[-•]\s(.+)$/gm,'<li style="margin:4px 0;padding-left:4px">$1</li>')
+      .replace(/(<li[\s\S]*?<\/li>)+/g,'<ul style="margin:6px 0;padding:0 0 0 18px;list-style:disc">$&</ul>')
+      .replace(/\n{2,}/g,'</p><p style="margin:8px 0">')
+      .replace(/\n/g,'<br>');
+  }
+
+  fetch(KB_API, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({question:query, chunks:chunks, city:city, stream:true})
+  }).then(function(resp){
     thinking.remove();
+    ansNode.style.display = '';
 
-    // 来源标签
-    var citeTags=result.cites.map(function(c){
-      return '<span style="display:inline-block;padding:2px 8px;background:#f0f4ff;color:#1a56db;border-radius:12px;font-size:11px;margin:2px 3px">📌 '+c+'</span>';
-    }).join('');
+    if(!resp.ok){
+      return resp.json().then(function(e){
+        bodyDiv.innerHTML = '<span style="color:#ef4444">服务错误：'+(e.error||resp.status)+'</span>';
+      });
+    }
 
-    // 追问按钮
-    var followHtml=result.followups.length?
-      '<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">'+
-        result.followups.map(function(f){
-          return '<button onclick="kbSendQuestion(this,\''+f.replace(/'/g,"\\'")+'\')" '+
-            'style="padding:5px 10px;background:#f5f7fb;border:1px solid #e8edf5;border-radius:20px;font-size:12px;color:#0b183b;cursor:pointer">'+f+'</button>';
-        }).join('')+
-      '</div>':'';
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder();
+    var buf = '';
 
-    var statsHtml='<div style="font-size:10.5px;color:#b0bac8;margin-top:6px">'+
-      '检索到 '+result.cites.length+' 个来源 · 响应 '+elapsed+'ms</div>';
+    function pump(){
+      reader.read().then(function(d){
+        if(d.done){
+          // 完成：追加来源 + 追问
+          var elapsed = Date.now()-t0;
+          var cites = [...new Set(chunks.map(function(c){return c.cite;}).filter(Boolean))];
+          var citeTags = cites.map(function(c){
+            return '<span style="display:inline-block;padding:2px 8px;background:#f0f4ff;color:#1a56db;border-radius:12px;font-size:11px;margin:2px 3px">📌 '+c+'</span>';
+          }).join('');
 
-    var node=document.createElement('div');
-    node.className='message';
-    node.innerHTML='<img src="'+aiAvatar()+'"><div class="message-bubble" id="kbTyping">'+
-      '<div class="kb-answer-body"></div>'+
-      (citeTags?'<div style="margin-top:8px">'+citeTags+'</div>':'')+
-      statsHtml+followHtml+
-    '</div>';
-    container.appendChild(node);
+          // 追问按钮
+          var isSZ = city && city.indexOf('随州')>=0;
+          var followups = isSZ
+            ? ['随州各园区如何分工承接？','随州与十堰/荆门的差异化空间？','链主企业还缺哪些关键配套？']
+            : ['最值得优先补链的核心环节？','各园区如何分工承接？','本地链主还缺哪些关键配套？'];
+          var followHtml = '<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">'+
+            followups.map(function(f){
+              return '<button onclick="kbSendQuestion(this,\''+f.replace(/'/g,"\\'")+'\')" '+
+                'style="padding:5px 11px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:20px;font-size:12px;color:#0b183b;cursor:pointer;transition:background .1s" '+
+                'onmouseover="this.style.background=\'#eef2ff\'" onmouseout="this.style.background=\'#f5f7fb\'">'+f+'</button>';
+            }).join('')+
+          '</div>';
 
-    // 打字机逐字渲染
-    var body=node.querySelector('.kb-answer-body');
-    var tmp=document.createElement('div');
-    tmp.innerHTML=result.html;
-    var fullText=tmp.innerHTML;
-    var idx=0; var charsPerTick=8;
-    var timer=setInterval(function(){
-      idx=Math.min(idx+charsPerTick, fullText.length);
-      // 安全截断至最近完整标签
-      var partial=fullText.slice(0,idx);
-      var lastClose=partial.lastIndexOf('>');
-      body.innerHTML=lastClose>=0?partial.slice(0,lastClose+1):partial;
-      container.scrollTop=container.scrollHeight;
-      if(idx>=fullText.length){ clearInterval(timer); body.innerHTML=fullText; }
-    },30);
-  }, 600);
+          var footer = (citeTags?'<div style="margin-top:8px">'+citeTags+'</div>':'')+
+            '<div style="font-size:10.5px;color:#b0bac8;margin-top:6px">DeepSeek · 响应 '+elapsed+'ms · 检索 '+chunks.length+' 个数据块</div>'+
+            followHtml+
+            '<div style="margin-top:8px;padding:8px 10px;background:#f9fafb;border-radius:8px;font-size:11px;color:#9aa5b5;line-height:1.6">⚠ 以上内容基于公开信息与慧小招实测数据，园区承载、企业采购规模及领导具体交办仍需政府授权材料确认</div>';
+
+          bubble.insertAdjacentHTML('beforeend', footer);
+          container.scrollTop = container.scrollHeight;
+          return;
+        }
+
+        buf += decoder.decode(d.value, {stream:true});
+        var lines2 = buf.split('\n');
+        buf = lines2.pop(); // 保留不完整行
+
+        lines2.forEach(function(line){
+          if(!line.startsWith('data:')) return;
+          var data = line.slice(5).trim();
+          if(data === '[DONE]') return;
+          try{
+            var j = JSON.parse(data);
+            var delta = (j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||'';
+            if(delta){
+              accText += delta;
+              bodyDiv.innerHTML = '<p style="margin:0;line-height:1.75">'+renderMarkdown(accText)+'</p>';
+              container.scrollTop = container.scrollHeight;
+            }
+          }catch(e){}
+        });
+        pump();
+      });
+    }
+    pump();
+
+  }).catch(function(err){
+    thinking.remove();
+    ansNode.style.display = '';
+    bodyDiv.innerHTML = '<span style="color:#ef4444">连接失败：'+err.message+
+      '<br><small style="color:#9aa5b5">请确认 kb-server 已在 localhost:5050 运行</small></span>';
+  });
 }
 
-/* 追问按钮点击 */
 function kbSendQuestion(btn, q){
-  if(btn){ btn.style.opacity='0.5'; btn.disabled=true; }
+  if(btn){btn.style.opacity='0.5';btn.disabled=true;}
   var c=document.getElementById('kbConv')||document.getElementById('conv');
   if(!c)return;
   var ud=document.createElement('div');
@@ -2188,16 +2255,13 @@ function kbSendQuestion(btn, q){
   kbRAGQuery(q, c);
 }
 
-/* ── 5. 主入口：doSend 里的 knowledge 分支替换目标 ── */
 function kbRAGQuery(query, container){
   var p=P(); if(!p) return;
-  var t0=Date.now();
   var corpus=buildKBCorpus(p.city);
   var chunks=kbSearch(query, corpus, 5);
-  var result=generateKBAnswer(query, chunks, p.city);
-  var elapsed=Date.now()-t0;
-  kbAnswerRender(container, query, result, elapsed);
+  kbAnswerRender(container, query, chunks, p.city);
 }
+
 
 /* ══ RAG ENGINE END ══ */
 
