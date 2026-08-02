@@ -5473,9 +5473,11 @@ function leaderAdvise(i){var d=LEADER_DOCS[i];
   openModal('招商建议草稿 · '+d.city+' · '+d.topic,body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="closeModal();toast(\'已下发招商建议给 '+d.who+'\')"><i class="i">📤</i>确认下发 '+d.who+'</button>');
 }
 function opsRes(){
-  var head='<div class="page"><div class="page-header"><div><span class="eyebrow">RESOURCE BASE</span><h1>资源库</h1>'+
-    '<p>可对接企业 / 资本 / 园区档案库。</p></div>'+
-    '<button class="ghost-button" onclick="resAdd()"><i class="i">➕</i>录入企业</button></div>';
+  var head='<div class="page"><div class="page-header"><div><span class="eyebrow">RESOURCE BASE</span><h1>资源库 · 企业推荐</h1>'+
+    '<p>录入慧小招团队推荐企业，直接推送到对应项目的「慧小招团队推荐」区，政府端可见脱敏信息。</p></div>'+
+    '<div style="display:flex;gap:8px">'+
+    '<button class="ghost-button" onclick="resAdd()" style="background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none"><i class="i">📝</i>录入推荐企业</button>'+
+    '</div></div>';
   if(RESOURCES.length===0){
     return head+'<div class="knowledge-scroll"><div class="empty-page"><div class="empty-state">'+
       '<i class="i">🗄️</i><h1>资源库</h1>'+
@@ -5485,7 +5487,15 @@ function opsRes(){
         '<button class="topic-row" onclick="resImport()"><i class="i">📥</i><span><strong>批量导入名录</strong><small>Excel/CSV 一次导入行业名录</small></span></button>'+
         '<button class="topic-row" onclick="resChannel()"><i class="i">🔗</i><span><strong>对接外部渠道</strong><small>招商平台 / 行业协会 / 园区名录</small></span></button>'+
       '</div>'+
-      '<div class="warning-callout" style="margin-top:18px;text-align:left"><strong>待补资源清单（由需求反推）</strong><p>燃料电池电堆（随州电堆外购占整车成本53%）/ 应急机器人与无人机（江南专汽/齐星依赖外采）/ 香菇功能成分提取（仅裕国/肽源2家布局）等缺口暂无资源，建议优先补录这三类企业。</p></div>'+
+      '<div class="warning-callout" style="margin-top:18px;text-align:left">'+
+        '<strong>📝 录入推荐企业流程</strong>'+
+        '<p style="margin:8px 0 0;font-size:13px;line-height:1.7">'+
+          '① 点击「录入推荐企业」→ 填写脱敏代号/补链方向/扩张信号（必须有可查证来源）<br>'+
+          '② 选择关联项目 → 保存后自动推送到政府端「慧小招团队推荐」区<br>'+
+          '③ 政府端看到脱敏信息，可点「请资源团队核验」→ 进入资源核验流程'+
+        '</p>'+
+      '</div>'+
+      '<div class="warning-callout" style="margin-top:12px;text-align:left"><strong>当前待补充推荐（燃料电池电堆（随州电堆外购占整车成本53%）/ 应急机器人与无人机（江南专汽/齐星依赖外采）/ 香菇功能成分提取（仅裕国/肽源2家布局）等缺口暂无资源，建议优先补录这三类企业。</p></div>'+
     '</div></div></div>';
   }
   var rows=RESOURCES.map(function(r,i){
@@ -5525,6 +5535,68 @@ function resChannel(){
     '</div>'+
     '<div class="boundary-note" style="margin-top:10px"><i class="i">🔒</i>渠道对接由资源团队线下推进；系统只登记来源与回流线索。</div>';
   openModal('对接外部渠道',body,'<button class="primary-button" onclick="closeModal()">知道了</button>');
+}
+
+/* 管理端录入企业推荐，直接写入对应项目的 clues（慧小招团队推荐区）*/
+function saveResAdd(){
+  var projKey = (document.getElementById('ra-proj')||{}).value;
+  var alias   = ((document.getElementById('ra-alias')||{}).value||'').trim();
+  var real    = ((document.getElementById('ra-real')||{}).value||'').trim();
+  var gap     = ((document.getElementById('ra-gap')||{}).value||'').trim();
+  var kind    = ((document.getElementById('ra-kind')||{}).value||'').trim();
+  var signal  = ((document.getElementById('ra-signal')||{}).value||'').trim();
+  var reason  = ((document.getElementById('ra-reason')||{}).value||'').trim();
+  var qsRaw   = ((document.getElementById('ra-qs')||{}).value||'').trim();
+
+  if(!projKey){ toast('请选择关联项目'); return; }
+  if(!alias)  { toast('请填写脱敏代号'); return; }
+  if(!signal) { toast('扩张信号不能为空（必须有可查证来源）'); return; }
+
+  var p = PROJECTS[projKey];
+  if(!p){ toast('项目不存在'); return; }
+  if(!p.clues) p.clues=[];
+
+  var questions = qsRaw ? qsRaw.split(/[,，、；;]/).map(function(q){return q.trim();}).filter(Boolean) : [];
+
+  var newClue = {
+    id:     'ops_clue_'+Date.now().toString(36),
+    name:   alias,
+    realName: real,    // 仅内部，不传政府端
+    kind:   kind||gap,
+    region: kind.split('·').pop().trim()||'待填写',
+    gap:    gap,
+    source: '慧小招团队推荐（'+new Date().toLocaleDateString('zh-CN')+'）',
+    signal: signal,
+    signalSrc: '慧小招内部渠道',
+    reason: reason,
+    questions: questions,
+    tone:   'amber',   // 团队推荐直接进入核验中状态
+    status: 'ops_rec', // 区别于 ai_scan
+    priority: 4,
+    localAttr: 'A',
+    hasMoveSignal: true,
+    addedBy: 'ops'
+  };
+
+  p.clues.push(newClue);
+
+  // 同步写入 RESOURCES（资源库备案）
+  RESOURCES.push({
+    alias: alias,
+    real:  real,
+    domain: gap,
+    loc:   kind,
+    intent: signal.substring(0,40),
+    status: '可用',
+    profile: reason,
+    why:    reason,
+    risk:   '需人工核验后推送政府端'
+  });
+
+  persist();
+  closeModal();
+  render();
+  toast('✓ 已录入「'+alias+'」→ 已推送至「'+p.city+'·'+p.topic.substring(0,15)+'」项目线索');
 }
 function resAdd(){
   var body='<p class="modal-intro">新增可对接主体，真名仅内部可见，政府端只见脱敏名。</p>'+
