@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+rag-audit.log
+server.log
+.DS_Store
+.env
