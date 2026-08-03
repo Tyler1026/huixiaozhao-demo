@@ -305,7 +305,7 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     if not DS_KEY:
-        print("[kb] ERROR: DEEPSEEK_API_KEY not set"); exit(1)
+        print("[kb] WARN: DEEPSEEK_API_KEY 未设置 — 页面可访问，但 AI 问答/报告会报错。请在 Railway Variables 里配置 DEEPSEEK_API_KEY。")
     import threading
 
     # 云端(Railway)：单端口，绑 0.0.0.0；政府端=/，管理端=/ops（同一端口路由）
