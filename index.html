@@ -1470,6 +1470,13 @@ function kbReadiness(){
       if(conf||x.indexOf('\u2705')===0) warnConfirmed++;
     });
   });
+  // 同步纳入报告页「领导确认」（PENDING_CONFIRMS）的确认状态，
+  // 否则报告页确认后顶部大进度条不动（两套确认系统互不相通的 bug 修复）
+  var pend=PENDING_CONFIRMS[cur]||[];
+  pend.forEach(function(it){
+    warnTotal++;
+    if(it&&(it.status==='confirmed'||it.status==='edited')) warnConfirmed++;
+  });
   var uploads=(UPLOADS[cur]||[]).length;
   // 评分：⚠️确认率×60 + 上传加分×40
   var warnRate=warnTotal>0?warnConfirmed/warnTotal:1; // 无⚠️时视为全部完成
@@ -3173,6 +3180,7 @@ function cfmItem(projKey, idx){
       '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#22c55e;cursor:pointer;flex-shrink:0">撤回</button>';
   }
   updateConfirmProgress(projKey);
+  refreshTopReliability();
 }
 
 /* 撤回确认 */
@@ -3187,6 +3195,17 @@ function uncfmItem(projKey, idx){
     panel.replaceWith(tmp.firstChild);
   }
   updateConfirmProgress(projKey);
+  refreshTopReliability();
+}
+
+/* 确认/撤回后即时刷新顶部大进度条（侧栏完成度条 + 招商问答页顶部横幅） */
+function refreshTopReliability(){
+  try{ refreshKbProgress(); }catch(e){}
+  // 招商问答页(kbPage)顶部横幅：若当前正显示该页，重渲染以更新百分比/文案
+  try{
+    if(view==='knowledge'&&typeof render==='function'){ render(); }
+  }catch(e){}
+  try{ persist(); }catch(e){}
 }
 
 /* 显示编辑框 */
@@ -3570,7 +3589,7 @@ function triggerReport(phase){
     }).filter(Boolean).join('\n');
     return md;
   }
-  fetch(((location.origin && location.origin.indexOf('http')===0) ? location.origin : 'http://localhost:5050')+'/api/kb-chat',{
+  fetch('http://localhost:5050/api/kb-chat',{
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({question:query,chunks:chunks,city:p.city,stream:true,mode:phase===1?'draft':'full'})
   }).then(function(resp){
@@ -4654,7 +4673,7 @@ function generateKBAnswer(query, chunks, city){
 /* ── 4. 打字机渲染 + 来源引用 + 追问按钮 ── */
 
 /* ── KB RAG: 流式渲染 + 追问按钮 ── */
-var KB_API = ((location.origin && location.origin.indexOf('http')===0) ? location.origin : 'http://localhost:5050')+'/api/kb-chat';
+var KB_API = 'http://localhost:5050/api/kb-chat';
 
 function kbAnswerRender(container, query, chunks, city){
   // 1. 思考气泡
