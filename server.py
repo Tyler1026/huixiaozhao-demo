@@ -49,7 +49,7 @@ DS_URL      = "https://api.deepseek.com/v1/chat/completions"
 # 直连 DeepSeek，绕过系统代理(Clash 7897)——否则请求会挂死
 DS_OPENER   = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 def _load_ds_key():
-    # 优先精确匹配；找不到则容错扫描（变量名含空格/DEEPSEEK/DS_KEY 都能兜住）
+    # 优先精确匹配环境变量；找不到则容错扫描（变量名含空格/DEEPSEEK/DS_KEY 都能兜住）
     v = os.environ.get("DEEPSEEK_API_KEY", "")
     if not v.strip():
         for k, val in os.environ.items():
@@ -57,6 +57,13 @@ def _load_ds_key():
             if ku in ("DEEPSEEK_API_KEY", "DEEPSEEKAPIKEY", "DS_KEY", "DEEPSEEK_KEY") or "DEEPSEEK" in ku:
                 if val and val.strip():
                     v = val; break
+    # 最终兜底：从同目录 deepseek_key.txt 读取（不依赖 Railway 环境变量）
+    if not v.strip():
+        try:
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "deepseek_key.txt"), encoding="utf-8") as f:
+                v = f.read()
+        except Exception:
+            pass
     v = v.strip().strip('"').strip("'").strip()
     if v and not v.startswith("sk-"):
         import re as _re
