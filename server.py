@@ -239,6 +239,7 @@ class Handler(BaseHTTPRequestHandler):
         city   = body.get("city", "")
         stream = body.get("stream", True)
         mode   = body.get("mode", "full")
+        history = body.get("history", [])  # 多轮上下文：[{role:'user'|'assistant', content:'...'}]
 
         if mode not in ("chat", "draft", "full"):
             mode = "full"
@@ -280,12 +281,21 @@ class Handler(BaseHTTPRequestHandler):
             system_prompt = SYSTEM_FULL
             max_tokens    = MAX_TOKENS_FULL
 
+        # 多轮上下文：注入最近几轮对话（仅保留合法 role + 非空文本，限制条数防止 context 膨胀）
+        hist_msgs = []
+        for h in (history or [])[-8:]:
+            role = h.get("role", "")
+            content = (h.get("content", "") or "").strip()
+            if role in ("user", "assistant") and content:
+                hist_msgs.append({"role": role, "content": content[:1500]})
+
         payload = json.dumps({
             "model": MODEL,
             "max_tokens": max_tokens,
             "stream": stream,
             "messages": [
                 {"role": "system", "content": system_prompt},
+                *hist_msgs,
                 {"role": "user",   "content": f"城市：{city}\n\n知识片段：\n{ctx}\n\n问题：{q}"}
             ]
         }).encode()

@@ -3607,12 +3607,12 @@ function triggerReport(phase){
     }).filter(Boolean).join('\n');
     return md;
   }
-  fetch('http://localhost:5050/api/kb-chat',{
+  fetch(KB_API,{
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({question:query,chunks:chunks,city:p.city,stream:true,mode:phase===1?'draft':'full'})
   }).then(function(resp){
     if(!resp.ok){
-      if(content) content.innerHTML='<span style="color:#ef4444">服务错误：'+resp.status+'<br><small>请确认 kb-server 已在 localhost:5050 运行</small></span>';
+      if(content) content.innerHTML='<span style="color:#ef4444">服务错误：'+resp.status+'<br><small>AI 服务暂时不可用，请稍后重试</small></span>';
       return;
     }
     var reader=resp.body.getReader(); var decoder=new TextDecoder(); var buf='';
@@ -3700,7 +3700,7 @@ function triggerReport(phase){
     }
     pump();
   }).catch(function(err){
-    if(content) content.innerHTML='<span style="color:#ef4444">连接失败：'+err.message+'<br><small>请确认 kb-server 已在 localhost:5050 运行</small></span>';
+    if(content) content.innerHTML='<span style="color:#ef4444">连接失败：'+err.message+'<br><small>网络异常，请检查连接后重试</small></span>';
   });
 }
 
@@ -4176,7 +4176,8 @@ function persist(){
       KB_UNLOCKED:KB_UNLOCKED,
       REPORTSTATE:REPORTSTATE,
       PENDING_CONFIRMS:PENDING_CONFIRMS,
-      DOCK_LOGS:DOCK_LOGS
+      DOCK_LOGS:DOCK_LOGS,
+      KB_CHAT:KB_CHAT
     };
     localStorage.setItem(LS_KEY, JSON.stringify(data));
   }catch(e){ console.warn('[persist] failed:',e.message); }
@@ -4198,6 +4199,7 @@ function restore(){
       REPORTSTATE=data.REPORTSTATE||{};
       PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
       DOCK_LOGS=data.DOCK_LOGS||{};
+      KB_CHAT=data.KB_CHAT||{};
       console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
       return true;
     }
@@ -4225,6 +4227,7 @@ window.addEventListener('storage', function(e){
     PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
     DOCK_LOGS=data.DOCK_LOGS||{};
     KB_UNLOCKED=data.KB_UNLOCKED||{};
+    KB_CHAT=data.KB_CHAT||{};
     // 重渲染（仅影响当前视图）
     render();
     console.log('[sync] 已同步管理端数据');
@@ -4234,6 +4237,23 @@ window.addEventListener('storage', function(e){
 var UPLOADS={};
 var KB_FILE_CHUNKS={};
 var KB_CONFIRMS={};  // {projKey:{kbIdx:{itemIdx:{status,text,ts}}}}
+// 城市智库多轮对话历史 {projKey:[{role:'user'|'assistant', content:'...', ts}]}
+var KB_CHAT={};
+function kbChatLog(role, content){
+  if(!cur)return;
+  if(!KB_CHAT[cur])KB_CHAT[cur]=[];
+  content=(content||'').toString().trim();
+  if(!content)return;
+  KB_CHAT[cur].push({role:role, content:content, ts:Date.now()});
+  // 只保留最近 20 条，防止 localStorage 膨胀
+  if(KB_CHAT[cur].length>20)KB_CHAT[cur]=KB_CHAT[cur].slice(-20);
+  persist();
+}
+// 取最近 N 轮对话作为发给后端的 history（不含当前正在问的这句）
+function kbChatHistory(){
+  if(!cur||!KB_CHAT[cur])return [];
+  return KB_CHAT[cur].slice(-6).map(function(m){return {role:m.role, content:m.content};});
+}
 // 招引方向派生的项目（方案A三层：产业方向→报告→招引方向项目）{产业key:[{name,stage,from}]}
 var SUBPROJ={};
 function saveSubproj(){try{localStorage.setItem('hxz_subproj',JSON.stringify(SUBPROJ))}catch(e){}}
@@ -4691,7 +4711,7 @@ function generateKBAnswer(query, chunks, city){
 /* ── 4. 打字机渲染 + 来源引用 + 追问按钮 ── */
 
 /* ── KB RAG: 流式渲染 + 追问按钮 ── */
-var KB_API = 'http://localhost:5050/api/kb-chat';
+var KB_API = '/api/kb-chat';  // 同源相对路径：线上请求 Railway 后端，本地请求 localhost:5050 后端
 
 function kbAnswerRender(container, query, chunks, city){
   // 1. 思考气泡
@@ -4718,6 +4738,9 @@ function kbAnswerRender(container, query, chunks, city){
 
   var accText = '';
   var t0 = Date.now();
+  // 先取历史（不含当前这句），再把当前问题记入对话
+  var _history = kbChatHistory();
+  kbChatLog('user', query);
 
   function renderMarkdown(md){
     // 简单 markdown: **bold**, - list, 表格转列表, \n段落
@@ -4753,7 +4776,7 @@ function kbAnswerRender(container, query, chunks, city){
   fetch(KB_API, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({question:query, chunks:chunks, city:city, stream:true, mode:'chat'})
+    body: JSON.stringify({question:query, chunks:chunks, city:city, stream:true, mode:'chat', history:_history})
   }).then(function(resp){
     thinking.remove();
     ansNode.style.display = '';
@@ -4798,6 +4821,8 @@ function kbAnswerRender(container, query, chunks, city){
 
           bubble.insertAdjacentHTML('beforeend', footer);
           container.scrollTop = container.scrollHeight;
+          // 记录 AI 回答到多轮对话历史（用于下一轮上下文）
+          if(accText.trim()) kbChatLog('assistant', accText.trim());
           return;
         }
 
@@ -4828,7 +4853,7 @@ function kbAnswerRender(container, query, chunks, city){
     thinking.remove();
     ansNode.style.display = '';
     bodyDiv.innerHTML = '<span style="color:#ef4444">连接失败：'+err.message+
-      '<br><small style="color:#9aa5b5">请确认 kb-server 已在 localhost:5050 运行</small></span>';
+      '<br><small style="color:#9aa5b5">网络异常，请检查连接后重试</small></span>';
   });
 }
 
@@ -5292,28 +5317,102 @@ function ingestFiles(files, kbTopicIdx){
     c.appendChild(nd); c.scrollTop=c.scrollHeight;
   }
 
+  function onOne(chunks){
+    allChunks=allChunks.concat(chunks||[]);
+    done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
+  }
+
   files.forEach(function(file){
-    var canRead=/\.(txt|md|csv|json)$/i.test(file.name);
-    if(canRead){
+    var name=file.name;
+    if(/\.(txt|md|csv|json)$/i.test(name)){
       var reader=new FileReader();
-      reader.onload=function(e){
-        var chunks=textToChunks(e.target.result||'', file.name, p, kbTopicIdx);
-        allChunks=allChunks.concat(chunks);
-        done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
-      };
-      reader.onerror=function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p); };
+      reader.onload=function(e){ onOne(textToChunks(e.target.result||'', name, p, kbTopicIdx)); };
+      reader.onerror=function(){ onOne(fallbackChunk(file,p,kbTopicIdx)); };
       reader.readAsText(file,'utf-8');
+    } else if(/\.pdf$/i.test(name)){
+      extractPdfText(file).then(function(text){
+        var chunks=(text&&text.trim().length>=20) ? textToChunks(text, name, p, kbTopicIdx) : fallbackChunk(file,p,kbTopicIdx);
+        onOne(chunks);
+      }).catch(function(){ onOne(fallbackChunk(file,p,kbTopicIdx)); });
+    } else if(/\.(docx)$/i.test(name)){
+      extractDocxText(file).then(function(text){
+        var chunks=(text&&text.trim().length>=20) ? textToChunks(text, name, p, kbTopicIdx) : fallbackChunk(file,p,kbTopicIdx);
+        onOne(chunks);
+      }).catch(function(){ onOne(fallbackChunk(file,p,kbTopicIdx)); });
     } else {
-      allChunks.push({
-        id:'file:'+file.name+':0',
-        topic: kbTopicIdx!=null&&p.kb[kbTopicIdx] ? p.kb[kbTopicIdx].t : '上传材料',
-        tags:['上传','材料'],
-        text:'用户已上传文件「'+file.name+'」('+Math.round(file.size/1024)+'KB)，该文件包含与'+p.city+'招商研判相关的材料。',
-        cite:file.name
-      });
-      done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
+      // .doc(旧版二进制) / .xls / .xlsx 等前端无法可靠解析 → 占位
+      onOne(fallbackChunk(file,p,kbTopicIdx));
     }
   });
+}
+
+/* 无法解析时的占位 chunk（仅记录文件存在） */
+function fallbackChunk(file,p,kbTopicIdx){
+  return [{
+    id:'file:'+file.name+':0',
+    topic: kbTopicIdx!=null&&p.kb[kbTopicIdx] ? p.kb[kbTopicIdx].t : '上传材料',
+    tags:['上传','材料'],
+    text:'用户已上传文件「'+file.name+'」('+Math.round(file.size/1024)+'KB)，该文件包含与'+p.city+'招商研判相关的材料（未能自动提取正文，建议转存为 PDF/DOCX/TXT 以便解析）。',
+    cite:file.name
+  }];
+}
+
+/* ── PDF 正文提取（pdf.js，按需懒加载 CDN）── */
+var _pdfjsLoading=null;
+function ensurePdfJs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if(_pdfjsLoading) return _pdfjsLoading;
+  _pdfjsLoading=new Promise(function(resolve,reject){
+    var s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload=function(){
+      try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }catch(e){}
+      resolve(window.pdfjsLib);
+    };
+    s.onerror=function(){ reject(new Error('pdf.js 加载失败')); };
+    document.head.appendChild(s);
+  });
+  return _pdfjsLoading;
+}
+function extractPdfText(file){
+  return ensurePdfJs().then(function(pdfjsLib){
+    return file.arrayBuffer();
+  }).then(function(buf){
+    return window.pdfjsLib.getDocument({data:buf}).promise;
+  }).then(function(pdf){
+    var maxPages=Math.min(pdf.numPages,40); // 限页防卡
+    var jobs=[];
+    for(var i=1;i<=maxPages;i++){
+      jobs.push(pdf.getPage(i).then(function(page){
+        return page.getTextContent().then(function(tc){
+          return tc.items.map(function(it){return it.str;}).join(' ');
+        });
+      }));
+    }
+    return Promise.all(jobs).then(function(pages){ return pages.join('\n\n'); });
+  });
+}
+
+/* ── DOCX 正文提取（mammoth.js，按需懒加载 CDN）── */
+var _mammothLoading=null;
+function ensureMammoth(){
+  if(window.mammoth) return Promise.resolve(window.mammoth);
+  if(_mammothLoading) return _mammothLoading;
+  _mammothLoading=new Promise(function(resolve,reject){
+    var s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js';
+    s.onload=function(){ resolve(window.mammoth); };
+    s.onerror=function(){ reject(new Error('mammoth.js 加载失败')); };
+    document.head.appendChild(s);
+  });
+  return _mammothLoading;
+}
+function extractDocxText(file){
+  return ensureMammoth().then(function(mammoth){
+    return file.arrayBuffer();
+  }).then(function(buf){
+    return window.mammoth.extractRawText({arrayBuffer:buf});
+  }).then(function(r){ return (r&&r.value)||''; });
 }
 
 /* 文本切 chunk — 按段落，每块约150字 */
