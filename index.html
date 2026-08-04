@@ -885,7 +885,9 @@ function runAnalysisAnim(city, fileName, stepsCount, onDone){
     {icon:'✨', label:'生成城市智库与研判框架',               dur:4600, si:5},
   ];
   if(fileName){
-    steps.splice(1,0,{icon:'📎', label:'解析上传材料：'+fileName, dur:1200});
+    // upload:true 标记上传材料步骤——它没有 SOURCES 数据源，结束文案应显示"已解析入库"而非"0个来源已扫描"
+    var _upCount=(_setupFiles&&_setupFiles.length)||1;
+    steps.splice(1,0,{icon:'📎', label:'解析上传材料：'+fileName, dur:1200, upload:true, upCount:_upCount});
   }
   var idx=0;
   function runStep(){
@@ -944,7 +946,7 @@ function runAnalysisAnim(city, fileName, stepsCount, onDone){
     }
     setTimeout(function(){
       if(tickTimer)clearInterval(tickTimer);
-      if(tickEl){tickEl.style.opacity='0.4';tickEl.textContent=srcs.length+'个来源已扫描';}
+      if(tickEl){tickEl.style.opacity='0.4';tickEl.textContent=s.upload?('已解析 '+(s.upCount||1)+' 份材料并入库'):(srcs.length+'个来源已扫描');}
       if(check){check.style.opacity='1';check.style.color='#1a56db';}
       idx++;
       setTimeout(runStep, 180);
@@ -995,13 +997,18 @@ function ingestSetupFiles(files, projKey){
   files.forEach(function(file){
     var canRead=/\.(txt|md|csv|json)$/i.test(file.name);
     if(canRead){
+      // 先同步登记 pending 条目：FileReader 异步，若等 onload 才入库，动画结束渲染侧栏时 UPLOADS 还是空 → 显示"0份材料"
+      var entry={name:file.name, size:file.size, ts:Date.now(), chunks:0, kbIdx:null, pending:true};
+      UPLOADS[projKey].push(entry);
+      persist();
       var reader=new FileReader();
       reader.onload=function(e){
         var chunks=textToChunks(e.target.result||'', file.name, p, null);
         KB_FILE_CHUNKS[projKey]=KB_FILE_CHUNKS[projKey].concat(chunks);
-        UPLOADS[projKey].push({name:file.name, size:file.size, ts:Date.now(),
-          chunks:chunks.length, kbIdx:null});
+        // 回填已登记的 pending 条目，避免重复计数
+        entry.chunks=chunks.length; entry.pending=false;
         persist();
+        if(typeof render==='function') try{ render(); }catch(_){}
         console.log('[setup-ingest] '+file.name+' → '+chunks.length+' chunks');
       };
       reader.readAsText(file,'utf-8');
