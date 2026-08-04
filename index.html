@@ -5258,6 +5258,14 @@ function ingestFiles(files, kbTopicIdx){
   var p=P(); if(!p) return;
   var total=files.length, done=0, allChunks=[];
 
+  // 先登记上传条目（pending），避免解析异步进行时侧栏/进度读到「0 份」
+  if(!UPLOADS[cur]) UPLOADS[cur]=[];
+  files.forEach(function(f){
+    UPLOADS[cur].push({name:f.name, size:f.size, ts:Date.now(), chunks:0, kbIdx:kbTopicIdx, pending:true});
+  });
+  try{ refreshKbProgress(); }catch(e){}
+  try{ persist(); }catch(e){}
+
   var c=document.getElementById('kbConv');
   if(c){
     var nd=document.createElement('div'); nd.className='message is-user';
@@ -5318,9 +5326,14 @@ function finalizeIngest(chunks, files, kbTopicIdx, p){
 
   if(!UPLOADS[cur]) UPLOADS[cur]=[];
   files.forEach(function(f){
-    UPLOADS[cur].push({name:f.name, size:f.size, ts:Date.now(),
-      chunks:chunks.filter(function(c){return c.cite===f.name;}).length,
-      kbIdx:kbTopicIdx});
+    var n=chunks.filter(function(c){return c.cite===f.name;}).length;
+    // 优先更新 ingestFiles 入口登记的 pending 条目，避免重复计数
+    var existing=null;
+    for(var i=UPLOADS[cur].length-1;i>=0;i--){
+      if(UPLOADS[cur][i].pending && UPLOADS[cur][i].name===f.name){ existing=UPLOADS[cur][i]; break; }
+    }
+    if(existing){ existing.chunks=n; existing.kbIdx=kbTopicIdx; delete existing.pending; }
+    else { UPLOADS[cur].push({name:f.name, size:f.size, ts:Date.now(), chunks:n, kbIdx:kbTopicIdx}); }
   });
 
   if(kbTopicIdx!=null && p.kb && p.kb[kbTopicIdx]){
