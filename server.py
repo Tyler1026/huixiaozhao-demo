@@ -48,7 +48,22 @@ HTML_OPS    = os.path.join(_BASE, "ops.html")
 DS_URL      = "https://api.deepseek.com/v1/chat/completions"
 # 直连 DeepSeek，绕过系统代理(Clash 7897)——否则请求会挂死
 DS_OPENER   = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-DS_KEY      = os.environ.get("DEEPSEEK_API_KEY", "").strip().strip('"').strip("'").strip()
+def _load_ds_key():
+    # 优先精确匹配；找不到则容错扫描（变量名含空格/DEEPSEEK/DS_KEY 都能兜住）
+    v = os.environ.get("DEEPSEEK_API_KEY", "")
+    if not v.strip():
+        for k, val in os.environ.items():
+            ku = k.strip().upper().replace(" ", "").replace("-", "_")
+            if ku in ("DEEPSEEK_API_KEY", "DEEPSEEKAPIKEY", "DS_KEY", "DEEPSEEK_KEY") or "DEEPSEEK" in ku:
+                if val and val.strip():
+                    v = val; break
+    v = v.strip().strip('"').strip("'").strip()
+    if v and not v.startswith("sk-"):
+        import re as _re
+        m = _re.search(r"sk-[A-Za-z0-9_\-]{10,}", v)
+        if m: v = m.group(0)
+    return v
+DS_KEY      = _load_ds_key()
 MODEL       = "deepseek-chat"
 MAX_TOKENS_DRAFT = 800
 MAX_TOKENS_FULL  = 3000
