@@ -48,7 +48,7 @@ HTML_OPS    = os.path.join(_BASE, "ops.html")
 DS_URL      = "https://api.deepseek.com/v1/chat/completions"
 # 直连 DeepSeek，绕过系统代理(Clash 7897)——否则请求会挂死
 DS_OPENER   = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-DS_KEY      = os.environ.get("DEEPSEEK_API_KEY", "")
+DS_KEY      = os.environ.get("DEEPSEEK_API_KEY", "").strip().strip('"').strip("'").strip()
 MODEL       = "deepseek-chat"
 MAX_TOKENS_DRAFT = 800
 MAX_TOKENS_FULL  = 3000
@@ -197,7 +197,10 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/health":
             port = self.server.server_address[1]
             role = "ops" if port == PORT_OPS else "gov"
-            body = json.dumps({"ok": True, "model": MODEL, "key": bool(DS_KEY), "role": role, "port": port}).encode()
+            body = json.dumps({"ok": True, "model": MODEL, "key": bool(DS_KEY),
+                               "key_len": len(DS_KEY),
+                               "key_prefix": (DS_KEY[:5]+"…"+DS_KEY[-3:]) if DS_KEY else "",
+                               "role": role, "port": port}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.cors(); self.end_headers(); self.wfile.write(body)
