@@ -2214,7 +2214,18 @@ function clueCard(clue, projKey, idx){
 /* ── 操作函数 ── */
 function toggleClue(id){
   window.__clueOpen = (window.__clueOpen===id) ? null : id;
+  // 记录当前滚动容器位置：render() 整页重渲染会把 scrollTop 归零，导致展开卡片时视图弹回顶部
+  var sc=document.querySelector('.report-scroll,.clues-scroll,.knowledge-scroll,.conversation-scroll,.docking-scroll');
+  var top=sc?sc.scrollTop:0;
   render();
+  // 重渲染后恢复滚动位置，让展开/折叠就地发生
+  var restore=function(){
+    var sc2=document.querySelector('.report-scroll,.clues-scroll,.knowledge-scroll,.conversation-scroll,.docking-scroll');
+    if(sc2) sc2.scrollTop=top;
+  };
+  restore();
+  // 再在下一帧恢复一次，防止浏览器异步重排把 scrollTop 又归零
+  if(window.requestAnimationFrame) requestAnimationFrame(restore);
 }
 
 function requestVerify(projKey, clueId){
