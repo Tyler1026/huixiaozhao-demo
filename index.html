@@ -1607,8 +1607,7 @@ function kbReadiness(){
   var warnTotal=0, warnConfirmed=0;
   p.kb.forEach(function(k,ki){
     (k.known||[]).forEach(function(x,xi){
-      var isWarn=x.indexOf('\u26a0\ufe0f')>=0;
-      if(!isWarn) return;  // 非⚠️直接跳过，视为已确认
+      if(x.indexOf('📎')===0) return;  // 文件条目已入库，不计入分母
       warnTotal++;
       var conf=KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][ki]&&KB_CONFIRMS[cur][ki][xi];
       if(conf||x.indexOf('\u2705')===0) warnConfirmed++;
@@ -1664,8 +1663,18 @@ function kbProgressInner(r){
 }
 /* 确认/编辑/上传后即时刷新顶部完成度条（不整页重渲染，弹窗保持打开） */
 function refreshKbProgress(){
+  var r=kbReadiness();
   var box=document.getElementById('kbProgressBox');
-  if(box) box.innerHTML=kbProgressInner(kbReadiness());
+  if(box) box.innerHTML=kbProgressInner(r);
+  var head=document.getElementById('kbHeadProgress');
+  if(head){
+    head.innerHTML=
+      '<div style="flex:1;background:#f0f4ff;border-radius:4px;height:6px;overflow:hidden">'+
+        '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:4px;transition:width .4s"></div>'+
+      '</div>'+
+      '<span style="font-size:12px;font-weight:700;color:'+r.color+'">'+r.score+'%</span>'+
+      '<span style="font-size:11px;color:'+r.color+'">'+r.label+'</span>';
+  }
 }
 function sidebar(){
   var p=P();
@@ -4065,6 +4074,163 @@ function promptRow(icon,strong,small,fn){
   return '<button class="prompt-row" onclick="'+fn+'"><i class="i">'+icon+'</i><span><strong>'+strong+'</strong><small>'+small+'</small></span><i class="i">➜</i></button>';
 }
 function aiAvatar(){return 'data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="46" height="46"><rect width="46" height="46" rx="23" fill="#ebf3fd"/><text x="23" y="30" font-size="18" fill="#0757ad" text-anchor="middle" font-family="sans-serif">慧</text></svg>')}
+// 统计三类记忆条数
+function memBankStats(){
+  var p=P();
+  var textN=0, fileN=0, chatN=0;
+  // 文字记忆：领导确认/编辑过的条目
+  var cf=KB_CONFIRMS[cur]||{};
+  Object.keys(cf).forEach(function(ki){ Object.keys(cf[ki]||{}).forEach(function(){ textN++; }); });
+  // 文件记忆：上传的文件
+  fileN=(UPLOADS[cur]||[]).length;
+  // 对话记忆：用户提问轮数
+  chatN=(KB_CHAT[cur]||[]).filter(function(m){return m.role==='user';}).length;
+  if(chatN===0) chatN=(KB_CHAT[cur]||[]).length;  // 兼容 {role,html} 结构：无显式 user 标记时按总条数
+  return {textN:textN, fileN:fileN, chatN:chatN, total:textN+fileN+chatN};
+}
+function memBankBadge(){
+  var s=memBankStats();
+  if(!s.total)return '';
+  return ' <span style="display:inline-block;min-width:16px;padding:0 5px;background:#6366f1;color:#fff;border-radius:9px;font-size:10px;line-height:16px;text-align:center;font-weight:700">'+s.total+'</span>';
+}
+function fmtTs(ts){
+  if(!ts)return '';
+  var d=new Date(ts);
+  var pad=function(n){return n<10?'0'+n:''+n;};
+  return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+}
+function memTab(id,label,n,active){
+  return '<button onclick="switchMemTab(\''+id+'\')" data-memtab="'+id+'" '+
+    'style="flex:1;padding:10px 8px;border:none;border-bottom:2.5px solid '+(active?'#6366f1':'transparent')+';'+
+    'background:none;cursor:pointer;font-size:13px;font-weight:'+(active?'700':'500')+';color:'+(active?'#4338ca':'#8492a6')+';transition:.15s">'+
+    label+'<span style="display:inline-block;margin-left:5px;min-width:18px;padding:0 6px;background:'+(active?'#eef2ff':'#f1f5f9')+';color:'+(active?'#4f46e5':'#94a3b8')+';border-radius:9px;font-size:11px;line-height:18px;font-weight:700">'+n+'</span></button>';
+}
+
+/* ── 记忆库主入口 ── */
+var _memTab='text';
+function openMemoryBank(){
+  _memTab='text';
+  var p=P();
+  openModal('🧠 '+(p.city||'城市')+'智库 · 记忆库',
+    '<div style="margin:-4px 0 2px;font-size:12px;color:#8492a6;line-height:1.6">这里沉淀了本智库的全部长期记忆——领导确认过的关键结论、上传的政府材料、以及历史问答。每一条都可追溯来源与时间。</div>'+
+    '<div id="memTabBar" style="display:flex;border-bottom:1px solid #eef2f7;margin:12px 0 4px"></div>'+
+    '<div id="memBody" style="min-height:220px;max-height:56vh;overflow-y:auto;padding:4px 2px"></div>',
+    '<button class="primary-button" onclick="closeModal()">完成</button>');
+  renderMemTabs();
+  renderMemBody();
+}
+function renderMemTabs(){
+  var s=memBankStats();
+  var bar=document.getElementById('memTabBar'); if(!bar)return;
+  bar.innerHTML=
+    memTab('text','📝 文字记忆',s.textN,_memTab==='text')+
+    memTab('file','📎 文件记忆',s.fileN,_memTab==='file')+
+    memTab('chat','💬 问答记忆',s.chatN,_memTab==='chat');
+}
+function switchMemTab(id){ _memTab=id; renderMemTabs(); renderMemBody(); }
+function memEmpty(txt){
+  return '<div style="text-align:center;padding:48px 20px;color:#b0bac8">'+
+    '<div style="font-size:38px;margin-bottom:10px;opacity:.5">🗂️</div>'+
+    '<div style="font-size:13px">'+txt+'</div></div>';
+}
+function renderMemBody(){
+  var box=document.getElementById('memBody'); if(!box)return;
+  if(_memTab==='text') box.innerHTML=memTextView();
+  else if(_memTab==='file') box.innerHTML=memFileView();
+  else box.innerHTML=memChatView();
+}
+
+/* ── 文字记忆：领导确认/编辑过的结论 ── */
+function memTextView(){
+  var p=P(); var cf=KB_CONFIRMS[cur]||{};
+  var rows=[];
+  Object.keys(cf).forEach(function(ki){
+    var topic=(p.kb&&p.kb[ki])?p.kb[ki].t:'未知主题';
+    var icon=(p.kb&&p.kb[ki])?p.kb[ki].icon:'📌';
+    Object.keys(cf[ki]||{}).forEach(function(ii){
+      var rec=cf[ki][ii]; if(!rec)return;
+      rows.push({topic:topic, icon:icon, text:rec.text||'', status:rec.status||'confirmed', ts:rec.ts||0});
+    });
+  });
+  if(!rows.length) return memEmpty('还没有领导确认或修改过的结论。<br>在主题卡里点「确认」或「编辑」后，会沉淀到这里。');
+  rows.sort(function(a,b){return b.ts-a.ts;});
+  return rows.map(function(r){
+    var isEdit=r.status==='edited';
+    var badge=isEdit
+      ? '<span style="background:#eef2ff;color:#4f46e5;padding:1px 8px;border-radius:10px;font-size:10.5px;font-weight:700">✎ 领导修改</span>'
+      : '<span style="background:#ecfdf5;color:#059669;padding:1px 8px;border-radius:10px;font-size:10.5px;font-weight:700">✓ 领导确认</span>';
+    return '<div style="border:1px solid #eef2f7;border-left:3px solid '+(isEdit?'#6366f1':'#10b981')+';border-radius:10px;padding:11px 13px;margin-bottom:9px;background:#fff">'+
+      '<div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">'+
+        '<span style="font-size:14px">'+r.icon+'</span>'+
+        '<span style="font-size:11.5px;color:#6366f1;font-weight:650">'+r.topic+'</span>'+
+        badge+
+        '<span style="margin-left:auto;font-size:10.5px;color:#b0bac8">'+fmtTs(r.ts)+'</span>'+
+      '</div>'+
+      '<div style="font-size:13px;color:#1e293b;line-height:1.7">'+highlightKeyData(r.text)+'</div>'+
+    '</div>';
+  }).join('');
+}
+
+/* ── 文件记忆：上传的政府材料 ── */
+function memFileView(){
+  var ups=UPLOADS[cur]||[]; var p=P();
+  if(!ups.length) return memEmpty('还没有上传过材料。<br>在问答框点「📎 补充材料」上传政府文件（PDF/Word/TXT），会真正解析入库。');
+  var list=ups.slice().reverse();
+  return list.map(function(u){
+    var kb=(u.kbIdx!=null&&p.kb&&p.kb[u.kbIdx])?p.kb[u.kbIdx].t:'城市智库';
+    var sizeStr=u.size?(Math.round(u.size/1024)+' KB'):'';
+    var ts=u.ts||0; var when=ts?fmtTs(ts):(u.at||'');
+    var ext=(u.name||'').split('.').pop().toLowerCase();
+    var emap={pdf:'📕',doc:'📘',docx:'📘',xls:'📗',xlsx:'📗',csv:'📗',txt:'📄',md:'📄',json:'📄'};
+    var fico=emap[ext]||'📎';
+    var chunks=(u.chunks!=null)?u.chunks:0;
+    var parsed=chunks>0;
+    var pill=u.pending
+      ? '<span style="background:#fef9c3;color:#a16207;padding:1px 8px;border-radius:10px;font-size:10.5px;font-weight:700">⏳ 解析中</span>'
+      : (parsed
+        ? '<span style="background:#ecfdf5;color:#059669;padding:1px 8px;border-radius:10px;font-size:10.5px;font-weight:700">✓ 已解析 '+chunks+' 片段</span>'
+        : '<span style="background:#fef2f2;color:#dc2626;padding:1px 8px;border-radius:10px;font-size:10.5px;font-weight:700">⚠ 仅记录文件名</span>');
+    return '<div style="border:1px solid #eef2f7;border-radius:10px;padding:11px 13px;margin-bottom:9px;background:#fff;display:flex;align-items:flex-start;gap:11px">'+
+      '<span style="font-size:26px;flex-shrink:0">'+fico+'</span>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:13px;font-weight:600;color:#1e293b;word-break:break-all;line-height:1.4">'+u.name+'</div>'+
+        '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:6px">'+
+          pill+
+          '<span style="font-size:11px;color:#8492a6">📁 '+kb+'</span>'+
+          (sizeStr?'<span style="font-size:11px;color:#b0bac8">'+sizeStr+'</span>':'')+
+          '<span style="margin-left:auto;font-size:10.5px;color:#b0bac8">'+when+'</span>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+
+/* ── 问答记忆：历史对话 ── */
+function memChatView(){
+  var msgs=KB_CHAT[cur]||[];
+  if(!msgs.length) return memEmpty('还没有问答记录。<br>在下方对话框提问后，历史会保留在这里（支持多轮上下文）。');
+  var list=msgs.slice().reverse();
+  return '<div style="margin-bottom:10px;text-align:right">'+
+      '<button onclick="clearMemChat()" style="font-size:11px;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:4px 10px;cursor:pointer">清空问答记忆</button>'+
+    '</div>'+
+    list.map(function(m){
+      var isU=m.role==='user';
+      return '<div style="margin-bottom:9px;display:flex;'+(isU?'justify-content:flex-end':'justify-content:flex-start')+'">'+
+        '<div style="max-width:82%;border-radius:12px;padding:8px 12px;font-size:12.5px;line-height:1.65;'+
+          (isU?'background:#eef2ff;color:#3730a3;border:1px solid #e0e7ff':'background:#f8fafc;color:#1e293b;border:1px solid #eef2f7')+'">'+
+          '<div style="font-size:10px;color:#94a3b8;margin-bottom:3px;font-weight:600">'+(isU?'招商干部':'慧小招 AI')+(m.ts?' · '+fmtTs(m.ts):'')+'</div>'+
+          (m.content!=null?m.content.replace(/</g,'&lt;').replace(/\n/g,'<br>'):(m.html||''))+
+        '</div>'+
+      '</div>';
+    }).join('');
+}
+function clearMemChat(){
+  if(!cur)return;
+  KB_CHAT[cur]=[]; persist();
+  renderMemTabs(); renderMemBody();
+  toast('问答记忆已清空');
+}
+
 function kbPage(p){
   return '<div class="page">'+
     (function(){
@@ -4072,7 +4238,7 @@ function kbPage(p){
       return '<div class="page-header"><div>'+
         '<span class="eyebrow">CITY INTELLIGENCE</span><h1>城市智库 · 招商问答</h1>'+
         '<p>点击主题卡展开详细结论，或直接在下方对话框提问。</p>'+
-        '<div style="display:flex;align-items:center;gap:10px;margin-top:8px">'+
+        '<div id="kbHeadProgress" style="display:flex;align-items:center;gap:10px;margin-top:8px">'+
           '<div style="flex:1;background:#f0f4ff;border-radius:4px;height:6px;overflow:hidden">'+
             '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:4px;transition:width .4s"></div>'+
           '</div>'+
@@ -4084,6 +4250,7 @@ function kbPage(p){
         (r.score<80?'<p style="font-size:11.5px;color:#f59e0b;margin:5px 0 0">'+          '⚡ 上传越多材料、领导确认越多结论，研判数据可靠性越高（差 '+(80-r.score)+'% 自动解锁后续步骤）</p>':'')+
         '</div>'+
         '<div style="display:flex;gap:8px">'+
+        '<button class="ghost-button" onclick="openMemoryBank()" style="border-color:#c7d2fe;color:#4f46e5">🧠 记忆库'+memBankBadge()+'</button>'+
         '<button class="ghost-button" onclick="showDownloadReport()"><i class="i"></i>下载分析报告</button>'+
         '</div></div>';
     })()+
@@ -5033,6 +5200,88 @@ function kbRAGQueryWithHint(query, container, kbTopic){
   kbAnswerRender(container,query,chunks,p.city);
 }
 
+/* ── 整主题重跑：真实调用 DeepSeek，基于已确认知识+上传材料重新生成本主题全部结论 ── */
+function rerunKbTopic(i){
+  var p=P(); if(!p||!p.kb||!p.kb[i]) return;
+  var k=p.kb[i];
+  closeKbDetail();
+  // 组装该主题上下文：已有 known（含领导确认/修改）+ 该主题上传附件
+  var knownLines=(k.known||[]).map(function(x){return x.replace('\u2705 ','').replace('\u26a0\ufe0f ','');});
+  var uploads=(KB_FILE_CHUNKS[cur]||[]).filter(function(c){var tg=c.tags||[];return (c.topic===k.t)||(tg.indexOf(k.t)>=0);});
+  var chunks=knownLines.map(function(t,idx){return {id:'known:'+idx,topic:k.t,tags:topicTags(k.t),text:t,cite:k.t+'(现有结论)'};});
+  uploads.forEach(function(u){chunks.push(u);});
+  var q='请基于以上「'+k.t+'」主题的现有结论与上传材料，重新梳理并输出该主题下最新、最准确的要点清单（每条一行，聚焦'+p.city+'的产业事实、缺口与可招引方向；保留关键数字；不要编造未提供的数据）。';
+  // 进度浮层
+  var ov=document.createElement('div');
+  ov.id='rerunOverlay';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(11,24,59,.42);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)';
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;width:min(560px,92vw);max-height:80vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 12px 48px rgba(11,24,59,.2)">'+
+    '<div style="padding:18px 22px;border-bottom:1px solid #f0f4ff;display:flex;align-items:center;gap:10px">'+
+      '<span style="font-size:20px">\U0001F504</span>'+
+      '<div><div style="font-size:15px;font-weight:750;color:#0b183b">重跑主题 · '+k.icon+' '+k.t+'</div>'+
+      '<div style="font-size:11.5px;color:#8492a6">AI 正基于已确认知识与上传材料重新生成…</div></div>'+
+    '</div>'+
+    '<div id="rerunBody" style="flex:1;overflow-y:auto;padding:16px 22px;font-size:13px;line-height:1.8;color:#1e293b;white-space:pre-wrap;min-height:120px"><span style="color:#9aa5b5">\u2699 正在调用 DeepSeek…</span></div>'+
+    '<div id="rerunFoot" style="padding:12px 22px 16px;border-top:1px solid #f0f4ff;display:none;gap:8px">'+
+      '<button onclick="applyRerun('+i+')" style="flex:1;padding:11px;background:linear-gradient(135deg,#16a34a,#22c55e);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:650;cursor:pointer">\u2713 采纳并写入知识库（领导确认）</button>'+
+      '<button onclick="closeRerun()" style="padding:11px 16px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer">放弃</button>'+
+    '</div></div>';
+  document.body.appendChild(ov);
+
+  var body=document.getElementById('rerunBody');
+  var acc='';
+  window._rerunResult={topicIdx:i, text:''};
+  fetch(KB_API,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question:q, chunks:chunks, city:p.city, stream:true, mode:'chat'})
+  }).then(function(resp){
+    if(!resp.ok){ body.innerHTML='<span style="color:#ef4444">服务错误：'+resp.status+'</span>'; return; }
+    var reader=resp.body.getReader(), dec=new TextDecoder(), buf='';
+    function pump(){
+      reader.read().then(function(d){
+        if(d.done){
+          window._rerunResult.text=acc.trim();
+          var f=document.getElementById('rerunFoot'); if(f)f.style.display='flex';
+          return;
+        }
+        buf+=dec.decode(d.value,{stream:true});
+        var lines=buf.split('\n'); buf=lines.pop();
+        lines.forEach(function(line){
+          if(!line.startsWith('data:'))return;
+          var data=line.slice(5).trim();
+          if(data==='[DONE]')return;
+          try{ var j=JSON.parse(data); var dl=(j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||''; if(dl){acc+=dl; if(body)body.textContent=acc; body.scrollTop=body.scrollHeight;} }catch(e){}
+        });
+        pump();
+      });
+    }
+    pump();
+  }).catch(function(err){ if(body)body.innerHTML='<span style="color:#ef4444">连接失败：'+err.message+'</span>'; });
+}
+function closeRerun(){ var o=document.getElementById('rerunOverlay'); if(o)o.remove(); }
+/* 采纳重跑结果：把每行写回 known（标记✅已确认），进记忆，刷新进度条 */
+function applyRerun(i){
+  var r=window._rerunResult; if(!r||r.topicIdx!==i||!r.text){ closeRerun(); return; }
+  var p=P(); if(!p||!p.kb[i]){ closeRerun(); return; }
+  var k=p.kb[i];
+  // 按行拆分为条目，过滤空行与纯标题
+  var lines=r.text.split('\n').map(function(x){return x.replace(/^[-\u2022\*\d\.\)\s]+/,'').trim();}).filter(function(x){return x.length>=6;});
+  if(!lines.length){ toast('重跑结果为空，未写入'); closeRerun(); return; }
+  // 保留文件条目，替换其余 known 为重跑结果（每条标记✅已确认+来源）
+  var files=(k.known||[]).filter(function(x){return x.indexOf('\U0001F4CE')===0;});
+  var newKnown=lines.map(function(t){return '\u2705 '+t;}).concat(files);
+  k.known=newKnown;
+  // 写入确认记忆：整主题标记为 edited（可追溯），旧确认清空后按新条目重建
+  if(!KB_CONFIRMS[cur])KB_CONFIRMS[cur]={};
+  KB_CONFIRMS[cur][i]={};
+  lines.forEach(function(t,xi){ KB_CONFIRMS[cur][i][xi]={status:'edited',text:t,ts:Date.now(),via:'rerun'}; });
+  persist();
+  try{ buildKBCorpus(p.city); }catch(e){}
+  closeRerun();
+  refreshKbProgress();
+  kbDetail(i);
+  toast('\u2705 已重跑并写入知识库（'+lines.length+' 条）');
+}
+
 function kbRAGQuery(query, container){
   var p=P(); if(!p) return;
   var corpus=buildKBCorpus(p.city);
@@ -5248,9 +5497,9 @@ function kbDetail(i){
           if(isConfirmed){
             bg='#f0fdf4';bd='#86efac';accent='#22c55e';icon='\u2705';txtColor='#14532d';
           }
-          // ⚠️ 条目的操作按钮
+          // 每张卡片都可确认（文件条目除外）
           var actionBtns='';
-          if(warn&&!isConfirmed){
+          if(!isFile&&!isConfirmed){
             actionBtns='<div style="display:flex;gap:6px;margin-top:8px">'+
               '<button onclick="confirmKbItem('+i+','+xi+')" '+
                 'style="flex:1;padding:6px 0;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12px;color:#166534;cursor:pointer;font-weight:600" '+
@@ -5355,6 +5604,9 @@ function kbDetail(i){
           '</button>'+
           '<button onclick="pickLocalFile('+i+')" style="padding:11px 13px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer">'+
             '📎 上传材料'+
+          '</button>'+
+          '<button onclick="rerunKbTopic('+i+')" title="基于已确认知识与上传材料，让 AI 重新生成本主题全部结论" style="flex-basis:100%;margin-top:2px;padding:10px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:10px;font-size:13px;color:#c2410c;cursor:pointer;font-weight:600">'+
+            '🔄 领导确认后·重跑本主题结论（AI 重新生成）'+
           '</button>'+
         '</div>'+
       '</div>'+
