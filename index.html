@@ -1608,10 +1608,11 @@ function kbReadiness(){
   p.kb.forEach(function(k,ki){
     (k.known||[]).forEach(function(x,xi){
       var isWarn=x.indexOf('\u26a0\ufe0f')>=0;
-      if(!isWarn) return;  // 非⚠️直接跳过，视为已确认
+      var isDone=x.indexOf('\u2705')===0;
+      if(!isWarn&&!isDone) return;  // 非⚠️且非✅，跳过
       warnTotal++;
       var conf=KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][ki]&&KB_CONFIRMS[cur][ki][xi];
-      if(conf||x.indexOf('\u2705')===0) warnConfirmed++;
+      if(conf||isDone) warnConfirmed++;
     });
   });
   // 同步纳入报告页「领导确认」（PENDING_CONFIRMS）的确认状态，
