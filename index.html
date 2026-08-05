@@ -1696,8 +1696,6 @@ function kbProgressInner(r){
 /* 确认/编辑/上传后即时刷新顶部完成度条（不整页重渲染，弹窗保持打开） */
 function refreshKbProgress(){
   var r=kbReadiness();
-  var box=document.getElementById('kbProgressBox');
-  if(box) box.innerHTML=kbProgressInner(r);
   var head=document.getElementById('kbHeadProgress');
   if(head){
     head.innerHTML=
@@ -1757,10 +1755,6 @@ function sidebar(){
         lockBadge+
       '</button>';
     }).join('')+'</div>'+
-    (function(){
-      if(!cur)return '';
-      return '<div id="kbProgressBox">'+kbProgressInner(r)+'</div>';
-    })()+
     '<div class="system-status"><span></span>系统运行正常</div></div>';
 }
 function progressFooter(p){
