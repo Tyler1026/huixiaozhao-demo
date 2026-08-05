@@ -5214,19 +5214,32 @@ function rerunKbTopic(i){
   // 进度浮层
   var ov=document.createElement('div');
   ov.id='rerunOverlay';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(11,24,59,.42);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)';
-  ov.innerHTML='<div style="background:#fff;border-radius:16px;width:min(560px,92vw);max-height:80vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 12px 48px rgba(11,24,59,.2)">'+
-    '<div style="padding:18px 22px;border-bottom:1px solid #f0f4ff;display:flex;align-items:center;gap:10px">'+
-      '<span style="font-size:20px">\U0001F504</span>'+
-      '<div><div style="font-size:15px;font-weight:750;color:#0b183b">重跑主题 · '+k.icon+' '+k.t+'</div>'+
-      '<div style="font-size:11.5px;color:#8492a6">AI 正基于已确认知识与上传材料重新生成…</div></div>'+
+  ov.style.cssText='position:fixed;inset:0;background:rgba(11,24,59,.5);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px);animation:rerunFade .2s ease';
+  ov.innerHTML='<div style="background:#fff;border-radius:20px;width:min(600px,94vw);max-height:82vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 64px rgba(11,24,59,.28)">'+
+    // 顶栏：渐变标题条
+    '<div style="padding:20px 24px;background:linear-gradient(135deg,#fff7ed,#fff);border-bottom:1px solid #f4ede3;display:flex;align-items:center;gap:13px">'+
+      '<div style="width:42px;height:42px;flex-shrink:0;border-radius:12px;background:linear-gradient(135deg,#fb923c,#f97316);display:grid;place-items:center;font-size:20px;box-shadow:0 4px 12px rgba(249,115,22,.3)">\U0001F504</div>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:15.5px;font-weight:750;color:#0b183b">重新生成 · '+k.icon+' '+k.t+'</div>'+
+        '<div style="font-size:11.5px;color:#9a8574;margin-top:2px">AI 正结合已确认结论与上传材料，重新梳理本主题</div>'+
+      '</div>'+
+      '<button onclick="closeRerun()" style="background:none;border:none;font-size:19px;color:#c9a789;cursor:pointer;padding:2px 6px;border-radius:6px;flex-shrink:0" onmouseover="this.style.background=\'#fdf0e3\'" onmouseout="this.style.background=\'none\'">\u2715</button>'+
     '</div>'+
-    '<div id="rerunBody" style="flex:1;overflow-y:auto;padding:16px 22px;font-size:13px;line-height:1.8;color:#1e293b;white-space:pre-wrap;min-height:120px"><span style="color:#9aa5b5">\u2699 正在调用 DeepSeek…</span></div>'+
-    '<div id="rerunFoot" style="padding:12px 22px 16px;border-top:1px solid #f0f4ff;display:none;gap:8px">'+
-      '<button onclick="applyRerun('+i+')" style="flex:1;padding:11px;background:linear-gradient(135deg,#16a34a,#22c55e);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:650;cursor:pointer">\u2713 采纳并写入知识库（领导确认）</button>'+
-      '<button onclick="closeRerun()" style="padding:11px 16px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer">放弃</button>'+
+    // 正文：卡片式滚动区
+    '<div id="rerunBody" style="flex:1;overflow-y:auto;padding:18px 24px;font-size:13px;line-height:1.85;color:#1e293b;white-space:pre-wrap;min-height:140px;background:#fcfcfd">'+
+      '<div style="display:flex;align-items:center;gap:9px;color:#9aa5b5;font-size:12.5px"><span class="kb-thinking-dot"></span>正在调用 AI 分析最新内容…</div>'+
+    '</div>'+
+    // 底栏
+    '<div id="rerunFoot" style="padding:14px 24px 18px;border-top:1px solid #f0f4ff;display:none;gap:10px;background:#fff">'+
+      '<button onclick="applyRerun('+i+')" style="flex:1;padding:12px;background:linear-gradient(135deg,#16a34a,#22c55e);color:#fff;border:none;border-radius:11px;font-size:13.5px;font-weight:650;cursor:pointer;box-shadow:0 4px 12px rgba(34,197,94,.25)">\u2713 采纳并写入知识库</button>'+
+      '<button onclick="closeRerun()" style="padding:12px 18px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:11px;font-size:13px;color:#64748b;cursor:pointer">放弃</button>'+
     '</div></div>';
   document.body.appendChild(ov);
+  if(!document.getElementById('rerunFadeStyle')){
+    var rst=document.createElement('style');rst.id='rerunFadeStyle';
+    rst.textContent='@keyframes rerunFade{from{opacity:0}to{opacity:1}}';
+    document.head.appendChild(rst);
+  }
 
   var body=document.getElementById('rerunBody');
   var acc='';
@@ -5605,8 +5618,9 @@ function kbDetail(i){
           '<button onclick="pickLocalFile('+i+')" style="padding:11px 13px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer">'+
             '📎 上传材料'+
           '</button>'+
-          '<button onclick="rerunKbTopic('+i+')" title="基于已确认知识与上传材料，让 AI 重新生成本主题全部结论" style="flex-basis:100%;margin-top:2px;padding:10px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:10px;font-size:13px;color:#c2410c;cursor:pointer;font-weight:600">'+
-            '🔄 领导确认后·重跑本主题结论（AI 重新生成）'+
+          '<button onclick="rerunKbTopic('+i+')" title="若您已修改结论或补充了材料，点此让 AI 结合最新内容重新生成本主题结论" style="flex-basis:100%;margin-top:2px;padding:11px 12px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:10px;font-size:12.5px;color:#c2410c;cursor:pointer;font-weight:600;text-align:left;line-height:1.5">'+
+            '<span style="font-size:13.5px">🔄 重新生成本主题结论</span>'+
+            '<span style="display:block;font-size:11px;color:#ea9a5c;font-weight:400;margin-top:2px">如您已修改内容或补充材料，点此获取最新结论</span>'+
           '</button>'+
         '</div>'+
       '</div>'+
@@ -5717,27 +5731,96 @@ function ingestFiles(files, kbTopicIdx){
   }
 
   files.forEach(function(file){
-    var canRead=/\.(txt|md|csv|json)$/i.test(file.name);
-    if(canRead){
+    var name=file.name;
+    if(/\.(txt|md|csv|json)$/i.test(name)){
       var reader=new FileReader();
-      reader.onload=function(e){
-        var chunks=textToChunks(e.target.result||'', file.name, p, kbTopicIdx);
-        allChunks=allChunks.concat(chunks);
-        done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
-      };
-      reader.onerror=function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p); };
+      reader.onload=function(e){ onOne(textToChunks(e.target.result||'', name, p, kbTopicIdx)); };
+      reader.onerror=function(){ onOne(fallbackChunk(file,p,kbTopicIdx)); };
       reader.readAsText(file,'utf-8');
+    } else if(/\.pdf$/i.test(name)){
+      extractPdfText(file).then(function(text){
+        var chunks=(text&&text.trim().length>=20) ? textToChunks(text, name, p, kbTopicIdx) : fallbackChunk(file,p,kbTopicIdx);
+        onOne(chunks);
+      }).catch(function(){ onOne(fallbackChunk(file,p,kbTopicIdx)); });
+    } else if(/\.(docx)$/i.test(name)){
+      extractDocxText(file).then(function(text){
+        var chunks=(text&&text.trim().length>=20) ? textToChunks(text, name, p, kbTopicIdx) : fallbackChunk(file,p,kbTopicIdx);
+        onOne(chunks);
+      }).catch(function(){ onOne(fallbackChunk(file,p,kbTopicIdx)); });
     } else {
-      allChunks.push({
-        id:'file:'+file.name+':0',
-        topic: kbTopicIdx!=null&&p.kb[kbTopicIdx] ? p.kb[kbTopicIdx].t : '上传材料',
-        tags:['上传','材料'],
-        text:'用户已上传文件「'+file.name+'」('+Math.round(file.size/1024)+'KB)，该文件包含与'+p.city+'招商研判相关的材料。',
-        cite:file.name
-      });
-      done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
+      // .doc(旧版二进制) / .xls / .xlsx 等前端无法可靠解析 → 占位
+      onOne(fallbackChunk(file,p,kbTopicIdx));
     }
   });
+}
+
+/* 无法解析时的占位 chunk（仅记录文件存在） */
+function fallbackChunk(file,p,kbTopicIdx){
+  return [{
+    id:'file:'+file.name+':0',
+    topic: kbTopicIdx!=null&&p.kb[kbTopicIdx] ? p.kb[kbTopicIdx].t : '上传材料',
+    tags:['上传','材料'],
+    text:'用户已上传文件「'+file.name+'」('+Math.round(file.size/1024)+'KB)，该文件包含与'+p.city+'招商研判相关的材料（未能自动提取正文，建议转存为 PDF/DOCX/TXT 以便解析）。',
+    cite:file.name
+  }];
+}
+
+/* ── PDF 正文提取（pdf.js，按需懒加载 CDN）── */
+var _pdfjsLoading=null;
+function ensurePdfJs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if(_pdfjsLoading) return _pdfjsLoading;
+  _pdfjsLoading=new Promise(function(resolve,reject){
+    var s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload=function(){
+      try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }catch(e){}
+      resolve(window.pdfjsLib);
+    };
+    s.onerror=function(){ reject(new Error('pdf.js 加载失败')); };
+    document.head.appendChild(s);
+  });
+  return _pdfjsLoading;
+}
+function extractPdfText(file){
+  return ensurePdfJs().then(function(pdfjsLib){
+    return file.arrayBuffer();
+  }).then(function(buf){
+    return window.pdfjsLib.getDocument({data:buf}).promise;
+  }).then(function(pdf){
+    var maxPages=Math.min(pdf.numPages,40); // 限页防卡
+    var jobs=[];
+    for(var i=1;i<=maxPages;i++){
+      jobs.push(pdf.getPage(i).then(function(page){
+        return page.getTextContent().then(function(tc){
+          return tc.items.map(function(it){return it.str;}).join(' ');
+        });
+      }));
+    }
+    return Promise.all(jobs).then(function(pages){ return pages.join('\n\n'); });
+  });
+}
+
+/* ── DOCX 正文提取（mammoth.js，按需懒加载 CDN）── */
+var _mammothLoading=null;
+function ensureMammoth(){
+  if(window.mammoth) return Promise.resolve(window.mammoth);
+  if(_mammothLoading) return _mammothLoading;
+  _mammothLoading=new Promise(function(resolve,reject){
+    var s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js';
+    s.onload=function(){ resolve(window.mammoth); };
+    s.onerror=function(){ reject(new Error('mammoth.js 加载失败')); };
+    document.head.appendChild(s);
+  });
+  return _mammothLoading;
+}
+function extractDocxText(file){
+  return ensureMammoth().then(function(mammoth){
+    return file.arrayBuffer();
+  }).then(function(buf){
+    return window.mammoth.extractRawText({arrayBuffer:buf});
+  }).then(function(r){ return (r&&r.value)||''; });
 }
 
 /* 文本切 chunk — 按段落，每块约150字 */
