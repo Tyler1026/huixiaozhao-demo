@@ -1706,7 +1706,7 @@ function sidebar(){
         var done=pc.filter(function(x){return x.status==='confirmed'||x.status==='edited';}).length;
         return done+'/'+pc.length+' 待确认 · 草稿已生成';
       }
-      return '✓ 完整报告已生成 · '+rs.score+'%置信度';
+      return '✓ 完整报告已生成'+(rs.score!=null?' · '+rs.score+'%置信度':'');
     })(),
     home: (function(){
       if(!p) return '报告派生项目·对接需求';
