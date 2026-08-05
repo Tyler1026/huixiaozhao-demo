@@ -637,6 +637,17 @@ var RES_COLOR={matched:{bg:'#e4f5f3',c:'#006d70'},checking:{bg:'#ebf3fd',c:'#013
 
 var role='gov';   // 政府端固定，ops端在 localhost:5051
 var cur=null,view='setup',detailOpen=false,detailData=null,curKb=null,curDemand=null,curSub=null;
+
+/* AUTH: 当前登录态 {user,city,projKey,resident,who,org}；null=未登录 */
+var AUTH=null;
+var ACCOUNTS={
+  'suizhou': {pwd:'suizhou', city:'随州', projKey:'sz', resident:true,  who:'张主任', org:'随州市招商局'},
+  'admin':   {pwd:'admin',   city:null,  projKey:null, resident:false, who:'招商干部', org:'招商局'}
+};
+function saveAuth(){ try{ AUTH?localStorage.setItem('hxz_auth',JSON.stringify(AUTH)):localStorage.removeItem('hxz_auth'); }catch(e){} }
+function loadAuth(){ try{ var d=localStorage.getItem('hxz_auth'); if(d)AUTH=JSON.parse(d); }catch(e){ AUTH=null; } }
+function logout(){ AUTH=null; saveAuth(); cur=null; view='setup'; render._restored=false; render._routed=false; render(); }
+loadAuth();
 // 报告版本迭代状态（每项目一份）：{ver, finalized, patches:[补充意见], edits:{结论index:新文字}}
 var REPORTSTATE={};
 function rs(){var k=cur;if(!REPORTSTATE[k])REPORTSTATE[k]={ver:1,finalized:false,patches:[],edits:{}};return REPORTSTATE[k];}
@@ -656,6 +667,25 @@ function closeModal(){var l=$('#modalLayer');if(l)l.remove()}
 var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','研判需求','出报告·可来回优化'],['home','📋','项目管理','报告派生项目·对接需求'],['docking','🤝','政企对接','资源匹配与对接进度'],['settings','⚙️','设置','账号与提醒']];
 
 function render(){
+  // ── 登录门禁：未登录 → 登录页 ──
+  if(location.search.indexOf('demo')<0 && !AUTH){
+    var _r=document.getElementById('root');
+    if(_r){ _r.innerHTML=loginPage(); }
+    return;
+  }
+  // ── 登录后按账号权威定城市（只执行一次，之后允许自由切换）──
+  if(AUTH && !render._routed){
+    render._routed=true;
+    if(!render._restored){ render._restored=true; try{restore();}catch(e){} }
+    if(AUTH.resident){
+      provisionSuizhou(); cur='sz'; view='knowledge';
+      KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true};
+    } else {
+      if(AUTH.projKey && PROJECTS[AUTH.projKey]){ cur=AUTH.projKey; view='knowledge'; }
+      else { cur=null; view='setup'; }
+    }
+  }
+
   // 尝试从 localStorage 恢复（非 ?demo 模式）
   if(location.search.indexOf('demo')<0&&!cur&&!render._restored){
     render._restored=true;
@@ -692,7 +722,7 @@ function render(){
   // 给 demo 项目注入示例报告状态，以便测试线索派生
   if(!REPORTSTATE[_dk]){
     REPORTSTATE[_dk]={
-      text:'## 一、产业基础判断\n\n随州是中国专用汽车之都。2025年专用汽车与应急产业总产值**703亿元**（+12.1%），年产专用车约**16万辆**，全国占比>10%，专汽出口+71%全省第一。安全应急产业2023年总产值502亿，其中移动应急装备324亿。香菇全产业链2024年产值超500亿，区域品牌价值205.8亿，连续3年全国食药用菌第一。\n\n本地配套率仅**41%**，远低于山东梁山65%和十堰75%+。链主企业：程力（整车）、新楚风（氢能整车，49T氢重卡已量产，百公里氢耗7.1kg续航1000km）、齐星（整车/无人机指挥车）、江南专汽（泡沫消防车600-1000万/台）、品源（"菇的辣克"2024签1亿美元+2025续签3亿美元）。\n\n## 二、产业链缺口分析\n\n### 氢能专用车方向\n- ✅ 已有：整车/改装（程力/新楚风/齐星）、车身驾驶室（齐星）、车规级晶振（泰晶AEC-Q200）、电解液（犇星）\n- ❌ 缺失：燃料电池电堆（占整车成本53%，A=必须本地化，全部外购）\n- ❌ 缺失：高压储氢瓶阀与管路（占整车成本14%，A=必须本地化）\n- ⚠️ 薄弱：底盘/动力总成（占整车成本50%，外购十堰潍柴/法士特/汉德，C=优先本地化）\n\n### 智慧应急装备方向\n- ✅ 已有：整机平台（博利特高空系留无人机消防车、齐星6架无人机指挥车）、软体材料（金龙篷布全国30%）\n- ❌ 缺失：应急机器人本体（依赖启灵外采，B=可跨区域）\n- ❌ 缺失：5G/卫星应急通信模块（本地零布局，B=可跨区域）\n\n### 香菇精深加工方向\n- ✅ 已有：初加工出口（品源辣酱，年产70万吨）、多糖提取（裕国药业）、多肽提取（肽源）\n- ❌ 缺失：香菇多糖/多肽规模化提取平台（仅2家布局，A=必须本地化）\n- ❌ 缺失：菌种自主研发（国外7925/7917品种垄断，A=必须本地化）\n\n## 三、补链优先级清单TOP5\n\n| 排名 | 缺口节点 | 本地化属性 | 经济拉动★ | 招引可行性★ | 综合优先级 |\n|---|---|---|---|---|---|\n| 1 | 燃料电池电堆 | A=必须本地化 | ★★★★★ | ★★★★ | 第一优先 |\n| 2 | 高压储氢瓶阀与管路 | A=必须本地化 | ★★★★ | ★★★★ | 第二优先 |\n| 3 | 应急机器人本体 | B=可跨区域 | ★★★★ | ★★★ | 第三优先 |\n| 4 | 香菇多糖/多肽提取 | A=必须本地化 | ★★★★ | ★★★★ | 第四优先 |\n| 5 | 菌种自主研发基地 | A=必须本地化 | ★★★ | ★★★ | 第五优先 |\n\n## 四、目标企业画像\n\n**燃料电池电堆（第一优先）**\n- 目标类型：商用车功率段燃料电池系统集成商或电堆制造企业，年产能≥3000台，掌握金属双极板或膜电极核心工艺\n- 开口话术：「随州新楚风49T氢重卡已量产，年产能16万辆整车基地就是您进入商用车场景最快的验证通道，落地即锁定程力/新楚风的稳定采购订单。」\n\n**高压储氢瓶阀（第二优先）**\n- 目标类型：35MPa/70MPa高压储氢瓶阀、管路及集成模块制造企业\n- 开口话术：「随州16万辆/年专用车产量是稳定的储氢系统需求方，与电堆企业同步落地可降低整体物流成本。」\n\n**香菇多糖/多肽提取（第四优先）**\n- 目标类型：香菇多糖/多肽功能成分提取与功能性食品企业，寻求中部原料产地合作\n- 开口话术：「随州年产香菇约70万吨，全球白花菇约50%，就近落地可将原料采购成本降低40%+，与裕国/肽源形成产能协作。」\n\n## 五、待确认事项\n\n⚠️ 湖北省氢能专项补贴额度与首选承接园区（高新区/曾都经开区/专汽产业园）需向领导确认\n⚠️ 程力/新楚风的首批电堆采购意向与数量，需走访链主企业核实\n⚠️ 菌种自主研发基地的用地指标与洁净厂房条件，需园区管委会确认\n⚠️ 随县香菇产业园精深加工区的GMP洁净厂房现状，需现场核实',
+      text:SZ_REPORT_TEXT,
       topic:'随州主导产业补链招引',
       ts: Date.now(),
       score: 75,
@@ -727,6 +757,64 @@ function render(){
 function opsTopbarEmpty(){
   return '<div class="top-bar"><div class="top-brand"><div class="brand-icon">慧</div><span style="font-weight:700;font-size:15px;color:#0b183b">慧小招</span></div>'+
     '<div style="flex:1"></div><span style="font-size:12px;color:#9aa5b5">运营端</span></div>';
+}
+
+/* ═══════════ 登录页 ═══════════ */
+function loginPage(){
+  return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#eef3ff 0%,#f8faff 55%,#f2ecff 100%)">'+
+    '<div style="width:min(400px,92vw);background:#fff;border-radius:18px;box-shadow:0 24px 70px rgba(11,31,65,.13);padding:38px 34px 30px">'+
+      '<div style="text-align:center;margin-bottom:24px">'+
+        '<div style="width:56px;height:56px;margin:0 auto 12px;border-radius:15px;background:linear-gradient(135deg,#1a56db,#6366f1);display:grid;place-items:center;font-size:28px;color:#fff;font-weight:700">慧</div>'+
+        '<h1 style="margin:0;font-size:21px;color:#0b183b;letter-spacing:-.01em">慧小招 · 城市智库</h1>'+
+        '<p style="margin:6px 0 0;font-size:12.5px;color:#8492a6">AI 招商智能体 · 请登录进入你的城市工作区</p>'+
+      '</div>'+
+      '<div style="display:grid;gap:13px">'+
+        '<label style="display:grid;gap:6px;font-size:12px;color:#52637a">账号'+
+          '<input id="loginUser" type="text" autocomplete="username" placeholder="如 suizhou" onkeydown="if(event.key===\'Enter\')doLogin()" style="min-height:44px;padding:9px 12px;border:1px solid #d8e0ed;border-radius:9px;outline:0;font-size:14px"></label>'+
+        '<label style="display:grid;gap:6px;font-size:12px;color:#52637a">密码'+
+          '<input id="loginPwd" type="password" autocomplete="current-password" placeholder="请输入密码" onkeydown="if(event.key===\'Enter\')doLogin()" style="min-height:44px;padding:9px 12px;border:1px solid #d8e0ed;border-radius:9px;outline:0;font-size:14px"></label>'+
+        '<div id="loginErr" style="display:none;font-size:12px;color:#dc2626;margin-top:-4px"></div>'+
+        '<button onclick="doLogin()" style="min-height:46px;margin-top:4px;border:none;border-radius:10px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;font-size:15px;font-weight:650;cursor:pointer;letter-spacing:.3px">登录</button>'+
+      '</div>'+
+      '<div style="margin-top:20px;padding-top:16px;border-top:1px solid #f0f4ff;font-size:11.5px;color:#9aa5b5;line-height:1.7">'+
+        '<div style="font-weight:650;color:#6b7688;margin-bottom:4px">演示账号</div>'+
+        '· <b>suizhou</b> / suizhou —— 随州常驻工作区（含完整数据）<br>'+
+        '· <b>admin</b> / admin —— 通用账号，可新建任意城市'+
+      '</div>'+
+    '</div></div>';
+}
+function loginErr(msg){ var e=document.getElementById('loginErr'); if(e){ e.textContent=msg; e.style.display='block'; } }
+function doLogin(){
+  var u=(document.getElementById('loginUser')||{}).value||'';
+  var pw=(document.getElementById('loginPwd')||{}).value||'';
+  u=u.trim().toLowerCase();
+  var acc=ACCOUNTS[u];
+  if(!acc){ loginErr('账号不存在'); return; }
+  if(acc.pwd!==pw){ loginErr('密码错误'); return; }
+  AUTH={user:u, city:acc.city, projKey:acc.projKey, resident:!!acc.resident, who:acc.who, org:acc.org};
+  saveAuth();
+  cur=null; view='setup'; render._restored=false; render._routed=false;
+  render();
+}
+
+/* 随州常驻：首次即预置完整数据，key 固定 sz，永不 onboarding */
+function provisionSuizhou(){
+  if(!PROJECTS.sz){
+    var _c=generateKbConclusions('随州');
+    PROJECTS.sz={id:'sz',city:'随州',org:'随州市招商局',who:'张主任',topic:'随州主导产业补链招引',stage:5,
+      kb:[
+        {icon:'\ud83c\udfed',t:'主导产业与产业链',sub:_c.industry.sub,tag:_c.industry.tag,known:_c.industry.known,calls:['产业链缺口测绘报告']},
+        {icon:'\ud83c\udfe2',t:'园区与承载条件',sub:_c.park.sub,tag:_c.park.tag,known:_c.park.known,calls:['产业链缺口测绘报告']},
+        {icon:'\ud83c\udfd7\ufe0f',t:'链主与存量企业',sub:_c.firm.sub,tag:_c.firm.tag,known:_c.firm.known,calls:['产业链缺口测绘报告']},
+        {icon:'\ud83d\udcdc',t:'政策、规划与领导关注',sub:_c.policy.sub,tag:_c.policy.tag,known:_c.policy.known,calls:['政策规划研究']}
+      ],report:null,clues:[]};
+  }
+  if(!REPORTSTATE.sz){
+    REPORTSTATE.sz={text:SZ_REPORT_TEXT,topic:'随州主导产业补链招引',ts:Date.now(),score:75,phase:2,ver:2,finalized:true,patches:[],edits:{}};
+  }
+  KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true};
+  persist();
+  return 'sz';
 }
 
 /* ===== ONBOARDING v2: 城市 → 可选上传 → 分析动画 → 工作区 ===== */
@@ -1029,6 +1117,7 @@ function ingestSetupFiles(files, projKey){
 /* 点击「进入工作区」按钮时调用 */
 
 /* 根据城市名生成城市智库四大主题的核心结论（公开信息初判） */
+var SZ_REPORT_TEXT='## 一、产业基础判断\n\n随州是中国专用汽车之都。2025年专用汽车与应急产业总产值**703亿元**（+12.1%），年产专用车约**16万辆**，全国占比>10%，专汽出口+71%全省第一。安全应急产业2023年总产值502亿，其中移动应急装备324亿。香菇全产业链2024年产值超500亿，区域品牌价值205.8亿，连续3年全国食药用菌第一。\n\n本地配套率仅**41%**，远低于山东梁山65%和十堰75%+。链主企业：程力（整车）、新楚风（氢能整车，49T氢重卡已量产，百公里氢耗7.1kg续航1000km）、齐星（整车/无人机指挥车）、江南专汽（泡沫消防车600-1000万/台）、品源（"菇的辣克"2024签1亿美元+2025续签3亿美元）。\n\n## 二、产业链缺口分析\n\n### 氢能专用车方向\n- ✅ 已有：整车/改装（程力/新楚风/齐星）、车身驾驶室（齐星）、车规级晶振（泰晶AEC-Q200）、电解液（犇星）\n- ❌ 缺失：燃料电池电堆（占整车成本53%，A=必须本地化，全部外购）\n- ❌ 缺失：高压储氢瓶阀与管路（占整车成本14%，A=必须本地化）\n- ⚠️ 薄弱：底盘/动力总成（占整车成本50%，外购十堰潍柴/法士特/汉德，C=优先本地化）\n\n### 智慧应急装备方向\n- ✅ 已有：整机平台（博利特高空系留无人机消防车、齐星6架无人机指挥车）、软体材料（金龙篷布全国30%）\n- ❌ 缺失：应急机器人本体（依赖启灵外采，B=可跨区域）\n- ❌ 缺失：5G/卫星应急通信模块（本地零布局，B=可跨区域）\n\n### 香菇精深加工方向\n- ✅ 已有：初加工出口（品源辣酱，年产70万吨）、多糖提取（裕国药业）、多肽提取（肽源）\n- ❌ 缺失：香菇多糖/多肽规模化提取平台（仅2家布局，A=必须本地化）\n- ❌ 缺失：菌种自主研发（国外7925/7917品种垄断，A=必须本地化）\n\n## 三、补链优先级清单TOP5\n\n| 排名 | 缺口节点 | 本地化属性 | 经济拉动★ | 招引可行性★ | 综合优先级 |\n|---|---|---|---|---|---|\n| 1 | 燃料电池电堆 | A=必须本地化 | ★★★★★ | ★★★★ | 第一优先 |\n| 2 | 高压储氢瓶阀与管路 | A=必须本地化 | ★★★★ | ★★★★ | 第二优先 |\n| 3 | 应急机器人本体 | B=可跨区域 | ★★★★ | ★★★ | 第三优先 |\n| 4 | 香菇多糖/多肽提取 | A=必须本地化 | ★★★★ | ★★★★ | 第四优先 |\n| 5 | 菌种自主研发基地 | A=必须本地化 | ★★★ | ★★★ | 第五优先 |\n\n## 四、目标企业画像\n\n**燃料电池电堆（第一优先）**\n- 目标类型：商用车功率段燃料电池系统集成商或电堆制造企业，年产能≥3000台，掌握金属双极板或膜电极核心工艺\n- 开口话术：「随州新楚风49T氢重卡已量产，年产能16万辆整车基地就是您进入商用车场景最快的验证通道，落地即锁定程力/新楚风的稳定采购订单。」\n\n**高压储氢瓶阀（第二优先）**\n- 目标类型：35MPa/70MPa高压储氢瓶阀、管路及集成模块制造企业\n- 开口话术：「随州16万辆/年专用车产量是稳定的储氢系统需求方，与电堆企业同步落地可降低整体物流成本。」\n\n**香菇多糖/多肽提取（第四优先）**\n- 目标类型：香菇多糖/多肽功能成分提取与功能性食品企业，寻求中部原料产地合作\n- 开口话术：「随州年产香菇约70万吨，全球白花菇约50%，就近落地可将原料采购成本降低40%+，与裕国/肽源形成产能协作。」\n\n## 五、待确认事项\n\n⚠️ 湖北省氢能专项补贴额度与首选承接园区（高新区/曾都经开区/专汽产业园）需向领导确认\n⚠️ 程力/新楚风的首批电堆采购意向与数量，需走访链主企业核实\n⚠️ 菌种自主研发基地的用地指标与洁净厂房条件，需园区管委会确认\n⚠️ 随县香菇产业园精深加工区的GMP洁净厂房现状，需现场核实';
 function generateKbConclusions(city){
   // 随州专项真实数据（源自慧小招2026-07报告）
   // 通用城市走通用骨架；随州走完整真实数据
@@ -1457,9 +1546,55 @@ function topbar(p){
       '<span style="position:relative;cursor:pointer" onclick="toggleNotif(event)"><i class="i">🔔</i>'+
         (unreadCount()>0?'<b style="position:absolute;top:-4px;right:-6px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:#c85b09;color:#fff;font-size:9px;line-height:15px;text-align:center;font-weight:700">'+unreadCount()+'</b>':'')+
         '<div id="notifPanel" style="display:none;position:absolute;top:30px;right:0;width:310px;background:#fff;border:1px solid #d8e0ed;border-radius:12px;box-shadow:0 12px 32px rgba(11,24,59,.16);z-index:70;overflow:hidden;text-align:left;cursor:default" onclick="event.stopPropagation()">'+notifList()+'</div>'+
-      '</span></div>'+
+      '</span>'+
+      '<button onclick="openCitySwitch()" title="切换城市" style="display:inline-flex;align-items:center;gap:5px;min-height:32px;padding:0 11px;border:1px solid #d8e0ed;border-radius:8px;background:#fff;color:#0757ad;font-size:12.5px;cursor:pointer">\ud83c\udfd9\ufe0f 切换城市</button>'+
+      (AUTH?'<button onclick="logout()" title="退出登录" style="display:inline-flex;align-items:center;gap:5px;min-height:32px;padding:0 11px;border:1px solid #f0d8d8;border-radius:8px;background:#fff;color:#b5504a;font-size:12.5px;cursor:pointer">\u21aa 退出</button>':'')+
+      '</div>'+
   '</div>';
 }
+
+/* 切换 / 新建城市弹窗：已建城市直进，新城市走 onboarding */
+function openCitySwitch(){
+  var cities=[];
+  for(var k in PROJECTS){ if(PROJECTS.hasOwnProperty(k)) cities.push({key:k, city:PROJECTS[k].city, topic:PROJECTS[k].topic}); }
+  var list=cities.map(function(c){
+    var on=c.key===cur;
+    return '<button onclick="switchToCity(\''+c.key+'\')" style="width:100%;text-align:left;display:flex;align-items:center;gap:10px;padding:11px 13px;margin-bottom:8px;border:1px solid '+(on?'#6366f1':'#e8edf5')+';border-radius:10px;background:'+(on?'#f3f4ff':'#fff')+';cursor:pointer">'+
+      '<span style="font-size:18px">\ud83c\udfd9\ufe0f</span>'+
+      '<span style="flex:1;min-width:0"><strong style="font-size:13.5px;color:#0b183b;display:block">'+c.city+(on?' · 当前':'')+'</strong>'+
+      '<small style="font-size:11px;color:#8492a6">'+(c.topic||'')+'</small></span></button>';
+  }).join('') || '<p style="font-size:12.5px;color:#8492a6;margin:0 0 10px">暂无已建城市。</p>';
+  openModal('\ud83c\udfd9\ufe0f 切换 / 新建城市',
+    '<div style="font-size:12px;color:#8492a6;margin:-2px 0 12px;line-height:1.6">选择一个已建城市直接进入（数据已保存）；或输入新城市名走一遍建库流程。</div>'+
+    list+
+    '<div style="margin-top:14px;padding-top:14px;border-top:1px solid #f0f4ff">'+
+      '<div style="font-size:12px;font-weight:650;color:#0b183b;margin-bottom:8px">\u2795 新建城市</div>'+
+      '<div style="display:flex;gap:8px">'+
+        '<input id="switchCityInput" type="text" placeholder="输入城市名，如 十堰" onkeydown="if(event.key===\'Enter\')switchNewCity()" style="flex:1;min-height:42px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:9px;outline:0;font-size:14px">'+
+        '<button onclick="switchNewCity()" style="min-height:42px;padding:0 16px;border:none;border-radius:9px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;font-size:13.5px;font-weight:650;cursor:pointer">建库</button>'+
+      '</div>'+
+    '</div>',
+    '<button class="secondary-button" onclick="closeModal()">取消</button>');
+}
+function switchToCity(k){
+  if(!PROJECTS[k])return;
+  closeModal(); cur=k; view='knowledge'; detailData=null; detailOpen=false;
+  KB_UNLOCKED[k]=KB_UNLOCKED[k]||{report:true,home:true,docking:true};
+  persist(); render();
+  toast('已进入「'+PROJECTS[k].city+'」城市智库');
+}
+function switchNewCity(){
+  var v=(document.getElementById('switchCityInput')||{}).value||'';
+  v=v.trim(); if(!v)return;
+  for(var k in PROJECTS){ if(PROJECTS[k].city===v){ switchToCity(k); return; } }
+  closeModal();
+  _setupFiles=[];
+  cur=null; view='setup';
+  var _root=document.getElementById('root');
+  if(_root){ _root.innerHTML='<div style="height:100vh;background:#f5f7fb">'+setupPage()+'</div>'; bind(); }
+  setTimeout(function(){ var ci=document.getElementById('setupCity'); if(ci){ ci.value=v; if(typeof setupValidate==='function')setupValidate(); } }, 40);
+}
+
 function stColor(s){return s>=4?{bg:'#e4f5f3',c:'#006d70'}:s>=3?{bg:'#ebf3fd',c:'#013582'}:{bg:'#fff0de',c:'#a34c09'}}
 
 /* kb lock/readiness */
