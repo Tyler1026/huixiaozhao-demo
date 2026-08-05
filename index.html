@@ -397,7 +397,7 @@ function downloadReportPDF(mode){
       '<div class="brand"><div class="logo">慧</div><div><div class="bname">慧小招 · AI 招商智能体</div><div class="bsub">HUIXIAOZHAO INVESTMENT INTELLIGENCE</div></div></div>'+
       '<h1>'+city+'市招商研判报告</h1>'+
       '<div class="subtitle">'+topic+(mode==='short'?' · 精简版':' · 完整版')+'</div>'+
-      '<div class="meta"><span>生成日期<b>'+date+'</b></span><span>研判置信度<b>'+score+'%</b></span><span>分析引擎<b>DeepSeek + 慧小招智库</b></span></div>'+
+      '<div class="meta"><span>生成日期<b>'+date+'</b></span><span>研判置信度<b>'+score+'%</b></span><span>分析引擎<b>慧小招 AI 智库</b></span></div>'+
     '</div>'+
     srcHtml+
     '<div class="report-body">'+bodyHtml+'</div>'+
@@ -1255,65 +1255,93 @@ function showDownloadReport(){
   var p=P();
   if(!p||!p.city){toast('请先完成城市分析');return;}
   var city=p.city;
-  window._exportReport={full:'', short:'', done:false};
+  window._exportReport={full:'', done:false, mode:'full'};
 
-  var modal='<div id="dlReportModal" style="position:fixed;inset:0;background:rgba(11,24,59,.45);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)" onclick="if(event.target.id===\'dlReportModal\')this.remove()">'+
-    '<div style="background:#fff;border-radius:22px;padding:32px;max-width:520px;width:92%;box-shadow:0 8px 60px rgba(11,24,59,.18);animation:fadeUp .3s ease">'+
+  var modal='<div id="dlReportModal" style="position:fixed;inset:0;background:rgba(11,24,59,.45);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)" onclick="if(event.target.id===\'dlReportModal\'&&window._exportReport&&window._exportReport.done)this.remove()">'+
+    '<div style="background:#fff;border-radius:22px;padding:34px 34px 30px;max-width:460px;width:90%;box-shadow:0 8px 60px rgba(11,24,59,.18);animation:fadeUp .3s ease">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'+
         '<div>'+
           '<div style="font-size:12px;font-weight:650;color:#8492a6;letter-spacing:.5px;margin-bottom:4px">城市智库 · 招商研判报告</div>'+
           '<h2 style="font-size:19px;font-weight:750;color:#0b183b;margin:0">'+city+' 智库报告导出</h2>'+
         '</div>'+
-        '<button onclick="document.getElementById(\'dlReportModal\').remove()" style="background:none;border:none;font-size:18px;color:#9aa5b5;cursor:pointer;padding:4px">✕</button>'+
       '</div>'+
-      '<p style="font-size:12.5px;color:#8492a6;margin:8px 0 18px;line-height:1.6">AI 将基于本智库的<b>领导已确认结论</b>、<b>上传材料</b>与主题卡知识，实时生成完整招商研判报告。</p>'+
-      '<div id="exportGenBox" style="border:1.5px solid #e8edf5;border-radius:14px;padding:16px 18px;min-height:120px;max-height:min(46vh,360px);overflow-y:auto;font-size:12.5px;line-height:1.8;color:#1e293b;background:#fcfcfd;white-space:pre-wrap">'+
-        '<div style="display:flex;align-items:center;gap:9px;color:#9aa5b5"><span class="kb-thinking-dot"></span>正在调用 AI 生成完整报告…（约 30-60 秒）</div>'+
+      '<p style="font-size:12.5px;color:#8492a6;margin:8px 0 22px;line-height:1.6">选择报告版本，系统将基于本智库<b>领导已确认结论</b>、<b>上传材料</b>与主题卡知识自动生成并下载 PDF。</p>'+
+      '<div id="exportChoose" style="display:flex;flex-direction:column;gap:11px">'+
+        '<button onclick="startExportReport(\'full\')" style="display:flex;align-items:center;gap:13px;padding:15px 17px;border:1.5px solid #e8edf5;border-radius:14px;background:#fff;cursor:pointer;text-align:left" onmouseover="this.style.borderColor=\'#6366f1\'" onmouseout="this.style.borderColor=\'#e8edf5\'">'+
+          '<span style="font-size:24px">📄</span>'+
+          '<span style="flex:1"><span style="display:block;font-size:14px;font-weight:700;color:#0b183b">完整版报告</span>'+
+          '<span style="display:block;font-size:11.5px;color:#8492a6;margin-top:2px">五章结构 · 产业基础/缺口分析/补链清单/企业画像/招商建议</span></span>'+
+          '<span style="font-size:16px;color:#c9d3e0">→</span>'+
+        '</button>'+
+        '<button onclick="startExportReport(\'short\')" style="display:flex;align-items:center;gap:13px;padding:15px 17px;border:1.5px solid #e8edf5;border-radius:14px;background:#fff;cursor:pointer;text-align:left" onmouseover="this.style.borderColor=\'#6366f1\'" onmouseout="this.style.borderColor=\'#e8edf5\'">'+
+          '<span style="font-size:24px">📋</span>'+
+          '<span style="flex:1"><span style="display:block;font-size:14px;font-weight:700;color:#0b183b">精简版报告</span>'+
+          '<span style="display:block;font-size:11.5px;color:#8492a6;margin-top:2px">决策摘要 · 核心研判/三大缺口/招引方向/领导需确认事项</span></span>'+
+          '<span style="font-size:16px;color:#c9d3e0">→</span>'+
+        '</button>'+
       '</div>'+
-      '<div id="exportFoot" style="display:none;gap:10px;margin-top:16px">'+
-        '<button onclick="downloadReportPDF(\'full\')" style="flex:1;padding:11px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:11px;font-size:13.5px;font-weight:650;cursor:pointer">⬇ 完整版 PDF</button>'+
-        '<button onclick="downloadReportPDF(\'short\')" style="padding:11px 16px;background:#f5f7fb;color:#0b183b;border:1.5px solid #e8edf5;border-radius:11px;font-size:13.5px;font-weight:600;cursor:pointer">精简版 PDF</button>'+
+      '<div id="exportLoading" style="display:none;flex-direction:column;align-items:center;justify-content:center;padding:34px 10px 26px;text-align:center">'+
+        '<div class="export-spinner" style="width:44px;height:44px;border:4px solid #eef2ff;border-top-color:#6366f1;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:18px"></div>'+
+        '<div style="font-size:14px;font-weight:650;color:#0b183b">正在生成<span id="exportModeLabel">完整版</span>报告…</div>'+
+        '<div id="exportLoadHint" style="font-size:12px;color:#9aa5b5;margin-top:6px;line-height:1.6">正在梳理产业数据与缺口分析，约 30-60 秒<br>生成后将自动下载 PDF</div>'+
       '</div>'+
-      '<p style="font-size:11px;color:#b0bac8;margin:14px 0 0;text-align:center;line-height:1.7">报告为 AI 基于已确认智库数据的研判成果，正式招商决策须结合政府授权材料与领导确认</p>'+
+      '<p style="font-size:11px;color:#b0bac8;margin:18px 0 0;text-align:center;line-height:1.7">报告为 AI 基于已确认智库数据的研判成果，正式招商决策须结合政府授权材料与领导确认</p>'+
     '</div>'+
   '</div>';
   var wrap=document.createElement('div'); wrap.innerHTML=modal;
   document.body.appendChild(wrap.firstChild);
+  if(!document.getElementById('spinStyle')){var st=document.createElement('style');st.id='spinStyle';st.textContent='@keyframes spin{to{transform:rotate(360deg)}}';document.head.appendChild(st);}
+}
 
-  // 组装数据源：主题卡知识(含✅已确认) + 上传材料 chunks
+/* 选定版本后：切 loading 动画 → 后台流式生成(不展示正文) → 完成即自动下载 PDF */
+function startExportReport(mode){
+  var p=P(); if(!p||!p.city) return;
+  var city=p.city;
+  window._exportReport={full:'', done:false, mode:mode};
+  var choose=document.getElementById('exportChoose'); if(choose)choose.style.display='none';
+  var load=document.getElementById('exportLoading'); if(load)load.style.display='flex';
+  var lbl=document.getElementById('exportModeLabel'); if(lbl)lbl.textContent=(mode==='short'?'精简版':'完整版');
+
   var corpus=buildKBCorpus(city);
-  var confirmedNote='';
-  var cf=KB_CONFIRMS[cur]||{};
-  var confLines=[];
+  var cf=KB_CONFIRMS[cur]||{}; var confLines=[];
   Object.keys(cf).forEach(function(ki){ Object.keys(cf[ki]||{}).forEach(function(ii){ var rec=cf[ki][ii]; if(rec&&rec.text) confLines.push(rec.text); }); });
-  if(confLines.length) confirmedNote='\n\n【领导已确认的关键结论（须优先采信）】\n'+confLines.map(function(t){return '· '+t;}).join('\n');
-  var upN=(UPLOADS[cur]||[]).length;
+  var confirmedNote=confLines.length?('\n\n【领导已确认的关键结论（须优先采信）】\n'+confLines.map(function(t){return '· '+t;}).join('\n')):'';
 
-  var query='请基于'+city+'城市智库数据，输出完整招商研判报告，严格按五章结构：\n'+
-    '一、产业基础判断（用具体数字，来自知识片段）\n'+
-    '二、产业链缺口分析（逐环节标注✅已有/⚠️薄弱/❌缺失）\n'+
-    '三、补链优先级清单TOP5（Markdown表格：缺口节点|本地化属性|经济拉动|招引可行性|综合优先级）\n'+
-    '四、目标企业画像（每个TOP缺口：目标企业类型+规模+开口话术）\n'+
-    '五、招商建议与待确认事项（⚠️标注需领导确认的专项资金/地块/政策口径）'+confirmedNote;
-  var chunks=kbSearch(query, corpus, 10);
-
-  var box=document.getElementById('exportGenBox');
+  var query;
+  if(mode==='short'){
+    query='请基于'+city+'城市智库数据，输出一份【决策摘要版】招商研判报告（约800-1200字，面向招商局领导快速决策），包含四个部分：\n'+
+      '一、产业基础与核心判断（3-4句话概括主导产业规模、地位与关键数字）\n'+
+      '二、三大关键产业链缺口（每条：缺口环节+具体数据+为何值得补）\n'+
+      '三、优先招引方向（3个方向，每条：方向名+目标企业类型+一句话理由）\n'+
+      '四、需领导确认事项（⚠️标注专项资金/地块/政策口径）\n'+
+      '要求：简洁有力、突出数字与结论，不需要展开长篇分析。'+confirmedNote;
+  } else {
+    query='请基于'+city+'城市智库数据，输出完整招商研判报告，严格按五章结构：\n'+
+      '一、产业基础判断（用具体数字，来自知识片段）\n'+
+      '二、产业链缺口分析（逐环节标注✅已有/⚠️薄弱/❌缺失）\n'+
+      '三、补链优先级清单TOP5（Markdown表格：缺口节点|本地化属性|经济拉动|招引可行性|综合优先级）\n'+
+      '四、目标企业画像（每个TOP缺口：目标企业类型+规模+开口话术）\n'+
+      '五、招商建议与待确认事项（⚠️标注需领导确认的专项资金/地块/政策口径）'+confirmedNote;
+  }
+  var chunks=kbSearch(query, corpus, mode==='short'?8:10);
   var acc='';
   fetch('/api/kb-chat',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({question:query, chunks:chunks, city:city, stream:true, mode:'full'})
   }).then(function(resp){
-    if(!resp.ok){ if(box)box.innerHTML='<span style="color:#ef4444">服务错误：'+resp.status+'，请稍后重试</span>'; return; }
+    if(!resp.ok){ _exportFail('服务错误：'+resp.status); return; }
     var reader=resp.body.getReader(), dec=new TextDecoder(), buf='';
     function pump(){
       reader.read().then(function(d){
         if(d.done){
-          window._exportReport.full=acc.trim();
-          window._exportReport.done=true;
-          // 写入 REPORTSTATE 供 downloadReportPDF 复用
+          var txt=acc.trim();
+          window._exportReport.full=txt; window._exportReport.done=true;
           var r=kbReadiness();
-          REPORTSTATE[cur]={text:acc.trim(), topic:p.topic||(city+'招商研判'), ts:Date.now(), score:r.score, phase:2, via:'kb-export'};
+          REPORTSTATE[cur]={text:txt, topic:p.topic||(city+'招商研判'), ts:Date.now(), score:r.score, phase:2, via:'kb-export'};
           persist();
-          var foot=document.getElementById('exportFoot'); if(foot)foot.style.display='flex';
+          // 自动触发 PDF 下载，然后关闭弹窗
+          downloadReportPDF(mode==='short'?'shortFull':'full');
+          var m=document.getElementById('dlReportModal'); if(m)setTimeout(function(){m.remove();},600);
+          toast('✓ 报告已生成，请在打印对话框选择「另存为 PDF」');
           return;
         }
         buf+=dec.decode(d.value,{stream:true});
@@ -1321,13 +1349,17 @@ function showDownloadReport(){
         lines.forEach(function(line){
           if(!line.startsWith('data:'))return;
           var dd=line.slice(5).trim(); if(dd==='[DONE]')return;
-          try{ var j=JSON.parse(dd); var dl=(j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||''; if(dl){acc+=dl; if(box){box.textContent=acc; box.scrollTop=box.scrollHeight;}} }catch(e){}
+          try{ var j=JSON.parse(dd); var dl=(j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||''; if(dl)acc+=dl; }catch(e){}
         });
         pump();
       });
     }
     pump();
-  }).catch(function(err){ if(box)box.innerHTML='<span style="color:#ef4444">连接失败：'+err.message+'</span>'; });
+  }).catch(function(err){ _exportFail('连接失败：'+err.message); });
+}
+function _exportFail(msg){
+  var load=document.getElementById('exportLoading');
+  if(load)load.innerHTML='<div style="color:#ef4444;font-size:13px;text-align:center;padding:20px">'+msg+'<br><small style="color:#9aa5b5">请关闭后重试</small></div>';
 }
 
 function showSummaryModal(city2,sectors){
@@ -3475,13 +3507,24 @@ function renderActionItems(text, p, r){
 
   if(!items.length){
     tlines.forEach(function(l){
-      if((l.indexOf('❌')>=0||l.indexOf('缺失')>=0||l.indexOf('全部外购')>=0)&&items.length<3){
-        var clean=l.replace(/^[*\-•|#\s]+/,'').replace(/❌|\*\*/g,'').trim();
+      if((l.indexOf('❌')>=0||l.indexOf('缺失')>=0||l.indexOf('全部外购')>=0||l.indexOf('⚠')>=0)&&items.length<3){
+        var clean=l.replace(/^[*\-•|#\s]+/,'').replace(/❌|⚠️|\*\*/g,'').trim();
         if(clean.length>4&&clean.length<60) items.push({rank:items.length+1,gap:clean,attr:'',score:''});
       }
     });
   }
-  if(!items.length) return;
+  // 兜底2：从主题卡 known 里取缺口/薄弱条目，保证末尾选项一定出现
+  if(!items.length && p.kb){
+    p.kb.forEach(function(k){ (k.known||[]).forEach(function(x){
+      if(items.length>=3) return;
+      if(x.indexOf('⚠')>=0||x.indexOf('缺')>=0||x.indexOf('外购')>=0||x.indexOf('依赖')>=0){
+        var clean=x.replace(/^[*\-•|#\s]+/,'').replace(/⚠️|✅|📎/g,'').trim();
+        if(clean.length>4) items.push({rank:items.length+1,gap:clean.slice(0,40),attr:'',score:''});
+      }
+    }); });
+  }
+  // 兜底3：仍为空则给一个基于主题的通用立项入口
+  if(!items.length){ items.push({rank:1,gap:p.topic||(p.city+'招商方向'),attr:'',score:''}); }
 
   var colors=['#1a56db','#6366f1','#0891b2'];
   var icons=['🥇','🥈','🥉'];

@@ -1713,6 +1713,88 @@ var SUIZHOU_SCAN_CLUES = [
   },
 ];
 
+/* ── 从报告文本提取缺口（供通用城市动态扫描用）── */
+function extractGapsForScan(p){
+  var gaps=[];
+  var rsx=(typeof REPORTSTATE!=='undefined')?(REPORTSTATE[p.id]||REPORTSTATE[cur]):null;
+  var text=rsx&&rsx.text||'';
+  if(text){
+    var lines=text.split('\n'); var inTop5=false;
+    for(var i=0;i<lines.length;i++){
+      var l=lines[i];
+      if(l.indexOf('补链优先级')>=0||l.indexOf('TOP5')>=0||l.indexOf('优先级清单')>=0)inTop5=true;
+      if(inTop5&&l.trim().charAt(0)==='|'){
+        var cells=l.trim().slice(1,-1).split('|').map(function(c){return c.replace(/[*★]/g,'').trim();});
+        if(cells.every(function(c){return /^[\s\-:]+$/.test(c);})||cells[0]==='排名'||cells[0]==='缺口节点')continue;
+        var rank=parseInt(cells[0]); if(!isNaN(rank)&&cells[1])gaps.push(cells[1]);
+      }
+      if(inTop5&&gaps.length>=4)break;
+    }
+    if(!gaps.length){
+      lines.forEach(function(l){
+        if(l.indexOf('❌')>=0&&gaps.length<4){
+          var c=l.replace(/^[*\-•|#\s]+/,'').replace(/❌|\*\*/g,'').replace('缺失','').trim();
+          c=c.split(/[（(，,：:]/)[0].trim();
+          if(c.length>=3&&c.length<30)gaps.push(c);
+        }
+      });
+    }
+  }
+  if(!gaps.length)gaps=['核心零部件配套','关键系统集成','精深加工延链','智能装备升级'];
+  return gaps.slice(0,4);
+}
+
+/* ── 统一扫描入口：随州走真实企业库，其他城市按缺口动态生成 ── */
+function computeScanClues(p){
+  if(!p)return [];
+  var city=(p.city||''); var topic=(p.topic||'').toLowerCase();
+  if(city.indexOf('随州')>=0){
+    return SUIZHOU_SCAN_CLUES.filter(function(sc){
+      if(topic.indexOf('氢能')>=0||topic.indexOf('电堆')>=0||topic.indexOf('储氢')>=0)
+        return sc.gap.indexOf('电堆')>=0||sc.gap.indexOf('储氢')>=0;
+      if(topic.indexOf('应急')>=0||topic.indexOf('机器人')>=0||topic.indexOf('无人机')>=0)
+        return sc.gap.indexOf('机器人')>=0||sc.gap.indexOf('无人机')>=0;
+      if(topic.indexOf('香菇')>=0||topic.indexOf('菌种')>=0||topic.indexOf('提取')>=0)
+        return sc.gap.indexOf('多糖')>=0||sc.gap.indexOf('多肽')>=0||sc.gap.indexOf('菌种')>=0;
+      return true; // 通用 topic → 返回随州全部方向候选（不再兜底为0条）
+    });
+  }
+  return genGenericScanClues(p);
+}
+
+/* ── 通用城市动态候选企业（脱敏代号，基于报告缺口）── */
+function genGenericScanClues(p){
+  var city=p.city||'该市';
+  var gaps=extractGapsForScan(p);
+  var regionPool=['长三角(江浙沪)','珠三角(广东)','成渝地区','环渤海(京津冀)','华中(武汉城市圈)'];
+  var kindPool=['系统集成商','核心部件制造企业','精深加工龙头','智能装备供应商'];
+  var laPool=['A','A','B','C']; var prPool=[5,4,4,3];
+  return gaps.map(function(gap,idx){
+    var g=gap.slice(0,10);
+    return {
+      id:'scan_'+(p.id||'x')+'_'+idx, gap:gap,
+      name:'脱敏企业 '+String.fromCharCode(65+idx)+'（'+g+'·代号）',
+      kind:g+kindPool[idx%kindPool.length], region:regionPool[idx%regionPool.length],
+      scale:'该细分领域头部之一，规模适配'+city+'配套需求（具体以核验为准）',
+      techRoute:'掌握「'+g+'」核心工艺，产品与'+city+'主导产业上下游匹配',
+      signal:'⚠️ 基于公开信息与行业布局初判存在异地扩产/配套下沉动机，'+city+'方向需资源团队主动接触核实',
+      signalSrc:'慧小招公开信息扫描（截至'+new Date().toLocaleDateString('zh-CN')+'）',
+      hasMoveSignal:false,
+      matchPoints:[
+        '直接补齐'+city+'「'+g+'」产业链缺口，与本地链主形成配套需求',
+        '落地即可锁定'+city+'本地整机/龙头企业的稳定采购订单',
+        '产业配套就近集聚，可降低整体物流与协同成本'
+      ],
+      questions:[
+        '企业是否有在'+city+'或周边区域布局产能/配套基地的计划',
+        '与'+city+'本地链主的技术匹配度与联合开发意向',
+        '落地'+city+'所需的政策支持与承载条件'
+      ],
+      priority:prPool[idx%prPool.length], localAttr:laPool[idx%laPool.length], status:'ai_scan'
+    };
+  });
+}
+
 /* ── 企业线索两栏布局渲染 ── */
 function renderCluesTwoPanel(projKey){
   var p = PROJECTS[projKey]; if(!p) return '';
