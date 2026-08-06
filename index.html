@@ -795,7 +795,10 @@ function doLogin(){
   saveAuth();
   cur=null; view='setup'; render._restored=false; render._routed=false;
   // 登录后先从服务器拉取最新数据，再 render
-  restoreFromServer(function(ok){ render(); });
+  // 2秒内服务器未响应则直接 render，避免白屏
+  var _rendered=false;
+  var _fallback=setTimeout(function(){ if(!_rendered){_rendered=true;render();} },2000);
+  restoreFromServer(function(ok){ if(!_rendered){_rendered=true;clearTimeout(_fallback);render();} });
 }
 
 /* 随州常驻：首次即预置完整数据，key 固定 sz，永不 onboarding */
