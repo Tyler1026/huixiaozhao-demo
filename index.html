@@ -5778,8 +5778,8 @@ function kbVerifyMaterial(){
   var kbIdx=window._lastIngestKbIdx;
   var p=P(); if(!p||!newChunks.length) return;
 
-  var actDiv=document.getElementById('kbIngestActions');
-  if(actDiv) actDiv.remove();
+  // 只把校验按钮变为加载态，其他两个按钮保留
+  var verifyBtn=document.querySelector('#kbIngestActions button:last-child'); if(verifyBtn){verifyBtn.disabled=true;verifyBtn.textContent='🔍 校验中…';}
 
   var c=document.getElementById('kbConv'); if(!c) return;
 
