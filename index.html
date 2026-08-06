@@ -4292,6 +4292,15 @@ function kbPage(p){
     '<button onclick="askKB(\''+P().city+'各园区如何分工承接不同细分产业？\')">园区分工承接方案</button>'+
     '<button onclick="askKB(\'本地链主企业还缺哪些关键上游配套？\')">链主缺口分析</button>'+
     '</div>'+
+    // 折叠条
+    '<div id="kbConvWrap">'+
+    '<div id="kbConvToggle" onclick="toggleKbConv()" '+
+      'style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;'+
+      'background:#f5f7fb;border:1px solid #e8edf5;border-radius:10px;cursor:pointer;margin-bottom:6px;user-select:none">'+
+      '<span style="font-size:12.5px;font-weight:650;color:#334155">💬 问答记录</span>'+
+      '<span id="kbConvCount" style="font-size:11.5px;color:#8492a6"></span>'+
+      '<span id="kbConvArrow" style="font-size:12px;color:#8492a6;transition:transform .2s">▲</span>'+
+    '</div>'+
     '<div id="kbConv" style="padding:0 0 8px">'+
       '<div class="message" style="margin-top:0"><img src="'+aiAvatar()+'">'+
       '<div class="message-bubble"><p>'+p.city+'城市智库已就位，你可以直接提问——例如：</p>'+
@@ -4301,7 +4310,7 @@ function kbPage(p){
       '<li style="font-size:12.5px;color:#4a5568">• 各园区如何分工承接不同细分产业？</li>'+
       '<li style="font-size:12.5px;color:#4a5568">• 随州与十堰/荆门的竞争差异化空间在哪里？</li>'+
       '</ul></div></div>'+
-    '</div></div>'+composer()+'</div>';
+    '</div></div></div>'+composer()+'</div>';
 }
 function settingsPage(p){
   return '<div class="page">'+
@@ -4600,6 +4609,7 @@ function kbChatPush(role, html){
   // 最多保留最近 100 条，防止无限增长
   if(KB_CHAT[cur].length>100) KB_CHAT[cur]=KB_CHAT[cur].slice(-100);
   persist();
+  try{updateKbConvCount();}catch(_){}
 }
 // 更新最后一条 AI 消息内容（流式回复结束后调用）
 function kbChatUpdateLast(html){
@@ -4628,6 +4638,33 @@ function kbChatReplay(){
     } else {
       frag+='<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble">'+content+'</div></div>';
     }
+
+/* 问答区折叠/展开 */
+var _kbConvCollapsed=false;
+function toggleKbConv(){
+  var conv=document.getElementById('kbConv');
+  var arrow=document.getElementById('kbConvArrow');
+  if(!conv) return;
+  _kbConvCollapsed=!_kbConvCollapsed;
+  if(_kbConvCollapsed){
+    conv.style.display='none';
+    if(arrow){arrow.textContent='▼';arrow.style.transform='rotate(0deg)';}
+  } else {
+    conv.style.display='';
+    if(arrow){arrow.textContent='▲';arrow.style.transform='rotate(0deg)';}
+    conv.scrollTop=conv.scrollHeight;
+  }
+  updateKbConvCount();
+}
+function updateKbConvCount(){
+  var cnt=document.getElementById('kbConvCount');
+  if(!cnt) return;
+  var msgs=document.querySelectorAll('#kbConv .message');
+  var n=msgs.length;
+  if(n>0) cnt.textContent=_kbConvCollapsed?n+'条对话（展开查看）':''+n+'条，点击折叠';
+  else cnt.textContent='尚无对话';
+}
+
   });
   c.insertAdjacentHTML('beforeend', frag);
   c.scrollTop=c.scrollHeight;
