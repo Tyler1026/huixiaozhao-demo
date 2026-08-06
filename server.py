@@ -42,7 +42,7 @@ def audit_log(entry):
             print(f"[audit]   📎 来自上传《{s['cite']}》: {s['text'][:60]}")
 
 # HTML 与 server.py 同目录（云端部署打包在一起）
-SYNC_PATH = os.path.join(_BASE, "sync_data.json")
+SYNC_PATH = os.environ.get("SYNC_PATH", "/tmp/sync_data.json")
 _BASE       = os.path.dirname(os.path.abspath(__file__))
 HTML_GOV    = os.path.join(_BASE, "index.html")
 HTML_OPS    = os.path.join(_BASE, "ops.html")
