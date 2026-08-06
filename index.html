@@ -5790,29 +5790,30 @@ function kbVerifyMaterial(){
   c.appendChild(qd); c.scrollTop=c.scrollHeight;
   kbChatPush('user', qd.outerHTML);
 
-  // 优先取对应主题的完整结论（不截断），其他主题取前2条摘要
+  // 把新文件原文和智库结论都直接嵌入 question，让模型两份原文逐字对比
   var topicKnown=[];
   var otherKnown=[];
   if(p.kb) p.kb.forEach(function(k,ki){
     (k.known||[]).forEach(function(x){
       if(x.indexOf('📎')!==0){
         var clean=x.replace(/^[\u2705\u26a0\ufe0f\s]+/,'');
-        if(ki===kbIdx) topicKnown.push('['+k.t+'] '+clean);
-        else otherKnown.push('['+k.t+'] '+clean.substring(0,40));
+        if(ki===kbIdx) topicKnown.push(clean);
+        else otherKnown.push('['+k.t+'] '+clean.substring(0,60));
       }
     });
   });
-  // 合并：对应主题全量 + 其他主题最多6条
-  var allRef=topicKnown.concat(otherKnown.slice(0,6));
-  var knownHint=allRef.length ? '（智库已有结论：'+allRef.join('；')+'）' : '';
+  var allRef=topicKnown.concat(otherKnown.slice(0,4));
 
-  var prompt='请校验以下上传材料的可信度'+knownHint+'。'
-    +'逐条指出：'
-    +'①数字/年份/比例与已有结论明显不一致（必须具体列出两者数字对比）；'
-    +'②材料内部逻辑自相矛盾；'
-    +'③夸大表述（“全国最大”等缺乏来源）；'
-    +'④关键数值模糊。'
-    +'每条用【严重程度:高/中/低】标注，引用原文。若全无问题则说明“未发现明显错误”。不要编造。';
+  // 新文件原文（直接拼入 question）
+  var newText=newChunks.map(function(ck){return ck.text;}).join('\n');
+
+  var prompt=
+    '【新上传文件原文】\n'+newText+'\n\n'
+    +'【智库已有结论（正确基准）】\n'+allRef.join('\n')+'\n\n'
+    +'任务：上方是两份原文，请直接逐字对比。'
+    +'对每一处不一致，必须明确说：「文件说XXX，智库记录是YYY，不一致」。'
+    +'逐条用【严重程度:高/中/低】标注。'
+    +'如确实完全一致则说明“未发现矛盾”。不要用“若”“假设”等语气。';
 
   // 思考气泡
   var thinking=document.createElement('div');
@@ -5837,7 +5838,7 @@ function kbVerifyMaterial(){
   fetch(KB_API,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:prompt, chunks:newChunks.slice(0,6), city:p.city, stream:true, mode:'chat'})
+    body:JSON.stringify({question:prompt, chunks:[], city:p.city, stream:true, mode:'chat'})
   }).then(function(resp){
     thinking.remove();
     c.appendChild(ansNode); c.scrollTop=c.scrollHeight;
