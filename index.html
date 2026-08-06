@@ -4648,10 +4648,10 @@ function toggleKbConv(){
   _kbConvCollapsed=!_kbConvCollapsed;
   if(_kbConvCollapsed){
     conv.style.display='none';
-    if(arrow){arrow.textContent='▼';arrow.style.transform='rotate(0deg)';}
+    if(arrow) arrow.textContent='▼ 展开';
   } else {
     conv.style.display='';
-    if(arrow){arrow.textContent='▲';arrow.style.transform='rotate(0deg)';}
+    if(arrow) arrow.textContent='▲ 折叠';
     conv.scrollTop=conv.scrollHeight;
   }
   updateKbConvCount();
@@ -4661,9 +4661,10 @@ function updateKbConvCount(){
   if(!cnt) return;
   var msgs=document.querySelectorAll('#kbConv .message');
   var n=msgs.length;
-  if(n>0) cnt.textContent=_kbConvCollapsed?n+'条对话（展开查看）':''+n+'条，点击折叠';
+  if(n>0) cnt.textContent=_kbConvCollapsed ? n+'条对话' : n+'条，点击折叠';
   else cnt.textContent='尚无对话';
 }
+
 
   });
   c.insertAdjacentHTML('beforeend', frag);
