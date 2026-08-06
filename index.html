@@ -5858,6 +5858,10 @@ function kbVerifyMaterial(){
             '">'+badgeText+
             '<span style="font-weight:400;color:#94a3b8;margin-left:8px">· 校验耗时 '+elapsed+'ms · 对比 '+allKnown.length+' 条现有结论</span>'+
             '</div>');
+          // 兜底：bodyDiv 为空但 accText 有内容时直接渲染纯文本
+          if(accText && !bodyDiv.innerHTML.trim()){
+            bodyDiv.innerHTML='<p style="margin:0;line-height:1.75;white-space:pre-wrap">'+accText.replace(/</g,'&lt;')+'</p>';
+          }
           kbChatPush('ai', ansNode.outerHTML);
           return;
         }
@@ -5867,7 +5871,11 @@ function kbVerifyMaterial(){
           if(!line.startsWith('data:'))return;
           var data=line.slice(5).trim(); if(data==='[DONE]')return;
           try{var j=JSON.parse(data);var dl=(j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||'';
-            if(dl){accText+=dl;bodyDiv.innerHTML='<p style="margin:0;line-height:1.75">'+renderMarkdown(accText)+'</p>';c.scrollTop=c.scrollHeight;}}catch(e){}
+          try{var j=JSON.parse(data);var dl=(j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||'';
+            if(dl){accText+=dl;
+              try{bodyDiv.innerHTML='<p style="margin:0;line-height:1.75">'+renderMarkdown(accText)+'</p>';}
+              catch(e2){bodyDiv.innerHTML='<p style="margin:0;line-height:1.75;white-space:pre-wrap">'+accText.replace(/</g,'&lt;')+'</p>';}
+              c.scrollTop=c.scrollHeight;}}catch(e){}
         });
         pump();
       });
