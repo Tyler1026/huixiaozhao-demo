@@ -1556,7 +1556,7 @@ function topbar(p){
       '<span style="margin:0 10px;color:#cbd7e6">/</span>'+
       '<strong style="color:var(--blue-dark)">'+p.topic+'</strong>'+
     '</div>'+
-    '<div class="top-meta"><span><i class="i">🛰️</i>'+p.city+'城市智库已连接</span><span><i class="i">🕒</i>随州产业信息更新至 7月20日 06:00</span>'+
+    '<div class="top-meta"><span><i class="i">🛰️</i>'+p.city+'城市智库已连接</span><span><i class="i">🕒</i>'+nowLabel()+'产业信息更新至 '+nowLabel()+'</span>'+
       '<span style="position:relative;cursor:pointer" onclick="toggleNotif(event)"><i class="i">🔔</i>'+
         (unreadCount()>0?'<b style="position:absolute;top:-4px;right:-6px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:#c85b09;color:#fff;font-size:9px;line-height:15px;text-align:center;font-weight:700">'+unreadCount()+'</b>':'')+
         '<div id="notifPanel" style="display:none;position:absolute;top:30px;right:0;width:310px;background:#fff;border:1px solid #d8e0ed;border-radius:12px;box-shadow:0 12px 32px rgba(11,24,59,.16);z-index:70;overflow:hidden;text-align:left;cursor:default" onclick="event.stopPropagation()">'+notifList()+'</div>'+
@@ -4114,6 +4114,12 @@ function memBankBadge(){
   if(!s.total)return '';
   return ' <span style="display:inline-block;min-width:16px;padding:0 5px;background:#6366f1;color:#fff;border-radius:9px;font-size:10px;line-height:16px;text-align:center;font-weight:700">'+s.total+'</span>';
 }
+// 动态当前日期时间（替代硬编码的"7月20日 06:00"）
+function nowLabel(){
+  var d=new Date();
+  var pad=function(n){return n<10?'0'+n:''+n;};
+  return (d.getMonth()+1)+'月'+d.getDate()+'日 '+pad(d.getHours())+':'+pad(d.getMinutes());
+}
 function fmtTs(ts){
   if(!ts)return '';
   var d=new Date(ts);
@@ -4420,7 +4426,7 @@ function detailAnalysis(p){
       '<div class="detail-block"><h3>已掌握</h3>'+
         '<ul class="check-list">'+
         (p.kb||[]).map(function(k){return '<li><i class="i">✔</i>'+k.t+'（'+k.sub+'）</li>';}).join('')+
-        '<li><i class="i">✔</i>今日公开信息已更新（7月20日 06:00）</li>'+
+        '<li><i class="i">✔</i>今日公开信息已更新（'+nowLabel()+'）</li>'+
         ((UPLOADS[cur]&&UPLOADS[cur].length)?'<li><i class="i">✔</i>已上传 '+UPLOADS[cur].length+' 份材料</li>':'')+
         '</ul></div>'+
       '<div class="detail-block"><h3>建议补充</h3>'+
@@ -4782,7 +4788,7 @@ function exportReport(){
   var now=new Date().toLocaleString('zh-CN');var L=[];
   L.push(r.title);
   L.push('导出时间：'+now+'　|　编制：'+p.org+' · '+p.who);
-  L.push('数据来源：'+p.city+'城市智库 + 公开信息（更新至 7月20日 06:00）');
+  L.push('数据来源：'+p.city+'城市智库 + 公开信息（更新至 '+nowLabel()+'）');
   L.push('====================================================\n');
   L.push('【摘要】');L.push(r.lead+'\n');
   L.push('【关键指标】');r.summary.forEach(function(s){L.push('  '+s[0]+'：'+s[1])});L.push('');
@@ -5795,6 +5801,8 @@ function finalizeIngest(chunks, files, kbTopicIdx, p){
           '🔍 校验材料可信度</button>';
       c.appendChild(ad);
       c.scrollTop=c.scrollHeight;
+      // 上传完成后确保整个问答区也滚到底
+      setTimeout(function(){ var kc=document.getElementById('kbConv'); if(kc) kc.scrollTop=kc.scrollHeight; var ks=document.querySelector('.knowledge-scroll'); if(ks) ks.scrollTop=ks.scrollHeight; },100);
     },800);
   }
 }
@@ -6226,7 +6234,7 @@ function downloadSummary(){
   var p=P();var kb=p.kb;var now=new Date().toLocaleString('zh-CN');
   var L=[];
   L.push('慧小招 · '+p.city+'城市智库摘要');
-  L.push('导出时间：'+now+'　|　数据更新至：7月20日 06:00');
+  L.push('导出时间：'+now+'　|　数据更新至：'+nowLabel()+'');
   L.push('当前研判方向：'+p.topic);
   L.push('====================================================\n');
   kb.forEach(function(k,i){
@@ -6240,7 +6248,7 @@ function downloadSummary(){
   L.push('可下载的原始材料清单：');
   ['重点园区清单.xlsx（随州高新区/曾都经开区/专汽产业园/随县香菇产业园载体明细）',
    '随州三大产业链图谱.pdf（氢能专用车/智慧应急/香菇深加工缺口分析）',
-   '今日公开信息摘要（更新至 7月20日 06:00，含新楚风/程力/博利特/品源最新动态）',
+   '今日公开信息摘要（更新至 '+nowLabel()+'，含新楚风/程力/博利特/品源最新动态）',
    '2026年随州市政府工作报告（完整版）',
    '随州市领导近期产业发言（含氢能走廊/应急示范基地/香菇升级方向公开报道整理）'].forEach(function(x){L.push('  - '+x)});
   L.push('');
