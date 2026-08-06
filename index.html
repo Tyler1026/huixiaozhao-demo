@@ -5807,7 +5807,7 @@ function kbVerifyMaterial(){
   var p=P(); if(!p||!newChunks.length) return;
 
   // 只把校验按钮变为加载态，其他两个按钮保留
-  var verifyBtn=document.querySelector('#kbIngestActions button:last-child'); if(verifyBtn){verifyBtn.disabled=true;verifyBtn.textContent='🔍 校验中…';}
+  var verifyBtn=document.querySelector('#kbIngestActions [data-action="verify"]'); if(verifyBtn){verifyBtn.disabled=true;verifyBtn.textContent='🔍 校验中…';}
 
   var c=document.getElementById('kbConv'); if(!c) return;
 
@@ -5898,8 +5898,8 @@ function kbVerifyMaterial(){
             bodyDiv.innerHTML='<p style="margin:0;line-height:1.75;white-space:pre-wrap">'+accText.replace(/</g,'&lt;')+'</p>';
           }
           // 校验完成：把按钮改为「已校验」
-          var vBtn=document.querySelector('#kbIngestActions [data-action="verify"]');
-          if(vBtn){vBtn.disabled=false;vBtn.textContent='✅ 已校验';vBtn.style.background='#f0fdf4';vBtn.style.color='#059669';vBtn.style.borderColor='#86efac';vBtn.onclick=null;}
+          if(verifyBtn){verifyBtn.disabled=false;verifyBtn.textContent='✅ 已校验';verifyBtn.style.background='#f0fdf4';verifyBtn.style.color='#059669';verifyBtn.style.border='1.5px solid #86efac';verifyBtn.onclick=null;}
+
           kbChatPush('ai', ansNode.outerHTML);
           return;
         }
