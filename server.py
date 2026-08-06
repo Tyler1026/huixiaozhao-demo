@@ -42,6 +42,7 @@ def audit_log(entry):
             print(f"[audit]   📎 来自上传《{s['cite']}》: {s['text'][:60]}")
 
 # HTML 与 server.py 同目录（云端部署打包在一起）
+SYNC_PATH = os.path.join(_BASE, "sync_data.json")
 _BASE       = os.path.dirname(os.path.abspath(__file__))
 HTML_GOV    = os.path.join(_BASE, "index.html")
 HTML_OPS    = os.path.join(_BASE, "ops.html")
@@ -160,6 +161,18 @@ class Handler(BaseHTTPRequestHandler):
         # /ops 和 /ops.html 路径在两个端口都服务管理端
         # 5051 访问 / 也直接服务管理端（和 5050/ops 共享 origin→不行，但5050/ops 共享 origin 可以）
         path = self.path.split('?')[0]
+        # 云端数据同步：GET /api/sync 读取
+        if path == '/api/sync':
+            try:
+                with open(SYNC_PATH, encoding='utf-8') as f:
+                    data = f.read().encode()
+            except FileNotFoundError:
+                data = b'{}'
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Length', str(len(data)))
+            self.cors(); self.end_headers(); self.wfile.write(data)
+            return
         port = self.server.server_address[1]
         if path in ("/", "/index.html"):
             # 本地 5051 端口访问 / → 重定向到同 origin 的 /ops（云端单端口不触发）
@@ -230,10 +243,26 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
-        if self.path != "/api/kb-chat":
+        length = int(self.headers.get('Content-Length', 0))
+        raw = self.rfile.read(length)
+        # 云端数据同步：POST /api/sync 保存
+        if self.path == '/api/sync':
+            try:
+                with open(SYNC_PATH, 'w', encoding='utf-8') as f:
+                    f.write(raw.decode('utf-8'))
+                resp = json.dumps({'ok': True}).encode()
+            except Exception as e:
+                resp = json.dumps({'ok': False, 'error': str(e)}).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(resp)))
+            self.cors(); self.end_headers(); self.wfile.write(resp)
+            return
+        if self.path != '/api/kb-chat':
+            self.send_error(404); return
             self.send_error(404); return
 
-        body   = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+        body   = json.loads(raw)
         q      = body.get("question", "").strip()
         chunks = body.get("chunks", [])
         city   = body.get("city", "")
