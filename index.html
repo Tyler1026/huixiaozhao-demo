@@ -6052,16 +6052,28 @@ function kbRAGQueryFull(){
   var topicLabel=window._lastIngestTopicLabel||'城市智库';
   var kbIdx=window._lastIngestKbIdx;
   var p=P(); if(!p) return;
-  var actDiv=document.getElementById('kbIngestActions');
   var fullBtn=document.querySelector('#kbIngestActions button:nth-child(3)'); if(fullBtn){fullBtn.disabled=true;fullBtn.textContent='🔄 分析中…';}
   var c=document.getElementById('kbConv'); if(!c) return;
+
+  // 全量获取该主题下所有已上传文件的 chunks，不走 RAG 筛选，避免第二份文件被摆掉
+  var allUploadChunks=(KB_FILE_CHUNKS[cur]||[]).filter(function(ck){
+    if(kbIdx==null) return true; // 未指定主题时取全部
+    var k=p.kb&&p.kb[kbIdx];
+    return !k || ck.topic===k.t || (ck.tags&&ck.tags.indexOf(k.t)>=0);
+  });
+  // 和主题 known 结论一起作为上下文
+  var kHint=kbIdx!=null&&p.kb ? p.kb[kbIdx] : null;
+  var knownChunks=kHint ? (kHint.known||[]).slice(0,4).map(function(t,i){
+    return {id:'known:'+i,topic:kHint.t,tags:[],text:t.replace(/^[\u2705\u26a0\ufe0f\s]+/,''),cite:kHint.t+'（已有结论）'};
+  }) : [];
+  var chunks=knownChunks.concat(allUploadChunks).slice(0,12);
+
   var autoQ='根据已上传的全部材料，'+p.city+'在「'+topicLabel+'」方向有哪些关键发现？请综合分析。';
   var qd=document.createElement('div'); qd.className='message is-user';
   qd.innerHTML='<div class="message-bubble"><p>'+autoQ+'</p></div>';
   c.appendChild(qd); c.scrollTop=c.scrollHeight;
   kbChatPush('user', qd.outerHTML);
-  var kHint=kbIdx!=null&&p.kb ? p.kb[kbIdx] : null;
-  kbRAGQueryWithHint(autoQ, c, kHint);
+  kbAnswerRender(c, autoQ, chunks, p.city);
 }
 
 function kbFileParsed(fname){
