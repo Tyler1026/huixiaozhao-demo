@@ -4530,11 +4530,21 @@ function persist(){
       REPORTSTATE:REPORTSTATE,
       PENDING_CONFIRMS:PENDING_CONFIRMS,
       DOCK_LOGS:DOCK_LOGS,
-      KB_CHAT:KB_CHAT
+      KB_CHAT:KB_CHAT,
+      syncTs:Date.now()
     };
-    localStorage.setItem(LS_KEY, JSON.stringify(data));
     // 同步到服务器（静默，不影响主流程）
-    try{ fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(function(){}); }catch(_){}
+    // 只有本地数据比服务器新时才推送（防止低版本覆盖高版本）
+    try{
+      var _ls=JSON.parse(localStorage.getItem(LS_KEY)||'{}');
+      fetch('/api/sync').then(function(r){return r.json();}).then(function(srv){
+        if(!srv.syncTs || data.syncTs >= srv.syncTs){
+          fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(function(){});
+        }
+      }).catch(function(){
+        fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(function(){});
+      });
+    }catch(_){}
   }catch(e){ console.warn('[persist] failed:',e.message); }
 }
 
@@ -4566,6 +4576,14 @@ function restore(){
 function restoreFromServer(callback){
   fetch('/api/sync').then(function(r){return r.json();}).then(function(data){
     if(!data||!data.PROJECTS||!Object.keys(data.PROJECTS).length){if(callback)callback(false);return;}
+    // 比较时间戳：服务器数据更新才覆盖本地
+    try{
+      var _local=JSON.parse(localStorage.getItem(LS_KEY)||'{}');
+      if(_local.syncTs && data.syncTs && _local.syncTs > data.syncTs){
+        console.log('[sync] local is newer, skip server data');
+        if(callback)callback(false); return;
+      }
+    }catch(_){}
     PROJECTS=data.PROJECTS;
     cur=data.cur||null;
     view=data.view||'setup';
