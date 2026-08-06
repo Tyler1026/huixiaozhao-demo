@@ -219,8 +219,7 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 @keyframes kbPulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1.2)}}
 .topic-grid .topic-row{cursor:pointer;transition:box-shadow .15s,border-color .15s;}
 .topic-grid .topic-row:hover{box-shadow:0 2px 16px rgba(26,86,219,.1);border-color:#c7d2fe;}
-</style><script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
-</head><body>
+</style></head><body>
 <div id="root"></div>
 <div class="toast" id="toast"><span class="i">✅</span><span id="toastMsg"></span></div>
 <script>
@@ -404,7 +403,8 @@ function downloadReportPDF(mode){
     '<div class="report-body">'+bodyHtml+'</div>'+
     '<div class="footer"><div class="warn-note">⚠ 本报告为 AI 辅助研判成果，基于公开信息与授权材料生成。正式招商决策须结合政府授权材料与领导确认。</div>'+
       '慧小招 AI 招商智能体 · '+city+'市招商局 · 生成于 '+date+'</div>'+
-    '</body></html>';
+    '<script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js" async></script>
+</body></html>';
   // 用隐藏 iframe 打印，绕开浏览器弹窗拦截（window.open 常被拦）
   var old=document.getElementById('pdfPrintFrame'); if(old) old.remove();
   var ifr=document.createElement('iframe');
