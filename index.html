@@ -6200,13 +6200,47 @@ function kbAppendSingleFact(kbIdx, factIdx, btnEl){
   var entry='\u26a0\ufe0f '+clean;
   if(k.known.indexOf(entry)<0){ k.known.push(entry); persist(); refreshKbProgress(); }
   var btn=btnEl||document.querySelector('[data-factidx="'+factIdx+'"]');
-  if(btn){btn.disabled=true;btn.textContent='\u2705 \u5df2\u52a0\u5165';btn.style.background='#f0fdf4';btn.style.color='#059669';btn.style.border='1px solid #86efac';}
+  var btn=btnEl||document.querySelector('[data-factidx="'+factIdx+'"]');
+  if(btn){
+    btn.disabled=false;
+    btn.textContent='\u21a9 \u64a4\u56de';
+    btn.style.background='#fef2f2';
+    btn.style.color='#dc2626';
+    btn.style.border='1px solid #fecaca';
+    btn.setAttribute('data-entry', encodeURIComponent(entry));
+    btn.setAttribute('data-undo-kid', _kid);
+    btn.onclick=function(){ kbUndoSingleFact(this); };
+  }
   var rows=document.querySelectorAll('.topic-row');
   if(rows[_kid]){rows[_kid].scrollIntoView({behavior:'smooth',block:'center'});setTimeout(function(){rows[_kid].style.outline='2px solid #6366f1';setTimeout(function(){rows[_kid].style.outline='';},1500);},300);}
   toast('\u2705 \u5df2\u52a0\u5165\u300c'+k.t+'\u300d\uff08\u26a0\ufe0f\u5f85\u9886\u5bfc\u786e\u8ba4\uff09');
 }
 
 /* 把新发现追加到智库 known[]，标记 ⚠️ 待领导确认，原有条目完全不动 */
+/* 撤回单条已加入的要点 */
+function kbUndoSingleFact(btnEl){
+  var entry = btnEl ? decodeURIComponent(btnEl.getAttribute('data-entry')||'') : '';
+  var _kid  = btnEl ? parseInt(btnEl.getAttribute('data-undo-kid')||'0') : 0;
+  if(!entry) return;
+  var p=P(); if(!p||!p.kb||!p.kb[_kid]) return;
+  var k=p.kb[_kid];
+  var idx=k.known.indexOf(entry);
+  if(idx>=0){ k.known.splice(idx,1); persist(); refreshKbProgress(); }
+  // 恢复按钮为「+ 加入」
+  if(btnEl){
+    btnEl.textContent='\u271a \u52a0\u5165';
+    btnEl.style.background='#eff6ff';
+    btnEl.style.color='#1d4ed8';
+    btnEl.style.border='1px solid #bfdbfe';
+    // 恢复原来的 onclick
+    var factIdx = btnEl.getAttribute('data-factidx');
+    var kbidx   = btnEl.getAttribute('data-kbidx');
+    btnEl.onclick = null;
+    btnEl.setAttribute('onclick','kbAppendSingleFact('+kbidx+','+factIdx+',this)');
+  }
+  toast('\u21a9 \u5df2\u64a4\u56de\uff0c\u8981\u70b9\u5df2\u4ece\u300c'+k.t+'\u300d\u79fb\u9664');
+}
+
 function kbAppendNewFacts(kbIdx, facts, btnEl){
   var _kid = kbIdx;
   if((_kid==null||_kid!==_kid) && btnEl){
