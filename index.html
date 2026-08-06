@@ -5902,8 +5902,8 @@ function kbIncrementalAnalysis(){
   var kbIdx=window._lastIngestKbIdx;
   var p=P(); if(!p||!newChunks.length) return;
 
-  var actDiv=document.getElementById('kbIngestActions');
-  if(actDiv) actDiv.remove();
+  var incrBtn=document.querySelector('#kbIngestActions button:first-child'); if(incrBtn){incrBtn.disabled=true;incrBtn.textContent='📄 分析中…';}
+
 
   var c=document.getElementById('kbConv'); if(!c) return;
 
@@ -5914,19 +5914,17 @@ function kbIncrementalAnalysis(){
   kbChatPush('user', qd.outerHTML);
 
   // 构建现有结论摘要，告知 AI 避免重复
-  var existingKnown=[];
+  // question 只放简短指令，现有结论摘要用于提示 AI，新材料走 chunks
+  var existingTitles=[];
   if(kbIdx!=null && p.kb && p.kb[kbIdx]){
-    existingKnown=(p.kb[kbIdx].known||[]).filter(function(x){return x.indexOf('\u{1F4CE}')!==0;});
+    (p.kb[kbIdx].known||[]).forEach(function(x){
+      if(x.indexOf('📎')!==0) existingTitles.push(x.replace(/^[\u2705\u26a0\ufe0f\s]+/,'').substring(0,40));
+    });
   }
-  var existingSummary=existingKnown.length
-    ? '【已有结论（不要重复或改动）】\n'+existingKnown.map(function(x,i){return (i+1)+'. '+x.replace(/^[\u2705\u26a0\ufe0f\s]+/,'');}).join('\n')+'\n\n'
-    : '';
+  var existingHint=existingTitles.length ? '（已有结论摘要：'+existingTitles.slice(0,6).join('；')+'）' : '';
 
-  var chunkText=newChunks.map(function(ck){return '【'+ck.cite+'】'+ck.text;}).join('\n\n');
-  var prompt=existingSummary+
-    '【新上传材料内容】\n'+chunkText+'\n\n'+
-    '请基于以上新材料，找出'+p.city+'「'+topicLabel+'」方向中尚未涵盖的新信息、补充要点或需核实的新疑点。\n'+
-    '要求：①只输出新发现，不重复已有结论；②不编造材料中未提及的数据；③每条独立成行，关键数据加粗；④若材料不足以得出新结论，如实说明。';
+  var prompt='请基于提供的新材料，找出'+p.city+'「'+topicLabel+'」方向尚未涉及的新信息、补充要点或需核实的新疑点'+existingHint+'。'
+    +'要求：①只输出新发现，不重复已有结论；②不编造材料中未提及的数据；③每条独立成行，关键数据加粗；④若材料不足则如实说明。';
 
   var thinking=document.createElement('div');
   thinking.className='message';
@@ -5977,6 +5975,8 @@ function kbIncrementalAnalysis(){
             window._lastNewFacts=newFacts;
           }
           bubble.insertAdjacentHTML('beforeend','<div style="font-size:10.5px;color:#b0bac8;margin-top:6px">仅基于新材料 · '+elapsed+'ms · '+newChunks.length+' 个片段</div>');
+          var _ib=document.querySelector('#kbIngestActions button:first-child');
+          if(_ib){_ib.disabled=false;_ib.textContent='✅ 已分析';_ib.style.background='#f0fdf4';_ib.style.color='#059669';_ib.style.border='1.5px solid #86efac';_ib.onclick=null;}
           kbChatPush('ai', ansNode.outerHTML);
           return;
         }
@@ -6025,7 +6025,7 @@ function kbRAGQueryFull(){
   var kbIdx=window._lastIngestKbIdx;
   var p=P(); if(!p) return;
   var actDiv=document.getElementById('kbIngestActions');
-  if(actDiv) actDiv.remove();
+  var fullBtn=document.querySelector('#kbIngestActions button:nth-child(3)'); if(fullBtn){fullBtn.disabled=true;fullBtn.textContent='🔄 分析中…';}
   var c=document.getElementById('kbConv'); if(!c) return;
   var autoQ='根据已上传的全部材料，'+p.city+'在「'+topicLabel+'」方向有哪些关键发现？请综合分析。';
   var qd=document.createElement('div'); qd.className='message is-user';
