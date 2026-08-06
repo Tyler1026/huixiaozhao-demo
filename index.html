@@ -6017,7 +6017,7 @@ function kbIncrementalAnalysis(){
   fetch(KB_API,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:prompt, chunks:newChunks, city:p.city, stream:true, mode:'chat'})
+    body:JSON.stringify({question:prompt, chunks:newChunks.slice(0,6), city:p.city, stream:true, mode:'chat'})
   }).then(function(resp){
     thinking.remove();
     c.appendChild(ansNode); c.scrollTop=c.scrollHeight;
