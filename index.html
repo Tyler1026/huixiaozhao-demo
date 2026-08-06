@@ -4534,17 +4534,8 @@ function persist(){
       syncTs:Date.now()
     };
     // 同步到服务器（静默，不影响主流程）
-    // 只有本地数据比服务器新时才推送（防止低版本覆盖高版本）
-    try{
-      var _ls=JSON.parse(localStorage.getItem(LS_KEY)||'{}');
-      fetch('/api/sync').then(function(r){return r.json();}).then(function(srv){
-        if(!srv.syncTs || data.syncTs >= srv.syncTs){
-          fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(function(){});
-        }
-      }).catch(function(){
-        fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(function(){});
-      });
-    }catch(_){}
+    // 直接推送到服务器（合并逻辑在 restoreFromServer 里处理）
+    try{ fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(function(){}); }catch(_){}
   }catch(e){ console.warn('[persist] failed:',e.message); }
 }
 
@@ -4576,20 +4567,67 @@ function restore(){
 function restoreFromServer(callback){
   fetch('/api/sync').then(function(r){return r.json();}).then(function(srv){
     if(!srv||!srv.PROJECTS||!Object.keys(srv.PROJECTS).length){if(callback)callback(false);return;}
-    // 按项目 key 合并：各城市数据独立，取各自最新版本
     var local={};
     try{ local=JSON.parse(localStorage.getItem(LS_KEY)||'{}'); }catch(_){}
 
-    // 辅助：合并两个对象，按 key 取较新的（有 syncTs 比较，否则合并）
-    function mergeByKey(localObj, srvObj){
-      var result=Object.assign({}, localObj);
-      Object.keys(srvObj||{}).forEach(function(k){
-        if(!result[k]) result[k]=srvObj[k];
-        else {
-          // PROJECTS: 取 known[] 更多的版本，并把 KB_CONFIRMS 等附属数据合并进来
-          // 其他数据对象: 取服务器版（服务器代表多设备汇总）
-          result[k]=srvObj[k];
+    // 按项目 key 合并：每个 key 取 known[] 条数更多的版本
+    // 对于 KB_CONFIRMS/KB_CHAT 等附属数据，取两边的并集
+    function mergeProjects(loc, srv){
+      var res = Object.assign({}, loc);
+      Object.keys(srv).forEach(function(k){
+        if(!res[k]){ res[k]=srv[k]; return; }
+        // 比较 kb[].known 总条数，取多的
+        var locKnown = (res[k].kb||[]).reduce(function(s,t){return s+(t.known||[]).length;},0);
+        var srvKnown = (srv[k].kb||[]).reduce(function(s,t){return s+(t.known||[]).length;},0);
+        if(srvKnown > locKnown) res[k]=srv[k];
+      });
+      return res;
+    }
+    function mergeObj(loc, srv){
+      var res = Object.assign({}, loc);
+      Object.keys(srv||{}).forEach(function(k){
+        if(!res[k]) res[k]=srv[k];
+        else if(typeof res[k]==='object' && !Array.isArray(res[k])){
+          // 嵌套对象：再合并一层
+          res[k]=Object.assign({},srv[k],res[k]);
+        } else if(Array.isArray(res[k])){
+          // 数组取更长的
+          if((srv[k]||[]).length > res[k].length) res[k]=srv[k];
         }
+      });
+      return res;
+    }
+
+    var merged = {
+      PROJECTS:        mergeProjects(local.PROJECTS||{}, srv.PROJECTS||{}),
+      UPLOADS:         mergeObj(local.UPLOADS||{}, srv.UPLOADS||{}),
+      KB_CONFIRMS:     mergeObj(local.KB_CONFIRMS||{}, srv.KB_CONFIRMS||{}),
+      KB_FILE_CHUNKS:  mergeObj(local.KB_FILE_CHUNKS||{}, srv.KB_FILE_CHUNKS||{}),
+      KB_UNLOCKED:     mergeObj(local.KB_UNLOCKED||{}, srv.KB_UNLOCKED||{}),
+      REPORTSTATE:     mergeObj(local.REPORTSTATE||{}, srv.REPORTSTATE||{}),
+      PENDING_CONFIRMS:mergeObj(local.PENDING_CONFIRMS||{}, srv.PENDING_CONFIRMS||{}),
+      DOCK_LOGS:       mergeObj(local.DOCK_LOGS||{}, srv.DOCK_LOGS||{}),
+      KB_CHAT:         mergeObj(local.KB_CHAT||{}, srv.KB_CHAT||{}),
+      // cur: 用有数据的那端；syncTs: 更新为当前时间
+      cur:  local.cur || srv.cur || null,
+      view: local.view|| srv.view|| 'setup',
+      syncTs: Date.now()
+    };
+
+    // 写入内存
+    PROJECTS=merged.PROJECTS; UPLOADS=merged.UPLOADS; KB_CONFIRMS=merged.KB_CONFIRMS;
+    KB_FILE_CHUNKS=merged.KB_FILE_CHUNKS; KB_UNLOCKED=merged.KB_UNLOCKED;
+    REPORTSTATE=merged.REPORTSTATE; PENDING_CONFIRMS=merged.PENDING_CONFIRMS;
+    DOCK_LOGS=merged.DOCK_LOGS; KB_CHAT=merged.KB_CHAT;
+    cur=merged.cur; view=merged.view||'setup';
+
+    // 写回 localStorage 和服务器
+    try{localStorage.setItem(LS_KEY,JSON.stringify(merged));}catch(_){}
+    try{fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(merged)}).catch(function(){});}catch(_){}
+    console.log('[sync] merged, projects:', Object.keys(merged.PROJECTS).length);
+    if(callback)callback(true);
+  }).catch(function(){ if(callback)callback(false); });
+}
       });
       return result;
     }
