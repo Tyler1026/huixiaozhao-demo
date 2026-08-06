@@ -4222,7 +4222,7 @@ function memFileView(){
 function memChatView(){
   var msgs=KB_CHAT[cur]||[];
   if(!msgs.length) return memEmpty('还没有问答记录。<br>在下方对话框提问后，历史会保留在这里（支持多轮上下文）。');
-  var list=msgs.slice().reverse();
+  var list=msgs.slice(); // 正序：时间从旧到新
   return '<div style="margin-bottom:10px;text-align:right">'+
       '<button onclick="clearMemChat()" style="font-size:11px;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:4px 10px;cursor:pointer">清空问答记忆</button>'+
     '</div>'+
@@ -4557,6 +4557,9 @@ function kbChatPush(role, html){
     var _bub=_tmp.querySelector('.message-bubble');
     text = _bub ? _bub.innerHTML : (_tmp.textContent||html);
   } catch(e){}
+  // 去重：同 role + 相同文本在 3 秒内不重复存
+  var last=KB_CHAT[cur][KB_CHAT[cur].length-1];
+  if(last && last.role===role && last.text===text && Date.now()-last.ts<3000) return;
   KB_CHAT[cur].push({role:role, text:text, ts:Date.now()});
   // 最多保留最近 100 条，防止无限增长
   if(KB_CHAT[cur].length>100) KB_CHAT[cur]=KB_CHAT[cur].slice(-100);
