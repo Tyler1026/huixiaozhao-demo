@@ -5758,13 +5758,132 @@ function finalizeIngest(chunks, files, kbTopicIdx, p){
         '<button onclick="kbRAGQueryFull()" '+
           'style="padding:7px 14px;background:#f5f7fb;color:#334155;border:1.5px solid #e2e8f0;'+
           'border-radius:20px;font-size:12.5px;cursor:pointer">'+
-          '🔄 结合全库重新分析</button>';
+          '🔄 结合全库重新分析</button>'+
+        '<button onclick="kbVerifyMaterial()" '+
+          'style="padding:7px 14px;background:#fff7ed;color:#c2410c;border:1.5px solid #fed7aa;'+
+          'border-radius:20px;font-size:12.5px;cursor:pointer">'+
+          '🔍 校验材料可信度</button>';
       c.appendChild(ad);
       c.scrollTop=c.scrollHeight;
     },800);
   }
 }
 
+
+
+/* ── 材料可信度校验：交叉比对新材料与现有智库结论，标出疑点 ── */
+function kbVerifyMaterial(){
+  var newChunks=window._lastIngestChunks||[];
+  var topicLabel=window._lastIngestTopicLabel||'城市智库';
+  var kbIdx=window._lastIngestKbIdx;
+  var p=P(); if(!p||!newChunks.length) return;
+
+  var actDiv=document.getElementById('kbIngestActions');
+  if(actDiv) actDiv.remove();
+
+  var c=document.getElementById('kbConv'); if(!c) return;
+
+  // 用户问句气泡
+  var q='请校验这批新上传材料的可信度：有无错误信息、与已有结论矛盾处、或可疑数据？';
+  var qd=document.createElement('div'); qd.className='message is-user';
+  qd.innerHTML='<div class="message-bubble"><p>'+q+'</p></div>';
+  c.appendChild(qd); c.scrollTop=c.scrollHeight;
+  kbChatPush('user', qd.outerHTML);
+
+  // 组装现有结论
+  var existingKnown=[];
+  if(kbIdx!=null && p.kb && p.kb[kbIdx]){
+    existingKnown=(p.kb[kbIdx].known||[]).filter(function(x){ return x.indexOf('\u{1F4CE}')!==0; });
+  }
+  // 也把其他主题的已确认结论纳入（跨主题矛盾检测）
+  var allKnown=[];
+  if(p.kb) p.kb.forEach(function(k){ (k.known||[]).forEach(function(x){ if(x.indexOf('\u{1F4CE}')!==0) allKnown.push('['+k.t+'] '+x.replace(/^[\u2705\u26a0\ufe0f\s]+/,'')); }); });
+
+  var knownSummary=allKnown.length
+    ? '【智库现有结论（共'+allKnown.length+'条，请与新材料交叉核验）】\n'+allKnown.join('\n')+'\n\n'
+    : '';
+
+  var chunkText=newChunks.map(function(ck){ return '【'+ck.cite+'】'+ck.text; }).join('\n\n');
+
+  var prompt=knownSummary+
+    '【新上传材料内容】\n'+chunkText+'\n\n'+
+    '你是招商研判数据校验专家，请对上述新材料做严格核验，逐一指出：\n'+
+    '①【数字矛盾】新材料中的数值/年份/比例与智库现有结论明显不一致的地方\n'+
+    '②【逻辑异常】材料内部自相矛盾、前后不一致、或与常识/行业规律明显偏差的内容\n'+
+    '③【夸大嫌疑】缺乏来源支撑的极端表述（如"全国最大""唯一"等）\n'+
+    '④【数据缺失/模糊】关键数值用"约""左右""待定"等模糊表达，可能影响决策可靠性\n'+
+    '⑤【材料可信】如未发现明显问题，明确说明"未发现明显错误"并简述理由\n\n'+
+    '输出格式：每条问题用【严重程度：高/中/低】标注，引用原文片段，说明疑点原因。不要编造不存在的问题。';
+
+  // 思考气泡
+  var thinking=document.createElement('div');
+  thinking.className='message';
+  thinking.innerHTML='<img src="'+aiAvatar()+'"><div class="message-bubble"><span style="color:#9aa5b5;font-size:12px">🔍 正在校验材料可信度…</span></div>';
+  c.appendChild(thinking); c.scrollTop=c.scrollHeight;
+
+  var ansNode=document.createElement('div');
+  ansNode.className='message';
+  var bubble=document.createElement('div');
+  bubble.className='message-bubble';
+  var bodyDiv=document.createElement('div');
+  bubble.appendChild(bodyDiv);
+  var imgEl=document.createElement('img');
+  imgEl.src=aiAvatar();
+  ansNode.appendChild(imgEl);
+  ansNode.appendChild(bubble);
+
+  var accText='';
+  var t0=Date.now();
+
+  fetch(KB_API,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question:prompt, chunks:newChunks, city:p.city, stream:true, mode:'chat'})
+  }).then(function(resp){
+    thinking.remove();
+    c.appendChild(ansNode); c.scrollTop=c.scrollHeight;
+    if(!resp.ok){ bodyDiv.innerHTML='<span style="color:#ef4444">服务错误：'+resp.status+'</span>'; return; }
+    var reader=resp.body.getReader(), dec=new TextDecoder(), buf='';
+    function pump(){
+      reader.read().then(function(d){
+        if(d.done){
+          var elapsed=Date.now()-t0;
+          // 根据文本判断是否发现高危问题
+          var hasHighRisk=accText.indexOf('高')>=0 && (accText.indexOf('矛盾')>=0||accText.indexOf('错误')>=0||accText.indexOf('异常')>=0);
+          var allClear=accText.indexOf('未发现')>=0||accText.indexOf('可信')>=0;
+          var badgeBg=hasHighRisk?'#fff1f2':'(allClear?\'#f0fdf4\':\'#fffbeb\')';
+          var badgeColor=hasHighRisk?'#dc2626':'(allClear?\'#059669\':\'#d97706\')';
+          var badgeText=hasHighRisk?'⚠ 发现疑点，建议人工核实':(allClear?'✓ 未发现明显错误':'ℹ 存在部分模糊信息');
+          bubble.insertAdjacentHTML('beforeend',
+            '<div style="margin-top:12px;padding:8px 12px;background:'+
+            (hasHighRisk?'#fff1f2':(allClear?'#f0fdf4':'#fffbeb'))+
+            ';border-radius:8px;border:1px solid '+
+            (hasHighRisk?'#fecaca':(allClear?'#bbf7d0':'#fde68a'))+
+            ';font-size:12px;font-weight:650;color:'+
+            (hasHighRisk?'#dc2626':(allClear?'#059669':'#d97706'))+
+            '">'+badgeText+
+            '<span style="font-weight:400;color:#94a3b8;margin-left:8px">· 校验耗时 '+elapsed+'ms · 对比 '+allKnown.length+' 条现有结论</span>'+
+            '</div>');
+          kbChatPush('ai', ansNode.outerHTML);
+          return;
+        }
+        buf+=dec.decode(d.value,{stream:true});
+        var ls=buf.split('\n'); buf=ls.pop();
+        ls.forEach(function(line){
+          if(!line.startsWith('data:'))return;
+          var data=line.slice(5).trim(); if(data==='[DONE]')return;
+          try{var j=JSON.parse(data);var dl=(j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||'';
+            if(dl){accText+=dl;bodyDiv.innerHTML='<p style="margin:0;line-height:1.75">'+renderMarkdown(accText)+'</p>';c.scrollTop=c.scrollHeight;}}catch(e){}
+        });
+        pump();
+      });
+    }
+    pump();
+  }).catch(function(err){
+    thinking.remove(); c.appendChild(ansNode);
+    bodyDiv.innerHTML='<span style="color:#ef4444">连接失败：'+err.message+'</span>';
+  });
+}
 
 /* ── 增量分析：只对本次上传的新材料生成补充结论，原有结论完全不变 ── */
 function kbIncrementalAnalysis(){
