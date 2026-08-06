@@ -4218,7 +4218,7 @@ function memChatView(){
         '<div style="max-width:82%;border-radius:12px;padding:8px 12px;font-size:12.5px;line-height:1.65;'+
           (isU?'background:#eef2ff;color:#3730a3;border:1px solid #e0e7ff':'background:#f8fafc;color:#1e293b;border:1px solid #eef2f7')+'">'+
           '<div style="font-size:10px;color:#94a3b8;margin-bottom:3px;font-weight:600">'+(isU?'招商干部':'慧小招 AI')+(m.ts?' \u00b7 '+fmtTs(m.ts):'')+'</div>'+
-          (m.content!=null?m.content.replace(/</g,'&lt;').replace(/\n/g,'<br>'):(m.html||''))+
+          (m.text!=null?m.text:(m.content!=null?m.content.replace(/</g,'&lt;').replace(/\n/g,'<br>'):(m.html||'')))+
         '</div>'+
       '</div>';
     }).join('');
@@ -4536,13 +4536,29 @@ var KB_CHAT={};
 function kbChatPush(role, html){
   if(!cur) return;
   if(!KB_CHAT[cur]) KB_CHAT[cur]=[];
-  KB_CHAT[cur].push({role:role, html:html});
+  // 只存 bubble 内容文本，避免 data-URI 头像导致 localStorage 超限
+  var text = html;
+  try {
+    var _tmp=document.createElement('div'); _tmp.innerHTML=html;
+    var _bub=_tmp.querySelector('.message-bubble');
+    text = _bub ? _bub.innerHTML : (_tmp.textContent||html);
+  } catch(e){}
+  KB_CHAT[cur].push({role:role, text:text, ts:Date.now()});
+  // 最多保留最近 100 条，防止无限增长
+  if(KB_CHAT[cur].length>100) KB_CHAT[cur]=KB_CHAT[cur].slice(-100);
   persist();
 }
-// 更新最后一条 AI 消息的 HTML（流式回复结束后调用，存最终完整内容）
+// 更新最后一条 AI 消息内容（流式回复结束后调用）
 function kbChatUpdateLast(html){
   if(!cur||!KB_CHAT[cur]||!KB_CHAT[cur].length) return;
-  KB_CHAT[cur][KB_CHAT[cur].length-1].html=html;
+  var text = html;
+  try {
+    var _tmp=document.createElement('div'); _tmp.innerHTML=html;
+    var _bub=_tmp.querySelector('.message-bubble');
+    text = _bub ? _bub.innerHTML : (_tmp.textContent||html);
+  } catch(e){}
+  KB_CHAT[cur][KB_CHAT[cur].length-1].text=text;
+  KB_CHAT[cur][KB_CHAT[cur].length-1].ts=Date.now();
   persist();
 }
 // 把已存的历史对话回放进 #kbConv（在 render 重建容器后调用）
@@ -4550,7 +4566,16 @@ function kbChatReplay(){
   var c=document.getElementById('kbConv');
   if(!c||!cur||!KB_CHAT[cur]||!KB_CHAT[cur].length) return;
   var frag='';
-  KB_CHAT[cur].forEach(function(m){ frag+=m.html; });
+  KB_CHAT[cur].forEach(function(m){
+    // 兼容旧格式 {role,html}，新格式 {role,text,ts}
+    if(!m.text && m.html){ frag+=m.html; return; }
+    var content=m.text||'';
+    if(m.role==='user'){
+      frag+='<div class="message is-user"><div class="message-bubble"><p>'+content+'</p></div></div>';
+    } else {
+      frag+='<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble">'+content+'</div></div>';
+    }
+  });
   c.insertAdjacentHTML('beforeend', frag);
   c.scrollTop=c.scrollHeight;
 }
