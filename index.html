@@ -5992,15 +5992,24 @@ function kbIncrementalAnalysis(){
           });
           if(newFacts.length>0){
             var safeJson=JSON.stringify(newFacts).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-            bubble.insertAdjacentHTML('beforeend',
-              '<div style="margin-top:12px;padding:10px 12px;background:#f0f7ff;border-radius:8px;border:1px solid #bfdbfe">'+
-              '<div style="font-size:11.5px;color:#1d4ed8;font-weight:650;margin-bottom:6px">📥 发现 '+newFacts.length+' 条新要点 — 追加到智库待领导确认？</div>'+
-              '<button onclick="kbAppendNewFacts('+kbIdx+',window._lastNewFacts)" '+
-                'style="padding:6px 14px;background:#1d4ed8;color:#fff;border:none;border-radius:8px;font-size:12.5px;cursor:pointer;font-weight:600">'+
-                '\u271a 追加到「'+topicLabel+'」（标记为\u26a0\ufe0f待确认）</button>'+
-              '<span style="font-size:11px;color:#64748b;margin-left:8px">原有内容不变</span>'+
-              '</div>');
             window._lastNewFacts=newFacts;
+            // 生成每条要点的列表 HTML
+            var factsListHtml=newFacts.map(function(f,fi){
+              return '<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid #e0eaff">'+
+                '<span style="flex-shrink:0;width:20px;height:20px;background:#dbeafe;color:#1d4ed8;border-radius:50%;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px">'+(fi+1)+'</span>'+
+                '<span style="font-size:12.5px;color:#1e293b;line-height:1.6">'+f.replace(/</g,'&lt;')+'</span>'+
+              '</div>';
+            }).join('');
+            bubble.insertAdjacentHTML('beforeend',
+              '<div style="margin-top:12px;padding:12px 14px;background:#f0f7ff;border-radius:10px;border:1px solid #bfdbfe">'+
+              '<div style="font-size:12px;color:#1d4ed8;font-weight:700;margin-bottom:8px">📥 发现 '+newFacts.length+' 条新要点，可追加到智库待领导确认：</div>'+
+              '<div style="margin-bottom:10px">'+factsListHtml+'</div>'+
+              '<div style="display:flex;align-items:center;gap:10px;margin-top:4px">'+
+              '<button onclick="kbAppendNewFacts('+kbIdx+',window._lastNewFacts)" '+
+                'style="padding:7px 16px;background:#1d4ed8;color:#fff;border:none;border-radius:8px;font-size:12.5px;cursor:pointer;font-weight:600">'+'\u271a 全部追加到「'+topicLabel+'」</button>'+
+              '<span style="font-size:11px;color:#64748b">标记为⚠️待确认，原有内容不变</span>'+
+              '</div>'+
+              '</div>');
           }
           bubble.insertAdjacentHTML('beforeend','<div style="font-size:10.5px;color:#b0bac8;margin-top:6px">仅基于新材料 · '+elapsed+'ms · '+newChunks.length+' 个片段</div>');
           var _ib=document.querySelector('#kbIngestActions button:first-child');
