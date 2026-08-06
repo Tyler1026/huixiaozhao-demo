@@ -5953,6 +5953,7 @@ function kbVerifyMaterial(){
   var qd=document.createElement('div'); qd.className='message is-user';
   qd.innerHTML='<div class="message-bubble"><p>'+q+'</p></div>';
   c.appendChild(qd); c.scrollTop=c.scrollHeight;
+  var _ks=document.querySelector('.knowledge-scroll'); if(_ks) _ks.scrollTop=_ks.scrollHeight;
   kbChatPush('user', qd.outerHTML);
 
   // 把新文件原文和智库结论都直接嵌入 question，让模型两份原文逐字对比
@@ -6077,6 +6078,7 @@ function kbIncrementalAnalysis(){
   var qd=document.createElement('div'); qd.className='message is-user';
   qd.innerHTML='<div class="message-bubble"><p>'+q+'</p></div>';
   c.appendChild(qd); c.scrollTop=c.scrollHeight;
+  var _ks=document.querySelector('.knowledge-scroll'); if(_ks) _ks.scrollTop=_ks.scrollHeight;
   kbChatPush('user', qd.outerHTML);
 
   // 构建现有结论摘要，告知 AI 避免重复
@@ -6255,6 +6257,7 @@ function kbRAGQueryFull(){
   var qd=document.createElement('div'); qd.className='message is-user';
   qd.innerHTML='<div class="message-bubble"><p>'+autoQ+'</p></div>';
   c.appendChild(qd); c.scrollTop=c.scrollHeight;
+  var _ks=document.querySelector('.knowledge-scroll'); if(_ks) _ks.scrollTop=_ks.scrollHeight;
   kbChatPush('user', qd.outerHTML);
   kbAnswerRender(c, autoQ, chunks, p.city);
 }
