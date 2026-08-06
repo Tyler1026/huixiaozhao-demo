@@ -260,7 +260,6 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path != '/api/kb-chat':
             self.send_error(404); return
-            self.send_error(404); return
 
         body   = json.loads(raw)
         q      = body.get("question", "").strip()
