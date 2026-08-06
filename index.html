@@ -403,8 +403,7 @@ function downloadReportPDF(mode){
     '<div class="report-body">'+bodyHtml+'</div>'+
     '<div class="footer"><div class="warn-note">⚠ 本报告为 AI 辅助研判成果，基于公开信息与授权材料生成。正式招商决策须结合政府授权材料与领导确认。</div>'+
       '慧小招 AI 招商智能体 · '+city+'市招商局 · 生成于 '+date+'</div>'+
-    '<script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js" async></script>
-</body></html>';
+    '';
   // 用隐藏 iframe 打印，绕开浏览器弹窗拦截（window.open 常被拦）
   var old=document.getElementById('pdfPrintFrame'); if(old) old.remove();
   var ifr=document.createElement('iframe');
@@ -6834,4 +6833,5 @@ function roleSwitch(){
 /* ================= /整合联动层 ================= */
 
 render();
-</script></body></html>
+</script><script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js" async></script>
+</body></html>
