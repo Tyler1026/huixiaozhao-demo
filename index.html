@@ -219,7 +219,8 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 @keyframes kbPulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1.2)}}
 .topic-grid .topic-row{cursor:pointer;transition:box-shadow .15s,border-color .15s;}
 .topic-grid .topic-row:hover{box-shadow:0 2px 16px rgba(26,86,219,.1);border-color:#c7d2fe;}
-</style></head><body>
+</style><script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
+</head><body>
 <div id="root"></div>
 <div class="toast" id="toast"><span class="i">✅</span><span id="toastMsg"></span></div>
 <script>
@@ -1085,8 +1086,22 @@ function ingestSetupFiles(files, projKey){
   if(!KB_FILE_CHUNKS[projKey]) KB_FILE_CHUNKS[projKey]=[];
   if(!UPLOADS[projKey]) UPLOADS[projKey]=[];
   files.forEach(function(file){
+    var isDocx=/\.docx?$/i.test(file.name);
     var canRead=/\.(txt|md|csv|json)$/i.test(file.name);
-    if(canRead){
+    if(isDocx && typeof mammoth!=='undefined'){
+      var _e2={name:file.name,size:file.size,ts:Date.now(),chunks:0,kbIdx:null,pending:true};
+      UPLOADS[projKey].push(_e2);persist();
+      var _r2=new FileReader();
+      _r2.onload=function(ev){
+        mammoth.extractRawText({arrayBuffer:ev.target.result}).then(function(res){
+          var cks=textToChunks(res.value||'',file.name,p,null);
+          KB_FILE_CHUNKS[projKey]=KB_FILE_CHUNKS[projKey].concat(cks);
+          _e2.chunks=cks.length;_e2.pending=false;persist();
+          if(typeof render==='function')try{render();}catch(_){}
+        }).catch(function(){_e2.pending=false;persist();});
+      };
+      _r2.readAsArrayBuffer(file);
+    } else if(canRead){
       // 先同步登记 pending 条目：FileReader 异步，若等 onload 才入库，动画结束渲染侧栏时 UPLOADS 还是空 → 显示"0份材料"
       var entry={name:file.name, size:file.size, ts:Date.now(), chunks:0, kbIdx:null, pending:true};
       UPLOADS[projKey].push(entry);
@@ -5647,8 +5662,21 @@ function ingestFiles(files, kbTopicIdx){
   }
 
   files.forEach(function(file){
+    var isDocx=/\.docx?$/i.test(file.name);
     var canRead=/\.(txt|md|csv|json)$/i.test(file.name);
-    if(canRead){
+    if(isDocx && typeof mammoth!=='undefined'){
+      // docx：用 mammoth 提取纯文本
+      var reader=new FileReader();
+      reader.onload=function(e){
+        mammoth.extractRawText({arrayBuffer:e.target.result}).then(function(result){
+          var chunks=textToChunks(result.value||'', file.name, p, kbTopicIdx);
+          allChunks=allChunks.concat(chunks);
+          done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
+        }).catch(function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p); });
+      };
+      reader.onerror=function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p); };
+      reader.readAsArrayBuffer(file);
+    } else if(canRead){
       var reader=new FileReader();
       reader.onload=function(e){
         var chunks=textToChunks(e.target.result||'', file.name, p, kbTopicIdx);
@@ -5759,7 +5787,7 @@ function finalizeIngest(chunks, files, kbTopicIdx, p){
           'style="padding:7px 14px;background:#f5f7fb;color:#334155;border:1.5px solid #e2e8f0;'+
           'border-radius:20px;font-size:12.5px;cursor:pointer">'+
           '🔄 结合全库重新分析</button>'+
-        '<button onclick="kbVerifyMaterial()" '+
+        '<button data-action="verify" onclick="kbVerifyMaterial()" '+
           'style="padding:7px 14px;background:#fff7ed;color:#c2410c;border:1.5px solid #fed7aa;'+
           'border-radius:20px;font-size:12.5px;cursor:pointer">'+
           '🔍 校验材料可信度</button>';
@@ -5792,24 +5820,25 @@ function kbVerifyMaterial(){
 
   // 把新文件原文和智库结论都直接嵌入 question，让模型两份原文逐字对比
   var topicKnown=[];
-  var otherKnown=[];
-  if(p.kb) p.kb.forEach(function(k,ki){
-    (k.known||[]).forEach(function(x){
-      if(x.indexOf('📎')!==0){
-        var clean=x.replace(/^[\u2705\u26a0\ufe0f\s]+/,'');
-        if(ki===kbIdx) topicKnown.push(clean);
-        else otherKnown.push('['+k.t+'] '+clean.substring(0,60));
-      }
+  if(kbIdx!=null && p.kb && p.kb[kbIdx]){
+    (p.kb[kbIdx].known||[]).forEach(function(x){
+      if(x.indexOf('📎')!==0)
+        topicKnown.push(x.replace(/^[\u2705\u26a0\ufe0f\s]+/,''));
     });
-  });
-  var allRef=topicKnown.concat(otherKnown.slice(0,4));
+  } else if(p.kb && p.kb[0]){
+    (p.kb[0].known||[]).forEach(function(x){
+      if(x.indexOf('📎')!==0)
+        topicKnown.push(x.replace(/^[\u2705\u26a0\ufe0f\s]+/,''));
+    });
+  }
+  var knownHint=topicKnown.length ? '（智库已有结论：'+topicKnown.join('；')+'）' : '';
 
   // 新文件原文（直接拼入 question）
   var newText=newChunks.map(function(ck){return ck.text;}).join('\n');
 
   var prompt=
     '【新上传文件原文】\n'+newText+'\n\n'
-    +'【智库已有结论（正确基准）】\n'+allRef.join('\n')+'\n\n'
+    +'【智库已有结论（正确基准）】\n'+topicKnown.join('\n')+'\n\n'
     +'任务：上方是两份原文，请直接逐字对比。'
     +'对每一处不一致，必须明确说：「文件说XXX，智库记录是YYY，不一致」。'
     +'逐条用【严重程度:高/中/低】标注。'
@@ -5869,7 +5898,7 @@ function kbVerifyMaterial(){
             bodyDiv.innerHTML='<p style="margin:0;line-height:1.75;white-space:pre-wrap">'+accText.replace(/</g,'&lt;')+'</p>';
           }
           // 校验完成：把按钮改为「已校验」
-          var vBtn=document.querySelector('#kbIngestActions button:last-child');
+          var vBtn=document.querySelector('#kbIngestActions [data-action="verify"]');
           if(vBtn){vBtn.disabled=false;vBtn.textContent='✅ 已校验';vBtn.style.background='#f0fdf4';vBtn.style.color='#059669';vBtn.style.borderColor='#86efac';vBtn.onclick=null;}
           kbChatPush('ai', ansNode.outerHTML);
           return;
