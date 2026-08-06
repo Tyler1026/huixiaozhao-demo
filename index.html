@@ -4492,6 +4492,32 @@ function loadReportState(){try{var d=localStorage.getItem('hxz_reportstate');if(
 /* ── localStorage 持久化 ── */
 var LS_KEY='huixiaozhao_kb_v1';
 
+
+/* 问答区折叠/展开 */
+var _kbConvCollapsed=false;
+function toggleKbConv(){
+  var conv=document.getElementById('kbConv');
+  var arrow=document.getElementById('kbConvArrow');
+  if(!conv) return;
+  _kbConvCollapsed=!_kbConvCollapsed;
+  if(_kbConvCollapsed){
+    conv.style.display='none';
+    if(arrow) arrow.textContent='▼ 展开';
+  } else {
+    conv.style.display='';
+    if(arrow) arrow.textContent='▲ 折叠';
+    conv.scrollTop=conv.scrollHeight;
+  }
+  updateKbConvCount();
+}
+function updateKbConvCount(){
+  var cnt=document.getElementById('kbConvCount');
+  if(!cnt) return;
+  var msgs=document.querySelectorAll('#kbConv .message');
+  var n=msgs.length;
+  cnt.textContent=n>0 ? n+'条，点击'+(_kbConvCollapsed?'展开':'折叠') : '尚无对话';
+}
+
 function persist(){
   try{
     var data={
@@ -4638,33 +4664,6 @@ function kbChatReplay(){
     } else {
       frag+='<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble">'+content+'</div></div>';
     }
-
-/* 问答区折叠/展开 */
-var _kbConvCollapsed=false;
-function toggleKbConv(){
-  var conv=document.getElementById('kbConv');
-  var arrow=document.getElementById('kbConvArrow');
-  if(!conv) return;
-  _kbConvCollapsed=!_kbConvCollapsed;
-  if(_kbConvCollapsed){
-    conv.style.display='none';
-    if(arrow) arrow.textContent='▼ 展开';
-  } else {
-    conv.style.display='';
-    if(arrow) arrow.textContent='▲ 折叠';
-    conv.scrollTop=conv.scrollHeight;
-  }
-  updateKbConvCount();
-}
-function updateKbConvCount(){
-  var cnt=document.getElementById('kbConvCount');
-  if(!cnt) return;
-  var msgs=document.querySelectorAll('#kbConv .message');
-  var n=msgs.length;
-  if(n>0) cnt.textContent=_kbConvCollapsed ? n+'条对话' : n+'条，点击折叠';
-  else cnt.textContent='尚无对话';
-}
-
 
   });
   c.insertAdjacentHTML('beforeend', frag);
@@ -6196,7 +6195,6 @@ function kbRAGQueryFull(){
   kbChatPush('user', qd.outerHTML);
   kbAnswerRender(c, autoQ, chunks, p.city);
 }
-
 function kbFileParsed(fname){
   var c=$('#kbConv');if(!c)return;
   var _uHtml='<div class="message is-user" style="margin-top:14px"><div class="message-bubble"><p>[已上传本地材料] '+fname+'</p></div></div>';
