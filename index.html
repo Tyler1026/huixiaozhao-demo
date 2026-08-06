@@ -4646,27 +4646,6 @@ function restoreFromServer(callback){
     if(callback)callback(true);
   }).catch(function(){ if(callback)callback(false); });
 }
-    }catch(_){}
-    PROJECTS=data.PROJECTS;
-    cur=data.cur||null;
-    view=data.view||'setup';
-    UPLOADS=data.UPLOADS||{};
-    KB_CONFIRMS=data.KB_CONFIRMS||{};
-    KB_FILE_CHUNKS=data.KB_FILE_CHUNKS||{};
-    KB_UNLOCKED=data.KB_UNLOCKED||{};
-    REPORTSTATE=data.REPORTSTATE||{};
-    PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
-    DOCK_LOGS=data.DOCK_LOGS||{};
-    KB_CHAT=data.KB_CHAT||{};
-    // 同步到 localStorage
-    try{localStorage.setItem(LS_KEY,JSON.stringify(data));}catch(_){}
-    console.log('[sync] restored from server, projects:', Object.keys(PROJECTS).length);
-    if(callback)callback(true);
-  }).catch(function(){
-    if(callback)callback(false);
-  });
-}
-
 function clearPersist(){
   localStorage.removeItem(LS_KEY);
   toast('已清除本地存储');
