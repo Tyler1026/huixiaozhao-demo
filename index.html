@@ -4574,15 +4574,78 @@ function restore(){
 
 // 从服务器拉取数据并覆盖本地（登录后调用）
 function restoreFromServer(callback){
-  fetch('/api/sync').then(function(r){return r.json();}).then(function(data){
-    if(!data||!data.PROJECTS||!Object.keys(data.PROJECTS).length){if(callback)callback(false);return;}
-    // 比较时间戳：服务器数据更新才覆盖本地
-    try{
-      var _local=JSON.parse(localStorage.getItem(LS_KEY)||'{}');
-      if(_local.syncTs && data.syncTs && _local.syncTs > data.syncTs){
-        console.log('[sync] local is newer, skip server data');
-        if(callback)callback(false); return;
-      }
+  fetch('/api/sync').then(function(r){return r.json();}).then(function(srv){
+    if(!srv||!srv.PROJECTS||!Object.keys(srv.PROJECTS).length){if(callback)callback(false);return;}
+    // 按项目 key 合并：各城市数据独立，取各自最新版本
+    var local={};
+    try{ local=JSON.parse(localStorage.getItem(LS_KEY)||'{}'); }catch(_){}
+
+    // 辅助：合并两个对象，按 key 取较新的（有 syncTs 比较，否则合并）
+    function mergeByKey(localObj, srvObj){
+      var result=Object.assign({}, localObj);
+      Object.keys(srvObj||{}).forEach(function(k){
+        if(!result[k]) result[k]=srvObj[k];
+        else {
+          // PROJECTS: 取 known[] 更多的版本，并把 KB_CONFIRMS 等附属数据合并进来
+          // 其他数据对象: 取服务器版（服务器代表多设备汇总）
+          result[k]=srvObj[k];
+        }
+      });
+      return result;
+    }
+
+    // 整体时间戳比较
+    var localTs = local.syncTs || 0;
+    var srvTs   = srv.syncTs   || 0;
+
+    if(localTs > srvTs){
+      // 本地更新：把服务器里有但本地没有的项目 key 合并进来
+      var merged = {};
+      // 从 PROJECTS / KB_CONFIRMS 等按 key 合并
+      var keys = ['PROJECTS','UPLOADS','KB_CONFIRMS','KB_FILE_CHUNKS','KB_UNLOCKED','REPORTSTATE','PENDING_CONFIRMS','DOCK_LOGS','KB_CHAT'];
+      keys.forEach(function(field){
+        var loc = local[field]||{};
+        var srvF= srv[field]||{};
+        var res = Object.assign({}, srvF); // 先取服务器
+        Object.keys(loc).forEach(function(k){ res[k]=loc[k]; }); // 本地覆盖（本地更新）
+        merged[field]=res;
+      });
+      merged.cur = local.cur || srv.cur;
+      merged.view= local.view|| srv.view||'setup';
+      merged.syncTs = localTs;
+      // 把合并后的数据推回服务器
+      try{ fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(merged)}).catch(function(){}); }catch(_){}
+      // 写入内存
+      PROJECTS=merged.PROJECTS; UPLOADS=merged.UPLOADS; KB_CONFIRMS=merged.KB_CONFIRMS;
+      KB_FILE_CHUNKS=merged.KB_FILE_CHUNKS; KB_UNLOCKED=merged.KB_UNLOCKED;
+      REPORTSTATE=merged.REPORTSTATE; PENDING_CONFIRMS=merged.PENDING_CONFIRMS;
+      DOCK_LOGS=merged.DOCK_LOGS; KB_CHAT=merged.KB_CHAT;
+      cur=merged.cur; view=merged.view||'setup';
+      try{localStorage.setItem(LS_KEY,JSON.stringify(merged));}catch(_){}
+      console.log('[sync] local newer, merged server keys into local');
+    } else {
+      // 服务器更新：把本地有但服务器没有的 key 合并进来
+      var keys = ['PROJECTS','UPLOADS','KB_CONFIRMS','KB_FILE_CHUNKS','KB_UNLOCKED','REPORTSTATE','PENDING_CONFIRMS','DOCK_LOGS','KB_CHAT'];
+      keys.forEach(function(field){
+        var loc = local[field]||{};
+        var srvF= srv[field]||{};
+        var res = Object.assign({}, loc); // 先取本地
+        Object.keys(srvF).forEach(function(k){ res[k]=srvF[k]; }); // 服务器覆盖（服务器更新）
+        srv[field]=res;
+      });
+      srv.cur  = srv.cur  || local.cur;
+      srv.view = srv.view || local.view || 'setup';
+      PROJECTS=srv.PROJECTS; UPLOADS=srv.UPLOADS; KB_CONFIRMS=srv.KB_CONFIRMS;
+      KB_FILE_CHUNKS=srv.KB_FILE_CHUNKS; KB_UNLOCKED=srv.KB_UNLOCKED;
+      REPORTSTATE=srv.REPORTSTATE; PENDING_CONFIRMS=srv.PENDING_CONFIRMS;
+      DOCK_LOGS=srv.DOCK_LOGS; KB_CHAT=srv.KB_CHAT;
+      cur=srv.cur; view=srv.view||'setup';
+      try{localStorage.setItem(LS_KEY,JSON.stringify(srv));}catch(_){}
+      console.log('[sync] server newer, merged local keys into server');
+    }
+    if(callback)callback(true);
+  }).catch(function(){ if(callback)callback(false); });
+}
     }catch(_){}
     PROJECTS=data.PROJECTS;
     cur=data.cur||null;
