@@ -6010,8 +6010,8 @@ function kbIncrementalAnalysis(){
               return '<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid #e0eaff">'+
                 '<span style="flex-shrink:0;width:20px;height:20px;background:#dbeafe;color:#1d4ed8;border-radius:50%;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:2px">'+(fi+1)+'</span>'+
                 '<span style="flex:1;font-size:12.5px;color:#1e293b;line-height:1.6">'+f.replace(/</g,'&lt;')+'</span>'+
-                '<button onclick="kbAppendSingleFact('+kbIdx+','+fi+')" '+
-                  'data-factidx="'+fi+'" '+
+                '<button onclick="kbAppendSingleFact('+kbIdx+','+fi+',this)" '+
+                  'data-factidx="'+fi+'" data-fact="'+encodeURIComponent(f)+'" '+
                   'style="flex-shrink:0;padding:3px 10px;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:6px;font-size:11.5px;cursor:pointer;white-space:nowrap;margin-top:1px">'+'\u271a 加入</button>'+
               '</div>';
             }).join('');
@@ -6051,18 +6051,19 @@ function kbIncrementalAnalysis(){
 }
 
 /* 单独追加一条新要点到智库 */
-function kbAppendSingleFact(kbIdx, factIdx){
-  var facts=window._lastNewFacts||[]; var f=facts[factIdx];
+function kbAppendSingleFact(kbIdx, factIdx, btnEl){
+  var f='';
+  if(btnEl && btnEl.getAttribute('data-fact')) f=decodeURIComponent(btnEl.getAttribute('data-fact'));
+  if(!f && window._lastNewFacts) f=(window._lastNewFacts[factIdx]||'');
   if(!f) return;
   var p=P(); if(!p||kbIdx==null||!p.kb||!p.kb[kbIdx]) return;
   var k=p.kb[kbIdx];
-  var clean=f.replace(/^[\u2022\-\*\d\.\)\s]+/,'').trim();
+  var clean=f.replace(/^[\u2022\-\*\d\.\)\s]+/,'').replace(/\*\*/g,'').trim();
   var entry='\u26a0\ufe0f '+clean;
   if(k.known.indexOf(entry)<0){ k.known.push(entry); persist(); refreshKbProgress(); }
-  // 把该条按鈕改为已加入状态
-  var btn=document.querySelector('[data-factidx="'+factIdx+'"]');
-  if(btn){btn.disabled=true;btn.textContent='\u2705 已加入';btn.style.background='#f0fdf4';btn.style.color='#059669';btn.style.borderColor='#86efac';}
-  toast('\u2705 已加入智库（\u26a0\ufe0f待领导确认）');
+  var btn=btnEl||document.querySelector('[data-factidx="'+factIdx+'"]');
+  if(btn){btn.disabled=true;btn.textContent='\u2705 \u5df2\u52a0\u5165';btn.style.background='#f0fdf4';btn.style.color='#059669';btn.style.border='1px solid #86efac';}
+  toast('\u2705 \u5df2\u52a0\u5165\u667a\u5e93\uff08\u26a0\ufe0f\u5f85\u9886\u5bfc\u786e\u8ba4\uff09');
 }
 
 /* 把新发现追加到智库 known[]，标记 ⚠️ 待领导确认，原有条目完全不动 */
