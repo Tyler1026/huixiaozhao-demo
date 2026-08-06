@@ -6235,7 +6235,7 @@ function uploadHint(){
     ['📇','目标企业名单','已接触或拟核验的企业清单']
   ];
   var body='<p class="modal-intro">上传后我会结合城市智库与公开信息研判；材料仅用于本次分析，园区承载、企业采购和领导任务仍需政府授权材料确认。</p>'+
-    '<ul class="material-guide">'+mats.map(function(m){return '<li><i class="i">'+m[0]+'</i><span><strong>'+m[1]+'</strong><small>'+m[2]+'</small></span></li>'}).join('')+'</ul>';
+    '<p style="font-size:12.5px;font-weight:700;color:#4a5568;margin:12px 0 8px">推荐上传以下材料：</p>'+'<ul class="material-guide">'+mats.map(function(m){return '<li><i class="i">'+m[0]+'</i><span><strong>'+m[1]+'</strong><small>'+m[2]+'</small></span></li>'}).join('')+'</ul>';
   var foot='<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="doUpload()">选择文件上传</button>';
   openModal('上传城市与产业材料',body,foot);
 }
