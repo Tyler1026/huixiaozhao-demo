@@ -5790,30 +5790,24 @@ function kbVerifyMaterial(){
   c.appendChild(qd); c.scrollTop=c.scrollHeight;
   kbChatPush('user', qd.outerHTML);
 
-  // 组装现有结论
-  var existingKnown=[];
-  if(kbIdx!=null && p.kb && p.kb[kbIdx]){
-    existingKnown=(p.kb[kbIdx].known||[]).filter(function(x){ return x.indexOf('\u{1F4CE}')!==0; });
-  }
-  // 也把其他主题的已确认结论纳入（跨主题矛盾检测）
+  // 精简版现有结论（最多10条每条截50字，question 保持简短避免 Failed to fetch）
   var allKnown=[];
-  if(p.kb) p.kb.forEach(function(k){ (k.known||[]).forEach(function(x){ if(x.indexOf('\u{1F4CE}')!==0) allKnown.push('['+k.t+'] '+x.replace(/^[\u2705\u26a0\ufe0f\s]+/,'')); }); });
+  if(p.kb) p.kb.forEach(function(k){
+    (k.known||[]).forEach(function(x){
+      if(x.indexOf('📎')!==0){
+        var clean=x.replace(/^[\u2705\u26a0\ufe0f\s]+/,'').substring(0,50);
+        allKnown.push('['+k.t+'] '+clean);
+      }
+    });
+  });
+  var knownHint=allKnown.length ? '（已有结论摘要：'+allKnown.slice(0,10).join('; ')+'）' : '';
 
-  var knownSummary=allKnown.length
-    ? '【智库现有结论（共'+allKnown.length+'条，请与新材料交叉核验）】\n'+allKnown.join('\n')+'\n\n'
-    : '';
-
-  var chunkText=newChunks.map(function(ck){ return '【'+ck.cite+'】'+ck.text; }).join('\n\n');
-
-  var prompt=knownSummary+
-    '【新上传材料内容】\n'+chunkText+'\n\n'+
-    '你是招商研判数据校验专家，请对上述新材料做严格核验，逐一指出：\n'+
-    '①【数字矛盾】新材料中的数值/年份/比例与智库现有结论明显不一致的地方\n'+
-    '②【逻辑异常】材料内部自相矛盾、前后不一致、或与常识/行业规律明显偏差的内容\n'+
-    '③【夸大嫌疑】缺乏来源支撑的极端表述（如"全国最大""唯一"等）\n'+
-    '④【数据缺失/模糊】关键数值用"约""左右""待定"等模糊表达，可能影响决策可靠性\n'+
-    '⑤【材料可信】如未发现明显问题，明确说明"未发现明显错误"并简述理由\n\n'+
-    '输出格式：每条问题用【严重程度：高/中/低】标注，引用原文片段，说明疑点原因。不要编造不存在的问题。';
+  var prompt='请校验以下上传材料的可信度'+knownHint+'。逐条指出：'
+    +'①数字/年份与已有结论矛盾；'
+    +'②材料内部逻辑自相矛盾；'
+    +'③夸大表述（“全国最大”等缺乏来源）；'
+    +'④关键数值模糊（“约”“待定”等）。'
+    +'每条用【严重程度:高/中/低】标注并引用原文。若无问题则说明“未发现明显错误”。不要编造问题。';
 
   // 思考气泡
   var thinking=document.createElement('div');
@@ -5838,7 +5832,7 @@ function kbVerifyMaterial(){
   fetch(KB_API,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:prompt, chunks:newChunks, city:p.city, stream:true, mode:'chat'})
+    body:JSON.stringify({question:prompt, chunks:newChunks.slice(0,6), city:p.city, stream:true, mode:'chat'})
   }).then(function(resp){
     thinking.remove();
     c.appendChild(ansNode); c.scrollTop=c.scrollHeight;
