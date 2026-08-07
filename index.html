@@ -299,6 +299,14 @@ function viewCurrentReport(){
       '</div>'+
     '</div>';
 
+  // 产业链图谱：viewCurrentReport 调用时同步追加
+  if(!document.getElementById('chainMapBlock')){
+    var _cmEl2=document.createElement('div');
+    _cmEl2.id='chainMapBlock';
+    _cmEl2.innerHTML=chainMapHtml(PROJECTS[cur]);
+    area.appendChild(_cmEl2);
+  }
+
   // 更新底部操作栏
   var bar = document.querySelector('.report-bottom-bar');
   if(bar){
@@ -3887,6 +3895,14 @@ function triggerReport(phase){
                 '<button onclick="triggerReport(1)" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">🔄 重新生成</button>'+
                 '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>'+
                 '<button onclick="submitDemand()" style="flex:1;padding:12px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer">✓ 确认方向，提交招引需求</button>';
+              // 产业链图谱：完整报告生成后动态追加，避免须重新进入页面才能看到
+              var _raEl=document.getElementById('reportArea');
+              if(_raEl && !document.getElementById('chainMapBlock')){
+                var _cmEl=document.createElement('div');
+                _cmEl.id='chainMapBlock';
+                _cmEl.innerHTML=chainMapHtml(p);
+                _raEl.appendChild(_cmEl);
+              }
             setTimeout(function(){renderActionItems(accText,p,r);},300);
             }
           }
