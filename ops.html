@@ -2907,6 +2907,23 @@ function selectTopic(val, isCustom){
     var inp=document.getElementById('topicCustomInput');
     if(inp) inp.value='';
   }
+  // 同步刷新报告区（报告头部方向标签）
+  var _ra=document.getElementById('reportArea');
+  if(_ra){
+    var _rs=REPORTSTATE[cur];
+    if(_rs&&(_rs.finalized||_rs.phase===2)){
+      _ra.innerHTML=reportHtml(p)+(document.getElementById('chainMapBlock')?'':'');
+      // 重建 chainMapBlock
+      if(!document.getElementById('chainMapBlock')){
+        var _cm=document.createElement('div');
+        _cm.id='chainMapBlock';
+        _cm.innerHTML=chainMapHtml(p);
+        _ra.appendChild(_cm);
+      } else {
+        document.getElementById('chainMapBlock').innerHTML=chainMapHtml(p);
+      }
+    }
+  }
   // 同步刷新右侧面板（报告状态·研判方向）
   var _dp=document.querySelector('.detail-pane');
   if(_dp){
@@ -3588,7 +3605,7 @@ function reportHtml(p){
   return '<div style="border-radius:14px;border:1.5px solid #e8edf5;overflow:hidden;margin-bottom:8px">'+
     '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
       '<span style="font-size:12px;font-weight:650;color:#1a56db">📋 研判报告</span>'+
-      '<span style="font-size:11.5px;color:#4a5568">'+rs.topic+'</span>'+
+      '<span style="font-size:11.5px;color:#4a5568">'+p.topic+'</span>'+
       '<span style="margin-left:auto;font-size:11px;color:'+(rs.score>=80?'#22c55e':'#f59e0b')+'">置信度 '+rs.score+'%</span>'+
       '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
     '</div>'+
