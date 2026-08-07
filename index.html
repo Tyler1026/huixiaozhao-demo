@@ -4831,6 +4831,15 @@ function saveUploads(){try{localStorage.setItem('hxz_uploads',JSON.stringify(UPL
 function loadUploads(){try{var d=localStorage.getItem('hxz_uploads');if(d)UPLOADS=JSON.parse(d)}catch(e){}}
 function addUpload(name){var k=cur;if(!UPLOADS[k])UPLOADS[k]=[];UPLOADS[k].push({name:name,at:new Date().toLocaleString('zh-CN')});saveUploads();}
 loadReportState();loadUploads();loadSubproj();
+// 迁移：清理 seedDemo 遗留的假上传条目（格式为 {name,at}，无 size/ts）
+(function cleanFakeUploads(){
+  if(localStorage.getItem('hxz_uploads_cleaned_v1')) return;
+  Object.keys(UPLOADS).forEach(function(k){
+    UPLOADS[k]=(UPLOADS[k]||[]).filter(function(u){ return !!u.size||!!u.ts||!!u.chunks; });
+  });
+  saveUploads();
+  localStorage.setItem('hxz_uploads_cleaned_v1','1');
+})();
 // 预置样板：随州氢能一条完整主线（其余方向留白，避免全空也不塞满假数据）
 (function seedDemo(){
   if(localStorage.getItem('hxz_seeded_v3'))return;

@@ -4041,7 +4041,7 @@ loadReportState();loadUploads();loadSubproj();
 (function seedDemo(){
   if(localStorage.getItem('hxz_seeded_v3'))return;
   REPORTSTATE.sz={ver:2,finalized:true,patches:['楚胜汽车园区可承接电控配套'],edits:{}};
-  UPLOADS.sz=[{name:'随州市2026年政府工作报告.pdf',at:'2026-07-26 10:12'},{name:'专汽产业园区资料.xlsx',at:'2026-07-26 10:15'}];
+  UPLOADS.sz=[];
   // 派生项目：dir 与 clueName 必须与 PROJECTS.sz.clues 完全一致，右侧栏/工作页才能匹配到候选企业
   SUBPROJ.sz=[
     {name:'商用车燃料电池系统集成商 · 引进项目',dir:'商用车燃料电池系统集成商 · 长三角',clueName:'脱敏企业 A（氢驰动力·代号）',stage:5,from:'氢能专用车补链'},
