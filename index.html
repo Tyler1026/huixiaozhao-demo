@@ -4365,6 +4365,7 @@ function homePage(p){
   }
   var reportArea=
     '<div id="reportArea">'+
+      '<div id="reportHistoryArea"></div>'+
       (REPORTSTATE[cur]&&(REPORTSTATE[cur].phase===2||REPORTSTATE[cur].finalized)
         ? reportHtml(p)
         : '<div style="text-align:center;padding:48px 20px">'+
@@ -4379,6 +4380,7 @@ function homePage(p){
       )+
     '</div>';
   // 自动触发 Phase 1（若非完整报告）
+  setTimeout(function(){ renderHistoryReports(cur); }, 0);
 
 
 
