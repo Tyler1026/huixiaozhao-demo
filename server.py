@@ -7,6 +7,11 @@
 """
 import json, os, urllib.request, urllib.error, time, datetime
 from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
+try:
+    import psycopg2
+    _PG_AVAIL = True
+except ImportError:
+    _PG_AVAIL = False
 
 LOG_PATH    = os.path.expanduser("~/.violoop/services/kb-server/rag-audit.log")
 
@@ -42,7 +47,51 @@ def audit_log(entry):
             print(f"[audit]   📎 来自上传《{s['cite']}》: {s['text'][:60]}")
 
 # HTML 与 server.py 同目录（云端部署打包在一起）
-SYNC_PATH = os.environ.get("SYNC_PATH", "/tmp/sync_data.json")
+SYNC_PATH    = os.environ.get("SYNC_PATH", "/tmp/sync_data.json")
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+
+def _db_conn():
+    return psycopg2.connect(DATABASE_URL)
+
+def _init_db():
+    if not (_PG_AVAIL and DATABASE_URL):
+        print("[db] 未配置 DATABASE_URL，使用文件存储降级模式")
+        return
+    try:
+        conn = _db_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS sync_data (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                data TEXT NOT NULL DEFAULT '{}',
+                updated_at TIMESTAMP DEFAULT NOW(),
+                CHECK (id = 1)
+            )
+        """)
+        conn.commit(); cur.close(); conn.close()
+        print("[db] PostgreSQL sync_data 表就绪")
+    except Exception as e:
+        print(f"[db] 初始化失败: {e}")
+
+def _db_get():
+    try:
+        conn = _db_conn(); cur = conn.cursor()
+        cur.execute("SELECT data FROM sync_data WHERE id=1")
+        row = cur.fetchone(); cur.close(); conn.close()
+        return row[0] if row else '{}'
+    except Exception as e:
+        print(f"[db] 读取失败: {e}"); return None
+
+def _db_set(data_str):
+    try:
+        conn = _db_conn(); cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO sync_data(id,data,updated_at) VALUES(1,%s,NOW()) "
+            "ON CONFLICT(id) DO UPDATE SET data=EXCLUDED.data,updated_at=NOW()",
+            (data_str,))
+        conn.commit(); cur.close(); conn.close(); return True
+    except Exception as e:
+        print(f"[db] 写入失败: {e}"); return False
 _BASE       = os.path.dirname(os.path.abspath(__file__))
 HTML_GOV    = os.path.join(_BASE, "index.html")
 HTML_OPS    = os.path.join(_BASE, "ops.html")
@@ -163,11 +212,15 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split('?')[0]
         # 云端数据同步：GET /api/sync 读取
         if path == '/api/sync':
-            try:
-                with open(SYNC_PATH, encoding='utf-8') as f:
-                    data = f.read().encode()
-            except FileNotFoundError:
-                data = b'{}'
+            if _PG_AVAIL and DATABASE_URL:
+                result = _db_get()
+                data = (result or '{}').encode()
+            else:
+                try:
+                    with open(SYNC_PATH, encoding='utf-8') as f:
+                        data = f.read().encode()
+                except FileNotFoundError:
+                    data = b'{}'
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.send_header('Content-Length', str(len(data)))
@@ -247,12 +300,17 @@ class Handler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length)
         # 云端数据同步：POST /api/sync 保存
         if self.path == '/api/sync':
-            try:
-                with open(SYNC_PATH, 'w', encoding='utf-8') as f:
-                    f.write(raw.decode('utf-8'))
-                resp = json.dumps({'ok': True}).encode()
-            except Exception as e:
-                resp = json.dumps({'ok': False, 'error': str(e)}).encode()
+            data_str = raw.decode('utf-8')
+            if _PG_AVAIL and DATABASE_URL:
+                ok = _db_set(data_str)
+                resp = json.dumps({'ok': ok}).encode()
+            else:
+                try:
+                    with open(SYNC_PATH, 'w', encoding='utf-8') as f:
+                        f.write(data_str)
+                    resp = json.dumps({'ok': True}).encode()
+                except Exception as e:
+                    resp = json.dumps({'ok': False, 'error': str(e)}).encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Content-Length', str(len(resp)))
@@ -369,6 +427,7 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     if not DS_KEY:
         print("[kb] WARN: DEEPSEEK_API_KEY 未设置 — 页面可访问，但 AI 问答/报告会报错。请在 Railway Variables 里配置 DEEPSEEK_API_KEY。")
+    _init_db()
     import threading
 
     # 云端(Railway)：单端口，绑 0.0.0.0；政府端=/，管理端=/ops（同一端口路由）
