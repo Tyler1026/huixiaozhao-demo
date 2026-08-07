@@ -4332,7 +4332,7 @@ function memTextView(){
   }).join('');
 }
 function memFileView(){
-  var ups=UPLOADS[cur]||[]; var p=P();
+  var ups=(UPLOADS[cur]||[]).filter(function(u){return !!u.size||!!u.ts;}); var p=P();
   if(!ups.length) return memEmpty('还没有上传过材料。<br>在问答框点「\📎 补充材料」上传政府文件（PDF/Word/TXT），会真正解析入库。');
   var list=ups.slice().reverse();
   return list.map(function(u){
