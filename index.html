@@ -296,7 +296,7 @@ function viewCurrentReport(){
       '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
         '<span style="font-size:13px;font-weight:700;color:#1d4ed8">📊 研判报告（完整版）</span>'+
         '<span style="font-size:11.5px;color:#8492a6">'+rs.topic+'</span>'+
-        '<span style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f0fdf4;color:#166534">置信度 '+rs.score+'%</span>'+
+        '<span style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f0fdf4;color:#166534">置信度 '+topicScore(rs.topic)+'%</span>'+
         '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
       '</div>'+
       '<div style="padding:18px 20px;font-size:13px;line-height:1.85;color:#1e293b">'+
@@ -304,7 +304,7 @@ function viewCurrentReport(){
       '</div>'+
       '<div style="padding:10px 16px;background:#f9fafb;border-top:1px solid #f0f4ff;font-size:11px;color:#9aa5b5">'+
         '生成时间：'+new Date(rs.ts).toLocaleDateString('zh-CN')+' · '+
-        '数据来源：慧小招实测报告+DeepSeek分析 · 置信度'+rs.score+'%'+
+        '数据来源：慧小招实测报告+DeepSeek分析 · 置信度'+topicScore(rs.topic)+'%'+
       '</div>'+
     '</div>');
 
@@ -1706,6 +1706,34 @@ function kbReadiness(){
   return {score:score,total:warnTotal,confirmed:warnConfirmed,files:uploads,label:label,color:color};
 }
 
+
+/* 按研判方向计算置信度（基础分 + 话题数据加权） */
+function topicScore(topic){
+  var base = kbReadiness().score;
+  // 各方向数据丰富度权重（基于随州实测数据覆盖情况）
+  var weights = {
+    '香菇': +8,   // 香菇：本地数据最全，产值/出口数据翔实
+    '蘑菇': +8,
+    '氢能': +5,   // 氢能：新楚风量产数据完整，但电堆缺口数据待补
+    '専用车': +5,
+    '应急': -3,   // 应急：感知层数据较薄，机器人/5G缺口依赖外部数据
+    '安全': -3,
+    '产业转移': -8,  // 产业转移：依赖沿海调研，本地数据少
+    '承接': -8,
+  };
+  var adj = 0;
+  if(topic){
+    Object.keys(weights).forEach(function(k){
+      if(topic.indexOf(k) >= 0) adj += weights[k];
+    });
+  }
+  // 上传文件额外加分（每份+3，上限+15）
+  var uploads = (UPLOADS[cur]||[]).filter(function(u){return !!u.size||!!u.ts;}).length;
+  var uploadAdj = Math.min(15, uploads * 3);
+  var final = Math.min(96, Math.max(42, base + adj + uploadAdj));
+  return final;
+}
+
 function isLocked(v){
   if(['report','home','docking'].indexOf(v)<0) return false;
   if(!cur) return true;
@@ -1780,7 +1808,7 @@ function sidebar(){
         var done=pc.filter(function(x){return x.status==='confirmed'||x.status==='edited';}).length;
         return done+'/'+pc.length+' 待确认 · 草稿已生成';
       }
-      return '✓ 完整报告已生成'+(rs.score!=null?' · '+rs.score+'%置信度':'');
+      return '✓ 完整报告已生成'+(rs.score!=null?' · '+topicScore(P()&&P().topic)+'%置信度':'');
     })(),
     home: (function(){
       if(!p) return '报告派生项目·对接需求';
@@ -2680,7 +2708,7 @@ function projMgmtPage(p){
             '<span style="font-size:14px">📋</span>'+
             '<div style="flex:1">'+
               '<div style="font-size:13px;font-weight:650;color:#0b183b">研判报告</div>'+
-              '<div style="font-size:11.5px;color:#8492a6">置信度 '+rs.score+'% · '+new Date(rs.ts).toLocaleDateString('zh-CN')+'</div>'+
+              '<div style="font-size:11.5px;color:#8492a6">置信度 '+topicScore(rs.topic)+'% · '+new Date(rs.ts).toLocaleDateString('zh-CN')+'</div>'+
             '</div>'+
             '<button onclick="gotoStudy(\''+k+'\')" style="padding:5px 12px;background:#fff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer">查看报告</button>'+
           '</div>'+
@@ -3716,7 +3744,7 @@ function importToProject(gap, city, topic){
       title:(city||p.city)+'·'+gap+'招商研判报告',
       lead:gap+'方向招引，基于慧小招实测报告',
       sections:[{h:'研判依据',p:(REPORTSTATE[cur].text||'').substring(0,300)+'…',type:'real',ev:'慧小招研判报告',chk:''}],
-      summary:[['数据来源','慧小招实测'],['置信度',(REPORTSTATE[cur].score||0)+'%'],['生成时间',new Date().toLocaleDateString('zh-CN')]]
+      summary:[['数据来源','慧小招实测'],['置信度',topicScore(P()&&P().topic)+'%'],['生成时间',new Date().toLocaleDateString('zh-CN')]]
     } : null,
     clues:[]
   };
@@ -3835,7 +3863,7 @@ function triggerReport(phase){
           '<div style="font-size:11.5px;color:'+(phase===1?'#b45309':'#3b82f6')+';margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+p.topic+'</div>'+
         '</div>'+
         '<div style="display:flex;align-items:center;gap:8px">'+
-          '<span style="padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:'+(r.score>=80?'#dcfce7':'#fef9c3')+';color:'+(r.score>=80?'#166534':'#92400e')+';border:1px solid '+(r.score>=80?'#86efac':'#fde68a')+'">置信度 '+r.score+'%</span>'+
+          '<span style="padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:'+(topicScore(p.topic)>=80?'#dcfce7':'#fef9c3')+';color:'+(topicScore(p.topic)>=80?'#166534':'#92400e')+';border:1px solid '+(topicScore(p.topic)>=80?'#86efac':'#fde68a')+'">置信度 '+topicScore(p.topic)+'%</span>'+
           '<div id="reportSpinner" style="width:18px;height:18px;border:2.5px solid #e2e8f0;border-top-color:'+(phase===1?'#f59e0b':'#1a56db')+';border-radius:50%;animation:spin 1s linear infinite;flex-shrink:0"></div>'+
         '</div>'+
       '</div>'+
@@ -4004,7 +4032,7 @@ function triggerReport(phase){
           // 归档旧报告
           archiveCurrentReport(cur);
           renderHistoryReports(cur);
-          REPORTSTATE[cur]={text:accText,topic:p.topic,ts:Date.now(),score:r.score,phase:phase};
+          REPORTSTATE[cur]={text:accText,topic:p.topic,ts:Date.now(),score:topicScore(p.topic),phase:phase};
           persist();
           var sp=document.getElementById('reportSpinner');if(sp)sp.style.display='none';
           var footer=document.getElementById('reportFooter');
@@ -4012,7 +4040,7 @@ function triggerReport(phase){
             var cites=[...new Set(chunks.map(function(c){return c.cite;}).filter(Boolean))];
             footer.innerHTML='数据来源：'+cites.map(function(c){
               return '<span style="padding:1px 6px;background:#f0f4ff;color:#1a56db;border-radius:4px;font-size:10.5px">'+c+'</span>';
-            }).join(' ')+' · DeepSeek · '+elapsed+'ms · 置信度 '+r.score+'%';
+            }).join(' ')+' · DeepSeek · '+elapsed+'ms · 置信度 '+topicScore(p.topic)+'%';
             footer.style.display='block';
           }
           var bottomBar=document.querySelector('.report-bottom-bar');
@@ -4083,7 +4111,7 @@ function submitDemand(){
     projKey:cur,
     city:p.city, gov:p.org+'·'+p.who,
     topic:p.topic, domain:p.topic.replace('补链','').replace('升级',''),
-    need:'基于研判报告（置信度'+rs.score+'%），见报告全文',
+    need:'基于研判报告（置信度'+topicScore(P()&&P().topic)+'%），见报告全文',
     submit:'刚刚', res:'none', resLabel:'待研判', clues:0,
     note:rs.text?rs.text.slice(0,120)+'…':'', ai:''
   });
@@ -4263,7 +4291,7 @@ function reportHtml(p){
     '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
       '<span style="font-size:12px;font-weight:650;color:#1a56db">📋 研判报告</span>'+
       '<span style="font-size:11.5px;color:#4a5568">'+p.topic+'</span>'+
-      '<span style="margin-left:auto;font-size:11px;color:'+(rs.score>=80?'#22c55e':'#f59e0b')+'">置信度 '+rs.score+'%</span>'+
+      '<span style="margin-left:auto;font-size:11px;color:'+(topicScore(p.topic)>=80?'#22c55e':'#f59e0b')+'">置信度 '+topicScore(p.topic)+'%</span>'+
       '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
     '</div>'+
     '<div style="padding:16px 18px;font-size:13px;color:#1e293b;line-height:1.8">'+
@@ -4718,7 +4746,7 @@ function detailReport(p){
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>报告状态</h3>'+(st
         ? '<ul class="check-list">'+
-            '<li><i class="i">'+(st.phase===2?'✅':'✎')+'</i>'+(st.phase===2?'完整报告已生成':'初步草稿')+' · 置信度 '+st.score+'%</li>'+
+            '<li><i class="i">'+(st.phase===2?'✅':'✎')+'</i>'+(st.phase===2?'完整报告已生成':'初步草稿')+' · 置信度 '+topicScore(p.topic)+'%</li>'+
             '<li><i class="i"></i>研判方向：'+p.topic+'</li>'+
             '<li><i class="i"></i>生成时间：'+(st.ts?new Date(st.ts).toLocaleDateString('zh-CN'):'未知')+'</li>'+
           '</ul>'
