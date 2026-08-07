@@ -2907,20 +2907,22 @@ function selectTopic(val, isCustom){
     var inp=document.getElementById('topicCustomInput');
     if(inp) inp.value='';
   }
-  // 同步刷新报告区（报告头部方向标签）
+  // 同步刷新报告区（切换方向时换报告文本+图谱）
   var _ra=document.getElementById('reportArea');
   if(_ra){
     var _rs=REPORTSTATE[cur];
     if(_rs&&(_rs.finalized||_rs.phase===2)){
-      _ra.innerHTML=reportHtml(p)+(document.getElementById('chainMapBlock')?'':'');
-      // 重建 chainMapBlock
-      if(!document.getElementById('chainMapBlock')){
-        var _cm=document.createElement('div');
-        _cm.id='chainMapBlock';
-        _cm.innerHTML=chainMapHtml(p);
-        _ra.appendChild(_cm);
-      } else {
-        document.getElementById('chainMapBlock').innerHTML=chainMapHtml(p);
+      var _nt=getTopicReport(p.topic);
+      if(_nt){ _rs.text=_nt; }
+      _rs.topic=p.topic;
+      _ra.innerHTML=reportHtml(p);
+      var _cmEl=document.getElementById('chainMapBlock');
+      if(_cmEl){ _cmEl.innerHTML=chainMapHtml(p); }
+      else{
+        var _cm2=document.createElement('div');
+        _cm2.id='chainMapBlock';
+        _cm2.innerHTML=chainMapHtml(p);
+        _ra.appendChild(_cm2);
       }
     }
   }
@@ -4060,6 +4062,16 @@ function saveUploads(){try{localStorage.setItem('hxz_uploads',JSON.stringify(UPL
 function loadUploads(){try{var d=localStorage.getItem('hxz_uploads');if(d)UPLOADS=JSON.parse(d)}catch(e){}}
 function addUpload(name){var k=cur;if(!UPLOADS[k])UPLOADS[k]=[];UPLOADS[k].push({name:name,at:new Date().toLocaleString('zh-CN')});saveUploads();}
 loadReportState();loadUploads();loadSubproj();
+var TOPIC_REPORTS={
+  '\u9999\u83c7\u7cbe\u6df1\u52a0\u5de5\u5347\u7ea7': '## 一、产业基础判断\n\n随州香菇全产业链2024年产值超**500亿元**，区域品牌价值205.8亿，连续3年全国食药用菌第一。全球白花菇约**50%**产自随州，品源「菇的辣克」2024签1亿美元+2025续签3亿美元出口订单。种植端极强但精深加工本地布局极薄，高附加值环节大量外流。\n\n## 二、产业链缺口分析\n\n- ✅ 已有：种植采摘（全球最大白花菇产区）、品牌出口（品源4亿美元订单）、初加工\n- ❌ 缺失：香菇多糖/多肽规模化提取（仅裕国/肽源2家，A=必须本地化）\n- ❌ 缺失：菌种自主研发（国外7925/7917品种垄断，本地零布局）\n- ⚠️ 薄弱：功能性食品OEM（市场空间大，本地无规模企业）\n\n## 三、补链优先级TOP3\n\n| 排名 | 缺口节点 | 属性 | 综合优先级 |\n|---|---|---|---|\n| 1 | 香菇多糖/多肽提取平台 | A=必须本地化 | 第一优先 |\n| 2 | 菌种自主研发基地 | A=必须本地化 | 第二优先 |\n| 3 | 功能性食品OEM | B=可跨区域 | 第三优先 |\n\n## 四、目标企业画像\n\n**香菇多糖/多肽提取（第一优先）**\n- 目标：功能成分提取企业，年处理鲜菇≥5万吨，寻求中部原料产地合作\n- 话术：随州年产香菇约70万吨，落地可将原料采购成本降低40%+，与裕国/肽源形成产能协作。\n\n**菌种研发（第二优先）**\n- 目标：具备食用菌育种能力的科研院所或企业\n- 话术：随州种植规模为全球最大实验场景，育种成果可立即实现万亩级产业化验证。\n\n## 五、待确认事项\n\n⚠️ 随县香菇产业园精深加工区GMP洁净厂房现状，需现场核实\n⚠️ 菌种研发基地用地指标与配套政策，需园区管委会确认',
+  '\u6c22\u80fd\u4e13\u7528\u8f66\u8865\u94fe': '## 一、产业基础判断\n\n随州是中国专用汽车之都，2025年专用汽车产值**703亿元**（+12.1%），年产专用车约**16万辆**，全国占比>10%。新楚风49T氢重卡已量产，百公里氢耗7.1kg续航1000km。本地配套率仅**41%**，燃料电池电堆全部外采，成本占整车53%。\n\n## 二、产业链缺口分析\n\n- ✅ 已有：整车改装（97家资质企业）、车身驾驶室（齐星）、车规级晶振（泰晶）\n- ❌ 缺失：燃料电池电堆（占整车成本53%，全部外购，A=必须本地化）\n- ❌ 缺失：高压储氢瓶阀与管路（占整车成本14%，全部外采）\n- ⚠️ 薄弱：底盘/动力总成（依赖十堰，占整车50%成本）\n\n## 三、补链优先级TOP3\n\n| 排名 | 缺口节点 | 属性 | 综合优先级 |\n|---|---|---|---|\n| 1 | 燃料电池电堆 | A=必须本地化 | 第一优先 |\n| 2 | 高压储氢瓶阀管路 | A=必须本地化 | 第二优先 |\n| 3 | 电堆密封件/碳纸 | B=可跨区域 | 第三优先 |\n\n## 四、目标企业画像\n\n**燃料电池电堆（第一优先）**\n- 目标：商用车功率段燃料电池系统集成商，年产能≥3000台\n- 话术：随州新楚风49T氢重卡已量产，年产能16万辆整车基地是进入商用车场景最快验证通道，落地即锁定程力/新楚风稳定采购订单。\n\n## 五、待确认事项\n\n⚠️ 湖北省氢能专项补贴额度与首选承接园区需向领导确认\n⚠️ 程力/新楚风首批电堆采购意向与数量，需走访链主企业核实',
+  '\u667a\u6167\u5e94\u6025\u88c5\u5907\u8865\u94fe': '## 一、产业基础判断\n\n随州安全应急产业2023年总产值**502亿元**，其中移动应急装备324亿，是国家安全应急产业示范基地。博利特高空系留无人机消防车、齐星无人机指挥车已量产，金龙篷布全国占比30%。但感知层（机器人/传感器）与通信层（5G模块）本地几乎空白。\n\n## 二、产业链缺口分析\n\n- ✅ 已有：移动应急整车（博利特/齐星/江南）、篷布风机（金龙30%全国市场）\n- ❌ 缺失：应急机器人本体（依赖外采启灵，B=可跨区域）\n- ❌ 缺失：5G/卫星应急通信模块（本地零布局）\n- ⚠️ 薄弱：无人机本体（依赖外采迅北斗，未本地化）\n\n## 三、补链优先级TOP3\n\n| 排名 | 缺口节点 | 属性 | 综合优先级 |\n|---|---|---|---|\n| 1 | 应急机器人本体 | B=可跨区域 | 第一优先 |\n| 2 | 无人机本体 | B=可跨区域 | 第二优先 |\n| 3 | 5G应急通信模块 | B=可跨区域 | 第三优先 |\n\n## 四、目标企业画像\n\n**应急机器人（第一优先）**\n- 目标：消防/救援机器人制造企业，具备防爆/耐高温认证\n- 话术：随州是国家安全应急示范基地，博利特/齐星整车平台就是机器人最好的集成搭载场景。\n\n## 五、待确认事项\n\n⚠️ 国家示范基地配套用地指标与政策，需主管部门确认\n⚠️ 博利特/齐星对机器人本地化配套采购意向，需走访核实',
+  '\u4ea7\u4e1a\u8f6c\u79fb\u627f\u63a5': '## 一、产业基础判断\n\n随州地处中部交通枢纽，用工/土地成本较沿海低30-40%，经开区/高新区厂房资源充裕。专用汽车产业链为承接汽车零部件配套提供了天然需求端，香菇产业为食品加工提供了原料优势。当前沿海制造业向中部转移窗口明确，随州承接条件具备。\n\n## 二、适合承接的产业方向\n\n- ✅ 优先：汽车零部件配套（就近供应程力/新楚风/齐星，需求稳定）\n- ✅ 优先：劳动密集型轻工制造（篷布/纺织/包装，人力成本优势显著）\n- ⚠️ 潜力：食品精深加工（香菇/农产品原料丰富，冷链待完善）\n- ⚠️ 培育：电子零部件组装（泰晶晶振生态初步形成）\n\n## 三、承接优先方向TOP3\n\n| 排名 | 方向 | 核心优势 | 综合评级 |\n|---|---|---|---|\n| 1 | 汽车零部件配套 | 专汽产业链需求牵引 | 第一优先 |\n| 2 | 劳动密集型制造 | 用工/土地成本优势 | 第二优先 |\n| 3 | 食品精深加工 | 农业原料资源丰富 | 第三优先 |\n\n## 四、目标企业画像\n\n**汽车零部件（第一优先）**\n- 目标：沿海汽车零部件企业，寻求降本转移，年产值5000万以上\n- 话术：随州16万辆/年专用车产量就是您稳定的本地订单，就近配套可节省15-20%物流成本。\n\n## 五、待确认事项\n\n⚠️ 各园区可承接厂房面积与租金优惠政策，需园区管委会确认\n⚠️ 转移企业税收减免与人才补贴，需招商局确认'
+};
+function getTopicReport(topic){
+  if(!topic) return null;
+  var keys=Object.keys(TOPIC_REPORTS);
+  for(var i=0;i<keys.length;i++){ if(topic===keys[i]) return TOPIC_REPORTS[keys[i]]; }
 // 预置样板：随州氢能一条完整主线（其余方向留白，避免全空也不塞满假数据）
 (function seedDemo(){
   if(localStorage.getItem('hxz_seeded_v3'))return;
