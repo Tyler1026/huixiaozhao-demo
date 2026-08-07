@@ -3952,94 +3952,127 @@ function submitDemand(){
 /* ══════ 产业链图谱 — 研判后自动生成 ══════ */
 function chainMapHtml(p){
   if(!p) return '';
+  var topic=p.topic||'';
 
-  /* 产业环节数据：level = strong/mid/weak */
-  var items=[
-    /* 专用汽车·氢能 */
-    {chain:'专用汽车·氢能', name:'整车改装',       level:'strong', note:'97家资质企业，全国占比>10%'},
-    {chain:'专用汽车·氢能', name:'新能源专用车',   level:'strong', note:'程力/新楚风/齐星量产'},
-    {chain:'专用汽车·氢能', name:'车身驾驶室',     level:'strong', note:'齐星本地供应'},
-    {chain:'专用汽车·氢能', name:'电子零部件',     level:'mid',    note:'晶振/铜箔/电解液有配套'},
-    {chain:'专用汽车·氢能', name:'储氢系统',       level:'weak',   note:'14%成本全部外采'},
-    {chain:'专用汽车·氢能', name:'氢燃料电堆',     level:'weak',   note:'占整车53%成本，零本地布局'},
-    {chain:'专用汽车·氢能', name:'底盘/动力总成',  level:'weak',   note:'依赖十堰，占整车50%'},
-    /* 安全应急 */
-    {chain:'安全应急装备', name:'移动应急整车',     level:'strong', note:'国家示范基地，曾都区主产区'},
-    {chain:'安全应急装备', name:'篷布/风机',        level:'strong', note:'篷布全国占30%'},
-    {chain:'安全应急装备', name:'5G通信模块',       level:'mid',    note:'有政策引导，尚未落地'},
-    {chain:'安全应急装备', name:'应急机器人',       level:'weak',   note:'依赖外采启灵'},
-    {chain:'安全应急装备', name:'无人机本体',       level:'weak',   note:'依赖外采迅北斗'},
-    /* 香菇 */
-    {chain:'香菇全产业链', name:'种植采摘',         level:'strong', note:'全球白花菇约50%'},
-    {chain:'香菇全产业链', name:'品牌出口',         level:'strong', note:'品源4亿美元出口订单'},
-    {chain:'香菇全产业链', name:'初加工',           level:'mid',    note:'已有企业入驻'},
-    {chain:'香菇全产业链', name:'多糖/功能成分提取',level:'weak',   note:'仅裕国/肽源2家'},
-    {chain:'香菇全产业链', name:'菌种研发',         level:'weak',   note:'国外垄断，本地零布局'}
-  ];
+  /* ── 各产业链节点数据 ── */
+  var CHAINS={
+    '香菇':[
+      {name:'菌种研发',   level:'weak',   note:'国外垄断，本地零布局'},
+      {name:'种植采摘',   level:'strong', note:'白花菇全球占比约50%'},
+      {name:'初加工',     level:'mid',    note:'已有企业入驻，产能有限'},
+      {name:'精深加工',   level:'weak',   note:'仅裕国/肽源2家'},
+      {name:'多糖/功能成分提取', level:'weak', note:'高附加值，本地几乎空白'},
+      {name:'品牌出口',   level:'strong', note:'品源4亿美元订单'}
+    ],
+    '氢能':[
+      {name:'氢气制备',   level:'weak',   note:'本地依赖外购'},
+      {name:'储氢系统',   level:'weak',   note:'14%整车成本，全部外采'},
+      {name:'氢燃料电堆', level:'weak',   note:'占整车53%成本，零布局'},
+      {name:'电控系统',   level:'mid',    note:'晶振/电解液有配套'},
+      {name:'车身驾驶室', level:'strong', note:'齐星本地供应'},
+      {name:'整车改装',   level:'strong', note:'97家资质企业，全国>10%'}
+    ],
+    '应急':[
+      {name:'无人机本体', level:'weak',   note:'依赖外采迅北斗'},
+      {name:'应急机器人', level:'weak',   note:'依赖外采启灵'},
+      {name:'5G通信模块', level:'mid',    note:'有政策引导，尚未落地'},
+      {name:'篷布/风机',  level:'strong', note:'篷布全国占30%'},
+      {name:'移动应急整车',level:'strong',note:'国家示范基地，曾都区主产区'}
+    ],
+    '产业转移':[
+      {name:'沿海存量产能', level:'weak',  note:'制造业向内陆转移窗口期'},
+      {name:'本地承载能力', level:'mid',   note:'经开区厂房充裕，用工成本低'},
+      {name:'配套供应链',   level:'mid',   note:'基础零部件可就近采购'},
+      {name:'品牌/研发',    level:'strong',note:'引入后可沉淀核心能力'}
+    ]
+  };
 
-  var cols=[
-    {key:'strong', label:'强', sub:'本地已有优势', bg:'#f0fdf4', bd:'#16a34a', fc:'#15803d', hbg:'#16a34a', icon:'💪'},
-    {key:'mid',    label:'中', sub:'有基础待加强', bg:'#fefce8', bd:'#ca8a04', fc:'#92400e', hbg:'#ca8a04', icon:'📈'},
-    {key:'weak',   label:'弱', sub:'缺口·优先补链', bg:'#fef2f2', bd:'#dc2626', fc:'#991b1b', hbg:'#dc2626', icon:'🎯'}
-  ];
+  var RECS={
+    '香菇':[
+      {l:'菌种研发',why:'国内外垄断，突破即建立技术壁垒'},
+      {l:'精深加工/多糖提取',why:'品源亿美元订单驱动，高附加值'},
+      {l:'功能性食品OEM',why:'品牌溢价高，补全出口→内销闭环'}
+    ],
+    '氢能':[
+      {l:'氢燃料电堆',why:'成本占整车53%，新楚风氢重卡已量产'},
+      {l:'储氢系统',why:'整车14%成本全部外采，需求确定'},
+      {l:'电堆密封/碳纸',why:'核心耗材，可快速形成本地供应'}
+    ],
+    '应急':[
+      {l:'应急机器人',why:'国家安全应急示范基地，差异化赛道'},
+      {l:'无人机本体',why:'应急指挥配套需求强，政策加持'},
+      {l:'5G应急通信',why:'数字化应急升级趋势，市场空间大'}
+    ],
+    '产业转移':[
+      {l:'沿海劳动密集型制造',why:'成本套利明显，承接意愿强'},
+      {l:'汽车零部件配套',why:'专汽产业链延伸，就地配套'},
+      {l:'食品加工',why:'农业资源丰富，冷链条件具备'}
+    ]
+  };
 
-  var chains=['专用汽车·氢能','安全应急装备','香菇全产业链'];
-  var chainColors={'专用汽车·氢能':'#1a56db','安全应急装备':'#7c3aed','香菇全产业链':'#059669'};
+  /* 匹配产业链 */
+  var key='香菇';
+  if(/氢能|汽车|专用车/.test(topic)) key='氢能';
+  else if(/应急|安全/.test(topic)) key='应急';
+  else if(/产业转移|承接/.test(topic)) key='产业转移';
+  else if(/香菇|蘑菇|菌/.test(topic)) key='香菇';
 
-  var h='<div style="margin-top:14px;border-radius:14px;border:1.5px solid #e8edf5;overflow:hidden">';
-  /* 标题栏 */
-  h+='<div style="padding:11px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">';
-  h+='<span style="font-size:13px;font-weight:700;color:#1a56db">📊 产业链强弱图谱</span>';
-  h+='<span style="font-size:11.5px;color:#64748b">基于研判报告自动生成</span>';
-  h+='</div>';
-  /* 三列表头 */
-  h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border-bottom:1px solid #e8edf5">';
-  cols.forEach(function(col){
-    h+='<div style="background:'+col.hbg+';padding:10px 14px;text-align:center;border-right:1px solid rgba(255,255,255,0.2)">';
-    h+='<div style="font-size:18px">'+col.icon+'</div>';
-    h+='<div style="font-size:14px;font-weight:800;color:#fff;margin-top:2px">'+col.label+'</div>';
-    h+='<div style="font-size:10.5px;color:rgba(255,255,255,0.85);margin-top:1px">'+col.sub+'</div>';
+  var nodes=CHAINS[key]||CHAINS['香菇'];
+  var recs=RECS[key]||RECS['香菇'];
+
+  var LEVEL={
+    strong:{bg:'#f0fdf4',bd:'#16a34a',fc:'#15803d',tag:'优势',tbg:'#dcfce7',tfc:'#15803d'},
+    mid:   {bg:'#fefce8',bd:'#d97706',fc:'#92400e',tag:'培育',tbg:'#fef9c3',tfc:'#92400e'},
+    weak:  {bg:'#fef2f2',bd:'#ef4444',fc:'#991b1b',tag:'缺口',tbg:'#fee2e2',tfc:'#b91c1c'}
+  };
+
+  var chainIcon={'香菇':'🍄','氢能':'⚡','应急':'🚨','产业转移':'🏭'};
+  var icon=chainIcon[key]||'📊';
+
+  var h='<div style="margin-top:16px;border-radius:16px;border:1.5px solid #e2e8f0;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.06)">';
+
+  /* 标题 */
+  h+='<div style="padding:12px 18px;background:linear-gradient(135deg,#1e3a5f,#1a56db);display:flex;align-items:center;gap:10px">';
+  h+='<span style="font-size:20px">'+icon+'</span>';
+  h+='<div><div style="font-size:13.5px;font-weight:800;color:#fff;letter-spacing:.3px">'+key+'产业链图谱</div>';
+  h+='<div style="font-size:11px;color:rgba(255,255,255,0.7);margin-top:1px">当前研判方向 · '+topic+'</div></div>';
+  /* 图例 */
+  h+='<div style="margin-left:auto;display:flex;gap:8px">';
+  [{t:'优势',bg:'#16a34a'},{t:'培育',bg:'#d97706'},{t:'缺口',bg:'#ef4444'}].forEach(function(lg){
+    h+='<span style="background:'+lg.bg+';color:#fff;border-radius:20px;padding:2px 9px;font-size:10.5px;font-weight:700">'+lg.t+'</span>';
+  });
+  h+='</div></div>';
+
+  /* 链条流向 */
+  h+='<div style="padding:18px 16px;background:#f8faff">';
+  h+='<div style="display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:4px">';
+  nodes.forEach(function(nd,i){
+    var lv=LEVEL[nd.level]||LEVEL.weak;
+    /* 节点卡片 */
+    h+='<div style="flex:1;min-width:88px;background:'+lv.bg+';border:2px solid '+lv.bd+';border-radius:12px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;text-align:center">';
+    h+='<span style="background:'+lv.tbg+';color:'+lv.tfc+';border-radius:10px;padding:1px 8px;font-size:10px;font-weight:800;margin-bottom:5px">'+lv.tag+'</span>';
+    h+='<div style="font-size:12px;font-weight:700;color:'+lv.fc+';line-height:1.35;margin-bottom:4px">'+nd.name+'</div>';
+    h+='<div style="font-size:10px;color:#64748b;line-height:1.4">'+nd.note+'</div>';
+    h+='</div>';
+    /* 箭头 */
+    if(i<nodes.length-1){
+      h+='<div style="display:flex;align-items:center;flex-shrink:0;padding:0 4px;color:#94a3b8;font-size:16px">→</div>';
+    }
+  });
+  h+='</div></div>';
+
+  /* 补链推荐 */
+  h+='<div style="padding:12px 16px;background:#fff;border-top:1px solid #e8edf5">';
+  h+='<div style="font-size:12px;font-weight:700;color:#1d4ed8;margin-bottom:8px">🎯 补链优先推荐</div>';
+  h+='<div style="display:flex;flex-direction:column;gap:6px">';
+  recs.forEach(function(rec,i){
+    h+='<div style="display:flex;align-items:flex-start;gap:8px">';
+    h+='<span style="background:#dbeafe;color:#1d4ed8;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:700;flex-shrink:0;line-height:1.6">'+(i+1)+'</span>';
+    h+='<div style="font-size:12px;color:#1e293b"><strong>'+rec.l+'</strong> <span style="color:#64748b">· '+rec.why+'</span></div>';
     h+='</div>';
   });
-  h+='</div>';
-  /* 按产业链分组，每条链一行 */
-  h+='<div style="padding:14px 16px">';
-  chains.forEach(function(chain){
-    var cc=chainColors[chain];
-    h+='<div style="margin-bottom:16px">';
-    h+='<div style="font-size:11.5px;font-weight:700;color:'+cc+';margin-bottom:8px;padding-left:8px;border-left:3px solid '+cc+'">'+chain+'</div>';
-    h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">';
-    cols.forEach(function(col){
-      var its=items.filter(function(x){return x.chain===chain && x.level===col.key;});
-      h+='<div style="background:'+col.bg+';border:1.5px solid '+col.bd+';border-radius:10px;padding:8px 10px;min-height:60px">';
-      if(its.length===0){
-        h+='<div style="color:#cbd5e1;font-size:11px;text-align:center;padding-top:12px">—</div>';
-      } else {
-        its.forEach(function(it){
-          h+='<div style="margin-bottom:5px">';
-          h+='<div style="font-size:11.5px;font-weight:700;color:'+col.fc+'">'+it.name+'</div>';
-          h+='<div style="font-size:10px;color:#64748b;line-height:1.4">'+it.note+'</div>';
-          h+='</div>';
-        });
-      }
-      h+='</div>';
-    });
-    h+='</div></div>';
-  });
-  /* 补链推荐条 */
-  h+='<div style="background:linear-gradient(135deg,#eff6ff,#f5f3ff);border-radius:10px;padding:11px 14px;margin-top:4px">';
-  h+='<div style="font-size:12px;font-weight:700;color:#1d4ed8;margin-bottom:8px">🎯 补链优先推荐（弱项→招引窗口）</div>';
-  [{r:'①',l:'氢燃料电堆',why:'成本占整车53%，新楚风氢重卡已量产，需求牵引最强'},
-   {r:'②',l:'应急机器人/无人机',why:'国家安全应急示范基地，差异化赛道'},
-   {r:'③',l:'香菇精深加工',why:'仅2家布局，品源亿美元订单驱动'}
-  ].forEach(function(rec){
-    h+='<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:5px">';
-    h+='<span style="background:#1d4ed8;color:#fff;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:700;flex-shrink:0">'+rec.r+'</span>';
-    h+='<div><span style="font-size:12px;font-weight:700;color:#0b183b">'+rec.l+'</span>';
-    h+='<span style="font-size:11px;color:#475569"> · '+rec.why+'</span></div></div>';
-  });
-  h+='</div>';
   h+='</div></div>';
+  h+='</div>';
   return h;
 }
 
