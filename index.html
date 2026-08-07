@@ -4639,6 +4639,8 @@ function restoreFromServer(callback){
 
     // 写回 localStorage 和服务器
     try{localStorage.setItem(LS_KEY,JSON.stringify(merged));}catch(_){}
+    // 服务器 hxz_uploads 覆盖本地（清除已删除的假文件）
+    if(srv.hxz_uploads) try{localStorage.setItem('hxz_uploads',JSON.stringify(srv.hxz_uploads));}catch(_){}
     try{fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(merged)}).catch(function(){});}catch(_){}
     console.log('[sync] merged, projects:', Object.keys(merged.PROJECTS).length);
     if(callback)callback(true);
