@@ -4581,68 +4581,43 @@ function restore(){
 
 // 从服务器拉取数据并覆盖本地（登录后调用）
 function restoreFromServer(callback){
-  fetch('/api/sync').then(function(r){return r.json();}).then(function(srv){
-    if(!srv||!srv.PROJECTS||!Object.keys(srv.PROJECTS).length){if(callback)callback(false);return;}
-    var local={};
-    try{ local=JSON.parse(localStorage.getItem(LS_KEY)||'{}'); }catch(_){}
-
-    // 按项目 key 合并：每个 key 取 known[] 条数更多的版本
-    // 对于 KB_CONFIRMS/KB_CHAT 等附属数据，取两边的并集
-    function mergeProjects(loc, srv){
-      var res = Object.assign({}, loc);
-      Object.keys(srv).forEach(function(k){
-        if(!res[k]){ res[k]=srv[k]; return; }
-        // 比较 kb[].known 总条数，取多的
-        var locKnown = (res[k].kb||[]).reduce(function(s,t){return s+(t.known||[]).length;},0);
-        var srvKnown = (srv[k].kb||[]).reduce(function(s,t){return s+(t.known||[]).length;},0);
-        if(srvKnown > locKnown) res[k]=srv[k];
-      });
-      return res;
+  fetch('/api/sync').then(function(r){return r.json();}).then(function(raw){
+    if(!raw){ if(callback)callback(false); return; }
+    // 兼容两种存储格式：
+    //   扁平格式（persist()写入）: {PROJECTS:{...}, UPLOADS:{...}, ...}
+    //   包装格式（历史遗留）:      {huixiaozhao_kb_v1:{PROJECTS:{...},...}, hxz_uploads:{...}}
+    var srv = (raw.huixiaozhao_kb_v1 && raw.huixiaozhao_kb_v1.PROJECTS)
+              ? raw.huixiaozhao_kb_v1
+              : raw;
+    if(!srv||!srv.PROJECTS||!Object.keys(srv.PROJECTS).length){
+      if(callback)callback(false); return;
     }
-    function mergeObj(loc, srv){
-      var res = Object.assign({}, loc);
-      Object.keys(srv||{}).forEach(function(k){
-        if(!res[k]) res[k]=srv[k];
-        else if(typeof res[k]==='object' && !Array.isArray(res[k])){
-          // 嵌套对象：再合并一层
-          res[k]=Object.assign({},srv[k],res[k]);
-        } else if(Array.isArray(res[k])){
-          // 数组取更长的
-          if((srv[k]||[]).length > res[k].length) res[k]=srv[k];
-        }
-      });
-      return res;
+    // 服务器直接覆盖本地，不做合并——保证所有人看到同一份数据
+    PROJECTS         = srv.PROJECTS         || {};
+    UPLOADS          = srv.UPLOADS          || {};
+    KB_CONFIRMS      = srv.KB_CONFIRMS      || {};
+    KB_FILE_CHUNKS   = srv.KB_FILE_CHUNKS   || {};
+    KB_UNLOCKED      = srv.KB_UNLOCKED      || {};
+    REPORTSTATE      = srv.REPORTSTATE      || {};
+    PENDING_CONFIRMS = srv.PENDING_CONFIRMS || {};
+    DOCK_LOGS        = srv.DOCK_LOGS        || {};
+    KB_CHAT          = srv.KB_CHAT          || {};
+    cur  = srv.cur  || Object.keys(PROJECTS)[0] || null;
+    view = srv.view || 'setup';
+    // 写回 localStorage（统一扁平格式）
+    var flat={cur:cur,view:view,PROJECTS:PROJECTS,UPLOADS:UPLOADS,
+      KB_CONFIRMS:KB_CONFIRMS,KB_FILE_CHUNKS:KB_FILE_CHUNKS,
+      KB_UNLOCKED:KB_UNLOCKED,REPORTSTATE:REPORTSTATE,
+      PENDING_CONFIRMS:PENDING_CONFIRMS,DOCK_LOGS:DOCK_LOGS,
+      KB_CHAT:KB_CHAT,syncTs:Date.now()};
+    try{localStorage.setItem(LS_KEY,JSON.stringify(flat));}catch(_){}
+    try{localStorage.setItem('hxz_uploads',JSON.stringify(UPLOADS));}catch(_){}
+    // 若 Postgres 是旧包装格式，顺手更新成扁平格式
+    if(raw.huixiaozhao_kb_v1){
+      try{fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(flat)}).catch(function(){});}catch(_){}
     }
-
-    var merged = {
-      PROJECTS:        mergeProjects(local.PROJECTS||{}, srv.PROJECTS||{}),
-      UPLOADS:         srv.UPLOADS||local.UPLOADS||{},
-      KB_CONFIRMS:     mergeObj(local.KB_CONFIRMS||{}, srv.KB_CONFIRMS||{}),
-      KB_FILE_CHUNKS:  mergeObj(local.KB_FILE_CHUNKS||{}, srv.KB_FILE_CHUNKS||{}),
-      KB_UNLOCKED:     mergeObj(local.KB_UNLOCKED||{}, srv.KB_UNLOCKED||{}),
-      REPORTSTATE:     mergeObj(local.REPORTSTATE||{}, srv.REPORTSTATE||{}),
-      PENDING_CONFIRMS:mergeObj(local.PENDING_CONFIRMS||{}, srv.PENDING_CONFIRMS||{}),
-      DOCK_LOGS:       mergeObj(local.DOCK_LOGS||{}, srv.DOCK_LOGS||{}),
-      KB_CHAT:         mergeObj(local.KB_CHAT||{}, srv.KB_CHAT||{}),
-      // cur: 用有数据的那端；syncTs: 更新为当前时间
-      cur:  local.cur || srv.cur || null,
-      view: local.view|| srv.view|| 'setup',
-      syncTs: Date.now()
-    };
-
-    // 写入内存
-    PROJECTS=merged.PROJECTS; UPLOADS=merged.UPLOADS; KB_CONFIRMS=merged.KB_CONFIRMS;
-    KB_FILE_CHUNKS=merged.KB_FILE_CHUNKS; KB_UNLOCKED=merged.KB_UNLOCKED;
-    REPORTSTATE=merged.REPORTSTATE; PENDING_CONFIRMS=merged.PENDING_CONFIRMS;
-    DOCK_LOGS=merged.DOCK_LOGS; KB_CHAT=merged.KB_CHAT;
-    cur=merged.cur; view=merged.view||'setup';
-
-    // 写回 localStorage 和服务器
-    try{localStorage.setItem(LS_KEY,JSON.stringify(merged));}catch(_){}
-    // 服务器 hxz_uploads 覆盖本地（清除已删除的假文件）
-    if(srv.hxz_uploads) try{localStorage.setItem('hxz_uploads',JSON.stringify(srv.hxz_uploads));}catch(_){}
-    try{fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(merged)}).catch(function(){});}catch(_){}
-    console.log('[sync] merged, projects:', Object.keys(merged.PROJECTS).length);
+    console.log('[sync] restored from server, projects:',Object.keys(PROJECTS).length);
     if(callback)callback(true);
   }).catch(function(){ if(callback)callback(false); });
 }
