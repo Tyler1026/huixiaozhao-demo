@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head>
+﻿<!doctype html><html lang="zh-CN"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>慧小招｜AI 招商智能体</title>
 <style>
@@ -831,6 +831,13 @@ function provisionSuizhou(){
   }
   if(!REPORTSTATE.sz){
     REPORTSTATE.sz={text:SZ_REPORT_TEXT,topic:'随州主导产业补链招引',ts:Date.now(),score:75,phase:2,ver:2,finalized:true,patches:[],edits:{}};
+  } else {
+    // 补齐 Postgres 同步时可能丢失的字段（旧数据缺 text/phase/topic/score）
+    if(!REPORTSTATE.sz.text)               REPORTSTATE.sz.text    = SZ_REPORT_TEXT;
+    if(!REPORTSTATE.sz.topic)              REPORTSTATE.sz.topic   = '随州主导产业补链招引';
+    if(!REPORTSTATE.sz.phase)              REPORTSTATE.sz.phase   = 2;
+    if(!REPORTSTATE.sz.score)              REPORTSTATE.sz.score   = 75;
+    if(REPORTSTATE.sz.finalized===undefined) REPORTSTATE.sz.finalized = true;
   }
   KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true};
   persist();
@@ -7137,3 +7144,4 @@ function roleSwitch(){
 render();
 </script><script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js" async></script>
 </body></html>
+
