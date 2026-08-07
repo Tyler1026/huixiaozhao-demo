@@ -3883,8 +3883,8 @@ function detailReport(p){
       '<div class="detail-block"><h3>报告状态</h3>'+(st
         ? '<ul class="check-list">'+
             '<li><i class="i">'+(st.phase===2?'✅':'✎')+'</i>'+(st.phase===2?'完整报告已生成':'初步草稿')+' · 置信度 '+st.score+'%</li>'+
-            '<li><i class="i"></i>研判方向：'+st.topic+'</li>'+
-            '<li><i class="i"></i>生成时间：'+new Date(st.ts).toLocaleDateString('zh-CN')+'</li>'+
+            '<li><i class="i"></i>研判方向：'+p.topic+'</li>'+
+            '<li><i class="i"></i>生成时间：'+(st.ts?new Date(st.ts).toLocaleDateString('zh-CN'):'未知')+'</li>'+
           '</ul>'
         : '<div class="info-callout" style="margin-top:0">尚未生成报告。请先在「研判需求」选择方向并点击生成。</div>'      )+'</div>'+
       '<div class="detail-block"><h3>当前阶段</h3>'+
