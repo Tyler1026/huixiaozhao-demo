@@ -245,6 +245,15 @@ window.addEventListener('unhandledrejection', function(e) {
    ══════════════════════════════════════════════════════════════ */
 
 /* ── 查看报告：把 REPORTSTATE[cur].text 渲染到 reportArea ── */
+
+/* 设置 reportArea 内容时保留历史区 */
+function setReportAreaHtml(area, html){
+  var hist=document.getElementById('reportHistoryArea');
+  var histHtml=hist?hist.outerHTML:'<div id="reportHistoryArea"></div>';
+  area.innerHTML=histHtml+html;
+  setTimeout(function(){ renderHistoryReports(cur); }, 0);
+}
+
 function viewCurrentReport(){
   var rs = REPORTSTATE[cur];
   if(!rs || !rs.text){ toast('暂无报告，请先在研判需求页生成'); return; }
@@ -282,7 +291,7 @@ function viewCurrentReport(){
       .replace(/\n/g,'<br>');
   }
 
-  area.innerHTML=
+  setReportAreaHtml(area,
     '<div style="border-radius:14px;border:1.5px solid #bfdbfe;overflow:hidden;margin-bottom:8px">'+
       '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
         '<span style="font-size:13px;font-weight:700;color:#1d4ed8">📊 研判报告（完整版）</span>'+
@@ -297,7 +306,7 @@ function viewCurrentReport(){
         '生成时间：'+new Date(rs.ts).toLocaleDateString('zh-CN')+' · '+
         '数据来源：慧小招实测报告+DeepSeek分析 · 置信度'+rs.score+'%'+
       '</div>'+
-    '</div>';
+    '</div>');
 
   // 产业链图谱：viewCurrentReport 调用时同步追加
   if(!document.getElementById('chainMapBlock')){
@@ -3253,7 +3262,7 @@ function selectTopic(val, isCustom){
       var _nt=getTopicReport(p.topic);
       if(_nt){ _rs.text=_nt; }
       _rs.topic=p.topic;
-      _ra.innerHTML=reportHtml(p);
+      setReportAreaHtml(_ra,reportHtml(p));
       var _cmEl=document.getElementById('chainMapBlock');
       if(_cmEl){ _cmEl.innerHTML=chainMapHtml(p); }
       else{
@@ -3817,7 +3826,7 @@ function triggerReport(phase){
   renderHistoryReports(cur);
   // 清除旧报告内容（保留历史区）
   Array.from(area.children).forEach(function(c){if(c.id!=='reportHistoryArea')c.remove();});
-  area.innerHTML=(document.getElementById('reportHistoryArea')?document.getElementById('reportHistoryArea').outerHTML:'')+
+  setReportAreaHtml(area,
     '<div style="border-radius:16px;border:1.5px solid '+(phase===1?'#fed7aa':'#bfdbfe')+';overflow:hidden;margin-bottom:8px;box-shadow:0 2px 12px rgba(0,0,0,0.06)">'+
       '<div style="padding:14px 18px;background:'+(phase===1?'linear-gradient(135deg,#fffbeb,#fef3c7)':'linear-gradient(135deg,#eff6ff,#f0f9ff)')+';border-bottom:1px solid '+(phase===1?'#fde68a':'#e0f2fe')+';display:flex;align-items:center;gap:10px">'+
         '<span style="font-size:20px">'+(phase===1?'📋':'📊')+'</span>'+
@@ -3837,9 +3846,7 @@ function triggerReport(phase){
         '</div>'+
       '</div>'+
       '<div id="reportFooter" style="display:none;padding:8px 18px;background:#f8faff;border-top:1px solid #f0f4ff;font-size:11px;color:#9aa5b5"></div>'+
-    '</div>';
-  // 重新渲染历史区（innerHTML 会覆盖之前的节点）
-  setTimeout(function(){ renderHistoryReports(cur); }, 0);
+    '</div>');
   var content=document.getElementById('reportContent');
   // ── phase 2「定点分析」：≥60s 的分步分析动画，报告在分析走完后才揭示 ──
   var analysisGate={ready:false, done:false, minElapsed:false, cb:null};
