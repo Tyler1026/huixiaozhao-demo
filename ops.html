@@ -2907,6 +2907,12 @@ function selectTopic(val, isCustom){
     var inp=document.getElementById('topicCustomInput');
     if(inp) inp.value='';
   }
+  // 同步刷新右侧面板（报告状态·研判方向）
+  var _dp=document.querySelector('.detail-pane');
+  if(_dp){
+    _dp.innerHTML='<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button>'+
+      '<div class="detail-page">'+detailReport(p)+'</div>';
+  }
   // 重渲染卡片高亮
   var cardGrid=document.getElementById('topicCardGrid');
   if(!cardGrid) return;
