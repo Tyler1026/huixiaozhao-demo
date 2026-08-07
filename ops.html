@@ -2976,6 +2976,84 @@ function parsePendingItems(text){
   return items;
 }
 
+
+/* ══ 报告历史记录 ══ */
+var REPORT_HISTORY = REPORT_HISTORY || {};
+
+function saveReportHistory(){try{localStorage.setItem('hxz_rpt_history',JSON.stringify(REPORT_HISTORY));}catch(e){}}
+function loadReportHistory(){try{var d=localStorage.getItem('hxz_rpt_history');if(d)REPORT_HISTORY=JSON.parse(d);}catch(e){}}
+loadReportHistory();
+
+function archiveCurrentReport(key){
+  var rs=REPORTSTATE[key];
+  if(!rs||!rs.text) return;
+  if(!REPORT_HISTORY[key]) REPORT_HISTORY[key]=[];
+  // 避免重复归档（同 ts）
+  var exists=REPORT_HISTORY[key].some(function(h){return h.ts===rs.ts;});
+  if(!exists){
+    REPORT_HISTORY[key].unshift({text:rs.text,topic:rs.topic,ts:rs.ts,score:rs.score,phase:rs.phase});
+    if(REPORT_HISTORY[key].length>10) REPORT_HISTORY[key]=REPORT_HISTORY[key].slice(0,10);
+    saveReportHistory();
+  }
+}
+
+function deleteHistoryReport(key, idx){
+  if(!REPORT_HISTORY[key]) return;
+  REPORT_HISTORY[key].splice(idx,1);
+  saveReportHistory();
+  renderHistoryReports(key);
+}
+
+function toggleHistoryReport(key, idx){
+  var body=document.getElementById('hrpt-body-'+key+'-'+idx);
+  var ico=document.getElementById('hrpt-ico-'+key+'-'+idx);
+  if(!body) return;
+  var open=body.style.display!=='none';
+  body.style.display=open?'none':'block';
+  if(ico) ico.textContent=open?'▶':'▼';
+}
+
+function renderHistoryReports(key){
+  var container=document.getElementById('reportHistoryArea');
+  if(!container) return;
+  var list=REPORT_HISTORY[key]||[];
+  if(!list.length){container.innerHTML='';return;}
+  var h='<div style="margin-bottom:12px">';
+  h+='<div style="font-size:11.5px;font-weight:700;color:#64748b;letter-spacing:.3px;margin-bottom:6px;display:flex;align-items:center;gap:6px">';
+  h+='<span style="display:inline-block;width:3px;height:12px;background:#94a3b8;border-radius:2px"></span>';
+  h+='历史报告（'+list.length+' 份）</div>';
+  list.forEach(function(rep,i){
+    var dt=rep.ts?new Date(rep.ts).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'未知时间';
+    var phaseLabel=rep.phase===2?'完整报告':'初步草稿';
+    var phaseColor=rep.phase===2?'#1d4ed8':'#92400e';
+    var phaseBg=rep.phase===2?'#dbeafe':'#fef3c7';
+    h+='<div style="border-radius:12px;border:1.5px solid #e2e8f0;overflow:hidden;margin-bottom:6px;background:#fff">';
+    // 折叠头
+    h+='<div style="padding:10px 14px;background:#f8faff;display:flex;align-items:center;gap:8px;cursor:pointer" onclick="toggleHistoryReport(\''+key+'\','+i+')">';
+    h+='<span id="hrpt-ico-'+key+'-'+i+'" style="font-size:10px;color:#94a3b8;flex-shrink:0">▶</span>';
+    h+='<span style="font-size:11px;padding:1px 7px;border-radius:10px;background:'+phaseBg+';color:'+phaseColor+';font-weight:700">'+phaseLabel+'</span>';
+    h+='<span style="font-size:12px;font-weight:600;color:#374151;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+rep.topic+'</span>';
+    h+='<span style="font-size:11px;color:#94a3b8;flex-shrink:0">'+dt+'</span>';
+    if(rep.score!=null) h+='<span style="font-size:11px;color:#64748b;flex-shrink:0;margin-left:4px">'+rep.score+'%</span>';
+    h+='<button onclick="event.stopPropagation();deleteHistoryReport(\''+key+'\','+i+')" style="flex-shrink:0;margin-left:6px;padding:2px 8px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;font-size:11px;color:#ef4444;cursor:pointer;font-weight:600">删除</button>';
+    h+='</div>';
+    // 折叠体（默认收起）
+    h+='<div id="hrpt-body-'+key+'-'+i+'" style="display:none;padding:14px 16px;font-size:12.5px;color:#1e293b;line-height:1.8;border-top:1px solid #f0f4ff;max-height:400px;overflow-y:auto">';
+    // 简单 markdown 渲染
+    var txt=rep.text||'';
+    txt=txt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    txt=txt.replace(/\*\*([^*\n]+)\*\*/g,'<strong>$1</strong>');
+    txt=txt.replace(/^#{1,3}\s(.+)$/gm,'<div style="font-weight:700;color:#0b183b;margin:8px 0 3px">$1</div>');
+    txt=txt.replace(/^[-•]\s(.+)$/gm,'<div style="padding-left:12px;margin:2px 0">· $1</div>');
+    txt=txt.replace(/\n\n/g,'<br>');
+    h+=txt;
+    h+='</div>';
+    h+='</div>';
+  });
+  h+='</div>';
+  container.innerHTML=h;
+}
+
 /* 渲染待确认面板（插在草稿下方） */
 function renderConfirmPanel(items, projKey){
   if(!items || !items.length) return '';
