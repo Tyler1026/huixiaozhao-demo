@@ -4616,7 +4616,7 @@ function restoreFromServer(callback){
 
     var merged = {
       PROJECTS:        mergeProjects(local.PROJECTS||{}, srv.PROJECTS||{}),
-      UPLOADS:         mergeObj(local.UPLOADS||{}, srv.UPLOADS||{}),
+      UPLOADS:         srv.UPLOADS||local.UPLOADS||{},
       KB_CONFIRMS:     mergeObj(local.KB_CONFIRMS||{}, srv.KB_CONFIRMS||{}),
       KB_FILE_CHUNKS:  mergeObj(local.KB_FILE_CHUNKS||{}, srv.KB_FILE_CHUNKS||{}),
       KB_UNLOCKED:     mergeObj(local.KB_UNLOCKED||{}, srv.KB_UNLOCKED||{}),
