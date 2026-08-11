@@ -4883,8 +4883,10 @@ function persist(){
       KB_CHAT:KB_CHAT,
       syncTs:Date.now()
     };
+    // 同时写入 localStorage（保证同账号任何设备刷新都读到最新快照）
+    try{ localStorage.setItem(LS_KEY, JSON.stringify(data)); }catch(_){}
+    try{ localStorage.setItem('hxz_uploads', JSON.stringify(UPLOADS)); }catch(_){}
     // 同步到服务器（静默，不影响主流程）
-    // 直接推送到服务器（合并逻辑在 restoreFromServer 里处理）
     try{ fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(function(){}); }catch(_){}
   }catch(e){ console.warn('[persist] failed:',e.message); }
 }
