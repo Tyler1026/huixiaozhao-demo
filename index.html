@@ -710,17 +710,29 @@ function render(){
   if(AUTH && !render._routed){
     render._routed=true;
     if(!render._restored){ render._restored=true; try{restore();}catch(e){} }
+    // 优先从服务器拉取数据（异步），确保多设备同步
+    if(!render._serverSynced){
+      render._serverSynced=true;
+      restoreFromServer(function(ok){
+        if(ok){
+          // 服务器有数据，用服务器的
+          if(AUTH.resident){ cur='sz'; view=view||'knowledge'; KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true}; }
+          render();
+        } else {
+          // 服务器无数据，用本地seed初始化并同步到服务器
+          if(AUTH.resident){ provisionSuizhou(); cur='sz'; view='knowledge'; KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true}; persist(); }
+          render();
+        }
+      });
+    }
+    // 先用本地数据快速渲染（避免白屏），服务器回调后会覆盖
     if(AUTH.resident){
-      provisionSuizhou(); cur='sz'; view='knowledge';
+      if(!PROJECTS.sz) provisionSuizhou();
+      cur='sz'; view=view||'knowledge';
       KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true};
     } else {
       if(AUTH.projKey && PROJECTS[AUTH.projKey]){ cur=AUTH.projKey; view='knowledge'; }
       else { cur=null; view='setup'; }
-    }
-    // 登录后也从服务器拉取最新数据，确保多设备同步
-    if(!render._serverSynced){
-      render._serverSynced=true;
-      restoreFromServer(function(ok){ if(ok) render(); });
     }
   }
 
@@ -870,7 +882,7 @@ function provisionSuizhou(){
     if(REPORTSTATE.sz.finalized===undefined) REPORTSTATE.sz.finalized = true;
   }
   KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true};
-  persist();
+  // 不在此处persist - 等restoreFromServer完成后再决定是否写回
   return 'sz';
 }
 
