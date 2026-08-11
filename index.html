@@ -722,7 +722,21 @@ function render(){
   // 尝试从 localStorage 恢复（非 ?demo 模式）
   if(location.search.indexOf('demo')<0&&!cur&&!render._restored){
     render._restored=true;
-    if(restore()){return render();}
+    if(restore()){
+      render(); // 先用本地快照快速渲染
+      // 后台拉服务器，服务器有更新则覆盖重渲（保证多端同步）
+      if(!render._serverSynced){
+        render._serverSynced=true;
+        var _localSyncTs=(function(){try{return JSON.parse(localStorage.getItem(LS_KEY)||'{}').syncTs||0;}catch(e){return 0;}})();
+        restoreFromServer(function(ok){
+          if(ok){
+            var _srvSyncTs=(function(){try{return JSON.parse(localStorage.getItem(LS_KEY)||'{}').syncTs||0;}catch(e){return 0;}})();
+            if(_srvSyncTs>_localSyncTs) render();
+          }
+        });
+      }
+      return;
+    }
   }
   // ?demo 模式：先尝试从 localStorage 恢复已有数据（管理端可能已写入）
   if(location.search.indexOf('demo')>=0&&!cur){
