@@ -731,7 +731,7 @@ function render(){
         restoreFromServer(function(ok){
           if(ok){
             var _srvSyncTs=(function(){try{return JSON.parse(localStorage.getItem(LS_KEY)||'{}').syncTs||0;}catch(e){return 0;}})();
-            if(_srvSyncTs>_localSyncTs) render();
+            render(); // 始终以服务器数据为准，确保多设备一致
           }
         });
       }
@@ -3537,6 +3537,9 @@ function updateConfirmProgress(projKey){
   // 始终强制重建底部操作栏
   var bottomBar=document.querySelector('.report-bottom-bar');
   if(!bottomBar) return persist();
+  // 全部确认后推进到「资源匹配」阶段
+  var _p=P(); if(_p && allDone && _p.stage<4){ _p.stage=4; }
+  if(_p && !allDone && _p.stage===4){ _p.stage=3; }
   if(allDone){
     bottomBar.innerHTML=
       '<div style="flex:1;font-size:12.5px;color:#166534;background:#f0fdf4;padding:10px 14px;border-radius:10px;border:1px solid #86efac">✓ 所有待确认事项已完成</div>'+
@@ -5075,6 +5078,7 @@ loadReportState();loadUploads();loadSubproj();
   // 随州氢能已定稿并派生项目、进入对接 → 阶段应到「政企对接」，否则进度条/政企对接页与事实矛盾
   if(PROJECTS.sz)PROJECTS.sz.stage=5;
   saveReportState();saveUploads();saveSubproj();
+  persist(); // 同步stage到服务器，确保多设备一致
   try{localStorage.setItem('hxz_seeded_v3','1')}catch(e){}
 })();
 // 历史报告 / 上传材料 弹窗（Ryan要的"第二天在哪看"）
