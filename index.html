@@ -710,29 +710,24 @@ function render(){
   if(AUTH && !render._routed){
     render._routed=true;
     if(!render._restored){ render._restored=true; try{restore();}catch(e){} }
-    // 优先从服务器拉取数据（异步），确保多设备同步
+    // 必须先从服务器拉取数据，阻止本地seed覆盖
     if(!render._serverSynced){
       render._serverSynced=true;
+      // 显示加载状态
+      var _r=document.getElementById('root');
+      if(_r) _r.innerHTML='<div style="height:100vh;display:flex;align-items:center;justify-content:center;font-size:15px;color:#667590">正在同步数据…</div>';
       restoreFromServer(function(ok){
         if(ok){
-          // 服务器有数据，用服务器的
-          if(AUTH.resident){ cur='sz'; view=view||'knowledge'; KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true}; }
-          render();
+          // 服务器有数据，直接使用
+          if(AUTH.resident){ cur=cur||'sz'; view=view||'knowledge'; KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true}; }
         } else {
-          // 服务器无数据，用本地seed初始化并同步到服务器
+          // 服务器无数据，本地初始化
           if(AUTH.resident){ provisionSuizhou(); cur='sz'; view='knowledge'; KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true}; persist(); }
-          render();
+          else { if(AUTH.projKey&&PROJECTS[AUTH.projKey]){cur=AUTH.projKey;view='knowledge';}else{cur=null;view='setup';} }
         }
+        render();
       });
-    }
-    // 先用本地数据快速渲染（避免白屏），服务器回调后会覆盖
-    if(AUTH.resident){
-      if(!PROJECTS.sz) provisionSuizhou();
-      cur='sz'; view=view||'knowledge';
-      KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true};
-    } else {
-      if(AUTH.projKey && PROJECTS[AUTH.projKey]){ cur=AUTH.projKey; view='knowledge'; }
-      else { cur=null; view='setup'; }
+      return; // 等待服务器响应，不继续渲染
     }
   }
 
