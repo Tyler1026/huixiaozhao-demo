@@ -717,6 +717,11 @@ function render(){
       if(AUTH.projKey && PROJECTS[AUTH.projKey]){ cur=AUTH.projKey; view='knowledge'; }
       else { cur=null; view='setup'; }
     }
+    // 登录后也从服务器拉取最新数据，确保多设备同步
+    if(!render._serverSynced){
+      render._serverSynced=true;
+      restoreFromServer(function(ok){ if(ok) render(); });
+    }
   }
 
   // 尝试从 localStorage 恢复（非 ?demo 模式）
