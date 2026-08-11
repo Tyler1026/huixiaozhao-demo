@@ -722,17 +722,15 @@ function render(){
   // 尝试从 localStorage 恢复（非 ?demo 模式）
   if(location.search.indexOf('demo')<0&&!cur&&!render._restored){
     render._restored=true;
-    if(restore()){
-      render(); // 先用本地快照快速渲染
-      // 后台拉服务器，服务器有更新则覆盖重渲（保证多端同步）
-      if(!render._serverSynced){
-        render._serverSynced=true;
-        restoreFromServer(function(ok){
-          if(ok) render(); // 始终以服务器数据为准，确保多设备一致
-        });
-      }
-      return;
+    var _hasLocal = restore();
+    // 无论本地是否有数据，都从服务器拉取最新状态（保证多端同步）
+    if(!render._serverSynced){
+      render._serverSynced=true;
+      restoreFromServer(function(ok){
+        if(ok) render(); // 服务器数据覆盖本地，重新渲染
+      });
     }
+    if(_hasLocal){ render(); return; }
   }
   // ?demo 模式：先尝试从 localStorage 恢复已有数据（管理端可能已写入）
   if(location.search.indexOf('demo')>=0&&!cur){
