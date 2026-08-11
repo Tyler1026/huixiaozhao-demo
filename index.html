@@ -3566,6 +3566,7 @@ function cfmItem(projKey, idx){
       '<div style="font-size:11px;color:#22c55e;margin-top:3px">已确认</div></div>'+
       '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#22c55e;cursor:pointer;flex-shrink:0">撤回</button>';
   }
+  persist(); // 同步确认状态到服务器
   updateConfirmProgress(projKey);
   refreshTopReliability();
 }
@@ -3581,6 +3582,7 @@ function uncfmItem(projKey, idx){
     tmp.innerHTML = renderConfirmPanel(PENDING_CONFIRMS[projKey], projKey);
     panel.replaceWith(tmp.firstChild);
   }
+  persist(); // 同步撤回到服务器
   updateConfirmProgress(projKey);
   refreshTopReliability();
 }
@@ -5193,6 +5195,7 @@ function syncDemandFromProject(){
   // 更新城市漏斗（提交+确认各+1；若该城市不存在则新建）
   var f=CITY_FUNNEL.find(function(x){return x.city===p.city});
   if(f){f.submit++;f.confirm++;}else{CITY_FUNNEL.push({city:p.city,submit:1,confirm:1,match:0,dock:0,sign:0});}
+  persist(); // 同步到服务器
 }
 function submitNeed(){
   setStage(3);
