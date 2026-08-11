@@ -720,7 +720,7 @@ function render(){
   }
 
   // 尝试从 localStorage 恢复（非 ?demo 模式）
-  if(location.search.indexOf('demo')<0&&!cur&&!render._restored){
+  if(location.search.indexOf('demo')<0&&!render._restored){
     render._restored=true;
     var _hasLocal = restore();
     // 无论本地是否有数据，都从服务器拉取最新状态（保证多端同步）
