@@ -256,10 +256,10 @@ function setReportAreaHtml(area, html){
 
 function viewCurrentReport(){
   var rs = REPORTSTATE[cur];
-  if(!rs || !rs.text){ toast('暂无报告，请先在研判需求页生成'); return; }
+  if(!rs || !rs.text){ toast('暂无报告，请先在产业分析页生成'); return; }
   var area = document.getElementById('reportArea');
   if(!area){
-    // 不在研判需求页，跳转过去再显示
+    // 不在产业分析页，跳转过去再显示
     view='report'; render();
     setTimeout(function(){ viewCurrentReport(); }, 200);
     return;
@@ -323,7 +323,7 @@ function viewCurrentReport(){
       '<button onclick="triggerReport(1)" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">🔄 重新生成</button>'+
       '<button onclick="downloadReport(\'full\')" style="padding:12px 14px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;font-size:13px;color:#1a56db;cursor:pointer;font-weight:600">⬇ 下载完整版</button>'+
       '<button onclick="downloadReport(\'short\')" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">⬇ 下载精简版</button>'+
-      '<button onclick="submitDemand()" style="flex:1;padding:12px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer">✓ 确认方向，提交招引需求</button>';
+      '<button onclick="submitDemand()" style="flex:1;padding:12px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer">✓ 批量提交招商需求</button>';
   }
 }
 
@@ -434,7 +434,7 @@ function downloadReportPDF(mode){
     '</div>'+
     srcHtml+
     '<div class="report-body">'+bodyHtml+'</div>'+
-    '<div class="footer"><div class="warn-note">⚠ 本报告为 AI 辅助研判成果，基于公开信息与授权材料生成。正式招商决策须结合政府授权材料与领导确认。</div>'+
+    '<div class="footer"><div class="warn-note">⚠ 本报告为 AI 辅助研判成果，基于公开信息与授权材料生成。正式招商决策须结合政府授权材料与确认。</div>'+
       '慧小招 AI 招商智能体 · '+city+'市招商局 · 生成于 '+date+'</div>'+
     '';
   // 用隐藏 iframe 打印，绕开浏览器弹窗拦截（window.open 常被拦）
@@ -480,7 +480,7 @@ function downloadReportTxt(mode){
       rs.text,
       '',
       '════════════════════════════════',
-      '⚠ 本报告为AI辅助研判，正式招商决策需结合政府授权材料与领导确认。',
+      '⚠ 本报告为AI辅助研判，正式招商决策需结合政府授权材料与确认。',
     ].join('\n');
     filename=city+'_'+topic+'_研判报告_完整版.txt';
   } else {
@@ -657,7 +657,7 @@ var PROJECTS={};
 
 
 
-var STAGES=[['资料准备','上传与授权材料'],['AI 研判','生成缺口与方向'],['确认需求','干部与领导双确认'],['资源匹配','资源端核验匹配'],['政企对接','安排正式沟通']];
+var STAGES=[['资料准备','上传与授权材料'],['AI 研判','生成缺口与方向'],['确认需求','双确认'],['资源匹配','资源端核验匹配'],['政企对接','安排正式沟通']];
 
 /* ===== 运营端（周总·全局）：跨城市需求池 ===== */
 var DEMANDS=[];
@@ -697,7 +697,7 @@ function openModal(title,bodyHtml,footHtml){
   document.body.appendChild(l);
 }
 function closeModal(){var l=$('#modalLayer');if(l)l.remove()}
-var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','研判需求','出报告·可来回优化'],['home','📋','项目管理','报告派生项目·对接需求'],['docking','🤝','政企对接','资源匹配与对接进度'],['settings','⚙️','设置','账号与提醒']];
+var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','产业分析','产业分析·可来回优化'],['home','📋','项目管理','报告派生项目·对接需求'],['docking','🤝','政企对接','资源匹配与对接进度'],['settings','⚙️','设置','账号与提醒']];
 
 function render(){
   // ── 登录门禁：未登录 → 登录页 ──
@@ -898,17 +898,7 @@ function setupPage(){
             'onblur="this.style.border=\'1.5px solid #e8edf5\';this.style.boxShadow=\'none\'" '+
             'onkeydown="if(event.key===\'Enter\'){var b=document.getElementById(\'setupBtn\');if(b&&b.style.pointerEvents!==\'none\')createProject();}" />'+
         '</div>'+
-        '<div id="uploadZone" style="border:1.5px dashed #d1dce8;border-radius:12px;padding:16px;text-align:center;cursor:pointer;transition:all .15s;margin-bottom:20px" '+
-          'onclick="setupPickFile()" '+
-          'ondragover="event.preventDefault();this.style.background=\'#f0f4ff\';this.style.borderColor=\'#1a56db\'" '+
-          'ondragleave="this.style.background=\'\';this.style.borderColor=\'#d1dce8\'" '+
-          'ondrop="setupDropFile(event)">'+
-          '<div id="uploadLabel" style="font-size:13px;color:#8492a6;line-height:1.6">'+
-            '<span style="font-size:18px;display:block;margin-bottom:4px">📎</span>'+
-            '<span style="font-weight:600;color:#4a5568">补充材料（可选）</span><br>'+
-            '<span style="font-size:11.5px">政府工作报告、产业链图谱、园区资料 · 拖拽或点击上传</span><br>'+
-            '<span style="font-size:11px;color:#b0bac8;margin-top:3px;display:inline-block">若不上传，将基于公开可查询信息完成分析</span>'+
-          '</div>'+
+        '<!-- 补充材料区域已移至城市智库页面 -->'+
         '</div>'+
         '<input id="setupFileInput" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" multiple style="display:none" onchange="setupFileSelected(this)" />'+
         '<button id="setupBtn" onclick="createProject()" '+
@@ -1049,7 +1039,7 @@ function runAnalysisAnim(city, fileName, stepsCount, onDone){
         {icon:'🏭', name:'主导产业与产业链', desc:isSZ?'专用汽车703亿+安全应急502亿+香菇500亿，三大集群均已识别':'主导产业集群已识别，具体产值待材料确认'},
         {icon:'🏢', name:'园区与承载条件',   desc:isSZ?'随州高新区(国家级)+曾都经开区+专汽/香菇产业园，四大载体已评估':'主要工业园区载体与承接条件已梳理'},
         {icon:'🏗️', name:'链主与存量企业',   desc:isSZ?'程力/新楚风/齐星/江南专汽/品源均已梳理，电堆+机器人+提取三大外采缺口明确':'骨干链主与核心外采依赖已梳理'},
-        {icon:'📜', name:'政策与领导关注',   desc:isSZ?'氢能走廊+安全应急示范基地+香菇精深加工三条主线，口径待领导确认':'政策主线已提取，专项资金待确认'},
+        {icon:'📜', name:'政策与领导关注',   desc:isSZ?'氢能走廊+安全应急示范基地+香菇精深加工三条主线，口径待确认':'政策主线已提取，专项资金待确认'},
       ];
       var sumHtml='<div style="background:#fff;border-radius:16px;padding:20px 24px;box-shadow:0 2px 20px rgba(11,24,59,.06),0 0 0 1px rgba(11,24,59,.04)">'+
         '<div style="font-size:12px;font-weight:650;color:#8492a6;letter-spacing:.5px;margin-bottom:14px">分析完成 · '+city2+'城市智库已就位</div>'+
@@ -1191,7 +1181,7 @@ function ingestSetupFiles(files, projKey){
 /* 根据城市名生成城市智库四大主题的核心结论（公开信息初判） */
 var TOPIC_REPORTS={
   '\u9999\u83c7\u7cbe\u6df1\u52a0\u5de5\u5347\u7ea7': '## 一、产业基础判断\n\n随州香菇全产业链2024年产值超**500亿元**，区域品牌价值205.8亿，连续3年全国食药用菌第一。全球白花菇约**50%**产自随州，品源「菇的辣克」2024签1亿美元+2025续签3亿美元出口订单。种植端极强但精深加工本地布局极薄，高附加值环节大量外流。\n\n## 二、产业链缺口分析\n\n- ✅ 已有：种植采摘（全球最大白花菇产区）、品牌出口（品源4亿美元订单）、初加工\n- ❌ 缺失：香菇多糖/多肽规模化提取（仅裕国/肽源2家，A=必须本地化）\n- ❌ 缺失：菌种自主研发（国外7925/7917品种垄断，本地零布局）\n- ⚠️ 薄弱：功能性食品OEM（市场空间大，本地无规模企业）\n\n## 三、补链优先级TOP3\n\n| 排名 | 缺口节点 | 属性 | 综合优先级 |\n|---|---|---|---|\n| 1 | 香菇多糖/多肽提取平台 | A=必须本地化 | 第一优先 |\n| 2 | 菌种自主研发基地 | A=必须本地化 | 第二优先 |\n| 3 | 功能性食品OEM | B=可跨区域 | 第三优先 |\n\n## 四、目标企业画像\n\n**香菇多糖/多肽提取（第一优先）**\n- 目标：功能成分提取企业，年处理鲜菇≥5万吨，寻求中部原料产地合作\n- 话术：随州年产香菇约70万吨，落地可将原料采购成本降低40%+，与裕国/肽源形成产能协作。\n\n**菌种研发（第二优先）**\n- 目标：具备食用菌育种能力的科研院所或企业\n- 话术：随州种植规模为全球最大实验场景，育种成果可立即实现万亩级产业化验证。\n\n## 五、待确认事项\n\n⚠️ 随县香菇产业园精深加工区GMP洁净厂房现状，需现场核实\n⚠️ 菌种研发基地用地指标与配套政策，需园区管委会确认',
-  '\u6c22\u80fd\u4e13\u7528\u8f66\u8865\u94fe': '## 一、产业基础判断\n\n随州是中国专用汽车之都，2025年专用汽车产值**703亿元**（+12.1%），年产专用车约**16万辆**，全国占比>10%。新楚风49T氢重卡已量产，百公里氢耗7.1kg续航1000km。本地配套率仅**41%**，燃料电池电堆全部外采，成本占整车53%。\n\n## 二、产业链缺口分析\n\n- ✅ 已有：整车改装（97家资质企业）、车身驾驶室（齐星）、车规级晶振（泰晶）\n- ❌ 缺失：燃料电池电堆（占整车成本53%，全部外购，A=必须本地化）\n- ❌ 缺失：高压储氢瓶阀与管路（占整车成本14%，全部外采）\n- ⚠️ 薄弱：底盘/动力总成（依赖十堰，占整车50%成本）\n\n## 三、补链优先级TOP3\n\n| 排名 | 缺口节点 | 属性 | 综合优先级 |\n|---|---|---|---|\n| 1 | 燃料电池电堆 | A=必须本地化 | 第一优先 |\n| 2 | 高压储氢瓶阀管路 | A=必须本地化 | 第二优先 |\n| 3 | 电堆密封件/碳纸 | B=可跨区域 | 第三优先 |\n\n## 四、目标企业画像\n\n**燃料电池电堆（第一优先）**\n- 目标：商用车功率段燃料电池系统集成商，年产能≥3000台\n- 话术：随州新楚风49T氢重卡已量产，年产能16万辆整车基地是进入商用车场景最快验证通道，落地即锁定程力/新楚风稳定采购订单。\n\n## 五、待确认事项\n\n⚠️ 湖北省氢能专项补贴额度与首选承接园区需向领导确认\n⚠️ 程力/新楚风首批电堆采购意向与数量，需走访链主企业核实',
+  '\u6c22\u80fd\u4e13\u7528\u8f66\u8865\u94fe': '## 一、产业基础判断\n\n随州是中国专用汽车之都，2025年专用汽车产值**703亿元**（+12.1%），年产专用车约**16万辆**，全国占比>10%。新楚风49T氢重卡已量产，百公里氢耗7.1kg续航1000km。本地配套率仅**41%**，燃料电池电堆全部外采，成本占整车53%。\n\n## 二、产业链缺口分析\n\n- ✅ 已有：整车改装（97家资质企业）、车身驾驶室（齐星）、车规级晶振（泰晶）\n- ❌ 缺失：燃料电池电堆（占整车成本53%，全部外购，A=必须本地化）\n- ❌ 缺失：高压储氢瓶阀与管路（占整车成本14%，全部外采）\n- ⚠️ 薄弱：底盘/动力总成（依赖十堰，占整车50%成本）\n\n## 三、补链优先级TOP3\n\n| 排名 | 缺口节点 | 属性 | 综合优先级 |\n|---|---|---|---|\n| 1 | 燃料电池电堆 | A=必须本地化 | 第一优先 |\n| 2 | 高压储氢瓶阀管路 | A=必须本地化 | 第二优先 |\n| 3 | 电堆密封件/碳纸 | B=可跨区域 | 第三优先 |\n\n## 四、目标企业画像\n\n**燃料电池电堆（第一优先）**\n- 目标：商用车功率段燃料电池系统集成商，年产能≥3000台\n- 话术：随州新楚风49T氢重卡已量产，年产能16万辆整车基地是进入商用车场景最快验证通道，落地即锁定程力/新楚风稳定采购订单。\n\n## 五、待确认事项\n\n⚠️ 湖北省氢能专项补贴额度与首选承接园区需向确认\n⚠️ 程力/新楚风首批电堆采购意向与数量，需走访链主企业核实',
   '\u667a\u6167\u5e94\u6025\u88c5\u5907\u8865\u94fe': '## 一、产业基础判断\n\n随州安全应急产业2023年总产值**502亿元**，其中移动应急装备324亿，是国家安全应急产业示范基地。博利特高空系留无人机消防车、齐星无人机指挥车已量产，金龙篷布全国占比30%。但感知层（机器人/传感器）与通信层（5G模块）本地几乎空白。\n\n## 二、产业链缺口分析\n\n- ✅ 已有：移动应急整车（博利特/齐星/江南）、篷布风机（金龙30%全国市场）\n- ❌ 缺失：应急机器人本体（依赖外采启灵，B=可跨区域）\n- ❌ 缺失：5G/卫星应急通信模块（本地零布局）\n- ⚠️ 薄弱：无人机本体（依赖外采迅北斗，未本地化）\n\n## 三、补链优先级TOP3\n\n| 排名 | 缺口节点 | 属性 | 综合优先级 |\n|---|---|---|---|\n| 1 | 应急机器人本体 | B=可跨区域 | 第一优先 |\n| 2 | 无人机本体 | B=可跨区域 | 第二优先 |\n| 3 | 5G应急通信模块 | B=可跨区域 | 第三优先 |\n\n## 四、目标企业画像\n\n**应急机器人（第一优先）**\n- 目标：消防/救援机器人制造企业，具备防爆/耐高温认证\n- 话术：随州是国家安全应急示范基地，博利特/齐星整车平台就是机器人最好的集成搭载场景。\n\n## 五、待确认事项\n\n⚠️ 国家示范基地配套用地指标与政策，需主管部门确认\n⚠️ 博利特/齐星对机器人本地化配套采购意向，需走访核实',
   '\u4ea7\u4e1a\u8f6c\u79fb\u627f\u63a5': '## 一、产业基础判断\n\n随州地处中部交通枢纽，用工/土地成本较沿海低30-40%，经开区/高新区厂房资源充裕。专用汽车产业链为承接汽车零部件配套提供了天然需求端，香菇产业为食品加工提供了原料优势。当前沿海制造业向中部转移窗口明确，随州承接条件具备。\n\n## 二、适合承接的产业方向\n\n- ✅ 优先：汽车零部件配套（就近供应程力/新楚风/齐星，需求稳定）\n- ✅ 优先：劳动密集型轻工制造（篷布/纺织/包装，人力成本优势显著）\n- ⚠️ 潜力：食品精深加工（香菇/农产品原料丰富，冷链待完善）\n- ⚠️ 培育：电子零部件组装（泰晶晶振生态初步形成）\n\n## 三、承接优先方向TOP3\n\n| 排名 | 方向 | 核心优势 | 综合评级 |\n|---|---|---|---|\n| 1 | 汽车零部件配套 | 专汽产业链需求牵引 | 第一优先 |\n| 2 | 劳动密集型制造 | 用工/土地成本优势 | 第二优先 |\n| 3 | 食品精深加工 | 农业原料资源丰富 | 第三优先 |\n\n## 四、目标企业画像\n\n**汽车零部件（第一优先）**\n- 目标：沿海汽车零部件企业，寻求降本转移，年产值5000万以上\n- 话术：随州16万辆/年专用车产量就是您稳定的本地订单，就近配套可节省15-20%物流成本。\n\n## 五、待确认事项\n\n⚠️ 各园区可承接厂房面积与租金优惠政策，需园区管委会确认\n⚠️ 转移企业税收减免与人才补贴，需招商局确认'
 };
@@ -1205,7 +1195,7 @@ function getTopicReport(topic){
   if(/\u8f6c\u79fb|\u627f\u63a5/.test(topic)) return TOPIC_REPORTS['\u4ea7\u4e1a\u8f6c\u79fb\u627f\u63a5'];
   return null;
 }
-var SZ_REPORT_TEXT='## 一、产业基础判断\n\n随州是中国专用汽车之都。2025年专用汽车与应急产业总产值**703亿元**（+12.1%），年产专用车约**16万辆**，全国占比>10%，专汽出口+71%全省第一。安全应急产业2023年总产值502亿，其中移动应急装备324亿。香菇全产业链2024年产值超500亿，区域品牌价值205.8亿，连续3年全国食药用菌第一。\n\n本地配套率仅**41%**，远低于山东梁山65%和十堰75%+。链主企业：程力（整车）、新楚风（氢能整车，49T氢重卡已量产，百公里氢耗7.1kg续航1000km）、齐星（整车/无人机指挥车）、江南专汽（泡沫消防车600-1000万/台）、品源（"菇的辣克"2024签1亿美元+2025续签3亿美元）。\n\n## 二、产业链缺口分析\n\n### 氢能专用车方向\n- ✅ 已有：整车/改装（程力/新楚风/齐星）、车身驾驶室（齐星）、车规级晶振（泰晶AEC-Q200）、电解液（犇星）\n- ❌ 缺失：燃料电池电堆（占整车成本53%，A=必须本地化，全部外购）\n- ❌ 缺失：高压储氢瓶阀与管路（占整车成本14%，A=必须本地化）\n- ⚠️ 薄弱：底盘/动力总成（占整车成本50%，外购十堰潍柴/法士特/汉德，C=优先本地化）\n\n### 智慧应急装备方向\n- ✅ 已有：整机平台（博利特高空系留无人机消防车、齐星6架无人机指挥车）、软体材料（金龙篷布全国30%）\n- ❌ 缺失：应急机器人本体（依赖启灵外采，B=可跨区域）\n- ❌ 缺失：5G/卫星应急通信模块（本地零布局，B=可跨区域）\n\n### 香菇精深加工方向\n- ✅ 已有：初加工出口（品源辣酱，年产70万吨）、多糖提取（裕国药业）、多肽提取（肽源）\n- ❌ 缺失：香菇多糖/多肽规模化提取平台（仅2家布局，A=必须本地化）\n- ❌ 缺失：菌种自主研发（国外7925/7917品种垄断，A=必须本地化）\n\n## 三、补链优先级清单TOP5\n\n| 排名 | 缺口节点 | 本地化属性 | 经济拉动★ | 招引可行性★ | 综合优先级 |\n|---|---|---|---|---|---|\n| 1 | 燃料电池电堆 | A=必须本地化 | ★★★★★ | ★★★★ | 第一优先 |\n| 2 | 高压储氢瓶阀与管路 | A=必须本地化 | ★★★★ | ★★★★ | 第二优先 |\n| 3 | 应急机器人本体 | B=可跨区域 | ★★★★ | ★★★ | 第三优先 |\n| 4 | 香菇多糖/多肽提取 | A=必须本地化 | ★★★★ | ★★★★ | 第四优先 |\n| 5 | 菌种自主研发基地 | A=必须本地化 | ★★★ | ★★★ | 第五优先 |\n\n## 四、目标企业画像\n\n**燃料电池电堆（第一优先）**\n- 目标类型：商用车功率段燃料电池系统集成商或电堆制造企业，年产能≥3000台，掌握金属双极板或膜电极核心工艺\n- 开口话术：「随州新楚风49T氢重卡已量产，年产能16万辆整车基地就是您进入商用车场景最快的验证通道，落地即锁定程力/新楚风的稳定采购订单。」\n\n**高压储氢瓶阀（第二优先）**\n- 目标类型：35MPa/70MPa高压储氢瓶阀、管路及集成模块制造企业\n- 开口话术：「随州16万辆/年专用车产量是稳定的储氢系统需求方，与电堆企业同步落地可降低整体物流成本。」\n\n**香菇多糖/多肽提取（第四优先）**\n- 目标类型：香菇多糖/多肽功能成分提取与功能性食品企业，寻求中部原料产地合作\n- 开口话术：「随州年产香菇约70万吨，全球白花菇约50%，就近落地可将原料采购成本降低40%+，与裕国/肽源形成产能协作。」\n\n## 五、待确认事项\n\n⚠️ 湖北省氢能专项补贴额度与首选承接园区（高新区/曾都经开区/专汽产业园）需向领导确认\n⚠️ 程力/新楚风的首批电堆采购意向与数量，需走访链主企业核实\n⚠️ 菌种自主研发基地的用地指标与洁净厂房条件，需园区管委会确认\n⚠️ 随县香菇产业园精深加工区的GMP洁净厂房现状，需现场核实';
+var SZ_REPORT_TEXT='## 一、产业基础判断\n\n随州是中国专用汽车之都。2025年专用汽车与应急产业总产值**703亿元**（+12.1%），年产专用车约**16万辆**，全国占比>10%，专汽出口+71%全省第一。安全应急产业2023年总产值502亿，其中移动应急装备324亿。香菇全产业链2024年产值超500亿，区域品牌价值205.8亿，连续3年全国食药用菌第一。\n\n本地配套率仅**41%**，远低于山东梁山65%和十堰75%+。链主企业：程力（整车）、新楚风（氢能整车，49T氢重卡已量产，百公里氢耗7.1kg续航1000km）、齐星（整车/无人机指挥车）、江南专汽（泡沫消防车600-1000万/台）、品源（"菇的辣克"2024签1亿美元+2025续签3亿美元）。\n\n## 二、产业链缺口分析\n\n### 氢能专用车方向\n- ✅ 已有：整车/改装（程力/新楚风/齐星）、车身驾驶室（齐星）、车规级晶振（泰晶AEC-Q200）、电解液（犇星）\n- ❌ 缺失：燃料电池电堆（占整车成本53%，A=必须本地化，全部外购）\n- ❌ 缺失：高压储氢瓶阀与管路（占整车成本14%，A=必须本地化）\n- ⚠️ 薄弱：底盘/动力总成（占整车成本50%，外购十堰潍柴/法士特/汉德，C=优先本地化）\n\n### 智慧应急装备方向\n- ✅ 已有：整机平台（博利特高空系留无人机消防车、齐星6架无人机指挥车）、软体材料（金龙篷布全国30%）\n- ❌ 缺失：应急机器人本体（依赖启灵外采，B=可跨区域）\n- ❌ 缺失：5G/卫星应急通信模块（本地零布局，B=可跨区域）\n\n### 香菇精深加工方向\n- ✅ 已有：初加工出口（品源辣酱，年产70万吨）、多糖提取（裕国药业）、多肽提取（肽源）\n- ❌ 缺失：香菇多糖/多肽规模化提取平台（仅2家布局，A=必须本地化）\n- ❌ 缺失：菌种自主研发（国外7925/7917品种垄断，A=必须本地化）\n\n## 三、补链优先级清单TOP5\n\n| 排名 | 缺口节点 | 本地化属性 | 经济拉动★ | 招引可行性★ | 综合优先级 |\n|---|---|---|---|---|---|\n| 1 | 燃料电池电堆 | A=必须本地化 | ★★★★★ | ★★★★ | 第一优先 |\n| 2 | 高压储氢瓶阀与管路 | A=必须本地化 | ★★★★ | ★★★★ | 第二优先 |\n| 3 | 应急机器人本体 | B=可跨区域 | ★★★★ | ★★★ | 第三优先 |\n| 4 | 香菇多糖/多肽提取 | A=必须本地化 | ★★★★ | ★★★★ | 第四优先 |\n| 5 | 菌种自主研发基地 | A=必须本地化 | ★★★ | ★★★ | 第五优先 |\n\n## 四、目标企业画像\n\n**燃料电池电堆（第一优先）**\n- 目标类型：商用车功率段燃料电池系统集成商或电堆制造企业，年产能≥3000台，掌握金属双极板或膜电极核心工艺\n- 开口话术：「随州新楚风49T氢重卡已量产，年产能16万辆整车基地就是您进入商用车场景最快的验证通道，落地即锁定程力/新楚风的稳定采购订单。」\n\n**高压储氢瓶阀（第二优先）**\n- 目标类型：35MPa/70MPa高压储氢瓶阀、管路及集成模块制造企业\n- 开口话术：「随州16万辆/年专用车产量是稳定的储氢系统需求方，与电堆企业同步落地可降低整体物流成本。」\n\n**香菇多糖/多肽提取（第四优先）**\n- 目标类型：香菇多糖/多肽功能成分提取与功能性食品企业，寻求中部原料产地合作\n- 开口话术：「随州年产香菇约70万吨，全球白花菇约50%，就近落地可将原料采购成本降低40%+，与裕国/肽源形成产能协作。」\n\n## 五、待确认事项\n\n⚠️ 湖北省氢能专项补贴额度与首选承接园区（高新区/曾都经开区/专汽产业园）需向确认\n⚠️ 程力/新楚风的首批电堆采购意向与数量，需走访链主企业核实\n⚠️ 菌种自主研发基地的用地指标与洁净厂房条件，需园区管委会确认\n⚠️ 随县香菇产业园精深加工区的GMP洁净厂房现状，需现场核实';
 function generateKbConclusions(city){
   // 随州专项真实数据（源自慧小招2026-07报告）
   // 通用城市走通用骨架；随州走完整真实数据
@@ -1221,7 +1211,7 @@ function generateKbConclusions(city){
           '香菇：2024年全产业链产值超500亿，区域品牌价值205.8亿(连续3年全国食药用菌第一)，年产约70万吨(全球白花菇约50%)',
           '链主企业：程力(整车)、新楚风(氢能整车·49T氢重卡已量产)、齐星(整车/无人机指挥车)、江南专汽(消防车)、品源("菇的辣克"4亿美元出口订单)',
           '核心缺口：氢燃料电池电堆(占整车成本53%全部外购)、储氢瓶(14%)、应急机器人/无人机本体(依赖外采)、香菇多糖提取(仅2家)、菌种自主权(国外垄断)',
-          '⚠️ 2026年各产业链方向优先招引顺序、重点突破的细分环节，请领导确认'
+          '⚠️ 2026年各产业链方向优先招引顺序、重点突破的细分环节，请确认'
         ]
       },
       park:{
@@ -1233,7 +1223,7 @@ function generateKbConclusions(city){
           '专汽产业园：30公里专汽长廊核心区，已有程力/齐星等整车及改装企业入驻',
           '随县香菇产业园：已有初加工入驻，精深加工(生物提取/GMP洁净)厂房条件需进一步核实',
           '区位优势：汉十高铁随州南站至武汉50分钟/至襄阳30分钟；"汉孝随襄十"万亿汽车走廊节点',
-          '⚠️ 首选承接园区与地块、可用厂房面积及能耗配额，请领导确认'
+          '⚠️ 首选承接园区与地块、可用厂房面积及能耗配额，请确认'
         ]
       },
       firm:{
@@ -1249,8 +1239,8 @@ function generateKbConclusions(city){
         ]
       },
       policy:{
-        sub:'氢能走廊+应急示范基地+香菇精深加工升级三条政策主线',
-        tag:'慧小招实测 · 待领导确认口径',
+        sub:'氢能走廊+应急示范基地+香菇产业精深加工升级三条政策主线',
+        tag:'慧小招实测 · 待确认口径',
         known:[
           '湖北省氢能走廊：武汉-十堰-随州-襄阳沿线布局，随州以氢能专用车为主攻方向，专项支持方向已明确',
           '国家安全应急产业示范基地(曾都区)：支持智慧应急装备落地，对机器人/无人机/5G通信模块有专项引导',
@@ -1298,7 +1288,7 @@ function generateKbConclusions(city){
     },
     policy:{
       sub:city+'政策方向与领导关注重点（公开信息初判）',
-      tag:'AI初判 · 待领导确认',
+      tag:'AI初判 · 待确认',
       known:[
         city+'近年政府工作报告将制造业升级与招商引资列为重点，产业政策支持力度较强',
         '符合主导方向的落地企业通常可获土地优惠/税收减免/人才补贴等配套政策',
@@ -1345,7 +1335,7 @@ function showDownloadReport(){
     '  3. 招引目标画像：具备落地意向、产品与缺口直接匹配的细分领域龙头',
     '  4. 待确认事项：专项资金额度、首选地块、领导最新交办口径',
     '',
-    '⚠ 本报告为 AI 基于公开信息的初判，正式招商决策需结合政府授权材料与领导确认。',
+    '⚠ 本报告为 AI 基于公开信息的初判，正式招商决策需结合政府授权材料与确认。',
   ].join('\n');
 
   // 精简版内容
@@ -1399,7 +1389,7 @@ function showDownloadReport(){
           '<button onclick="downloadReportPDF(\'short\')" style="width:100%;padding:10px;background:#f5f7fb;color:#0b183b;border:1.5px solid #e8edf5;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer">⬇ 下载精简版 PDF</button>'+
         '</div>'+
       '</div>'+
-      '<p style="font-size:11px;color:#b0bac8;margin:16px 0 0;text-align:center;line-height:1.7">报告内容为 AI 基于公开信息的初步研判，正式招商决策需结合政府授权材料与领导确认</p>'+
+      '<p style="font-size:11px;color:#b0bac8;margin:16px 0 0;text-align:center;line-height:1.7">报告内容为 AI 基于公开信息的初步研判，正式招商决策需结合政府授权材料与确认</p>'+
     '</div>'+
   '</div>';
 
@@ -1416,7 +1406,7 @@ function showSummaryModal(city2,sectors){
     '专用汽车703亿+安全应急502亿+香菇500亿三大集群，本地配套率仅41%，氢电堆53%/底盘50%全靠外购',
     '随州高新区(国家级)·曾都经开区·专汽/香菇产业园四大载体，汉十高铁至武汉50分钟',
     '程力/新楚风/齐星/江南专汽/品源均有明确外采诉求；电堆·机器人·香菇提取三大缺口可直接对接',
-    '氢能走廊+安全应急示范基地+香菇精深加工三条政策主线，专项资金口径待领导确认',
+    '氢能走廊+安全应急示范基地+香菇精深加工三条政策主线，专项资金口径待确认',
   ]:[
     p&&p.city?p.city+'工业基础可承接，上游核心零部件本地配套率偏低，存在明显补链空间':'主导产业集群已识别，链条缺口待明确',
     '主要工业园区载体已梳理，厂房与能耗条件可满足主流制造业落地需求',
@@ -1507,7 +1497,7 @@ function enterWorkspace(){
       '完成初步分析。</p>'+
       '<p style="margin-top:6px">左侧四大主题均可点击展开，你也可以直接提问：</p>'+
       '<ul style="margin:6px 0 0 18px;line-height:2;font-size:13px;color:#33415a">'+
-        '<li>「<strong>'+city+'最值得补链的核心环节是哪些？</strong>」</li>'+
+        '<li>「<strong>'+city+'补链的核心缺口有哪些？</strong>」</li>'+
         '<li>「<strong>本地链主企业还缺哪些关键配套？</strong>」</li>'+
         '<li>「<strong>园区如何分工承接不同细分方向？</strong>」</li>'+
       '</ul>'+
@@ -1703,7 +1693,7 @@ function kbReadiness(){
       if(conf||isDone) warnConfirmed++;
     });
   });
-  // 同步纳入报告页「领导确认」（PENDING_CONFIRMS）的确认状态，
+  // 同步纳入报告页「确认」（PENDING_CONFIRMS）的确认状态，
   // 否则报告页确认后顶部大进度条不动（两套确认系统互不相通的 bug 修复）
   var pend=PENDING_CONFIRMS[cur]||[];
   pend.forEach(function(it){
@@ -1777,7 +1767,7 @@ function kbPageProgressInner(r){
     '<span title="计算方式：确认'+warn+'事项×60% + 上传材料×10%（上限 40%）"'+
       ' style="font-size:11px;color:#9aa5b5;cursor:help;margin-left:2px">'+info+'</span>'+
   '</div>'+
-  (r.score<80?'<p style="font-size:11.5px;color:#f59e0b;margin:5px 0 0">⚡ 上传越多材料、领导确认越多结论，研判数据可靠性越高（差 '+(80-r.score)+'% 自动解锁后续步骤）</p>':'');
+  (r.score<80?'<p style="font-size:11.5px;color:#f59e0b;margin:5px 0 0">⚡ 上传越多材料、确认越多结论，研判数据可靠性越高（差 '+(80-r.score)+'% 自动解锁后续步骤）</p>':'');
 }
 function kbProgressInner(r){
   r=r||kbReadiness();
@@ -1875,7 +1865,7 @@ function progressFooter(p){
 var NOTIFS=[
   {id:'n1',type:'状态变化',icon:'🔵',proj:'sq',title:'智慧应急装备 · 资源端已反馈',desc:'资源团队核验：长三角应急无人机集成商（脱敏企业E·天目无人机）已具备可对接窗口，建议准备承接材料。',time:'10分钟前',read:false},
   {id:'n2',type:'超时提醒',icon:'🟠',proj:'py',title:'香菇深加工 · 已3个工作日无更新',desc:'该研判自双确认后暂无进展，建议跟进资源端对功能成分提取企业的核验进度。',time:'今天 09:12',read:false},
-  {id:'n3',type:'每日摘要',icon:'📋',proj:null,title:'每日摘要 · 3个研判进行中',desc:'氢能专用车补链待你确认报告（电堆缺口53%已有候选）；智慧应急装备资源匹配中；香菇深加工待跟进。',time:'今天 09:00',read:false}
+  {id:'n3',type:'每日摘要',icon:'📋',proj:null,title:'每日摘要 · 3个研判进行中',desc:'氢能专用车产业补链待你确认报告（电堆缺口53%已有候选）；智慧应急装备资源匹配中；香菇深加工待跟进。',time:'今天 09:00',read:false}
 ];
 function unreadCount(){return NOTIFS.filter(function(n){return !n.read}).length}
 function notifList(){
@@ -1975,7 +1965,7 @@ function bind(){
 function mainPane(p){
   if(view==='knowledge')return kbPage(p);
   if(view==='settings')return settingsPage(p);
-  if(view==='report')return homePage(p);      // 研判需求：出报告的对话工作区
+  if(view==='report')return homePage(p);      // 产业分析：出报告的对话工作区
   if(view==='docking')return dockingPage(p);   // 政企对接：独立tab
   if(view==='subwork')return subWorkPage(p);   // 招引项目独立工作页
   return projMgmtPage(p);                       // home = 项目管理（默认）
@@ -2638,14 +2628,14 @@ function projMgmtPage(p){
   if(!projKeys.length){
     return '<div class="page">'+
       '<div class="page-header"><div><span class="eyebrow">PROJECTS</span><h1>项目管理</h1>'+
-      '<p>研判报告确认后，立项导入的方向会出现在这里。</p></div></div>'+
+      '<p>研判报告确认后，提交招商需求的方向会出现在这里。</p></div></div>'+
       '<div class="knowledge-scroll"><div style="text-align:center;padding:60px 20px">'+
         '<div style="font-size:36px;margin-bottom:12px">📂</div>'+
         '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">暂无立项</div>'+
         '<div style="font-size:13px;color:#8492a6;line-height:1.7;margin-bottom:20px">'+
-          '在「研判需求」生成完整报告后，<br>点击「🏁 可立项招引方向」中的「立项导入 →」按钮建立项目'+
+          '在「产业分析」生成完整产业报告后，<br>点击「🏁 可立项招引方向」中的「提交招商需求 →」按钮建立项目'+
         '</div>'+
-        '<button onclick="go(\'report\')" style="padding:10px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:650;cursor:pointer">前往研判需求 →</button>'+
+        '<button onclick="go(\'report\')" style="padding:10px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:650;cursor:pointer">前往产业分析 →</button>'+
       '</div></div></div>';
   }
 
@@ -2729,7 +2719,7 @@ function projMgmtPage(p){
         '</div>';
       }
 
-      // stage=2 引导：前往研判需求生成本方向报告
+      // stage=2 引导：前往产业分析生成本方向报告
       var stageGuide = '';
       if(x.stage===2){
         // stage=2：报告已从父项目继承，直接引导确认方向
@@ -2876,7 +2866,7 @@ function subReply(kind,s,p){
   var _kbFirm2=p.kb&&p.kb[2]||{};var _kbPol2=p.kb&&p.kb[3]||{};
   var _ind2Txt=(_kbInd2.known||[]).slice(0,2).join('；')||p.city+'产业基础扎实，具体配套率见产业链图谱';
   var _park2Txt=(_kbPark2.known||[]).slice(0,1).join('')||p.city+'高新区/经开区具备承接载体';
-  var _pol2Txt=(_kbPol2.known||[]).slice(0,1).join('')||'本地产业扶持政策方向明确，专项资金额度待领导确认';
+  var _pol2Txt=(_kbPol2.known||[]).slice(0,1).join('')||'本地产业扶持政策方向明确，专项资金额度待确认';
   if(kind==='draft'){
     tag='对接方案（草稿 · 待确认）';fileHint='对接方案';
     body='<p>已结合<strong>'+s.from+'</strong>报告结论与'+p.city+'本地承接条件，起草「'+dirName+'」初步对接方案草稿——</p>'+
@@ -2884,7 +2874,7 @@ function subReply(kind,s,p){
         '<b>一、'+p.city+'承接优势</b><br>'+_ind2Txt+'。'+_park2Txt+'，可与候选企业形成上下游/场景协同配套。<br>'+
         '<b>二、对企业的核心价值点</b><br>本地整车/改装产量大（配套采购需求稳定）；'+(_kbFirm2.known||[]).slice(0,1).join('')||'骨干链主提供稳定订单'+'；示范场景开放可加速企业渗透市场。<br>'+
         '<b>三、拟对接方式</b><br>由资源端核验「'+s.clueName+'」真实意向后，安排实地走访'+p.city+'承接园区 + 政企座谈；我方准备承接材料与可用时段。<br>'+
-        '<b>四、待补充确认</b><br>'+_pol2Txt+'；首选承接园区地块需向领导确认后填入本方案。'+
+        '<b>四、待补充确认</b><br>'+_pol2Txt+'；首选承接园区地块需向确认后填入本方案。'+
       '</div></div>';
   }else if(kind==='verify'){
     tag='核验清单（供资源端参考）';fileHint='核验清单';
@@ -2920,7 +2910,7 @@ function subReply(kind,s,p){
     body='<p>围绕「'+dirName+'」，从产业链上下游看，以下环节尚可深入研判——</p>'+
       '<div class="report" style="margin-top:6px"><div class="rbody" style="padding:12px 14px"><ul class="check-list">'+
       _expandItems.map(function(x){return '<li><i class="i">•</i>'+x+'</li>'}).join('')+
-      '</ul></div></div><p style="margin-top:6px;font-size:12px;color:#667590">如需研判某个环节，可到「研判需求」新增产业方向。</p>';
+      '</ul></div></div><p style="margin-top:6px;font-size:12px;color:#667590">如需研判某个环节，可到「产业分析」新增产业方向。</p>';
   }
   var d=addA(body+'<div class="answer-note" style="margin-top:8px">⚠ 以上为 AI 生成草稿，关键判断需人工确认；系统不自动联系企业、不跳过确认关口。</div>');
   // 生成结果附操作条：导出该材料
@@ -2939,7 +2929,7 @@ function exportSub(){
   L.push('招引方向：'+s.dir);
   L.push('来源产业方向：'+s.from);
   L.push('候选企业（脱敏）：'+(s.clueName||'暂无'));
-  L.push('确认状态：干部确认 + 授权领导确认 已完成，已正式递交');
+  L.push('确认状态：干部确认 + 授权确认 已完成，已正式递交');
   L.push('当前阶段：'+STAGES[Math.min(s.stage||4,STAGES.length)-1][0]);
   L.push('');
   L.push('----------------------------------------------------');
@@ -3233,7 +3223,7 @@ function composer(){
     '</div>';
   }
   var ph=isKb&&activeTopic?'针对「'+activeTopic+'」提问，我会优先检索该主题数据…':
-      isKb?'直接输入问题，例如：'+P().city+'最值得补链的核心缺口是哪些？':
+      isKb?'直接输入问题，例如：'+P().city+'补链的核心缺口有哪些？':
       sub?'针对本项目：让我起草对接方案、列核验清单、写领导汇报，或补充招引环节…':
       '可直接描述产业方向、细分环节、目标企业或领导交办任务，我会结合城市智库与最新公开信息研判…';
   return '<div class="composer-wrap">'+topicPill+'<div class="composer">'+
@@ -3283,7 +3273,7 @@ function cancelTopicEdit(){
   if(e)e.style.display='none';
 }
 
-/* ── 研判需求页辅助函数 ── */
+/* ── 产业分析页辅助函数 ── */
 
 // 选择研判方向（卡片点击 or 自定义输入）
 function selectTopic(val, isCustom){
@@ -3342,7 +3332,7 @@ function selectTopic(val, isCustom){
 
 // 触发生成报告
 /* ══════════════════════════════════════════════════════════════
-   研判需求 — 待确认事项结构化面板
+   产业分析 — 待确认事项结构化面板
    流程：进入页面自动触发草稿 → 解析⚠️ → 渲染确认面板 → 全部确认后解锁完整报告
    ══════════════════════════════════════════════════════════════ */
 
@@ -3492,7 +3482,7 @@ function renderConfirmPanel(items, projKey){
       '</div>'+
       // 操作栏
       '<div style="padding:10px 15px;background:linear-gradient(135deg,#fefce8,#fef9c3);border-top:1px solid #fde68a;display:flex;gap:8px">'+
-        '<button onclick="cfmItem(\''+projKey+'\','+idx+')" style="flex:1;padding:8px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1.5px solid #86efac;border-radius:10px;font-size:12.5px;font-weight:700;color:#166534;cursor:pointer;transition:all .15s" onmouseenter="this.style.background=\'#dcfce7\'" onmouseleave="this.style.background=\'linear-gradient(135deg,#f0fdf4,#dcfce7)\'">✓ 领导确认</button>'+
+        '<button onclick="cfmItem(\''+projKey+'\','+idx+')" style="flex:1;padding:8px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1.5px solid #86efac;border-radius:10px;font-size:12.5px;font-weight:700;color:#166534;cursor:pointer;transition:all .15s" onmouseenter="this.style.background=\'#dcfce7\'" onmouseleave="this.style.background=\'linear-gradient(135deg,#f0fdf4,#dcfce7)\'">✓ 确认</button>'+
         '<button onclick="ciShowEdit(\''+projKey+'\','+idx+')" style="flex:1;padding:8px;background:linear-gradient(135deg,#f5f3ff,#ede9fe);border:1.5px solid #c4b5fd;border-radius:10px;font-size:12.5px;font-weight:600;color:#6d28d9;cursor:pointer" onmouseenter="this.style.background=\'#ede9fe\'" onmouseleave="this.style.background=\'linear-gradient(135deg,#f5f3ff,#ede9fe)\'">✎ 修改内容</button>'+
       '</div>'+
     '</div>';
@@ -3506,7 +3496,7 @@ function renderConfirmPanel(items, projKey){
     '<div style="padding:13px 18px;background:linear-gradient(135deg,#fffbeb,#fef9c3);border-bottom:1px solid #fde68a;display:flex;align-items:center;gap:10px">'+
       '<span style="font-size:18px">📋</span>'+
       '<div style="flex:1">'+
-        '<div style="font-size:13px;font-weight:800;color:#92400e;letter-spacing:.2px">待领导确认事项</div>'+
+        '<div style="font-size:13px;font-weight:800;color:#92400e;letter-spacing:.2px">待确认事项</div>'+
         '<div style="font-size:11px;color:#b45309;margin-top:1px">全部确认后方可生成完整五章报告</div>'+
       '</div>'+
       '<div style="display:flex;align-items:center;gap:8px">'+
@@ -3519,7 +3509,7 @@ function renderConfirmPanel(items, projKey){
     '<div style="padding:12px 16px;display:flex;flex-direction:column;gap:8px;background:#fff" id="cp-items-'+projKey+'">'+rows+'</div>'+
     '<div id="cp-unlock-'+projKey+'" style="padding:12px 18px;background:'+(allDone?'linear-gradient(135deg,#f0fdf4,#dcfce7)':'#f9fafb')+';border-top:1px solid '+(allDone?'#86efac':'#f0f4ff')+';display:flex;align-items:center;justify-content:center;gap:8px">'+
       (allDone
-        ? '<span style="font-size:13px;font-weight:700;color:#166534">✅ 所有事项已确认，立即生成完整报告</span>'
+        ? '<span style="font-size:13px;font-weight:700;color:#166534">✅ 所有事项已确认，立即生成完整产业报告</span>'
         : '<span style="font-size:12.5px;color:#9aa5b5">还有 <strong style="color:#f59e0b">'+(total-done)+'</strong> 条事项待确认</span>'
       )+
     '</div>'+
@@ -3541,7 +3531,7 @@ function updateConfirmProgress(projKey){
     unlock.style.background=allDone?'#f0fdf4':'#f9fafb';
     unlock.style.borderColor=allDone?'#86efac':'#e8edf5';
     unlock.innerHTML=allDone
-      ?'<span style="font-size:13px;font-weight:650;color:#166534">✓ 所有事项已确认，可生成完整报告</span>'
+      ?'<span style="font-size:13px;font-weight:650;color:#166534">✓ 所有事项已确认，可生成完整产业报告</span>'
       :'<span style="font-size:13px;color:#9aa5b5">还剩 '+(total-done)+' 条待确认</span>';
   }
   // 始终强制重建底部操作栏
@@ -3550,11 +3540,11 @@ function updateConfirmProgress(projKey){
   if(allDone){
     bottomBar.innerHTML=
       '<div style="flex:1;font-size:12.5px;color:#166534;background:#f0fdf4;padding:10px 14px;border-radius:10px;border:1px solid #86efac">✓ 所有待确认事项已完成</div>'+
-      '<button onclick="triggerReport(2)" style="padding:12px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;box-shadow:0 4px 16px rgba(26,86,219,.3)">生成完整报告 →</button>'+
+      '<button onclick="triggerReport(2)" style="padding:12px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;box-shadow:0 4px 16px rgba(26,86,219,.3)">生成完整产业报告 →</button>'+
       '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>';
   } else {
     bottomBar.innerHTML=
-      '<div style="flex:1;font-size:12.5px;color:#92400e;background:#fffbeb;padding:10px 14px;border-radius:10px;border:1px solid #fde68a">请确认上方 '+(total-done)+' 条待确认事项后生成完整报告</div>'+
+      '<div style="flex:1;font-size:12.5px;color:#92400e;background:#fffbeb;padding:10px 14px;border-radius:10px;border:1px solid #fde68a">请确认上方 '+(total-done)+' 条待确认事项后生成完整产业报告</div>'+
       '<button disabled style="padding:12px 20px;background:#e8edf5;color:#9aa5b5;border:none;border-radius:12px;font-size:13.5px;cursor:not-allowed">完成确认后解锁 →</button>'+
       '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>';
   }
@@ -3728,7 +3718,7 @@ function renderActionItems(text, p, r){
         '<button data-gap="'+safeGap+'" data-city="'+safeCity+'" data-topic="'+safeTopic+'"'+
           ' onclick="importToProject(this.getAttribute(\'data-gap\'),this.getAttribute(\'data-city\'),this.getAttribute(\'data-topic\'))"'+
           ' style="padding:8px 16px;background:'+color+';color:#fff;border:none;border-radius:10px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap;flex-shrink:0">'+
-          '立项导入 →'+
+          '提交招商需求 →'+
         '</button>'+
       '</div>'+
     '</div>';
@@ -3739,14 +3729,14 @@ function renderActionItems(text, p, r){
     '<div style="margin-top:20px;padding:16px;background:#f8faff;border-radius:14px;border:1.5px solid #e8edf5">'+
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'+
         '<span style="font-size:13px;font-weight:750;color:#0b183b;letter-spacing:.2px">🏁 可立项招引方向</span>'+
-        '<span style="font-size:11px;color:#9aa5b5">· 点击「立项导入」自动生成招商项目，进入项目管理</span>'+
+        '<span style="font-size:11px;color:#9aa5b5">· 点击「提交招商需求」自动生成招商项目，进入项目管理</span>'+
       '</div>'+
       '<div>'+cards+'</div>'+
     '</div>';
   area.appendChild(wrapper);
 }
 
-/* 立项导入 */
+/* 提交招商需求 */
 function importToProject(gap, city, topic){
   var key='proj_'+Date.now().toString(36);
   var p=P();
@@ -3762,7 +3752,7 @@ function importToProject(gap, city, topic){
     } : null,
     clues:[]
   };
-  // 把父项目的报告复制给新项目（让研判需求页可以直接使用）
+  // 把父项目的报告复制给新项目（让产业分析页可以直接使用）
   if(cur && REPORTSTATE[cur] && !REPORTSTATE[key]){
     REPORTSTATE[key]=JSON.parse(JSON.stringify(REPORTSTATE[cur]));
     REPORTSTATE[key].topic=gap;   // 更新 topic 为新方向
@@ -3771,7 +3761,7 @@ function importToProject(gap, city, topic){
   // 不切换 cur — 保留当前研判页所有状态
   persist();
   // 弹出确认浮层，让用户主动跳转
-  showImportConfirm(key, gap);
+  toast('发送成功'); // 提交招商需求完成
 }
 
 function showImportConfirm(projKey, gap){
@@ -3802,7 +3792,7 @@ function showImportConfirm(projKey, gap){
           'style="position:absolute;top:14px;right:14px;width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.2);border:none;color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1" '+
           'onmouseover="this.style.background=\'rgba(255,255,255,.35)\'" onmouseout="this.style.background=\'rgba(255,255,255,.2)\'">✕</button>'+
         '<div style="font-size:32px;margin-bottom:10px">🏁</div>'+
-        '<div style="font-size:18px;font-weight:750;color:#fff;margin-bottom:4px">立项成功</div>'+
+        '<div style="font-size:18px;font-weight:750;color:#fff;margin-bottom:4px">发送成功</div>'+
         '<div style="font-size:13px;color:rgba(255,255,255,.75)">已自动生成招商项目</div>'+
       '</div>'+
 
@@ -3850,8 +3840,8 @@ function triggerReport(phase){
   var r=kbReadiness();
   var corpus=buildKBCorpus(p.city);
   var query=phase===1
-    ? '请基于'+p.city+'城市智库数据，针对「'+p.topic+'」方向，快速输出：①最关键的3个产业链缺口（每条附具体数据）②建议的3个招引方向（标注方向类型：补链/承接转移/精深加工/协同枢纽）③需要领导确认的待确认事项（用⚠️标注）④数据可靠性评估（哪些有数据支撑，哪些需补充）'
-    : '请基于'+p.city+'城市智库数据，针对「'+p.topic+'」方向，输出完整招商研判报告，严格按五章结构：\n一、产业基础判断（具体数字，来自知识片段）\n二、产业链缺口分析（逐环节标注✅已有/⚠️薄弱/❌缺失，标注本地化属性A必须本地化/B可跨区域/C优先本地化）\n三、补链优先级清单TOP5（表格格式：缺口节点|本地化属性|经济拉动★|招引可行性★|综合优先级）\n四、目标企业画像（每个TOP缺口：目标企业类型+规模+开口话术模板）\n五、待确认事项（⚠️标注每条需领导确认的专项资金/园区地块/政策口径）';
+    ? '请基于'+p.city+'城市智库数据，针对「'+p.topic+'」方向，快速输出：①最关键的3个产业链缺口（每条附具体数据）②建议的3个招引方向（标注方向类型：补链/承接转移/精深加工/协同枢纽）③需要确认的待确认事项（用⚠️标注）④数据可靠性评估（哪些有数据支撑，哪些需补充）'
+    : '请基于'+p.city+'城市智库数据，针对「'+p.topic+'」方向，输出完整招商研判报告，严格按五章结构：\n一、产业基础判断（具体数字，来自知识片段）\n二、产业链缺口分析（逐环节标注✅已有/⚠️薄弱/❌缺失，标注本地化属性A必须本地化/B可跨区域/C优先本地化）\n三、补链优先级清单TOP5（表格格式：缺口节点|本地化属性|经济拉动★|招引可行性★|综合优先级）\n四、目标企业画像（每个TOP缺口：目标企业类型+规模+开口话术模板）\n五、待确认事项（⚠️标注每条需确认的专项资金/园区地块/政策口径）';
   var chunks=kbSearch(query,corpus,phase===1?5:8);
   var t0=Date.now(); var accText='';
   if(!document.getElementById('spinStyle')){
@@ -3873,7 +3863,7 @@ function triggerReport(phase){
       '<div style="padding:14px 18px;background:'+(phase===1?'linear-gradient(135deg,#fffbeb,#fef3c7)':'linear-gradient(135deg,#eff6ff,#f0f9ff)')+';border-bottom:1px solid '+(phase===1?'#fde68a':'#e0f2fe')+';display:flex;align-items:center;gap:10px">'+
         '<span style="font-size:20px">'+(phase===1?'📋':'📊')+'</span>'+
         '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:13.5px;font-weight:800;color:'+(phase===1?'#92400e':'#1d4ed8')+';letter-spacing:.2px">'+(phase===1?'初步研判草稿':'完整研判报告')+'</div>'+
+          '<div style="font-size:13.5px;font-weight:800;color:'+(phase===1?'#92400e':'#1d4ed8')+';letter-spacing:.2px">'+(phase===1?'初步研判草稿':'完整产业分析报告')+'</div>'+
           '<div style="font-size:11.5px;color:'+(phase===1?'#b45309':'#3b82f6')+';margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+p.topic+'</div>'+
         '</div>'+
         '<div style="display:flex;align-items:center;gap:8px">'+
@@ -4082,15 +4072,15 @@ function triggerReport(phase){
               var allDone=hasPending&&PENDING_CONFIRMS[cur].every(function(x){return x.status==='confirmed'||x.status==='edited';});
               bottomBar.innerHTML=
                 '<div style="flex:1;font-size:12.5px;color:#92400e;background:#fffbeb;padding:10px 14px;border-radius:10px;border:1px solid #fde68a;line-height:1.6">'+
-                  (hasPending&&!allDone?'请确认上方待确认事项后，才可生成完整报告':'以上为初步研判草稿，确认方向后生成完整五章报告')+
+                  (hasPending&&!allDone?'请确认上方待确认事项后，才可生成完整产业报告':'以上为初步研判草稿，确认方向后生成完整五章报告')+
                 '</div>'+
-                '<button onclick="triggerReport(2)" '+(allDone||!hasPending?'':'disabled style="opacity:.4;cursor:not-allowed;"')+' style="padding:12px 20px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:13.5px;font-weight:650;cursor:pointer;white-space:nowrap">' +(allDone||!hasPending?'生成完整报告 →':'待确认后生成 →')+'</button>'+
+                '<button onclick="triggerReport(2)" '+(allDone||!hasPending?'':'disabled style="opacity:.4;cursor:not-allowed;"')+' style="padding:12px 20px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:13.5px;font-weight:650;cursor:pointer;white-space:nowrap">' +(allDone||!hasPending?'生成完整产业报告 →':'待确认后生成 →')+'</button>'+
                 '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>';
             } else {
               bottomBar.innerHTML=
                 '<button onclick="triggerReport(1)" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">🔄 重新生成</button>'+
                 '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>'+
-                '<button onclick="submitDemand()" style="flex:1;padding:12px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer">✓ 确认方向，提交招引需求</button>';
+                '<button onclick="submitDemand()" style="flex:1;padding:12px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer">✓ 批量提交招商需求</button>';
               // 产业链图谱：完整报告生成后动态追加，避免须重新进入页面才能看到
               var _raEl=document.getElementById('reportArea');
               if(_raEl && !document.getElementById('chainMapBlock')){
@@ -4319,11 +4309,11 @@ function generateTopicsFromKb(p){
   var allKnown=[];
   p.kb.forEach(function(k){ (k.known||[]).forEach(function(x){ allKnown.push(x); }); });
   var patterns=[
-    {re:/氢能|电堆|储氢|燃料电池/, type:'补链', icon:'⚡', label:'氢能专用车补链',
+    {re:/氢能|电堆|储氢|燃料电池/, type:'补链', icon:'⚡', label:'氢能专用车产业补链',
      descFn:function(t){var m=t.match(/(\d+%)/);return m?'电堆'+m[0]+'外购，新楚风已量产':'氢能核心零部件本地空白';}},
     {re:/应急机器人|无人机|5G通信|智慧应急/, type:'补链', icon:'🚨', label:'智慧应急装备补链',
      descFn:function(t){return t.indexOf('启灵')>=0?'机器人靠启灵外采，无人机靠迅北斗':'感知层核心系统依赖外采';}},
-    {re:/香菇|菌种|多糖|精深加工/, type:'精深加工', icon:'🍄', label:'香菇精深加工升级',
+    {re:/香菇|菌种|多糖|精深加工/, type:'精深加工', icon:'🍄', label:'香菇产业精深加工升级',
      descFn:function(t){return (t.indexOf('2家')>=0||t.indexOf('仅')>=0)?'功能成分提取仅2家布局':'香菇向高附加值延伸';}},
     {re:/底盘|动力总成|新能源配套/, type:'补链', icon:'🔧', label:'新能源专用车零部件配套',
      descFn:function(t){var m=t.match(/(\d+%)/);return m?'底盘动力总成占成本'+m[0]+'外购':'核心零部件本地空白';}},
@@ -4408,7 +4398,7 @@ function homePage(p){
     '</div>';
 
   // ── 报告区 ──
-  // 进入研判需求页时清除旧报告状态，强制重新分析
+  // 进入产业分析页时清除旧报告状态，强制重新分析
   if(REPORTSTATE[cur]&&REPORTSTATE[cur].phase===1){
     // 保留 Phase 2 完整报告，但草稿不缓存展示
   }
@@ -4420,7 +4410,7 @@ function homePage(p){
         : '<div style="text-align:center;padding:48px 20px">'+
             '<div style="font-size:40px;margin-bottom:12px">📋</div>'+
             '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">'+
-              '选择上方研判方向，点击「🔍 开始初步研判」'+
+              '选择上方研判方向，点击「🔍 产业智能分析」'+
             '</div>'+
             '<div style="font-size:12.5px;color:#8492a6;line-height:1.8">'+
               '① AI 先出初步草稿（约10秒）② 逐条确认待确认事项 ③ 生成完整五章报告'+
@@ -4449,7 +4439,7 @@ function homePage(p){
            '<button onclick="triggerReport(1)" style="padding:13px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:12.5px;color:#4a5568;cursor:pointer">🔄 重新研判</button>')
         : ('<button id="generateBtn" onclick="triggerReport(1)" '+
             'style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">'+
-            '🔍 开始初步研判'+
+            '🔍 产业智能分析'+
       '</button>'))+
       '<button onclick="doUpload()" style="padding:13px 16px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>'+
       (REPORTSTATE[cur]
@@ -4505,7 +4495,7 @@ function openMemoryBank(){
   _memTab='text';
   var p=P();
   openModal('\🧠 '+(p.city||'城市')+'智库 · 记忆库',
-    '<div style="margin:-4px 0 2px;font-size:12px;color:#8492a6;line-height:1.6">这里沉淀了本智库的全部长期记忆——领导确认过的关键结论、上传的政府材料、以及历史问答。每一条都可追溯来源与时间。</div>'+
+    '<div style="margin:-4px 0 2px;font-size:12px;color:#8492a6;line-height:1.6">这里沉淀了本智库的全部长期记忆——确认过的关键结论、上传的政府材料、以及历史问答。每一条都可追溯来源与时间。</div>'+
     '<div id="memTabBar" style="display:flex;border-bottom:1px solid #eef2f7;margin:12px 0 4px"></div>'+
     '<div id="memBody" style="min-height:220px;max-height:56vh;overflow-y:auto;padding:4px 2px"></div>',
     '<button class="primary-button" onclick="closeModal()">完成</button>');
@@ -4543,13 +4533,13 @@ function memTextView(){
       rows.push({topic:topic, icon:icon, text:rec.text||'', status:rec.status||'confirmed', ts:rec.ts||0});
     });
   });
-  if(!rows.length) return memEmpty('还没有领导确认或修改过的结论。<br>在主题卡里点「确认」或「编辑」后，会沉淀到这里。');
+  if(!rows.length) return memEmpty('还没有确认或修改过的结论。<br>在主题卡里点「确认」或「编辑」后，会沉淀到这里。');
   rows.sort(function(a,b){return b.ts-a.ts;});
   return rows.map(function(r){
     var isEdit=r.status==='edited';
     var badge=isEdit
       ? '<span style="background:#eef2ff;color:#4f46e5;padding:1px 8px;border-radius:10px;font-size:10.5px;font-weight:700">\u270e 领导修改</span>'
-      : '<span style="background:#ecfdf5;color:#059669;padding:1px 8px;border-radius:10px;font-size:10.5px;font-weight:700">\u2713 领导确认</span>';
+      : '<span style="background:#ecfdf5;color:#059669;padding:1px 8px;border-radius:10px;font-size:10.5px;font-weight:700">\u2713 确认</span>';
     return '<div style="border:1px solid #eef2f7;border-left:3px solid '+(isEdit?'#6366f1':'#10b981')+';border-radius:10px;padding:11px 13px;margin-bottom:9px;background:#fff">'+
       '<div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">'+
         '<span style="font-size:14px">'+r.icon+'</span>'+
@@ -4652,7 +4642,7 @@ function kbPage(p){
       }).join('')+
     '</div>'+
     '<div class="suggestion-strip">可以这样问：'+
-    '<button onclick="askKB(\''+P().city+'最值得补链的核心环节是哪些？\')">最值得补链的核心环节</button>'+
+    '<button onclick="askKB(\''+P().city+'补链的核心缺口有哪些？\')">补链的核心缺口</button>'+
     '<button onclick="askKB(\''+P().city+'各园区如何分工承接不同细分产业？\')">园区分工承接方案</button>'+
     '<button onclick="askKB(\'本地链主企业还缺哪些关键上游配套？\')">链主缺口分析</button>'+
     '</div>'+
@@ -4669,7 +4659,7 @@ function kbPage(p){
       '<div class="message" style="margin-top:0"><img src="'+aiAvatar()+'">'+
       '<div class="message-bubble"><p>'+p.city+'城市智库已就位，你可以直接提问——例如：</p>'+
       '<ul style="margin:6px 0 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px">'+
-      '<li style="font-size:12.5px;color:#4a5568">• '+p.city+'最值得补链的核心缺口是哪些？</li>'+
+      '<li style="font-size:12.5px;color:#4a5568">• '+p.city+'补链的核心缺口有哪些？</li>'+
       '<li style="font-size:12.5px;color:#4a5568">• 本地链主企业还缺哪些关键上游配套？</li>'+
       '<li style="font-size:12.5px;color:#4a5568">• 各园区如何分工承接不同细分产业？</li>'+
       '<li style="font-size:12.5px;color:#4a5568">• 随州与十堰/荆门的竞争差异化空间在哪里？</li>'+
@@ -4695,7 +4685,7 @@ function settingsPage(p){
       '<button class="primary-button settings-save" onclick="toast(\'提醒偏好已保存\')">保存偏好</button></div>'+
     '<div class="settings-section"><h2>系统会据此调整</h2><ul class="plain-list">'+
       ['首页任务提示','报告中的产业关注顺序','进度提醒频率'].map(function(x){return '<li>'+x+'</li>'}).join('')+'</ul>'+
-      '<div class="boundary-note"><i class="i">🔒</i>干部与领导确认关口、资源核验责任和企业触达边界，不会因个人设置而跳过。</div></div>'+
+      '<div class="boundary-note"><i class="i">🔒</i>干部与确认关口、资源核验责任和企业触达边界，不会因个人设置而跳过。</div></div>'+
     '</div></div>';
 }
 /* ===== 右侧详情栏（复刻雷总"本次分析" + 证据联动）===== */
@@ -4708,7 +4698,7 @@ function detailPane(p){
   else if(view==='docking'){body=detailDocking(p);}   // 政企对接→对接概览
   else if(view==='settings'){body=detailSettings(p);}
   else if(view==='knowledge'){body=detailKbIntro(p);}
-  else{body=detailReport(p);}                          // report研判需求→本次研判
+  else{body=detailReport(p);}                          // report产业分析→本次研判
   return '<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button>'+
     '<div class="detail-page">'+body+'</div>';
 }
@@ -4753,7 +4743,7 @@ function detailSub(s){
       '<div class="detail-block"><div class="boundary-note" style="margin-top:0"><i class="i">🔒</i>脱敏展示，不显示内部人脉路径；系统不自动联系企业。</div></div>'+
     '</div>';
 }
-// 研判需求页 → 右侧：本次研判（版本/进度/待核实/已传材料）
+// 产业分析页 → 右侧：本次研判（版本/进度/待核实/已传材料）
 function detailReport(p){
   var st=REPORTSTATE[cur]; var ups=(UPLOADS[cur]||[]);
   return '<div class="detail-header"><div><span class="eyebrow">CURRENT STUDY</span><h2>本次研判</h2><p>'+p.topic+'</p></div></div>'+
@@ -4764,7 +4754,7 @@ function detailReport(p){
             '<li><i class="i"></i>研判方向：'+p.topic+'</li>'+
             '<li><i class="i"></i>生成时间：'+(st.ts?new Date(st.ts).toLocaleDateString('zh-CN'):'未知')+'</li>'+
           '</ul>'
-        : '<div class="info-callout" style="margin-top:0">尚未生成报告。请先在「研判需求」选择方向并点击生成。</div>'      )+'</div>'+
+        : '<div class="info-callout" style="margin-top:0">尚未生成报告。请先在「产业分析」选择方向并点击生成。</div>'      )+'</div>'+
       '<div class="detail-block"><h3>当前阶段</h3>'+
         '<div class="info-callout" style="margin-top:0">'+(STAGES[p.stage-1]?STAGES[p.stage-1][0]:'未知')+' · '+(STAGES[p.stage-1]?STAGES[p.stage-1][1]:'')+'</div>'+
       '</div>'+
@@ -5079,8 +5069,8 @@ loadReportState();loadUploads();loadSubproj();
   UPLOADS.sz=[];
   // 派生项目：dir 与 clueName 必须与 PROJECTS.sz.clues 完全一致，右侧栏/工作页才能匹配到候选企业
   SUBPROJ.sz=[
-    {name:'商用车燃料电池系统集成商 · 引进项目',dir:'商用车燃料电池系统集成商 · 长三角',clueName:'脱敏企业 A（氢驰动力·代号）',stage:5,from:'氢能专用车补链'},
-    {name:'燃料电池电堆研发与制造 · 引进项目',dir:'燃料电池电堆研发与制造企业 · 华南',clueName:'脱敏企业 B（势通氢能·代号）',stage:4,from:'氢能专用车补链'}
+    {name:'商用车燃料电池系统集成商 · 引进项目',dir:'商用车燃料电池系统集成商 · 长三角',clueName:'脱敏企业 A（氢驰动力·代号）',stage:5,from:'氢能专用车产业补链'},
+    {name:'燃料电池电堆研发与制造 · 引进项目',dir:'燃料电池电堆研发与制造企业 · 华南',clueName:'脱敏企业 B（势通氢能·代号）',stage:4,from:'氢能专用车产业补链'}
   ];
   // 随州氢能已定稿并派生项目、进入对接 → 阶段应到「政企对接」，否则进度条/政企对接页与事实矛盾
   if(PROJECTS.sz)PROJECTS.sz.stage=5;
@@ -5150,7 +5140,7 @@ function showReport(){
   var confirmArea=st.finalized?
     ('<div class="detail-actions-stack" style="border:0;padding:16px 0 0">'+
       '<div class="confirm-row" onclick="cadreOK(this)"><input type="checkbox" id="ck1"><span><strong>干部确认</strong><small>确认判断准确、需求成立</small></span></div>'+
-      '<div class="confirm-row" onclick="leaderOK(this)"><input type="checkbox" id="ck2" disabled><span><strong>授权领导确认</strong><small>干部确认后开放</small></span></div>'+
+      '<div class="confirm-row" onclick="leaderOK(this)"><input type="checkbox" id="ck2" disabled><span><strong>授权确认</strong><small>确认后开放</small></span></div>'+
       '<button class="primary-button" id="submitBtn" disabled onclick="submitNeed()"><i class="i">🚀</i>完成双确认 · 正式递交</button>'+
       '<small>双确认通过后，报告的补链方向将自动建成项目并挂到「项目管理」</small>'+
     '</div>'):
@@ -5183,8 +5173,8 @@ function rerenderReport(){
 }
 function pickFold(ev,el){detailData={kind:'fold',d:JSON.parse(decodeURIComponent(ev))};if(!detailOpen)detailOpen=true;
   var dp=$('.detail-pane');if(dp){dp.innerHTML='<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button><div class="detail-page">'+detailFold(detailData.d)+'</div>';}else render();}
-function cadreOK(row){var ck=row.querySelector('input');ck.checked=true;$('#ck2').disabled=false;toast('干部已确认，待授权领导确认')}
-function leaderOK(row){var ck=row.querySelector('input');if(ck.disabled){toast('请先完成干部确认');return;}ck.checked=true;$('#submitBtn').disabled=false;toast('双确认完成，可正式递交')}
+function cadreOK(row){var ck=row.querySelector('input');ck.checked=true;$('#ck2').disabled=false;toast('干部已确认，待授权确认')}
+function leaderOK(row){var ck=row.querySelector('input');if(ck.disabled){toast('请先完成干部确认');return;}ck.checked=true;$('#submitBtn').disabled=false;toast('确认完成，可正式递交')}
 // 双确认 == 从研判进入项目管理的唯一关口：通过后报告的「补链方向」自动派生为项目
 /* 跨端桥接：政府端双确认递交 → upsert 一条管理端需求池记录（黄金演示动线第1→2步） */
 function syncDemandFromProject(){
@@ -5219,7 +5209,7 @@ function submitNeed(){
   saveSubproj();
   if(n===0){
     // 无补链方向可派生（Ryan：高概率一家都没有）——需求仍进入资源池
-    addA('<p>✅ 双确认完成，已生成<strong>正式招商需求</strong>并递交资源端。</p>');
+    addA('<p>✅ 确认完成，已生成<strong>正式招商需求</strong>并递交资源端。</p>');
     addRaw('<div class="clue-origin"><i class="i">🔗</i>需求已递交<button onclick="scrollToReport()">查看报告</button></div>'+
       '<div style="border:1px dashed #cdd8e8;border-radius:10px;padding:20px;text-align:center;background:#fafbfd">'+
         '<div style="font-size:26px;margin-bottom:6px">📭</div>'+
@@ -5232,7 +5222,7 @@ function submitNeed(){
     setTimeout(function(){addRaw(dockPanel());setStage(5);},700);
     return;
   }
-  addA('<p>✅ 双确认完成，已生成<strong>正式招商需求</strong>。系统已把报告的 <strong>'+n+' 个补链方向自动建成招引项目</strong>，挂在「项目管理 › '+P().topic+'」下，可分别推进对接——</p>');
+  addA('<p>✅ 确认完成，已生成<strong>正式招商需求</strong>。系统已把报告的 <strong>'+n+' 个补链方向自动建成招引项目</strong>，挂在「项目管理 › '+P().topic+'」下，可分别推进对接——</p>');
   addRaw('<div class="clue-origin"><i class="i">🔗</i>项目由报告补链方向自动派生<button onclick="scrollToReport()">查看报告</button></div>'+
     '<div class="clue-list">'+cl.map(function(c,i){return '<div class="clue-row" onclick="go(\'home\');setTimeout(function(){toggleProjGroup(\''+cur+'\')},60)"><div class="clue-icon"><i class="i">🎯</i></div>'+
       '<div class="clue-main"><strong>'+c.dir.split(' · ')[0]+'</strong><small>候选线索 '+c.name+'</small><em>已建为项目 · 点击到「项目管理」查看</em></div>'+
@@ -5243,7 +5233,7 @@ function submitNeed(){
   setTimeout(function(){addRaw(dockPanel());setStage(5);},700);
 }
 function scrollToReport(){var r=document.querySelector('.report-document');if(r){r.scrollIntoView({behavior:'smooth',block:'start'});r.style.outline='2px solid #0757ad';setTimeout(function(){r.style.outline=''},1200);}else{toast('报告在当前对话上方')}}
-// 导出报告：生成完整研判报告文件并下载
+// 导出报告：生成完整产业分析报告文件并下载
 function exportReport(){
   var p=P();var r=p.report;if(!r){toast('请先生成报告');return;}
   var now=new Date().toLocaleString('zh-CN');var L=[];
@@ -5262,7 +5252,7 @@ function exportReport(){
     L.push('');
   });
   L.push('----------------------------------------------------');
-  L.push('确认状态：需经 干部确认 → 授权领导确认 后方可正式递交');
+  L.push('确认状态：需经 干部确认 → 授权确认 后方可正式递交');
   L.push('使用边界：'+r.footnote);
   L.push('====================================================');
   L.push('本报告由慧小招根据城市智库与公开信息自动生成，供招商研判参考；正式对接前需政府授权材料确认。');
@@ -5356,7 +5346,7 @@ function buildKBCorpus(city){
       {id:'sz:pol2',    topic:'政策', tags:['应急示范','基地','政策','机器人'],
        text:'曾都区国家安全应急产业示范基地政策支持智慧应急装备落地，对机器人/无人机/5G通信模块有专项引导；孝感应急产业园42.8亿为直接竞争对手，需尽快锁定差异化方向',cite:'政策规划研究'},
       {id:'sz:pol3',    topic:'政策', tags:['香菇','农业','精深加工','政策'],
-       text:'随州将香菇精深加工与品牌化列为农业升级重点；但菌种自主研发基地、洁净厂房用地指标、首选承接园区等具体事项须向领导确认',cite:'政策规划研究'},
+       text:'随州将香菇精深加工与品牌化列为农业升级重点；但菌种自主研发基地、洁净厂房用地指标、首选承接园区等具体事项须向确认',cite:'政策规划研究'},
     ];
     chunks=chunks.concat(compChunks);
   }
@@ -5370,7 +5360,7 @@ function highlightKeyData(text){
     .replace(/(\d+[\d.]*%)/g,'<strong style=\"color:#1a56db;font-weight:700\">$1</strong>')
     .replace(/(程力|新楚风|齐星|江南专汽|博利特|金龙新材料|品源|裕国药业|肽源|泰晶科技|犇星|昱通)/g,'<strong style=\"color:#6d28d9;font-weight:650\">$1</strong>')
     .replace(/(燃料电池电堆|储氢瓶|质子交换膜|膜电极|应急机器人|无人机本体|菌种自主权|香菇多糖|多肽提取)/g,'<em style=\"background:#fef3c7;color:#92400e;border-radius:3px;padding:0 3px;font-style:normal\">$1</em>')
-    .replace(/(全部外购|靠外采|本地空白|国外垄断|待领导确认|待核实)/g,'<span style=\"color:#dc2626;font-weight:600\">$1</span>');
+    .replace(/(全部外购|靠外采|本地空白|国外垄断|待确认|待核实)/g,'<span style=\"color:#dc2626;font-weight:600\">$1</span>');
 }
 
 function topicTags(t){
@@ -5434,7 +5424,7 @@ function kbSearch(query, chunks, topK){
 function generateKBAnswer(query, chunks, city){
   if(!chunks||!chunks.length){
     return {
-      html:'<p>暂未找到与「'+query+'」直接相关的已知内容。建议补充政府工作报告或产业链图谱后重新提问，或切换到「研判需求」页生成完整报告。</p>',
+      html:'<p>暂未找到与「'+query+'」直接相关的已知内容。建议补充政府工作报告或产业链图谱后重新提问，或切换到「产业分析」页生成完整产业报告。</p>',
       cites:[], followups:[]
     };
   }
@@ -5495,7 +5485,7 @@ function generateKBAnswer(query, chunks, city){
     '</div>';
   } else if(isRec){
     conclusion='<div style="background:#f5f3ff;border-left:3px solid #6366f1;padding:10px 14px;border-radius:0 8px 8px 0;margin-top:12px;font-size:12.5px;color:#3730a3;line-height:1.75">'+
-      '<strong>行动建议：</strong>将以上分析转化为正式招商需求，递交资源端核验企业可达性；同时向领导确认专项资金额度与首选承接园区，形成完整对接方案。'+
+      '<strong>行动建议：</strong>将以上分析转化为正式招商需求，递交资源端核验企业可达性；同时向确认专项资金额度与首选承接园区，形成完整对接方案。'+
     '</div>';
   }
   if(conclusion) paragraphs.push(conclusion);
@@ -5503,12 +5493,12 @@ function generateKBAnswer(query, chunks, city){
   // ── 追问建议 ──
   var followups=[];
   if(isSZ){
-    if(!isGap) followups.push(city+'最值得优先补链的核心缺口是哪些？');
+    if(!isGap) followups.push(city+'补链的核心缺口有哪些？');
     if(!isPark) followups.push('各园区如何分工承接不同细分方向？');
     if(!isComp) followups.push('随州与十堰/荆门的竞争差异化空间在哪里？');
     if(!isFirm) followups.push('本地链主企业还缺哪些关键上游配套？');
   } else {
-    followups=['最值得优先补链的核心缺口是哪些？','各园区如何分工承接不同细分产业？','本地链主企业还缺哪些关键上游配套？'];
+    followups=['补链的核心缺口有哪些？','各园区如何分工承接不同细分产业？','本地链主企业还缺哪些关键上游配套？'];
   }
   followups=followups.slice(0,3);
 
@@ -5612,7 +5602,7 @@ function kbAnswerRender(container, query, chunks, city){
           var isSZ = city && city.indexOf('随州')>=0;
           var followups = isSZ
             ? ['随州各园区如何分工承接？','随州与十堰/荆门的差异化空间？','链主企业还缺哪些关键配套？']
-            : ['最值得优先补链的核心环节？','各园区如何分工承接？','本地链主还缺哪些关键配套？'];
+            : ['优先补链的核心环节？','各园区如何分工承接？','本地链主还缺哪些关键配套？'];
           var followHtml = '<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">'+
             followups.map(function(f){
               return '<button onclick="kbSendQuestion(this,\''+f.replace(/'/g,"\\'")+'\')" '+
@@ -5737,7 +5727,7 @@ function kbAsk(q,k){
   },400);
 }
 
-/* ── 领导确认/修改 known 条目 ── */
+/* ── 确认/修改 known 条目 ── */
 function confirmKbItem(kbIdx,itemIdx){
   var p=P();if(!p)return;
   if(!KB_CONFIRMS[cur])KB_CONFIRMS[cur]={};
@@ -5826,7 +5816,7 @@ function editKbItem(kbIdx,itemIdx){
   var orig=(k.known[itemIdx]||'').replace('\u26a0\ufe0f ','').replace('\u2705 ','');
   card.innerHTML=
     '<div style="padding:10px 13px">'+
-      '<div style="font-size:11px;color:#6366f1;font-weight:650;margin-bottom:6px">修改内容（领导确认后写入知识库）</div>'+
+      '<div style="font-size:11px;color:#6366f1;font-weight:650;margin-bottom:6px">修改内容（确认后写入知识库）</div>'+
       '<textarea id="kb-edit-'+kbIdx+'-'+itemIdx+'" '+
         'style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #6366f1;border-radius:8px;font-size:13px;line-height:1.6;color:#1e293b;resize:vertical;min-height:72px;outline:none" '+
         'onkeydown="if(event.key===\'Enter\'&&event.metaKey)saveKbEdit('+kbIdx+','+itemIdx+')">'+orig+'</textarea>'+
@@ -5921,7 +5911,7 @@ function kbDetail(i){
               '<button onclick="confirmKbItem('+i+','+xi+')" '+
                 'style="flex:1;padding:6px 0;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12px;color:#166534;cursor:pointer;font-weight:600" '+
                 'onmouseover="this.style.background=\'#dcfce7\'" onmouseout="this.style.background=\'#f0fdf4\'">'+
-                '\u2713 领导确认'+
+                '\u2713 确认'+
               '</button>'+
               '<button onclick="editKbItem('+i+','+xi+')" '+
                 'style="flex:1;padding:6px 0;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600" '+
@@ -5931,7 +5921,7 @@ function kbDetail(i){
             '</div>';
           } else if(isConfirmed){
             actionBtns='<div style="margin-top:6px;font-size:11px;color:#22c55e;display:flex;align-items:center;gap:4px">'+
-              '<span>\u2713 已由领导确认</span>'+
+              '<span>\u2713 已由确认</span>'+
               '<button onclick="editKbItem('+i+','+xi+')" style="background:none;border:none;color:#94a3b8;font-size:11px;cursor:pointer;margin-left:6px">修改</button>'+
             '</div>';
           }
@@ -6006,7 +5996,7 @@ function kbDetail(i){
           if(!total)return '';
           return '<div style="padding:0 22px 12px">'+
             '<div style="display:flex;justify-content:space-between;font-size:11px;color:#9aa5b5;margin-bottom:5px">'+
-              '<span>领导确认进度</span><span>'+done+' / '+total+'</span>'+
+              '<span>确认进度</span><span>'+done+' / '+total+'</span>'+
             '</div>'+
             '<div style="height:5px;background:#f0f4ff;border-radius:3px;overflow:hidden">'+
               '<div style="height:100%;width:'+(total?Math.round(done/total*100):0)+'%;background:linear-gradient(90deg,#22c55e,#16a34a);border-radius:3px;transition:width .4s"></div>'+
@@ -6078,12 +6068,12 @@ function clearKbActiveTopic(){
 function askAboutKb(i){
   var k=P().kb[i]; if(!k) return;
   var qMap={
-    '主导产业与产业链':P().city+'主导产业链上最值得优先补链的核心缺口是哪些？结合配套率和链主外采情况分析。',
+    '主导产业与产业链':P().city+'主导产业链上补链的核心缺口有哪些？结合配套率和链主外采情况分析。',
     '园区与承载条件':P().city+'各园区如何分工承接不同细分产业？厂房、能耗与用地条件是否满足？',
     '链主与存量企业':P().city+'本地链主企业的外采依赖集中在哪些核心环节？招引上游配套的优先级如何？',
     '政策、规划与领导关注':P().city+'在「'+P().topic+'」方向，政策支持最强、待干部确认的关键事项有哪些？'
   };
-  var q=qMap[k.t]||('请结合「'+k.t+'」主题数据，分析'+P().city+'的现状与最值得优先推进的招引方向。');
+  var q=qMap[k.t]||('请结合「'+k.t+'」主题数据，分析'+P().city+'的现状与优先推进的招引方向。');
   closeKbDetail();
   if(view!=='knowledge'){view='knowledge';render();}
   var c=document.getElementById('kbConv');
@@ -6481,7 +6471,7 @@ function kbIncrementalAnalysis(){
             }).join('');
             bubble.insertAdjacentHTML('beforeend',
               '<div style="margin-top:12px;padding:12px 14px;background:#f0f7ff;border-radius:10px;border:1px solid #bfdbfe">'+
-              '<div style="font-size:12px;color:#1d4ed8;font-weight:700;margin-bottom:8px">📥 发现 '+newFacts.length+' 条新要点，可选择追加到智库待领导确认：</div>'+
+              '<div style="font-size:12px;color:#1d4ed8;font-weight:700;margin-bottom:8px">📥 发现 '+newFacts.length+' 条新要点，可选择追加到智库待确认：</div>'+
               '<div style="margin-bottom:10px" id="factsListDiv">'+factsListHtml+'</div>'+
               '<div style="display:flex;align-items:center;gap:10px;margin-top:6px">'+
               '<button onclick="kbAppendNewFacts('+kbIdx+',window._lastNewFacts,this)" data-kbidx="'+kbIdx+'" '+
@@ -6551,7 +6541,7 @@ function kbAppendSingleFact(kbIdx, factIdx, btnEl){
   toast('\u2705 \u5df2\u52a0\u5165\u300c'+k.t+'\u300d\uff08\u26a0\ufe0f\u5f85\u9886\u5bfc\u786e\u8ba4\uff09');
 }
 
-/* 把新发现追加到智库 known[]，标记 ⚠️ 待领导确认，原有条目完全不动 */
+/* 把新发现追加到智库 known[]，标记 ⚠️ 待确认，原有条目完全不动 */
 /* 撤回单条已加入的要点 */
 function kbUndoSingleFact(btnEl){
   var entry = btnEl ? decodeURIComponent(btnEl.getAttribute('data-entry')||'') : '';
@@ -6598,7 +6588,7 @@ function kbAppendNewFacts(kbIdx, facts, btnEl){
   boxes.forEach(function(b){var box=b.closest('div[style*="background:#f0f7ff"]');if(box)box.innerHTML='<span style="font-size:12px;color:#059669">✅ 已追加 '+added+' 条到「'+k.t+'」，可在主题卡确认</span>';});
   var rows=document.querySelectorAll('.topic-row');
   if(rows[_kid]){rows[_kid].scrollIntoView({behavior:'smooth',block:'center'});setTimeout(function(){rows[_kid].style.outline='2px solid #6366f1';setTimeout(function(){rows[_kid].style.outline='';},1500);},300);}
-  toast('\u2705 已追加 '+added+' 条到「'+k.t+'」\uff08\u26a0\ufe0f待领导确认\uff09');
+  toast('\u2705 已追加 '+added+' 条到「'+k.t+'」\uff08\u26a0\ufe0f待确认\uff09');
 }
 
 /* 结合全库重新分析（原有行为） */
@@ -6690,9 +6680,9 @@ function doSend(v){
     reply='关于政策与规划（'+_p.city+'）：'+(_polKnown||'已识别重点方向')+      '。领导最新产业发言尚未上传，建议补充后确认交办口径。';
   }else if(/缺口|补链|缺什么|缺哪/.test(v)){
     var _indKnown=(_kbInd.known||[]).slice(0,2).join('；');
-    reply='关于'+_p.topic+'的链条缺口：'+(_indKnown||'核心系统外购比例高，本地配套率偏低')+      '。可直接生成完整报告查看具体分析。';
+    reply='关于'+_p.topic+'的链条缺口：'+(_indKnown||'核心系统外购比例高，本地配套率偏低')+      '。可直接生成完整产业报告查看具体分析。';
   }else if(/线索|候选|企业/.test(v)&&_clues.length){
-    reply='当前研判方向「'+_p.topic+'」已识别 '+_clues.length+' 条候选线索：'+      _clues.slice(0,2).map(function(c){return c.name+'（'+c.dir+'）'}).join('、')+      '。可在「政企对接」模块查看核验要点，或在当前页生成完整报告。';
+    reply='当前研判方向「'+_p.topic+'」已识别 '+_clues.length+' 条候选线索：'+      _clues.slice(0,2).map(function(c){return c.name+'（'+c.dir+'）'}).join('、')+      '。可在「政企对接」模块查看核验要点，或在当前页生成完整产业报告。';
   }else{
     reply='我已结合'+_p.city+'城市智库（'+_p.topic+'方向）与最新公开信息研判。可以继续补充材料，也可以直接生成初步报告——报告将涵盖产业基础判断、链条缺口、建议招引方向与候选线索。';
   }
@@ -6731,7 +6721,7 @@ function uploadParsed(fname){
     var pl=$('.prompt-list');if(pl)pl.remove();
     var _up=P();var _upKb=_up.kb||[];var _upInd=_upKb[0]||{};var _upPol=_upKb[3]||{};
     var _real1=(_upInd.known||[])[0]||(_up.topic+'被列为主导产业，含具体产值与项目表述');
-    var _virt1=(_upPol.known||[])[1]||'方向性政策表述，缺具体金额/地块/落地主体，需向领导确认';
+    var _virt1=(_upPol.known||[])[1]||'方向性政策表述，缺具体金额/地块/落地主体，需向确认';
     addA('<p>已收到 <b>'+fname+'</b>，完成解析。从材料中提取到与「'+_up.topic+'」研判相关的要点：</p>'+
       '<div class="report" style="margin-top:6px"><div class="rbody">'+
         '<div class="fold open"><div class="head"><span class="num">1</span><span class="concl">识别到重点产业表述 3 处</span><span class="badge real">实据</span></div>'+
@@ -6739,7 +6729,7 @@ function uploadParsed(fname){
         '<div class="fold open"><div class="head"><span class="num">2</span><span class="concl">政策方向表述待核实落地细则</span><span class="badge virt">待核实</span></div>'+
           '<div class="detail">'+_virt1+'。<div class="src">来源：'+fname+' · 第 12 页</div></div></div>'+
       '</div></div>'+
-      '<p style="margin-top:8px">材料已并入本次研判，可继续补充，或直接生成完整报告。</p>');
+      '<p style="margin-top:8px">材料已并入本次研判，可继续补充，或直接生成完整产业报告。</p>');
     if(P().stage<2)setStage(2);
     toast('材料已解析并加入本次研判');
   },200);
@@ -7333,7 +7323,7 @@ function opsCity(){
 }
 function opsOpen(){
   var rows=OPEN_ACCOUNTS.map(function(a){
-    var _aSpec=a.org.indexOf('氢能')>-1?'氢能专用车补链':a.org.indexOf('农业')>-1?'香菇深加工补链':'智慧应急装备补链';
+    var _aSpec=a.org.indexOf('氢能')>-1?'氢能专用车产业补链':a.org.indexOf('农业')>-1?'香菇深加工补链':'智慧应急装备补链';
     return '<tr><td><strong>'+a.city+'</strong></td><td>'+a.org+'<br><small style="color:#9aa5b5">'+_aSpec+'</small></td><td>'+a.who+' · '+a.role+'</td><td>'+a.crawl+'</td><td><span class="status-tag" style="color:#006d70;background:#e4f5f3">'+a.status+'</span></td></tr>';
   }).join('');
   return '<div class="page"><div class="page-header"><div><span class="eyebrow">ACCOUNT & CITY</span><h1>账号 · 城市开通</h1><p>为新城市注册、绑定政府端账号，并触发每日 0 点数据抓取。</p></div>'+
