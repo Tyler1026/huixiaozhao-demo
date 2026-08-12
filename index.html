@@ -801,6 +801,7 @@ function render(){
     progressFooter(p)+
    '</div>';
   bind();
+  if(cur && REPORT_HISTORY[cur]) { var _rha=document.getElementById('reportHistoryArea'); if(_rha) renderHistoryReports(cur); }
   // 城市智库对话：render 重建了 #kbConv，把已存的历史对话回放回去（切主题/切模块/刷新都不丢）
   if(view==='knowledge'){ setTimeout(kbChatReplay, 50); }
 }
@@ -3334,7 +3335,7 @@ function selectTopic(val, isCustom){
   if(_ra2){
     var _ha2=document.getElementById('reportHistoryArea');
     if(!_ha2){ _ha2=document.createElement('div'); _ha2.id='reportHistoryArea'; _ra2.insertBefore(_ha2, _ra2.firstChild); }
-    renderHistoryReports(cur);
+    renderHistoryReports(cur, p.topic);
   }
   // 重渲染卡片高亮
   var cardGrid=document.getElementById('topicCardGrid');
@@ -3417,11 +3418,11 @@ function toggleHistoryReport(key, idx){
   if(ico) ico.textContent=open?'▶':'▼';
 }
 
-function renderHistoryReports(key){
+function renderHistoryReports(key, topicFilter){
   var container=document.getElementById('reportHistoryArea');
   if(!container) return;
   var p=P();
-  var currentTopic=p?p.topic:'';
+  var currentTopic=topicFilter || (p?p.topic:'');
   var list=(REPORT_HISTORY[key]||[]).filter(function(rep){
     if(!currentTopic) return true;
     return rep.topic===currentTopic;
