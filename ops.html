@@ -4187,11 +4187,14 @@ function restore(){
 }
 
 function restoreFromServer(callback){
+  var localENT = OPS_ENT && OPS_ENT.length ? OPS_ENT.slice() : [];
   fetch('/api/sync').then(function(r){return r.json();}).then(function(raw){
     if(!raw){ window._opsDataReady=true; if(callback)callback(false); return; }
     var srv = (raw.huixiaozhao_kb_v1 && raw.huixiaozhao_kb_v1.PROJECTS)
               ? raw.huixiaozhao_kb_v1 : raw;
     if(!srv||!srv.PROJECTS||!Object.keys(srv.PROJECTS).length){
+      window._opsDataReady=true;
+      if(localENT.length && !OPS_ENT.length) OPS_ENT = localENT;
       if(callback)callback(false); return;
     }
     PROJECTS         = srv.PROJECTS         || {};
@@ -4202,15 +4205,23 @@ function restoreFromServer(callback){
     REPORTSTATE      = srv.REPORTSTATE      || {};
     PENDING_CONFIRMS = srv.PENDING_CONFIRMS || {};
     DOCK_LOGS        = srv.DOCK_LOGS        || {};
-    OPS_ENT          = srv.OPS_ENT          || OPS_ENT || [];
+    // Merge: server wins if non-empty; otherwise keep local/hardcoded
+    if(srv.OPS_ENT && srv.OPS_ENT.length){
+      OPS_ENT = srv.OPS_ENT;
+    } else if(localENT.length){
+      OPS_ENT = localENT;
+    }
     cur  = srv.cur  || Object.keys(PROJECTS)[0] || null;
     try{ localStorage.setItem(LS_KEY, JSON.stringify(srv)); }catch(e){}
     window._opsServerHadData=true;
     window._opsDataReady=true;
+    // If server had no OPS_ENT but we have local data, push it up now
+    if((!srv.OPS_ENT || !srv.OPS_ENT.length) && OPS_ENT.length){
+      persist();
+    }
     if(callback) callback(true);
   }).catch(function(e){ console.warn('[restoreFromServer]',e); window._opsDataReady=true; if(callback)callback(false); });
 }
-
 
 function clearPersist(){
   localStorage.removeItem(LS_KEY);
