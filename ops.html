@@ -6247,8 +6247,12 @@ var OPS_ENT = OPS_ENT || [];  // 企业库 [{id,name,realName,kind,gap,region,si
 function renderOpsV2(){
   var root = $('#root');
   if(!root) return;
+  var opsContent = document.getElementById('opsContent');
+  var scrollTop = opsContent ? opsContent.scrollTop : 0;
   root.innerHTML = opsShell();
   bind();
+  var newContent = document.getElementById('opsContent');
+  if(newContent) newContent.scrollTop = scrollTop;
 }
 
 function opsShell(){
