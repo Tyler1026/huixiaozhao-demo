@@ -4156,7 +4156,8 @@ function persist(){
     };
     try{ localStorage.setItem(LS_KEY, JSON.stringify(data)); }catch(_){}
     // 同步到服务器（持久化存储）
-    try{ fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(function(){}); }catch(_){}
+    // Guard: don't overwrite server if OPS_ENT is empty (likely not yet loaded)
+    if(OPS_ENT.length>0 || !window._opsServerHadData){ try{ fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(function(){}); }catch(_){} }
   }catch(e){ console.warn('[persist] failed:',e.message); }
 }
 
@@ -4203,6 +4204,7 @@ function restoreFromServer(callback){
     OPS_ENT          = srv.OPS_ENT          || OPS_ENT || [];
     cur  = srv.cur  || Object.keys(PROJECTS)[0] || null;
     try{ localStorage.setItem(LS_KEY, JSON.stringify(srv)); }catch(e){}
+    window._opsServerHadData=true;
     if(callback) callback(true);
   }).catch(function(e){ console.warn('[restoreFromServer]',e); if(callback)callback(false); });
 }
