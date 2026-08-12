@@ -6494,7 +6494,7 @@ function opsEntListV2(list){
         matchHtml +
         '<div style="margin-top:auto;padding-top:8px;display:flex;gap:6px">' +
           (e.status!=='scanned'&&e.status!=='pushed'?'<button onclick="opsEntScanOne('+idx+')" style="padding:4px 10px;background:#f5f3ff;border:1px solid #c4b5fd;border-radius:6px;font-size:11px;color:#6d28d9;cursor:pointer">扫描</button>':'') +
-          (matchCount>0?'<button onclick="opsEntPushModal('+idx+')" style="padding:4px 10px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#166534;cursor:pointer;font-weight:600">推送('+matchCount+')</button>':'') +
+          (matchCount>0?'<button onclick="opsEntPushModal('+idx+')" style="padding:8px 18px;background:linear-gradient(135deg,#f97316,#ea580c);border:none;border-radius:8px;font-size:13px;color:#fff;cursor:pointer;font-weight:700;box-shadow:0 2px 8px rgba(249,115,22,.3)">推送('+matchCount+')</button>':'') +
           '<button onclick="opsEntDelete('+idx+')" style="padding:4px 8px;background:none;border:1px solid #e8edf5;border-radius:6px;font-size:11px;color:#9aa5b5;cursor:pointer">删除</button>' +
         '</div>' +
       '</div>';
