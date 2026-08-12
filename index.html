@@ -802,7 +802,7 @@ function render(){
    '</div>';
   bind();
   // 城市智库对话：render 重建了 #kbConv，把已存的历史对话回放回去（切主题/切模块/刷新都不丢）
-  if(view==='knowledge'){ kbChatReplay(); }
+  if(view==='knowledge'){ setTimeout(kbChatReplay, 50); }
 }
 /* 顶栏角色切换按钮（政府端 ⇄ 运营端）*/
 
@@ -5054,7 +5054,9 @@ function kbChatReplay(){
     if(m.role==='user'){
       frag+='<div class="message is-user"><div class="message-bubble"><p>'+content+'</p></div></div>';
     } else {
-      frag+='<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble">'+content+'</div></div>';
+      // 回放时去除交互按钮（onclick已失效）
+      var safeContent=content.replace(/<button[^>]*onclick[^>]*>.*?<\/button>/gi,'').replace(/<div[^>]*id="kbIngestActions"[^>]*>.*?<\/div>/gi,'');
+      frag+='<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble">'+safeContent+'</div></div>';
     }
 
   });
