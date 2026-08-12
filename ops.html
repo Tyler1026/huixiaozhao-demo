@@ -6560,6 +6560,7 @@ function opsEntListV2(list){
         (e.contact?'<div style="margin-top:6px;font-size:11.5px;color:#4a5568"><b>'+e.contact+'</b>'+(e.note?' · '+e.note:'')+'</div>':'') +
         matchHtml +
         '<div style="margin-top:auto;padding-top:8px;display:flex;gap:6px">' +
+          '<button onclick="opsEntAiFillExisting('+idx+')" style="padding:4px 10px;background:linear-gradient(135deg,#1a56db,#6366f1);border:none;border-radius:6px;font-size:11px;color:#fff;cursor:pointer;font-weight:600">AI补全</button>' +
           (e.status!=='scanned'&&e.status!=='pushed'?'<button onclick="opsEntScanOne('+idx+')" style="padding:4px 10px;background:#f5f3ff;border:1px solid #c4b5fd;border-radius:6px;font-size:11px;color:#6d28d9;cursor:pointer">扫描</button>':'') +
           (matchCount>0?'<button onclick="opsEntPushModal('+idx+')" style="padding:6px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12px;color:#166534;cursor:pointer;font-weight:650">推送('+matchCount+')</button>':'') +
           '<button onclick="opsEntDelete('+idx+')" style="padding:4px 8px;background:none;border:1px solid #e8edf5;border-radius:6px;font-size:11px;color:#9aa5b5;cursor:pointer">删除</button>' +
@@ -6673,6 +6674,50 @@ function opsEntAdd(){
 }
 
 /* AI智能填充：输入企业名后自动查询公开信息填充表单 */
+/* AI补全已有企业信息（标签/派系/营收等） */
+function opsEntAiFillExisting(idx){
+  var e = OPS_ENT[idx]; if(!e) return;
+  toast('正在为「'+e.name+'」补全信息…');
+
+  var prompt='请查询企业「'+e.name+'」的以下公开信息，以JSON格式返回（不要markdown代码块）：'+
+    '{"kind":"行业类型(简短)","region":"总部所在城市","revenue":"年营收(如3.2亿)","employees":"员工数(如280人)",'+
+    '"tags":["标签1","标签2","标签3","标签4"],"faction":[{"person":"核心人物姓名","label":"其毕业院校或所属商会","type":"校友会或商会"}],'+
+    '"gap":"该企业可能适合的产业补链方向","signal":"近期是否有产能扩张/异地投资信号(如有写具体内容,无则写空字符串)","note":"一句话企业简介"}'+
+    '已知信息：行业='+e.kind+'，地区='+e.region+'，方向='+(e.gap||'')+
+    '。要求：①faction重点列出CEO/董事长/CTO的毕业院校（校友会）和参与的商会组织；②tags包含行业关键词；③基于公开可查资料，不确定的标注"待核实"';
+
+  fetch('/api/kb-chat',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question:prompt,city:'企业查询',role:'ops'})
+  }).then(function(r){return r.text();}).then(function(text){
+    var full='';
+    text.split('\n').forEach(function(line){
+      if(!line.startsWith('data:'))return;
+      var d=line.slice(5).trim();if(d==='[DONE]')return;
+      try{var j=JSON.parse(d);var c=(j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||'';full+=c;}catch(ex){}
+    });
+    var jsonMatch=full.match(/\{[\s\S]*\}/);
+    if(!jsonMatch){toast('AI返回格式异常');return;}
+    try{
+      var info=JSON.parse(jsonMatch[0]);
+      // 补全而不覆盖已有数据
+      if(info.kind && !e.kind) e.kind=info.kind;
+      if(info.region && (!e.region||e.region==='待填写')) e.region=info.region;
+      if(info.revenue && !e.revenue) e.revenue=info.revenue;
+      if(info.employees && !e.employees) e.employees=info.employees;
+      if(info.tags && info.tags.length && (!e.tags||!e.tags.length)) e.tags=info.tags;
+      if(info.faction && info.faction.length && (!e.faction||!e.faction.length)) e.faction=info.faction;
+      if(info.gap && !e.gap) e.gap=info.gap;
+      if(info.signal && !e.signal){ e.signal=info.signal; e.hasMoveSignal=true; }
+      if(info.note && !e.note) e.note=info.note;
+      persist();
+      renderOpsV2();
+      toast('✓ 已为「'+e.name+'」补全信息');
+    }catch(ex){toast('解析失败：'+ex.message);}
+  }).catch(function(err){toast('连接失败：'+err.message);});
+}
+
 function opsEntAiFill(){
   var name=((document.getElementById('oe-name')||{}).value||'').trim();
   if(!name){toast('请先输入企业名称');return;}
