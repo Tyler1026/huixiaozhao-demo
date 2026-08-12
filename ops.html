@@ -2570,7 +2570,56 @@ function exportSub(){
 
 /* 对接记录存储 {projKey: [{ts, note, type}]} */
 var DOCK_LOGS = DOCK_LOGS || {};
-var OPS_ENT = OPS_ENT || [];  // 管理端企业库
+var OPS_ENT = OPS_ENT || [
+  {name:'京东物流',kind:'物流科技',region:'北京',revenue:'1462亿',employees:'40万+',
+   tags:['智慧物流','无人配送','供应链','上市公司'],
+   faction:[{type:'校友会',label:'中欧EMBA',person:'刘强东'},{type:'商会',label:'苏商会',person:'刘强东'}],
+   gap:'智慧应急装备·感知层配送终端',hasMoveSignal:true,status:'scanned',
+   matches:[{city:'随州',gap:'智慧应急装备·无人配送终端',pushed:false}],
+   contact:'王总 (华中区BD)',phone:'138****5521',note:'2025年在武汉设区域仓，有向鄂北延伸意向'},
+  {name:'氢驰动力',kind:'燃料电池系统集成',region:'上海',revenue:'3.2亿',employees:'280',
+   tags:['氢能','燃料电池','电堆集成','商用车'],
+   faction:[{type:'校友会',label:'同济汽车系',person:'李总'},{type:'产业联盟',label:'长三角氢走廊联盟',person:''}],
+   gap:'氢能专用车产业补链·电堆系统',hasMoveSignal:true,status:'scanned',
+   matches:[{city:'随州',gap:'燃料电池电堆系统集成',pushed:true}],
+   contact:'张工 (商务总监)',phone:'139****7702',note:'已与程力初步接触，对随州专汽产业园感兴趣'},
+  {name:'势通氢能',kind:'氢燃料电池电堆研发',region:'深圳',revenue:'1.8亿',employees:'150',
+   tags:['氢能','电堆研发','MEA膜电极','国产替代'],
+   faction:[{type:'校友会',label:'清华汽车系',person:'王博士'},{type:'商会',label:'深圳新能源商会',person:''}],
+   gap:'氢能专用车产业补链·电堆制造',hasMoveSignal:true,status:'scanned',
+   matches:[{city:'随州',gap:'燃料电池电堆研发与制造',pushed:true}],
+   contact:'赵总 (CEO)',phone:'136****9918',note:'电堆产能扩张中，华中区域寻找新基地'},
+  {name:'品源食品',kind:'香菇精深加工/出口',region:'随州',revenue:'28亿',employees:'3200',
+   tags:['香菇','精深加工','出口','本地龙头'],
+   faction:[{type:'商会',label:'随州食品商会',person:'周总'},{type:'产业联盟',label:'中国食用菌协会',person:''}],
+   gap:'香菇产业精深加工升级·功能成分提取',hasMoveSignal:false,status:'scanned',
+   matches:[{city:'随州',gap:'多糖/功能成分提取',pushed:false}],
+   contact:'周总 (董事长)',phone:'189****3301',note:'4亿美元出口订单，欲建菌种研发中心'},
+  {name:'裕国菇业',kind:'食用菌全产业链',region:'随州',revenue:'15亿',employees:'1800',
+   tags:['香菇','种植','出口','冻干技术'],
+   faction:[{type:'商会',label:'随州食品商会',person:'雷总'},{type:'校友会',label:'华农食品学院',person:''}],
+   gap:'香菇产业精深加工升级·冻干/提取',hasMoveSignal:false,status:'manual',
+   matches:[],
+   contact:'雷总 (总经理)',phone:'137****2208',note:'冻干产线扩产中，需引进提取设备供应商'},
+  {name:'天目无人机',kind:'工业无人机集成',region:'杭州',revenue:'5.6亿',employees:'420',
+   tags:['无人机','应急救援','AI视觉','集成商'],
+   faction:[{type:'校友会',label:'浙大计算机系',person:'陈总'},{type:'产业联盟',label:'应急装备产业联盟',person:''}],
+   gap:'智慧应急装备·感知层无人机',hasMoveSignal:true,status:'scanned',
+   matches:[{city:'随州',gap:'应急无人机集成',pushed:false}],
+   contact:'陈总 (VP)',phone:'158****6633',note:'长三角应急无人机集成商，已具备可对接窗口'},
+  {name:'程力汽车',kind:'专用汽车制造',region:'随州',revenue:'180亿',employees:'12000',
+   tags:['专用车','改装','链主企业','本地龙头'],
+   faction:[{type:'商会',label:'随州专汽商会',person:'程总'},{type:'产业联盟',label:'中国专用汽车联盟',person:''}],
+   gap:'氢能专用车产业补链·整车制造链主',hasMoveSignal:false,status:'scanned',
+   matches:[{city:'随州',gap:'氢能底盘配套',pushed:false}],
+   contact:'程总 (集团副总)',phone:'159****1108',note:'已与成都壹为签新能源底盘合作，寻电堆供应商'},
+  {name:'新楚风汽车',kind:'新能源专用车',region:'随州',revenue:'45亿',employees:'3500',
+   tags:['氢能重卡','新能源','专用车','链主企业'],
+   faction:[{type:'校友会',label:'武汉理工汽车学院',person:'刘总'},{type:'产业联盟',label:'湖北氢能产业联盟',person:''}],
+   gap:'氢能专用车产业补链·氢能重卡链主',hasMoveSignal:false,status:'scanned',
+   matches:[{city:'随州',gap:'49T氢重卡量产配套',pushed:false}],
+   contact:'刘总 (技术副总)',phone:'135****7706',note:'49T氢重卡百公里氢耗7.1kg续航1000km，需电堆稳定供应'}
+];  // 管理端企业库
 
 function dockingPage(p){
   var projKeys=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k].stage>=3;});
@@ -6390,17 +6439,65 @@ function opsViewCityReport(projKey){
 
 /* ══ Tab2: 企业资源库 ══ */
 function opsEnterprises(){
+  var filtered = opsEntFilter(OPS_ENT);
   return '<div style="padding:24px">' +
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">' +
       '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">企业资源库</h1>' +
-      '<span style="font-size:12px;color:#9aa5b5">共 ' + OPS_ENT.length + ' 家</span>' +
+      '<span style="font-size:12px;color:#9aa5b5">共 ' + OPS_ENT.length + ' 家' + (filtered.length!==OPS_ENT.length?' · 筛选 '+filtered.length+' 家':'') + '</span>' +
       '<div style="flex:1"></div>' +
       '<button onclick="opsEntAdd()" style="padding:8px 16px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer">+ 手动录入</button>' +
-      '<button onclick="opsEntImport()" style="padding:8px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer;margin-left:6px">📁 文件导入</button>' +
-      '<button onclick="opsEntScanAll()" style="padding:8px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:10px;font-size:13px;color:#6d28d9;cursor:pointer;margin-left:6px" id="scanAllBtn">🔍 全局扫描</button>' +
+      '<button onclick="opsEntImport()" style="padding:8px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer;margin-left:6px"> 文件导入</button>' +
+      '<button onclick="opsEntScanAll()" style="padding:8px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:10px;font-size:13px;color:#6d28d9;cursor:pointer;margin-left:6px" id="scanAllBtn"> 全局扫描</button>' +
     '</div>' +
-    '<p style="font-size:12.5px;color:#8492a6;margin:0 0 20px;line-height:1.6">录入或导入企业后，点「全局扫描」自动评估适合推荐到哪个城市的哪个缺口方向，再一键推送。</p>' +
-    (OPS_ENT.length===0 ? opsEntEmpty() : opsEntList()) +
+    '<div style="margin:12px 0 16px">' +
+      '<input id="opsEntSearch" type="text" placeholder="搜索企业名称 / 标签 / 派系 / 方向…" value="'+(window._opsEntQ||'')+'" oninput="window._opsEntQ=this.value;renderOpsV2()" style="width:100%;padding:10px 14px;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;outline:none;transition:border .15s" onfocus="this.style.borderColor=\'#1a56db\'" onblur="this.style.borderColor=\'#e8edf5\'" />' +
+    '</div>' +
+    (filtered.length===0&&OPS_ENT.length>0 ? '<div style="text-align:center;padding:40px;color:#9aa5b5;font-size:13px">无匹配结果</div>' : filtered.length===0 ? opsEntEmpty() : opsEntListV2(filtered)) +
+  '</div>';
+}
+
+function opsEntFilter(list){
+  var q=(window._opsEntQ||'').trim().toLowerCase();
+  if(!q) return list;
+  return list.filter(function(e){
+    var haystack=(e.name+' '+e.kind+' '+e.region+' '+(e.gap||'')+' '+(e.tags||[]).join(' ')+' '+(e.faction||[]).map(function(f){return f.type+' '+f.label+' '+(f.person||'');}).join(' ')+' '+(e.note||'')+' '+(e.contact||'')).toLowerCase();
+    return haystack.indexOf(q)>=0;
+  });
+}
+
+function opsEntListV2(list){
+  return '<div style="display:flex;flex-direction:column;gap:10px">' +
+    list.map(function(e){
+      var idx=OPS_ENT.indexOf(e);
+      var matchCount=(e.matches||[]).length;
+      var statusColor=e.status==='scanned'?'#6d28d9':e.status==='pushed'?'#166534':'#9aa5b5';
+      var statusBg=e.status==='scanned'?'#f5f3ff':e.status==='pushed'?'#f0fdf4':'#f5f7fb';
+      var statusLabel=e.status==='scanned'?'已扫描 '+matchCount+'个匹配':e.status==='pushed'?'已推送':'待扫描';
+      var tagsHtml=(e.tags||[]).map(function(t){return '<span style="padding:2px 8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:11px;color:#1a56db">'+t+'</span>';}).join('');
+      var factionHtml=(e.faction||[]).map(function(f){return '<span style="padding:2px 8px;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;font-size:11px;color:#92400e">'+f.type+'·'+f.label+(f.person?' ('+f.person+')':'')+'</span>';}).join('');
+      return '<div style="background:#fff;border:1.5px solid #e8edf5;border-radius:14px;overflow:hidden">' +
+        '<div style="padding:14px 18px;display:flex;align-items:flex-start;gap:12px">' +
+          '<div style="flex:1;min-width:0">' +
+            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">' +
+              '<span style="font-size:14px;font-weight:700;color:#0b183b">'+e.name+'</span>' +
+              (e.hasMoveSignal?'<span style="padding:1px 7px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:11px;border:1px solid #bbf7d0">有扩张信号</span>':'') +
+              '<span style="padding:3px 10px;background:'+statusBg+';color:'+statusColor+';border-radius:20px;font-size:11px;font-weight:600">'+statusLabel+'</span>' +
+            '</div>' +
+            '<div style="font-size:12.5px;color:#4a5568;margin-bottom:4px">'+e.kind+' · '+e.region+(e.revenue?' · '+e.revenue:'')+'</div>' +
+            (e.gap?'<div style="font-size:12px;color:#8492a6;margin-bottom:6px">补链方向：'+e.gap+'</div>':'') +
+            (tagsHtml?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">'+tagsHtml+'</div>':'') +
+            (factionHtml?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">'+factionHtml+'</div>':'') +
+            (e.contact?'<div style="font-size:11.5px;color:#667590;margin-top:4px">联系人：'+e.contact+(e.note?' · '+e.note:'')+'</div>':'') +
+          '</div>' +
+          '<div style="text-align:right;flex-shrink:0;display:flex;gap:6px">' +
+            (e.status!=='scanned'&&e.status!=='pushed'?'<button onclick="opsEntScanOne('+idx+')" style="padding:5px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:7px;font-size:11.5px;color:#6d28d9;cursor:pointer">扫描</button>':'') +
+            (matchCount>0?'<button onclick="opsEntPushModal('+idx+')" style="padding:5px 10px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:7px;font-size:11.5px;color:#166534;cursor:pointer;font-weight:600">推送('+matchCount+')</button>':'') +
+            '<button onclick="opsEntDelete('+idx+')" style="padding:5px 8px;background:#fff5f5;border:1px solid #fecaca;border-radius:7px;font-size:11.5px;color:#ef4444;cursor:pointer">删</button>' +
+          '</div>' +
+        '</div>' +
+        (matchCount>0?'<div style="padding:0 18px 12px"><div style="font-size:11px;color:#9aa5b5;margin-bottom:6px">匹配方向：</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+(e.matches||[]).map(function(m){return '<div style="padding:4px 10px;background:'+(m.pushed?'#f0fdf4':'#f5f3ff')+';border:1px solid '+(m.pushed?'#86efac':'#c4b5fd')+';border-radius:8px;font-size:11.5px;color:'+(m.pushed?'#166534':'#6d28d9')+'">'+m.city+' · '+m.gap+(m.pushed?' ✓':'')+'</div>';}).join('')+'</div></div>':'') +
+      '</div>';
+    }).join('') +
   '</div>';
 }
 
