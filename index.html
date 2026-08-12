@@ -3317,6 +3317,8 @@ function selectTopic(val, isCustom){
     _dp.innerHTML='<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button>'+
       '<div class="detail-page">'+detailReport(p)+'</div>';
   }
+  // 刷新历史报告（只显示当前方向的）
+  renderHistoryReports(cur);
   // 重渲染卡片高亮
   var cardGrid=document.getElementById('topicCardGrid');
   if(!cardGrid) return;
