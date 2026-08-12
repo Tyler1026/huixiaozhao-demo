@@ -298,9 +298,28 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get('Content-Length', 0))
         raw = self.rfile.read(length)
-        # 云端数据同步：POST /api/sync 保存
+        # 云端数据同步：POST /api/sync 合并保存（保护字段不被空值覆盖）
         if self.path == '/api/sync':
             data_str = raw.decode('utf-8')
+            try:
+                incoming = json.loads(data_str)
+                if _PG_AVAIL and DATABASE_URL:
+                    existing = json.loads(_db_get() or '{}')
+                else:
+                    try:
+                        with open(SYNC_PATH, 'r', encoding='utf-8') as f2:
+                            existing = json.loads(f2.read())
+                    except Exception:
+                        existing = {}
+                # 合并：空列表/空字典不覆盖已有非空数据
+                _protected = ['OPS_ENT','DEMANDS','KB_CHAT','PENDING_CONFIRMS','KB_CONFIRMS']
+                for k, v in incoming.items():
+                    if k in _protected and not v and existing.get(k):
+                        continue
+                    existing[k] = v
+                data_str = json.dumps(existing, ensure_ascii=False)
+            except Exception as e:
+                print(f"[sync] merge error: {e}")
             if _PG_AVAIL and DATABASE_URL:
                 ok = _db_set(data_str)
                 resp = json.dumps({'ok': ok}).encode()
