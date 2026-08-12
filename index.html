@@ -3310,6 +3310,15 @@ function selectTopic(val, isCustom){
         _cm2.innerHTML=chainMapHtml(p);
         _ra.appendChild(_cm2);
       }
+      // 恢复当前方向的招引方向卡片
+      var _aiEl=document.getElementById('actionItemsBlock');
+      if(!_aiEl){_aiEl=document.createElement('div');_aiEl.id='actionItemsBlock';_ra.appendChild(_aiEl);}
+      _aiEl.innerHTML=restoreActionItems();
+      // 恢复确认面板
+      if(!document.getElementById('confirmPanel-'+cur)){
+        var _cpHtml=restoreConfirmPanel();
+        if(_cpHtml){var _cpDiv=document.createElement('div');_cpDiv.innerHTML=_cpHtml;_ra.appendChild(_cpDiv.firstChild||_cpDiv);}
+      }
     } else {
       // 当前方向无报告，清空报告区显示空状态
       _ra.innerHTML='<div id="reportHistoryArea"></div>'+
@@ -3709,8 +3718,12 @@ function restoreConfirmPanel(){
 
 /* 从REPORTSTATE恢复已保存的招引方向卡片 */
 function restoreActionItems(){
-  if(!cur || !REPORTSTATE[cur] || !REPORTSTATE[cur].actionItems) return '';
-  var items = REPORTSTATE[cur].actionItems;
+  if(!cur || !REPORTSTATE[cur]) return '';
+  var p=P();
+  var topic=p?p.topic:'';
+  var byTopic=REPORTSTATE[cur].actionItemsByTopic||{};
+  var items=byTopic[topic]||REPORTSTATE[cur].actionItems;
+  if(!items||!items.length) return '';
   var p = P(); if(!p) return '';
   var colors=['#1a56db','#6366f1','#0891b2'];
   var icons=['\ud83e\udd47','\ud83e\udd48','\ud83e\udd49'];
@@ -3771,8 +3784,14 @@ function renderActionItems(text, p, r){
     });
   }
   if(!items.length) return;
-  // 持久化招引方向卡片数据
-  if(cur && REPORTSTATE[cur]) { REPORTSTATE[cur].actionItems=items; persist(); }
+  // 持久化招引方向卡片数据（按方向分别存储）
+  if(cur && REPORTSTATE[cur]) {
+    if(!REPORTSTATE[cur].actionItemsByTopic) REPORTSTATE[cur].actionItemsByTopic={};
+    var _topic=p?p.topic:'';
+    if(_topic) REPORTSTATE[cur].actionItemsByTopic[_topic]=items;
+    REPORTSTATE[cur].actionItems=items; // backward compat
+    persist();
+  }
 
 
   var colors=['#1a56db','#6366f1','#0891b2'];
