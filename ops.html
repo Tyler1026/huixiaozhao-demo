@@ -6336,8 +6336,12 @@ function opsOverview(){
     // 候选线索统计
     var aiClues  = clues.filter(function(c){return c.status==='ai_scan';});
     var opsClues = clues.filter(function(c){return c.status==='ops_rec';});
-    var verified = clues.filter(function(c){return c.tone==='teal';});
-    var checking = clues.filter(function(c){return c.tone==='amber';});
+    // 从企业资源库统计匹配到该城市的企业数
+    var matchedEnts = OPS_ENT.filter(function(e){
+      return (e.matches||[]).some(function(m){return m.city===p.city;});
+    });
+    var verified = matchedEnts.filter(function(e){return (e.matches||[]).some(function(m){return m.city===p.city&&m.pushed;});});
+    var checking = matchedEnts.filter(function(e){return (e.matches||[]).some(function(m){return m.city===p.city&&!m.pushed;});});
 
     return '<div style="background:#fff;border:1.5px solid #e8edf5;border-radius:16px;overflow:hidden;margin-bottom:16px">' +
       // 头部
