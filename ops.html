@@ -7086,51 +7086,78 @@ function opsEntImport(){
 /* 扫描单家企业：匹配所有城市的缺口方向 */
 function opsEntScanOne(idx, silent){
   var e=OPS_ENT[idx]; if(!e) return;
-  var matches=[];
+  var matches=e.matches||[];  // 保留已有匹配，不清空
+  var existingKeys={};
+  matches.forEach(function(m){existingKeys[m.city+':'+m.gap]=true;});
+
   var gapKw=(e.gap||e.kind||'').toLowerCase();
+  var nameKw=(e.name||'').toLowerCase();
+  var tagKws=(e.tags||[]).map(function(t){return t.toLowerCase();});
+
   Object.keys(PROJECTS).forEach(function(k){
     var p=PROJECTS[k];
     var rs=REPORTSTATE[k];
-    if(!rs||!rs.text) return;
-    // 从报告文本里找 ❌缺失 行，和企业 gap 做关键词匹配
+    var kb=p.kb||[];
+
+    // 从报告文本中提取缺口
     var gaps=[];
-    rs.text.split('\n').forEach(function(l){
-      if(l.indexOf('❌')>=0){
-        var clean=l.replace(/[❌*#|]/g,'').replace(/\s+/g,' ').trim();
-        if(clean.length>3&&clean.length<60) gaps.push(clean);
-      }
+    if(rs&&rs.text){
+      rs.text.split('\n').forEach(function(l){
+        if(l.indexOf('\u274c')>=0||l.indexOf('\u26a0')>=0||l.indexOf('\u8584\u5f31')>=0||l.indexOf('\u7f3a\u5931')>=0){
+          var clean=l.replace(/[\u274c\u2705\u26a0\ufe0f*#|]/g,'').replace(/\s+/g,' ').trim();
+          if(clean.length>3&&clean.length<80) gaps.push(clean);
+        }
+      });
+    }
+
+    // 从KB主题卡中提取方向
+    kb.forEach(function(card){
+      if(card&&card.t) gaps.push(card.t);
+      (card.known||[]).forEach(function(item){
+        var c=item.replace(/[\u2705\u26a0\ufe0f\s]/g,'').trim();
+        if(c.indexOf('\u7f3a')>=0||c.indexOf('\u8865\u94fe')>=0||c.indexOf('\u5f15\u8fdb')>=0){
+          if(c.length>4&&c.length<60) gaps.push(c);
+        }
+      });
     });
+
+    // 匹配逻辑：企业关键词 vs 城市缺口
     gaps.forEach(function(gapTxt){
       var gapLow=gapTxt.toLowerCase();
-      // 关键词命中打分
-      var kws=(e.gap||'').toLowerCase().split(/[/、，,\s]+/).filter(Boolean);
-      var hit=kws.some(function(kw){return kw.length>1&&gapLow.indexOf(kw)>=0;});
+      var kws=(e.gap||'').toLowerCase().split(/[/\u3001\uff0c,\s]+/).filter(function(w){return w.length>1;});
+      // 企业gap关键词命中缺口
+      var hit=kws.some(function(kw){return gapLow.indexOf(kw)>=0;});
+      // 企业tags命中缺口
+      if(!hit) hit=tagKws.some(function(t){return t.length>1&&gapLow.indexOf(t)>=0;});
+      // 企业kind命中缺口
       if(!hit){
-        // 反向：报告缺口词出现在企业 kind 里
-        var gapWords=gapLow.split(/[/、，,\s]+/).filter(function(w){return w.length>1;});
+        var kindKws=(e.kind||'').toLowerCase().split(/[/\u3001\uff0c,\s]+/).filter(function(w){return w.length>1;});
+        hit=kindKws.some(function(kw){return gapLow.indexOf(kw)>=0;});
+      }
+      // 反向：缺口词出现在企业信息里
+      if(!hit){
+        var gapWords=gapLow.split(/[/\u3001\uff0c,\s]+/).filter(function(w){return w.length>1;});
         hit=gapWords.some(function(w){
-          return (e.kind||'').toLowerCase().indexOf(w)>=0 ||
-                 (e.name||'').toLowerCase().indexOf(w)>=0 ||
-                 gapKw.indexOf(w)>=0;
+          return nameKw.indexOf(w)>=0||gapKw.indexOf(w)>=0||(e.kind||'').toLowerCase().indexOf(w)>=0;
         });
       }
       if(hit){
-        matches.push({projKey:k, city:p.city, gap:gapTxt.slice(0,25), pushed:false});
+        var key=p.city+':'+gapTxt.slice(0,25);
+        if(!existingKeys[key]){
+          existingKeys[key]=true;
+          matches.push({city:p.city,gap:gapTxt.slice(0,25),pushed:false});
+        }
       }
     });
   });
-  // 去重
-  var seen={};
-  matches=matches.filter(function(m){
-    var key=m.projKey+':'+m.gap;
-    if(seen[key]) return false;
-    seen[key]=true; return true;
-  }).slice(0,5);
+
+  // 去重并限制
+  matches=matches.slice(0,8);
   OPS_ENT[idx].matches=matches;
   OPS_ENT[idx].status=matches.length>0?'scanned':'manual';
   if(!silent){
-    renderOpsV2();
-    toast(matches.length>0?'✓ 扫描完成，找到 '+matches.length+' 个匹配方向':'未找到匹配方向，请检查企业方向填写');
+    persist(); renderOpsV2();
+    toast(matches.length>0?'\u2713 \u626b\u63cf\u5b8c\u6210\uff0c\u627e\u5230 '+matches.length+' \u4e2a\u5339\u914d\u65b9\u5411':'\u672a\u627e\u5230\u5339\u914d\u65b9\u5411');
   }
 }
 
