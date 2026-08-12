@@ -3672,6 +3672,12 @@ function ciAttachFiles(files, projKey, idx){
 
 
 /* 立项卡片 */
+/* 恢复确认面板（如果有待确认事项） */
+function restoreConfirmPanel(){
+  if(!cur || !PENDING_CONFIRMS[cur] || !PENDING_CONFIRMS[cur].length) return '';
+  return renderConfirmPanel(PENDING_CONFIRMS[cur], cur);
+}
+
 /* 从REPORTSTATE恢复已保存的招引方向卡片 */
 function restoreActionItems(){
   if(!cur || !REPORTSTATE[cur] || !REPORTSTATE[cur].actionItems) return '';
@@ -4219,12 +4225,14 @@ function triggerReport(phase){
                   if(existTexts.indexOf(it.text)<0) PENDING_CONFIRMS[cur].push(it);
                 });
                 persist();
-                // 把确认面板插到报告区下方
+                // 把确认面板插到报告区下方（避免重复）
                 var reportArea=document.getElementById('reportArea');
-                var panelHtml=renderConfirmPanel(PENDING_CONFIRMS[cur],cur);
-                var panelDiv=document.createElement('div');
-                panelDiv.innerHTML=panelHtml;
-                if(reportArea) reportArea.appendChild(panelDiv.firstChild);
+                if(reportArea && !document.getElementById('confirmPanel-'+cur)){
+                  var panelHtml=renderConfirmPanel(PENDING_CONFIRMS[cur],cur);
+                  var panelDiv=document.createElement('div');
+                  panelDiv.innerHTML=panelHtml;
+                  reportArea.appendChild(panelDiv.firstChild);
+                }
               }
               // 底部：根据是否有待确认项决定按钮状态
               var hasPending=PENDING_CONFIRMS[cur]&&PENDING_CONFIRMS[cur].length>0;
@@ -4565,7 +4573,7 @@ function homePage(p){
     '<div id="reportArea">'+
       '<div id="reportHistoryArea"></div>'+
       (REPORTSTATE[cur]&&(REPORTSTATE[cur].phase===2||REPORTSTATE[cur].finalized)
-        ? reportHtml(p)+'<div id="chainMapBlock">'+chainMapHtml(p)+'</div>'+'<div id="actionItemsBlock">'+restoreActionItems()+'</div>'
+        ? reportHtml(p)+'<div id="chainMapBlock">'+chainMapHtml(p)+'</div>'+'<div id="actionItemsBlock">'+restoreActionItems()+'</div>'+restoreConfirmPanel()
         : '<div style="text-align:center;padding:48px 20px">'+
             '<div style="font-size:40px;margin-bottom:12px">📋</div>'+
             '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">'+
