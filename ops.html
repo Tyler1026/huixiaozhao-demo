@@ -531,11 +531,13 @@ function closeModal(){var l=$('#modalLayer');if(l)l.remove()}
 var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','研判需求','出报告·可来回优化'],['home','📋','项目管理','报告派生项目·对接需求'],['docking','🤝','政企对接','资源匹配与对接进度'],['settings','⚙️','设置','账号与提醒']];
 
 function render(){
-  // 管理端：restore 后直接走 renderOps()
+  // 管理端：先从服务器拉数据，确保持久化同步
   if(role==='ops'){
     if(!render._opsRestored){
       render._opsRestored=true;
-      restore();  // 从 localStorage 同步政府端数据
+      restore();  // 先用本地缓存快速渲染
+      // 从服务器拉取最新数据
+      restoreFromServer(function(ok){ if(ok) renderOpsV2(); });
     }
     renderOpsV2();
     return;
@@ -4099,9 +4101,13 @@ function persist(){
       REPORTSTATE:REPORTSTATE,
       PENDING_CONFIRMS:PENDING_CONFIRMS,
       DOCK_LOGS:DOCK_LOGS,
-      OPS_ENT:OPS_ENT
+      OPS_ENT:OPS_ENT,
+      KB_CHAT:typeof KB_CHAT!=='undefined'?KB_CHAT:{},
+      syncTs:Date.now()
     };
-    localStorage.setItem(LS_KEY, JSON.stringify(data));
+    try{ localStorage.setItem(LS_KEY, JSON.stringify(data)); }catch(_){}
+    // 同步到服务器（持久化存储）
+    try{ fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(function(){}); }catch(_){}
   }catch(e){ console.warn('[persist] failed:',e.message); }
 }
 
@@ -4128,6 +4134,30 @@ function restore(){
   }catch(e){ console.warn('[restore] failed:',e.message); }
   return false;
 }
+
+function restoreFromServer(callback){
+  fetch('/api/sync').then(function(r){return r.json();}).then(function(raw){
+    if(!raw){ if(callback)callback(false); return; }
+    var srv = (raw.huixiaozhao_kb_v1 && raw.huixiaozhao_kb_v1.PROJECTS)
+              ? raw.huixiaozhao_kb_v1 : raw;
+    if(!srv||!srv.PROJECTS||!Object.keys(srv.PROJECTS).length){
+      if(callback)callback(false); return;
+    }
+    PROJECTS         = srv.PROJECTS         || {};
+    UPLOADS          = srv.UPLOADS          || {};
+    KB_CONFIRMS      = srv.KB_CONFIRMS      || {};
+    KB_FILE_CHUNKS   = srv.KB_FILE_CHUNKS   || {};
+    KB_UNLOCKED      = srv.KB_UNLOCKED      || {};
+    REPORTSTATE      = srv.REPORTSTATE      || {};
+    PENDING_CONFIRMS = srv.PENDING_CONFIRMS || {};
+    DOCK_LOGS        = srv.DOCK_LOGS        || {};
+    OPS_ENT          = srv.OPS_ENT          || OPS_ENT || [];
+    cur  = srv.cur  || Object.keys(PROJECTS)[0] || null;
+    try{ localStorage.setItem(LS_KEY, JSON.stringify(srv)); }catch(e){}
+    if(callback) callback(true);
+  }).catch(function(e){ console.warn('[restoreFromServer]',e); if(callback)callback(false); });
+}
+
 
 function clearPersist(){
   localStorage.removeItem(LS_KEY);
