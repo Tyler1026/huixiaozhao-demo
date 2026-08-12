@@ -3423,10 +3423,10 @@ function renderHistoryReports(key, topicFilter){
   if(!container) return;
   var p=P();
   var currentTopic=topicFilter || (p?p.topic:'');
-  var list=(REPORT_HISTORY[key]||[]).filter(function(rep){
-    if(!currentTopic) return true;
+  var allReports=REPORT_HISTORY[key]||[];
+  var list=currentTopic ? allReports.filter(function(rep){
     return rep.topic===currentTopic;
-  });
+  }) : allReports;
   if(!list.length){container.innerHTML='';return;}
   var h='<div style="margin-bottom:12px">';
   h+='<div style="font-size:11.5px;font-weight:700;color:#64748b;letter-spacing:.3px;margin-bottom:6px;display:flex;align-items:center;gap:6px">';
@@ -4550,7 +4550,14 @@ function generateTopicsFromKb(p){
     {label:p.city+'产业转移承接',icon:'🔄',type:'承接转移',desc:'承接沿海转移，利用区位成本优势'},
     {label:p.city+'特色产业升级',icon:'⬆️',type:'精深加工',desc:'现有产业向高附加值延伸'},
   ];
-  return topics.slice(0,4);
+  // Append user-defined custom topics
+  var customs = (p.customTopics||[]);
+  customs.forEach(function(ct){
+    if(!topics.some(function(t){return t.label===ct;})){
+      topics.push({label:ct, icon:'\ud83d\udccc', type:'custom', desc:'\u81ea\u5b9a\u4e49\u65b9\u5411'});
+    }
+  });
+  return topics;
 }
 
 
