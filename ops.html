@@ -219,7 +219,10 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 @keyframes kbPulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1.2)}}
 .topic-grid .topic-row{cursor:pointer;transition:box-shadow .15s,border-color .15s;}
 .topic-grid .topic-row:hover{box-shadow:0 2px 16px rgba(26,86,219,.1);border-color:#c7d2fe;}
-</style></head><body>
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>if(typeof pdfjsLib!=='undefined')pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+</head><body>
 <div id="root"></div>
 <div class="toast" id="toast"><span class="i">✅</span><span id="toastMsg"></span></div>
 <script>
@@ -5266,6 +5269,7 @@ function ingestFiles(files, kbTopicIdx){
 
   files.forEach(function(file){
     var canRead=/\.(txt|md|csv|json)$/i.test(file.name);
+    var isPDF=/\.pdf$/i.test(file.name);
     if(canRead){
       var reader=new FileReader();
       reader.onload=function(e){
@@ -5275,6 +5279,36 @@ function ingestFiles(files, kbTopicIdx){
       };
       reader.onerror=function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p); };
       reader.readAsText(file,'utf-8');
+    } else if(isPDF && typeof pdfjsLib!=='undefined'){
+      var reader2=new FileReader();
+      reader2.onload=function(e){
+        var typedArr=new Uint8Array(e.target.result);
+        pdfjsLib.getDocument({data:typedArr}).promise.then(function(pdf){
+          var pages=[]; var numPages=pdf.numPages;
+          var pDone=0;
+          for(var pi=1;pi<=numPages;pi++){
+            (function(pageNum){
+              pdf.getPage(pageNum).then(function(page){
+                page.getTextContent().then(function(tc){
+                  pages[pageNum-1]=tc.items.map(function(it){return it.str;}).join(' ');
+                  pDone++;
+                  if(pDone===numPages){
+                    var fullText=pages.join('\n\n');
+                    var chunks=textToChunks(fullText, file.name, p, kbTopicIdx);
+                    allChunks=allChunks.concat(chunks);
+                    done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
+                  }
+                });
+              });
+            })(pi);
+          }
+        }).catch(function(){
+          allChunks.push({id:'file:'+file.name+':0',topic:kbTopicIdx!=null&&p.kb[kbTopicIdx]?p.kb[kbTopicIdx].t:'上传材料',tags:['上传','材料'],text:'用户已上传文件「'+file.name+'」('+Math.round(file.size/1024)+'KB)，PDF解析失败，该文件包含与'+p.city+'招商研判相关的材料。',cite:file.name});
+          done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
+        });
+      };
+      reader2.onerror=function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p); };
+      reader2.readAsArrayBuffer(file);
     } else {
       allChunks.push({
         id:'file:'+file.name+':0',
