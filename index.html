@@ -241,7 +241,7 @@ window.addEventListener('unhandledrejection', function(e) {
 <script>
 
 /* ══════════════════════════════════════════════════════════════
-   报告查看 & 下载 & 政企对接页面重建
+   报告查看 & 下载 & 招商对接页面重建
    ══════════════════════════════════════════════════════════════ */
 
 /* ── 查看报告：把 REPORTSTATE[cur].text 渲染到 reportArea ── */
@@ -657,7 +657,7 @@ var PROJECTS={};
 
 
 
-var STAGES=[['资料准备','上传与授权材料'],['AI 研判','生成缺口与方向'],['确认需求','双确认'],['资源匹配','资源端核验匹配'],['政企对接','安排正式沟通']];
+var STAGES=[['资料准备','上传与授权材料'],['AI 研判','生成缺口与方向'],['确认需求','双确认'],['资源匹配','资源端核验匹配'],['招商对接','安排正式沟通']];
 
 /* ===== 运营端（周总·全局）：跨城市需求池 ===== */
 var DEMANDS=[];
@@ -697,7 +697,7 @@ function openModal(title,bodyHtml,footHtml){
   document.body.appendChild(l);
 }
 function closeModal(){var l=$('#modalLayer');if(l)l.remove()}
-var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','产业分析','产业分析·可来回优化'],['home','📋','项目管理','报告派生项目·对接需求'],['docking','🤝','政企对接','资源匹配与对接进度'],['settings','⚙️','设置','账号与提醒']];
+var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','产业分析','产业分析·可来回优化'],['home','📋','项目管理','报告派生项目·对接需求'],['docking','🤝','招商对接','资源匹配与对接进度'],['settings','⚙️','设置','账号与提醒']];
 
 function render(){
   // ── 登录门禁：未登录 → 登录页 ──
@@ -1588,7 +1588,7 @@ function opsDetail(){
       '<div class="boundary-note"><i class="i">🔒</i>资源可达性、关键人触达由资源团队线下核验；系统只做需求汇总、状态跟踪与提醒，不自动联系企业。</div>'+
     '</div>'+
     '<div class="detail-actions-stack" style="gap:8px;padding:12px 22px 16px">'+
-      '<button class="primary-button" onclick="opsAction(\''+d.id+'\')"><i class="i">'+(d.res==='matched'?'🤝':d.res==='checking'?'🔍':'📌')+'</i>'+(d.res==='matched'?'安排政企对接':d.res==='checking'?'查看核验进度':'纳入长期跟踪')+'</button>'+
+      '<button class="primary-button" onclick="opsAction(\''+d.id+'\')"><i class="i">'+(d.res==='matched'?'🤝':d.res==='checking'?'🔍':'📌')+'</i>'+(d.res==='matched'?'安排招商对接':d.res==='checking'?'查看核验进度':'纳入长期跟踪')+'</button>'+
       '<small>对接进度会同步回该城市干部的「当前研判」时间线</small>'+
     '</div></div>';
 }
@@ -1597,12 +1597,12 @@ function opsAction(id){
   var d=DEMANDS.find(function(x){return x.id===id});if(!d)return;
   if(d.res==='matched'){
     // 已匹配 → 弹出对接安排表单（真实内容）
-    var body='<p class="modal-intro">为「'+d.city+' · '+d.topic+'」安排政企对接，确认后将同步回该城市干部的「当前研判」时间线。</p>'+
+    var body='<p class="modal-intro">为「'+d.city+' · '+d.topic+'」安排招商对接，确认后将同步回该城市干部的「当前研判」时间线。</p>'+
       '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">需求方</span><span class="vv">'+d.gov+'</span></div>'+
       '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">候选线索</span><span class="vv">'+d.clues+' 家脱敏企业（资源端核验通过）</span></div>'+
       '<div class="form-stack" style="margin-top:12px"><label>拟对接时间<input value="本周内 · 待与双方确认"></label>'+
       '<label>对接方式<input value="资源端带队实地走访 + 政企座谈"></label></div>';
-    openModal('安排政企对接',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="closeModal();toast(\'对接安排已发起，将通知 '+d.gov+'\')">确认发起对接</button>');
+    openModal('安排招商对接',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="closeModal();toast(\'对接安排已发起，将通知 '+d.gov+'\')">确认发起对接</button>');
   }else if(d.res==='checking'){
     // 核验中 → 弹出核验进度详情
     var body='<p class="modal-intro">「'+d.city+' · '+d.topic+'」资源可达性核验进度：</p>'+
@@ -1824,7 +1824,7 @@ function sidebar(){
     home: (function(){
       if(!p) return '报告派生项目·对接需求';
       var stage=p.stage||1;
-      var stageNames=['资料准备','AI研判','确认需求','资源匹配','政企对接'];
+      var stageNames=['资料准备','AI研判','确认需求','资源匹配','招商对接'];
       var nProjects=Object.keys(PROJECTS).length;
       return nProjects+'个项目 · 当前「'+(stageNames[stage-1]||'进行中')+'」';
     })(),
@@ -1973,7 +1973,7 @@ function mainPane(p){
   if(view==='knowledge')return kbPage(p);
   if(view==='settings')return settingsPage(p);
   if(view==='report')return homePage(p);      // 产业分析：出报告的对话工作区
-  if(view==='docking')return dockingPage(p);   // 政企对接：独立tab
+  if(view==='docking')return dockingPage(p);   // 招商对接：独立tab
   if(view==='subwork')return subWorkPage(p);   // 招引项目独立工作页
   return projMgmtPage(p);                       // home = 项目管理（默认）
 }
@@ -2526,7 +2526,7 @@ function arrangeDocking(projKey, clueId){
   p.stage = Math.max(p.stage, 5);
   persist();
   render();
-  toast('✓ 已标记为可安排沟通，进入政企对接阶段');
+  toast('✓ 已标记为可安排沟通，进入招商对接阶段');
 }
 
 function editClue(projKey, clueId){
@@ -2940,7 +2940,7 @@ function exportSub(){
   L.push('当前阶段：'+STAGES[Math.min(s.stage||4,STAGES.length)-1][0]);
   L.push('');
   L.push('----------------------------------------------------');
-  L.push('对接进度：需求已递交 → 资源匹配中 → 安排政企对接（待资源回传）');
+  L.push('对接进度：需求已递交 → 资源匹配中 → 安排招商对接（待资源回传）');
   L.push('使用边界：脱敏展示，不显示内部人脉路径；对接由资源端线下推进，系统不自动联系企业。');
   var blob=new Blob([L.join('\n')],{type:'text/plain;charset=utf-8'});
   var a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -2948,9 +2948,9 @@ function exportSub(){
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   toast('已导出项目卡：'+s.name.split(' · ')[0]);
 }
-// 政企对接：独立tab，展示所有项目的对接进度
+// 招商对接：独立tab，展示所有项目的对接进度
 /* ══════════════════════════════════════════════════════════════
-   政企对接页面重建
+   招商对接页面重建
    ══════════════════════════════════════════════════════════════ */
 
 /* 对接记录存储 {projKey: [{ts, note, type}]} */
@@ -2961,7 +2961,7 @@ function dockingPage(p){
 
   if(!projKeys.length){
     return '<div class="page">'+
-      '<div class="page-header"><div><span class="eyebrow">DOCKING</span><h1>政企对接</h1>'+
+      '<div class="page-header"><div><span class="eyebrow">DOCKING</span><h1>招商对接</h1>'+
       '<p>招引需求提交后，资源核验与对接进度会出现在这里。</p></div></div>'+
       '<div class="knowledge-scroll"><div style="text-align:center;padding:60px 20px">'+
         '<div style="font-size:36px;margin-bottom:12px">🤝</div>'+
@@ -3152,7 +3152,7 @@ function dockingPage(p){
     : '';
 
   return '<div class="page">'+
-    '<div class="page-header"><div><span class="eyebrow">DOCKING</span><h1>政企对接</h1>'+
+    '<div class="page-header"><div><span class="eyebrow">DOCKING</span><h1>招商对接</h1>'+
     '<p>已递交需求的核验进度与对接记录。候选企业信息均为脱敏展示，资源细节由资源团队掌握。</p></div></div>'+
     '<div style="display:grid;grid-template-columns:280px 1fr;gap:16px;height:calc(100vh - 130px);padding:0 22px 16px;overflow:hidden">'+
       // 左列
@@ -4941,7 +4941,7 @@ function detailPane(p){
   else if(detailData&&detailData.kind==='clue'){body=detailClue(detailData.d);}
   else if(detailData&&detailData.kind==='sub'){body=detailSub(detailData.d);}
   else if(view==='home'){body=detailNeeds(p);}       // 项目管理→需求概览
-  else if(view==='docking'){body=detailDocking(p);}   // 政企对接→对接概览
+  else if(view==='docking'){body=detailDocking(p);}   // 招商对接→对接概览
   else if(view==='settings'){body=detailSettings(p);}
   else if(view==='knowledge'){body=detailKbIntro(p);}
   else{body=detailReport(p);}                          // report产业分析→本次研判
@@ -4985,7 +4985,7 @@ function detailSub(s){
       '<div class="detail-block"><h3>候选线索</h3><ul class="source-list"><li><i class="i">🏢</i>'+(s.clueName||'脱敏候选企业')+'<small>脱敏 · 由资源端核验可达性</small></li></ul></div>'+
       '<div class="detail-block"><h3>对接进度</h3><div class="timeline"><div class="timeline-item done"><div class="timeline-dot"><i class="i">✓</i></div><div><div class="timeline-title"><strong>需求已递交</strong></div></div></div>'+
         '<div class="timeline-item current"><div class="timeline-dot"><i class="i">◔</i></div><div><div class="timeline-title"><strong>资源匹配中</strong></div><p>资源端核验候选企业真实意向。</p></div></div>'+
-        '<div class="timeline-item"><div class="timeline-dot"><i class="i">•</i></div><div><div class="timeline-title"><strong>安排政企对接</strong></div></div></div></div></div>'+
+        '<div class="timeline-item"><div class="timeline-dot"><i class="i">•</i></div><div><div class="timeline-title"><strong>安排招商对接</strong></div></div></div></div></div>'+
       '<div class="detail-block"><div class="boundary-note" style="margin-top:0"><i class="i">🔒</i>脱敏展示，不显示内部人脉路径；系统不自动联系企业。</div></div>'+
     '</div>';
 }
@@ -5018,7 +5018,7 @@ function detailReport(p){
       '<div class="detail-block"><div class="boundary-note" style="margin-top:0"><i class="i">ℹ</i>报告为AI辅助草稿，关键判断需人工确认；定稿后正式递交。</div></div>'+
     '</div>';
 }
-// 政企对接页 → 右侧：对接概览
+// 招商对接页 → 右侧：对接概览
 function detailDocking(p){
   var ks=Object.keys(PROJECTS);
   var n4=ks.filter(function(k){return PROJECTS[k].stage>=4}).length;
@@ -5320,7 +5320,7 @@ loadReportState();loadUploads();loadSubproj();
     {name:'商用车燃料电池系统集成商 · 引进项目',dir:'商用车燃料电池系统集成商 · 长三角',clueName:'脱敏企业 A（氢驰动力·代号）',stage:5,from:'氢能专用车产业补链'},
     {name:'燃料电池电堆研发与制造 · 引进项目',dir:'燃料电池电堆研发与制造企业 · 华南',clueName:'脱敏企业 B（势通氢能·代号）',stage:4,from:'氢能专用车产业补链'}
   ];
-  // 随州氢能已定稿并派生项目、进入对接 → 阶段应到「政企对接」，否则进度条/政企对接页与事实矛盾
+  // 随州氢能已定稿并派生项目、进入对接 → 阶段应到「招商对接」，否则进度条/招商对接页与事实矛盾
   if(PROJECTS.sz)PROJECTS.sz.stage=5;
   saveReportState();saveUploads();saveSubproj();
   // 不在seed中persist，等restoreFromServer判断服务器是否已有数据
@@ -7044,7 +7044,7 @@ function doSend(v){
     var _indKnown=(_kbInd.known||[]).slice(0,2).join('；');
     reply='关于'+_p.topic+'的链条缺口：'+(_indKnown||'核心系统外购比例高，本地配套率偏低')+      '。可直接生成完整产业报告查看具体分析。';
   }else if(/线索|候选|企业/.test(v)&&_clues.length){
-    reply='当前研判方向「'+_p.topic+'」已识别 '+_clues.length+' 条候选线索：'+      _clues.slice(0,2).map(function(c){return c.name+'（'+c.dir+'）'}).join('、')+      '。可在「政企对接」模块查看核验要点，或在当前页生成完整产业报告。';
+    reply='当前研判方向「'+_p.topic+'」已识别 '+_clues.length+' 条候选线索：'+      _clues.slice(0,2).map(function(c){return c.name+'（'+c.dir+'）'}).join('、')+      '。可在「招商对接」模块查看核验要点，或在当前页生成完整产业报告。';
   }else{
     reply='我已结合'+_p.city+'城市智库（'+_p.topic+'方向）与最新公开信息研判。可以继续补充材料，也可以直接生成初步报告——报告将涵盖产业基础判断、链条缺口、建议招引方向与候选线索。';
   }
@@ -7326,7 +7326,7 @@ function opsDetail(){
       '<div class="boundary-note"><i class="i">🔒</i>资源可达性、关键人触达由资源团队线下核验；系统只做需求汇总、状态跟踪与提醒，不自动联系企业。</div>'+
     '</div>'+
     '<div class="detail-actions-stack" style="gap:8px;padding:12px 22px 16px">'+
-      '<button class="primary-button" onclick="opsAction(\''+d.id+'\')"><i class="i">'+(d.res==='matched'?'🤝':d.res==='checking'?'🔍':'📌')+'</i>'+(d.res==='matched'?'安排政企对接':d.res==='checking'?'查看核验进度':'纳入长期跟踪')+'</button>'+
+      '<button class="primary-button" onclick="opsAction(\''+d.id+'\')"><i class="i">'+(d.res==='matched'?'🤝':d.res==='checking'?'🔍':'📌')+'</i>'+(d.res==='matched'?'安排招商对接':d.res==='checking'?'查看核验进度':'纳入长期跟踪')+'</button>'+
       '<small>对接进度会同步回该城市干部的「当前研判」时间线</small>'+
     '</div></div>';
 }
@@ -7335,12 +7335,12 @@ function opsAction(id){
   var d=DEMANDS.find(function(x){return x.id===id});if(!d)return;
   if(d.res==='matched'){
     // 已匹配 → 弹出对接安排表单（真实内容）
-    var body='<p class="modal-intro">为「'+d.city+' · '+d.topic+'」安排政企对接，确认后将同步回该城市干部的「当前研判」时间线。</p>'+
+    var body='<p class="modal-intro">为「'+d.city+' · '+d.topic+'」安排招商对接，确认后将同步回该城市干部的「当前研判」时间线。</p>'+
       '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">需求方</span><span class="vv">'+d.gov+'</span></div>'+
       '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">候选线索</span><span class="vv">'+d.clues+' 家脱敏企业（资源端核验通过）</span></div>'+
       '<div class="form-stack" style="margin-top:12px"><label>拟对接时间<input value="本周内 · 待与双方确认"></label>'+
       '<label>对接方式<input value="资源端带队实地走访 + 政企座谈"></label></div>';
-    openModal('安排政企对接',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="doArrangeDock(\''+d.id+'\')">确认发起对接</button>');
+    openModal('安排招商对接',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="doArrangeDock(\''+d.id+'\')">确认发起对接</button>');
   }else if(d.res==='checking'){
     // 核验中 → 弹出核验进度详情
     var body='<p class="modal-intro">「'+d.city+' · '+d.topic+'」资源可达性核验进度：</p>'+
