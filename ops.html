@@ -6450,7 +6450,7 @@ function opsEnterprises(){
       '<button onclick="opsEntScanAll()" style="padding:8px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:10px;font-size:13px;color:#6d28d9;cursor:pointer;margin-left:6px" id="scanAllBtn"> 全局扫描</button>' +
     '</div>' +
     '<div style="margin:12px 0 16px">' +
-      '<input id="opsEntSearch" type="text" placeholder="搜索企业名称 / 标签 / 派系 / 方向…" value="'+(window._opsEntQ||'')+'" oninput="window._opsEntQ=this.value;renderOpsV2()" style="width:100%;padding:10px 14px;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;outline:none;transition:border .15s" onfocus="this.style.borderColor=\'#1a56db\'" onblur="this.style.borderColor=\'#e8edf5\'" />' +
+      '<input id="opsEntSearch" type="text" placeholder="搜索企业名称 / 标签 / 派系 / 方向…" value="'+(window._opsEntQ||'')+'" oninput="window._opsEntQ=this.value;opsEntRefreshList()" style="width:100%;padding:10px 14px;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;outline:none;transition:border .15s" onfocus="this.style.borderColor=\'#1a56db\'" onblur="this.style.borderColor=\'#e8edf5\'" />' +
     '</div>' +
     (filtered.length===0&&OPS_ENT.length>0 ? '<div style="text-align:center;padding:40px;color:#9aa5b5;font-size:13px">无匹配结果</div>' : filtered.length===0 ? opsEntEmpty() : opsEntListV2(filtered)) +
   '</div>';
@@ -6463,6 +6463,24 @@ function opsEntFilter(list){
     var haystack=(e.name+' '+e.kind+' '+e.region+' '+(e.gap||'')+' '+(e.tags||[]).join(' ')+' '+(e.faction||[]).map(function(f){return f.type+' '+f.label+' '+(f.person||'');}).join(' ')+' '+(e.note||'')+' '+(e.contact||'')).toLowerCase();
     return haystack.indexOf(q)>=0;
   });
+}
+
+function opsEntRefreshList(){
+  var filtered = opsEntFilter(OPS_ENT);
+  var container = document.getElementById('opsContent');
+  if(!container) return;
+  // Find the grid container and replace its content
+  var grid = container.querySelector('[style*="grid-template-columns"]');
+  if(!grid) { renderOpsV2(); return; }
+  var countEl = container.querySelector('span[style*="color:#9aa5b5"]');
+  if(countEl) countEl.textContent = '共 ' + OPS_ENT.length + ' 家' + (filtered.length!==OPS_ENT.length?' · 筛选 '+filtered.length+' 家':'');
+  if(filtered.length===0 && OPS_ENT.length>0){
+    grid.innerHTML='<div style="text-align:center;padding:40px;color:#9aa5b5;font-size:13px;grid-column:1/-1">无匹配结果</div>';
+  } else if(filtered.length===0){
+    grid.innerHTML=opsEntEmpty();
+  } else {
+    grid.innerHTML=opsEntListV2(filtered).replace(/^<div[^>]*>|<\/div>$/g,'');
+  }
 }
 
 function opsEntListV2(list){
