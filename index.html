@@ -3919,6 +3919,18 @@ function showImportConfirm(projKey, gap){
 /* ══ AI 访谈流程（产业分析前的逐步提问） ══ */
 var _interviewState = { answers: [], currentQ: 0, topic: '' };
 
+/* 添加自定义方向为新卡片 */
+function addCustomTopic(){
+  var inp=document.getElementById('topicCustomInput');
+  var val=(inp?inp.value:'').trim();
+  if(!val){toast('请输入方向名称');return;}
+  // 选中该方向
+  selectTopic(val, true);
+  // 清空输入框
+  if(inp) inp.value='';
+  toast('✓ 已添加方向「'+val+'」');
+}
+
 function startAiInterview(){
   var p=P(); if(!p) return;
   var inp=document.getElementById('topicCustomInput');
@@ -4588,15 +4600,13 @@ function homePage(p){
       '<div id="topicCardGrid" style="display:flex;gap:10px;margin-bottom:12px">'+topicCards+'</div>'+
       '<div style="display:flex;align-items:center;gap:8px">'+
         '<div style="flex:1;position:relative">'+
-          '<input id="topicCustomInput" placeholder="或输入自定义方向…" value="'+(recommendedTopics.some(function(t){return t.label===p.topic;})?'':p.topic)+'" '+
+          '<input id="topicCustomInput" placeholder="或输入自定义方向…" value="" '+
             'style="width:100%;box-sizing:border-box;padding:10px 14px;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#0b183b;outline:none;transition:border .15s" '+
             'onfocus="this.style.border=\'1.5px solid #6366f1\'" '+
             'onblur="this.style.border=\'1.5px solid #e8edf5\'" '+
-            'oninput="selectTopic(this.value,true)" '+
-            'onkeydown="if(event.key===\'Enter\')triggerReport()" />'+
+            'onkeydown="if(event.key===\'Enter\'){event.preventDefault();addCustomTopic();}" />'+
         '</div>'+
-        '<div id="currentTopicBadge" style="flex-shrink:0;padding:6px 12px;background:#f0f4ff;border-radius:8px;font-size:12px;color:#1a56db;font-weight:600;white-space:nowrap">'+
-          p.topic+
+        '<button onclick="addCustomTopic()" style="flex-shrink:0;padding:10px 18px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer;white-space:nowrap">确认添加</button'+
         '</div>'+
       '</div>'+
     '</div>';
