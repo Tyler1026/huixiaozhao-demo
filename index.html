@@ -3309,6 +3309,18 @@ function selectTopic(val, isCustom){
         _cm2.innerHTML=chainMapHtml(p);
         _ra.appendChild(_cm2);
       }
+    } else {
+      // 当前方向无报告，清空报告区显示空状态
+      _ra.innerHTML='<div id="reportHistoryArea"></div>'+
+        '<div style="text-align:center;padding:48px 20px">'+
+          '<div style="font-size:40px;margin-bottom:12px">📊</div>'+
+          '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">'+
+            '选择上方研判方向，点击「产业智能分析」'+
+          '</div>'+
+          '<div style="font-size:12.5px;color:#8492a6;line-height:1.6">'+
+            '基于城市智库数据，AI 将自动生成产业链分析报告'+
+          '</div>'+
+        '</div>';
     }
   }
   // 同步刷新右侧面板（报告状态·研判方向）
