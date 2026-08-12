@@ -3712,7 +3712,7 @@ function restoreActionItems(){
         '</div>'+
         '<div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between">'+
           '<div style="font-size:12px;color:#4a5568">'+safeCity+' · '+safeTopic+'<br>置信度 100% · 来源：慧小招实测报告</div>'+
-          '<button onclick="importToProject(\''+safeGap+'\',\''+safeCity+'\',\''+safeTopic+'\')" style="padding:8px 18px;background:'+color+';color:#fff;border:none;border-radius:10px;font-size:12.5px;font-weight:650;cursor:pointer">提交招商需求 →</button>'+
+          '<button onclick="importToProject(\''+safeGap+'\',\''+safeCity+'\',\''+safeTopic+'\',this)" style="padding:8px 18px;background:'+color+';color:#fff;border:none;border-radius:10px;font-size:12.5px;font-weight:650;cursor:pointer">提交招商需求 →</button>'+
         '</div>'+
       '</div>';
     }).join('')+
@@ -3777,7 +3777,7 @@ function renderActionItems(text, p, r){
           '置信度 '+r.score+'% · 来源：慧小招实测报告'+
         '</div>'+
         '<button data-gap="'+safeGap+'" data-city="'+safeCity+'" data-topic="'+safeTopic+'"'+
-          ' onclick="importToProject(this.getAttribute(\'data-gap\'),this.getAttribute(\'data-city\'),this.getAttribute(\'data-topic\'))"'+
+          ' onclick="importToProject(this.getAttribute(\'data-gap\'),this.getAttribute(\'data-city\'),this.getAttribute(\'data-topic\'),this)"'+
           ' style="padding:8px 16px;background:'+color+';color:#fff;border:none;border-radius:10px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap;flex-shrink:0">'+
           '提交招商需求 →'+
         '</button>'+
@@ -3798,7 +3798,7 @@ function renderActionItems(text, p, r){
 }
 
 /* 提交招商需求 */
-function importToProject(gap, city, topic){
+function importToProject(gap, city, topic, btnEl){
   var key='proj_'+Date.now().toString(36);
   var p=P();
   PROJECTS[key]={
@@ -3822,7 +3822,15 @@ function importToProject(gap, city, topic){
   // 不切换 cur — 保留当前研判页所有状态
   persist();
   // 弹出确认浮层，让用户主动跳转
-  toast('发送成功'); // 提交招商需求完成
+  // 更新按钮为已提交状态
+  if(btnEl){
+    btnEl.textContent='✓ 已提交招商需求';
+    btnEl.style.background='#e8edf5';
+    btnEl.style.color='#059669';
+    btnEl.style.cursor='default';
+    btnEl.onclick=null;
+  }
+  toast('发送成功');
 }
 
 function showImportConfirm(projKey, gap){
