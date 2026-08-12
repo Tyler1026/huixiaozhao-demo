@@ -6678,10 +6678,10 @@ function opsEntAdd(){
 }
 
 /* AI智能填充：输入企业名后自动查询公开信息填充表单 */
-/* AI补全已有企业信息（标签/派系/营收等） */
+/* AI补全已有企业信息（标签/派系/营收等）- 需人工确认 */
 function opsEntAiFillExisting(idx){
   var e = OPS_ENT[idx]; if(!e) return;
-  toast('正在为「'+e.name+'」补全信息…');
+  toast('正在为「'+e.name+'」查询信息…');
 
   var prompt='请查询企业「'+e.name+'」的以下公开信息，以JSON格式返回（不要markdown代码块）：'+
     '{"kind":"行业类型(简短)","region":"总部所在城市","revenue":"年营收(如3.2亿)","employees":"员工数(如280人)",'+
@@ -6705,22 +6705,79 @@ function opsEntAiFillExisting(idx){
     if(!jsonMatch){toast('AI返回格式异常');return;}
     try{
       var info=JSON.parse(jsonMatch[0]);
-      // 补全而不覆盖已有数据
-      if(info.kind && !e.kind) e.kind=info.kind;
-      if(info.region && (!e.region||e.region==='待填写')) e.region=info.region;
-      if(info.revenue && !e.revenue) e.revenue=info.revenue;
-      if(info.employees && !e.employees) e.employees=info.employees;
-      if(info.tags && info.tags.length && (!e.tags||!e.tags.length)) e.tags=info.tags;
-      if(info.faction && info.faction.length && (!e.faction||!e.faction.length)) e.faction=info.faction;
-      if(info.gap && !e.gap) e.gap=info.gap;
-      if(info.signal && !e.signal){ e.signal=info.signal; e.hasMoveSignal=true; }
-      if(info.note && !e.note) e.note=info.note;
-      persist();
-      renderOpsV2();
-      toast('✓ 已为「'+e.name+'」补全信息');
+      // 弹出确认面板让用户逐项确认
+      window._aiFillPending={idx:idx, info:info};
+      showAiFillConfirm(idx, info, e);
     }catch(ex){toast('解析失败：'+ex.message);}
   }).catch(function(err){toast('连接失败：'+err.message);});
 }
+
+/* AI补全确认面板 */
+function showAiFillConfirm(idx, info, e){
+  var fields=[
+    {key:'kind',label:'行业类型',old:e.kind,new:info.kind},
+    {key:'region',label:'地区',old:e.region,new:info.region},
+    {key:'revenue',label:'营收',old:e.revenue,new:info.revenue},
+    {key:'employees',label:'员工数',old:e.employees,new:info.employees},
+    {key:'gap',label:'补链方向',old:e.gap,new:info.gap},
+    {key:'tags',label:'标签',old:(e.tags||[]).join(', '),new:(info.tags||[]).join(', ')},
+    {key:'faction',label:'人脉/派系',old:(e.faction||[]).map(function(f){return (f.person||'')+' · '+(f.label||'');}).join(', '),
+     new:(info.faction||[]).map(function(f){return (f.person||'')+' · '+(f.label||'');}).join(', ')},
+    {key:'signal',label:'扩张信号',old:e.signal,new:info.signal},
+    {key:'note',label:'备注',old:e.note,new:info.note}
+  ];
+
+  var rows=fields.map(function(f,fi){
+    var hasOld=f.old&&f.old.trim();
+    var hasNew=f.new&&f.new.trim();
+    if(!hasNew) return '';
+    if(hasOld && f.old===f.new) return '';
+    var checked=hasOld?'':'checked';
+    return '<div style="padding:10px 12px;background:#f8faff;border:1px solid #e8edf5;border-radius:8px;margin-bottom:8px">'+
+      '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">'+
+        '<input type="checkbox" data-field="'+f.key+'" '+checked+' style="margin-top:3px;width:16px;height:16px" />'+
+        '<div style="flex:1">'+
+          '<div style="font-size:12px;font-weight:650;color:#4a5568;margin-bottom:3px">'+f.label+'</div>'+
+          (hasOld?'<div style="font-size:12px;color:#9aa5b5;text-decoration:line-through;margin-bottom:2px">现有：'+f.old+'</div>':'')+
+          '<div style="font-size:13px;color:#1e293b">AI建议：'+f.new+'</div>'+
+        '</div>'+
+      '</label>'+
+    '</div>';
+  }).filter(Boolean).join('');
+
+  if(!rows){
+    toast('AI未发现新信息可补全');return;
+  }
+
+  var body='<div style="max-height:60vh;overflow-y:auto">'+
+    '<div style="font-size:12.5px;color:#8492a6;margin-bottom:12px">勾选需要采纳的字段，取消勾选则保留原值：</div>'+
+    rows+
+  '</div>';
+
+  openModal('AI补全确认 · '+e.name, body,
+    '<button class="secondary-button" onclick="closeModal()">取消</button>'+
+    '<button class="primary-button" onclick="applyAiFill()">确认采纳</button>');
+}
+
+/* 应用AI补全（仅勾选的字段） */
+function applyAiFill(){
+  var pending=window._aiFillPending; if(!pending) return;
+  var e=OPS_ENT[pending.idx]; var info=pending.info;
+  var checkboxes=document.querySelectorAll('#modal-container input[type=checkbox]');
+  checkboxes.forEach(function(cb){
+    if(!cb.checked) return;
+    var field=cb.dataset.field;
+    if(field==='tags' && info.tags) e.tags=info.tags;
+    else if(field==='faction' && info.faction) e.faction=info.faction;
+    else if(field==='signal' && info.signal){ e.signal=info.signal; e.hasMoveSignal=true; }
+    else if(info[field]) e[field]=info[field];
+  });
+  persist();
+  closeModal();
+  renderOpsV2();
+  toast('✓ 已更新「'+e.name+'」信息');
+}
+
 
 function opsEntAiFill(){
   var name=((document.getElementById('oe-name')||{}).value||'').trim();
