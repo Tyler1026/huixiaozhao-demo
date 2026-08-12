@@ -6431,7 +6431,7 @@ function opsViewUploads(projKey){
           '<div style="font-size:13px;font-weight:600;color:#0b183b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + u.name + '</div>' +
           '<div style="font-size:11.5px;color:#8492a6;margin-top:2px">' + (sizeStr?sizeStr+' · ':'') + dateStr + (u.chunks?' · '+u.chunks+'个知识片段':'') + '</div>' +
         '</div>' +
-        '<button onclick="opsViewFileChunks(\''+projKey+'\',\''+u.name.replace(/'/g,"")+'\'" style="flex-shrink:0;font-size:11px;color:#1a56db;padding:4px 10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;cursor:pointer">查看内容</button>' +
+        '<button data-proj="'+projKey+'" data-file="'+u.name.replace(/"/g,'&quot;')+'" onclick="opsViewFileChunks(this.dataset.proj,this.dataset.file)" style="flex-shrink:0;font-size:11px;color:#1a56db;padding:4px 10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;cursor:pointer">查看内容</button>' +
       '</div>';
     }).join('') +
   '</div>';
