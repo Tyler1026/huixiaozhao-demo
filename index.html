@@ -3318,7 +3318,12 @@ function selectTopic(val, isCustom){
       '<div class="detail-page">'+detailReport(p)+'</div>';
   }
   // 刷新历史报告（只显示当前方向的）
-  renderHistoryReports(cur);
+  var _ra2=document.getElementById('reportArea');
+  if(_ra2){
+    var _ha2=document.getElementById('reportHistoryArea');
+    if(!_ha2){ _ha2=document.createElement('div'); _ha2.id='reportHistoryArea'; _ra2.insertBefore(_ha2, _ra2.firstChild); }
+    renderHistoryReports(cur);
+  }
   // 重渲染卡片高亮
   var cardGrid=document.getElementById('topicCardGrid');
   if(!cardGrid) return;
