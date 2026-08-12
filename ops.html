@@ -6474,7 +6474,7 @@ function opsEntListV2(list){
       var statusBg=e.status==='scanned'?'#f5f3ff':e.status==='pushed'?'#f0fdf4':'#f5f7fb';
       var statusLabel=e.status==='scanned'?'已扫描 '+matchCount+'个匹配':e.status==='pushed'?'已推送':'待扫描';
       var tagsHtml=(e.tags||[]).map(function(t){return '<span style="padding:2px 8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:11px;color:#1a56db">'+t+'</span>';}).join('');
-      var factionHtml=(e.faction||[]).map(function(f){return '<span style="padding:2px 8px;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;font-size:11px;color:#92400e">'+f.type+'·'+f.label+(f.person?' ('+f.person+')':'')+'</span>';}).join('');
+      var factionHtml=(e.faction||[]).map(function(f){return '<span style="padding:2px 8px;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;font-size:11px;color:#92400e">'+(f.person?f.person+' · '+f.label+(f.type==='校友会'?'毕业':''):''+f.label)+'</span>';}).join('');
       return '<div style="background:#fff;border:1.5px solid #e8edf5;border-radius:14px;overflow:hidden">' +
         '<div style="padding:14px 18px;display:flex;align-items:flex-start;gap:12px">' +
           '<div style="flex:1;min-width:0">' +
