@@ -3401,7 +3401,12 @@ function toggleHistoryReport(key, idx){
 function renderHistoryReports(key){
   var container=document.getElementById('reportHistoryArea');
   if(!container) return;
-  var list=REPORT_HISTORY[key]||[];
+  var p=P();
+  var currentTopic=p?p.topic:'';
+  var list=(REPORT_HISTORY[key]||[]).filter(function(rep){
+    if(!currentTopic) return true;
+    return rep.topic===currentTopic;
+  });
   if(!list.length){container.innerHTML='';return;}
   var h='<div style="margin-bottom:12px">';
   h+='<div style="font-size:11.5px;font-weight:700;color:#64748b;letter-spacing:.3px;margin-bottom:6px;display:flex;align-items:center;gap:6px">';
