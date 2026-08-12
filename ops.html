@@ -2573,56 +2573,7 @@ function exportSub(){
 
 /* 对接记录存储 {projKey: [{ts, note, type}]} */
 var DOCK_LOGS = DOCK_LOGS || {};
-var OPS_ENT = OPS_ENT || [
-  {name:'京东物流',kind:'物流科技',region:'北京',revenue:'1462亿',employees:'40万+',
-   tags:['智慧物流','无人配送','供应链','上市公司'],
-   faction:[{type:'校友会',label:'中欧EMBA',person:'刘强东'},{type:'商会',label:'苏商会',person:'刘强东'}],
-   gap:'智慧应急装备·感知层配送终端',hasMoveSignal:true,status:'scanned',
-   matches:[{city:'随州',gap:'智慧应急装备·无人配送终端',pushed:false}],
-   contact:'王总 (华中区BD)',phone:'138****5521',note:'2025年在武汉设区域仓，有向鄂北延伸意向'},
-  {name:'氢驰动力',kind:'燃料电池系统集成',region:'上海',revenue:'3.2亿',employees:'280',
-   tags:['氢能','燃料电池','电堆集成','商用车'],
-   faction:[{type:'校友会',label:'同济汽车系',person:'李总'},{type:'产业联盟',label:'长三角氢走廊联盟',person:''}],
-   gap:'氢能专用车产业补链·电堆系统',hasMoveSignal:true,status:'scanned',
-   matches:[{city:'随州',gap:'燃料电池电堆系统集成',pushed:true}],
-   contact:'张工 (商务总监)',phone:'139****7702',note:'已与程力初步接触，对随州专汽产业园感兴趣'},
-  {name:'势通氢能',kind:'氢燃料电池电堆研发',region:'深圳',revenue:'1.8亿',employees:'150',
-   tags:['氢能','电堆研发','MEA膜电极','国产替代'],
-   faction:[{type:'校友会',label:'清华汽车系',person:'王博士'},{type:'商会',label:'深圳新能源商会',person:''}],
-   gap:'氢能专用车产业补链·电堆制造',hasMoveSignal:true,status:'scanned',
-   matches:[{city:'随州',gap:'燃料电池电堆研发与制造',pushed:true}],
-   contact:'赵总 (CEO)',phone:'136****9918',note:'电堆产能扩张中，华中区域寻找新基地'},
-  {name:'品源食品',kind:'香菇精深加工/出口',region:'随州',revenue:'28亿',employees:'3200',
-   tags:['香菇','精深加工','出口','本地龙头'],
-   faction:[{type:'商会',label:'随州食品商会',person:'周总'},{type:'产业联盟',label:'中国食用菌协会',person:''}],
-   gap:'香菇产业精深加工升级·功能成分提取',hasMoveSignal:false,status:'scanned',
-   matches:[{city:'随州',gap:'多糖/功能成分提取',pushed:false}],
-   contact:'周总 (董事长)',phone:'189****3301',note:'4亿美元出口订单，欲建菌种研发中心'},
-  {name:'裕国菇业',kind:'食用菌全产业链',region:'随州',revenue:'15亿',employees:'1800',
-   tags:['香菇','种植','出口','冻干技术'],
-   faction:[{type:'商会',label:'随州食品商会',person:'雷总'},{type:'校友会',label:'华农食品学院',person:''}],
-   gap:'香菇产业精深加工升级·冻干/提取',hasMoveSignal:false,status:'manual',
-   matches:[],
-   contact:'雷总 (总经理)',phone:'137****2208',note:'冻干产线扩产中，需引进提取设备供应商'},
-  {name:'天目无人机',kind:'工业无人机集成',region:'杭州',revenue:'5.6亿',employees:'420',
-   tags:['无人机','应急救援','AI视觉','集成商'],
-   faction:[{type:'校友会',label:'浙大计算机系',person:'陈总'},{type:'产业联盟',label:'应急装备产业联盟',person:''}],
-   gap:'智慧应急装备·感知层无人机',hasMoveSignal:true,status:'scanned',
-   matches:[{city:'随州',gap:'应急无人机集成',pushed:false}],
-   contact:'陈总 (VP)',phone:'158****6633',note:'长三角应急无人机集成商，已具备可对接窗口'},
-  {name:'程力汽车',kind:'专用汽车制造',region:'随州',revenue:'180亿',employees:'12000',
-   tags:['专用车','改装','链主企业','本地龙头'],
-   faction:[{type:'商会',label:'随州专汽商会',person:'程总'},{type:'产业联盟',label:'中国专用汽车联盟',person:''}],
-   gap:'氢能专用车产业补链·整车制造链主',hasMoveSignal:false,status:'scanned',
-   matches:[{city:'随州',gap:'氢能底盘配套',pushed:false}],
-   contact:'程总 (集团副总)',phone:'159****1108',note:'已与成都壹为签新能源底盘合作，寻电堆供应商'},
-  {name:'新楚风汽车',kind:'新能源专用车',region:'随州',revenue:'45亿',employees:'3500',
-   tags:['氢能重卡','新能源','专用车','链主企业'],
-   faction:[{type:'校友会',label:'武汉理工汽车学院',person:'刘总'},{type:'产业联盟',label:'湖北氢能产业联盟',person:''}],
-   gap:'氢能专用车产业补链·氢能重卡链主',hasMoveSignal:false,status:'scanned',
-   matches:[{city:'随州',gap:'49T氢重卡量产配套',pushed:false}],
-   contact:'刘总 (技术副总)',phone:'135****7706',note:'49T氢重卡百公里氢耗7.1kg续航1000km，需电堆稳定供应'}
-];  // 管理端企业库
+var OPS_ENT = OPS_ENT || [];  // 管理端企业库（无硬编码，全部来自用户录入）
 
 function dockingPage(p){
   var projKeys=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k].stage>=3;});
