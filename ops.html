@@ -6363,7 +6363,7 @@ function opsOverview(){
       '</div>' +
       // 统计网格
       '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-bottom:1px solid #f0f4ff">' +
-        statCell('📎 上传材料', ups.length+'份', ups.length>0?'#166534':'#9aa5b5') +
+        statCellClickable('📎 上传材料', ups.length+'份', ups.length>0?'#166534':'#9aa5b5', 'opsViewUploads(\''+k+'\')') +
         statCell('✅ 已确认结论', confirmedCount+'条', confirmedCount>0?'#1d4ed8':'#9aa5b5') +
         statCell('🔍 AI扫描线索', aiClues.length+'条', aiClues.length>0?'#6d28d9':'#9aa5b5') +
         statCell('✓ 可对接企业', verified.length+(checking.length?'/'+checking.length+'核验中':'')+'条', verified.length>0?'#166534':'#9aa5b5') +
@@ -6406,6 +6406,39 @@ function statCell(label, value, color){
     '<div style="font-size:15px;font-weight:700;color:' + color + '">' + value + '</div>' +
   '</div>';
 }
+
+function statCellClickable(label, value, color, onclick){
+  return '<div style="padding:12px 16px;border-right:1px solid #f0f4ff;cursor:pointer;transition:background .15s" onclick="'+onclick+'" onmouseover="this.style.background=\'#f8faff\'" onmouseout="this.style.background=\'\'">'+
+    '<div style="font-size:11px;color:#9aa5b5;margin-bottom:3px">' + label + '</div>' +
+    '<div style="font-size:15px;font-weight:700;color:' + color + '">' + value + ' <span style="font-size:11px;color:#9aa5b5;font-weight:400">查看</span></div>' +
+  '</div>';
+}
+
+/* 查看城市上传材料列表 */
+function opsViewUploads(projKey){
+  var ups = UPLOADS[projKey] || [];
+  var p = PROJECTS[projKey] || {};
+  if(!ups.length){ toast('该城市暂无上传材料'); return; }
+  var body = '<div style="display:flex;flex-direction:column;gap:10px">' +
+    ups.map(function(u, i){
+      var sizeStr = u.size ? (u.size>1048576 ? (u.size/1048576).toFixed(1)+'MB' : Math.round(u.size/1024)+'KB') : '';
+      var dateStr = u.ts ? new Date(u.ts).toLocaleString('zh-CN') : (u.at || '');
+      return '<div style="padding:12px 14px;background:#f8faff;border:1px solid #e8edf5;border-radius:10px;display:flex;align-items:center;gap:12px">' +
+        '<div style="width:36px;height:36px;background:#eff6ff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">' +
+          (u.name.match(/\.pdf$/i)?'PDF':u.name.match(/\.xlsx?$/i)?'XLS':u.name.match(/\.docx?$/i)?'DOC':'') +
+        '</div>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-size:13px;font-weight:600;color:#0b183b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + u.name + '</div>' +
+          '<div style="font-size:11.5px;color:#8492a6;margin-top:2px">' + (sizeStr?sizeStr+' · ':'') + dateStr + (u.chunks?' · '+u.chunks+'个知识片段':'') + '</div>' +
+        '</div>' +
+        '<div style="flex-shrink:0;font-size:11px;color:#1a56db;padding:4px 10px;background:#eff6ff;border-radius:6px">已解析</div>' +
+      '</div>';
+    }).join('') +
+  '</div>';
+  openModal(' ' + p.city + ' 上传材料（'+ups.length+'份）', body,
+    '<button class="secondary-button" onclick="closeModal()">关闭</button>');
+}
+
 
 /* 查看城市研判报告 */
 function opsViewCityReport(projKey){
