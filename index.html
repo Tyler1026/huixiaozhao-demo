@@ -4627,10 +4627,12 @@ function kbPage(p){
         '<p>点击主题卡展开详细结论，或直接在下方对话框提问。</p>'+
         '<div id="kbPageProgress">'+kbPageProgressInner(r)+'</div>'+
         '</div>'+
-        '<div style="display:flex;gap:8px">'+
-        '<button class="ghost-button" onclick="openMemoryBank()" style="border-color:#c7d2fe;color:#4f46e5">🧠 记忆库'+memBankBadge()+'</button>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
+        '<button onclick="doUpload()" style="padding:9px 18px;background:#fff;border:2px solid #e74c3c;border-radius:10px;font-size:13px;font-weight:700;color:#e74c3c;cursor:pointer">上传补充材料</button>'+
+        '<button class="ghost-button" onclick="openMemoryBank()" style="border-color:#c7d2fe;color:#4f46e5"> 记忆库'+memBankBadge()+'</button>'+
         '<button class="ghost-button" onclick="showDownloadReport()"><i class="i"></i>下载分析报告</button>'+
-
+        '</div>'+
+        '<div style="font-size:11.5px;color:#8492a6;margin-top:6px;line-height:1.5">支持上传：政府工作报告 / 会议讲话稿 / 产业报告 / 园区资料 / 企业名单</div>'+
         '</div></div>';
     })()+
 
