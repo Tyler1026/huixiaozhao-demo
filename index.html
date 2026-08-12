@@ -6435,8 +6435,8 @@ function kbIncrementalAnalysis(){
   }
   var existingHint=existingTitles.length ? '（已有结论摘要：'+existingTitles.slice(0,6).join('；')+'）' : '';
 
-  var prompt='请基于提供的新材料，找出'+p.city+'「'+topicLabel+'」方向尚未涉及的新信息、补充要点或需核实的新疑点'+existingHint+'。'
-    +'要求：①只输出新发现，不重复已有结论；②不编造材料中未提及的数据；③每条独立成行，关键数据加粗；④若材料不足则如实说明。';
+  var prompt='请基于提供的新材料，对比'+p.city+'「'+topicLabel+'」智库中已有结论'+existingHint+'，找出真正的新增信息或补充要点。'
+    +'要求：①如果新材料与现有数据一致，直接说"与现有数据一致，无需更新"；②只输出真正新增的、现有智库中没有的信息；③不要使用"不一致"标签来描述实际一致的数据；④每条新发现独立成行，关键数据加粗；⑤若存在真正矛盾（数据不同），明确标注【矛盾】并列出新旧数据对比；⑥不编造材料中未提及的数据。';
 
   var thinking=document.createElement('div');
   thinking.className='message';
