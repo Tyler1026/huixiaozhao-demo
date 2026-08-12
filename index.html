@@ -3675,7 +3675,11 @@ function ciAttachFiles(files, projKey, idx){
 /* 恢复确认面板（如果有待确认事项） */
 function restoreConfirmPanel(){
   if(!cur || !PENDING_CONFIRMS[cur] || !PENDING_CONFIRMS[cur].length) return '';
-  return renderConfirmPanel(PENDING_CONFIRMS[cur], cur);
+  var reanalyzeBtn = '<div style="margin-bottom:12px;display:flex;gap:10px;align-items:center">'+
+    '<button onclick="startAiInterview()" style="padding:10px 20px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer"> 重新分析（AI访谈）</button>'+
+    '<span style="font-size:12px;color:#8492a6">重新选择方向并通过AI访谈补充信息后生成新报告</span>'+
+  '</div>';
+  return reanalyzeBtn + renderConfirmPanel(PENDING_CONFIRMS[cur], cur);
 }
 
 /* 从REPORTSTATE恢复已保存的招引方向卡片 */
