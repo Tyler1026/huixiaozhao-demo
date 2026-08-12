@@ -6567,29 +6567,139 @@ function opsEntList(){
 function opsEntAdd(){
   var body=
     '<div style="display:flex;flex-direction:column;gap:12px">'+
+    '<div style="display:flex;gap:10px;align-items:flex-end">'+
+      '<div style="flex:1"><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">企业名称</label>'+
+      '<input id="oe-name" placeholder="输入企业全称，如：京东物流" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+      '<button onclick="opsEntAiFill()" id="oe-ai-btn" style="padding:8px 16px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap;height:36px">AI 智能填充</button>'+
+    '</div>'+
+    '<div id="oe-ai-status" style="display:none;font-size:12px;color:#6366f1;padding:6px 10px;background:#f5f3ff;border-radius:8px"></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
-      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">企业名称</label>'+
-      '<input id="oe-name" placeholder="企业全称" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
-      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">类型 · 区域</label>'+
-      '<input id="oe-kind" placeholder="如：燃料电池系统集成商 · 华南" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">行业类型</label>'+
+      '<input id="oe-kind" placeholder="如：燃料电池系统集成" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">所在地区</label>'+
+      '<input id="oe-region" placeholder="如：上海" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
-      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">主营/补链方向</label>'+
-      '<input id="oe-gap" placeholder="如：燃料电池电堆" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
-      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">规模/背景</label>'+
-      '<input id="oe-scale" placeholder="如：上市公司688339，年产能5000台" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">营收规模</label>'+
+      '<input id="oe-revenue" placeholder="如：3.2亿" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">员工规模</label>'+
+      '<input id="oe-employees" placeholder="如：280人" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
     '</div>'+
-    '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">扩张/落地信号（需可查证）</label>'+
-    '<textarea id="oe-signal" placeholder="如：2025年7月与湖北省政府签署备忘录（来源：港交所公告2025-07-15）" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none;resize:vertical;min-height:64px;line-height:1.6"></textarea></div>'+
-    '<div style="display:flex;align-items:center;gap:8px;padding:10px;background:#fffbeb;border-radius:8px;border:1px solid #fde68a">'+
-      '<span style="font-size:13px">⚠</span>'+
-      '<span style="font-size:12px;color:#92400e">无扩张信号的企业不应推送给政府端。填写信号后系统自动扫描匹配方向。</span>'+
+    '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">补链方向</label>'+
+    '<input id="oe-gap" placeholder="如：氢能专用车产业补链·电堆系统" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">企业标签</label>'+
+    '<input id="oe-tags" placeholder="用逗号分隔，如：氢能,燃料电池,电堆集成,商用车" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">人脉/派系（核心领导层校友会/商会）</label>'+
+    '<input id="oe-faction" placeholder="如：李总·同济汽车系毕业,张总·深圳新能源商会" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">联系人</label>'+
+      '<input id="oe-contact" placeholder="如：张工 (商务总监)" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">扩张信号</label>'+
+      '<input id="oe-signal" placeholder="如：华中区寻找新基地" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
     '</div>'+
+    '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">备注</label>'+
+    '<input id="oe-note" placeholder="其他补充信息" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
     '</div>';
   openModal('+ 手动录入企业',body,
     '<button class="secondary-button" onclick="closeModal()">取消</button>'+
-    '<button class="primary-button" onclick="opsEntSave()">保存 · 自动扫描匹配</button>');
+    '<button class="primary-button" onclick="opsEntSaveV2()">保存</button>');
 }
+
+/* AI智能填充：输入企业名后自动查询公开信息填充表单 */
+function opsEntAiFill(){
+  var name=((document.getElementById('oe-name')||{}).value||'').trim();
+  if(!name){toast('请先输入企业名称');return;}
+  var btn=document.getElementById('oe-ai-btn');
+  var status=document.getElementById('oe-ai-status');
+  if(btn){btn.disabled=true;btn.textContent='查询中…';}
+  if(status){status.style.display='block';status.textContent='正在查询「'+name+'」的公开信息…';}
+
+  var prompt='请查询企业「'+name+'」的以下公开信息，以JSON格式返回（不要markdown代码块）：'+
+    '{"kind":"行业类型(简短)","region":"总部所在城市","revenue":"年营收(如3.2亿)","employees":"员工数(如280人)",'+
+    '"tags":["标签1","标签2","标签3","标签4"],"faction":[{"person":"核心人物姓名","label":"其毕业院校或所属商会","type":"校友会或商会"}],'+
+    '"gap":"该企业可能适合的产业补链方向","signal":"近期是否有产能扩张/异地投资信号(如有写具体内容,无则写空字符串)","note":"一句话企业简介"}'+
+    '要求：①faction重点列出CEO/董事长/CTO的毕业院校（校友会）和参与的商会组织；②tags包含行业关键词；③信息必须基于公开可查资料，不确定的标注"待核实"';
+
+  fetch('/api/kb-chat',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question:prompt,city:'企业查询',role:'ops'})
+  }).then(function(r){return r.text();}).then(function(text){
+    // Parse streaming response
+    var full='';
+    text.split('\n').forEach(function(line){
+      if(!line.startsWith('data:'))return;
+      var d=line.slice(5).trim();if(d==='[DONE]')return;
+      try{var j=JSON.parse(d);var c=(j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||'';full+=c;}catch(e){}
+    });
+    // Try to extract JSON from response
+    var jsonStr=full;
+    var jsonMatch=full.match(/\{[\s\S]*\}/);
+    if(jsonMatch) jsonStr=jsonMatch[0];
+    try{
+      var info=JSON.parse(jsonStr);
+      // Fill form fields
+      if(info.kind) document.getElementById('oe-kind').value=info.kind;
+      if(info.region) document.getElementById('oe-region').value=info.region;
+      if(info.revenue) document.getElementById('oe-revenue').value=info.revenue;
+      if(info.employees) document.getElementById('oe-employees').value=info.employees;
+      if(info.gap) document.getElementById('oe-gap').value=info.gap;
+      if(info.tags&&info.tags.length) document.getElementById('oe-tags').value=info.tags.join(',');
+      if(info.faction&&info.faction.length){
+        document.getElementById('oe-faction').value=info.faction.map(function(f){
+          return (f.person||'')+'·'+(f.label||'')+(f.type==='校友会'?'毕业':'');
+        }).join(',');
+      }
+      if(info.signal) document.getElementById('oe-signal').value=info.signal;
+      if(info.note) document.getElementById('oe-note').value=info.note;
+      if(status){status.textContent='✓ 已自动填充，请核对后保存';status.style.color='#059669';status.style.background='#f0fdf4';}
+    }catch(e){
+      if(status){status.textContent='⚠ AI返回格式异常，请手动填写：'+full.substring(0,100);status.style.color='#d97706';status.style.background='#fffbeb';}
+    }
+    if(btn){btn.disabled=false;btn.textContent='AI 智能填充';}
+  }).catch(function(e){
+    if(status){status.textContent='连接失败：'+e.message;status.style.color='#ef4444';status.style.background='#fef2f2';}
+    if(btn){btn.disabled=false;btn.textContent='AI 智能填充';}
+  });
+}
+
+/* 保存企业（新版表单） */
+function opsEntSaveV2(){
+  var name=((document.getElementById('oe-name')||{}).value||'').trim();
+  if(!name){toast('请填写企业名称');return;}
+  var kind=((document.getElementById('oe-kind')||{}).value||'').trim();
+  var region=((document.getElementById('oe-region')||{}).value||'').trim()||'待填写';
+  var revenue=((document.getElementById('oe-revenue')||{}).value||'').trim();
+  var employees=((document.getElementById('oe-employees')||{}).value||'').trim();
+  var gap=((document.getElementById('oe-gap')||{}).value||'').trim();
+  var tagsStr=((document.getElementById('oe-tags')||{}).value||'').trim();
+  var factionStr=((document.getElementById('oe-faction')||{}).value||'').trim();
+  var contact=((document.getElementById('oe-contact')||{}).value||'').trim();
+  var signal=((document.getElementById('oe-signal')||{}).value||'').trim();
+  var note=((document.getElementById('oe-note')||{}).value||'').trim();
+
+  var tags=tagsStr?tagsStr.split(/[,，]/).map(function(t){return t.trim();}).filter(Boolean):[];
+  var faction=factionStr?factionStr.split(/[,，]/).map(function(f){
+    var parts=f.trim().split('·');
+    var person=parts[0]||'';
+    var label=parts[1]||'';
+    var type=label.indexOf('毕业')>=0?'校友会':'商会';
+    label=label.replace('毕业','');
+    return {person:person,label:label,type:type};
+  }).filter(function(f){return f.person||f.label;}):[];
+
+  var ent={
+    name:name,kind:kind,region:region,revenue:revenue,employees:employees,
+    gap:gap,tags:tags,faction:faction,contact:contact,note:note,
+    hasMoveSignal:!!signal,signal:signal,status:'manual',matches:[]
+  };
+  OPS_ENT.push(ent);
+  persist();
+  closeModal();
+  opsTab='enterprises'; renderOpsV2();
+  toast('✓ 已录入「'+name+'」');
+}
+
 
 function opsEntSave(){
   var name  =((document.getElementById('oe-name')||{}).value||'').trim();
