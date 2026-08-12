@@ -2904,7 +2904,18 @@ function cancelTopicEdit(){
 // 选择研判方向（卡片点击 or 自定义输入）
 function selectTopic(val, isCustom){
   var p=P(); if(!p||!val||!val.trim()) return;
-  p.topic=val.trim();
+  var newTopic=val.trim();
+  // If project already has report or submitted demand, create a new project for the new direction
+  if(p.topic!==newTopic && (REPORTSTATE[cur] || DEMANDS.find(function(d){return d.projKey===cur;}))){
+    var id='p'+Date.now().toString(36);
+    PROJECTS[id]={id:id,city:p.city,org:p.org,who:p.who,topic:newTopic,stage:1,
+      kb:JSON.parse(JSON.stringify(p.kb)),report:null,clues:[]};
+    // Reset kb confirmations for new project
+    cur=id; persist(); render();
+    toast('已为「'+newTopic+'」创建独立研判，原方向数据不变');
+    return;
+  }
+  p.topic=newTopic;
   persist();
   var badge=document.getElementById('currentTopicBadge');
   if(badge) badge.textContent=p.topic;
