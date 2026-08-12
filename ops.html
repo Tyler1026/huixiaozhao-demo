@@ -6564,7 +6564,8 @@ function opsEntListV2(list){
         (e.contact?'<div style="margin-top:6px;font-size:11.5px;color:#4a5568"><b>'+e.contact+'</b>'+(e.note?' · '+e.note:'')+'</div>':'') +
         matchHtml +
         '<div style="margin-top:auto;padding-top:8px;display:flex;gap:6px">' +
-          '<button onclick="opsEntAiFillExisting('+idx+')" style="padding:4px 10px;background:linear-gradient(135deg,#1a56db,#6366f1);border:none;border-radius:6px;font-size:11px;color:#fff;cursor:pointer;font-weight:600">AI补全</button>' +
+          '<button onclick="opsEntAiFillExisting('+idx+')" style="padding:4px 10px;background:linear-gradient(135deg,#1a56db,#6366f1);border:none;border-radius:6px;font-size:11px;color:#fff;cursor:pointer;font-weight:600">AI补全</button>'+
+          '<button onclick="opsEntManualEdit('+idx+')" style="padding:4px 10px;background:#fff;border:1.5px solid #1a56db;border-radius:6px;font-size:11px;color:#1a56db;cursor:pointer;font-weight:600">手动编辑</button>' +
           (e.status!=='scanned'&&e.status!=='pushed'?'<button onclick="opsEntScanOne('+idx+')" style="padding:4px 10px;background:#f5f3ff;border:1px solid #c4b5fd;border-radius:6px;font-size:11px;color:#6d28d9;cursor:pointer">扫描</button>':'') +
           (matchCount>0?'<button onclick="opsEntPushModal('+idx+')" style="padding:6px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12px;color:#166534;cursor:pointer;font-weight:650">推送('+matchCount+')</button>':'') +
           '<button onclick="opsEntDelete('+idx+')" style="padding:4px 8px;background:none;border:1px solid #e8edf5;border-radius:6px;font-size:11px;color:#9aa5b5;cursor:pointer">删除</button>' +
@@ -6760,10 +6761,72 @@ function showAiFillConfirm(idx, info, e){
 }
 
 /* 应用AI补全（仅勾选的字段） */
+/* 手动编辑企业信息 */
+function opsEntManualEdit(idx){
+  var e = OPS_ENT[idx]; if(!e) return;
+  var body=
+    '<div style="display:flex;flex-direction:column;gap:10px">'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">行业类型</label>'+
+      '<input id="me-kind" value="'+(e.kind||'')+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">地区</label>'+
+      '<input id="me-region" value="'+(e.region||'')+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">营收</label>'+
+      '<input id="me-revenue" value="'+(e.revenue||'')+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">员工数</label>'+
+      '<input id="me-employees" value="'+(e.employees||'')+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '</div>'+
+    '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">补链方向</label>'+
+    '<input id="me-gap" value="'+(e.gap||'')+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">标签（逗号分隔）</label>'+
+    '<input id="me-tags" value="'+((e.tags||[]).join(','))+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">人脉/派系（逗号分隔，格式：人名·院校/商会）</label>'+
+    '<input id="me-faction" value="'+((e.faction||[]).map(function(f){return (f.person||"")+"·"+(f.label||"");}).join(","))+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">联系人</label>'+
+      '<input id="me-contact" value="'+(e.contact||'')+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">扩张信号</label>'+
+      '<input id="me-signal" value="'+(e.signal||'')+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '</div>'+
+    '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">备注</label>'+
+    '<input id="me-note" value="'+(e.note||'')+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '</div>';
+  window._manualEditIdx=idx;
+  openModal('编辑 · '+e.name, body,
+    '<button class="secondary-button" onclick="closeModal()">取消</button>'+
+    '<button class="primary-button" onclick="applyManualEdit()">保存</button>');
+}
+
+function applyManualEdit(){
+  var idx=window._manualEditIdx; var e=OPS_ENT[idx]; if(!e) return;
+  e.kind=((document.getElementById('me-kind')||{}).value||'').trim();
+  e.region=((document.getElementById('me-region')||{}).value||'').trim()||'待填写';
+  e.revenue=((document.getElementById('me-revenue')||{}).value||'').trim();
+  e.employees=((document.getElementById('me-employees')||{}).value||'').trim();
+  e.gap=((document.getElementById('me-gap')||{}).value||'').trim();
+  var tagsStr=((document.getElementById('me-tags')||{}).value||'').trim();
+  e.tags=tagsStr?tagsStr.split(/[,，]/).map(function(t){return t.trim();}).filter(Boolean):[];
+  var factionStr=((document.getElementById('me-faction')||{}).value||'').trim();
+  e.faction=factionStr?factionStr.split(/[,，]/).map(function(f){
+    var parts=f.trim().split('·');
+    return {person:parts[0]||'',label:parts[1]||'',type:(parts[1]||'').indexOf('商会')>=0?'商会':'校友会'};
+  }).filter(function(f){return f.person||f.label;}):[];
+  e.contact=((document.getElementById('me-contact')||{}).value||'').trim();
+  e.signal=((document.getElementById('me-signal')||{}).value||'').trim();
+  e.hasMoveSignal=!!e.signal;
+  e.note=((document.getElementById('me-note')||{}).value||'').trim();
+  persist();
+  closeModal();
+  renderOpsV2();
+  toast('✓ 已更新「'+e.name+'」');
+}
+
 function applyAiFill(){
   var pending=window._aiFillPending; if(!pending) return;
   var e=OPS_ENT[pending.idx]; var info=pending.info;
-  var checkboxes=document.querySelectorAll('#modal-container input[type=checkbox]');
+  var checkboxes=document.querySelectorAll('#modalLayer input[type=checkbox]');
   checkboxes.forEach(function(cb){
     if(!cb.checked) return;
     var field=cb.dataset.field;
