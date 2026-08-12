@@ -320,7 +320,7 @@ function viewCurrentReport(){
   var bar = document.querySelector('.report-bottom-bar');
   if(bar){
     bar.innerHTML=
-      '<button onclick="triggerReport(1)" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">🔄 重新生成</button>'+
+      '<button onclick="startAiInterview()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">🔄 重新生成</button>'+
       '<button onclick="downloadReport(\'full\')" style="padding:12px 14px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;font-size:13px;color:#1a56db;cursor:pointer;font-weight:600">⬇ 下载完整版</button>'+
       '<button onclick="downloadReport(\'short\')" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">⬇ 下载精简版</button>'+
       '<button onclick="submitDemand()" style="flex:1;padding:12px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer">✓ 批量提交招商需求</button>';
@@ -3840,6 +3840,120 @@ function showImportConfirm(projKey, gap){
 }
 
 
+/* ══ AI 访谈流程（产业分析前的逐步提问） ══ */
+var _interviewState = { answers: [], currentQ: 0, topic: '' };
+
+function startAiInterview(){
+  var p=P(); if(!p) return;
+  var inp=document.getElementById('topicCustomInput');
+  if(inp&&inp.value.trim()) p.topic=inp.value.trim();
+  if(!p.topic){toast('请先选择或输入产业方向');return;}
+  persist();
+
+  _interviewState = { answers: [], currentQ: 0, topic: p.topic };
+
+  // 定义访谈问题（根据产业分析缺少的维度逐个提问）
+  _interviewState.questions = [
+    { id:'industry_base', q:'关于「'+p.topic+'」方向，'+p.city+'目前的产业基础情况如何？（如：现有企业数量、产值规模、产业链已覆盖的环节等）' },
+    { id:'park_info', q:'承接该方向的目标园区是哪个？园区有哪些配套条件？（如：土地面积、标准厂房、已入驻企业、优惠政策等）' },
+    { id:'policy', q:'当地政府针对「'+p.topic+'」方向有哪些专项政策支持？（如：专项资金额度、税收优惠、人才引进补贴等）' },
+    { id:'target_enterprise', q:'目前已有意向接触的目标企业有哪些？它们的规模和合作意向如何？' },
+    { id:'connections', q:'我们可能会尝试通过高校圈和商会圈接触企业高管。为便于梳理可用关系网络，想了解贵方主要领导的毕业院校、曾长期居住的城市，以及曾在哪些城市担任过主职工作。' },
+    { id:'gaps', q:'您认为目前该方向最急需补齐的产业链环节是什么？有没有已经明确的"卡脖子"问题？' }
+  ];
+
+  renderInterviewUI();
+}
+
+function renderInterviewUI(){
+  var area=document.getElementById('reportArea');
+  if(!area) return;
+  var q = _interviewState.questions[_interviewState.currentQ];
+  var total = _interviewState.questions.length;
+  var cur = _interviewState.currentQ + 1;
+  var p=P();
+
+  var answeredHtml = _interviewState.answers.map(function(a, i){
+    if(!a.text) return '';
+    return '<div style="margin-bottom:8px;padding:8px 12px;background:#f8faff;border-radius:8px;font-size:12px">'+
+      '<div style="color:#9aa5b5;margin-bottom:2px">Q'+(i+1)+'：'+_interviewState.questions[i].q.substring(0,30)+'…</div>'+
+      '<div style="color:#1e293b">'+a.text.substring(0,60)+(a.text.length>60?'…':'')+'</div>'+
+    '</div>';
+  }).filter(Boolean).join('');
+
+  area.innerHTML =
+    '<div style="padding:20px">'+
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'+
+        '<div style="width:36px;height:36px;background:linear-gradient(135deg,#1a56db,#6366f1);border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:800">AI</div>'+
+        '<div>'+
+          '<div style="font-size:15px;font-weight:700;color:#0b183b">产业分析访谈</div>'+
+          '<div style="font-size:12px;color:#8492a6">方向：'+_interviewState.topic+' · 问题 '+cur+'/'+total+'</div>'+
+        '</div>'+
+        '<div style="flex:1"></div>'+
+        '<div style="width:120px;height:6px;background:#e8edf5;border-radius:3px;overflow:hidden">'+
+          '<div style="width:'+(cur/total*100)+'%;height:100%;background:linear-gradient(90deg,#1a56db,#6366f1);border-radius:3px;transition:width .3s"></div>'+
+        '</div>'+
+        '<span style="font-size:11px;color:#9aa5b5">'+cur+'/'+total+'</span>'+
+      '</div>'+
+      (answeredHtml?'<div style="margin-bottom:12px;max-height:120px;overflow-y:auto">'+answeredHtml+'</div>':'')+
+      '<div style="background:#fff;border:1.5px solid #e8edf5;border-radius:14px;padding:20px;margin-bottom:16px">'+
+        '<div style="font-size:14px;color:#1e293b;line-height:1.8;margin-bottom:16px">'+q.q+'</div>'+
+        '<textarea id="interviewAnswer" placeholder="输入您的回答…（如暂时不清楚可点击跳过）" style="width:100%;box-sizing:border-box;min-height:100px;padding:12px;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;line-height:1.7;outline:none;resize:vertical" onfocus="this.style.borderColor='#1a56db'" onblur="this.style.borderColor='#e8edf5'">'+(_interviewState.answers[_interviewState.currentQ]?(_interviewState.answers[_interviewState.currentQ].text||''):'')+'</textarea>'+
+      '</div>'+
+      '<div style="display:flex;gap:10px;align-items:center">'+
+        (_interviewState.currentQ>0?'<button onclick="interviewPrev()" style="padding:10px 20px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer;font-weight:600">← 上一题</button>':'')+
+        '<button onclick="interviewSkip()" style="padding:10px 20px;background:#fff;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#9aa5b5;cursor:pointer">跳过</button>'+
+        '<div style="flex:1"></div>'+
+        (cur<total?'<button onclick="interviewNext()" style="padding:10px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer">下一题 →</button>':
+        '<button onclick="interviewDone()" style="padding:10px 24px;background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer">完成访谈，开始分析</button>')+
+      '</div>'+
+    '</div>';
+}
+
+function interviewNext(){
+  var textarea=document.getElementById('interviewAnswer');
+  var text=(textarea?textarea.value:'').trim();
+  _interviewState.answers[_interviewState.currentQ]={text:text, id:_interviewState.questions[_interviewState.currentQ].id};
+  _interviewState.currentQ++;
+  renderInterviewUI();
+}
+
+function interviewSkip(){
+  _interviewState.answers[_interviewState.currentQ]={text:'', id:_interviewState.questions[_interviewState.currentQ].id, skipped:true};
+  _interviewState.currentQ++;
+  if(_interviewState.currentQ>=_interviewState.questions.length){
+    interviewDone();
+  } else {
+    renderInterviewUI();
+  }
+}
+
+function interviewPrev(){
+  var textarea=document.getElementById('interviewAnswer');
+  var text=(textarea?textarea.value:'').trim();
+  _interviewState.answers[_interviewState.currentQ]={text:text, id:_interviewState.questions[_interviewState.currentQ].id};
+  _interviewState.currentQ--;
+  renderInterviewUI();
+}
+
+function interviewDone(){
+  // Save last answer
+  var textarea=document.getElementById('interviewAnswer');
+  if(textarea){
+    var text=textarea.value.trim();
+    _interviewState.answers[_interviewState.currentQ]={text:text, id:_interviewState.questions[_interviewState.currentQ].id};
+  }
+  // Collect all non-empty answers into context for the analysis
+  var context=_interviewState.answers.filter(function(a){return a&&a.text;}).map(function(a){
+    var qObj=_interviewState.questions.find(function(q){return q.id===a.id;});
+    return '【'+qObj.q.substring(0,20)+'…】'+a.text;
+  }).join('\n');
+  // Store interview context for use in triggerReport
+  window._interviewContext=context;
+  // Now trigger the actual analysis
+  triggerReport(1);
+}
+
 function triggerReport(phase){
   phase=phase||1;
   var p=P(); if(!p) return;
@@ -3850,8 +3964,9 @@ function triggerReport(phase){
   if(!area) return;
   var r=kbReadiness();
   var corpus=buildKBCorpus(p.city);
+  var interviewCtx=window._interviewContext||'';
   var query=phase===1
-    ? '请基于'+p.city+'城市智库数据，针对「'+p.topic+'」方向，快速输出：①最关键的3个产业链缺口（每条附具体数据）②建议的3个招引方向（标注方向类型：补链/承接转移/精深加工/协同枢纽）③需要确认的待确认事项（用⚠️标注）④数据可靠性评估（哪些有数据支撑，哪些需补充）'
+    ? '请基于'+p.city+'城市智库数据，针对「'+p.topic+'」方向'+(interviewCtx?'，结合以下访谈信息：\n'+interviewCtx+'\n':'')+',快速输出：①最关键的3个产业链缺口（每条附具体数据）②建议的3个招引方向（标注方向类型：补链/承接转移/精深加工/协同枢纽）③需要确认的待确认事项（用⚠️标注）④数据可靠性评估（哪些有数据支撑，哪些需补充）'
     : '请基于'+p.city+'城市智库数据，针对「'+p.topic+'」方向，输出完整招商研判报告，严格按五章结构：\n一、产业基础判断（具体数字，来自知识片段）\n二、产业链缺口分析（逐环节标注✅已有/⚠️薄弱/❌缺失，标注本地化属性A必须本地化/B可跨区域/C优先本地化）\n三、补链优先级清单TOP5（表格格式：缺口节点|本地化属性|经济拉动★|招引可行性★|综合优先级）\n四、目标企业画像（每个TOP缺口：目标企业类型+规模+开口话术模板）\n五、待确认事项（⚠️标注每条需确认的专项资金/园区地块/政策口径）';
   var chunks=kbSearch(query,corpus,phase===1?5:8);
   var t0=Date.now(); var accText='';
@@ -4089,7 +4204,7 @@ function triggerReport(phase){
                 '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>';
             } else {
               bottomBar.innerHTML=
-                '<button onclick="triggerReport(1)" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">🔄 重新生成</button>'+
+                '<button onclick="startAiInterview()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">🔄 重新生成</button>'+
                 '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>'+
                 '<button onclick="submitDemand()" style="flex:1;padding:12px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer">✓ 批量提交招商需求</button>';
               // 产业链图谱：完整报告生成后动态追加，避免须重新进入页面才能看到
@@ -4447,8 +4562,8 @@ function homePage(p){
         ? ('<button onclick="viewCurrentReport()" '+
             'style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">📊 查看完整报告</button>'+
            '<button onclick="downloadReport(\'full\')" style="padding:13px 16px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;font-size:13px;color:#1a56db;cursor:pointer;font-weight:600">⬇ 下载</button>'+
-           '<button onclick="triggerReport(1)" style="padding:13px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:12.5px;color:#4a5568;cursor:pointer">🔄 重新研判</button>')
-        : ('<button id="generateBtn" onclick="triggerReport(1)" '+
+           '<button onclick="startAiInterview()" style="padding:13px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:12.5px;color:#4a5568;cursor:pointer">🔄 重新研判</button>')
+        : ('<button id="generateBtn" onclick="startAiInterview()" '+
             'style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">'+
             '🔍 产业智能分析'+
       '</button>'))+
