@@ -4139,6 +4139,7 @@ function loadReportState(){try{var d=localStorage.getItem('hxz_reportstate');if(
 var LS_KEY='huixiaozhao_kb_v1';
 
 function persist(){
+  if(!window._opsDataReady){return;} // block persist until server data loaded
   try{
     var data={
       cur:cur, view:view,
@@ -4187,7 +4188,7 @@ function restore(){
 
 function restoreFromServer(callback){
   fetch('/api/sync').then(function(r){return r.json();}).then(function(raw){
-    if(!raw){ if(callback)callback(false); return; }
+    if(!raw){ window._opsDataReady=true; if(callback)callback(false); return; }
     var srv = (raw.huixiaozhao_kb_v1 && raw.huixiaozhao_kb_v1.PROJECTS)
               ? raw.huixiaozhao_kb_v1 : raw;
     if(!srv||!srv.PROJECTS||!Object.keys(srv.PROJECTS).length){
@@ -4205,8 +4206,9 @@ function restoreFromServer(callback){
     cur  = srv.cur  || Object.keys(PROJECTS)[0] || null;
     try{ localStorage.setItem(LS_KEY, JSON.stringify(srv)); }catch(e){}
     window._opsServerHadData=true;
+    window._opsDataReady=true;
     if(callback) callback(true);
-  }).catch(function(e){ console.warn('[restoreFromServer]',e); if(callback)callback(false); });
+  }).catch(function(e){ console.warn('[restoreFromServer]',e); window._opsDataReady=true; if(callback)callback(false); });
 }
 
 
