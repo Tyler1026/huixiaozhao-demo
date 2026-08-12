@@ -2956,6 +2956,11 @@ function exportSub(){
 /* 对接记录存储 {projKey: [{ts, note, type}]} */
 var DOCK_LOGS = DOCK_LOGS || {};
 
+function pickDock(key){
+  window.__dockPick=key;
+  render();
+}
+
 function dockingPage(p){
   var projKeys=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k].stage>=3;});
 
