@@ -6340,16 +6340,9 @@ function opsOverview(){
     // 候选线索统计
     var aiClues  = clues.filter(function(c){return c.status==='ai_scan';});
     var opsClues = clues.filter(function(c){return c.status==='ops_rec';});
-    // 从企业资源库统计匹配到该城市+该方向的企业数
-    var _topic=(p.topic||'').toLowerCase();
+    // 从企业资源库统计匹配到该城市的企业数
     var matchedEnts = OPS_ENT.filter(function(e){
-      return (e.matches||[]).some(function(m){
-        if(m.city!==p.city) return false;
-        if(!_topic) return true;
-        var gapLow=(m.gap||'').toLowerCase();
-        var entGapLow=(e.gap||'').toLowerCase();
-        return gapLow.indexOf(_topic.substring(0,4))>=0 || entGapLow.indexOf(_topic.substring(0,4))>=0 || _topic.indexOf((e.gap||'').substring(0,4).toLowerCase())>=0;
-      });
+      return (e.matches||[]).some(function(m){ return m.city===p.city; });
     });
     var verified = matchedEnts.filter(function(e){return (e.matches||[]).some(function(m){return m.city===p.city&&m.pushed;});});
     var checking = matchedEnts.filter(function(e){return (e.matches||[]).some(function(m){return m.city===p.city&&!m.pushed;});});
