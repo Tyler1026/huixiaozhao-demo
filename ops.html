@@ -6466,36 +6466,52 @@ function opsEntFilter(list){
 }
 
 function opsEntListV2(list){
-  return '<div style="display:flex;flex-direction:column;gap:10px">' +
+  return '<div style="display:flex;flex-direction:column;gap:12px">' +
     list.map(function(e){
       var idx=OPS_ENT.indexOf(e);
       var matchCount=(e.matches||[]).length;
       var statusColor=e.status==='scanned'?'#6d28d9':e.status==='pushed'?'#166534':'#9aa5b5';
       var statusBg=e.status==='scanned'?'#f5f3ff':e.status==='pushed'?'#f0fdf4':'#f5f7fb';
-      var statusLabel=e.status==='scanned'?'已扫描 '+matchCount+'个匹配':e.status==='pushed'?'已推送':'待扫描';
-      var tagsHtml=(e.tags||[]).map(function(t){return '<span style="padding:2px 8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:11px;color:#1a56db">'+t+'</span>';}).join('');
-      var factionHtml=(e.faction||[]).map(function(f){return '<span style="padding:2px 8px;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;font-size:11px;color:#92400e">'+(f.person?f.person+' · '+f.label+(f.type==='校友会'?'毕业':''):''+f.label)+'</span>';}).join('');
-      return '<div style="background:#fff;border:1.5px solid #e8edf5;border-radius:14px;overflow:hidden">' +
-        '<div style="padding:14px 18px;display:flex;align-items:flex-start;gap:12px">' +
-          '<div style="flex:1;min-width:0">' +
-            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">' +
-              '<span style="font-size:14px;font-weight:700;color:#0b183b">'+e.name+'</span>' +
-              (e.hasMoveSignal?'<span style="padding:1px 7px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:11px;border:1px solid #bbf7d0">有扩张信号</span>':'') +
-              '<span style="padding:3px 10px;background:'+statusBg+';color:'+statusColor+';border-radius:20px;font-size:11px;font-weight:600">'+statusLabel+'</span>' +
-            '</div>' +
-            '<div style="font-size:12.5px;color:#4a5568;margin-bottom:4px">'+e.kind+' · '+e.region+(e.revenue?' · '+e.revenue:'')+'</div>' +
-            (e.gap?'<div style="font-size:12px;color:#8492a6;margin-bottom:6px">补链方向：'+e.gap+'</div>':'') +
-            (tagsHtml?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">'+tagsHtml+'</div>':'') +
-            (factionHtml?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">'+factionHtml+'</div>':'') +
-            (e.contact?'<div style="font-size:11.5px;color:#667590;margin-top:4px">联系人：'+e.contact+(e.note?' · '+e.note:'')+'</div>':'') +
-          '</div>' +
-          '<div style="text-align:right;flex-shrink:0;display:flex;gap:6px">' +
-            (e.status!=='scanned'&&e.status!=='pushed'?'<button onclick="opsEntScanOne('+idx+')" style="padding:5px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:7px;font-size:11.5px;color:#6d28d9;cursor:pointer">扫描</button>':'') +
-            (matchCount>0?'<button onclick="opsEntPushModal('+idx+')" style="padding:5px 10px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:7px;font-size:11.5px;color:#166534;cursor:pointer;font-weight:600">推送('+matchCount+')</button>':'') +
-            '<button onclick="opsEntDelete('+idx+')" style="padding:5px 8px;background:#fff5f5;border:1px solid #fecaca;border-radius:7px;font-size:11.5px;color:#ef4444;cursor:pointer">删</button>' +
-          '</div>' +
+      var statusLabel=e.status==='scanned'?'已扫描 '+matchCount+'匹配':e.status==='pushed'?'已推送':'待扫描';
+
+      // 标签
+      var tagsHtml=(e.tags||[]).length?'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:10px">'+(e.tags||[]).map(function(t){return '<span style="padding:3px 9px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;font-size:11px;color:#1a56db">'+t+'</span>';}).join('')+'</div>':'';
+
+      // 人脉/派系 - 分行显示
+      var factionHtml=(e.faction||[]).length?'<div style="margin-top:8px;padding:8px 12px;background:#fffbeb;border-radius:8px;border:1px solid #fef3c7"><div style="font-size:11px;color:#92400e;font-weight:600;margin-bottom:4px">人脉关系</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+(e.faction||[]).map(function(f){var lbl=f.person?(f.person+' · '+f.label+(f.type==='校友会'?'毕业':'')):''+f.label;return '<span style="padding:3px 9px;background:#fff;border:1px solid #fde68a;border-radius:12px;font-size:11px;color:#78350f">'+lbl+'</span>';}).join('')+'</div></div>':'';
+
+      // 联系人
+      var contactHtml=e.contact?'<div style="margin-top:8px;font-size:12px;color:#4a5568;display:flex;align-items:center;gap:6px"><span style="color:#9aa5b5">联系人</span><span style="font-weight:600">'+e.contact+'</span></div>':'';
+      
+      // 备注
+      var noteHtml=e.note?'<div style="margin-top:4px;font-size:11.5px;color:#667590;padding-left:2px">'+e.note+'</div>':'';
+
+      // 匹配方向
+      var matchHtml=matchCount>0?'<div style="margin-top:10px;padding-top:10px;border-top:1px solid #f0f4ff"><div style="font-size:11px;color:#9aa5b5;margin-bottom:6px">匹配方向</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+(e.matches||[]).map(function(m){return '<span style="padding:4px 10px;background:'+(m.pushed?'#f0fdf4':'#f5f3ff')+';border:1px solid '+(m.pushed?'#86efac':'#c4b5fd')+';border-radius:8px;font-size:11.5px;color:'+(m.pushed?'#166534':'#6d28d9')+'">'+m.city+' · '+m.gap+(m.pushed?' ✓':'')+'</span>';}).join('')+'</div></div>':'';
+
+      return '<div style="background:#fff;border:1.5px solid #e8edf5;border-radius:14px;padding:16px 20px">' +
+        // 头部：名称 + 扩张信号 + 状态 + 按钮
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">' +
+          '<span style="font-size:15px;font-weight:750;color:#0b183b">'+e.name+'</span>' +
+          (e.hasMoveSignal?'<span style="padding:2px 8px;background:#f0fdf4;color:#166534;border-radius:12px;font-size:11px;border:1px solid #bbf7d0">有扩张信号</span>':'') +
+          '<span style="padding:2px 9px;background:'+statusBg+';color:'+statusColor+';border-radius:12px;font-size:11px;font-weight:600">'+statusLabel+'</span>' +
+          '<div style="flex:1"></div>' +
+          (e.status!=='scanned'&&e.status!=='pushed'?'<button onclick="opsEntScanOne('+idx+')" style="padding:5px 12px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:11.5px;color:#6d28d9;cursor:pointer">扫描</button>':'') +
+          (matchCount>0?'<button onclick="opsEntPushModal('+idx+')" style="padding:5px 12px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:11.5px;color:#166534;cursor:pointer;font-weight:600">推送('+matchCount+')</button>':'') +
+          '<button onclick="opsEntDelete('+idx+')" style="padding:5px 8px;background:none;border:1px solid #e8edf5;border-radius:8px;font-size:11.5px;color:#9aa5b5;cursor:pointer">删除</button>' +
         '</div>' +
-        (matchCount>0?'<div style="padding:0 18px 12px"><div style="font-size:11px;color:#9aa5b5;margin-bottom:6px">匹配方向：</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+(e.matches||[]).map(function(m){return '<div style="padding:4px 10px;background:'+(m.pushed?'#f0fdf4':'#f5f3ff')+';border:1px solid '+(m.pushed?'#86efac':'#c4b5fd')+';border-radius:8px;font-size:11.5px;color:'+(m.pushed?'#166534':'#6d28d9')+'">'+m.city+' · '+m.gap+(m.pushed?' ✓':'')+'</div>';}).join('')+'</div></div>':'') +
+        // 基本信息行
+        '<div style="font-size:13px;color:#4a5568">'+e.kind+' · '+e.region+(e.revenue?' · 营收 '+e.revenue:'')+(e.employees?' · '+e.employees+'人':'')+'</div>' +
+        (e.gap?'<div style="font-size:12px;color:#667590;margin-top:3px">补链方向：'+e.gap+'</div>':'') +
+        // 标签
+        tagsHtml +
+        // 人脉派系
+        factionHtml +
+        // 联系人
+        contactHtml +
+        noteHtml +
+        // 匹配
+        matchHtml +
       '</div>';
     }).join('') +
   '</div>';
