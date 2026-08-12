@@ -4417,7 +4417,7 @@ function homePage(p){
     '<div id="reportArea">'+
       '<div id="reportHistoryArea"></div>'+
       (REPORTSTATE[cur]&&(REPORTSTATE[cur].phase===2||REPORTSTATE[cur].finalized)
-        ? reportHtml(p)
+        ? reportHtml(p)+'<div id="chainMapBlock">'+chainMapHtml(p)+'</div>'
         : '<div style="text-align:center;padding:48px 20px">'+
             '<div style="font-size:40px;margin-bottom:12px">📋</div>'+
             '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">'+
