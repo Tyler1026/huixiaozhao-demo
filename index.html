@@ -3672,6 +3672,36 @@ function ciAttachFiles(files, projKey, idx){
 
 
 /* 立项卡片 */
+/* 从REPORTSTATE恢复已保存的招引方向卡片 */
+function restoreActionItems(){
+  if(!cur || !REPORTSTATE[cur] || !REPORTSTATE[cur].actionItems) return '';
+  var items = REPORTSTATE[cur].actionItems;
+  var p = P(); if(!p) return '';
+  var colors=['#1a56db','#6366f1','#0891b2'];
+  var icons=['\ud83e\udd47','\ud83e\udd48','\ud83e\udd49'];
+
+  return '<div style="margin-top:20px;padding:0 4px">'+
+    '<div style="font-size:13px;font-weight:700;color:#0b183b;margin-bottom:10px">\ud83c\udf96 可立项招引方向 <span style="font-size:12px;color:#8492a6;font-weight:400">· 点击「提交招商需求」自动生成招商项目，进入项目管理</span></div>'+
+    items.map(function(it,idx){
+      var color=colors[idx%3];
+      var safeGap=it.gap.replace(/"/g,'&quot;');
+      var safeCity=p.city.replace(/"/g,'&quot;');
+      var safeTopic=p.topic.replace(/"/g,'&quot;');
+      return '<div style="border-radius:14px;border:2px solid '+color+';overflow:hidden;background:#fff;margin-bottom:10px">'+
+        '<div style="padding:12px 16px;background:'+color+';display:flex;align-items:center;gap:8px">'+
+          '<span style="font-size:18px">'+icons[idx]+'</span>'+
+          '<span style="font-size:13px;font-weight:700;color:#fff;flex:1">'+it.gap+'</span>'+
+          (it.attr?'<span style="padding:2px 8px;background:rgba(255,255,255,.2);border-radius:8px;font-size:11px;color:#fff">'+it.attr+'</span>':'')+
+        '</div>'+
+        '<div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between">'+
+          '<div style="font-size:12px;color:#4a5568">'+safeCity+' · '+safeTopic+'<br>置信度 100% · 来源：慧小招实测报告</div>'+
+          '<button onclick="importToProject(\''+safeGap+'\',\''+safeCity+'\',\''+safeTopic+'\')" style="padding:8px 18px;background:'+color+';color:#fff;border:none;border-radius:10px;font-size:12.5px;font-weight:650;cursor:pointer">提交招商需求 →</button>'+
+        '</div>'+
+      '</div>';
+    }).join('')+
+  '</div>';
+}
+
 function renderActionItems(text, p, r){
   if(!text||!p) return;
   var area=document.getElementById('reportArea');
@@ -3706,6 +3736,9 @@ function renderActionItems(text, p, r){
     });
   }
   if(!items.length) return;
+  // 持久化招引方向卡片数据
+  if(cur && REPORTSTATE[cur]) { REPORTSTATE[cur].actionItems=items; persist(); }
+
 
   var colors=['#1a56db','#6366f1','#0891b2'];
   var icons=['🥇','🥈','🥉'];
@@ -4532,7 +4565,7 @@ function homePage(p){
     '<div id="reportArea">'+
       '<div id="reportHistoryArea"></div>'+
       (REPORTSTATE[cur]&&(REPORTSTATE[cur].phase===2||REPORTSTATE[cur].finalized)
-        ? reportHtml(p)+'<div id="chainMapBlock">'+chainMapHtml(p)+'</div>'
+        ? reportHtml(p)+'<div id="chainMapBlock">'+chainMapHtml(p)+'</div>'+'<div id="actionItemsBlock">'+restoreActionItems()+'</div>'
         : '<div style="text-align:center;padding:48px 20px">'+
             '<div style="font-size:40px;margin-bottom:12px">📋</div>'+
             '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">'+
