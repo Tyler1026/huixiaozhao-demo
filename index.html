@@ -1709,8 +1709,8 @@ function kbReadiness(){
   var uploads=(UPLOADS[cur]||[]).length;
   // 评分：⚠️确认率×60 + 上传加分×40
   var warnRate=warnTotal>0?warnConfirmed/warnTotal:1; // 无⚠️时视为全部完成
-  var uploadBonus=Math.min(40, uploads*10);
-  var score=Math.round(warnRate*60 + uploadBonus);
+  var uploadBonus=Math.min(20, uploads*10); // 上传材料加分（可选）
+  var score=Math.round(warnRate*80 + uploadBonus);
   var label=score>=80?'已就绪':score>=50?'基本完整':score>=20?'待补充':'未开始';
   var color=score>=80?'#22c55e':score>=50?'#f59e0b':score>=20?'#3b82f6':'#9aa5b5';
   return {score:score,total:warnTotal,confirmed:warnConfirmed,files:uploads,label:label,color:color};
