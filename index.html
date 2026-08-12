@@ -3861,6 +3861,18 @@ function importToProject(gap, city, topic, btnEl){
     REPORTSTATE[key].topic=gap;   // 更新 topic 为新方向
     REPORTSTATE[key].phase=2;     // 保留完整报告（研判已完成）
   }
+  // 同步到管理端需求池（DEMANDS）
+  if(typeof DEMANDS==='undefined') window.DEMANDS=[];
+  DEMANDS.push({
+    id:key,
+    city:city||p.city,
+    topic:gap,
+    from:topic||p.topic,
+    who:p?p.who:'负责人',
+    org:(city||p.city)+'市招商局',
+    ts:Date.now(),
+    status:'pending'
+  });
   // 不切换 cur — 保留当前研判页所有状态
   persist();
   // 弹出确认浮层，让用户主动跳转
@@ -5135,6 +5147,7 @@ function persist(){
       REPORTSTATE:REPORTSTATE,
       PENDING_CONFIRMS:PENDING_CONFIRMS,
       DOCK_LOGS:DOCK_LOGS,
+      DEMANDS:typeof DEMANDS!=='undefined'?DEMANDS:[],
       KB_CHAT:KB_CHAT,
       syncTs:Date.now()
     };
@@ -5192,6 +5205,7 @@ function restoreFromServer(callback){
     REPORTSTATE      = srv.REPORTSTATE      || {};
     PENDING_CONFIRMS = srv.PENDING_CONFIRMS || {};
     DOCK_LOGS        = srv.DOCK_LOGS        || {};
+    if(srv.DEMANDS) window.DEMANDS=srv.DEMANDS;
     KB_CHAT          = srv.KB_CHAT          || {};
     cur  = srv.cur  || Object.keys(PROJECTS)[0] || null;
     view = srv.view || 'setup';
