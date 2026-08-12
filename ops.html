@@ -6444,19 +6444,13 @@ function opsViewFileChunks(projKey, fname){
   var chunks = (KB_FILE_CHUNKS[projKey]||[]).filter(function(c){ return c.cite === fname; });
   var body = '';
   if(chunks.length === 0){
-    body = '<div style="padding:20px;text-align:center;color:#8492a6;font-size:13px">该文件的原始内容未保存在服务器。<br>仅保存了解析后的知识片段元数据。</div>';
+    body = '<div style="padding:20px;text-align:center;color:#8492a6;font-size:13px">该文件的解析内容暂未保存。</div>';
   } else {
-    body = '<div style="display:flex;flex-direction:column;gap:8px">' +
-      chunks.map(function(c, i){
-        return '<div style="padding:10px 14px;background:#f8faff;border:1px solid #e8edf5;border-radius:8px">' +
-          '<div style="font-size:11px;color:#9aa5b5;margin-bottom:4px">片段 '+(i+1)+' · 主题：'+c.topic+'</div>' +
-          '<div style="font-size:13px;color:#1e293b;line-height:1.7">'+c.text+'</div>' +
-          (c.tags?'<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">'+c.tags.map(function(t){return '<span style="padding:1px 6px;background:#eff6ff;border-radius:4px;font-size:10px;color:#1a56db">'+t+'</span>';}).join('')+'</div>':'') +
-        '</div>';
-      }).join('') +
-    '</div>';
+    // 拼接所有片段为完整文档展示
+    var fullText = chunks.map(function(c){ return c.text; }).join('\n\n');
+    body = '<div style="padding:16px 20px;background:#f8faff;border:1px solid #e8edf5;border-radius:10px;font-size:13px;color:#1e293b;line-height:2;white-space:pre-wrap;max-height:60vh;overflow-y:auto">' + fullText + '</div>';
   }
-  openModal(' '+fname+' （'+chunks.length+'个片段）', body,
+  openModal(' ' + fname, body,
     '<button class="secondary-button" onclick="closeModal()">关闭</button>');
 }
 
