@@ -1634,7 +1634,7 @@ function topbar(p){
     '<div class="org-block"><i class="i">🏛️</i>'+
       '<strong style="font-weight:650">'+p.org+' · '+(p&&p.who||'—')+'</strong>'+
       '<span style="margin:0 10px;color:#cbd7e6">/</span>'+
-      '<strong style="color:var(--blue-dark)">'+p.topic+'</strong>'+
+      '<strong id="topbarTopic" style="color:var(--blue-dark)">'+p.topic+'</strong>'+
     '</div>'+
     '<div class="top-meta"><span><i class="i">🛰️</i>'+p.city+'城市智库已连接</span><span><i class="i">🕒</i>'+nowLabel()+'产业信息更新至 '+nowLabel()+'</span>'+
       '<span style="position:relative;cursor:pointer" onclick="toggleNotif(event)"><i class="i">🔔</i>'+
@@ -3484,6 +3484,8 @@ function selectTopic(val, isCustom){
   persist();
   var badge=document.getElementById('currentTopicBadge');
   if(badge) badge.textContent=p.topic;
+  var _tbTopic=document.getElementById('topbarTopic');
+  if(_tbTopic) _tbTopic.textContent=p.topic;
   if(!isCustom){
     var inp=document.getElementById('topicCustomInput');
     if(inp) inp.value='';
