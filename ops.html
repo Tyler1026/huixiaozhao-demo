@@ -6399,8 +6399,7 @@ function opsOverview(){
         }).join('') +
       '</div>' +
       // 统计网格
-      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-bottom:1px solid #f0f4ff">' +
-        statCell('✅ 已确认结论', confirmedCount+'条', confirmedCount>0?'#1d4ed8':'#9aa5b5') +
+      '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0;border-bottom:1px solid #f0f4ff">' +
         statCell('🔍 AI扫描线索', aiClues.length+'条', aiClues.length>0?'#6d28d9':'#9aa5b5') +
         statCell('✓ 可对接企业', verified.length+(checking.length?'/'+checking.length+'核验中':'')+'条', verified.length>0?'#166534':'#9aa5b5') +
       '</div>' +
