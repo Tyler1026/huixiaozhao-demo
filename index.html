@@ -3494,7 +3494,7 @@ function selectTopic(val, isCustom){
   var _ra=document.getElementById('reportArea');
   if(_ra){
     var _rs=REPORTSTATE[cur];
-    if(_rs&&(_rs.finalized||_rs.phase===2)){
+    if(_rs&&(_rs.finalized||_rs.phase===2||_rs.text||(PENDING_CONFIRMS[cur]&&PENDING_CONFIRMS[cur].length))){
       var _nt=getTopicReport(p.topic);
       if(_nt){ _rs.text=_nt; }
       _rs.topic=p.topic;
