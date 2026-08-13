@@ -719,7 +719,12 @@ function render(){
       restoreFromServer(function(ok){
         if(ok){
           // 服务器有数据，直接使用
-          if(AUTH.resident){ cur=cur||'sz'; view=view||'knowledge'; KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true}; }
+          if(AUTH.resident){
+            // 常驻=随州账号：强制落到随州项目，忽略服务器残留的其他城市 cur（如上海）
+            var _isSz=function(k){return PROJECTS[k]&&PROJECTS[k].city&&PROJECTS[k].city.indexOf('随州')>=0;};
+            if(!cur || !_isSz(cur)){ cur = PROJECTS['sz'] ? 'sz' : (Object.keys(PROJECTS).filter(_isSz)[0]||'sz'); }
+            view=view||'knowledge'; KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true};
+          }
         } else {
           // 服务器无数据，本地初始化
           if(AUTH.resident){ provisionSuizhou(); cur='sz'; view='knowledge'; KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true}; persist(); }
