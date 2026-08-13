@@ -6880,15 +6880,22 @@ function showAiFillConfirm(idx, info, e){
     if(!hasNew) return '';
     if(hasOld && f.old===f.new) return '';
     var checked=hasOld?'':'checked';
+    var safeNew=String(f.new).replace(/"/g,'&quot;');
     return '<div style="padding:10px 12px;background:#f8faff;border:1px solid #e8edf5;border-radius:8px;margin-bottom:8px">'+
-      '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">'+
-        '<input type="checkbox" data-field="'+f.key+'" '+checked+' style="margin-top:3px;width:16px;height:16px" />'+
+      '<div style="display:flex;align-items:flex-start;gap:10px">'+
+        '<input type="checkbox" data-field="'+f.key+'" '+checked+' style="margin-top:3px;width:16px;height:16px;cursor:pointer" />'+
         '<div style="flex:1">'+
           '<div style="font-size:12px;font-weight:650;color:#4a5568;margin-bottom:3px">'+f.label+'</div>'+
-          (hasOld?'<div style="font-size:12px;color:#9aa5b5;text-decoration:line-through;margin-bottom:2px">现有：'+f.old+'</div>':'')+
-          '<div style="font-size:13px;color:#1e293b">AI建议：'+f.new+'</div>'+
+          (hasOld?'<div style="font-size:12px;color:#9aa5b5;text-decoration:line-through;margin-bottom:4px">现有：'+f.old+'</div>':'')+
+          '<div style="display:flex;align-items:center;gap:6px">'+
+            '<span style="font-size:12px;color:#6d28d9;font-weight:600;flex-shrink:0">AI建议</span>'+
+            '<input type="text" data-fieldval="'+f.key+'" value="'+safeNew+'" '+
+              'style="flex:1;box-sizing:border-box;padding:6px 9px;border:1.5px solid #ddd6fe;border-radius:7px;font-size:13px;color:#1e293b;outline:none;background:#fff" '+
+              'onfocus="this.style.border=\'1.5px solid #6d28d9\'" onblur="this.style.border=\'1.5px solid #ddd6fe\'" '+
+              'oninput="var cb=this.closest(\'div[style*=background\']\')?this.closest(\'div\').parentNode.parentNode.querySelector(\'input[type=checkbox]\'):null;if(cb)cb.checked=true;" />'+
+          '</div>'+
         '</div>'+
-      '</label>'+
+      '</div>'+
     '</div>';
   }).filter(Boolean).join('');
 
@@ -6976,9 +6983,13 @@ function applyAiFill(){
   checkboxes.forEach(function(cb){
     if(!cb.checked) return;
     var field=cb.dataset.field;
-    if(field==='tags' && info.tags) e.tags=info.tags;
+    // 读取输入框里（可能被手动修改过的）值，回退到 AI 原值
+    var inp=document.querySelector('#modalLayer input[data-fieldval="'+field+'"]');
+    var editedVal=inp?inp.value.trim():'';
+    if(field==='tags'){ e.tags=editedVal?editedVal.split(/[,，、]+/).map(function(t){return t.trim();}).filter(Boolean):(info.tags||e.tags); }
     else if(field==='faction' && info.faction) e.faction=info.faction;
-    else if(field==='signal' && info.signal){ e.signal=info.signal; e.hasMoveSignal=true; }
+    else if(field==='signal'){ e.signal=editedVal||info.signal; e.hasMoveSignal=true; }
+    else if(editedVal) e[field]=editedVal;
     else if(info[field]) e[field]=info[field];
   });
   persist();
