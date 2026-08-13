@@ -3441,7 +3441,26 @@ function cancelTopicEdit(){
 // 选择研判方向（卡片点击 or 自定义输入）
 function selectTopic(val, isCustom){
   var p=P(); if(!p||!val||!val.trim()) return;
+  // 切换方向前：把当前方向的待确认事项存回该方向的桶
+  if(cur && REPORTSTATE[cur]){
+    if(!REPORTSTATE[cur].pendingByTopic) REPORTSTATE[cur].pendingByTopic={};
+    var _oldTopic=p.topic;
+    if(_oldTopic && typeof PENDING_CONFIRMS!=='undefined' && PENDING_CONFIRMS[cur])
+      REPORTSTATE[cur].pendingByTopic[_oldTopic]=PENDING_CONFIRMS[cur];
+  }
   p.topic=val.trim();
+  // 切换后：加载新方向的待确认事项（无缓存则从该方向报告文本解析）
+  if(cur && REPORTSTATE[cur]){
+    var _pb=REPORTSTATE[cur].pendingByTopic||{};
+    var _np=_pb[p.topic];
+    if(!_np||!_np.length){
+      var _rtxt=getTopicReport(p.topic)||'';
+      _np=parsePendingItems(_rtxt);
+    }
+    PENDING_CONFIRMS[cur]=_np||[];
+    if(!REPORTSTATE[cur].pendingByTopic) REPORTSTATE[cur].pendingByTopic={};
+    REPORTSTATE[cur].pendingByTopic[p.topic]=PENDING_CONFIRMS[cur];
+  }
   persist();
   var badge=document.getElementById('currentTopicBadge');
   if(badge) badge.textContent=p.topic;
@@ -3883,6 +3902,21 @@ function ciAttachFiles(files, projKey, idx){
 /* 立项卡片 */
 /* 恢复确认面板（如果有待确认事项） */
 function restoreConfirmPanel(){
+  // 若当前方向待确认事项为空，按方向缓存/报告文本恢复
+  if(cur && REPORTSTATE[cur] && (!PENDING_CONFIRMS[cur] || !PENDING_CONFIRMS[cur].length)){
+    var _p=P(); var _topic=_p?_p.topic:'';
+    var _pb=REPORTSTATE[cur].pendingByTopic||{};
+    var _np=_topic?_pb[_topic]:null;
+    if((!_np||!_np.length)&&_topic){
+      var _rtxt=getTopicReport(_topic)||REPORTSTATE[cur].text||'';
+      _np=parsePendingItems(_rtxt);
+    }
+    if(_np&&_np.length){
+      PENDING_CONFIRMS[cur]=_np;
+      if(!REPORTSTATE[cur].pendingByTopic) REPORTSTATE[cur].pendingByTopic={};
+      if(_topic) REPORTSTATE[cur].pendingByTopic[_topic]=_np;
+    }
+  }
   if(!cur || !PENDING_CONFIRMS[cur] || !PENDING_CONFIRMS[cur].length) return '';
   var reanalyzeBtn = '<div style="margin-bottom:12px;display:flex;gap:10px;align-items:center">'+
     '<button onclick="startAiInterview()" style="padding:10px 20px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer"> 重新分析（AI访谈）</button>'+
