@@ -1824,25 +1824,8 @@ function sidebar(){
       if(r.score>=80) return '✓ 已就绪 '+r.score+'% · '+conf+'条已确认';
       return conf>0?(conf+'条已确认 · '+uploads+'份材料 · '+r.score+'%'):'待完善 · 产业/园区/企业/政策';
     })(),
-    report: (function(){
-      if(!p) return '生成缺口分析与招引方向';
-      var rs=REPORTSTATE[cur];
-      if(!rs) return '待研判 · 选方向后点击生成';
-      if(rs.phase===1){
-        var pc=PENDING_CONFIRMS[cur]||[];
-        var done=pc.filter(function(x){return x.status==='confirmed'||x.status==='edited';}).length;
-        return done+'/'+pc.length+' 待确认 · 草稿已生成';
-      }
-      return '✓ 完整报告已生成'+(rs.score!=null?' · '+topicScore(P()&&P().topic)+'%置信度':'');
-    })(),
-    home: (function(){
-      if(!p) return '报告派生项目·对接需求';
-      var stage=p.stage||1;
-      var stageNames=['资料准备','AI研判','确认需求','资源匹配','招商对接'];
-      var _mc=(cur&&PROJECTS[cur]&&PROJECTS[cur].city)?PROJECTS[cur].city:null;
-      var nProjects=Object.keys(PROJECTS).filter(function(k){return !_mc||(PROJECTS[k]&&PROJECTS[k].city===_mc);}).length;
-      return nProjects+'个项目 · 当前「'+(stageNames[stage-1]||'进行中')+'」';
-    })(),
+    report: '生成缺口分析与招引方向',
+    home: '报告派生项目·对接需求',
     docking: (function(){
       if(!p||!p.clues||!p.clues.length) return '候选企业·可达性核验';
       var amber=p.clues.filter(function(c){return c.tag==='amber';}).length;
