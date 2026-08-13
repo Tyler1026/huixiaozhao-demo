@@ -4954,7 +4954,7 @@ function homePage(p){
   var reportArea=
     '<div id="reportArea">'+
       '<div id="reportHistoryArea"></div>'+
-      (REPORTSTATE[cur]&&(REPORTSTATE[cur].phase===2||REPORTSTATE[cur].finalized)
+      ((REPORTSTATE[cur]&&(REPORTSTATE[cur].phase===2||REPORTSTATE[cur].finalized))||(REPORTSTATE[cur]&&REPORTSTATE[cur].text)||(PENDING_CONFIRMS[cur]&&PENDING_CONFIRMS[cur].length)
         ? reportHtml(p)+'<div id="chainMapBlock">'+chainMapHtml(p)+'</div>'+'<div id="actionItemsBlock">'+restoreActionItems()+'</div>'+restoreConfirmPanel()
         : '<div style="text-align:center;padding:48px 20px">'+
             '<div style="font-size:40px;margin-bottom:12px">📋</div>'+
