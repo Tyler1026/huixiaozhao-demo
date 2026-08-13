@@ -7233,7 +7233,7 @@ function opsEntScanOne(idx, silent){
   var e=OPS_ENT[idx]; if(!e) return;
   var matches=e.matches||[];  // 保留已有匹配，不清空
   var existingKeys={};
-  matches.forEach(function(m){existingKeys[m.city+':'+m.gap]=true;});
+  matches.forEach(function(m){existingKeys[(m.projKey||m.city)+':'+m.gap]=true;});
 
   var gapKw=(e.gap||e.kind||'').toLowerCase();
   var nameKw=(e.name||'').toLowerCase();
@@ -7287,10 +7287,10 @@ function opsEntScanOne(idx, silent){
         });
       }
       if(hit){
-        var key=p.city+':'+gapTxt.slice(0,25);
+        var key=k+':'+gapTxt.slice(0,25);
         if(!existingKeys[key]){
           existingKeys[key]=true;
-          matches.push({city:p.city,gap:gapTxt.slice(0,25),pushed:false});
+          matches.push({city:p.city,projKey:k,gap:gapTxt.slice(0,25),pushed:false});
         }
       }
     });
@@ -7315,6 +7315,7 @@ function opsEntScanAll(){
     opsEntScanOne(i, true);
     count+=(e.matches||[]).length;
   });
+  persist();
   renderOpsV2();
   toast('✓ 全局扫描完成，共找到 '+count+' 个匹配方向，可逐条推送');
 }
@@ -7539,6 +7540,7 @@ function opsEntScanAll(){
     opsEntScanOne(i, true);
     count+=(e.matches||[]).length;
   });
+  persist();
   renderOpsV2();
   toast('✓ 全局扫描完成，共找到 '+count+' 个匹配方向，可逐条推送');
 }
