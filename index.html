@@ -4198,7 +4198,6 @@ function renderInterviewUI(){
       '<div style="display:flex;gap:10px;align-items:center">'+
         (_interviewState.currentQ>0?'<button onclick="interviewPrev()" style="padding:10px 20px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer;font-weight:600">← 上一题</button>':'')+
         '<button onclick="interviewSkip()" style="padding:10px 20px;background:#fff;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#9aa5b5;cursor:pointer">跳过</button>'+
-        '<div style="flex:1"></div>'+
         (cur<total?'<button onclick="interviewNext()" style="padding:10px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer">下一题 →</button>':
         '<button onclick="interviewDone()" style="padding:10px 24px;background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer">完成访谈，开始分析</button>')+
       '</div>'+
@@ -4208,6 +4207,11 @@ function renderInterviewUI(){
 function interviewNext(){
   var textarea=document.getElementById('interviewAnswer');
   var text=(textarea?textarea.value:'').trim();
+  if(!text){
+    toast('请先作答，或点击「跳过」');
+    if(textarea){ textarea.focus(); textarea.style.border='1.5px solid #f59e0b'; }
+    return;
+  }
   _interviewState.answers[_interviewState.currentQ]={text:text, id:_interviewState.questions[_interviewState.currentQ].id};
   _interviewState.currentQ++;
   renderInterviewUI();
