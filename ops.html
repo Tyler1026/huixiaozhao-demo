@@ -6404,6 +6404,17 @@ function opsOverview(){
         statCell('🔍 AI扫描线索', aiClues.length+'条', aiClues.length>0?'#6d28d9':'#9aa5b5') +
         statCell('✓ 可对接企业', verified.length+(checking.length?'/'+checking.length+'核验中':'')+'条', verified.length>0?'#166534':'#9aa5b5') +
       '</div>' +
+      // 指标说明
+      '<div style="padding:10px 20px;background:#fbfcff;border-bottom:1px solid #f0f4ff;display:flex;flex-direction:column;gap:6px">' +
+        '<div style="display:flex;align-items:flex-start;gap:7px;font-size:11.5px;color:#6b7280;line-height:1.6">' +
+          '<span style="color:#6d28d9;font-weight:700;flex-shrink:0">🔍 AI扫描线索</span>' +
+          '<span>系统根据该方向的产业报告缺口，自动从公开信息中扫出的<b>候选企业线索</b>，供参考，尚未经人工核实真实投资意向。</span>' +
+        '</div>' +
+        '<div style="display:flex;align-items:flex-start;gap:7px;font-size:11.5px;color:#6b7280;line-height:1.6">' +
+          '<span style="color:#166534;font-weight:700;flex-shrink:0">✓ 可对接企业</span>' +
+          '<span>已在<b>企业资源库</b>中匹配并推送到该城市的企业；「核验中」表示已匹配待资源团队核实，核实通过后即为可安排对接的确定资源。</span>' +
+        '</div>' +
+      '</div>' +
       // 需求块
       (demand ?
         '<div style="padding:14px 20px;background:#fffbeb;border-bottom:1px solid #fde68a">' +
