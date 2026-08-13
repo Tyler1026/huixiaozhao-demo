@@ -7482,35 +7482,57 @@ function opsEntImport(){
 }
 
 /* 扫描单家企业：匹配所有城市的缺口方向 */
+/* 领域聚类：把一段文本归到若干产业领域（用于企业↔缺口的语义匹配） */
+function opsEntDomains(text){
+  text=(text||'').toLowerCase();
+  var DICT={
+    'h2stack':['电堆','燃料电池','氢燃料','氢能','pem','fcv','双极板','膜电极'],
+    'h2store':['储氢','氢瓶','瓶阀','高压气态','储氢瓶','气瓶','复合材料'],
+    'powertrain':['动力总成','底盘','发动机','变速','传动','驱动桥'],
+    'drone':['无人机','应急','机器人','卫星','通信模块','5g','低空','消防'],
+    'mushroom':['香菇','食用菌','菌菇','菌种','多糖','多肽','提取','精深','预制菜','植物提取','烘干','菌棒','深加工']
+  };
+  var doms={};
+  for(var d in DICT){ if(DICT[d].some(function(w){return text.indexOf(w)>=0;})) doms[d]=true; }
+  return doms;
+}
+
 function opsEntScanOne(idx, silent){
   var e=OPS_ENT[idx]; if(!e) return;
   var matches=[];
-  var gapKw=(e.gap||e.kind||'').toLowerCase();
+  // 企业侧领域：综合 名称+方向+行业+标签
+  var entText=(e.name||'')+' '+(e.gap||'')+' '+(e.kind||'')+' '+((e.tags||[]).join(' '));
+  var entDoms=opsEntDomains(entText);
+  var entDomList=Object.keys(entDoms);
   Object.keys(PROJECTS).forEach(function(k){
     var p=PROJECTS[k];
     var rs=REPORTSTATE[k];
-    if(!rs||!rs.text) return;
-    // 从报告文本里找 ❌缺失 行，和企业 gap 做关键词匹配
+    var kb=p.kb||[];
+    // 缺口来源：报告文本 ❌/⚠/薄弱/缺失 行 + KB 主题卡方向
     var gaps=[];
-    rs.text.split('\n').forEach(function(l){
-      if(l.indexOf('❌')>=0){
-        var clean=l.replace(/[❌*#|]/g,'').replace(/\s+/g,' ').trim();
-        if(clean.length>3&&clean.length<60) gaps.push(clean);
-      }
+    if(rs&&rs.text){
+      rs.text.split('\n').forEach(function(l){
+        if(l.indexOf('❌')>=0||l.indexOf('⚠')>=0||l.indexOf('薄弱')>=0||l.indexOf('缺失')>=0){
+          var clean=l.replace(/[❌✅⚠️*#|]/g,'').replace(/\s+/g,' ').trim();
+          if(clean.length>3&&clean.length<80) gaps.push(clean);
+        }
+      });
+    }
+    kb.forEach(function(card){
+      (card&&card.known||[]).forEach(function(item){
+        var c=item.replace(/[✅⚠️]/g,'').replace(/\s+/g,' ').trim();
+        if((c.indexOf('缺')>=0||c.indexOf('薄弱')>=0||c.indexOf('补链')>=0||c.indexOf('引进')>=0)&&c.length>4&&c.length<80) gaps.push(c);
+      });
     });
     gaps.forEach(function(gapTxt){
       var gapLow=gapTxt.toLowerCase();
-      // 关键词命中打分
-      var kws=(e.gap||'').toLowerCase().split(/[/、，,\s]+/).filter(Boolean);
-      var hit=kws.some(function(kw){return kw.length>1&&gapLow.indexOf(kw)>=0;});
-      if(!hit){
-        // 反向：报告缺口词出现在企业 kind 里
-        var gapWords=gapLow.split(/[/、，,\s]+/).filter(function(w){return w.length>1;});
-        hit=gapWords.some(function(w){
-          return (e.kind||'').toLowerCase().indexOf(w)>=0 ||
-                 (e.name||'').toLowerCase().indexOf(w)>=0 ||
-                 gapKw.indexOf(w)>=0;
-        });
+      var kws=(e.gap||'').toLowerCase().split(/[/、，,\s]+/).filter(function(w){return w.length>1;});
+      // ① 字面命中（企业方向词出现在缺口里）
+      var hit=kws.some(function(kw){return gapLow.indexOf(kw)>=0;});
+      // ② 领域聚类命中（企业领域 ∩ 缺口领域 非空）
+      if(!hit && entDomList.length){
+        var gapDoms=opsEntDomains(gapTxt);
+        hit=entDomList.some(function(d){return gapDoms[d];});
       }
       if(hit){
         matches.push({projKey:k, city:p.city, gap:gapTxt.slice(0,25), pushed:false});
@@ -7523,10 +7545,11 @@ function opsEntScanOne(idx, silent){
     var key=m.projKey+':'+m.gap;
     if(seen[key]) return false;
     seen[key]=true; return true;
-  }).slice(0,5);
+  }).slice(0,6);
   OPS_ENT[idx].matches=matches;
   OPS_ENT[idx].status=matches.length>0?'scanned':'manual';
   if(!silent){
+    persist();
     renderOpsV2();
     toast(matches.length>0?'✓ 扫描完成，找到 '+matches.length+' 个匹配方向':'未找到匹配方向，请检查企业方向填写');
   }
