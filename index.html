@@ -294,7 +294,7 @@ function viewCurrentReport(){
   setReportAreaHtml(area,
     '<div style="border-radius:14px;border:1.5px solid #bfdbfe;overflow:hidden;margin-bottom:8px">'+
       '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
-        '<span style="font-size:13px;font-weight:700;color:#1d4ed8">📊 研判报告（完整版）</span>'+
+        '<span style="font-size:13px;font-weight:700;color:#1d4ed8">📊 产业分析报告（完整版）</span>'+
         '<span style="font-size:11.5px;color:#8492a6">'+rs.topic+'</span>'+
         '<span style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f0fdf4;color:#166534">置信度 '+topicScore(rs.topic)+'%</span>'+
         '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
@@ -3481,7 +3481,7 @@ function selectTopic(val, isCustom){
         '<div style="text-align:center;padding:48px 20px">'+
           '<div style="font-size:40px;margin-bottom:12px">📊</div>'+
           '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">'+
-            '选择上方研判方向，点击「产业智能分析」'+
+            '选择上方产业分析方向，点击「产业智能分析」'+
           '</div>'+
           '<div style="font-size:12.5px;color:#8492a6;line-height:1.6">'+
             '基于城市智库数据，AI 将自动生成产业链分析报告'+
@@ -4713,7 +4713,7 @@ function chainMapHtml(p){
   h+='<div style="padding:12px 18px;background:linear-gradient(135deg,#1e3a5f,#1a56db);display:flex;align-items:center;gap:10px">';
   h+='<span style="font-size:20px">'+icon+'</span>';
   h+='<div><div style="font-size:13.5px;font-weight:800;color:#fff;letter-spacing:.3px">'+key+'产业链图谱</div>';
-  h+='<div style="font-size:11px;color:rgba(255,255,255,0.7);margin-top:1px">当前研判方向 · '+topic+'</div></div>';
+  h+='<div style="font-size:11px;color:rgba(255,255,255,0.7);margin-top:1px">当前产业分析方向 · '+topic+'</div></div>';
   /* 图例 */
   h+='<div style="margin-left:auto;display:flex;gap:8px">';
   [{t:'优势',bg:'#16a34a'},{t:'培育',bg:'#d97706'},{t:'缺口',bg:'#ef4444'}].forEach(function(lg){
@@ -4791,7 +4791,7 @@ function reportHtml(p){
   }
   return '<div style="border-radius:14px;border:1.5px solid #e8edf5;overflow:hidden;margin-bottom:8px">'+
     '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
-      '<span style="font-size:12px;font-weight:650;color:#1a56db">📋 研判报告</span>'+
+      '<span style="font-size:12px;font-weight:650;color:#1a56db">📋 产业分析报告</span>'+
       '<span style="font-size:11.5px;color:#4a5568">'+p.topic+'</span>'+
       '<span style="margin-left:auto;font-size:11px;color:'+(topicScore(p.topic)>=80?'#22c55e':'#f59e0b')+'">置信度 '+topicScore(p.topic)+'%</span>'+
       '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
@@ -4862,7 +4862,7 @@ function homePage(p){
       '</div>'+
       (r.score<80
         ? '<button onclick="go(\'knowledge\')" style="flex-shrink:0;padding:6px 12px;background:#fff;border:1.5px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e;cursor:pointer;font-weight:600">补充城市智库 →</button>'
-        : '<span style="flex-shrink:0;font-size:12px;color:#22c55e">✓ 可直接生成研判</span>'
+        : '<span style="flex-shrink:0;font-size:12px;color:#22c55e">✓ 可直接生成产业分析</span>'
       )+
     '</div>';
 
@@ -4885,7 +4885,7 @@ function homePage(p){
 
   var topicSelector=
     '<div style="padding:0 0 20px">'+
-      '<div style="font-size:12px;font-weight:650;color:#4a5568;margin-bottom:10px;letter-spacing:.3px">选择研判方向</div>'+
+      '<div style="font-size:12px;font-weight:650;color:#4a5568;margin-bottom:10px;letter-spacing:.3px">选择产业分析方向</div>'+
       '<div id="topicCardGrid" style="display:flex;gap:10px;margin-bottom:12px">'+topicCards+'</div>'+
       '<div style="display:flex;align-items:center;gap:8px">'+
         '<div style="flex:1;position:relative">'+
@@ -4913,7 +4913,7 @@ function homePage(p){
         : '<div style="text-align:center;padding:48px 20px">'+
             '<div style="font-size:40px;margin-bottom:12px">📋</div>'+
             '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">'+
-              '选择上方研判方向，点击「🔍 产业智能分析」'+
+              '选择上方产业分析方向，点击「🔍 产业智能分析」'+
             '</div>'+
             '<div style="font-size:12.5px;color:#8492a6;line-height:1.8">'+
               '① AI 先出初步草稿（约10秒）② 逐条确认待确认事项 ③ 生成完整五章报告'+
@@ -4939,7 +4939,7 @@ function homePage(p){
         ? ('<button onclick="viewCurrentReport()" '+
             'style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">📊 查看完整报告</button>'+
            '<button onclick="downloadReport(\'full\')" style="padding:13px 16px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;font-size:13px;color:#1a56db;cursor:pointer;font-weight:600">⬇ 下载</button>'+
-           '<button onclick="startAiInterview()" style="padding:13px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:12.5px;color:#4a5568;cursor:pointer">🔄 重新研判</button>')
+           '<button onclick="startAiInterview()" style="padding:13px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:12.5px;color:#4a5568;cursor:pointer">🔄 重新产业分析</button>')
         : ('<button id="generateBtn" onclick="startAiInterview()" '+
             'style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">'+
             '🔍 产业智能分析'+
@@ -5255,12 +5255,12 @@ function detailSub(s){
 // 产业分析页 → 右侧：本次研判（版本/进度/待核实/已传材料）
 function detailReport(p){
   var st=REPORTSTATE[cur]; var ups=(UPLOADS[cur]||[]);
-  return '<div class="detail-header"><div><span class="eyebrow">CURRENT STUDY</span><h2>本次研判</h2><p>'+p.topic+'</p></div></div>'+
+  return '<div class="detail-header"><div><span class="eyebrow">CURRENT STUDY</span><h2>本次产业分析</h2><p>'+p.topic+'</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>报告状态</h3>'+(st
         ? '<ul class="check-list">'+
             '<li><i class="i">'+(st.phase===2?'✅':'✎')+'</i>'+(st.phase===2?'完整报告已生成':'初步草稿')+' · 置信度 '+topicScore(p.topic)+'%</li>'+
-            '<li><i class="i"></i>研判方向：'+p.topic+'</li>'+
+            '<li><i class="i"></i>产业分析方向：'+p.topic+'</li>'+
             '<li><i class="i"></i>生成时间：'+(st.ts?new Date(st.ts).toLocaleDateString('zh-CN'):'未知')+'</li>'+
           '</ul>'
         : '<div class="info-callout" style="margin-top:0">尚未生成报告。请先在「产业分析」选择方向并点击生成。</div>'      )+'</div>'+
