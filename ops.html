@@ -6335,7 +6335,7 @@ function opsOverview(){
     '</div>';
   }
 
-  var cards = projKeys.map(function(k){
+  function opsProjCard(k){
     var p  = PROJECTS[k];
     var rs = REPORTSTATE[k];
     var ups = (UPLOADS[k]||[]);
@@ -6389,7 +6389,7 @@ function opsOverview(){
       '</div>' +
       // 统计网格
       '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-bottom:1px solid #f0f4ff">' +
-        statCellClickable('📎 上传材料', ups.length+'份', ups.length>0?'#166534':'#9aa5b5', 'opsViewUploads(\''+k+'\')') +
+        statCellClickable('📎 上传材料', ups.length+'份', ups.length>0?'#166534':'#9aa5b5', 'opsViewCityUploads(\''+encodeURIComponent(p.city)+'\')') +
         statCell('✅ 已确认结论', confirmedCount+'条', confirmedCount>0?'#1d4ed8':'#9aa5b5') +
         statCell('🔍 AI扫描线索', aiClues.length+'条', aiClues.length>0?'#6d28d9':'#9aa5b5') +
         statCell('✓ 可对接企业', verified.length+(checking.length?'/'+checking.length+'核验中':'')+'条', verified.length>0?'#166534':'#9aa5b5') +
@@ -6415,15 +6415,54 @@ function opsOverview(){
         (rs ? '<button onclick="opsViewCityReport(\'' + k + '\')" style="padding:7px 14px;background:#f8faff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer">📋 查看报告</button>' : '') +
       '</div>' +
     '</div>';
+  }
+
+  // 按城市分组
+  var cityGroups = {}; var cityOrder = [];
+  projKeys.forEach(function(k){
+    var c = (PROJECTS[k]||{}).city || '未分类';
+    if(!cityGroups[c]){ cityGroups[c]=[]; cityOrder.push(c); }
+    cityGroups[c].push(k);
+  });
+  if(window.__opsCityOpen == null){
+    window.__opsCityOpen = {};
+    cityOrder.forEach(function(c){ window.__opsCityOpen[c] = true; });
+  }
+  var _stgN = ['资料准备','AI研判','确认需求','资源匹配','招商对接'];
+  var groups = cityOrder.map(function(city){
+    var keys = cityGroups[city];
+    var isOpen = window.__opsCityOpen[city] !== false;
+    var maxStage = Math.max.apply(null, keys.map(function(k){ return (PROJECTS[k]||{}).stage||1; }));
+    var totalUps = keys.reduce(function(n,k){ return n+((UPLOADS[k]||[]).length); }, 0);
+    var org = (PROJECTS[keys[0]]||{}).org || '';
+    var header = '<div onclick="toggleOpsCity(\'' + city.replace(/'/g,"\\'") + '\')" style="display:flex;align-items:center;gap:12px;padding:16px 20px;background:#eef4ff;border:1.5px solid #d6e4ff;border-radius:14px;cursor:pointer;margin-bottom:' + (isOpen?'14px':'0') + '">' +
+      '<span style="font-size:13px;color:#1a56db;display:inline-block;transform:rotate(' + (isOpen?'90':'0') + 'deg)">&#9654;</span>' +
+      '<span style="font-size:16px;font-weight:750;color:#0b183b">' + city + '</span>' +
+      '<span style="font-size:12px;color:#8492a6">' + org + '</span>' +
+      '<span style="margin-left:auto;display:flex;align-items:center;gap:10px">' +
+        '<span style="font-size:12px;color:#4a5568">' + keys.length + ' 个项目</span>' +
+        '<span style="font-size:12px;color:#4a5568">' + totalUps + ' 份材料</span>' +
+        '<span style="padding:3px 10px;background:#1a56db;color:#fff;border-radius:20px;font-size:11px;font-weight:650">' + (_stgN[maxStage-1]||'进行中') + '</span>' +
+      '</span>' +
+    '</div>';
+    var body = isOpen ? '<div style="padding-left:6px">' + keys.map(opsProjCard).join('') + '</div>' : '';
+    return '<div style="margin-bottom:18px">' + header + body + '</div>';
   }).join('');
 
   return '<div style="padding:24px">' +
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">' +
       '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">城市需求概览</h1>' +
-      '<span style="font-size:12px;color:#9aa5b5">共 ' + projKeys.length + ' 个城市</span>' +
+      '<span style="font-size:12px;color:#9aa5b5">共 ' + cityOrder.length + ' 个城市 · ' + projKeys.length + ' 个项目</span>' +
     '</div>' +
-    cards +
+    groups +
   '</div>';
+}
+
+/* 折叠/展开某个城市分组 */
+function toggleOpsCity(city){
+  if(window.__opsCityOpen == null) window.__opsCityOpen = {};
+  window.__opsCityOpen[city] = (window.__opsCityOpen[city] === false);
+  renderOpsV2();
 }
 
 function statCell(label, value, color){
@@ -6441,6 +6480,36 @@ function statCellClickable(label, value, color, onclick){
 }
 
 /* 查看城市上传材料列表 */
+function opsViewCityUploads(cityEnc){
+  var city = decodeURIComponent(cityEnc);
+  // 汇总该城市下所有项目的上传材料
+  var items = [];
+  Object.keys(PROJECTS).forEach(function(k){
+    if((PROJECTS[k]||{}).city !== city) return;
+    (UPLOADS[k]||[]).forEach(function(u){ items.push({proj:k, projTopic:(PROJECTS[k]||{}).topic||'', u:u}); });
+  });
+  if(!items.length){ toast('该城市暂无上传材料'); return; }
+  var body = '<div style="display:flex;flex-direction:column;gap:10px">' +
+    items.map(function(it){
+      var u = it.u;
+      var sizeStr = u.size ? (u.size>1048576 ? (u.size/1048576).toFixed(1)+'MB' : Math.round(u.size/1024)+'KB') : '';
+      var dateStr = u.ts ? new Date(u.ts).toLocaleString('zh-CN') : (u.at || '');
+      return '<div style="padding:12px 14px;background:#f8faff;border:1px solid #e8edf5;border-radius:10px;display:flex;align-items:center;gap:12px">' +
+        '<div style="width:36px;height:36px;background:#eff6ff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">' +
+          (u.name.match(/\.pdf$/i)?'PDF':u.name.match(/\.xlsx?$/i)?'XLS':u.name.match(/\.docx?$/i)?'DOC':'') +
+        '</div>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-size:13px;font-weight:600;color:#0b183b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + u.name + '</div>' +
+          '<div style="font-size:11.5px;color:#8492a6;margin-top:2px">' + (it.projTopic?it.projTopic+' · ':'') + (sizeStr?sizeStr+' · ':'') + dateStr + (u.chunks?' · '+u.chunks+'个知识片段':'') + '</div>' +
+        '</div>' +
+        '<button data-proj="'+it.proj+'" data-file="'+u.name.replace(/"/g,'&quot;')+'" onclick="opsViewFileChunks(this.dataset.proj,this.dataset.file)" style="flex-shrink:0;font-size:11px;color:#1a56db;padding:4px 10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;cursor:pointer">查看内容</button>' +
+      '</div>';
+    }).join('') +
+  '</div>';
+  openModal(city + ' 上传材料（'+items.length+'份）', body,
+    '<button class="secondary-button" onclick="closeModal()">关闭</button>');
+}
+
 function opsViewUploads(projKey){
   var ups = UPLOADS[projKey] || [];
   var p = PROJECTS[projKey] || {};
