@@ -6712,7 +6712,7 @@ function opsEntListV2(list){
         '<div style="margin-top:auto;padding-top:8px;display:flex;gap:6px">' +
           '<button onclick="opsEntAiFillExisting('+idx+')" style="padding:6px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);border:none;border-radius:8px;font-size:12px;color:#fff;cursor:pointer;font-weight:600">AI补全</button>'+
           '<button onclick="opsEntManualEdit('+idx+')" style="padding:6px 14px;background:#fff;border:1.5px solid #1a56db;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600">手动编辑</button>' +
-          (e.status!=='scanned'&&e.status!=='pushed'?'<button onclick="opsEntScanOne('+idx+')" style="padding:6px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer">扫描</button>':'') +
+          '<button onclick="opsEntScanOne('+idx+')" style="padding:6px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600">'+(e.status==='scanned'||e.status==='pushed'?'重新扫描':'扫描')+'</button>' +
           (matchCount>0?'<button onclick="opsEntPushModal('+idx+')" style="padding:6px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12px;color:#166534;cursor:pointer;font-weight:600">推送('+matchCount+')</button>':'') +
           '<button onclick="opsEntDelete('+idx+')" style="padding:6px 14px;background:none;border:1.5px solid #e8edf5;border-radius:8px;font-size:12px;color:#9aa5b5;cursor:pointer">删除</button>' +
         '</div>' +
