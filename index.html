@@ -2640,7 +2640,11 @@ function addClueManual(projKey){
    projMgmtPage 完整重写
    ══════════════════════════════════════════════════════════════ */
 function projMgmtPage(p){
-  var projKeys = Object.keys(PROJECTS);
+  // 账号按城市独立：只显示当前登录城市（cur 项目所在城市）的项目
+  var _myCity = (cur && PROJECTS[cur] && PROJECTS[cur].city) ? PROJECTS[cur].city : null;
+  var projKeys = Object.keys(PROJECTS).filter(function(k){
+    return !_myCity || (PROJECTS[k] && PROJECTS[k].city === _myCity);
+  });
   if(!projKeys.length){
     return '<div class="page">'+
       '<div class="page-header"><div><span class="eyebrow">PROJECTS</span><h1>项目管理</h1>'+
