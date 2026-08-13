@@ -6388,8 +6388,7 @@ function opsOverview(){
         }).join('') +
       '</div>' +
       // 统计网格
-      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-bottom:1px solid #f0f4ff">' +
-        statCell('📎 上传材料', ups.length+'份', ups.length>0?'#166534':'#9aa5b5') +
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-bottom:1px solid #f0f4ff">' +
         statCell('✅ 已确认结论', confirmedCount+'条', confirmedCount>0?'#1d4ed8':'#9aa5b5') +
         statCell('🔍 AI扫描线索', aiClues.length+'条', aiClues.length>0?'#6d28d9':'#9aa5b5') +
         statCell('✓ 可对接企业', verified.length+(checking.length?'/'+checking.length+'核验中':'')+'条', verified.length>0?'#166534':'#9aa5b5') +
@@ -6536,41 +6535,41 @@ function opsViewUploads(projKey){
 
 /* 查看某个文件（优先显示原始文件，fallback到解析片段） */
 function opsViewFileChunks(projKey, fname){
-  // 查找上传记录中的dataUrl
   var ups = UPLOADS[projKey] || [];
   var rec = null;
   for(var i=ups.length-1;i>=0;i--){ if(ups[i].name===fname && ups[i].dataUrl){ rec=ups[i]; break; } }
+  function esc(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  var isPDF   = /\.pdf$/i.test(fname);
+  var isImage = /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(fname);
+  var isText  = /\.(txt|md|markdown|csv|tsv|json|log|xml|yaml|yml|ini|htm|html)$/i.test(fname);
+  var chunks  = (KB_FILE_CHUNKS[projKey]||[]).filter(function(c){ return c.cite === fname; });
+  var parsedHtml = chunks.length ? '<div style="padding:16px 20px;background:#f8faff;border:1px solid #e8edf5;border-radius:10px;font-size:13px;color:#1e293b;line-height:2;white-space:pre-wrap;max-height:50vh;overflow-y:auto">' + esc(chunks.map(function(c){ return c.text; }).join('\n\n')) + '</div>' : '';
+  var closeBtn = '<button class="secondary-button" onclick="closeModal()">关闭</button>';
 
   if(rec && rec.dataUrl){
-    var body = '';
-    var isPDF = /\.pdf$/i.test(fname);
-    var isImage = /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(fname);
     if(isPDF){
-      body = '<iframe src="'+rec.dataUrl+'" style="width:100%;height:70vh;border:none;border-radius:8px"></iframe>';
-    } else if(isImage){
-      body = '<div style="text-align:center;max-height:70vh;overflow:auto"><img src="'+rec.dataUrl+'" style="max-width:100%;border-radius:8px"></div>';
-    } else {
-      // For other files (doc/xls etc), show download link + parsed text
-      body = '<div style="padding:16px;text-align:center"><a href="'+rec.dataUrl+'" download="'+fname+'" style="padding:10px 20px;background:#1a56db;color:#fff;border-radius:8px;text-decoration:none;font-size:13px">下载原始文件</a></div>';
-      var chunks = (KB_FILE_CHUNKS[projKey]||[]).filter(function(c){ return c.cite === fname; });
-      if(chunks.length){
-        var fullText = chunks.map(function(c){ return c.text; }).join('\n\n');
-        body += '<div style="margin-top:12px;padding:16px 20px;background:#f8faff;border:1px solid #e8edf5;border-radius:10px;font-size:13px;color:#1e293b;line-height:2;white-space:pre-wrap;max-height:40vh;overflow-y:auto">' + fullText + '</div>';
-      }
+      openModal(fname, '<iframe src="'+rec.dataUrl+'" style="width:100%;height:72vh;border:none;border-radius:8px"></iframe>', closeBtn);
+      return;
     }
-    openModal(fname, body, '<button class="secondary-button" onclick="closeModal()">关闭</button>');
-  } else {
-    // No dataUrl stored - show parsed chunks
-    var chunks = (KB_FILE_CHUNKS[projKey]||[]).filter(function(c){ return c.cite === fname; });
-    var body = '';
-    if(chunks.length === 0){
-      body = '<div style="padding:20px;text-align:center;color:#8492a6;font-size:13px">该文件的解析内容暂未保存。</div>';
-    } else {
-      var fullText = chunks.map(function(c){ return c.text; }).join('\n\n');
-      body = '<div style="padding:16px 20px;background:#f8faff;border:1px solid #e8edf5;border-radius:10px;font-size:13px;color:#1e293b;line-height:2;white-space:pre-wrap;max-height:60vh;overflow-y:auto">' + fullText + '</div>';
+    if(isImage){
+      openModal(fname, '<div style="text-align:center;max-height:72vh;overflow:auto"><img src="'+rec.dataUrl+'" style="max-width:100%;border-radius:8px"></div>', closeBtn);
+      return;
     }
-    openModal(fname, body, '<button class="secondary-button" onclick="closeModal()">关闭</button>');
+    if(isText){
+      openModal(fname, '<div id="ftxtBox" style="padding:16px 20px;background:#f8faff;border:1px solid #e8edf5;border-radius:10px;font-size:13px;color:#1e293b;line-height:1.9;white-space:pre-wrap;max-height:64vh;overflow-y:auto">加载中…</div>', closeBtn);
+      fetch(rec.dataUrl).then(function(r){ return r.text(); }).then(function(txt){
+        var el=document.getElementById('ftxtBox'); if(el) el.textContent = txt;
+      }).catch(function(){ var el=document.getElementById('ftxtBox'); if(el) el.textContent='无法读取文件内容'; });
+      return;
+    }
+    // office / 其他格式：优先内联渲染文本，另附下载
+    var dl = '<div style="padding:12px;text-align:center"><a href="'+rec.dataUrl+'" download="'+fname+'" style="display:inline-block;padding:10px 20px;background:#1a56db;color:#fff;border-radius:8px;text-decoration:none;font-size:13px">⬇ 下载原始文件</a>' +
+      '<div style="font-size:12px;color:#8492a6;margin-top:8px">该格式（'+esc(fname.split('.').pop())+'）暂不支持浏览器内直接渲染，可下载后查看'+(parsedHtml?'；下方为已解析文本':'')+'</div></div>';
+    openModal(fname, dl + (parsedHtml?'<div style="margin-top:12px">'+parsedHtml+'</div>':''), closeBtn);
+    return;
   }
+  // 无 dataUrl（历史数据）：显示解析内容
+  openModal(fname, parsedHtml || '<div style="padding:20px;text-align:center;color:#8492a6;font-size:13px">该文件的解析内容暂未保存。</div>', closeBtn);
 }
 
 
