@@ -6340,8 +6340,19 @@ function opsOverview(){
     var rs = REPORTSTATE[k];
     var ups = (UPLOADS[k]||[]);
     var clues = (p.clues||[]);
-    var confirms = KB_CONFIRMS[k]||{};
-    var confirmedCount = Object.keys(confirms).reduce(function(n,ki){return n+Object.keys(confirms[ki]).length;},0);
+    // 已确认结论：按该项目「当前产业方向」自己确认的待确认事项数统计
+    var confirmedCount = 0;
+    (function(){
+      var topic = p.topic || '';
+      var pend = null;
+      // 优先取该方向缓存的 pendingByTopic
+      if(rs && rs.pendingByTopic && topic && rs.pendingByTopic[topic]) pend = rs.pendingByTopic[topic];
+      // 回退：该项目当前 PENDING_CONFIRMS（单方向项目）
+      if((!pend||!pend.length) && typeof PENDING_CONFIRMS!=='undefined' && PENDING_CONFIRMS[k]) pend = PENDING_CONFIRMS[k];
+      if(pend && pend.length){
+        confirmedCount = pend.filter(function(x){return x.status==='confirmed'||x.status==='edited';}).length;
+      }
+    })();
     var stage = p.stage||1;
     var stageNames = ['资料准备','AI研判','确认需求','资源匹配','招商对接'];
     var stageName  = stageNames[stage-1]||'进行中';
@@ -6433,6 +6444,11 @@ function opsOverview(){
     var isOpen = window.__opsCityOpen[city] !== false;
     var maxStage = Math.max.apply(null, keys.map(function(k){ return (PROJECTS[k]||{}).stage||1; }));
     var totalUps = keys.reduce(function(n,k){ return n+((UPLOADS[k]||[]).length); }, 0);
+    // 城市智库确认（城市级共享数据）：汇总该城市各项目的 KB_CONFIRMS
+    var cityKbConfirms = keys.reduce(function(n,k){
+      var cf = KB_CONFIRMS[k]||{};
+      return n + Object.keys(cf).reduce(function(m,ki){return m+Object.keys(cf[ki]).length;},0);
+    }, 0);
     var org = (PROJECTS[keys[0]]||{}).org || '';
     var header = '<div onclick="toggleOpsCity(\'' + city.replace(/'/g,"\\'") + '\')" style="display:flex;align-items:center;gap:12px;padding:16px 20px;background:#eef4ff;border:1.5px solid #d6e4ff;border-radius:14px;cursor:pointer;margin-bottom:' + (isOpen?'14px':'0') + '">' +
       '<span style="font-size:13px;color:#1a56db;display:inline-block;transform:rotate(' + (isOpen?'90':'0') + 'deg)">&#9654;</span>' +
@@ -6440,6 +6456,7 @@ function opsOverview(){
       '<span style="font-size:12px;color:#8492a6">' + org + '</span>' +
       '<span style="margin-left:auto;display:flex;align-items:center;gap:10px">' +
         '<span style="font-size:12px;color:#4a5568">' + keys.length + ' 个项目</span>' +
+        (cityKbConfirms>0 ? '<span style="font-size:12px;color:#1d4ed8;font-weight:600">✅ 城市智库已确认 ' + cityKbConfirms + ' 条</span>' : '') +
         (totalUps>0 ? '<button onclick="event.stopPropagation();opsViewCityUploads(\'' + encodeURIComponent(city) + '\')" style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600">📎 上传材料 ' + totalUps + ' 份 · 查看</button>' : '<span style="font-size:12px;color:#9aa5b5">暂无材料</span>') +
         '<span style="padding:3px 10px;background:#1a56db;color:#fff;border-radius:20px;font-size:11px;font-weight:650">' + (_stgN[maxStage-1]||'进行中') + '</span>' +
       '</span>' +
