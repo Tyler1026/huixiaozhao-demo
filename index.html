@@ -1650,8 +1650,7 @@ function openCitySwitch(){
     var on=c.key===cur;
     return '<button onclick="switchToCity(\''+c.key+'\')" style="width:100%;text-align:left;display:flex;align-items:center;gap:10px;padding:11px 13px;margin-bottom:8px;border:1px solid '+(on?'#6366f1':'#e8edf5')+';border-radius:10px;background:'+(on?'#f3f4ff':'#fff')+';cursor:pointer">'+
       '<span style="font-size:18px">\ud83c\udfd9\ufe0f</span>'+
-      '<span style="flex:1;min-width:0"><strong style="font-size:13.5px;color:#0b183b;display:block">'+c.city+(on?' · 当前':'')+'</strong>'+
-      '<small style="font-size:11px;color:#8492a6">'+(c.topic||'')+'</small></span></button>';
+      '<span style="flex:1;min-width:0"><strong style="font-size:13.5px;color:#0b183b;display:block">'+c.city+(on?' · 当前':'')+'</strong></span></button>';
   }).join('') || '<p style="font-size:12.5px;color:#8492a6;margin:0 0 10px">暂无已建城市。</p>';
   openModal('\ud83c\udfd9\ufe0f 切换 / 新建城市',
     '<div style="font-size:12px;color:#8492a6;margin:-2px 0 12px;line-height:1.6">选择一个已建城市直接进入（数据已保存）；或输入新城市名走一遍建库流程。</div>'+
