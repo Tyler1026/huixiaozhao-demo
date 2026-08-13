@@ -1834,7 +1834,8 @@ function sidebar(){
       if(!p) return '报告派生项目·对接需求';
       var stage=p.stage||1;
       var stageNames=['资料准备','AI研判','确认需求','资源匹配','招商对接'];
-      var nProjects=Object.keys(PROJECTS).length;
+      var _mc=(cur&&PROJECTS[cur]&&PROJECTS[cur].city)?PROJECTS[cur].city:null;
+      var nProjects=Object.keys(PROJECTS).filter(function(k){return !_mc||(PROJECTS[k]&&PROJECTS[k].city===_mc);}).length;
       return nProjects+'个项目 · 当前「'+(stageNames[stage-1]||'进行中')+'」';
     })(),
     docking: (function(){
