@@ -2456,8 +2456,9 @@ function clueCard(clue, projKey, idx){
                 'style="flex:1;padding:8px;background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;font-size:12.5px;font-weight:600;color:#92400e;cursor:pointer">'+
                 '🔍 请资源团队核验</button>'
             : clue.tone==='amber'
-            ? '<button disabled style="flex:1;padding:8px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;color:#9aa5b5;cursor:not-allowed">'+
-                '⏳ 核验进行中</button>'
+            ? '<button onclick="arrangeDocking(\''+projKey+'\',\''+clue.id+'\')" '+
+                'style="flex:1;padding:8px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12.5px;font-weight:600;color:#166534;cursor:pointer">'+
+                '✓ 核验通过，可安排沟通</button>'
             : '<button onclick="arrangeDocking(\''+projKey+'\',\''+clue.id+'\')" '+
                 'style="flex:1;padding:8px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12.5px;font-weight:600;color:#166534;cursor:pointer">'+
                 '✓ 安排首次沟通</button>'
