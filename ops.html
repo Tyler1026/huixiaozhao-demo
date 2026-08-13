@@ -6325,7 +6325,11 @@ function opsTabBar(){
 
 /* ══ Tab1: 城市需求概览 ══ */
 function opsOverview(){
-  var projKeys = Object.keys(PROJECTS);
+  // 账号按城市独立：只显示当前账号所属城市（cur 项目所在城市）的项目
+  var _myCity = (cur && PROJECTS[cur] && PROJECTS[cur].city) ? PROJECTS[cur].city : null;
+  var projKeys = Object.keys(PROJECTS).filter(function(k){
+    return !_myCity || (PROJECTS[k] && PROJECTS[k].city === _myCity);
+  });
 
   if(!projKeys.length){
     return '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:#9aa5b5;padding:60px">' +
