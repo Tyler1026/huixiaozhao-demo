@@ -1644,8 +1644,14 @@ function topbar(p){
 
 /* 切换 / 新建城市弹窗：已建城市直进，新城市走 onboarding */
 function openCitySwitch(){
-  var cities=[];
-  for(var k in PROJECTS){ if(PROJECTS.hasOwnProperty(k)) cities.push({key:k, city:PROJECTS[k].city, topic:PROJECTS[k].topic}); }
+  // 按城市去重：一个城市只显示一条；若某城市含当前项目 cur，则该条指向 cur
+  var cities=[], _seen={};
+  for(var k in PROJECTS){ if(!PROJECTS.hasOwnProperty(k)) continue;
+    var _c=PROJECTS[k].city||'';
+    if(_seen[_c]!=null){ if(k===cur) cities[_seen[_c]].key=k; continue; }
+    _seen[_c]=cities.length;
+    cities.push({key:k, city:_c, topic:PROJECTS[k].topic});
+  }
   var list=cities.map(function(c){
     var on=c.key===cur;
     return '<button onclick="switchToCity(\''+c.key+'\')" style="width:100%;text-align:left;display:flex;align-items:center;gap:10px;padding:11px 13px;margin-bottom:8px;border:1px solid '+(on?'#6366f1':'#e8edf5')+';border-radius:10px;background:'+(on?'#f3f4ff':'#fff')+';cursor:pointer">'+
