@@ -7539,10 +7539,13 @@ function opsEntScanOne(idx, silent){
       }
     });
   });
-  // 去重
+  // 去重：按「城市+缺口语义」合并（同一缺口在多个项目重复出现时只保留一条）
   var seen={};
   matches=matches.filter(function(m){
-    var key=m.projKey+':'+m.gap;
+    // 规范化缺口文本：去标点/前后缀「缺失/薄弱/核心缺口」等，抓取核心词做去重键
+    var g=(m.gap||'').replace(/[\s\-—：:（）()、，,。.]/g,'')
+                     .replace(/^(核心缺口|缺失|薄弱|缺口方向)/,'');
+    var key=(m.city||'')+':'+g.slice(0,10);
     if(seen[key]) return false;
     seen[key]=true; return true;
   }).slice(0,6);
