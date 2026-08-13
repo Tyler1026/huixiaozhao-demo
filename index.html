@@ -3898,7 +3898,16 @@ function restoreActionItems(){
   var p=P();
   var topic=p?p.topic:'';
   var byTopic=REPORTSTATE[cur].actionItemsByTopic||{};
-  var items=byTopic[topic]||REPORTSTATE[cur].actionItems;
+  var items=byTopic[topic];
+  // 该方向无缓存时，从该方向自己的报告文本实时解析（不再回退到旧方向的 actionItems）
+  if(!items||!items.length){
+    var _txt=getTopicReport(topic)||REPORTSTATE[cur].text||'';
+    items=parseActionItems(_txt);
+    if(items.length){
+      if(!REPORTSTATE[cur].actionItemsByTopic) REPORTSTATE[cur].actionItemsByTopic={};
+      REPORTSTATE[cur].actionItemsByTopic[topic]=items;
+    }
+  }
   if(!items||!items.length) return '';
   var p = P(); if(!p) return '';
   var colors=['#1a56db','#6366f1','#0891b2'];
@@ -3924,6 +3933,39 @@ function restoreActionItems(){
       '</div>';
     }).join('')+
   '</div>';
+}
+
+/* 从报告文本解析TOP3招引方向（供渲染与切换方向时复用） */
+function parseActionItems(text){
+  var items=[];
+  if(!text) return items;
+  var tlines=text.split('\n');
+  var inTop5=false;
+  for(var i=0;i<tlines.length;i++){
+    var l=tlines[i];
+    if(l.indexOf('补链优先级')>=0||l.indexOf('TOP5')>=0||l.indexOf('优先级清单')>=0||l.indexOf('承接优先方向')>=0||l.indexOf('补链优先级TOP3')>=0) inTop5=true;
+    if(inTop5&&l.trim().charAt(0)==='|'){
+      var cells=l.trim().slice(1,-1).split('|').map(function(c){return c.replace(/[*\u2605<>]/g,'').trim();});
+      if(cells.length>=2){
+        var isSep=cells.every(function(c){return /^[\s\-:]+$/.test(c);});
+        if(isSep||cells[0]==='排名'||cells[0]==='缺口节点'||cells[0]==='缺口'||cells[0]==='方向') continue;
+        var rank=parseInt(cells[0]);
+        if(!isNaN(rank)&&rank>=1&&rank<=3&&cells[1]){
+          items.push({rank:rank,gap:cells[1],attr:cells[2]||'',score:cells[cells.length-1]||''});
+        }
+      }
+    }
+    if(inTop5&&items.length>=3) break;
+  }
+  if(!items.length){
+    tlines.forEach(function(l){
+      if((l.indexOf('\u274c')>=0||l.indexOf('缺失')>=0||l.indexOf('全部外购')>=0)&&items.length<3){
+        var clean=l.replace(/^[*\-\u2022|#\s]+/,'').replace(/\u274c|\*\*/g,'').trim();
+        if(clean.length>4&&clean.length<60) items.push({rank:items.length+1,gap:clean,attr:'',score:''});
+      }
+    });
+  }
+  return items;
 }
 
 function renderActionItems(text, p, r){
