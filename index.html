@@ -4046,16 +4046,45 @@ function importToProject(gap, city, topic, btnEl){
   });
   // 不切换 cur — 保留当前研判页所有状态
   persist();
-  // 弹出确认浮层，让用户主动跳转
-  // 更新按钮为已提交状态
+  // 更新按钮为「已提交·可撤回」状态
   if(btnEl){
-    btnEl.textContent='✓ 已提交招商需求';
-    btnEl.style.background='#e8edf5';
-    btnEl.style.color='#059669';
-    btnEl.style.cursor='default';
-    btnEl.onclick=null;
+    btnEl.textContent='↩ 撤回提交';
+    btnEl.style.background='#fff';
+    btnEl.style.color='#dc2626';
+    btnEl.style.border='1.5px solid #fca5a5';
+    btnEl.style.cursor='pointer';
+    btnEl.setAttribute('data-projkey', key);
+    btnEl.onclick=function(){ withdrawDemand(key, btnEl, gap, city, topic, color); };
   }
-  toast('发送成功');
+  toast('✓ 已提交招商需求（可撤回）');
+}
+
+/* 撤回招商需求：删除生成的项目 + 需求池记录，同步到管理端 */
+function withdrawDemand(key, btnEl, gap, city, topic, color){
+  // 删除项目及其派生数据
+  if(PROJECTS[key]) delete PROJECTS[key];
+  if(REPORTSTATE[key]) delete REPORTSTATE[key];
+  if(typeof DOCK_LOGS!=='undefined' && DOCK_LOGS[key]) delete DOCK_LOGS[key];
+  if(typeof PENDING_CONFIRMS!=='undefined' && PENDING_CONFIRMS[key]) delete PENDING_CONFIRMS[key];
+  if(typeof UPLOADS!=='undefined' && UPLOADS[key]) delete UPLOADS[key];
+  // 删除需求池记录（importToProject 用 id===key）
+  if(typeof DEMANDS!=='undefined'){
+    for(var i=DEMANDS.length-1;i>=0;i--){ if(DEMANDS[i].id===key || DEMANDS[i].projKey===key) DEMANDS.splice(i,1); }
+  }
+  // 若当前正停留在被撤回的项目上，回退 cur
+  if(cur===key) cur=null;
+  persist();   // 同步到 /api/sync，管理端自动移除
+  // 恢复按钮为「提交招商需求」
+  if(btnEl){
+    btnEl.textContent='提交招商需求 →';
+    btnEl.style.background=color||'#1a56db';
+    btnEl.style.color='#fff';
+    btnEl.style.border='none';
+    btnEl.style.cursor='pointer';
+    btnEl.removeAttribute('data-projkey');
+    btnEl.onclick=function(){ importToProject(gap, city, topic, btnEl); };
+  }
+  toast('已撤回，管理端项目同步移除');
 }
 
 function showImportConfirm(projKey, gap){
@@ -4197,6 +4226,7 @@ function renderInterviewUI(){
       '</div>'+
       '<div style="display:flex;gap:10px;align-items:center">'+
         (_interviewState.currentQ>0?'<button onclick="interviewPrev()" style="padding:10px 20px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer;font-weight:600">← 上一题</button>':'')+
+        '<div style="flex:1"></div>'+
         '<button onclick="interviewSkip()" style="padding:10px 20px;background:#fff;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#9aa5b5;cursor:pointer">跳过</button>'+
         (cur<total?'<button onclick="interviewNext()" style="padding:10px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer">下一题 →</button>':
         '<button onclick="interviewDone()" style="padding:10px 24px;background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer">完成访谈，开始分析</button>')+
