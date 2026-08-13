@@ -685,6 +685,11 @@ loadAuth();
 var REPORTSTATE={};
 function rs(){var k=cur;if(!REPORTSTATE[k])REPORTSTATE[k]={ver:1,finalized:false,patches:[],edits:{}};return REPORTSTATE[k];}
 function P(){return cur&&PROJECTS[cur]||{}}
+/* 政府端账号按城市独立：返回当前登录城市（cur所在城市）的项目key列表 */
+function cityKeys(){
+  var mc=(cur&&PROJECTS[cur]&&PROJECTS[cur].city)?PROJECTS[cur].city:null;
+  return Object.keys(PROJECTS).filter(function(k){return !mc||(PROJECTS[k]&&PROJECTS[k].city===mc);});
+}
 /* ===== 渲染骨架：用雷总真实DOM结构 ===== */
 var $=function(s){return document.querySelector(s)};
 function toast(t){var e=$('#toast');$('#toastMsg').textContent=t;e.classList.add('show');setTimeout(function(){e.classList.remove('show')},2200)}
@@ -1904,14 +1909,14 @@ function openNotif(id){
   render();
   // 每日摘要 = 全局概览（不属于单个项目），点开列出各研判状态
   if(!n.proj){
-    var rows=Object.keys(PROJECTS).map(function(k){var x=PROJECTS[k];var sc=stColor(x.stage);
+    var rows=cityKeys().map(function(k){var x=PROJECTS[k];var sc=stColor(x.stage);
       return '<div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #f2f5f9;cursor:pointer" onclick="closeModal();gotoProjFromNotif(\''+k+'\')">'+
         '<span style="font-size:16px">📍</span>'+
         '<span style="flex:1;min-width:0"><strong style="font-size:13.5px;color:#0b183b;display:block">'+x.topic+'</strong>'+
         '<small style="font-size:11px;color:#667590">'+x.city+' · '+STAGES[x.stage-1][1]+'</small></span>'+
         '<span class="status-tag" style="color:'+sc.c+';background:'+sc.bg+'">'+STAGES[x.stage-1][0]+'</span></div>';
     }).join('');
-    var body='<p class="modal-intro">今天 09:00 · '+P().who+' 名下 '+Object.keys(PROJECTS).length+' 个研判进展如下，点任意一条进入。</p>'+rows+
+    var body='<p class="modal-intro">今天 09:00 · '+P().who+' 名下 '+cityKeys().length+' 个研判进展如下，点任意一条进入。</p>'+rows+
       '<div class="boundary-note" style="margin-top:14px"><i class="i">📋</i>每日摘要为全局汇总，不属于单个研判；系统每天 09:00 自动生成。</div>';
     openModal('每日摘要 · 今日各研判概览',body,'<button class="primary-button" onclick="closeModal()">知道了</button>');
     return;
@@ -2980,7 +2985,7 @@ function pickDock(key){
 }
 
 function dockingPage(p){
-  var projKeys=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k].stage>=3;});
+  var projKeys=cityKeys().filter(function(k){return PROJECTS[k].stage>=3;});
 
   if(!projKeys.length){
     return '<div class="page">'+
@@ -5264,7 +5269,7 @@ function detailPane(p){
 }
 // 我的需求页 → 右侧：需求汇总统计
 function detailNeeds(p){
-  var ks=Object.keys(PROJECTS);var byStage={};ks.forEach(function(k){var s=PROJECTS[k].stage;byStage[s]=(byStage[s]||0)+1});
+  var ks=cityKeys();var byStage={};ks.forEach(function(k){var s=PROJECTS[k].stage;byStage[s]=(byStage[s]||0)+1});
   return '<div class="detail-header"><div><span class="eyebrow">OVERVIEW</span><h2>需求概览</h2><p>'+p.who+' 名下研判汇总</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>研判总数</h3><p class="detail-copy" style="font-size:22px;font-weight:700;color:#013582">'+ks.length+' 个产业方向</p></div>'+
@@ -5334,7 +5339,7 @@ function detailReport(p){
 }
 // 招商对接页 → 右侧：对接概览
 function detailDocking(p){
-  var ks=Object.keys(PROJECTS);
+  var ks=cityKeys();
   var n4=ks.filter(function(k){return PROJECTS[k].stage>=4}).length;
   var n5=ks.filter(function(k){return PROJECTS[k].stage>=5}).length;
   return '<div class="detail-header"><div><span class="eyebrow">DOCKING</span><h2>对接概览</h2><p>各项目对接进度</p></div></div>'+
