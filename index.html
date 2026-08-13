@@ -3608,15 +3608,17 @@ function renderHistoryReports(key, topicFilter){
   var p=P();
   var currentTopic=topicFilter || (p?p.topic:'');
   var allReports=REPORT_HISTORY[key]||[];
-  var list=currentTopic ? allReports.filter(function(rep){
-    return rep.topic===currentTopic;
-  }) : allReports;
+  // 携带原始索引（删除/展开用），再按时间降序排序
+  var list=allReports.map(function(rep,oi){return {rep:rep,oi:oi};});
+  if(currentTopic) list=list.filter(function(x){return x.rep.topic===currentTopic;});
+  list.sort(function(a,b){return (b.rep.ts||0)-(a.rep.ts||0);});
   if(!list.length){container.innerHTML='';return;}
   var h='<div style="margin-bottom:12px">';
   h+='<div style="font-size:11.5px;font-weight:700;color:#64748b;letter-spacing:.3px;margin-bottom:6px;display:flex;align-items:center;gap:6px">';
   h+='<span style="display:inline-block;width:3px;height:12px;background:#94a3b8;border-radius:2px"></span>';
   h+='历史报告（'+list.length+' 份）</div>';
-  list.forEach(function(rep,i){
+  list.forEach(function(x,i){
+    var rep=x.rep; var oi=x.oi;
     var dt=rep.ts?new Date(rep.ts).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'未知时间';
     var phaseLabel=rep.phase===2?'完整报告':'初步草稿';
     var phaseColor=rep.phase===2?'#1d4ed8':'#92400e';
