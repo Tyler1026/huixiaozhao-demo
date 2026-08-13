@@ -697,7 +697,7 @@ function openModal(title,bodyHtml,footHtml){
   document.body.appendChild(l);
 }
 function closeModal(){var l=$('#modalLayer');if(l)l.remove()}
-var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','产业分析','产业分析·可来回优化'],['home','📋','项目管理','报告派生项目·对接需求'],['docking','🤝','招商对接','资源匹配与对接进度'],['settings','⚙️','设置','账号与提醒']];
+var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','产业分析','产业分析·可来回优化'],['home','📋','项目管理','报告派生项目·对接+进度'],['settings','⚙️','设置','账号与提醒']];
 
 function render(){
   // ── 登录门禁：未登录 → 登录页 ──
@@ -1973,7 +1973,7 @@ function mainPane(p){
   if(view==='knowledge')return kbPage(p);
   if(view==='settings')return settingsPage(p);
   if(view==='report')return homePage(p);      // 产业分析：出报告的对话工作区
-  if(view==='docking')return dockingPage(p);   // 招商对接：独立tab
+  if(view==='docking'){view='home';}          // 招商对接已并入项目管理
   if(view==='subwork')return subWorkPage(p);   // 招引项目独立工作页
   return projMgmtPage(p);                       // home = 项目管理（默认）
 }
@@ -2766,11 +2766,15 @@ function projMgmtPage(p){
           : ''
         );
 
+      // 对接进度（原招商对接模块，仅 stage>=3 显示）
+      var dockInline = (x.stage>=3) ? dockProgressInline(k) : '';
+
       expandedContent = '<div style="padding:0 16px 16px">'+
         stageBar+
         stageGuide+
         reportHist+
         cluesList+
+        dockInline+
       '</div>';
     }
 
@@ -3177,6 +3181,154 @@ function dockingPage(p){
         '</div>'+
       '</div>'+
     '</div></div>';
+}
+
+/* ══════════════════════════════════════════════════════════════
+   对接进度（内联）— 招商对接模块合并进项目管理后，
+   在展开的项目卡片内展示：递交时间线 + 候选状态 + 对接记录
+   ══════════════════════════════════════════════════════════════ */
+function dockProgressInline(pk){
+  var px=PROJECTS[pk]; if(!px) return '';
+  var clues=px.clues||[];
+  var logs=DOCK_LOGS[pk]||[];
+
+  var timeline=
+    '<div style="margin-bottom:18px">'+
+      '<div style="font-size:12px;font-weight:650;color:#4a5568;letter-spacing:.3px;margin-bottom:12px">递交时间线</div>'+
+      '<div style="display:flex;flex-direction:column;gap:0">'+
+        '<div style="display:flex;gap:12px">'+
+          '<div style="display:flex;flex-direction:column;align-items:center">'+
+            '<div style="width:28px;height:28px;border-radius:50%;background:#1a56db;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;flex-shrink:0">✓</div>'+
+            '<div style="width:2px;flex:1;background:#e8edf5;margin:4px 0"></div>'+
+          '</div>'+
+          '<div style="padding:2px 0 16px">'+
+            '<div style="font-size:13px;font-weight:650;color:#0b183b">需求已递交</div>'+
+            '<div style="font-size:12px;color:#8492a6;margin-top:2px">已同步招商需求、承接区域与报告证据链</div>'+
+          '</div>'+
+        '</div>'+
+        (px.stage>=4?
+          '<div style="display:flex;gap:12px">'+
+            '<div style="display:flex;flex-direction:column;align-items:center">'+
+              '<div style="width:28px;height:28px;border-radius:50%;background:'+(px.stage>=5?'#22c55e':'#f59e0b')+';display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;flex-shrink:0">'+(px.stage>=5?'✓':'◔')+'</div>'+
+              '<div style="width:2px;flex:1;background:#e8edf5;margin:4px 0"></div>'+
+            '</div>'+
+            '<div style="padding:2px 0 16px">'+
+              '<div style="font-size:13px;font-weight:650;color:#0b183b">资源可达性核验中</div>'+
+              '<div style="font-size:12px;color:#8492a6;margin-top:2px">资源团队正在核验企业真实意向与决策层触达路径</div>'+
+            '</div>'+
+          '</div>'
+        :'<div style="display:flex;gap:12px">'+
+            '<div style="display:flex;flex-direction:column;align-items:center">'+
+              '<div style="width:28px;height:28px;border-radius:50%;background:#f0f4ff;border:2px solid #e8edf5;display:flex;align-items:center;justify-content:center;color:#9aa5b5;font-size:12px;flex-shrink:0">2</div>'+
+              '<div style="width:2px;flex:1;background:#e8edf5;margin:4px 0"></div>'+
+            '</div>'+
+            '<div style="padding:2px 0 16px">'+
+              '<div style="font-size:13px;font-weight:650;color:#9aa5b5">资源可达性核验</div>'+
+              '<div style="font-size:12px;color:#b0bac8;margin-top:2px">待候选线索核验启动</div>'+
+            '</div>'+
+          '</div>')+
+        (px.stage>=5?
+          '<div style="display:flex;gap:12px">'+
+            '<div style="display:flex;flex-direction:column;align-items:center">'+
+              '<div style="width:28px;height:28px;border-radius:50%;background:#22c55e;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;flex-shrink:0">✓</div>'+
+            '</div>'+
+            '<div style="padding:2px 0">'+
+              '<div style="font-size:13px;font-weight:650;color:#0b183b">可安排首次沟通</div>'+
+              '<div style="font-size:12px;color:#8492a6;margin-top:2px">核验通过，请准备承接材料与可用时段</div>'+
+            '</div>'+
+          '</div>'
+        :'<div style="display:flex;gap:12px">'+
+            '<div style="width:28px;height:28px;border-radius:50%;background:#f0f4ff;border:2px solid #e8edf5;display:flex;align-items:center;justify-content:center;color:#9aa5b5;font-size:12px;flex-shrink:0">3</div>'+
+            '<div style="padding:2px 0">'+
+              '<div style="font-size:13px;font-weight:650;color:#9aa5b5">首次沟通</div>'+
+              '<div style="font-size:12px;color:#b0bac8;margin-top:2px">核验通过后安排</div>'+
+            '</div>'+
+          '</div>')+
+      '</div>'+
+    '</div>';
+
+  var clueStatus=clues.length
+    ? '<div style="margin-bottom:18px">'+
+        '<div style="font-size:12px;font-weight:650;color:#4a5568;letter-spacing:.3px;margin-bottom:10px">候选企业线索</div>'+
+        clues.map(function(c){
+          var toneMap={slate:{bg:'#f5f7fb',dot:'#9aa5b5',label:'待接触'},amber:{bg:'#fffbeb',dot:'#f59e0b',label:'核验中'},teal:{bg:'#f0fdf4',dot:'#22c55e',label:'可安排沟通'}};
+          var t=toneMap[c.tone]||toneMap.slate;
+          return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:'+t.bg+';border-radius:10px;margin-bottom:6px">'+
+            '<span style="width:8px;height:8px;border-radius:50%;background:'+t.dot+';flex-shrink:0"></span>'+
+            '<div style="flex:1;min-width:0">'+
+              '<div style="font-size:13px;font-weight:650;color:#0b183b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.name+'</div>'+
+              '<div style="font-size:11.5px;color:#8492a6">'+c.kind+'</div>'+
+            '</div>'+
+            '<span style="padding:2px 8px;background:'+t.bg+';color:'+t.dot+';border:1px solid;border-radius:20px;font-size:11px;font-weight:600;flex-shrink:0">'+t.label+'</span>'+
+          '</div>';
+        }).join('')+
+      '</div>'
+    : '';
+
+  var dockLogs=
+    '<div>'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'+
+        '<span style="font-size:12px;font-weight:650;color:#4a5568;letter-spacing:.3px">对接记录</span>'+
+        '<span style="font-size:11px;color:#9aa5b5">'+logs.length+'条</span>'+
+      '</div>'+
+      (logs.length
+        ? logs.map(function(l){
+            var typeIcon={visit:'🤝',call:'📞',email:'📧',material:'📎'}[l.type]||'📝';
+            return '<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid #f0f4ff">'+
+              '<span style="font-size:16px;flex-shrink:0">'+typeIcon+'</span>'+
+              '<div style="flex:1">'+
+                '<div style="font-size:12.5px;color:#1e293b;line-height:1.6">'+l.note+'</div>'+
+                '<div style="font-size:11px;color:#9aa5b5;margin-top:3px">'+new Date(l.ts).toLocaleString('zh-CN')+'</div>'+
+              '</div>'+
+            '</div>';
+          }).join('')
+        : '<div style="font-size:12.5px;color:#9aa5b5;padding:8px 0">暂无对接记录</div>'
+      )+
+      '<div style="margin-top:12px">'+
+        '<div style="display:flex;gap:6px;margin-bottom:8px">'+
+          ['visit:🤝拜访','call:📞电话','email:📧邮件','material:📎材料'].map(function(str){
+            var parts=str.split(':'), val=parts[0], label=parts[1];
+            return '<button onclick="setDockType(\''+pk+'\',\''+val+'\')" id="dtype-'+pk+'-'+val+'" '+
+              'style="padding:5px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:12px;cursor:pointer;background:#f5f7fb;color:#4a5568">'+label+'</button>';
+          }).join('')+
+        '</div>'+
+        '<textarea id="dock-note-'+pk+'" placeholder="记录本次沟通内容、关键信息或待跟进事项…" '+
+          'style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;resize:vertical;min-height:64px;outline:none;line-height:1.6" '+
+          'onfocus="this.style.border=\'1.5px solid #6366f1\'" onblur="this.style.border=\'1.5px solid #e8edf5\'"></textarea>'+
+        '<button onclick="saveDockLog(\''+pk+'\')" '+
+          'style="width:100%;margin-top:8px;padding:9px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:650;cursor:pointer">'+
+          '保存对接记录</button>'+
+      '</div>'+
+    '</div>';
+
+  var nextStep='';
+  if(px.stage===3){
+    nextStep='<div style="padding:12px 14px;background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;margin-bottom:16px">'+
+      '<div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">⏳ 等待资源核验启动</div>'+
+      '<div style="font-size:12px;color:#4a5568;line-height:1.7">候选线索已录入，等待资源团队判断可触达路径。可点上方进度条推进阶段。</div>'+
+    '</div>';
+  } else if(px.stage===4){
+    nextStep='<div style="padding:12px 14px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;margin-bottom:16px">'+
+      '<div style="font-size:12px;font-weight:700;color:#c2410c;margin-bottom:6px">🔍 资源核验进行中（预计2个工作日）</div>'+
+      '<div style="font-size:12px;color:#4a5568;line-height:1.7">政府侧待办：准备<strong>园区承接条件说明</strong>（可用厂房/能耗指标）和<strong>可用时段</strong>，核验通过后即可安排首次沟通。</div>'+
+    '</div>';
+  } else if(px.stage>=5){
+    nextStep='<div style="padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;margin-bottom:16px">'+
+      '<div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:6px">✓ 可安排首次沟通</div>'+
+      '<div style="font-size:12px;color:#4a5568;line-height:1.7">政府侧待办：确认<strong>接待时段</strong>、准备<strong>承接方案</strong>（园区/政策/配套）。在下方填写对接记录跟踪进展。</div>'+
+    '</div>';
+  }
+
+  return '<div style="margin-top:16px;padding:16px;background:#fbfcff;border:1.5px solid #e8edf5;border-radius:12px">'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">'+
+      '<span style="font-size:16px">🤝</span>'+
+      '<span style="font-size:13.5px;font-weight:700;color:#0b183b">招商对接进度</span>'+
+    '</div>'+
+    nextStep+
+    timeline+
+    clueStatus+
+    dockLogs+
+  '</div>';
 }
 
 /* ── 对接记录辅助函数 ── */
