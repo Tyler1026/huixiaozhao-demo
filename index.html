@@ -5700,6 +5700,7 @@ function persist(){
       DOCK_LOGS:DOCK_LOGS,
       DEMANDS:typeof DEMANDS!=='undefined'?DEMANDS:[],
       KB_CHAT:KB_CHAT,
+      REPORT_HISTORY:REPORT_HISTORY,
       syncTs:Date.now()
     };
     // 同时写入 localStorage（保证同账号任何设备刷新都读到最新快照）
@@ -5727,6 +5728,7 @@ function restore(){
       PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
       DOCK_LOGS=data.DOCK_LOGS||{};
       KB_CHAT=data.KB_CHAT||{};
+      if(data.REPORT_HISTORY) REPORT_HISTORY=data.REPORT_HISTORY;
       console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
       return true;
     }
@@ -5758,6 +5760,8 @@ function restoreFromServer(callback){
     DOCK_LOGS        = srv.DOCK_LOGS        || {};
     if(srv.DEMANDS) window.DEMANDS=srv.DEMANDS;
     KB_CHAT          = srv.KB_CHAT          || {};
+    // 历史报告：服务器有则用服务器，否则保留本地已加载的（避免旧记录被空值冲掉）
+    if(srv.REPORT_HISTORY && Object.keys(srv.REPORT_HISTORY).length) REPORT_HISTORY = srv.REPORT_HISTORY;
     cur  = srv.cur  || Object.keys(PROJECTS)[0] || null;
     view = srv.view || 'setup';
     // 写回 localStorage（统一扁平格式）
