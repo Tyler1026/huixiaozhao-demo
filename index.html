@@ -5515,7 +5515,7 @@ function kbPage(p){
       '<li style="font-size:12.5px;color:#4a5568">• '+p.city+'补链的核心缺口有哪些？</li>'+
       '<li style="font-size:12.5px;color:#4a5568">• 本地链主企业还缺哪些关键上游配套？</li>'+
       '<li style="font-size:12.5px;color:#4a5568">• 各园区如何分工承接不同细分产业？</li>'+
-      '<li style="font-size:12.5px;color:#4a5568">• 随州与十堰/荆门的竞争差异化空间在哪里？</li>'+
+      '<li style="font-size:12.5px;color:#4a5568">• '+p.city+'的主导产业有哪些差异化竞争空间？</li>'+
       '</ul></div></div>'+
     '</div></div></div>'+composer()+'</div>';
 }
@@ -6386,7 +6386,7 @@ function generateKBAnswer(query, chunks, city){
   if(isSZ){
     if(!isGap) followups.push(city+'补链的核心缺口有哪些？');
     if(!isPark) followups.push('各园区如何分工承接不同细分方向？');
-    if(!isComp) followups.push('随州与十堰/荆门的竞争差异化空间在哪里？');
+    if(!isComp) followups.push(city+'的主导产业有哪些差异化竞争空间？');
     if(!isFirm) followups.push('本地链主企业还缺哪些关键上游配套？');
   } else {
     followups=['补链的核心缺口有哪些？','各园区如何分工承接不同细分产业？','本地链主企业还缺哪些关键上游配套？'];
