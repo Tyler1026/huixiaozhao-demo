@@ -149,6 +149,15 @@ SYSTEM_CHAT = """你是慧小招城市智库的AI问答助手，在招商问答�
 - 如果用户只是补充/更新了一条数据，简短确认已收到并说明它对研判的意义即可，不要展开长篇分析。
 - 使用中文，口语化、精炼。"""
 
+SYSTEM_SUGGEST = """你是慧小招城市智库的AI助手。根据提供的某个城市的智库数据，站在当地招商干部视角，生成他们此刻最该问、最有价值的建议问题。
+
+要求：
+- 只输出 4 个问题，每行一个，不加序号、不加符号、不加任何解释。
+- 每个问题必须紧扣该城市的真实产业/园区/链主/政策特征，带上城市名或该城市的具体产业名，禁止泛泛而谈。
+- 问题要具体、可回答、对招商决策有用（围绕补链缺口、承接方向、园区分工、竞争差异化、招引对象等）。
+- 若智库数据不足，也要基于城市名和常识提出该城市可能关心的招商问题，禁止出现其他城市的名字。
+- 使用中文，每个问题不超过25字。"""
+
 SYSTEM_FULL = """你是慧小招产业链研判师，结合城市智库数据完成完整的招商研判报告。
 
 ## 报告结构（严格按此输出）
@@ -346,7 +355,7 @@ class Handler(BaseHTTPRequestHandler):
         mode   = body.get("mode", "full")
         history = body.get("history", [])  # 多轮上下文：[{role:'user'|'assistant', content:'...'}]
 
-        if mode not in ("chat", "draft", "full"):
+        if mode not in ("chat", "draft", "full", "suggest"):
             mode = "full"
 
         if not q:
@@ -376,7 +385,10 @@ class Handler(BaseHTTPRequestHandler):
             ],
         })
 
-        if mode == "chat":
+        if mode == "suggest":
+            system_prompt = SYSTEM_SUGGEST
+            max_tokens    = 200
+        elif mode == "chat":
             system_prompt = SYSTEM_CHAT
             max_tokens    = MAX_TOKENS_CHAT
         elif mode == "draft":

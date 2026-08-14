@@ -5510,12 +5510,9 @@ function kbPage(p){
     '</div>'+
     '<div id="kbConv" style="padding:0 0 8px">'+
       '<div class="message" style="margin-top:0"><img src="'+aiAvatar()+'">'+
-      '<div class="message-bubble"><p>'+p.city+'城市智库已就位，你可以直接提问——例如：</p>'+
-      '<ul style="margin:6px 0 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px">'+
-      '<li style="font-size:12.5px;color:#4a5568">• '+p.city+'补链的核心缺口有哪些？</li>'+
-      '<li style="font-size:12.5px;color:#4a5568">• 本地链主企业还缺哪些关键上游配套？</li>'+
-      '<li style="font-size:12.5px;color:#4a5568">• 各园区如何分工承接不同细分产业？</li>'+
-      '<li style="font-size:12.5px;color:#4a5568">• '+p.city+'的主导产业有哪些差异化竞争空间？</li>'+
+      '<div class="message-bubble"><p>'+p.city+'城市智库已就位，你可以直接提问——AI 正在结合本市数据生成建议问题：</p>'+
+      '<ul id="kbSuggestList" style="margin:6px 0 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px">'+
+      '<li style="font-size:12.5px;color:#9aa5b5">· 正在生成建议问题…</li>'+
       '</ul></div></div>'+
     '</div></div></div>'+composer()+'</div>';
 }
@@ -5912,8 +5909,34 @@ function kbChatUpdateLast(html){
   KB_CHAT[cur][KB_CHAT[cur].length-1].ts=Date.now();
   persist();
 }
+// AI 动态生成本市建议问题（进入城市智库时调用，替换所有硬编码问题）
+var _kbSuggestCache={};
+function kbGenSuggestions(){
+  var listEl=document.getElementById('kbSuggestList');
+  var p=P(); if(!listEl||!p||!p.city) return;
+  var city=p.city;
+  function fill(qs){
+    if(!qs||!qs.length){ listEl.innerHTML='<li style="font-size:12.5px;color:#9aa5b5">· 暂无建议，直接在下方输入你的问题即可</li>'; return; }
+    listEl.innerHTML=qs.map(function(q){
+      var safe=q.replace(/'/g,"\\'");
+      return '<li style="font-size:12.5px;color:#1a56db;cursor:pointer;line-height:1.7" onclick="askKB(\''+safe+'\')">• '+q+'</li>';
+    }).join('');
+  }
+  // 会话内缓存，避免每次渲染都重复调用
+  if(_kbSuggestCache[cur]){ fill(_kbSuggestCache[cur]); return; }
+  var chunks=(typeof buildKBCorpus==='function')?buildKBCorpus(city):[];
+  fetch(KB_API,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question:'请为'+city+'生成4个招商建议问题',chunks:chunks,city:city,stream:false,mode:'suggest'})
+  }).then(function(r){return r.ok?r.json():null;}).then(function(j){
+    var txt=(j&&j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content)||'';
+    var qs=txt.split('\n').map(function(l){return l.replace(/^[\s\d.、)）·•\-]+/,'').trim();}).filter(function(l){return l.length>3;}).slice(0,4);
+    if(qs.length){ _kbSuggestCache[cur]=qs; }
+    fill(qs);
+  }).catch(function(){ fill(null); });
+}
 // 把已存的历史对话回放进 #kbConv（在 render 重建容器后调用）
 function kbChatReplay(){
+  if(document.getElementById('kbSuggestList')) kbGenSuggestions();
   var c=document.getElementById('kbConv');
   if(!c||!cur||!KB_CHAT[cur]||!KB_CHAT[cur].length) return;
   var frag='';
@@ -6490,10 +6513,8 @@ function kbAnswerRender(container, query, chunks, city){
           }).join('');
 
           // 追问按钮
-          var isSZ = city && city.indexOf('随州')>=0;
-          var followups = isSZ
-            ? ['随州各园区如何分工承接？','随州与十堰/荆门的差异化空间？','链主企业还缺哪些关键配套？']
-            : ['优先补链的核心环节？','各园区如何分工承接？','本地链主还缺哪些关键配套？'];
+          var _cy = city || (P()&&P().city) || '本市';
+          var followups = [_cy+'优先补链的核心环节？', _cy+'各园区如何分工承接？', _cy+'本地链主还缺哪些关键配套？'];
           var followHtml = '<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">'+
             followups.map(function(f){
               return '<button onclick="kbSendQuestion(this,\''+f.replace(/'/g,"\\'")+'\')" '+
