@@ -541,6 +541,15 @@ function render(){
       restore();  // 先用本地缓存快速渲染
       // 从服务器拉取最新数据
       restoreFromServer(function(ok){ if(ok) renderOpsV2(); });
+      // 周期性自动刷新：政府端新注册/新建城市后，管理端无需手动刷新即可同步出现
+      if(!render._opsPollTimer){
+        render._opsPollTimer=setInterval(function(){
+          var _before=Object.keys(PROJECTS).length;
+          restoreFromServer(function(ok){
+            if(ok && Object.keys(PROJECTS).length!==_before){ renderOpsV2(); }
+          });
+        }, 15000);
+      }
     }
     renderOpsV2();
     return;
