@@ -6666,8 +6666,8 @@ function opsViewCityReport(projKey){
 function opsUsers(){
   var keys = Object.keys(USER_PROFILES||{});
   keys.sort(function(a,b){ return (USER_PROFILES[b].ts||0)-(USER_PROFILES[a].ts||0); });
-  var head = '<div style="padding:24px">' +
-    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">' +
+  var head = '<div style="padding:24px;max-width:1100px;margin:0 auto">' +
+    '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:20px">' +
       '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">注册用户</h1>' +
       '<span style="font-size:12px;color:#9aa5b5">共 ' + keys.length + ' 位政府端注册用户 · 可电话/微信联系</span>' +
     '</div>';
@@ -6677,28 +6677,35 @@ function opsUsers(){
   var cards = keys.map(function(u){
     var d = USER_PROFILES[u]||{};
     var dateStr = d.ts ? new Date(d.ts).toLocaleString('zh-CN') : '';
-    function row(label,val,icon){
-      return '<div style="display:flex;gap:8px;padding:6px 0;font-size:13px">' +
-        '<span style="width:64px;flex-shrink:0;color:#8492a6">' + (icon||'') + label + '</span>' +
-        '<span style="flex:1;color:#1e293b;font-weight:500">' + (val||'—') + '</span>' +
+    function field(icon,label,val){
+      return '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0">' +
+        '<span style="font-size:16px;flex-shrink:0;line-height:1.4">' + icon + '</span>' +
+        '<div style="min-width:0">' +
+          '<div style="font-size:11px;color:#9aa5b5;margin-bottom:2px">' + label + '</div>' +
+          '<div style="font-size:13.5px;color:#1e293b;font-weight:550;word-break:break-all">' + (val||'—') + '</div>' +
+        '</div>' +
       '</div>';
     }
-    return '<div style="background:#fff;border:1px solid #e8edf5;border-radius:14px;padding:18px 20px;margin-bottom:14px;box-shadow:0 1px 3px rgba(11,24,59,.04)">' +
-      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #f2f5f9">' +
-        '<div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#1a56db,#6366f1);display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;font-weight:700;flex-shrink:0">' + (d.name?d.name.charAt(0):'?') + '</div>' +
+    return '<div style="background:#fff;border:1px solid #e8edf5;border-radius:16px;padding:22px 24px;margin-bottom:16px;box-shadow:0 1px 4px rgba(11,24,59,.05)">' +
+      '<div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #f2f5f9">' +
+        '<div style="width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#1a56db,#6366f1);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:700;flex-shrink:0">' + (d.name?d.name.charAt(0):'?') + '</div>' +
         '<div style="flex:1;min-width:0">' +
-          '<div style="font-size:15px;font-weight:700;color:#0b183b">' + (d.name||u) + '<span style="font-size:12px;font-weight:400;color:#9aa5b5;margin-left:8px">@' + u + '</span></div>' +
-          '<div style="font-size:12px;color:#8492a6;margin-top:2px">' + (d.title||'') + (d.dept?' · '+d.dept:'') + '</div>' +
+          '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' +
+            '<span style="font-size:19px;font-weight:750;color:#0b183b">' + (d.name||u) + '</span>' +
+            (d.city?'<span style="display:inline-flex;align-items:center;gap:4px;font-size:15px;font-weight:700;color:#1a56db;background:#eef3ff;padding:4px 14px;border-radius:20px">' + '📍' + d.city + '</span>':'') +
+            '<span style="font-size:12px;font-weight:400;color:#9aa5b5">@' + u + '</span>' +
+          '</div>' +
+          '<div style="font-size:12.5px;color:#8492a6;margin-top:4px">' + (d.title||'') + (d.dept?' · '+d.dept:'') + (d.org?' · '+d.org:'') + '</div>' +
         '</div>' +
-        '<span style="font-size:11px;color:#94a3b8">' + dateStr + '</span>' +
+        '<span style="font-size:11px;color:#94a3b8;flex-shrink:0">' + dateStr + '</span>' +
       '</div>' +
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px">' +
-        row('手机', d.phone, '\U0001F4F1 ') +
-        row('微信', d.wechat, '\U0001F4AC ') +
-        row('单位', d.org, '\U0001F3E2 ') +
-        row('城市', d.city, '\U0001F4CD ') +
-        row('部门', d.dept, '\U0001F5C2 ') +
-        row('职务', d.title, '\U0001F4BC ') +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 32px">' +
+        field('📱','手机', d.phone) +
+        field('💬','微信', d.wechat) +
+        field('🏢','单位', d.org) +
+        field('📍','城市', d.city) +
+        field('🗂','部门', d.dept) +
+        field('💼','职务', d.title) +
       '</div>' +
     '</div>';
   }).join('');
