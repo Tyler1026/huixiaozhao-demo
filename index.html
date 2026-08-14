@@ -730,6 +730,12 @@ function render(){
             var _isSz=function(k){return PROJECTS[k]&&PROJECTS[k].city&&PROJECTS[k].city.indexOf('随州')>=0;};
             if(!cur || !_isSz(cur)){ cur = PROJECTS['sz'] ? 'sz' : (Object.keys(PROJECTS).filter(_isSz)[0]||'sz'); }
             view=view||'knowledge'; KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true};
+          } else {
+            // 非常驻账号：落到本账号所在城市，忽略服务器残留的随州 cur
+            var _ac=AUTH.city||'';
+            var _mine=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k]&&PROJECTS[k].city===_ac;});
+            if(_mine.length){ if(!cur || _mine.indexOf(cur)<0){ cur=_mine[0]; } view=view||'knowledge'; }
+            else { cur=null; view='setup'; }
           }
         } else {
           // 服务器无数据，本地初始化
