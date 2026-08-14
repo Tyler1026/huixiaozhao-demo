@@ -2843,10 +2843,10 @@ function projMgmtPage(p){
           '<div style="display:flex;align-items:center;gap:8px">'+
             '<span style="font-size:14px">📋</span>'+
             '<div style="flex:1">'+
-              '<div style="font-size:13px;font-weight:650;color:#0b183b">研判报告</div>'+
+              '<div style="font-size:13px;font-weight:650;color:#0b183b">产业分析报告</div>'+
               '<div style="font-size:11.5px;color:#8492a6">置信度 '+topicScore(rs.topic)+'% · '+new Date(rs.ts).toLocaleDateString('zh-CN')+'</div>'+
             '</div>'+
-            '<button onclick="gotoStudy(\''+k+'\')" style="padding:5px 12px;background:#fff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer">查看报告</button>'+
+            '<button onclick="cur=\''+k+'\';viewCurrentReport()" style="padding:5px 12px;background:#fff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer">查看报告</button>'+
           '</div>'+
         '</div>';
       }
