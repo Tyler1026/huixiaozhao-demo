@@ -728,7 +728,8 @@ function render(){
           if(AUTH.resident){
             // 常驻=随州账号：强制落到随州项目，忽略服务器残留的其他城市 cur（如上海）
             var _isSz=function(k){return PROJECTS[k]&&PROJECTS[k].city&&PROJECTS[k].city.indexOf('随州')>=0;};
-            if(!cur || !_isSz(cur)){ cur = PROJECTS['sz'] ? 'sz' : (Object.keys(PROJECTS).filter(_isSz)[0]||'sz'); }
+            // 常驻账号始终落到数据最全的 sz 主项目(避免落到空白随州派生项目导致'信息丢失'错觉)
+            if(PROJECTS['sz']){ cur='sz'; } else if(!cur || !_isSz(cur)){ cur = Object.keys(PROJECTS).filter(_isSz)[0]||null; }
             view=view||'knowledge'; KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true};
           } else {
             // 非常驻账号：落到本账号所在城市，忽略服务器残留的随州 cur
