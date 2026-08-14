@@ -677,6 +677,7 @@ var ACCOUNTS={
   'suizhou': {pwd:'suizhou', city:'随州', projKey:'sz', resident:true,  who:'张主任', org:'随州市招商局'},
   'admin':   {pwd:'admin',   city:null,  projKey:null, resident:false, who:'招商干部', org:'招商局'}
 };
+var USER_PROFILES={};  // 注册用户资料库，按账号存 {name,phone,wechat,org,dept,title,city,pwd,ts}，跨端同步供管理端查看
 function saveAuth(){ try{ AUTH?localStorage.setItem('hxz_auth',JSON.stringify(AUTH)):localStorage.removeItem('hxz_auth'); }catch(e){} }
 function loadAuth(){ try{ var d=localStorage.getItem('hxz_auth'); if(d)AUTH=JSON.parse(d); }catch(e){ AUTH=null; } }
 function logout(){ AUTH=null; saveAuth(); cur=null; view='setup'; render._restored=false; render._routed=false; render(); }
@@ -839,6 +840,7 @@ function loginPage(){
           '<input id="loginPwd" type="password" autocomplete="current-password" placeholder="请输入密码" onkeydown="if(event.key===\'Enter\')doLogin()" style="min-height:44px;padding:9px 12px;border:1px solid #d8e0ed;border-radius:9px;outline:0;font-size:14px"></label>'+
         '<div id="loginErr" style="display:none;font-size:12px;color:#dc2626;margin-top:-4px"></div>'+
         '<button onclick="doLogin()" style="min-height:46px;margin-top:4px;border:none;border-radius:10px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;font-size:15px;font-weight:650;cursor:pointer;letter-spacing:.3px">登录</button>'+
+        '<button onclick="gotoRegister()" style="min-height:44px;border:1.5px solid #d8e0ed;border-radius:10px;background:#fff;color:#1a56db;font-size:14px;font-weight:600;cursor:pointer">注册新账号</button>'+
       '</div>'+
       '<div style="margin-top:20px;padding-top:16px;border-top:1px solid #f0f4ff;font-size:11.5px;color:#9aa5b5;line-height:1.7">'+
         '<div style="font-weight:650;color:#6b7688;margin-bottom:4px">演示账号</div>'+
@@ -847,12 +849,80 @@ function loginPage(){
       '</div>'+
     '</div></div>';
 }
+function gotoRegister(){ view='register'; render._routed=true; render(); }
+function regBack(){ view='login'; render._routed=true; render(); }
+function regErr(msg){ var e=document.getElementById('regErr'); if(e){ e.textContent=msg; e.style.display=msg?'block':'none'; } }
+
+/* 注册页：账号+密码+个人资料 */
+function registerPage(){
+  function fld(id,label,ph,type){
+    return '<label style="display:grid;gap:5px;font-size:12px;color:#52637a">'+label+
+      '<input id="'+id+'" type="'+(type||'text')+'" placeholder="'+ph+'" style="min-height:42px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:9px;outline:0;font-size:14px"></label>';
+  }
+  return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#eef3ff 0%,#f8faff 55%,#f2ecff 100%);padding:24px 0">'+
+    '<div style="width:min(440px,92vw);background:#fff;border-radius:18px;box-shadow:0 24px 70px rgba(11,31,65,.13);padding:34px 32px 26px">'+
+      '<div style="text-align:center;margin-bottom:20px">'+
+        '<div style="width:52px;height:52px;margin:0 auto 10px;border-radius:14px;background:linear-gradient(135deg,#1a56db,#6366f1);display:grid;place-items:center;font-size:26px;color:#fff;font-weight:700">慧</div>'+
+        '<h1 style="margin:0;font-size:19px;color:#0b183b">注册政府端账号</h1>'+
+        '<p style="margin:6px 0 0;font-size:12px;color:#8492a6">完善资料，便于项目提交后招商团队电话/微信联系</p>'+
+      '</div>'+
+      '<div style="display:grid;gap:11px">'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+          fld('regUser','登录账号 *','如 zhangsan')+
+          fld('regPwd','登录密码 *','设置密码','password')+
+        '</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+          fld('regName','姓名 *','真实姓名')+
+          fld('regPhone','手机号码 *','11位手机号')+
+        '</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+          fld('regWechat','微信号 *','微信号')+
+          fld('regCity','所在城市 *','如 随州')+
+        '</div>'+
+        fld('regOrg','所在单位 *','如 随州市招商局')+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+          fld('regDept','部门 *','如 投资促进科')+
+          fld('regTitle','职务 *','如 科长')+
+        '</div>'+
+        '<div id="regErr" style="display:none;font-size:12px;color:#dc2626;margin-top:-2px"></div>'+
+        '<button onclick="doRegister()" style="min-height:46px;margin-top:4px;border:none;border-radius:10px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;font-size:15px;font-weight:650;cursor:pointer">提交注册并登录</button>'+
+        '<button onclick="regBack()" style="min-height:40px;border:none;background:none;color:#8492a6;font-size:13px;cursor:pointer">← 返回登录</button>'+
+      '</div>'+
+    '</div></div>';
+}
+
+function doRegister(){
+  function v(id){ var el=document.getElementById(id); return el?el.value.trim():''; }
+  var u=v('regUser').toLowerCase(), pw=v('regPwd'), name=v('regName'), phone=v('regPhone'),
+      wechat=v('regWechat'), city=v('regCity'), org=v('regOrg'), dept=v('regDept'), title=v('regTitle');
+  if(!u||!pw||!name||!phone||!wechat||!city||!org||!dept||!title){ regErr('请填写所有带 * 的必填项'); return; }
+  if(!/^1[3-9]\d{9}$/.test(phone)){ regErr('手机号码格式不正确'); return; }
+  if(ACCOUNTS[u]){ regErr('该账号为系统保留账号，请换一个'); return; }
+  // 先从服务器拉最新用户库，避免覆盖别人
+  var proceed=function(){
+    if(USER_PROFILES[u]){ regErr('该账号已被注册'); return; }
+    USER_PROFILES[u]={name:name,phone:phone,wechat:wechat,org:org,dept:dept,title:title,city:city,pwd:pw,ts:Date.now()};
+    persist();
+    AUTH={user:u, city:city, projKey:null, resident:false, who:name, org:org};
+    saveAuth();
+    cur=null; view='setup'; render._restored=false; render._routed=false;
+    var done=false; var fb=setTimeout(function(){ if(!done){done=true;render();} },2000);
+    restoreFromServer(function(){ if(!done){done=true;clearTimeout(fb);render();} });
+    toast('✓ 注册成功，欢迎 '+name);
+  };
+  restoreFromServer(function(){ proceed(); });
+  // 服务器无数据时 restoreFromServer 回调可能不触发，兜底
+  setTimeout(function(){ if(!AUTH){ proceed(); } }, 1500);
+}
+
 function loginErr(msg){ var e=document.getElementById('loginErr'); if(e){ e.textContent=msg; e.style.display='block'; } }
 function doLogin(){
   var u=(document.getElementById('loginUser')||{}).value||'';
   var pw=(document.getElementById('loginPwd')||{}).value||'';
   u=u.trim().toLowerCase();
   var acc=ACCOUNTS[u];
+  // 内置账号不存在时，查注册用户库(需先从服务器拉取)
+  if(!acc && USER_PROFILES[u]){ var up=USER_PROFILES[u]; acc={pwd:up.pwd, city:up.city||null, projKey:null, resident:false, who:up.name||u, org:up.org||''}; }
   if(!acc){ loginErr('账号不存在'); return; }
   if(acc.pwd!==pw){ loginErr('密码错误'); return; }
   AUTH={user:u, city:acc.city, projKey:acc.projKey, resident:!!acc.resident, who:acc.who, org:acc.org};
@@ -5701,6 +5771,7 @@ function persist(){
       DEMANDS:typeof DEMANDS!=='undefined'?DEMANDS:[],
       KB_CHAT:KB_CHAT,
       REPORT_HISTORY:REPORT_HISTORY,
+      USER_PROFILES:USER_PROFILES,
       syncTs:Date.now()
     };
     // 同时写入 localStorage（保证同账号任何设备刷新都读到最新快照）
@@ -5729,6 +5800,7 @@ function restore(){
       DOCK_LOGS=data.DOCK_LOGS||{};
       KB_CHAT=data.KB_CHAT||{};
       if(data.REPORT_HISTORY) REPORT_HISTORY=data.REPORT_HISTORY;
+      if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
       console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
       return true;
     }
@@ -5762,6 +5834,8 @@ function restoreFromServer(callback){
     KB_CHAT          = srv.KB_CHAT          || {};
     // 历史报告：服务器有则用服务器，否则保留本地已加载的（避免旧记录被空值冲掉）
     if(srv.REPORT_HISTORY && Object.keys(srv.REPORT_HISTORY).length) REPORT_HISTORY = srv.REPORT_HISTORY;
+    // 注册用户资料：合并服务器与本地(不丢本地新注册未同步的)
+    if(srv.USER_PROFILES){ Object.keys(srv.USER_PROFILES).forEach(function(uk){ USER_PROFILES[uk]=srv.USER_PROFILES[uk]; }); }
     cur  = srv.cur  || Object.keys(PROJECTS)[0] || null;
     view = srv.view || 'setup';
     // 写回 localStorage（统一扁平格式）

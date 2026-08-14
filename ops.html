@@ -2995,6 +2995,7 @@ function parsePendingItems(text){
 
 /* ══ 报告历史记录 ══ */
 var REPORT_HISTORY = REPORT_HISTORY || {};
+var USER_PROFILES = (typeof USER_PROFILES!=='undefined'&&USER_PROFILES) || {};  // 政府端注册用户资料，跨端同步查看
 
 function saveReportHistory(){try{localStorage.setItem('hxz_rpt_history',JSON.stringify(REPORT_HISTORY));}catch(e){}}
 function loadReportHistory(){try{var d=localStorage.getItem('hxz_rpt_history');if(d)REPORT_HISTORY=JSON.parse(d);}catch(e){}}
@@ -4118,6 +4119,7 @@ function persist(){
       DOCK_LOGS:DOCK_LOGS,
       OPS_ENT:OPS_ENT,
       KB_CHAT:typeof KB_CHAT!=='undefined'?KB_CHAT:{},
+      USER_PROFILES:USER_PROFILES,
       syncTs:Date.now()
     };
     try{ localStorage.setItem(LS_KEY, JSON.stringify(data)); }catch(_){}
@@ -4144,6 +4146,7 @@ function restore(){
       PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
       DOCK_LOGS=data.DOCK_LOGS||{};
       OPS_ENT=data.OPS_ENT||[];
+      if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
       console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
       return true;
     }
@@ -4176,6 +4179,7 @@ function restoreFromServer(callback){
     } else if(localENT.length){
       OPS_ENT = localENT;
     }
+    if(srv.USER_PROFILES){ Object.keys(srv.USER_PROFILES).forEach(function(uk){ USER_PROFILES[uk]=srv.USER_PROFILES[uk]; }); }
     cur  = srv.cur  || Object.keys(PROJECTS)[0] || null;
     try{ localStorage.setItem(LS_KEY, JSON.stringify(srv)); }catch(e){}
     window._opsServerHadData=true;
@@ -6279,7 +6283,7 @@ function opsShell(){
     '<div style="display:flex;height:calc(100vh - 52px);overflow:hidden">' +
       opsTabBar() +
       '<div id="opsContent" style="flex:1;overflow-y:auto">' +
-        (opsTab==='overview' ? opsOverview() : opsEnterprises()) +
+        (opsTab==='overview' ? opsOverview() : opsTab==='users' ? opsUsers() : opsEnterprises()) +
       '</div>' +
     '</div>' +
   '</div>';
@@ -6308,6 +6312,7 @@ function opsTabBar(){
   var tabs=[
     {id:'overview', icon:'🏙️', label:'城市需求概览', sub:'用户·进度·需求'},
     {id:'enterprises', icon:'🏭', label:'企业资源库', sub:'录入·扫描·推送'},
+    {id:'users', icon:'👤', label:'注册用户', sub:'政府端账号资料'},
   ];
   return '<div style="width:200px;flex-shrink:0;background:#f8faff;border-right:1px solid #e8edf5;padding:16px 12px;display:flex;flex-direction:column;gap:4px">' +
     tabs.map(function(t){
@@ -6648,7 +6653,50 @@ function opsViewCityReport(projKey){
 }
 
 
-/* ══ Tab2: 企业资源库 ══ */
+/* == Tab: 注册用户（政府端账号资料，供电话/微信联系） == */
+function opsUsers(){
+  var keys = Object.keys(USER_PROFILES||{});
+  keys.sort(function(a,b){ return (USER_PROFILES[b].ts||0)-(USER_PROFILES[a].ts||0); });
+  var head = '<div style="padding:24px">' +
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">' +
+      '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">注册用户</h1>' +
+      '<span style="font-size:12px;color:#9aa5b5">共 ' + keys.length + ' 位政府端注册用户 · 可电话/微信联系</span>' +
+    '</div>';
+  if(!keys.length){
+    return head + '<div style="text-align:center;padding:60px 20px;color:#9aa5b5;font-size:14px">暂无注册用户<div style="font-size:12px;margin-top:8px;color:#b8c0cc">政府端用户注册后，账号资料会自动同步到这里</div></div></div>';
+  }
+  var cards = keys.map(function(u){
+    var d = USER_PROFILES[u]||{};
+    var dateStr = d.ts ? new Date(d.ts).toLocaleString('zh-CN') : '';
+    function row(label,val,icon){
+      return '<div style="display:flex;gap:8px;padding:6px 0;font-size:13px">' +
+        '<span style="width:64px;flex-shrink:0;color:#8492a6">' + (icon||'') + label + '</span>' +
+        '<span style="flex:1;color:#1e293b;font-weight:500">' + (val||'—') + '</span>' +
+      '</div>';
+    }
+    return '<div style="background:#fff;border:1px solid #e8edf5;border-radius:14px;padding:18px 20px;margin-bottom:14px;box-shadow:0 1px 3px rgba(11,24,59,.04)">' +
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #f2f5f9">' +
+        '<div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#1a56db,#6366f1);display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;font-weight:700;flex-shrink:0">' + (d.name?d.name.charAt(0):'?') + '</div>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-size:15px;font-weight:700;color:#0b183b">' + (d.name||u) + '<span style="font-size:12px;font-weight:400;color:#9aa5b5;margin-left:8px">@' + u + '</span></div>' +
+          '<div style="font-size:12px;color:#8492a6;margin-top:2px">' + (d.title||'') + (d.dept?' · '+d.dept:'') + '</div>' +
+        '</div>' +
+        '<span style="font-size:11px;color:#94a3b8">' + dateStr + '</span>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px">' +
+        row('手机', d.phone, '\U0001F4F1 ') +
+        row('微信', d.wechat, '\U0001F4AC ') +
+        row('单位', d.org, '\U0001F3E2 ') +
+        row('城市', d.city, '\U0001F4CD ') +
+        row('部门', d.dept, '\U0001F5C2 ') +
+        row('职务', d.title, '\U0001F4BC ') +
+      '</div>' +
+    '</div>';
+  }).join('');
+  return head + cards + '</div>';
+}
+
+/* == Tab2: 企业资源库 == */
 function opsEnterprises(){
   var filtered = opsEntFilter(OPS_ENT);
   return '<div style="padding:24px">' +
