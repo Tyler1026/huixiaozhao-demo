@@ -1853,6 +1853,7 @@ function sidebar(){
 }
 function progressFooter(p){
   p=p||P(); if(!cur||!PROJECTS[cur]||!p||!p.stage)return '';
+  if(view==='home')return '';
   return '<div class="progress-footer"><div class="progress-track">'+
     STAGES.map(function(s,si){var n=si+1;var cls=n<p.stage?' done':n===p.stage?' current':'';
       var sv=[null,'report','home','docking',null][si];
@@ -2180,49 +2181,70 @@ var SUIZHOU_SCAN_CLUES = [
 /* ── 企业线索两栏布局渲染 ── */
 function renderCluesTwoPanel(projKey){
   var p = PROJECTS[projKey]; if(!p) return '';
-  var manualClues = (p.clues||[]).filter(function(c){return c.status!=='ai_scan';});
-  var aiClues     = (p.clues||[]).filter(function(c){return c.status==='ai_scan';});
+  var all = p.clues||[];
+  if(!window.__clueGroupOpen) window.__clueGroupOpen={};
+  var gkey = function(seg){ return projKey+'::'+seg; };
+  // 默认展开策略：teal 与 amber 默认展开，slate 默认折叠
+  var defOpen = {teal:true, amber:true, slate:false};
+  var isOpen = function(seg){
+    var v=window.__clueGroupOpen[gkey(seg)];
+    return (v===undefined)?defOpen[seg]:v;
+  };
 
-  // AI 扫描栏
-  var aiPanel = '<div>'+
-    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'+
-      '<div style="display:flex;align-items:center;gap:6px">'+
-        '<span style="width:8px;height:8px;border-radius:50%;background:#6366f1"></span>'+
-        '<span style="font-size:12px;font-weight:750;color:#0b183b;letter-spacing:.3px">AI 扫描推荐</span>'+
-      '</div>'+
-      '<span style="font-size:11px;padding:2px 7px;background:#f5f3ff;color:#6d28d9;border-radius:10px">'+aiClues.length+'家</span>'+
-      '<span style="font-size:11px;color:#9aa5b5;margin-left:2px">· 基于报告缺口+公开信息扫描</span>'+
+  var renderOne = function(c,ci){
+    return (c.status==='ai_scan') ? scanClueCard(c, projKey, ci) : clueCard(c, projKey, ci);
+  };
+
+  var segMeta = {
+    teal:  {label:'可安排沟通', dot:'#22c55e', bg:'#f0fdf4', col:'#166534'},
+    amber: {label:'核验中',     dot:'#f59e0b', bg:'#fffbeb', col:'#92400e'},
+    slate: {label:'待接触',     dot:'#9aa5b5', bg:'#f5f7fb', col:'#6b7280'}
+  };
+
+  var section = function(seg){
+    var m=segMeta[seg];
+    var list=all.filter(function(c){return (c.tone||'slate')===seg;});
+    if(!list.length) return '';
+    var open=isOpen(seg);
+    var head='<button onclick="toggleClueGroup(\''+projKey+'\',\''+seg+'\')" '+
+      'style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 12px;background:'+m.bg+';border:1px solid '+m.dot+'33;border-radius:10px;cursor:pointer;text-align:left;margin-bottom:'+(open?'10px':'0')+'">'+
+      '<span style="width:8px;height:8px;border-radius:50%;background:'+m.dot+';flex-shrink:0"></span>'+
+      '<span style="font-size:12.5px;font-weight:750;color:'+m.col+'">'+m.label+'</span>'+
+      '<span style="font-size:11px;padding:1px 7px;background:#fff;color:'+m.col+';border-radius:10px;border:1px solid '+m.dot+'33">'+list.length+'家</span>'+
       '<div style="flex:1"></div>'+
-      '<button onclick="loadAIScanClues(\''+projKey+'\')" style="padding:4px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:11.5px;color:#6d28d9;cursor:pointer;font-weight:600">🔍 重新扫描</button>'+
-    '</div>'+
-    (aiClues.length
-      ? aiClues.map(function(c,ci){ return scanClueCard(c, projKey, ci); }).join('')
-      : '<div style="text-align:center;padding:20px;background:#f9fafb;border-radius:10px;border:1px solid #e8edf5">'+
-          '<div style="font-size:12.5px;color:#9aa5b5;margin-bottom:8px">暂无 AI 扫描结果</div>'+
-          '<button onclick="loadAIScanClues(\''+projKey+'\')" style="padding:6px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600">🔍 立即扫描</button>'+
-        '</div>'
-    )+
+      '<span style="font-size:12px;color:#9aa5b5">'+(open?'▲':'▼')+'</span>'+
+    '</button>';
+    var body=open ? '<div style="margin-bottom:14px">'+list.map(renderOne).join('')+'</div>' : '';
+    return head+body;
+  };
+
+  var sections = section('teal')+section('amber')+section('slate');
+
+  // 顶部工具条：扫描 / 录入 操作 + 空态
+  var tools = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'+
+    '<span style="font-size:12px;font-weight:750;color:#0b183b;letter-spacing:.3px">候选企业线索</span>'+
+    '<span style="font-size:11px;padding:2px 7px;background:#eef2ff;color:#4338ca;border-radius:10px">共 '+all.length+' 家</span>'+
+    '<div style="flex:1"></div>'+
+    '<button onclick="loadAIScanClues(\''+projKey+'\')" style="padding:4px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:11.5px;color:#6d28d9;cursor:pointer;font-weight:600">🔍 AI 扫描</button>'+
+    '<button onclick="addClueManual(\''+projKey+'\')" style="padding:4px 10px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:11.5px;color:#166534;cursor:pointer;font-weight:600">+ 录入</button>'+
   '</div>';
 
-  // 手动录入栏
-  var manualPanel = '<div style="margin-top:20px">'+
-    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'+
-      '<div style="display:flex;align-items:center;gap:6px">'+
-        '<span style="width:8px;height:8px;border-radius:50%;background:#22c55e"></span>'+
-        '<span style="font-size:12px;font-weight:750;color:#0b183b;letter-spacing:.3px">慧小招团队推荐</span>'+
-      '</div>'+
-      '<span style="font-size:11px;padding:2px 7px;background:#f0fdf4;color:#166534;border-radius:10px">'+manualClues.length+'家</span>'+
-      '<span style="font-size:11px;color:#9aa5b5;margin-left:2px">· 人工核验，可直接对接</span>'+
-      '<div style="flex:1"></div>'+
-      '<button onclick="addClueManual(\''+projKey+'\')" style="padding:4px 10px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:11.5px;color:#166534;cursor:pointer;font-weight:600">+ 录入</button>'+
-    '</div>'+
-    (manualClues.length
-      ? manualClues.map(function(c,ci){ return clueCard(c, projKey, ci); }).join('')
-      : '<div style="text-align:center;padding:16px;background:#f9fafb;border-radius:10px;border:1px solid #e8edf5;font-size:12.5px;color:#9aa5b5">暂无团队推荐企业 · 点击「+ 录入」添加</div>'
-    )+
+  var empty = '<div style="text-align:center;padding:20px;background:#f9fafb;border-radius:10px;border:1px solid #e8edf5">'+
+    '<div style="font-size:12.5px;color:#9aa5b5;margin-bottom:8px">暂无候选企业线索</div>'+
+    '<button onclick="loadAIScanClues(\''+projKey+'\')" style="padding:6px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600">🔍 立即扫描</button>'+
   '</div>';
 
-  return aiPanel + manualPanel;
+  return '<div>'+tools+(all.length?sections:empty)+'</div>';
+}
+
+function toggleClueGroup(projKey, seg){
+  if(!window.__clueGroupOpen) window.__clueGroupOpen={};
+  var key=projKey+'::'+seg;
+  var defOpen={teal:true, amber:true, slate:false};
+  var cur=window.__clueGroupOpen[key];
+  var now=(cur===undefined)?defOpen[seg]:cur;
+  window.__clueGroupOpen[key]=!now;
+  render();
 }
 
 /* ── AI 扫描企业卡片（展开/折叠，带优先级标签）── */
@@ -2808,6 +2830,7 @@ function projMgmtPage(p){
             '<div style="font-size:11px;font-weight:'+fw+';color:'+color+'">'+
               (isDone?'✓ ':'')+(isCur?'⬤ ':'')+s[0]+
             '</div>'+
+            (isCur?'<div style="font-size:9px;color:#6b7f9c;margin-top:2px;line-height:1.3">'+s[1]+'</div>':'')+
           '</div>';
         }).join('')+
         '</div></div>';
@@ -2859,6 +2882,10 @@ function projMgmtPage(p){
                 '提交招引需求 →</button>'+
             '</div>'+
           '</div>';
+      } else if(x.stage>=4){
+        var _tealN=teal, _amberN=amber, _slateN=slate;
+        var _g=nextStepGuide(k,x,_tealN,_amberN,_slateN);
+        if(_g) stageGuide=_g;
       }
       // 线索列表
       var cluesList = renderCluesTwoPanel(k)+
@@ -2911,6 +2938,28 @@ function projMgmtPage(p){
     '</div></div>';
 }
 
+/* 下一步引导条：根据当前阶段与线索状态给出"当前该做什么"+主操作 */
+function nextStepGuide(k,x,teal,amber,slate){
+  var box=function(bg,bd,col,icon,title,desc){
+    return '<div style="margin-bottom:16px;padding:14px 16px;background:'+bg+';border:1.5px solid '+bd+';border-radius:12px">'+
+      '<div style="display:flex;align-items:center;gap:10px">'+
+        '<span style="font-size:24px">'+icon+'</span>'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:13.5px;font-weight:700;color:'+col+';margin-bottom:3px">'+title+'</div>'+
+          '<div style="font-size:12px;color:#4a5568;line-height:1.6">'+desc+'</div>'+
+        '</div>'+
+      '</div></div>';
+  };
+  if(x.stage===4){
+    if(slate>0) return box('linear-gradient(135deg,#fffbeb,#fefce8)','#fde68a','#92400e','\uD83D\uDD0D','\u5f53\u524d\uff1a'+slate+' \u6761\u5019\u9009\u7ebf\u7d22\u5f85\u53d1\u8d77\u6838\u9a8c','\u5c55\u5f00\u4e0b\u65b9\u7ebf\u7d22\u5361\u7247\uff0c\u70b9\u300c\u8bf7\u8d44\u6e90\u56e2\u961f\u6838\u9a8c\u300d\u628a\u7ebf\u7d22\u63a8\u8fdb\u5230\u6838\u9a8c\u4e2d\u3002');
+    if(amber>0) return box('linear-gradient(135deg,#fffbeb,#fff7ed)','#fdba74','#9a3412','\u23F3','\u5f53\u524d\uff1a'+amber+' \u6761\u7ebf\u7d22\u6838\u9a8c\u4e2d','\u8d44\u6e90\u56e2\u961f\u6b63\u5728\u6838\u9a8c\u4f01\u4e1a\u771f\u5b9e\u610f\u5411\u4e0e\u51b3\u7b56\u5c42\u89e6\u8fbe\uff0c\u6838\u9a8c\u901a\u8fc7\u540e\u5373\u53ef\u5b89\u6392\u6c9f\u901a\u3002');
+    return box('linear-gradient(135deg,#eff6ff,#f0f9ff)','#bfdbfe','#1d4ed8','\uD83D\uDD0D','\u5f53\u524d\uff1a\u7b49\u5f85\u5019\u9009\u7ebf\u7d22','\u5728\u4e0b\u65b9 AI \u626b\u63cf\u6216\u56e2\u961f\u63a8\u8350\u4e2d\u9009\u5b9a\u5019\u9009\u4f01\u4e1a\uff0c\u53d1\u8d77\u8d44\u6e90\u6838\u9a8c\u3002');
+  }
+  if(x.stage>=5){
+    return box('linear-gradient(135deg,#f0fdf4,#f0f9ff)','#86efac','#166534','\u2705','\u5f53\u524d\uff1a'+(teal||0)+' \u6761\u7ebf\u7d22\u53ef\u5b89\u6392\u6c9f\u901a','\u5c55\u5f00\u53ef\u6c9f\u901a\u7ebf\u7d22\u67e5\u770b\u300c\u5982\u4f55\u8054\u7cfb\u8fd9\u5bb6\u4f01\u4e1a\u300d\uff0c\u5e76\u5728\u4e0b\u65b9\u5bf9\u63a5\u8bb0\u5f55\u4e2d\u767b\u8bb0\u8fdb\u5c55\u3002');
+  }
+  return '';
+}
 /* 推进阶段 */
 function advanceStage(projKey){
   var p = PROJECTS[projKey]; if(!p) return;
@@ -5352,13 +5401,37 @@ function detailPane(p){
 }
 // 我的需求页 → 右侧：需求汇总统计
 function detailNeeds(p){
+  // 若有展开的方向：右侧显示该方向上下文；否则显示全局汇总
+  var openK = window.__projOpen;
+  if(openK && PROJECTS[openK]){
+    var x = PROJECTS[openK];
+    var clues = x.clues||[];
+    var teal  = clues.filter(function(c){return c.tone==='teal';}).length;
+    var amber = clues.filter(function(c){return c.tone==='amber';}).length;
+    var slate = clues.filter(function(c){return c.tone==='slate';}).length;
+    var sname = STAGES[x.stage-1]?STAGES[x.stage-1][0]:'';
+    var sdesc = STAGES[x.stage-1]?STAGES[x.stage-1][1]:'';
+    return '<div class="detail-header"><div><span class="eyebrow">DIRECTION</span><h2>'+x.topic+'</h2><p>'+x.city+' · 当前方向进度</p></div></div>'+
+      '<div class="detail-scroll">'+
+        '<div class="detail-block"><h3>当前阶段</h3>'+
+          '<p class="detail-copy" style="font-size:18px;font-weight:700;color:#013582">'+sname+'</p>'+
+          '<div style="font-size:12px;color:#8492a6;margin-top:4px">第 '+x.stage+'/'+STAGES.length+' 步 · '+sdesc+'</div>'+
+        '</div>'+
+        '<div class="detail-block"><h3>候选线索</h3><ul class="check-list">'+
+          '<li><i class="i">•</i>可安排沟通：'+teal+' 家</li>'+
+          '<li><i class="i">•</i>核验中：'+amber+' 家</li>'+
+          '<li><i class="i">•</i>待接触：'+slate+' 家</li>'+
+        '</ul></div>'+
+        '<div class="detail-block"><h3>提示</h3><div class="info-callout" style="margin-top:0">右侧随所选方向联动；点击左侧其它方向可切换查看。企业真实联系方式由资源团队线下保管。</div></div>'+
+      '</div>';
+  }
   var ks=cityKeys();var byStage={};ks.forEach(function(k){var s=PROJECTS[k].stage;byStage[s]=(byStage[s]||0)+1});
   return '<div class="detail-header"><div><span class="eyebrow">OVERVIEW</span><h2>需求概览</h2><p>'+p.who+' 名下研判汇总</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>研判总数</h3><p class="detail-copy" style="font-size:22px;font-weight:700;color:#013582">'+ks.length+' 个产业方向</p></div>'+
       '<div class="detail-block"><h3>阶段分布</h3><ul class="check-list">'+
         STAGES.map(function(s,i){var n=byStage[i+1]||0;return n?'<li><i class="i">•</i>'+s[0]+'：'+n+' 个</li>':''}).join('')+'</ul></div>'+
-      '<div class="detail-block"><h3>提示</h3><div class="info-callout" style="margin-top:0">点击左侧任意研判方向可切换进入；每条为独立研判线，进度互不干扰。</div></div>'+
+      '<div class="detail-block"><h3>提示</h3><div class="info-callout" style="margin-top:0">展开任一产业方向后，这里会显示该方向的阶段与线索进度；每条为独立研判线，进度互不干扰。</div></div>'+
     '</div>';
 }
 // 设置页 → 右侧：账号与权限概览
