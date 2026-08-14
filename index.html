@@ -1746,59 +1746,12 @@ function topbar(p){
         (unreadCount()>0?'<b style="position:absolute;top:-4px;right:-6px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:#c85b09;color:#fff;font-size:9px;line-height:15px;text-align:center;font-weight:700">'+unreadCount()+'</b>':'')+
         '<div id="notifPanel" style="display:none;position:absolute;top:30px;right:0;width:310px;background:#fff;border:1px solid #d8e0ed;border-radius:12px;box-shadow:0 12px 32px rgba(11,24,59,.16);z-index:70;overflow:hidden;text-align:left;cursor:default" onclick="event.stopPropagation()">'+notifList()+'</div>'+
       '</span>'+
-      '<button onclick="openCitySwitch()" title="切换城市" style="display:inline-flex;align-items:center;gap:5px;min-height:32px;padding:0 11px;border:1px solid #d8e0ed;border-radius:8px;background:#fff;color:#0757ad;font-size:12.5px;cursor:pointer">\ud83c\udfd9\ufe0f 切换城市</button>'+
       (AUTH?'<button onclick="logout()" title="退出登录" style="display:inline-flex;align-items:center;gap:5px;min-height:32px;padding:0 11px;border:1px solid #f0d8d8;border-radius:8px;background:#fff;color:#b5504a;font-size:12.5px;cursor:pointer">\u21aa 退出</button>':'')+
       '</div>'+
   '</div>';
 }
 
-/* 切换 / 新建城市弹窗：已建城市直进，新城市走 onboarding */
-function openCitySwitch(){
-  // 按城市去重：一个城市只显示一条；若某城市含当前项目 cur，则该条指向 cur
-  var cities=[], _seen={};
-  for(var k in PROJECTS){ if(!PROJECTS.hasOwnProperty(k)) continue;
-    var _c=PROJECTS[k].city||'';
-    if(_seen[_c]!=null){ if(k===cur) cities[_seen[_c]].key=k; continue; }
-    _seen[_c]=cities.length;
-    cities.push({key:k, city:_c, topic:PROJECTS[k].topic});
-  }
-  var list=cities.map(function(c){
-    var on=c.key===cur;
-    return '<button onclick="switchToCity(\''+c.key+'\')" style="width:100%;text-align:left;display:flex;align-items:center;gap:10px;padding:11px 13px;margin-bottom:8px;border:1px solid '+(on?'#6366f1':'#e8edf5')+';border-radius:10px;background:'+(on?'#f3f4ff':'#fff')+';cursor:pointer">'+
-      '<span style="font-size:18px">\ud83c\udfd9\ufe0f</span>'+
-      '<span style="flex:1;min-width:0"><strong style="font-size:13.5px;color:#0b183b;display:block">'+c.city+(on?' · 当前':'')+'</strong></span></button>';
-  }).join('') || '<p style="font-size:12.5px;color:#8492a6;margin:0 0 10px">暂无已建城市。</p>';
-  openModal('\ud83c\udfd9\ufe0f 切换 / 新建城市',
-    '<div style="font-size:12px;color:#8492a6;margin:-2px 0 12px;line-height:1.6">选择一个已建城市直接进入（数据已保存）；或输入新城市名走一遍建库流程。</div>'+
-    list+
-    '<div style="margin-top:14px;padding-top:14px;border-top:1px solid #f0f4ff">'+
-      '<div style="font-size:12px;font-weight:650;color:#0b183b;margin-bottom:8px">\u2795 新建城市</div>'+
-      '<div style="display:flex;gap:8px">'+
-        '<input id="switchCityInput" type="text" placeholder="输入城市名，如 十堰" onkeydown="if(event.key===\'Enter\')switchNewCity()" style="flex:1;min-height:42px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:9px;outline:0;font-size:14px">'+
-        '<button onclick="switchNewCity()" style="min-height:42px;padding:0 16px;border:none;border-radius:9px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;font-size:13.5px;font-weight:650;cursor:pointer">建库</button>'+
-      '</div>'+
-    '</div>',
-    '<button class="secondary-button" onclick="closeModal()">取消</button>');
-}
-function switchToCity(k){
-  if(!PROJECTS[k])return;
-  closeModal(); cur=k; view='knowledge'; detailData=null; detailOpen=false;
-  KB_UNLOCKED[k]=KB_UNLOCKED[k]||{report:true,home:true,docking:true};
-  persist(); render();
-  toast('已进入「'+PROJECTS[k].city+'」城市智库');
-}
-function switchNewCity(){
-  var v=(document.getElementById('switchCityInput')||{}).value||'';
-  v=v.trim(); if(!v)return;
-  for(var k in PROJECTS){ if(PROJECTS[k].city===v){ switchToCity(k); return; } }
-  closeModal();
-  _setupFiles=[];
-  cur=null; view='setup';
-  var _root=document.getElementById('root');
-  if(_root){ _root.innerHTML='<div style="height:100vh;background:#f5f7fb">'+setupPage()+'</div>'; bind(); }
-  setTimeout(function(){ var ci=document.getElementById('setupCity'); if(ci){ ci.value=v; if(typeof setupValidate==='function')setupValidate(); } }, 40);
-}
-
+/* 切换城市功能已移除：现改为只能通过账号密码登录进入对应城市，不允许前端切换到其他城市 */
 function stColor(s){return s>=4?{bg:'#e4f5f3',c:'#006d70'}:s>=3?{bg:'#ebf3fd',c:'#013582'}:{bg:'#fff0de',c:'#a34c09'}}
 
 /* kb lock/readiness */
@@ -2459,6 +2412,8 @@ function dismissScanClue(projKey, clueId){
 function loadAIScanClues(projKey){
   var p = PROJECTS[projKey]; if(!p) return;
   if(!p.clues) p.clues=[];
+  // 城市门禁：随州专项企业库仅限随州城市，其他城市不串随州数据
+  if(!(p.city&&p.city.indexOf('随州')>=0)){ toast('该城市暂无 AI 实测企业库，请上传城市材料后由 AI 生成'); return; }
 
   // 根据项目 topic 匹配相关线索
   var topic=(p.topic||'').toLowerCase();
@@ -2887,6 +2842,8 @@ function projMgmtPage(p){
     if(!window.__scanLoaded[k]){
       window.__scanLoaded[k]=true;
       var _p2=PROJECTS[k];if(_p2&&!_p2.clues)_p2.clues=[];
+      // 城市门禁：非随州城市不自动填随州企业数据
+      if(_p2&&_p2.city&&_p2.city.indexOf('随州')<0){ /* skip */ } else {
       var existIds=(_p2&&_p2.clues||[]).map(function(c){return c.id;});
       var _topic=(_p2&&_p2.topic||'').toLowerCase();
       var relevant=SUIZHOU_SCAN_CLUES.filter(function(sc){
@@ -2902,6 +2859,7 @@ function projMgmtPage(p){
       if(newOnes.length&&_p2){
         _p2.clues=(_p2.clues||[]).concat(newOnes);
         persist();
+      }
       }
     }
 
