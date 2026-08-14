@@ -3261,8 +3261,9 @@ function dockingPage(p){
               '<div style="flex:1">'+
                 '<div style="font-size:12.5px;color:#1e293b;line-height:1.6">'+l.note+'</div>'+
                 '<div style="font-size:11px;color:#9aa5b5;margin-top:3px">'+new Date(l.ts).toLocaleString('zh-CN')+'</div>'+
+                ((l.files&&l.files.length)?'<div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">'+l.files.map(function(f,fi){return '<button onclick="dockDownloadAttach(\''+pk+'\','+l.ts+','+fi+')" style="display:flex;align-items:center;gap:6px;padding:5px 9px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:7px;font-size:11.5px;color:#4338ca;cursor:pointer;text-align:left"><span>u{1F4CE}</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+f.name+'</span><span style="color:#9aa5b5;font-size:10.5px">u{2193}</span></button>';}).join('')+'</div>':'')+
               '</div>'+
-              '<button onclick="deleteDockLog(\''+pk+'\','+l.ts+')" title="删除这条记录" style="flex-shrink:0;width:24px;height:24px;padding:0;background:none;border:none;color:#c0c8d4;font-size:15px;cursor:pointer;border-radius:6px;line-height:1" onmouseover="this.style.background=\'#fef2f2\';this.style.color=\'#ef4444\'" onmouseout="this.style.background=\'none\';this.style.color=\'#c0c8d4\'">u{2715}</button>'+
+              '<button onclick="deleteDockLog(\''+pk+'\','+l.ts+')" title="删除这条记录" style="flex-shrink:0;width:24px;height:24px;padding:0;background:none;border:none;color:#c0c8d4;font-size:15px;cursor:pointer;border-radius:6px;line-height:1" onmouseover="this.style.background=\'#fef2f2\';this.style.color=\'#ef4444\'" onmouseout="this.style.background=\'none\';this.style.color=\'#c0c8d4\'">✕</button>'+
             '</div>';
           }).join('')
         : '<div style="font-size:12.5px;color:#9aa5b5;padding:8px 0">暂无对接记录</div>'
@@ -3270,22 +3271,28 @@ function dockingPage(p){
       // 录入区
       '<div style="margin-top:12px">'+
         '<div style="display:flex;gap:6px;margin-bottom:8px">'+
-          ['visit:🤝拜访','call:📞电话','email:📧邮件','material:📎材料'].map(function(s){
-            var parts=s.split(':'), val=parts[0], label=parts[1];
+          ['visit:🤝拜访','call:📞电话','email:📧邮件','material:📎材料'].map(function(str){
+            var parts=str.split(':'), val=parts[0], label=parts[1];
             return '<button onclick="setDockType(\''+pk+'\',\''+val+'\')" id="dtype-'+pk+'-'+val+'" '+
               'style="padding:5px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:12px;cursor:pointer;background:#f5f7fb;color:#4a5568">'+label+'</button>';
           }).join('')+
         '</div>'+
         '<textarea id="dock-note-'+pk+'" placeholder="记录本次沟通内容、关键信息或待跟进事项…" '+
-          'style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;resize:vertical;min-height:72px;outline:none;line-height:1.6" '+
+          'style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;resize:vertical;min-height:64px;outline:none;line-height:1.6" '+
           'onfocus="this.style.border=\'1.5px solid #6366f1\'" onblur="this.style.border=\'1.5px solid #e8edf5\'"></textarea>'+
-        '<button onclick="saveDockLog(\''+pk+'\')" '+
-          'style="width:100%;margin-top:8px;padding:9px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:650;cursor:pointer">'+
-          '保存对接记录</button>'+
+        '<input id="dock-file-'+pk+'" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg" style="display:none" onchange="dockFileSelected(\''+pk+'\',this)" />'+
+        '<div id="dock-attach-'+pk+'" style="margin-top:8px"></div>'+
+        '<div style="display:flex;gap:8px;margin-top:8px">'+
+          '<button onclick="document.getElementById(\'dock-file-'+pk+'\').click()" '+
+            'style="flex-shrink:0;padding:9px 14px;background:#fff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:13px;color:#6d28d9;cursor:pointer;font-weight:600">📎 添加附件</button>'+
+          '<button onclick="saveDockLog(\''+pk+'\')" '+
+            'style="flex:1;padding:9px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:650;cursor:pointer">'+
+            '保存对接记录</button>'+
+        '</div>'+
       '</div>'+
     '</div>';
 
-  // 下一步政府待办
+
   var nextStep='';
   if(px.stage===3){
     nextStep='<div style="padding:12px 14px;background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;margin-bottom:16px">'+
@@ -3430,8 +3437,9 @@ function dockProgressInline(pk){
               '<div style="flex:1">'+
                 '<div style="font-size:12.5px;color:#1e293b;line-height:1.6">'+l.note+'</div>'+
                 '<div style="font-size:11px;color:#9aa5b5;margin-top:3px">'+new Date(l.ts).toLocaleString('zh-CN')+'</div>'+
+                ((l.files&&l.files.length)?'<div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">'+l.files.map(function(f,fi){return '<button onclick="dockDownloadAttach(\''+pk+'\','+l.ts+','+fi+')" style="display:flex;align-items:center;gap:6px;padding:5px 9px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:7px;font-size:11.5px;color:#4338ca;cursor:pointer;text-align:left"><span>u{1F4CE}</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+f.name+'</span><span style="color:#9aa5b5;font-size:10.5px">u{2193}</span></button>';}).join('')+'</div>':'')+
               '</div>'+
-              '<button onclick="deleteDockLog(\''+pk+'\','+l.ts+')" title="删除这条记录" style="flex-shrink:0;width:24px;height:24px;padding:0;background:none;border:none;color:#c0c8d4;font-size:15px;cursor:pointer;border-radius:6px;line-height:1" onmouseover="this.style.background=\'#fef2f2\';this.style.color=\'#ef4444\'" onmouseout="this.style.background=\'none\';this.style.color=\'#c0c8d4\'">u{2715}</button>'+
+              '<button onclick="deleteDockLog(\''+pk+'\','+l.ts+')" title="删除这条记录" style="flex-shrink:0;width:24px;height:24px;padding:0;background:none;border:none;color:#c0c8d4;font-size:15px;cursor:pointer;border-radius:6px;line-height:1" onmouseover="this.style.background=\'#fef2f2\';this.style.color=\'#ef4444\'" onmouseout="this.style.background=\'none\';this.style.color=\'#c0c8d4\'">✕</button>'+
             '</div>';
           }).join('')
         : '<div style="font-size:12.5px;color:#9aa5b5;padding:8px 0">暂无对接记录</div>'
@@ -3447,11 +3455,18 @@ function dockProgressInline(pk){
         '<textarea id="dock-note-'+pk+'" placeholder="记录本次沟通内容、关键信息或待跟进事项…" '+
           'style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;resize:vertical;min-height:64px;outline:none;line-height:1.6" '+
           'onfocus="this.style.border=\'1.5px solid #6366f1\'" onblur="this.style.border=\'1.5px solid #e8edf5\'"></textarea>'+
-        '<button onclick="saveDockLog(\''+pk+'\')" '+
-          'style="width:100%;margin-top:8px;padding:9px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:650;cursor:pointer">'+
-          '保存对接记录</button>'+
+        '<input id="dock-file-'+pk+'" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg" style="display:none" onchange="dockFileSelected(\''+pk+'\',this)" />'+
+        '<div id="dock-attach-'+pk+'" style="margin-top:8px"></div>'+
+        '<div style="display:flex;gap:8px;margin-top:8px">'+
+          '<button onclick="document.getElementById(\'dock-file-'+pk+'\').click()" '+
+            'style="flex-shrink:0;padding:9px 14px;background:#fff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:13px;color:#6d28d9;cursor:pointer;font-weight:600">📎 添加附件</button>'+
+          '<button onclick="saveDockLog(\''+pk+'\')" '+
+            'style="flex:1;padding:9px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:650;cursor:pointer">'+
+            '保存对接记录</button>'+
+        '</div>'+
       '</div>'+
     '</div>';
+
 
   var nextStep='';
   if(px.stage===3){
@@ -3496,19 +3511,77 @@ function setDockType(projKey, type){
   });
 }
 
+// 待保存的附件暂存（按项目）
+var __dockFiles = {};
+function dockFileSelected(projKey, inp){
+  var files=Array.from(inp.files||[]);
+  if(!files.length) return;
+  if(!__dockFiles[projKey]) __dockFiles[projKey]=[];
+  var pending=files.length;
+  files.forEach(function(f){
+    var reader=new FileReader();
+    reader.onload=function(){
+      __dockFiles[projKey].push({name:f.name, size:f.size, dataUrl:reader.result});
+      pending--;
+      if(pending===0) renderDockAttachDraft(projKey);
+    };
+    reader.readAsDataURL(f);
+  });
+  // 选材料附件时自动把类型切到"材料"
+  setDockType(projKey,'material');
+}
+function renderDockAttachDraft(projKey){
+  var box=document.getElementById('dock-attach-'+projKey);
+  if(!box) return;
+  var arr=__dockFiles[projKey]||[];
+  if(!arr.length){ box.innerHTML=''; return; }
+  box.innerHTML=arr.map(function(f,i){
+    return '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;margin-bottom:6px">'+
+      '<span style="font-size:13px">📎</span>'+
+      '<span style="flex:1;min-width:0;font-size:12px;color:#4338ca;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+f.name+'</span>'+
+      '<span style="font-size:11px;color:#9aa5b5">'+dockFileSize(f.size)+'</span>'+
+      '<button onclick="removeDockDraftFile(\''+projKey+'\','+i+')" title="移除" style="background:none;border:none;color:#c0c8d4;font-size:14px;cursor:pointer;padding:0 2px">\u2715</button>'+
+    '</div>';
+  }).join('');
+}
+function removeDockDraftFile(projKey, idx){
+  if(!__dockFiles[projKey]) return;
+  __dockFiles[projKey].splice(idx,1);
+  renderDockAttachDraft(projKey);
+}
+function dockFileSize(b){
+  if(b==null) return '';
+  if(b<1024) return b+'B';
+  if(b<1048576) return (b/1024).toFixed(0)+'KB';
+  return (b/1048576).toFixed(1)+'MB';
+}
+function dockDownloadAttach(projKey, ts, idx){
+  var logs=DOCK_LOGS[projKey]||[];
+  var l=logs.filter(function(x){return x.ts===ts;})[0];
+  if(!l||!l.files||!l.files[idx]) return;
+  var f=l.files[idx];
+  var a=document.createElement('a');
+  a.href=f.dataUrl; a.download=f.name;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
 function saveDockLog(projKey){
   var ta=document.getElementById('dock-note-'+projKey);
-  if(!ta||!ta.value.trim()){toast('请填写对接记录内容');return;}
+  var files=__dockFiles[projKey]||[];
+  var note=ta?ta.value.trim():'';
+  if(!note && !files.length){toast('请填写对接记录内容或添加附件');return;}
   if(!DOCK_LOGS[projKey]) DOCK_LOGS[projKey]=[];
   DOCK_LOGS[projKey].unshift({
     ts: Date.now(),
-    note: ta.value.trim(),
-    type: __dockType[projKey]||'visit'
+    note: note||'（附件）',
+    type: __dockType[projKey]||'visit',
+    files: files.slice()
   });
   persist();
-  ta.value='';
+  if(ta) ta.value='';
+  __dockFiles[projKey]=[];
   refreshDockInline(projKey);
-  toast('✓ 对接记录已保存');
+  toast('\u2713 对接记录已保存');
 }
 
 // 局部刷新对接进度区，避免整页 render 导致滚动跳回顶部
