@@ -973,6 +973,8 @@ function provisionSuizhou(){
 var _setupFiles=[];  // 可选上传文件（多文件）
 
 function setupPage(){
+  var _locked=(location.search.indexOf('demo')<0 && AUTH && AUTH.city);
+  var _cityVal=_locked?AUTH.city:'';
   return '<div id="onboardingWrap" style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#f0f4ff 0%,#fafbff 60%,#f5f0ff 100%)">'+
     '<div style="width:100%;max-width:480px;padding:0 20px">'+
       '<div style="text-align:center;margin-bottom:40px">'+
@@ -980,13 +982,14 @@ function setupPage(){
           '<span style="color:#fff;font-size:22px;font-weight:800;letter-spacing:-1px">慧</span>'+
         '</div>'+
         '<h1 style="font-size:26px;font-weight:780;color:#0b183b;margin:0 0 8px;letter-spacing:-.5px">慧小招</h1>'+
-        '<p style="font-size:14px;color:#8492a6;margin:0;line-height:1.6">AI 招商研判智能体 · 输入城市即可开始</p>'+
+        '<p style="font-size:14px;color:#8492a6;margin:0;line-height:1.6">'+(_locked?('AI 招商研判智能体 · '+_cityVal+' 城市工作区'):'AI 招商研判智能体 · 输入城市即可开始')+'</p>'+
       '</div>'+
       '<div style="background:#fff;border-radius:20px;padding:36px 36px 28px;box-shadow:0 2px 40px rgba(11,24,59,.07),0 0 0 1px rgba(11,24,59,.04)">'+
         '<div style="margin-bottom:20px">'+
-          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:8px;letter-spacing:.3px">目标城市</label>'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:8px;letter-spacing:.3px">目标城市'+(_locked?'<span style="font-weight:500;color:#8492a6"> · 账号已绑定，不可更改</span>':'')+'</label>'+
           '<input id="setupCity" type="text" placeholder="输入城市名称，例如：随州" autocomplete="off" '+
-            'style="width:100%;padding:13px 16px;border:1.5px solid #e8edf5;border-radius:12px;font-size:15px;color:#0b183b;outline:none;box-sizing:border-box;transition:border .15s,box-shadow .15s" '+
+            (_locked?('value="'+_cityVal+'" readonly '):'')+
+            'style="width:100%;padding:13px 16px;border:1.5px solid #e8edf5;border-radius:12px;font-size:15px;color:#0b183b;outline:none;box-sizing:border-box;transition:border .15s,box-shadow .15s'+(_locked?';background:#f5f7fb;cursor:not-allowed':'')+'" '+
             'oninput="setupValidate()" '+
             'onfocus="this.style.border=\'1.5px solid #1a56db\';this.style.boxShadow=\'0 0 0 3px rgba(26,86,219,.1)\'" '+
             'onblur="this.style.border=\'1.5px solid #e8edf5\';this.style.boxShadow=\'none\'" '+
@@ -995,7 +998,7 @@ function setupPage(){
         '<!-- 补充材料区域已移至城市智库页面 -->'+
         '<input id="setupFileInput" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" multiple style="display:none" onchange="setupFileSelected(this)" />'+
         '<button id="setupBtn" onclick="createProject()" '+
-          'style="width:100%;padding:14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:650;cursor:pointer;opacity:.4;pointer-events:none;transition:opacity .15s,transform .1s;letter-spacing:.2px" '+
+          'style="width:100%;padding:14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:650;cursor:pointer;opacity:'+(_locked?'1':'.4')+';pointer-events:'+(_locked?'auto':'none')+';transition:opacity .15s,transform .1s;letter-spacing:.2px" '+
           'onmousedown="this.style.transform=\'scale(.98)\'" onmouseup="this.style.transform=\'\'">'+
           '开始分析 →'+
         '</button>'+
@@ -1188,7 +1191,8 @@ function runAnalysisAnim(city, fileName, stepsCount, onDone){
 
 /* 创建项目 + 进入动画 */
 function createProject(){
-  var city=(document.getElementById('setupCity')||{}).value;
+  var _locked=(location.search.indexOf('demo')<0 && AUTH && AUTH.city);
+  var city=_locked?AUTH.city:((document.getElementById('setupCity')||{}).value);
   if(!city||!city.trim())return;
   city=city.trim();
   var fileName=_setupFiles&&_setupFiles.length?_setupFiles.map(function(f){return f.name;}).join('、'):null;
