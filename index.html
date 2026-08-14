@@ -845,7 +845,10 @@ function loginPage(){
         '<label style="display:grid;gap:6px;font-size:12px;color:#52637a">账号'+
           '<input id="loginUser" type="text" autocomplete="username" placeholder="如 suizhou" onkeydown="if(event.key===\'Enter\')doLogin()" style="min-height:44px;padding:9px 12px;border:1px solid #d8e0ed;border-radius:9px;outline:0;font-size:14px"></label>'+
         '<label style="display:grid;gap:6px;font-size:12px;color:#52637a">密码'+
-          '<input id="loginPwd" type="password" autocomplete="current-password" placeholder="请输入密码" onkeydown="if(event.key===\'Enter\')doLogin()" style="min-height:44px;padding:9px 12px;border:1px solid #d8e0ed;border-radius:9px;outline:0;font-size:14px"></label>'+
+          '<span style="position:relative;display:block">'+
+          '<input id="loginPwd" type="password" autocomplete="current-password" placeholder="请输入密码" onkeydown="if(event.key===\'Enter\')doLogin()" style="width:100%;box-sizing:border-box;min-height:44px;padding:9px 42px 9px 12px;border:1px solid #d8e0ed;border-radius:9px;outline:0;font-size:14px">'+
+          '<span id="loginPwdEye" onclick="togglePwd(\'loginPwd\',this)" title="显示/隐藏密码" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:16px;user-select:none;opacity:.55">👁</span>'+
+          '</span></label>'+
         '<div id="loginErr" style="display:none;font-size:12px;color:#dc2626;margin-top:-4px"></div>'+
         '<button onclick="doLogin()" style="min-height:46px;margin-top:4px;border:none;border-radius:10px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;font-size:15px;font-weight:650;cursor:pointer;letter-spacing:.3px">登录</button>'+
         '<button onclick="gotoRegister()" style="min-height:44px;border:1.5px solid #d8e0ed;border-radius:10px;background:#fff;color:#1a56db;font-size:14px;font-weight:600;cursor:pointer">注册新账号</button>'+
@@ -864,6 +867,13 @@ function regErr(msg){ var e=document.getElementById('regErr'); if(e){ e.textCont
 /* 注册页：账号+密码+个人资料 */
 function registerPage(){
   function fld(id,label,ph,type){
+    if(type==='password'){
+      return '<label style="display:grid;gap:5px;font-size:12px;color:#52637a">'+label+
+        '<span style="position:relative;display:block">'+
+        '<input id="'+id+'" type="password" placeholder="'+ph+'" style="width:100%;box-sizing:border-box;min-height:42px;padding:8px 42px 8px 12px;border:1px solid #d8e0ed;border-radius:9px;outline:0;font-size:14px">'+
+        '<span onclick="togglePwd(\''+id+'\',this)" title="显示/隐藏密码" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:16px;user-select:none;opacity:.55">👁</span>'+
+        '</span></label>';
+    }
     return '<label style="display:grid;gap:5px;font-size:12px;color:#52637a">'+label+
       '<input id="'+id+'" type="'+(type||'text')+'" placeholder="'+ph+'" style="min-height:42px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:9px;outline:0;font-size:14px"></label>';
   }
@@ -926,6 +936,11 @@ function doRegister(){
   setTimeout(function(){ if(!AUTH){ proceed(); } }, 1500);
 }
 
+function togglePwd(id,el){
+  var inp=document.getElementById(id); if(!inp) return;
+  if(inp.type==='password'){ inp.type='text'; if(el){ el.style.opacity='1'; el.textContent='🙈'; } }
+  else { inp.type='password'; if(el){ el.style.opacity='.55'; el.textContent='👁'; } }
+}
 function loginErr(msg){ var e=document.getElementById('loginErr'); if(e){ e.textContent=msg; e.style.display='block'; } }
 function doLogin(){
   var u=(document.getElementById('loginUser')||{}).value||'';
