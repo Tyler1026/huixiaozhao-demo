@@ -847,7 +847,7 @@ function loginPage(){
         '<label style="display:grid;gap:6px;font-size:12px;color:#52637a">密码'+
           '<span style="position:relative;display:block">'+
           '<input id="loginPwd" type="password" autocomplete="current-password" placeholder="请输入密码" onkeydown="if(event.key===\'Enter\')doLogin()" style="width:100%;box-sizing:border-box;min-height:44px;padding:9px 42px 9px 12px;border:1px solid #d8e0ed;border-radius:9px;outline:0;font-size:14px">'+
-          '<span id="loginPwdEye" onclick="togglePwd(\'loginPwd\',this)" title="显示/隐藏密码" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:16px;user-select:none;opacity:.55">👁</span>'+
+          '<span id="loginPwdEye" onclick="togglePwd(\'loginPwd\',this)" title="显示/隐藏密码" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;display:flex;align-items:center;color:#8492a6">'+eyeSvg(false)+'</span>'+
           '</span></label>'+
         '<div id="loginErr" style="display:none;font-size:12px;color:#dc2626;margin-top:-4px"></div>'+
         '<button onclick="doLogin()" style="min-height:46px;margin-top:4px;border:none;border-radius:10px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;font-size:15px;font-weight:650;cursor:pointer;letter-spacing:.3px">登录</button>'+
@@ -871,7 +871,7 @@ function registerPage(){
       return '<label style="display:grid;gap:5px;font-size:12px;color:#52637a">'+label+
         '<span style="position:relative;display:block">'+
         '<input id="'+id+'" type="password" placeholder="'+ph+'" style="width:100%;box-sizing:border-box;min-height:42px;padding:8px 42px 8px 12px;border:1px solid #d8e0ed;border-radius:9px;outline:0;font-size:14px">'+
-        '<span onclick="togglePwd(\''+id+'\',this)" title="显示/隐藏密码" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:16px;user-select:none;opacity:.55">👁</span>'+
+        '<span onclick="togglePwd(\''+id+'\',this)" title="显示/隐藏密码" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;display:flex;align-items:center;color:#8492a6">'+eyeSvg(false)+'</span>'+
         '</span></label>';
     }
     return '<label style="display:grid;gap:5px;font-size:12px;color:#52637a">'+label+
@@ -936,10 +936,16 @@ function doRegister(){
   setTimeout(function(){ if(!AUTH){ proceed(); } }, 1500);
 }
 
+function eyeSvg(open){
+  return open
+    ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>'
+    : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-10-7-10-7a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 10 7 10 7a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+}
 function togglePwd(id,el){
   var inp=document.getElementById(id); if(!inp) return;
-  if(inp.type==='password'){ inp.type='text'; if(el){ el.style.opacity='1'; el.textContent='🙈'; } }
-  else { inp.type='password'; if(el){ el.style.opacity='.55'; el.textContent='👁'; } }
+  var show=(inp.type==='password');
+  inp.type=show?'text':'password';
+  if(el){ el.innerHTML=eyeSvg(show); }
 }
 function loginErr(msg){ var e=document.getElementById('loginErr'); if(e){ e.textContent=msg; e.style.display='block'; } }
 function doLogin(){
