@@ -530,7 +530,7 @@ function openModal(title,bodyHtml,footHtml){
     '<div class="modal-body">'+bodyHtml+'</div>'+(footHtml?('<footer>'+footHtml+'</footer>'):'')+'</div>';
   document.body.appendChild(l);
 }
-function closeModal(){var l=$('#modalLayer');if(l)l.remove()}
+function closeModal(){var ls=document.querySelectorAll('.modal-layer');if(ls.length)ls[ls.length-1].remove();}
 var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','研判需求','出报告·可来回优化'],['home','📋','项目管理','报告派生项目·对接需求'],['docking','🤝','招商对接','资源匹配与对接进度'],['settings','⚙️','设置','账号与提醒']];
 
 function render(){
@@ -6287,6 +6287,7 @@ function opsShell(){
 
 function opsTopbarV2(){
   var projectCount = Object.keys(PROJECTS).length;
+  var cityCount = (function(){var s={};Object.keys(PROJECTS).forEach(function(k){var c=PROJECTS[k]&&PROJECTS[k].city;if(c)s[c]=1;});return Object.keys(s).length;})();
   var demandCount  = DEMANDS.length;
   return '<div style="height:52px;background:#0b183b;display:flex;align-items:center;padding:0 20px;gap:16px;flex-shrink:0">' +
     '<div style="display:flex;align-items:center;gap:8px">' +
