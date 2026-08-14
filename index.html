@@ -709,7 +709,7 @@ function render(){
   // ── 登录门禁：未登录 → 登录页 ──
   if(location.search.indexOf('demo')<0 && !AUTH){
     var _r=document.getElementById('root');
-    if(_r){ _r.innerHTML=loginPage(); }
+    if(_r){ _r.innerHTML=(view==='register')?registerPage():loginPage(); }
     return;
   }
   // ── 登录后按账号权威定城市（只执行一次，之后允许自由切换）──
