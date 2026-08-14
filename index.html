@@ -732,10 +732,11 @@ function render(){
             if(PROJECTS['sz']){ cur='sz'; } else if(!cur || !_isSz(cur)){ cur = Object.keys(PROJECTS).filter(_isSz)[0]||null; }
             view=view||'knowledge'; KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true};
           } else {
-            // 非常驻账号：落到本账号所在城市，忽略服务器残留的随州 cur
+            // 非常驻账号：只认本账号城市，忽略残留的其他城市 cur；本城市无项目则自动建并直接进入分析
             var _ac=AUTH.city||'';
             var _mine=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k]&&PROJECTS[k].city===_ac;});
-            if(_mine.length){ if(!cur || _mine.indexOf(cur)<0){ cur=_mine[0]; } view=view||'knowledge'; }
+            if(_mine.length){ if(!cur || _mine.indexOf(cur)<0){ cur=_mine[0]; } view='knowledge'; }
+            else if(_ac){ cur=autoProvisionCity(_ac); view='knowledge'; KB_UNLOCKED[cur]=KB_UNLOCKED[cur]||{report:true,home:true,docking:true}; persist(); }
             else { cur=null; view='setup'; }
           }
         } else {
@@ -908,6 +909,9 @@ function doRegister(){
   // 先从服务器拉最新用户库，避免覆盖别人
   var proceed=function(){
     if(USER_PROFILES[u]){ regErr('该账号已被注册'); return; }
+    // 一个城市只能注册一个账号：同城市已有注册账号则拒绝
+    var _dup=Object.keys(USER_PROFILES).filter(function(uk){return USER_PROFILES[uk]&&USER_PROFILES[uk].city===city;});
+    if(_dup.length){ regErr('「'+city+'」已有账号注册（'+USER_PROFILES[_dup[0]].name+'），每个城市仅限一个账号，请直接登录'); return; }
     USER_PROFILES[u]={name:name,phone:phone,wechat:wechat,org:org,dept:dept,title:title,city:city,pwd:pw,ts:Date.now()};
     persist();
     AUTH={user:u, city:city, projKey:null, resident:false, who:name, org:org};
@@ -943,6 +947,24 @@ function doLogin(){
 }
 
 /* 随州常驻：首次即预置完整数据，key 固定 sz，永不 onboarding */
+/* 任意城市自动建项：非随州账号登录后名下无项目时调用 */
+function autoProvisionCity(city){
+  city=(city||'').trim(); if(!city) return null;
+  if(city.indexOf('随州')>=0){ provisionSuizhou(); return 'sz'; }
+  var exist=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k]&&PROJECTS[k].city===city;});
+  if(exist.length) return exist[0];
+  var key='p'+Date.now().toString(36);
+  var _c=generateKbConclusions(city);
+  PROJECTS[key]={id:key, city:city, org:city+'市招商局', who:(AUTH&&AUTH.who)||'负责人', topic:city+'产业链招引', stage:1,
+    kb:[
+      {icon:'🏭',t:'主导产业与产业链',sub:_c.industry.sub,tag:_c.industry.tag,known:_c.industry.known,calls:['城市公开信息','产业链图谱']},
+      {icon:'🏢',t:'园区与承载条件',sub:_c.park.sub,tag:_c.park.tag,known:_c.park.known,calls:['园区基础资料','政府官网']},
+      {icon:'🏗️',t:'链主与存量企业',sub:_c.firm.sub,tag:_c.firm.tag,known:_c.firm.known,calls:['企业名录','工商信息']},
+      {icon:'📜',t:'政策、规划与领导关注',sub:_c.policy.sub,tag:_c.policy.tag,known:_c.policy.known,calls:['政府工作报告','领导发言']}
+    ],
+    report:null, clues:[]};
+  return key;
+}
 function provisionSuizhou(){
   if(!PROJECTS.sz){
     var _c=generateKbConclusions('随州');
