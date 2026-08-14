@@ -3737,7 +3737,7 @@ function selectTopic(val, isCustom){
       // 恢复确认面板
       if(!document.getElementById('confirmPanel-'+cur)){
         var _cpHtml=restoreConfirmPanel();
-        if(_cpHtml){var _cpDiv=document.createElement('div');_cpDiv.innerHTML=_cpHtml;_ra.appendChild(_cpDiv.firstChild||_cpDiv);}
+        if(_cpHtml){var _cpDiv=document.createElement('div');_cpDiv.innerHTML=_cpHtml;while(_cpDiv.firstChild){_ra.appendChild(_cpDiv.firstChild);}}
       }
     } else {
       // 当前方向无报告，清空报告区显示空状态
@@ -5189,7 +5189,7 @@ function homePage(p){
   var reportArea=
     '<div id="reportArea">'+
       '<div id="reportHistoryArea"></div>'+
-      ((REPORTSTATE[cur]&&(REPORTSTATE[cur].phase===2||REPORTSTATE[cur].finalized))||(REPORTSTATE[cur]&&REPORTSTATE[cur].text)||(PENDING_CONFIRMS[cur]&&PENDING_CONFIRMS[cur].length)
+      ((REPORTSTATE[cur]&&(REPORTSTATE[cur].phase===2||REPORTSTATE[cur].finalized))||(REPORTSTATE[cur]&&REPORTSTATE[cur].text)||(PENDING_CONFIRMS[cur]&&PENDING_CONFIRMS[cur].length)||(REPORTSTATE[cur]&&REPORTSTATE[cur].pendingByTopic&&p&&REPORTSTATE[cur].pendingByTopic[p.topic]&&REPORTSTATE[cur].pendingByTopic[p.topic].length)
         ? reportHtml(p)+'<div id="chainMapBlock">'+chainMapHtml(p)+'</div>'+'<div id="actionItemsBlock">'+restoreActionItems()+'</div>'+restoreConfirmPanel()
         : '<div style="text-align:center;padding:48px 20px">'+
             '<div style="font-size:40px;margin-bottom:12px">📋</div>'+
