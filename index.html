@@ -2526,6 +2526,105 @@ function arrangeDocking(projKey, clueId){
   persist();
   render();
   toast('✓ 已标记为可安排沟通，进入招商对接阶段');
+  showContactCard(projKey, clueId);
+}
+
+/* ── 核验通过后弹出：如何联系这家企业（折叠卡片）── */
+function showContactCard(projKey, clueId){
+  var p = PROJECTS[projKey]; if(!p) return;
+  var c = (p.clues||[]).find(function(x){return x.id===clueId;});
+  if(!c) return;
+  window.__contactOpen = true;
+  openModal('可安排沟通 · 如何联系这家企业', contactCardBody(c), contactCardFoot());
+}
+
+function toggleContactCard(){
+  window.__contactOpen = !window.__contactOpen;
+  var b = document.getElementById('contactCardBox'); if(!b) return;
+  var d = b.querySelector('.cc-detail'), a = b.querySelector('.cc-arrow');
+  if(d) d.style.display = window.__contactOpen ? 'block' : 'none';
+  if(a) a.textContent = window.__contactOpen ? '▲' : '▼';
+}
+
+function contactCardBody(c){
+  var open = window.__contactOpen;
+  var head =
+    '<div style="display:flex;align-items:flex-start;gap:12px;padding:14px 16px;background:#f0fdf4;border:1px solid #86efac;border-radius:12px">'+
+      '<div style="width:36px;height:36px;border-radius:50%;background:#22c55e;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;flex-shrink:0">✓</div>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:14px;font-weight:750;color:#065f46">核验通过 · 可安排首次沟通</div>'+
+        '<div style="font-size:12.5px;color:#166534;margin-top:3px;line-height:1.6">「'+c.name+'」已通过资源端可达性核验，下面是推荐的触达路径。</div>'+
+      '</div>'+
+    '</div>';
+  return '<div id="contactCardBox">'+ head + contactCardDetail(c) +'</div>';
+}
+
+function contactCardDetail(c){
+  var open = window.__contactOpen;
+  var toggle =
+    '<button onclick="toggleContactCard()" style="width:100%;display:flex;align-items:center;gap:8px;margin-top:12px;padding:11px 14px;background:#fff;border:1.5px solid #e8edf5;border-radius:10px;cursor:pointer;text-align:left">'+
+      '<span style="font-size:13px;font-weight:700;color:#0b183b;flex:1">📇 如何联系这家企业</span>'+
+      '<span class="cc-arrow" style="font-size:12px;color:#9aa5b5">'+(open?'▲':'▼')+'</span>'+
+    '</button>';
+  var detail = '<div class="cc-detail" style="display:'+(open?'block':'none')+';margin-top:10px">'+
+    contactPathHtml(c) + contactPersonHtml(c) + contactBoundaryHtml() +
+  '</div>';
+  return toggle + detail;
+}
+
+function contactPathHtml(c){
+  var steps = [
+    ['1','资源端移交对接窗口','资源团队已完成可达性核验，将脱敏企业「'+c.name+'」的对接窗口与关键人角色移交招商干部。'],
+    ['2','政企首次沟通','由招商干部或授权领导发起首次沟通，介绍'+((PROJECTS[cur]&&PROJECTS[cur].city)||'本地')+'承接条件与合作意向，确认企业投资意愿。'],
+    ['3','实地走访与落地洽谈','沟通达成初步意向后，安排企业实地走访承接园区，进入政策/选址/配套的正式洽谈。']
+  ];
+  var rows = steps.map(function(s){
+    return '<div style="display:flex;gap:12px">'+
+      '<div style="display:flex;flex-direction:column;align-items:center">'+
+        '<div style="width:24px;height:24px;border-radius:50%;background:#1a56db;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;flex-shrink:0">'+s[0]+'</div>'+
+        (s[0]!=='3'?'<div style="width:2px;flex:1;background:#e8edf5;margin:4px 0"></div>':'')+
+      '</div>'+
+      '<div style="padding:1px 0 '+(s[0]!=='3'?'14px':'2px')+'">'+
+        '<div style="font-size:13px;font-weight:650;color:#0b183b">'+s[1]+'</div>'+
+        '<div style="font-size:12px;color:#667590;margin-top:2px;line-height:1.6">'+s[2]+'</div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  return '<div style="padding:14px 16px;border:1px solid #e8edf5;border-radius:12px;margin-bottom:10px">'+
+    '<div style="font-size:11px;font-weight:650;color:#6b7280;letter-spacing:.3px;margin-bottom:12px">推荐触达路径</div>'+
+    rows +
+  '</div>';
+}
+function contactPersonHtml(c){
+  var rows = [
+    ['对接窗口','资源团队 · 项目对接专员','由资源端在核验通过后 1 个工作日内推送脱敏对接卡'],
+    ['企业关键人','决策层触达路径已核实','真实姓名/职务/联系方式由资源团队保管，线下移交'],
+    ['建议对接方','招商干部 + 授权领导','以政企身份发起首次沟通，规格匹配决策层']
+  ];
+  var body = rows.map(function(r){
+    return '<div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid #f3f4f6">'+
+      '<span style="width:64px;flex-shrink:0;font-size:12px;color:#8490a5">'+r[0]+'</span>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:12.5px;font-weight:600;color:#1f2937">'+r[1]+'</div>'+
+        '<div style="font-size:11.5px;color:#8492a6;margin-top:1px;line-height:1.5">'+r[2]+'</div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  return '<div style="padding:14px 16px;border:1px solid #e8edf5;border-radius:12px;margin-bottom:10px">'+
+    '<div style="font-size:11px;font-weight:650;color:#6b7280;letter-spacing:.3px;margin-bottom:6px">对接联系人（脱敏）</div>'+
+    body +
+  '</div>';
+}
+function contactBoundaryHtml(){
+  return '<div style="display:flex;align-items:flex-start;gap:8px;padding:11px 13px;background:#f7f8fa;border-radius:10px;font-size:11px;color:#8492a6;line-height:1.6">'+
+    '<span style="flex-shrink:0">🔒</span>'+
+    '<span>使用边界：政府端仅展示脱敏对接窗口与触达路径；企业真实名称、关键人联系方式由资源团队线下保管移交，系统不自动联系企业、不跳过确认关口。</span>'+
+  '</div>';
+}
+
+function contactCardFoot(){
+  return '<button class="secondary-button" onclick="closeModal()">稍后处理</button>'+
+    '<button class="primary-button" onclick="closeModal();toast(\'✓ 已通知资源团队协调触达，请留意对接进度\')">通知资源团队协调</button>';
 }
 
 function editClue(projKey, clueId){
