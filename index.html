@@ -931,19 +931,21 @@ function doLogin(){
   var u=(document.getElementById('loginUser')||{}).value||'';
   var pw=(document.getElementById('loginPwd')||{}).value||'';
   u=u.trim().toLowerCase();
-  var acc=ACCOUNTS[u];
-  // 内置账号不存在时，查注册用户库(需先从服务器拉取)
-  if(!acc && USER_PROFILES[u]){ var up=USER_PROFILES[u]; acc={pwd:up.pwd, city:up.city||null, projKey:null, resident:false, who:up.name||u, org:up.org||''}; }
-  if(!acc){ loginErr('账号不存在'); return; }
-  if(acc.pwd!==pw){ loginErr('密码错误'); return; }
-  AUTH={user:u, city:acc.city, projKey:acc.projKey, resident:!!acc.resident, who:acc.who, org:acc.org};
-  saveAuth();
-  cur=null; view='setup'; render._restored=false; render._routed=false;
-  // 登录后先从服务器拉取最新数据，再 render
-  // 2秒内服务器未响应则直接 render，避免白屏
-  var _rendered=false;
-  var _fallback=setTimeout(function(){ if(!_rendered){_rendered=true;render();} },2000);
-  restoreFromServer(function(ok){ if(!_rendered){_rendered=true;clearTimeout(_fallback);render();} });
+  var _verify=function(){
+    var acc=ACCOUNTS[u];
+    // 内置账号不存在时，查注册用户库
+    if(!acc && USER_PROFILES[u]){ var up=USER_PROFILES[u]; acc={pwd:up.pwd, city:up.city||null, projKey:null, resident:false, who:up.name||u, org:up.org||''}; }
+    if(!acc){ loginErr('账号不存在'); return; }
+    if(acc.pwd!==pw){ loginErr('密码错误'); return; }
+    AUTH={user:u, city:acc.city, projKey:acc.projKey, resident:!!acc.resident, who:acc.who, org:acc.org};
+    saveAuth();
+    cur=null; view='setup'; render._restored=false; render._routed=false; render._serverSynced=false;
+    render();
+  };
+  // 先从服务器拉取注册用户库再校验（登录门禁下 USER_PROFILES 尚未加载，否则真实账号会报「账号不存在」）
+  var _done=false;
+  var _fb=setTimeout(function(){ if(!_done){_done=true;_verify();} },2500);
+  restoreFromServer(function(){ if(!_done){_done=true;clearTimeout(_fb);_verify();} });
 }
 
 /* 随州常驻：首次即预置完整数据，key 固定 sz，永不 onboarding */
