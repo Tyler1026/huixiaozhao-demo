@@ -3262,6 +3262,7 @@ function dockingPage(p){
                 '<div style="font-size:12.5px;color:#1e293b;line-height:1.6">'+l.note+'</div>'+
                 '<div style="font-size:11px;color:#9aa5b5;margin-top:3px">'+new Date(l.ts).toLocaleString('zh-CN')+'</div>'+
               '</div>'+
+              '<button onclick="deleteDockLog(\''+pk+'\','+l.ts+')" title="删除这条记录" style="flex-shrink:0;width:24px;height:24px;padding:0;background:none;border:none;color:#c0c8d4;font-size:15px;cursor:pointer;border-radius:6px;line-height:1" onmouseover="this.style.background=\'#fef2f2\';this.style.color=\'#ef4444\'" onmouseout="this.style.background=\'none\';this.style.color=\'#c0c8d4\'">u{2715}</button>'+
             '</div>';
           }).join('')
         : '<div style="font-size:12.5px;color:#9aa5b5;padding:8px 0">暂无对接记录</div>'
@@ -3430,6 +3431,7 @@ function dockProgressInline(pk){
                 '<div style="font-size:12.5px;color:#1e293b;line-height:1.6">'+l.note+'</div>'+
                 '<div style="font-size:11px;color:#9aa5b5;margin-top:3px">'+new Date(l.ts).toLocaleString('zh-CN')+'</div>'+
               '</div>'+
+              '<button onclick="deleteDockLog(\''+pk+'\','+l.ts+')" title="删除这条记录" style="flex-shrink:0;width:24px;height:24px;padding:0;background:none;border:none;color:#c0c8d4;font-size:15px;cursor:pointer;border-radius:6px;line-height:1" onmouseover="this.style.background=\'#fef2f2\';this.style.color=\'#ef4444\'" onmouseout="this.style.background=\'none\';this.style.color=\'#c0c8d4\'">u{2715}</button>'+
             '</div>';
           }).join('')
         : '<div style="font-size:12.5px;color:#9aa5b5;padding:8px 0">暂无对接记录</div>'
@@ -3469,7 +3471,7 @@ function dockProgressInline(pk){
     '</div>';
   }
 
-  return '<div style="margin-top:16px;padding:16px;background:#fbfcff;border:1.5px solid #e8edf5;border-radius:12px">'+
+  return '<div id="dockInline-'+pk+'" style="margin-top:16px;padding:16px;background:#fbfcff;border:1.5px solid #e8edf5;border-radius:12px">'+
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">'+
       '<span style="font-size:16px">🤝</span>'+
       '<span style="font-size:13.5px;font-weight:700;color:#0b183b">招商对接进度</span>'+
@@ -3505,8 +3507,26 @@ function saveDockLog(projKey){
   });
   persist();
   ta.value='';
-  render();
+  refreshDockInline(projKey);
   toast('✓ 对接记录已保存');
+}
+
+// 局部刷新对接进度区，避免整页 render 导致滚动跳回顶部
+function refreshDockInline(projKey){
+  var box=document.getElementById('dockInline-'+projKey);
+  if(box){ box.outerHTML=dockProgressInline(projKey);
+    // 恢复已选择的记录类型高亮
+    if(__dockType[projKey]) setDockType(projKey,__dockType[projKey]);
+  } else { render(); }
+}
+
+// 删除一条对接记录
+function deleteDockLog(projKey, ts){
+  if(!DOCK_LOGS[projKey]) return;
+  DOCK_LOGS[projKey]=DOCK_LOGS[projKey].filter(function(l){return l.ts!==ts;});
+  persist();
+  refreshDockInline(projKey);
+  toast('已删除该对接记录');
 }
 function ctxBar(icon,strong,span){
   return '<div class="context-bar"><div class="context-icon"><i class="i">'+icon+'</i></div>'+
