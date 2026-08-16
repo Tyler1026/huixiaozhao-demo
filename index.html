@@ -787,7 +787,7 @@ function openModal(title,bodyHtml,footHtml){
   document.body.appendChild(l);
 }
 function closeModal(){var l=$('#modalLayer');if(l)l.remove()}
-var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','产业分析','产业分析·可来回优化'],['home','📋','项目管理','报告派生项目·对接+进度'],['settings','⚙️','设置','账号与提醒']];
+var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','产业分析','产业分析·可来回优化'],['home','🤝','招商对接','项目列表·对接进度'],['settings','⚙️','设置','账号与提醒']];
 
 function render(){
   // ── 登录门禁：未登录 → 登录页 ──
@@ -1873,7 +1873,7 @@ function brandLogo(){return 'data:image/svg+xml;utf8,'+encodeURIComponent('<svg 
 function topbar(p){
   return '<div class="topbar">'+
     '<div class="brand-block"><img src="data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"50\"><rect width=\"50\" height=\"50\" rx=\"25\" fill=\"%230757ad\"/><text x=\"25\" y=\"33\" font-size=\"22\" fill=\"white\" text-anchor=\"middle\" font-family=\"sans-serif\">慧</text></svg>')+'"><div><strong>慧小招</strong><span>AI 招商智能体</span></div></div>'+
-    // 机构与身份固定（账号绑定，不可切换）；当前方向只读展示，切换在「项目管理」进行
+    // 机构与身份固定（账号绑定，不可切换）；当前方向只读展示，切换在「招商对接」进行
     '<div class="org-block"><i class="i">🏛️</i>'+
       '<strong style="font-weight:650">'+p.org+' · '+(p&&p.who||'—')+'</strong>'+
       '<span style="margin:0 10px;color:#cbd7e6">/</span>'+
@@ -2122,7 +2122,7 @@ function newProj(){var m=$('#swMenu');if(m)m.style.display='none';newProjModal()
 function go(v){
   if(isLocked(v)){
     var r=kbReadiness();
-    var vnames={report:'\u7814\u5224\u9700\u6c42',home:'\u9879\u76ee\u7ba1\u7406',docking:'\u653f\u4f01\u5bf9\u63a5'};
+    var vnames={report:'产业分析',home:'招商对接',docking:'招商对接'};
     var vn=vnames[v]||v;
     var tips=[];
     if(r.confirmed<r.total) tips.push('\u786e\u8ba4\u5269\u4f59 '+(r.total-r.confirmed)+' \u6761\u5f85\u786e\u8ba4\u7ed3\u8bba');
@@ -2169,11 +2169,11 @@ function mainPane(p){
   if(view==='knowledge')return kbPage(p);
   if(view==='settings')return settingsPage(p);
   if(view==='report')return homePage(p);      // 产业分析：出报告的对话工作区
-  if(view==='docking'){view='home';}          // 招商对接已并入项目管理
+  if(view==='docking'){view='home';}          // docking 兼容重定向：对接内容已并入「招商对接」页
   if(view==='subwork')return subWorkPage(p);   // 招引项目独立工作页
-  return projMgmtPage(p);                       // home = 项目管理（默认）
+  return projMgmtPage(p);                       // home = 招商对接（默认）
 }
-// 项目管理：项目列表切换（AI对话分类式）+ 进入项目工作区
+// 招商对接：项目列表切换（AI对话分类式）+ 进入项目工作区
 /* ══════════════════════════════════════════════════════════════
    企业线索管理 — projMgmtPage 完整重写
    数据源：PROJECTS[k].clues[]
@@ -2962,7 +2962,7 @@ function projMgmtPage(p){
   });
   if(!projKeys.length){
     return '<div class="page">'+
-      '<div class="page-header"><div><span class="eyebrow">PROJECTS</span><h1>项目管理</h1>'+
+      '<div class="page-header"><div><span class="eyebrow">PROJECTS</span><h1>招商对接</h1>'+
       '<p>研判报告确认后，提交招商需求的方向会出现在这里。</p></div></div>'+
       '<div class="knowledge-scroll"><div style="text-align:center;padding:60px 20px">'+
         '<div style="font-size:36px;margin-bottom:12px">📂</div>'+
@@ -3134,7 +3134,7 @@ function projMgmtPage(p){
 
   return '<div class="page">'+
     '<div class="page-header"><div>'+
-      '<span class="eyebrow">PROJECTS</span><h1>项目管理 · 企业线索</h1>'+
+      '<span class="eyebrow">PROJECTS</span><h1>招商对接 · 企业线索</h1>'+
       '<p>展开产业方向查看候选企业线索、研判报告与阶段进度；发起资源核验或安排首次沟通。</p>'+
     '</div></div>'+
     '<div class="knowledge-scroll">'+
@@ -3198,7 +3198,7 @@ function subWorkPage(p){
     '<span class="status-tag" style="color:'+sc.c+';background:'+sc.bg+'">'+stageName+'</span></div>';
   return '<div class="page">'+
     '<div style="display:flex;align-items:center;gap:10px;padding:12px 22px 6px">'+
-      '<button class="ghost-button" onclick="go(\'home\')"><i class="i">‹</i>返回项目管理</button><div style="flex:1"></div>'+
+      '<button class="ghost-button" onclick="go(\'home\')"><i class="i">‹</i>返回招商对接</button><div style="flex:1"></div>'+
       '<button class="ghost-button" onclick="exportSub()"><i class="i">📤</i>导出项目材料</button></div>'+
     ctx+
     '<div class="conversation-scroll" id="conv">'+
@@ -3334,9 +3334,9 @@ function dockingPage(p){
         '<div style="font-size:36px;margin-bottom:12px">🤝</div>'+
         '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">尚未提交招引需求</div>'+
         '<div style="font-size:13px;color:#8492a6;line-height:1.7;margin-bottom:20px">'+
-          '在「项目管理」中提交招引需求后，<br>候选线索的资源核验与对接进度会出现在这里'+
+          '在「招商对接」中提交招引需求后，<br>候选线索的资源核验与对接进度会出现在这里'+
         '</div>'+
-        '<button onclick="go(\'home\')" style="padding:10px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:650;cursor:pointer">前往项目管理 →</button>'+
+        '<button onclick="go(\'home\')" style="padding:10px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:650;cursor:pointer">前往招商对接 →</button>'+
       '</div></div></div>';
   }
 
@@ -3397,7 +3397,7 @@ function dockingPage(p){
         }).join('')+
       '</div>'
     : '<div style="margin-bottom:20px;padding:14px;background:#f9fafb;border-radius:10px;font-size:13px;color:#9aa5b5;text-align:center">'+
-        '尚无候选线索 · 在「项目管理」中发起资源核验后出现'+
+        '尚无候选线索 · 在「招商对接」中发起资源核验后出现'+
       '</div>';
 
   // 对接记录
@@ -3451,7 +3451,7 @@ function dockingPage(p){
   if(px.stage===3){
     nextStep='<div style="padding:12px 14px;background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;margin-bottom:16px">'+
       '<div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">⏳ 等待资源核验启动</div>'+
-      '<div style="font-size:12px;color:#4a5568;line-height:1.7">候选线索已录入，等待资源团队判断可触达路径。可在「项目管理」中点「请资源团队核验」推进。</div>'+
+      '<div style="font-size:12px;color:#4a5568;line-height:1.7">候选线索已录入，等待资源团队判断可触达路径。可在「招商对接」中点「请资源团队核验」推进。</div>'+
     '</div>';
   } else if(px.stage===4){
     nextStep='<div style="padding:12px 14px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;margin-bottom:16px">'+
@@ -3496,7 +3496,7 @@ function dockingPage(p){
 }
 
 /* ══════════════════════════════════════════════════════════════
-   对接进度（内联）— 招商对接模块合并进项目管理后，
+   对接进度（内联）— 在「招商对接」页内展示
    在展开的项目卡片内展示：递交时间线 + 候选状态 + 对接记录
    ══════════════════════════════════════════════════════════════ */
 function dockProgressInline(pk){
@@ -4307,7 +4307,7 @@ function restoreActionItems(){
   var icons=['\ud83e\udd47','\ud83e\udd48','\ud83e\udd49'];
 
   return '<div style="margin-top:20px;padding:0 4px">'+
-    '<div style="font-size:13px;font-weight:700;color:#0b183b;margin-bottom:10px">\ud83c\udf96 可立项招引方向 <span style="font-size:12px;color:#8492a6;font-weight:400">· 点击「提交招商需求」自动生成招商项目，进入项目管理</span></div>'+
+    '<div style="font-size:13px;font-weight:700;color:#0b183b;margin-bottom:10px">\ud83c\udf96 可立项招引方向 <span style="font-size:12px;color:#8492a6;font-weight:400">· 点击「提交招商需求」自动生成招商项目，进入招商对接</span></div>'+
     items.map(function(it,idx){
       var color=colors[idx%3];
       var safeGap=it.gap.replace(/"/g,'&quot;');
@@ -4438,7 +4438,7 @@ function renderActionItems(text, p, r){
     '<div style="margin-top:20px;padding:16px;background:#f8faff;border-radius:14px;border:1.5px solid #e8edf5">'+
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'+
         '<span style="font-size:13px;font-weight:750;color:#0b183b;letter-spacing:.2px">🏁 可立项招引方向</span>'+
-        '<span style="font-size:11px;color:#9aa5b5">· 点击「提交招商需求」自动生成招商项目，进入项目管理</span>'+
+        '<span style="font-size:11px;color:#9aa5b5">· 点击「提交招商需求」自动生成招商项目，进入招商对接</span>'+
       '</div>'+
       '<div>'+cards+'</div>'+
     '</div>';
@@ -4564,7 +4564,7 @@ function showImportConfirm(projKey, gap){
           '</div>'+
         '</div>'+
         '<p style="font-size:13px;color:#4a5568;margin:0 0 20px;line-height:1.7">'+
-          '你可以继续完善当前研判报告，或前往项目管理查看新项目。'+
+          '你可以继续完善当前研判报告，或前往招商对接查看新项目。'+
         '</p>'+
 
         // ── 按钮 ──
@@ -4572,7 +4572,7 @@ function showImportConfirm(projKey, gap){
           '<button onclick="(function(){document.getElementById(\'importConfirmLayer\').remove();cur=\''+projKey+'\';view=\'home\';render();})()" '+
             'style="width:100%;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px" '+
             'onmouseover="this.style.opacity=\'0.92\'" onmouseout="this.style.opacity=\'1\'">'+
-            '前往项目管理 →'+
+            '前往招商对接 →'+
           '</button>'+
           '<button onclick="document.getElementById(\'importConfirmLayer\').remove()" '+
             'style="width:100%;padding:12px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13.5px;color:#4a5568;cursor:pointer" '+
@@ -5599,7 +5599,7 @@ function detailPane(p){
   if(detailData&&detailData.kind==='fold'){body=detailFold(detailData.d);}
   else if(detailData&&detailData.kind==='clue'){body=detailClue(detailData.d);}
   else if(detailData&&detailData.kind==='sub'){body=detailSub(detailData.d);}
-  else if(view==='home'){body=detailNeeds(p);}       // 项目管理→需求概览
+  else if(view==='home'){body=detailNeeds(p);}       // 招商对接→需求概览
   else if(view==='docking'){body=detailDocking(p);}   // 招商对接→对接概览
   else if(view==='settings'){body=detailSettings(p);}
   else if(view==='knowledge'){body=detailKbIntro(p);}
@@ -6110,7 +6110,7 @@ function showReport(){
       '<div class="confirm-row" onclick="cadreOK(this)"><input type="checkbox" id="ck1"><span><strong>干部确认</strong><small>确认判断准确、需求成立</small></span></div>'+
       '<div class="confirm-row" onclick="leaderOK(this)"><input type="checkbox" id="ck2" disabled><span><strong>授权确认</strong><small>确认后开放</small></span></div>'+
       '<button class="primary-button" id="submitBtn" disabled onclick="submitNeed()"><i class="i">🚀</i>完成双确认 · 正式递交</button>'+
-      '<small>双确认通过后，报告的补链方向将自动建成项目并挂到「项目管理」</small>'+
+      '<small>双确认通过后，报告的补链方向将自动建成项目并挂到「招商对接」</small>'+
     '</div>'):
     '<div class="report-footnote" style="color:#a34c09">⚠ 报告定稿后才能进行双确认与递交（避免半成品报告进入流程）。</div>';
   addRaw('<div class="report-document">'+
@@ -6143,7 +6143,7 @@ function pickFold(ev,el){detailData={kind:'fold',d:JSON.parse(decodeURIComponent
   var dp=$('.detail-pane');if(dp){dp.innerHTML='<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button><div class="detail-page">'+detailFold(detailData.d)+'</div>';}else render();}
 function cadreOK(row){var ck=row.querySelector('input');ck.checked=true;$('#ck2').disabled=false;toast('干部已确认，待授权确认')}
 function leaderOK(row){var ck=row.querySelector('input');if(ck.disabled){toast('请先完成干部确认');return;}ck.checked=true;$('#submitBtn').disabled=false;toast('确认完成，可正式递交')}
-// 双确认 == 从研判进入项目管理的唯一关口：通过后报告的「补链方向」自动派生为项目
+// 双确认 == 从研判进入招商对接的唯一关口：通过后报告的「补链方向」自动派生为项目
 /* 跨端桥接：政府端双确认递交 → upsert 一条管理端需求池记录（黄金演示动线第1→2步） */
 function syncDemandFromProject(){
   var p=P();if(!p)return;
@@ -6191,12 +6191,12 @@ function submitNeed(){
     setTimeout(function(){addRaw(dockPanel());setStage(5);},700);
     return;
   }
-  addA('<p>✅ 确认完成，已生成<strong>正式招商需求</strong>。系统已把报告的 <strong>'+n+' 个补链方向自动建成招引项目</strong>，挂在「项目管理 › '+P().topic+'」下，可分别推进对接——</p>');
+  addA('<p>✅ 确认完成，已生成<strong>正式招商需求</strong>。系统已把报告的 <strong>'+n+' 个补链方向自动建成招引项目</strong>，挂在「招商对接 › '+P().topic+'」下，可分别推进对接——</p>');
   addRaw('<div class="clue-origin"><i class="i">🔗</i>项目由报告补链方向自动派生<button onclick="scrollToReport()">查看报告</button></div>'+
     '<div class="clue-list">'+cl.map(function(c,i){return '<div class="clue-row" onclick="go(\'home\');setTimeout(function(){toggleProjGroup(\''+cur+'\')},60)"><div class="clue-icon"><i class="i">🎯</i></div>'+
-      '<div class="clue-main"><strong>'+c.dir.split(' · ')[0]+'</strong><small>候选线索 '+c.name+'</small><em>已建为项目 · 点击到「项目管理」查看</em></div>'+
+      '<div class="clue-main"><strong>'+c.dir.split(' · ')[0]+'</strong><small>候选线索 '+c.name+'</small><em>已建为项目 · 点击到「招商对接」查看</em></div>'+
       '<span class="status-tag" style="background:#ebf3fd;color:#013582">已建项目</span><i class="i">➜</i></div>';}).join('')+'</div>'+
-    '<div style="margin-top:10px"><button class="primary-button" onclick="go(\'home\');setTimeout(function(){toggleProjGroup(\''+cur+'\')},60)"><i class="i">📋</i>前往项目管理查看 '+n+' 个项目</button></div>'+
+    '<div style="margin-top:10px"><button class="primary-button" onclick="go(\'home\');setTimeout(function(){toggleProjGroup(\''+cur+'\')},60)"><i class="i">📋</i>前往招商对接查看 '+n+' 个项目</button></div>'+
     '<div class="boundary-note"><i class="i">ℹ</i>项目自动生成后即为独立对接线；候选企业由资源端核验可达性，系统不自动联系企业。</div>');
   setStage(4);
   setTimeout(function(){addRaw(dockPanel());setStage(5);},700);
