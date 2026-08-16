@@ -5264,6 +5264,10 @@ function chainMapHtml(p){
       h+='<div style="font-size:12px;font-weight:700;color:'+lv.fc+';line-height:1.35;margin-bottom:5px">'+nd.name+'</div>';
       /* 企业数量气泡（企业库动态统计：本地/对标，替代原硬编码 本地/全国） */
       h+='<div style="font-size:10.5px;font-weight:700;color:'+(_ents.length?'#0f172a':'#94a3b8')+';background:#fff;border:1px solid '+lv.bd+';border-radius:20px;padding:2px 9px;margin-bottom:6px;white-space:nowrap">'+(_ents.length?('本地 '+_local+' 家 · 对标 '+_bench+' 家'):'目标企业待录入')+'</div>';
+      /* AI 收集按钮：待录入/缺口节点可一键调研对标企业 */
+      if(!_ents.length && nd.level==='weak'){
+        h+='<div id="ai-collect-'+encodeURIComponent(nd.name)+'" onclick="researchSegment(\''+nd.name.replace(/'/g,'')+'\')" style="cursor:pointer;font-size:9.5px;font-weight:700;color:#6d28d9;background:#f5f3ff;border:1px dashed #c4b5fd;border-radius:10px;padding:3px 8px;margin-bottom:6px;white-space:nowrap">🤖 AI 收集</div>';
+      }
       h+='<div style="font-size:10px;color:#64748b;line-height:1.4">'+nd.note+'</div>';
       /* 对标企业（P2：企业库动态关联） */
       if(_ents.length){
@@ -5298,6 +5302,65 @@ function chainMapHtml(p){
   h+='</div></div>';
   h+='</div>';
   return h;
+}
+
+/* ── P3a：AI 调研某产业链环节的对标企业与全国企业数量/市场规模 ──
+   调用 /api/kb-chat mode=research（后端 SYSTEM_RESEARCH 强约束来源），
+   把结果写入企业库 OPS_ENT（对标企业），供图谱「对标 N 家」动态统计。
+   数字可靠性：后端铁律约束 value 无来源则 null，前端只落地 targets 企业名单。 */
+var _researching = {};
+function researchSegment(nodeName){
+  if(_researching[nodeName]){ toast('正在调研「'+nodeName+'」，请稍候…'); return; }
+  _researching[nodeName]=true;
+  var city=(P().city||'随州');
+  var _bid = 'ai-collect-' + encodeURIComponent(nodeName);
+  var btn=document.getElementById(_bid);
+  if(btn){ btn.textContent='调研中…'; btn.style.opacity='.6'; btn.style.pointerEvents='none'; }
+  var q='请调研'+city+'产业链「'+nodeName+'」环节：(1)全国头部/代表性企业(招引对标名单3~5家) (2)该环节全国企业数量与市场规模。';
+  fetch('/api/kb-chat',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question:q, city:city, mode:'research', stream:false})
+  }).then(function(r){return r.json();}).then(function(resp){
+    // 后端非流式返回 OpenAI 格式：{choices:[{message:{content:'...'}}]}
+    var content='';
+    if(resp && resp.choices && resp.choices[0] && resp.choices[0].message){
+      content = resp.choices[0].message.content || '';
+    } else if(typeof resp==='string'){
+      content = resp;
+    }
+    // 提取 JSON（容忍 markdown 代码块包裹）
+    var m = content.match(/\{[\s\S]*\}/);
+    if(!m){ throw new Error('AI 未返回有效数据'); }
+    var data = JSON.parse(m[0]);
+    var targets = (data && data.targets) || [];
+    if(!targets.length){ toast('「'+nodeName+'」未查到可靠对标企业（AI 已按来源约束留空）'); return; }
+    // 落地到企业库 OPS_ENT（去重）
+    var added=0;
+    targets.forEach(function(t){
+      if(!t || !t.name) return;
+      var exist = OPS_ENT.some(function(e){ return e.name===t.name; });
+      if(exist) return;
+      OPS_ENT.push({
+        name:t.name, kind:t.kind||'', region:t.region||'',
+        revenue:'待核实', gap:(t.match||('随州-'+nodeName+'环节')),
+        signal:t.signal||'', signalSrc:t.source||'',
+        hasMoveSignal:!!(t.signal),
+        source:t.source||'', note:t.match||'',
+        matches:[{city:city, gap:(nodeName+'环节')}]
+      });
+      added++;
+    });
+    persist();
+    toast('✓ 「'+nodeName+'」已收集 '+added+' 家对标企业');
+    // 重新渲染图谱
+    render();
+  }).catch(function(e){
+    toast('调研失败：'+(e && e.message ? e.message : '网络错误'));
+  }).finally(function(){
+    _researching[nodeName]=false;
+    var b2=document.getElementById('ai-collect-' + encodeURIComponent(nodeName));
+    if(b2){ b2.textContent='🤖 AI 收集'; b2.style.opacity='1'; b2.style.pointerEvents='auto'; }
+  });
 }
 
 function reportHtml(p){

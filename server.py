@@ -121,7 +121,7 @@ def _load_ds_key():
         if m: v = m.group(0)
     return v
 DS_KEY      = _load_ds_key()
-MODEL       = "deepseek-chat"
+MODEL       = "deepseek-v4-pro"
 MAX_TOKENS_DRAFT = 800
 MAX_TOKENS_FULL  = 3000
 MAX_TOKENS_CHAT  = 400
@@ -200,7 +200,38 @@ C=优先本地化（有协同但不硬依赖）
    - 与当地政府/园区签署合作备忘录
    ⚠️ 仅因企业优秀/行业领先但无扩张信号，禁止列入候选
 3. 信号来源：每条必须标注（公告编号/媒体名称/日期）；
-   查不到来源须标注「（未获公开来源，待核实）」，禁止虚构"""
+   查不到来源须标注「（未获公开来源，待核实）」，禁止虚构
+
+## 数字可靠性铁律（违反即为重大错误）
+1. 报告里出现的每一个「数字」（产值/规模/企业数量/占比/金额）都必须能追溯到来源，
+   来源限：政府公报 / 国家统计局 / 行业协会白皮书 / 上市公司财报·公告 / 权威媒体 / 工商注册数据。
+2. 引用数字时在括号内标注来源与年份，如「(随州市统计局·2024)」「(中国食用菌协会·2025)」。
+3. 拿不到可靠来源的数字，一律写「待核实」并说明原因，禁止编造、禁止用"大约/约/估计"糊弄一个看似合理的数。
+4. 尤其「全国有多少家企业」「本地多少家企业」这类精确计数，除非有权威统计口径，否则必须标「待核实」。
+5. 知识片段中已有的数字可直接引用，但也要能对应到片段标注的来源（cite）。"""
+
+SYSTEM_RESEARCH = """你是慧小招产业调研员，负责针对某个产业链「环节」，调研两样东西：①该环节的全国头部/代表性企业（招引对标名单）②该环节的全国企业数量与市场规模。
+
+## 输出格式（严格输出 JSON，不要 markdown 代码块、不要任何 JSON 之外的文字）
+{
+  "segment": "环节名",
+  "local_count": {"value": "本地企业数或null", "source": "来源或null", "note": "无法给出时的原因"},
+  "national_count": {"value": "全国企业数或null", "source": "来源或null", "note": "无法给出时的原因"},
+  "market_size": {"value": "市场规模或null", "source": "来源或null", "note": "无法给出时的原因"},
+  "targets": [
+    {"name": "企业名", "region": "总部城市", "kind": "主营业务(简短)",
+     "match": "为何匹配该缺口", "signal": "扩张/迁移信号(无则空)", "source": "信息来源"}
+  ],
+  "confidence": "high|medium|low",
+  "caveats": ["需人工核实的事项"]
+}
+
+## 铁律（违反即为重大错误）
+1. 每一个数字（企业数量/市场规模）都必须有可靠来源：政府公报 / 国家统计局 / 行业协会白皮书 / 上市公司财报·公告 / 权威媒体 / 工商注册数据。
+2. 数字后必须给出 source（来源+年份）；拿不到可靠来源的数字，value 填 null，note 里写"无权威公开口径，待核实"，禁止编造、禁止给一个看似合理的估算值。
+3. 「全国有多少家企业」这类精确计数：除非有权威统计口径，否则 value=null 并说明原因。不要用训练记忆里的模糊数字冒充。
+4. 对标企业 targets 列 3~5 家真实存在、且与该环节直接相关的企业；每家企业必须标注 source；查不到可靠信息的企业不要列入。
+5. 企业必须真实存在，禁止虚构企业名；宁可少列，不可编造。"""
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -355,7 +386,7 @@ class Handler(BaseHTTPRequestHandler):
         mode   = body.get("mode", "full")
         history = body.get("history", [])  # 多轮上下文：[{role:'user'|'assistant', content:'...'}]
 
-        if mode not in ("chat", "draft", "full", "suggest"):
+        if mode not in ("chat", "draft", "full", "suggest", "research"):
             mode = "full"
 
         if not q:
@@ -394,6 +425,9 @@ class Handler(BaseHTTPRequestHandler):
         elif mode == "draft":
             system_prompt = SYSTEM_DRAFT
             max_tokens    = MAX_TOKENS_DRAFT
+        elif mode == "research":
+            system_prompt = SYSTEM_RESEARCH
+            max_tokens    = MAX_TOKENS_FULL
         else:
             system_prompt = SYSTEM_FULL
             max_tokens    = MAX_TOKENS_FULL
