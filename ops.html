@@ -4245,6 +4245,7 @@ function persist(){
       PENDING_CONFIRMS:PENDING_CONFIRMS,
       DOCK_LOGS:DOCK_LOGS,
       OPS_ENT:OPS_ENT,
+      DEMANDS:DEMANDS,
       KB_CHAT:typeof KB_CHAT!=='undefined'?KB_CHAT:{},
       USER_PROFILES:USER_PROFILES,
       syncTs:Date.now()
@@ -4300,6 +4301,7 @@ function restoreFromServer(callback){
     REPORTSTATE      = srv.REPORTSTATE      || {};
     PENDING_CONFIRMS = srv.PENDING_CONFIRMS || {};
     DOCK_LOGS        = srv.DOCK_LOGS        || {};
+    if(srv.DEMANDS) DEMANDS = srv.DEMANDS;
     // Merge: server wins if non-empty; otherwise keep local/hardcoded
     if(srv.OPS_ENT && srv.OPS_ENT.length){
       OPS_ENT = srv.OPS_ENT;
