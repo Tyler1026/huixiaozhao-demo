@@ -5087,9 +5087,9 @@ function chainMapHtml(p){
   }
 
 
-  /* ── 各产业链节点数据（三段泳道：上游/中游/下游 + 企业数量）──
-     local=本地企业数(或种植主体数)，national=全国企业数；'—' 表示不适用/待统计
-     说明：企业数量为演示数据，上线前需替换为真实统计口径 */
+  /* ── 各产业链节点数据（三段泳道：上游/中游/下游）──
+     note=环节现状描述；local/national 为历史宏观参考数据（已不再渲染，
+     节点气泡的「本地/对标」改为从企业库 OPS_ENT 动态统计） */
   var CHAINS={
     '香菇':[
       {seg:'上游', nodes:[
@@ -5255,14 +5255,17 @@ function chainMapHtml(p){
     h+='<div style="flex:1;display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:2px">';
     seg.nodes.forEach(function(nd,i){
       var lv=LEVEL[nd.level]||LEVEL.weak;
+      /* P2：企业库(OPS_ENT)动态统计 —— 本地=region含随州/随县，对标=外地目标企业 */
+      var _ents=matchEnts(nd.name);
+      var _local=_ents.filter(function(e){return /随州|随县/.test(e.region||'');}).length;
+      var _bench=_ents.length-_local;
       h+='<div style="flex:1;min-width:96px;background:'+lv.bg+';border:2px solid '+lv.bd+';border-radius:12px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;text-align:center">';
       h+='<span style="background:'+lv.tbg+';color:'+lv.tfc+';border-radius:10px;padding:1px 8px;font-size:10px;font-weight:800;margin-bottom:5px">'+lv.tag+'</span>';
       h+='<div style="font-size:12px;font-weight:700;color:'+lv.fc+';line-height:1.35;margin-bottom:5px">'+nd.name+'</div>';
-      /* 企业数量气泡 */
-      h+='<div style="font-size:10.5px;font-weight:700;color:#0f172a;background:#fff;border:1px solid '+lv.bd+';border-radius:20px;padding:2px 9px;margin-bottom:6px;white-space:nowrap">本地 '+nd.local+' · 全国 '+nd.national+'</div>';
+      /* 企业数量气泡（企业库动态统计：本地/对标，替代原硬编码 本地/全国） */
+      h+='<div style="font-size:10.5px;font-weight:700;color:'+(_ents.length?'#0f172a':'#94a3b8')+';background:#fff;border:1px solid '+lv.bd+';border-radius:20px;padding:2px 9px;margin-bottom:6px;white-space:nowrap">'+(_ents.length?('本地 '+_local+' 家 · 对标 '+_bench+' 家'):'目标企业待录入')+'</div>';
       h+='<div style="font-size:10px;color:#64748b;line-height:1.4">'+nd.note+'</div>';
       /* 对标企业（P2：企业库动态关联） */
-      var _ents=matchEnts(nd.name);
       if(_ents.length){
         h+='<div style="margin-top:7px;padding-top:6px;border-top:1px dashed '+lv.bd+';width:100%;text-align:center">';
         h+='<div style="font-size:9px;color:#94a3b8;font-weight:700;letter-spacing:.3px;margin-bottom:3px">🎯 对标企业</div>';
