@@ -5339,10 +5339,15 @@ function chainMapHtml(p){
 var _chainResearching = {};
 function researchChain(chainKey, topic, city, nodeNames){
   if(_chainResearching[chainKey]) return;
-  // 已研判过则跳过
-  if(PROJECTS[cur] && PROJECTS[cur].segmentLevels && PROJECTS[cur].segmentLevels.__chainKey===chainKey) return;
-  _chainResearching[chainKey]=true;
   nodeNames = nodeNames || [];
+  // 已研判过则跳过；但历史脏数据可能只落地了部分环节（如旧的字段错位只落了1个），
+  // 此时 __chainKey 虽已标记但环节不齐，需清标记重跑，否则图谱会一直停在"只研判1个环节"。
+  var sl = PROJECTS[cur] && PROJECTS[cur].segmentLevels;
+  if(sl && sl.__chainKey===chainKey){
+    if(nodeNames.length && nodeNames.every(function(n){ return !!sl[n]; })) return;
+    delete sl.__chainKey;
+  }
+  _chainResearching[chainKey]=true;
   var q='请对'+city+'产业链「'+topic+'」的以下环节逐一研判（强弱判定/本地代表企业/外地对标企业）：'+nodeNames.join('、');
   fetch('/api/kb-chat',{
     method:'POST', headers:{'Content-Type':'application/json'},
