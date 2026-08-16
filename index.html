@@ -3189,8 +3189,10 @@ function projMgmtPage(p){
           '<div style="font-size:12px;color:#8492a6;margin-top:3px">'+x.city+' · '+stageNameOf(x,x.stage)+' · '+clues.length+'条线索</div>'+
         '</div>'+
         '<span style="padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:600;background:'+sc.bg+';color:'+sc.c+'">'+stageNameOf(x,x.stage)+'</span>'+
-        '<span onclick="event.stopPropagation();confirmDeleteProject(\''+k+'\')" title="取消该方向的招商申请" '+
-          'style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;cursor:pointer;font-size:14px;flex-shrink:0;margin-left:2px">🗑</span>'+
+        // sz 是城市智库主项目(承载 kb/城市报告)，不可删除；仅派生的招商方向项目可删
+        (isMainProject(k) ? '' :
+          '<span onclick="event.stopPropagation();confirmDeleteProject(\''+k+'\')" title="取消该方向的招商申请" '+
+          'style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;cursor:pointer;font-size:14px;flex-shrink:0;margin-left:2px">🗑</span>')+
         '<span style="font-size:13px;color:#9aa5b5;margin-left:4px">'+(expanded?'▲':'▼')+'</span>'+
       '</button>'+
       expandedContent+
@@ -3262,20 +3264,40 @@ function confirmDeleteProject(k){
       'onclick="doDeleteProject(\''+k+'\')">确认取消申请</button>';
   openModal('取消招商申请', body, foot);
 }
+/* 主项目判定：城市智库主锚点(承载 kb/城市报告)，不可删除。
+   sz=随州主锚点；非常驻账号的城市锚点 id 即城市名(autoProvisionCity 用 city 作 key)。 */
+function isMainProject(k){
+  if(k==='sz') return true;
+  var x=PROJECTS[k]; if(!x) return false;
+  // 城市锚点：id 等于城市名(如 '上海'/'武汉')，或 topic 是「XX主导产业补链招引」形态
+  if(x.id===x.city) return true;
+  return false;
+}
 function doDeleteProject(k){
   var x=PROJECTS[k]; if(!x){ closeModal(); return; }
+  if(isMainProject(k)){ closeModal(); toast('城市主项目不可删除'); return; }
   var topic=x.topic||'该方向';
+  var delCity=x.city||'';
   // 删除项目及其关联状态
   delete PROJECTS[k];
   if(typeof REPORTSTATE!=='undefined') delete REPORTSTATE[k];
   if(typeof PENDING_CONFIRMS!=='undefined') delete PENDING_CONFIRMS[k];
   if(typeof UPLOADS!=='undefined') delete UPLOADS[k];
   if(typeof KB_FILE_CHUNKS!=='undefined') delete KB_FILE_CHUNKS[k];
+  // 同步清理管理端需求池里对应记录(避免删了方向管理端还挂着需求)
+  if(typeof DEMANDS!=='undefined' && Array.isArray(DEMANDS)){
+    window.DEMANDS=DEMANDS.filter(function(d){return d.id!==k;});
+  }
   if(window.__projOpen===k) window.__projOpen=null;
-  // 若删除的是当前项目，切回同城其它项目或空
+  // 若删的是当前项目，只在【同城】项目间回退，绝不跨城(否则会跳出其他城市报告)；
+  // 同城优先回退到主锚点(sz/城市锚点)，其次同城任意项目。
   if(cur===k){
-    var _rest=Object.keys(PROJECTS);
-    cur=_rest.length?_rest[0]:null;
+    var _sameCity=Object.keys(PROJECTS).filter(function(pk){
+      return PROJECTS[pk] && PROJECTS[pk].city===delCity;
+    });
+    var _anchor=_sameCity.filter(isMainProject)[0];
+    cur = _anchor || _sameCity[0] || (PROJECTS['sz']?'sz':null) || Object.keys(PROJECTS)[0] || null;
+    view='home';
   }
   persist();
   closeModal();
