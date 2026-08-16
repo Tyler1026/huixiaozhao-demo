@@ -4059,7 +4059,9 @@ function parsePendingItems(text){
     // 章节内仅提取 ⚠️ 开头的行（排除「⚠️薄弱/缺失」这类缺口分析标记）
     if(clean.indexOf('⚠️') === 0 || clean.indexOf('⚠') === 0){
       var t = clean.replace(/^⚠️?\s*[:：]?/,'').replace(/^⚠\s*[:：]?/,'').trim();
-      if(t.length > 5) items.push({text: t, status:'pending', editedText:'', files:[]});
+      // 阈值放宽到2字：待确认事项常有短标题（如"园区地块""用地指标"），
+      // 之前 >5 会误过滤掉合法的短条目导致只解析出第一条。
+      if(t.length >= 2) items.push({text: t, status:'pending', editedText:'', files:[]});
     }
   });
   return items;
