@@ -504,6 +504,36 @@ var PROJECTS={};
 
 var STAGES=[['资料准备','上传与授权材料'],['AI 研判','生成缺口与方向'],['确认需求','干部与领导双确认'],['资源匹配','资源端核验匹配'],['招商对接','安排正式沟通']];
 
+/* 项目级阶段链：标准5阶段 + 该项目自定义追加阶段（客户反馈第4章第3条：后续阶段不写死） */
+function projStages(p){
+  var base=STAGES.map(function(s){return s.slice();});
+  if(p && p.customStages && p.customStages.length){
+    for(var i=0;i<p.customStages.length;i++) base.push([p.customStages[i],'自定义阶段']);
+  }
+  return base;
+}
+function stageNameOf(p,n){
+  var st=projStages(p);
+  return (n>=1 && st[n-1]) ? st[n-1][0] : '完成';
+}
+function stageDescOf(p,n){
+  var st=projStages(p);
+  return (n>=1 && st[n-1]) ? st[n-1][1] : '';
+}
+
+/* 项目阶段链：标准5阶段 + 该项目自定义追加阶段（后续不写死） */
+function projStages(p){
+  var base=STAGES.map(function(s){return s.slice();});
+  if(p && p.customStages && p.customStages.length){
+    for(var i=0;i<p.customStages.length;i++) base.push([p.customStages[i],'自定义阶段']);
+  }
+  return base;
+}
+function stageNameOf(p,n){
+  var st=projStages(p);
+  return (n>=1 && st[n-1]) ? st[n-1][0] : '完成';
+}
+
 /* ===== 运营端（周总·全局）：跨城市需求池 ===== */
 var DEMANDS=[];
 
@@ -1411,8 +1441,9 @@ function sidebar(){
 }
 function progressFooter(p){
   p=p||P(); if(!cur||!PROJECTS[cur]||!p||!p.stage)return '';
+  var _st=projStages(p);
   return '<div class="progress-footer"><div class="progress-track">'+
-    STAGES.map(function(s,si){var n=si+1;var cls=n<p.stage?' done':n===p.stage?' current':'';
+    _st.map(function(s,si){var n=si+1;var cls=n<p.stage?' done':n===p.stage?' current':'';
       var sv=[null,'report','home','docking',null][si];
       var locked=sv&&isLocked(sv);
       var nodeContent=n<p.stage?'<i class="i">\u2713</i>':locked?'&#128274;':n;
@@ -1421,8 +1452,8 @@ function progressFooter(p){
         (sv?'onclick="go(\''+sv+'\')" style="cursor:pointer"':'')+'>'+
         '<div class="progress-node">'+nodeContent+'</div>'+
         '<div class="progress-copy"><strong>'+s[0]+(locked?' &#128274;':'')+'</strong><small>'+s[1]+'</small></div></div>'+
-        (n<STAGES.length?'<div class="progress-line"></div>':'');
-    }).join('')+'</div><div class="progress-mobile">📂 '+p.topic+' · 当前「'+STAGES[p.stage-1][0]+'」· 第 '+p.stage+'/'+STAGES.length+' 步（进度跟随所选产业方向）</div></div>';
+        (n<_st.length?'<div class="progress-line"></div>':'');
+    }).join('')+'</div><div class="progress-mobile">📂 '+p.topic+' · 当前「'+stageNameOf(p,p.stage)+'」· 第 '+p.stage+'/'+_st.length+' 步（进度跟随所选产业方向）</div></div>';
 }
 /* ===== 通知：铃铛 + 面板 + 点击落回对应研判 ===== */
 var NOTIFS=[
@@ -1454,8 +1485,8 @@ function openNotif(id){
       return '<div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #f2f5f9;cursor:pointer" onclick="closeModal();gotoProjFromNotif(\''+k+'\')">'+
         '<span style="font-size:16px">📍</span>'+
         '<span style="flex:1;min-width:0"><strong style="font-size:13.5px;color:#0b183b;display:block">'+x.topic+'</strong>'+
-        '<small style="font-size:11px;color:#667590">'+x.city+' · '+STAGES[x.stage-1][1]+'</small></span>'+
-        '<span class="status-tag" style="color:'+sc.c+';background:'+sc.bg+'">'+STAGES[x.stage-1][0]+'</span></div>';
+        '<small style="font-size:11px;color:#667590">'+x.city+' · '+stageDescOf(x,x.stage)+'</small></span>'+
+        '<span class="status-tag" style="color:'+sc.c+';background:'+sc.bg+'">'+stageNameOf(x,x.stage)+'</span></div>';
     }).join('');
     var body='<p class="modal-intro">今天 09:00 · '+P().who+' 名下 '+Object.keys(PROJECTS).length+' 个研判进展如下，点任意一条进入。</p>'+rows+
       '<div class="boundary-note" style="margin-top:14px"><i class="i">📋</i>每日摘要为全局汇总，不属于单个研判；系统每天 09:00 自动生成。</div>';
@@ -1470,7 +1501,7 @@ function openNotif(id){
       '<div style="font-size:11px;color:#8490a5;margin-top:3px">'+n.type+' · '+n.time+'</div></div></div>'+
     '<div class="info-callout" style="margin-top:0">'+n.desc+'</div>'+
     '<div class="kv" style="margin-top:14px"><span class="kk" style="width:70px;color:#8490a5">相关研判</span><span class="vv">'+pj.city+' · '+pj.topic+'</span></div>'+
-    '<div class="kv"><span class="kk" style="width:70px;color:#8490a5">当前阶段</span><span class="vv">'+STAGES[pj.stage-1][0]+'</span></div>';
+    '<div class="kv"><span class="kk" style="width:70px;color:#8490a5">当前阶段</span><span class="vv">'+stageNameOf(pj,pj.stage)+'</span></div>';
   var foot='<button class="secondary-button" onclick="closeModal()">知道了</button>'+
     '<button class="primary-button" onclick="closeModal();gotoProjFromNotif(\''+n.proj+'\')">前往该研判 ➜</button>';
   openModal('通知详情',body,foot);
@@ -2318,24 +2349,38 @@ function projMgmtPage(p){
     // 展开内容
     var expandedContent = '';
     if(expanded){
-      // 进度条
+      // 进度条（标准5阶段 + 该项目自定义追加阶段）
+      var _projStages = projStages(x);
       var stageBar = '<div style="margin-bottom:16px">'+
+        '<div style="font-size:11px;font-weight:650;color:#4a5568;letter-spacing:.3px;margin-bottom:6px">阶段进度</div>'+
         '<div style="display:flex;gap:0;border-radius:8px;overflow:hidden;border:1px solid #e8edf5">'+
-        STAGES.map(function(s,si){
+        _projStages.map(function(s,si){
           var n=si+1;
           var isDone = n < x.stage;
           var isCur  = n === x.stage;
           var bg = isDone?'#1a56db':isCur?'#eff6ff':'#f9fafb';
           var color = isDone?'#fff':isCur?'#1a56db':'#9aa5b5';
           var fw = isCur?'700':'400';
-          return '<div style="flex:1;padding:8px 6px;text-align:center;background:'+bg+';border-right:1px solid #e8edf5;cursor:'+(n<=x.stage?'default':'pointer')+';" '+
-            (n===x.stage+1?'onclick="advanceStage(\''+k+'\')" title=\"点击推进到下一阶段\"':'')+'>' +
-            '<div style="font-size:11px;font-weight:'+fw+';color:'+color+'">'+
+          return '<div style="flex:1;padding:8px 4px;text-align:center;background:'+bg+';border-right:1px solid #e8edf5">'+
+            '<div style="font-size:10.5px;font-weight:'+fw+';color:'+color+';line-height:1.3">'+
               (isDone?'✓ ':'')+(isCur?'⬤ ':'')+s[0]+
             '</div>'+
           '</div>';
         }).join('')+
         '</div></div>';
+
+      // 阶段推进面板：回复说明 + 选下一阶段 + 新增自定义阶段 + 留痕列表
+      var stagePanel = '<div style="margin-bottom:16px;padding:14px 16px;background:#fafbff;border:1px solid #e0e7ff;border-radius:12px">'+
+        '<div style="font-size:12px;font-weight:700;color:#1a56db;margin-bottom:10px">🔄 阶段推进与回复</div>'+
+        '<textarea id="stage-note-'+k+'" placeholder="填写回复说明（如：材料已初审通过，建议约下周三第一次会议）…" '+
+          'style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;resize:vertical;min-height:56px;outline:none;line-height:1.6"></textarea>'+
+        '<div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">'+
+          '<select id="stage-target-'+k+'" style="flex:1;min-width:150px;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;background:#fff;color:#0b183b;outline:none">'+stageOptions(x)+'</select>'+
+          '<button onclick="saveStageAdvance(\''+k+'\')" style="padding:9px 16px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:650;cursor:pointer;white-space:nowrap">保存并推进</button>'+
+          '<button onclick="addCustomStage(\''+k+'\')" style="padding:9px 14px;background:#fff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:13px;color:#6d28d9;cursor:pointer;font-weight:600;white-space:nowrap">＋ 新增阶段</button>'+
+        '</div>'+
+        renderStageLog(x)+
+      '</div>';
 
       // 历史报告
       var reportHist = '';
@@ -2395,6 +2440,7 @@ function projMgmtPage(p){
 
       expandedContent = '<div style="padding:0 16px 16px">'+
         stageBar+
+        stagePanel+
         stageGuide+
         reportHist+
         cluesList+
@@ -2410,9 +2456,9 @@ function projMgmtPage(p){
             '<strong style="font-size:14px;color:#0b183b">'+x.topic+'</strong>'+
             cluesSummary+
           '</div>'+
-          '<div style="font-size:12px;color:#8492a6;margin-top:3px">'+x.city+' · '+STAGES[x.stage-1][0]+' · '+clues.length+'条线索</div>'+
+          '<div style="font-size:12px;color:#8492a6;margin-top:3px">'+x.city+' · '+stageNameOf(x,x.stage)+' · '+clues.length+'条线索</div>'+
         '</div>'+
-        '<span style="padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:600;background:'+sc.bg+';color:'+sc.c+'">'+STAGES[x.stage-1][0]+'</span>'+
+        '<span style="padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:600;background:'+sc.bg+';color:'+sc.c+'">'+stageNameOf(x,x.stage)+'</span>'+
         '<span style="font-size:13px;color:#9aa5b5;margin-left:4px">'+(expanded?'▲':'▼')+'</span>'+
       '</button>'+
       expandedContent+
@@ -2432,16 +2478,88 @@ function projMgmtPage(p){
     '</div></div>';
 }
 
-/* 推进阶段 */
+/* 推进阶段（向后兼容：默认推进到下一阶段） */
 function advanceStage(projKey){
   var p = PROJECTS[projKey]; if(!p) return;
-  if(p.stage < 5){
-    p.stage++;
-    persist();
-    render();
-    var stageName = STAGES[p.stage-1] ? STAGES[p.stage-1][0] : '完成';
-    toast('✓ 已推进到「' + stageName + '」阶段');
+  var st=projStages(p);
+  if(p.stage < st.length){
+    advanceStageTo(projKey, p.stage+1, '');
   }
+}
+
+/* 推进到指定阶段 + 填回复说明 + 操作留痕 */
+function advanceStageTo(projKey, target, note){
+  var p = PROJECTS[projKey]; if(!p) return;
+  target = parseInt(target);
+  var st = projStages(p);
+  if(!target || target<1 || target>st.length){
+    toast('无效的阶段'); return;
+  }
+  if(target === p.stage){ toast('已在该阶段'); return; }
+  var from = p.stage;
+  p.stage = target;
+  if(!p.stageLog) p.stageLog=[];
+  p.stageLog.unshift({ts:Date.now(), from:from, to:target, note:(note||'').trim(), who:'运营端'});
+  persist();
+  render();
+  toast('✓ 已推进到「' + stageNameOf(p,target) + '」阶段');
+}
+
+/* 阶段推进面板：下拉选项（当前阶段之后的所有阶段） */
+function stageOptions(p){
+  var st = projStages(p);
+  var cur = p.stage || 1;
+  var html = '';
+  for(var n=cur+1; n<=st.length; n++){
+    html += '<option value="'+n+'">推进到「'+st[n-1][0]+'」</option>';
+  }
+  if(!html) html = '<option value="" disabled>已是最后阶段</option>';
+  return html;
+}
+
+/* 阶段留痕列表 */
+function renderStageLog(p){
+  var log = (p && p.stageLog) || [];
+  if(!log.length) return '<div style="font-size:11.5px;color:#9aa5b5;margin-top:10px">暂无阶段推进记录</div>';
+  return '<div style="margin-top:12px;border-top:1px dashed #e0e7ff;padding-top:10px">'+
+    log.slice(0,6).map(function(l){
+      return '<div style="display:flex;gap:8px;padding:6px 0;font-size:12px;color:#4a5568">'+
+        '<span style="color:#1a56db;flex-shrink:0">▸</span>'+
+        '<div style="min-width:0"><span style="font-weight:650">'+stageNameOf(p,l.to)+'</span>'+
+        (l.note?'<span style="color:#8492a6"> — '+l.note+'</span>':'')+
+        '<div style="font-size:11px;color:#9aa5b5;margin-top:1px">'+new Date(l.ts).toLocaleString('zh-CN')+(l.who?' · '+l.who:'')+'</div></div>'+
+      '</div>';
+    }).join('')+
+  '</div>';
+}
+
+/* 读取阶段推进面板表单并提交 */
+function saveStageAdvance(projKey){
+  var targetEl = document.getElementById('stage-target-'+projKey);
+  var noteEl = document.getElementById('stage-note-'+projKey);
+  if(!targetEl) return;
+  advanceStageTo(projKey, targetEl.value, noteEl ? noteEl.value : '');
+}
+
+/* 新增后续自定义阶段 */
+function addCustomStage(projKey){
+  var p = PROJECTS[projKey]; if(!p) return;
+  openModal('新增后续阶段',
+    '<p class="modal-intro">输入要追加的阶段名称（如「第二次会议」「实地考察」「签约落地」），追加到当前流程末尾，后续不写死。</p>'+
+    '<input id="customStageName" placeholder="阶段名称…" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none">',
+    '<button class="secondary-button" onclick="closeModal()">取消</button>'+
+    '<button class="primary-button" onclick="confirmAddCustomStage(\''+projKey+'\')">添加</button>');
+}
+function confirmAddCustomStage(projKey){
+  var p = PROJECTS[projKey]; if(!p) return;
+  var name = ((document.getElementById('customStageName')||{}).value||'').trim();
+  if(!name){ toast('请输入阶段名称'); return; }
+  if(!p.customStages) p.customStages=[];
+  p.customStages.push(name);
+  persist();
+  closeModal();
+  render();
+  toast('✓ 已新增阶段「'+name+'」');
 }
 
 function toggleProjGroup(k){
@@ -2564,7 +2682,7 @@ function exportSub(){
   L.push('来源产业方向：'+s.from);
   L.push('候选企业（脱敏）：'+(s.clueName||'暂无'));
   L.push('确认状态：干部确认 + 授权领导确认 已完成，已正式递交');
-  L.push('当前阶段：'+STAGES[Math.min(s.stage||4,STAGES.length)-1][0]);
+  L.push('当前阶段：'+stageNameOf(s, s.stage||4));
   L.push('');
   L.push('----------------------------------------------------');
   L.push('对接进度：需求已递交 → 资源匹配中 → 安排招商对接（待资源回传）');
@@ -2626,7 +2744,7 @@ function dockingPage(p){
             (!teal&&!amber?'<span style="padding:1px 7px;background:#f5f7fb;color:#6b7280;border-radius:10px;font-size:11px">'+xClues.length+'条待接触</span>':'')+
           '</div>'+
         '</div>'+
-        '<span style="padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;background:'+sc.bg+';color:'+sc.c+';flex-shrink:0">'+STAGES[x.stage-1][0]+'</span>'+
+        '<span style="padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;background:'+sc.bg+';color:'+sc.c+';flex-shrink:0">'+stageNameOf(x,x.stage)+'</span>'+
       '</div>'+
     '</button>';
   }).join('');
