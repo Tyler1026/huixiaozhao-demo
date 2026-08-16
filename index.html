@@ -5359,18 +5359,23 @@ function researchChain(chainKey, topic, city, nodeNames){
     var data = JSON.parse(m[0]);
     var segResults = (data && data.segments) || [];
 
-    // 1) 落地强弱判定 + 标记链已研判
+    // 1) 落地强弱判定（只有全部环节落地成功才标记链已完成，否则下次渲染继续补）
     if(!PROJECTS[cur].segmentLevels) PROJECTS[cur].segmentLevels={};
-    PROJECTS[cur].segmentLevels.__chainKey=chainKey;
     segResults.forEach(function(sr){
-      if(!sr || !sr.segment) return;
-      PROJECTS[cur].segmentLevels[sr.segment]={
+      var segName = sr && (sr.segment || sr.name);
+      if(!segName) return;
+      PROJECTS[cur].segmentLevels[segName]={
         level: sr.level || 'mid',
         basis: sr.level_basis || '',
-        confidence: 'medium',
+        confidence: (data && data.confidence) || 'medium',
         ts: Date.now()
       };
     });
+    // 校验：所有 nodeNames 都落地了才标记完成
+    var allDone = nodeNames.every(function(n){ return !!PROJECTS[cur].segmentLevels[n]; });
+    if(allDone && segResults.length >= nodeNames.length){
+      PROJECTS[cur].segmentLevels.__chainKey=chainKey;
+    }
 
     // 2) 落地本地代表企业（type=local）与对标企业（type=target）
     var addedLocal=0, addedBench=0;
