@@ -125,6 +125,9 @@ MODEL       = "deepseek-v4-pro"
 MAX_TOKENS_DRAFT = 800
 MAX_TOKENS_FULL  = 3000
 MAX_TOKENS_CHAT  = 400
+# research 模式需返回结构化 JSON（对标企业3~5家+数量+来源），且 v4-pro 默认 thinking
+# 会消耗 token，故单独放大并预留思考空间
+MAX_TOKENS_RESEARCH = 6000
 # 云端：单端口读 $PORT（Railway 注入）；本地默认 5050。政府端/管理端同端口，ops 走 /ops 路由
 PORT_GOV    = int(os.environ.get("PORT", "5050"))
 PORT_OPS    = 5051
@@ -427,7 +430,7 @@ class Handler(BaseHTTPRequestHandler):
             max_tokens    = MAX_TOKENS_DRAFT
         elif mode == "research":
             system_prompt = SYSTEM_RESEARCH
-            max_tokens    = MAX_TOKENS_FULL
+            max_tokens    = MAX_TOKENS_RESEARCH
         else:
             system_prompt = SYSTEM_FULL
             max_tokens    = MAX_TOKENS_FULL
