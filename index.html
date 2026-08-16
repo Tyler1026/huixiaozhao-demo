@@ -5691,10 +5691,19 @@ function researchChain(chainKey, topic, city, nodeNames, chunks){
    供报告正文第三章对齐：weak(缺口)→mid(培育)→strong(优势) 排序，携带对标企业。 */
 function chainPriorityMarkdown(){
   if(!cur || !PROJECTS[cur]) return '';
+  var p=P();
   var sl = PROJECTS[cur].segmentLevels;
   if(!sl) return '';
+  // 当前链隔离：只取当前方向对应链的环节，杜绝跨链污染混入补链清单
+  var _chainKey = pickChainKey(p ? p.topic : '');
+  if(!_chainKey || sl.__chainKey!==_chainKey) return '';
+  var _chainNodes = _chainNodeNames(_chainKey);
   var entries=[];
-  for(var k in sl){ if(k==='__chainKey') continue; entries.push({name:k, level:sl[k].level||'mid'}); }
+  for(var k in sl){
+    if(k==='__chainKey') continue;
+    if(_chainNodes.length && _chainNodes.indexOf(k)<0) continue;  // 过滤不属于本链的残留环节
+    entries.push({name:k, level:sl[k].level||'mid'});
+  }
   var order={weak:0, mid:1, strong:2};
   entries.sort(function(a,b){
     var oa = order[a.level]!=null ? order[a.level] : 9;
