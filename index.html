@@ -5210,6 +5210,17 @@ function submitDemand(){
 // REPORTSTATE: 存储已生成的报告
 
 // reportHtml: 如果已有报告，直接渲染
+/* 统一选链：topic 关键词 → 产业链 key。匹配不到返回 null（不兜底香菇）。
+   覆盖 topic 全称的各种变体（AI 生成的方向名可能是「氢燃料电池电堆及系统招引」）。 */
+function pickChainKey(topic){
+  topic = topic || '';
+  if(/氢能|氢燃料|燃料电池|电堆|储氢|供氢|专用车|专汽|汽车|底盘|动力总成/.test(topic)) return '氢能';
+  if(/应急|安全|无人机|机器人|消防|篷布|救援|指挥车/.test(topic)) return '应急';
+  if(/香菇|蘑菇|菌|多糖|多肽|食用菌|精深加工|生物提取/.test(topic)) return '香菇';
+  if(/产业转移|承接|沿海|转移/.test(topic)) return '产业转移';
+  return null;
+}
+
 /* ══════ 产业链图谱 — 研判后自动生成 ══════ */
 function chainMapHtml(p){
   if(!p) return '';
@@ -5339,18 +5350,20 @@ function chainMapHtml(p){
     ]
   };
 
-  /* 匹配产业链（按 topic 关键词选链；顺序：先匹配更具体的产业词）
-     注意：topic 可能是「氢燃料电池电堆及系统招引」这类全称，
-     不含「氢能」二字，故必须覆盖 氢燃料/电堆/储氢/燃料电池 等变体。 */
-  var key=null;
-  if(/氢能|氢燃料|燃料电池|电堆|储氢|专用车|专汽|汽车|底盘|动力总成/.test(topic)) key='氢能';
-  else if(/应急|安全|无人机|机器人|消防|篷布/.test(topic)) key='应急';
-  else if(/产业转移|承接|沿海|转移/.test(topic)) key='产业转移';
-  else if(/香菇|蘑菇|菌|多糖|多肽|食用菌|精深加工/.test(topic)) key='香菇';
-  else key='香菇';  // 兜底
+  /* 匹配产业链：调用统一的 pickChainKey（topic 关键词 → 链）。
+     匹配不到时返回 null，不再无脑兜底香菇。 */
+  var key=pickChainKey(topic);
+  if(!key){
+    // 该方向无对应产业链图谱：明确提示，绝不塞香菇误导用户
+    return '<div style="margin-top:16px;padding:20px;border-radius:14px;border:1.5px dashed #cbd5e1;background:#f8fafc;text-align:center;color:#64748b;font-size:12.5px;line-height:1.7">'+
+      '<div style="font-size:26px;margin-bottom:8px">🧭</div>'+
+      '「'+topic+'」暂未匹配到对应的产业链图谱<br>'+
+      '<span style="font-size:11.5px;color:#94a3b8">当前支持：氢能专用车 / 安全应急 / 香菇 / 产业转移。可在城市智库补充该产业数据后重试。</span>'+
+    '</div>';
+  }
 
-  var segments=CHAINS[key]||CHAINS['香菇'];
-  var recs=RECS[key]||RECS['香菇'];
+  var segments=CHAINS[key];
+  var recs=RECS[key];
 
   /* ── P2：图谱节点关联目标企业库（OPS_ENT，跨端同步）──
      根据环节名关键词，从企业库匹配目标企业，展示"对标企业" */
@@ -5427,8 +5440,10 @@ function chainMapHtml(p){
     /* 节点链 */
     h+='<div style="flex:1;display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:2px">';
     seg.nodes.forEach(function(nd,i){
-      /* 调研结果优先：PROJECTS[cur].segmentLevels[环节名] 有 AI 研判则用它，否则用硬编码兜底 */
-      var _sl = (PROJECTS[cur] && PROJECTS[cur].segmentLevels) ? PROJECTS[cur].segmentLevels[nd.name] : null;
+      /* 调研结果优先，但必须是【当前链】的研判：只有 __chainKey===key 时才采用 segmentLevels，
+         否则读到的是别的链残留（污染），一律用硬编码兜底，杜绝跨链错位。 */
+      var _slAll = (PROJECTS[cur] && PROJECTS[cur].segmentLevels) || null;
+      var _sl = (_slAll && _slAll.__chainKey===key) ? _slAll[nd.name] : null;
       var effLevel = _sl ? _sl.level : nd.level;
       var lv=LEVEL[effLevel]||LEVEL.mid;
       /* 企业匹配（区分 type=local 本地存量 / 其余=对标招引） */
@@ -5525,8 +5540,17 @@ function researchChain(chainKey, topic, city, nodeNames, chunks){
   // 此时 __chainKey 虽已标记但环节不齐，需清标记重跑，否则图谱会一直停在"只研判1个环节"。
   var sl = PROJECTS[cur] && PROJECTS[cur].segmentLevels;
   if(sl && sl.__chainKey===chainKey){
+    // 只需当前链的环节齐了就跳过（不要求 sl 里没有别链残留）
     if(nodeNames.length && nodeNames.every(function(n){ return !!sl[n]; })) return;
     delete sl.__chainKey;
+  }
+  // 切换到新链：清掉 segmentLevels 里不属于本链 nodeNames 的残留环节（历史跨链污染），
+  // 保证图谱只反映当前链的研判，杜绝"选了氢能却混进香菇环节"。
+  if(sl){
+    Object.keys(sl).forEach(function(kk){
+      if(kk==='__chainKey') return;
+      if(nodeNames.indexOf(kk)<0) delete sl[kk];
+    });
   }
   _chainResearching[chainKey]=true;
   // 用 chainKey（干净的链名，如「香菇」）而非 topic（方向全称，如「香菇产业精深加工升级」）构造问题，
@@ -5604,7 +5628,13 @@ function researchChain(chainKey, topic, city, nodeNames, chunks){
 
     persist();
     if(addedLocal || addedBench){ toast('✓ 产业链图谱已完成 AI 研判（本地 '+addedLocal+' 家 · 对标 '+addedBench+' 家）'); }
-    render();
+    // 只在用户仍停留于该链图谱时【局部更新】图谱 DOM，避免整页 render 造成的"莫名刷新"、
+    // 也避免 render→chainMapHtml→researchChain 的循环触发。
+    var _p2=P();
+    var _block=document.getElementById('chainMapBlock');
+    if(_block && _p2 && view==='report' && pickChainKey(_p2.topic)===chainKey){
+      _block.innerHTML=chainMapHtml(_p2);
+    }
   }).catch(function(e){
     console.warn('chain research failed:', e && e.message);
   }).finally(function(){
