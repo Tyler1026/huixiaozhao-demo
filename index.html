@@ -5348,7 +5348,9 @@ function researchChain(chainKey, topic, city, nodeNames){
     delete sl.__chainKey;
   }
   _chainResearching[chainKey]=true;
-  var q='请对'+city+'产业链「'+topic+'」的以下环节逐一研判（强弱判定/本地代表企业/外地对标企业）：'+nodeNames.join('、');
+  // 用 chainKey（干净的链名，如「香菇」）而非 topic（方向全称，如「香菇产业精深加工升级」）构造问题，
+  // 避免方向全称里的限定词（精深加工升级）误导模型缩小范围、返回空 local_leaders。
+  var q='请对'+city+'产业链「'+chainKey+'」的以下环节逐一研判（强弱判定/本地代表企业/外地对标企业）：'+nodeNames.join('、');
   fetch('/api/kb-chat',{
     method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({question:q, city:city, mode:'chain', stream:false})
