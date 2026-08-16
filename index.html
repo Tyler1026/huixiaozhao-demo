@@ -6981,7 +6981,9 @@ function buildKBCorpus(city){
       });
     });
   }
-  var fc=(cur&&KB_FILE_CHUNKS[cur])||[];
+  // 上传文件 chunk 只在「当前项目城市 === 请求城市」时纳入，杜绝跨城市材料泄漏
+  var _curCity = (cur && PROJECTS[cur] && PROJECTS[cur].city) || '';
+  var fc=(cur && _curCity===city && KB_FILE_CHUNKS[cur])||[];
   if(fc.length){ chunks=chunks.concat(fc); console.log('[RAG] +'+fc.length+' file chunks'); }
   // 追加竞争格局数据（随州专项）
   if(isSZ){
