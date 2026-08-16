@@ -41,6 +41,40 @@
 - 方向/报告错位 → **已修复**（香菇方向显示香菇内容，无氢能"专用汽车之都"）。
 - 招引方向卡片脏缓存 → **已修复**（香菇方向不再显示燃料电池电堆）。
 
+### BUG-4（本次补测发现）政府端提交需求 → 管理端需求池不同步
+- **严重度**：高（跨端主链路断裂）
+- **位置**：`ops.html` 管理端 `restoreFromServer()`（约 4275 行处）
+- **现象**：政府端 `submitDemand()` 把 `DEMANDS` 写入 `/api/sync`，政府端 `restoreFromServer` 有 `if(srv.DEMANDS) window.DEMANDS=srv.DEMANDS` 读取；但**管理端 `restoreFromServer` 漏了这一行**，导致管理端永远读不到政府端提交的需求（实测管理端拉取后 `demandsCount=0`，需求池为空）。
+- **复现**：政府端提交"储氢瓶"需求（DEMANDS 6→7，服务器确认已写入）→ 管理端 restoreFromServer 后 DEMANDS 仍为 0。
+- **修复**：管理端 `restoreFromServer` 补 `if(srv.DEMANDS) DEMANDS = srv.DEMANDS;`（commit `e2dcf78`）。
+- **验证**：修复后管理端拉取 `demandsCount=7`、含"储氢瓶"需求；概览页顶栏"3 个城市 · 7 条需求 · 8 家企业"正确渲染。
+
+---
+
+## 二点五、跨端数据互通与推送链路实测（补测）
+
+> 用户追问"管理端和用户端的数据互通与推送测试到了吗"，本次补充做了端到端实测。
+
+### 已确认通（4 条链路）
+
+| 链路 | 方向 | 验证方式 | 结果 |
+|---|---|---|---|
+| 推进阶段 + 填回复说明 | 管理端→政府端 | stageLog 跨端读取 | ✅ |
+| 新增自定义阶段 | 管理端→政府端 | customStages 跨端读取 | ✅ |
+| **推送企业** | 管理端→政府端 | `opsDoPushToCity` 写 `PROJECTS[projKey].clues`(addedBy='ops_scan',status='ops_rec',tone='amber') → 政府端 `renderCluesTwoPanel` 归入"核验中"分组 | ✅ 实测：云圣智能推送后政府端招商对接"核验中"出现"天津云圣智能" |
+| **提交招商需求** | 政府端→管理端 | `submitDemand` 写 DEMANDS → 管理端 restoreFromServer 读取 | ✅（修复 BUG-4 后） |
+
+### 推送数据流（全链路确认）
+
+```
+管理端 opsDoPushToCity
+  → PROJECTS[projKey].clues.push({addedBy:'ops_scan', status:'ops_rec', tone:'amber', signalSrc:'慧小招管理端推送'})
+  → OPS_ENT[i].matches[j].pushed = true
+  → persist() → POST /api/sync（server.py 保护字段合并）
+  → 政府端 restoreFromServer 读到 PROJECTS
+  → renderCluesTwoPanel 按 tone 分组渲染（ops_rec→"核验中"）
+```
+
 ---
 
 ## 三、分组实测结果
@@ -160,7 +194,7 @@
 
 | ID | 用例 | 结果 | 实测证据 |
 |---|---|---|---|
-| TC-086 | 政府端→管理端 | ✅ | 注册襄阳后管理端数据源更新 |
+| TC-086 | 政府端→管理端 | ✅（修复后） | 政府端提交"储氢瓶"需求，管理端 DEMANDS 6→7，概览顶栏"7条需求"正确渲染（修复 BUG-4） |
 | TC-087 | 管理端→政府端 | ✅ | 阶段推进+说明跨端同步（此前验证） |
 | TC-088 | 保护字段空值不覆盖 | ✅ | server.py `_protected` 列表含 OPS_ENT/DEMANDS 等 |
 | TC-089 | 自定义阶段跨端 | ✅ | 政府端读 stageLog 显示回复说明（分母显示见 BUG-1） |
