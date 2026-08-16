@@ -3919,6 +3919,12 @@ function cancelTopicEdit(){
 // 选择研判方向（卡片点击 or 自定义输入）
 function selectTopic(val, isCustom){
   var p=P(); if(!p||!val||!val.trim()) return;
+  // 自定义方向落库：存进 customTopics，保证日后顶部方向卡片持久显示、可切回找到报告
+  if(isCustom){
+    if(!p.customTopics) p.customTopics=[];
+    var _v=val.trim();
+    if(p.customTopics.indexOf(_v)<0) p.customTopics.push(_v);
+  }
   // 切换方向前：把当前方向的待确认事项存回该方向的桶
   if(cur && REPORTSTATE[cur]){
     if(!REPORTSTATE[cur].pendingByTopic) REPORTSTATE[cur].pendingByTopic={};
@@ -4093,21 +4099,35 @@ function toggleHistoryReport(key, idx){
   if(ico) ico.textContent=open?'▶':'▼';
 }
 
+var _histShowAll = false;  // 历史报告区：false=仅当前方向，true=该城市全部方向
+function toggleHistShowAll(){ _histShowAll=!_histShowAll; var k=cur; if(k) renderHistoryReports(k); }
 function renderHistoryReports(key, topicFilter){
   var container=document.getElementById('reportHistoryArea');
   if(!container) return;
   var p=P();
   var currentTopic=topicFilter || (p?p.topic:'');
   var allReports=REPORT_HISTORY[key]||[];
+  var totalCount=allReports.length;
   // 携带原始索引（删除/展开用），再按时间降序排序
   var list=allReports.map(function(rep,oi){return {rep:rep,oi:oi};});
-  if(currentTopic) list=list.filter(function(x){return x.rep.topic===currentTopic;});
+  // _histShowAll=true 时列出该城市全部方向的历史（含自定义方向），否则只看当前方向
+  if(currentTopic && !_histShowAll) list=list.filter(function(x){return x.rep.topic===currentTopic;});
   list.sort(function(a,b){return (b.rep.ts||0)-(a.rep.ts||0);});
-  if(!list.length){container.innerHTML='';return;}
+  // 无任何历史报告则整块隐藏；有历史但当前方向为空时仍显示切换入口
+  if(!totalCount){container.innerHTML='';return;}
+  var otherCount=totalCount-list.length;
   var h='<div style="margin-bottom:12px">';
   h+='<div style="font-size:11.5px;font-weight:700;color:#64748b;letter-spacing:.3px;margin-bottom:6px;display:flex;align-items:center;gap:6px">';
   h+='<span style="display:inline-block;width:3px;height:12px;background:#94a3b8;border-radius:2px"></span>';
-  h+='历史报告（'+list.length+' 份）</div>';
+  h+='<span>历史报告（'+list.length+' 份）</span>';
+  // 全部方向 / 仅当前方向 切换
+  h+='<button onclick="toggleHistShowAll()" style="margin-left:auto;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid '+(_histShowAll?'#1a56db':'#cbd5e1')+';background:'+(_histShowAll?'#eff6ff':'#fff')+';color:'+(_histShowAll?'#1d4ed8':'#64748b')+'">'+
+    (_histShowAll?'✓ 全部方向（'+totalCount+'）':'查看全部方向'+(totalCount>list.length?'（'+totalCount+'）':''))+'</button>';
+  h+='</div>';
+  if(!list.length){
+    container.innerHTML=h+'<div style="font-size:11.5px;color:#94a3b8;padding:8px 2px">当前方向暂无历史报告。点上方「查看全部方向」可查看该城市其他方向（含自定义方向）的历史报告。</div></div>';
+    return;
+  }
   list.forEach(function(x,i){
     var rep=x.rep; var oi=x.oi;
     var dt=rep.ts?new Date(rep.ts).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'未知时间';
@@ -4115,17 +4135,19 @@ function renderHistoryReports(key, topicFilter){
     var phaseColor=rep.phase===2?'#1d4ed8':'#92400e';
     var phaseBg=rep.phase===2?'#dbeafe':'#fef3c7';
     h+='<div style="border-radius:12px;border:1.5px solid #e2e8f0;overflow:hidden;margin-bottom:6px;background:#fff">';
-    // 折叠头
-    h+='<div style="padding:10px 14px;background:#f8faff;display:flex;align-items:center;gap:8px;cursor:pointer" onclick="toggleHistoryReport(\''+key+'\','+i+')">';
-    h+='<span id="hrpt-ico-'+key+'-'+i+'" style="font-size:10px;color:#94a3b8;flex-shrink:0">▶</span>';
+    // 折叠头（DOM id 与删除均用原始索引 oi，避免"全部方向"排序后删错报告）
+    h+='<div style="padding:10px 14px;background:#f8faff;display:flex;align-items:center;gap:8px;cursor:pointer" onclick="toggleHistoryReport(\''+key+'\','+oi+')">';
+    h+='<span id="hrpt-ico-'+key+'-'+oi+'" style="font-size:10px;color:#94a3b8;flex-shrink:0">▶</span>';
     h+='<span style="font-size:11px;padding:1px 7px;border-radius:10px;background:'+phaseBg+';color:'+phaseColor+';font-weight:700">'+phaseLabel+'</span>';
     h+='<span style="font-size:12px;font-weight:600;color:#374151;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+rep.topic+'</span>';
     h+='<span style="font-size:11px;color:#94a3b8;flex-shrink:0">'+dt+'</span>';
     if(rep.score!=null) h+='<span style="font-size:11px;color:#64748b;flex-shrink:0;margin-left:4px">'+rep.score+'%</span>';
-    h+='<button onclick="event.stopPropagation();deleteHistoryReport(\''+key+'\','+i+')" style="flex-shrink:0;margin-left:6px;padding:2px 8px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;font-size:11px;color:#ef4444;cursor:pointer;font-weight:600">删除</button>';
+    // 全部方向模式下，点报告可一键切回该方向
+    h+='<button onclick="event.stopPropagation();selectTopic(\''+String(rep.topic).replace(/'/g,"\\'")+'\')" title="切到该方向" style="flex-shrink:0;margin-left:6px;padding:2px 8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:11px;color:#1d4ed8;cursor:pointer;font-weight:600">切到此方向</button>';
+    h+='<button onclick="event.stopPropagation();deleteHistoryReport(\''+key+'\','+oi+')" style="flex-shrink:0;margin-left:4px;padding:2px 8px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;font-size:11px;color:#ef4444;cursor:pointer;font-weight:600">删除</button>';
     h+='</div>';
     // 折叠体（默认收起）
-    h+='<div id="hrpt-body-'+key+'-'+i+'" style="display:none;padding:14px 16px;font-size:12.5px;color:#1e293b;line-height:1.8;border-top:1px solid #f0f4ff;max-height:400px;overflow-y:auto">';
+    h+='<div id="hrpt-body-'+key+'-'+oi+'" style="display:none;padding:14px 16px;font-size:12.5px;color:#1e293b;line-height:1.8;border-top:1px solid #f0f4ff;max-height:400px;overflow-y:auto">';
     // 简单 markdown 渲染
     var txt=rep.text||'';
     txt=txt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
