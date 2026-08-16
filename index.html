@@ -5363,7 +5363,14 @@ function chainMapHtml(p){
   /* 打开图谱即自动整链研判（异步，结果落地后 re-render；只跑一次） */
   var _nodeNames=[];
   segments.forEach(function(seg){ seg.nodes.forEach(function(nd){ _nodeNames.push(nd.name); }); });
-  setTimeout(function(){ researchChain(key, topic, (p.city||'随州'), _nodeNames); }, 0);
+  // 检索该城市 RAG 库中与本链相关的调研片段，作为研判的事实依据（单一事实源）
+  var _chainChunks=[];
+  try {
+    var _corpus=buildKBCorpus(p.city||'随州');
+    var _q=(topic||key)+' '+_nodeNames.join(' ')+' 产业链 缺口 龙头企业 本地 外购';
+    _chainChunks=kbSearch(_q, _corpus, 8);
+  } catch(e){ console.warn('chain corpus build failed:', e && e.message); }
+  setTimeout(function(){ researchChain(key, topic, (p.city||'随州'), _nodeNames, _chainChunks); }, 0);
   return h;
 }
 
@@ -5372,9 +5379,10 @@ function chainMapHtml(p){
    把结果落地到 PROJECTS[cur].segmentLevels + 企业库 OPS_ENT（type=local/target）。
    只跑一次：segmentLevels 已有该链研判结果则跳过，避免每次渲染重复调用。 */
 var _chainResearching = {};
-function researchChain(chainKey, topic, city, nodeNames){
+function researchChain(chainKey, topic, city, nodeNames, chunks){
   if(_chainResearching[chainKey]) return;
   nodeNames = nodeNames || [];
+  chunks = chunks || [];
   // 已研判过则跳过；但历史脏数据可能只落地了部分环节（如旧的字段错位只落了1个），
   // 此时 __chainKey 虽已标记但环节不齐，需清标记重跑，否则图谱会一直停在"只研判1个环节"。
   var sl = PROJECTS[cur] && PROJECTS[cur].segmentLevels;
@@ -5388,7 +5396,7 @@ function researchChain(chainKey, topic, city, nodeNames){
   var q='请对'+city+'产业链「'+chainKey+'」的以下环节逐一研判（强弱判定/本地代表企业/外地对标企业）：'+nodeNames.join('、');
   fetch('/api/kb-chat',{
     method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:q, city:city, mode:'chain', stream:false})
+    body:JSON.stringify({question:q, city:city, mode:'chain', stream:false, chunks:chunks})
   }).then(function(r){return r.json();}).then(function(resp){
     var content='';
     if(resp && resp.choices && resp.choices[0] && resp.choices[0].message){
