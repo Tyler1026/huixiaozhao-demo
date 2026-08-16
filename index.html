@@ -5688,16 +5688,19 @@ function balancedIndustryChunks(city, corpus){
     Object.keys(byTopic).forEach(function(t){ out0=out0.concat(byTopic[t].slice(0,3)); });
     return out0.slice(0,14);
   }
-  // 每个产业簇各检索最相关的 4 条片段
-  var picked=[], seen={};
+  // 每个产业簇各检索最相关的 4 条片段；记录哪些产业实际命中了片段
+  var picked=[], seen={}, coveredNames=[];
   clusters.forEach(function(cl){
     var hits=kbSearch(city+' '+cl.kw, corpus, 4);
+    var got=0;
     hits.forEach(function(h){
       var id=h.id||h.text;
       if(seen[id]) return;
-      seen[id]=true; picked.push(h);
+      seen[id]=true; picked.push(h); got++;
     });
+    if(got>0) coveredNames.push(cl.name);
   });
+  picked._industries = coveredNames;  // 附带覆盖的产业清单，供 prompt 使用
   return picked;
 }
 
@@ -5722,9 +5725,16 @@ function ensureAiTopics(){
   } catch(e){ return; }
   if(!chunks || !chunks.length) return;
   _aiTopicsGenerating[key]=true;
-  var q='请归纳'+city+'当前最值得推进的产业招商分析方向。知识片段覆盖多个不同产业，'+
-    '你必须让方向分布到不同产业上，每个有明显缺口/升级空间的产业至少归纳1个方向，'+
-    '禁止把方向全集中在单一产业。';
+  var _inds=(chunks._industries&&chunks._industries.length)?chunks._industries:null;
+  var q='请归纳'+city+'当前最值得推进的产业招商分析方向。';
+  if(_inds){
+    q+='知识片段覆盖以下'+_inds.length+'个产业：'+_inds.join('、')+'。'+
+      '硬性要求：①必须覆盖上述每一个产业，每个产业至少归纳1个方向；'+
+      '②同一产业最多2个方向；③优先保证产业覆盖面，而不是在单一产业里挖多个方向。'+
+      '④总数控制在'+_inds.length+'~'+(_inds.length+1)+'个。';
+  } else {
+    q+='知识片段覆盖多个不同产业，你必须让方向分布到不同产业上，每个有明显缺口/升级空间的产业至少归纳1个方向，禁止把方向全集中在单一产业。';
+  }
   fetch('/api/kb-chat',{
     method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({question:q, chunks:chunks, city:city, mode:'topics', stream:false})
