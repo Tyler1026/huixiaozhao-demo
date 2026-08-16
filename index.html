@@ -817,6 +817,13 @@ function render(){
       // 当前方向无预埋报告(如自定义/新能源配套)：清空旧报告正文，避免标题(当前)与正文(旧方向)错位
       REPORTSTATE[cur].text='';
     }
+    // 同根因连带修复：可立项招引方向卡片(actionItemsByTopic)历史脏缓存可能存了旧方向的招引方向，
+    // 导致切换方向后仍显示旧方向的 TOP3(如香菇方向却显示燃料电池电堆)。此处按当前方向实时重解析覆盖。
+    var _items=parseActionItems(_syncTxt||REPORTSTATE[cur].text||'');
+    if(_items.length){
+      if(!REPORTSTATE[cur].actionItemsByTopic) REPORTSTATE[cur].actionItemsByTopic={};
+      REPORTSTATE[cur].actionItemsByTopic[p.topic]=_items;
+    }
   }
   $('#root').innerHTML=
    '<div class="app-shell">'+
@@ -4294,9 +4301,17 @@ function restoreActionItems(){
   var topic=p?p.topic:'';
   var byTopic=REPORTSTATE[cur].actionItemsByTopic||{};
   var items=byTopic[topic];
-  // 该方向无缓存时，从该方向自己的报告文本实时解析（不再回退到旧方向的 actionItems）
-  if(!items||!items.length){
-    var _txt=getTopicReport(topic)||REPORTSTATE[cur].text||'';
+  // 预埋方向：始终从该方向的报告实时解析，避免历史脏缓存导致招引方向错位（如香菇方向下显示氢能招引方向）
+  var _pre=getTopicReport(topic);
+  if(_pre){
+    items=parseActionItems(_pre);
+    if(items.length){
+      if(!REPORTSTATE[cur].actionItemsByTopic) REPORTSTATE[cur].actionItemsByTopic={};
+      REPORTSTATE[cur].actionItemsByTopic[topic]=items;
+    }
+  } else if(!items||!items.length){
+    // 自定义/无预埋报告方向：从当前报告文本实时解析（不再回退到旧方向的 actionItems）
+    var _txt=REPORTSTATE[cur].text||'';
     items=parseActionItems(_txt);
     if(items.length){
       if(!REPORTSTATE[cur].actionItemsByTopic) REPORTSTATE[cur].actionItemsByTopic={};
