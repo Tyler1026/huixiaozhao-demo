@@ -6488,10 +6488,10 @@ function opsOverview(){
       }
     })();
     var stage = p.stage||1;
-    var stageNames = ['资料准备','AI研判','确认需求','资源匹配','招商对接'];
-    var stageName  = stageNames[stage-1]||'进行中';
+    var stageNames = projStages(p);
+    var stageName  = stageNameOf(p, stage);
     var stageColors= ['#9aa5b5','#f59e0b','#3b82f6','#6366f1','#22c55e'];
-    var stageColor = stageColors[stage-1]||'#9aa5b5';
+    var stageColor = stageColors[stage-1]||'#8b5cf6';
 
     // 需求摘要：从 DEMANDS 里找关联的
     var demand = DEMANDS.find(function(d){return d.projKey===k||d.city===p.city;});
@@ -6529,8 +6529,20 @@ function opsOverview(){
           var color=isDone?'#fff':isCur?'#1a56db':'#9aa5b5';
           var fw=isCur?'700':'400';
           return '<div style="flex:1;padding:6px 4px;text-align:center;background:'+bg+';font-size:10.5px;font-weight:'+fw+';color:'+color+';border-right:1px solid #e8edf5">' +
-            (isDone?'✓ ':'')+s+'</div>';
+            (isDone?'✓ ':'')+s[0]+'</div>';
         }).join('') +
+      '</div>' +
+      // 阶段推进面板：回复说明 + 选下一阶段 + 新增自定义阶段 + 留痕列表
+      '<div style="padding:12px 20px;border-bottom:1px solid #e0e7ff;background:#fafbff">' +
+        '<div style="font-size:12px;font-weight:700;color:#1a56db;margin-bottom:8px">🔄 阶段推进与回复</div>' +
+        '<textarea id="stage-note-' + k + '" placeholder="填写回复说明（如：材料已初审通过，建议约下周三第一次会议）…" ' +
+          'style="width:100%;box-sizing:border-box;padding:8px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;resize:vertical;min-height:50px;outline:none;line-height:1.6"></textarea>' +
+        '<div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">' +
+          '<select id="stage-target-' + k + '" style="flex:1;min-width:140px;padding:8px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;background:#fff;color:#0b183b;outline:none">' + stageOptions(p) + '</select>' +
+          '<button onclick="saveStageAdvance(\'' + k + '\')" style="padding:8px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap">保存并推进</button>' +
+          '<button onclick="addCustomStage(\'' + k + '\')" style="padding:8px 12px;background:#fff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12.5px;color:#6d28d9;cursor:pointer;font-weight:600;white-space:nowrap">＋ 新增阶段</button>' +
+        '</div>' +
+        renderStageLog(p) +
       '</div>' +
       // 统计网格
       '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0;border-bottom:1px solid #f0f4ff">' +
