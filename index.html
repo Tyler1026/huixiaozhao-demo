@@ -5665,7 +5665,64 @@ function reportHtml(p){
   '</div>';
 }
 
+/* AI 驱动的招商方向推荐：读 RAG 库让 DeepSeek 归纳该城市 3-5 个方向。
+   结果缓存到 PROJECTS[cur].aiTopics（含 ts），完成后刷新方向卡片。
+   AI 未就绪/失败时页面用正则兜底(generateTopicsFromKb)，路演无感知。 */
+var _aiTopicsGenerating = {};
+function ensureAiTopics(){
+  var p=P(); if(!p||!cur) return;
+  var city=p.city||'随州';
+  var key=cur;
+  if(_aiTopicsGenerating[key]) return;
+  // 已有较新的 AI 方向缓存(24h内)则不重复生成
+  if(p.aiTopics && p.aiTopics.list && p.aiTopics.list.length &&
+     p.aiTopics.ts && (Date.now()-p.aiTopics.ts < 24*3600*1000)) return;
+  var corpus, chunks;
+  try {
+    corpus=buildKBCorpus(city);
+    chunks=kbSearch(city+' 主导产业 产业链 缺口 补链 精深加工 承接转移 龙头企业', corpus, 10);
+  } catch(e){ return; }
+  if(!chunks || !chunks.length) return;
+  _aiTopicsGenerating[key]=true;
+  var q='请归纳'+city+'当前最值得推进的3-5个产业招商分析方向。';
+  fetch('/api/kb-chat',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question:q, chunks:chunks, city:city, mode:'topics', stream:false})
+  }).then(function(r){return r.json();}).then(function(resp){
+    var txt='';
+    if(resp && resp.choices && resp.choices[0] && resp.choices[0].message){
+      txt = resp.choices[0].message.content || '';
+    }
+    var m=txt.match(/\{[\s\S]*\}/);
+    if(!m) return;
+    var data; try{ data=JSON.parse(m[0]); }catch(e){ return; }
+    var list=(data.topics||[]).filter(function(t){return t&&t.label;}).map(function(t){
+      return {label:String(t.label).trim(), icon:t.icon||'📌', type:t.type||'补链', desc:t.desc||'', fromAi:true};
+    });
+    if(!list.length) return;
+    PROJECTS[cur].aiTopics={list:list, ts:Date.now()};
+    persist();
+    if(view==='report') render();
+  }).catch(function(e){
+    console.warn('ensureAiTopics failed:', e && e.message);
+  }).finally(function(){
+    _aiTopicsGenerating[key]=false;
+  });
+}
+
+/* 正则兜底方向推荐（AI 未就绪时用）：按关键词匹配 RAG 文本 */
 function generateTopicsFromKb(p){
+  // AI 生成的方向优先（RAG 驱动，单一事实源）
+  if(p && p.aiTopics && p.aiTopics.list && p.aiTopics.list.length){
+    var aiList=p.aiTopics.list.slice();
+    var customs0=(p.customTopics||[]);
+    customs0.forEach(function(ct){
+      if(!aiList.some(function(t){return t.label===ct;})){
+        aiList.push({label:ct, icon:'\ud83d\udccc', type:'custom', desc:'\u81ea\u5b9a\u4e49\u65b9\u5411'});
+      }
+    });
+    return aiList;
+  }
   if(!p||!p.kb) return [];
   var allKnown=[];
   p.kb.forEach(function(k){ (k.known||[]).forEach(function(x){ allKnown.push(x); }); });
@@ -5730,6 +5787,8 @@ function homePage(p){
     '</div>';
 
   // ── 推荐方向卡片 ──
+  // 后台从 RAG 库生成 AI 推荐方向（正则兜底先占位，AI 就绪后替换）
+  ensureAiTopics();
   var recommendedTopics=generateTopicsFromKb(p);
 
   var topicCards=recommendedTopics.map(function(t){

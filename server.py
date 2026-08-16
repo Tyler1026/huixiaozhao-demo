@@ -283,6 +283,28 @@ SYSTEM_RESEARCH_CHAIN = """你是慧小招产业调研员，负责对某城市�
 6. 环节名必须与用户给出的环节清单完全一致，一个不少，不要增删改。"""
 
 
+SYSTEM_TOPICS = """你是慧小招产业招商策略师。根据某城市的调研报告（知识片段），归纳出该城市当前最值得推进的 3-5 个「产业招商分析方向」。方向要具体、可招商落地，通常是「补链缺口」「精深加工升级」「承接转移」这类可执行主题，而不是宽泛的产业名。
+
+## 输出格式（严格输出 JSON，不要 markdown 代码块、不要 JSON 之外的任何文字）
+{
+  "topics": [
+    {
+      "label": "方向名称（8-16字，具体可招商，如「氢能专用车核心零部件补链」）",
+      "icon": "一个贴切的emoji",
+      "type": "补链|精深加工|承接转移|培育",
+      "desc": "一句话依据（≤24字，必须来自知识片段的事实，如「电堆占成本53%全外购」）"
+    }
+  ]
+}
+
+## 铁律
+1. 每个方向的 label 和 desc 必须能在知识片段里找到事实支撑；片段没提到的产业，不要凭空造方向。
+2. desc 优先引用知识片段里的具体数字/事实（占比、产值、企业数、缺口环节），不要空话套话。
+3. 输出 3-5 个方向，按招商价值/紧迫性从高到低排序（缺口大、拉动强的排前面）。
+4. 只输出该城市真实相关的方向；宁可少，不可为凑数编造。
+5. icon 用单个 emoji；type 从给定四类里选最贴切的。"""
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print(f"[kb] {self.address_string()} {fmt % args}")
@@ -480,6 +502,9 @@ class Handler(BaseHTTPRequestHandler):
         elif mode == "chain":
             system_prompt = SYSTEM_RESEARCH_CHAIN
             max_tokens    = MAX_TOKENS_CHAIN
+        elif mode == "topics":
+            system_prompt = SYSTEM_TOPICS
+            max_tokens    = 1200
         else:
             system_prompt = SYSTEM_FULL
             max_tokens    = MAX_TOKENS_FULL
@@ -504,7 +529,7 @@ class Handler(BaseHTTPRequestHandler):
         }
         # v4-pro 默认开启 thinking，CoT 会吃光 max_tokens 导致 content 为空。
         # 除 chat/suggest 外全部关闭 thinking（报告/研判要的是结构化产出，不需深度推理链）。
-        if mode in ("research", "chain", "full", "draft"):
+        if mode in ("research", "chain", "full", "draft", "topics"):
             payload_dict["thinking"] = {"type": "disabled"}
         payload = json.dumps(payload_dict).encode()
 
