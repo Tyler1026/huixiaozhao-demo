@@ -2094,8 +2094,8 @@ function openNotif(id){
       return '<div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #f2f5f9;cursor:pointer" onclick="closeModal();gotoProjFromNotif(\''+k+'\')">'+
         '<span style="font-size:16px">📍</span>'+
         '<span style="flex:1;min-width:0"><strong style="font-size:13.5px;color:#0b183b;display:block">'+x.topic+'</strong>'+
-        '<small style="font-size:11px;color:#667590">'+x.city+' · '+STAGES[x.stage-1][1]+'</small></span>'+
-        '<span class="status-tag" style="color:'+sc.c+';background:'+sc.bg+'">'+STAGES[x.stage-1][0]+'</span></div>';
+        '<small style="font-size:11px;color:#667590">'+x.city+' · '+stageDescOf(x,x.stage)+'</small></span>'+
+        '<span class="status-tag" style="color:'+sc.c+';background:'+sc.bg+'">'+stageNameOf(x,x.stage)+'</span></div>';
     }).join('');
     var body='<p class="modal-intro">今天 09:00 · '+P().who+' 名下 '+cityKeys().length+' 个研判进展如下，点任意一条进入。</p>'+rows+
       '<div class="boundary-note" style="margin-top:14px"><i class="i">📋</i>每日摘要为全局汇总，不属于单个研判；系统每天 09:00 自动生成。</div>';
@@ -2110,7 +2110,7 @@ function openNotif(id){
       '<div style="font-size:11px;color:#8490a5;margin-top:3px">'+n.type+' · '+n.time+'</div></div></div>'+
     '<div class="info-callout" style="margin-top:0">'+n.desc+'</div>'+
     '<div class="kv" style="margin-top:14px"><span class="kk" style="width:70px;color:#8490a5">相关研判</span><span class="vv">'+pj.city+' · '+pj.topic+'</span></div>'+
-    '<div class="kv"><span class="kk" style="width:70px;color:#8490a5">当前阶段</span><span class="vv">'+STAGES[pj.stage-1][0]+'</span></div>';
+    '<div class="kv"><span class="kk" style="width:70px;color:#8490a5">当前阶段</span><span class="vv">'+stageNameOf(pj,pj.stage)+'</span></div>';
   var foot='<button class="secondary-button" onclick="closeModal()">知道了</button>'+
     '<button class="primary-button" onclick="closeModal();gotoProjFromNotif(\''+n.proj+'\')">前往该研判 ➜</button>';
   openModal('通知详情',body,foot);
@@ -3123,9 +3123,9 @@ function projMgmtPage(p){
             '<strong style="font-size:14px;color:#0b183b">'+x.topic+'</strong>'+
             cluesSummary+
           '</div>'+
-          '<div style="font-size:12px;color:#8492a6;margin-top:3px">'+x.city+' · '+STAGES[x.stage-1][0]+' · '+clues.length+'条线索</div>'+
+          '<div style="font-size:12px;color:#8492a6;margin-top:3px">'+x.city+' · '+stageNameOf(x,x.stage)+' · '+clues.length+'条线索</div>'+
         '</div>'+
-        '<span style="padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:600;background:'+sc.bg+';color:'+sc.c+'">'+STAGES[x.stage-1][0]+'</span>'+
+        '<span style="padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:600;background:'+sc.bg+';color:'+sc.c+'">'+stageNameOf(x,x.stage)+'</span>'+
         '<span style="font-size:13px;color:#9aa5b5;margin-left:4px">'+(expanded?'▲':'▼')+'</span>'+
       '</button>'+
       expandedContent+
@@ -3174,7 +3174,7 @@ function advanceStage(projKey){
     p.stage++;
     persist();
     render();
-    var stageName = STAGES[p.stage-1] ? STAGES[p.stage-1][0] : '完成';
+    var stageName = stageNameOf(p, p.stage);
     toast('✓ 已推进到「' + stageName + '」阶段');
   }
 }
@@ -3189,7 +3189,7 @@ function subWorkPage(p){
   if(!s){view='home';return projMgmtPage(p);}
   var dir=P();var st=REPORTSTATE[cur];
   var stg=s.stage||4;var sc=stColor(stg);
-  var stageName=STAGES[Math.min(stg,STAGES.length)-1][0];
+  var stageName=stageNameOf(s, stg);
   // 顶部上下文条：项目本质信息 + 已双确认（一屏交代"这是什么项目/推进到哪"）
   var ctx='<div class="context-bar" style="margin:0 22px">'+
     '<div class="context-icon"><i class="i">🎯</i></div>'+
@@ -3299,7 +3299,7 @@ function exportSub(){
   L.push('来源产业方向：'+s.from);
   L.push('候选企业（脱敏）：'+(s.clueName||'暂无'));
   L.push('确认状态：干部确认 + 授权确认 已完成，已正式递交');
-  L.push('当前阶段：'+STAGES[Math.min(s.stage||4,STAGES.length)-1][0]);
+  L.push('当前阶段：'+stageNameOf(s, s.stage||4));
   L.push('');
   L.push('----------------------------------------------------');
   L.push('对接进度：需求已递交 → 资源匹配中 → 安排招商对接（待资源回传）');
@@ -3365,7 +3365,7 @@ function dockingPage(p){
             (!teal&&!amber?'<span style="padding:1px 7px;background:#f5f7fb;color:#6b7280;border-radius:10px;font-size:11px">'+xClues.length+'条待接触</span>':'')+
           '</div>'+
         '</div>'+
-        '<span style="padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;background:'+sc.bg+';color:'+sc.c+';flex-shrink:0">'+STAGES[x.stage-1][0]+'</span>'+
+        '<span style="padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;background:'+sc.bg+';color:'+sc.c+';flex-shrink:0">'+stageNameOf(x,x.stage)+'</span>'+
       '</div>'+
     '</button>';
   }).join('');
@@ -5617,13 +5617,13 @@ function detailNeeds(p){
     var teal  = clues.filter(function(c){return c.tone==='teal';}).length;
     var amber = clues.filter(function(c){return c.tone==='amber';}).length;
     var slate = clues.filter(function(c){return c.tone==='slate';}).length;
-    var sname = STAGES[x.stage-1]?STAGES[x.stage-1][0]:'';
-    var sdesc = STAGES[x.stage-1]?STAGES[x.stage-1][1]:'';
+    var sname = stageNameOf(x, x.stage);
+    var sdesc = stageDescOf(x, x.stage);
     return '<div class="detail-header"><div><span class="eyebrow">DIRECTION</span><h2>'+x.topic+'</h2><p>'+x.city+' · 当前方向进度</p></div></div>'+
       '<div class="detail-scroll">'+
         '<div class="detail-block"><h3>当前阶段</h3>'+
           '<p class="detail-copy" style="font-size:18px;font-weight:700;color:#013582">'+sname+'</p>'+
-          '<div style="font-size:12px;color:#8492a6;margin-top:4px">第 '+x.stage+'/'+STAGES.length+' 步 · '+sdesc+'</div>'+
+          '<div style="font-size:12px;color:#8492a6;margin-top:4px">第 '+x.stage+'/'+projStages(x).length+' 步 · '+sdesc+'</div>'+
         '</div>'+
         '<div class="detail-block"><h3>候选线索</h3><ul class="check-list">'+
           '<li><i class="i">•</i>可安排沟通：'+teal+' 家</li>'+
@@ -5685,7 +5685,7 @@ function detailReport(p){
           '</ul>'
         : '<div class="info-callout" style="margin-top:0">尚未生成报告。请先在「产业分析」选择方向并点击生成。</div>'      )+'</div>'+
       '<div class="detail-block"><h3>当前阶段</h3>'+
-        '<div class="info-callout" style="margin-top:0">'+(STAGES[p.stage-1]?STAGES[p.stage-1][0]:'未知')+' · '+(STAGES[p.stage-1]?STAGES[p.stage-1][1]:'')+'</div>'+
+        '<div class="info-callout" style="margin-top:0">'+stageNameOf(p,p.stage)+' · '+stageDescOf(p,p.stage)+'</div>'+
       '</div>'+
       '<div class="detail-block"><h3>已上传材料</h3>'+(ups.length
         ? '<ul class="source-list">'+ups.map(function(u){return '<li><i class="i"></i>'+u.name+'<small style="color:#9aa5b5;margin-left:6px">'+Math.round(u.size/1024)+'KB</small></li>';}).join('')+'</ul>'
