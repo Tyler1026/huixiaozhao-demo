@@ -5031,36 +5031,62 @@ function chainMapHtml(p){
   if(!p) return '';
   var topic=p.topic||'';
 
-  /* ── 各产业链节点数据 ── */
+  /* ── 各产业链节点数据（三段泳道：上游/中游/下游 + 企业数量）──
+     local=本地企业数(或种植主体数)，national=全国企业数；'—' 表示不适用/待统计
+     说明：企业数量为演示数据，上线前需替换为真实统计口径 */
   var CHAINS={
     '香菇':[
-      {name:'菌种研发',   level:'weak',   note:'国外7925/7917品种垄断，本地企业100%依赖进口菌种，育种话语权缺失导致种源成本居高'},
-      {name:'种植采摘',   level:'strong', note:'全球白花菇约50%产自随州，种植面积与经验积累30年+，是全产业链最强环节'},
-      {name:'初加工',     level:'mid',    note:'已有多家企业入驻做烘干/分级，但设备老旧、标准化程度低，产能利用率不足60%'},
-      {name:'精深加工',   level:'weak',   note:'仅裕国/肽源2家，覆盖不足原料总量5%，大量鲜菇以低价原料形式外流，附加值损失巨大'},
-      {name:'多糖/功能成分提取', level:'weak', note:'香菇多糖市场价超8万元/kg，本地几乎空白，高端提取物全部依赖外省企业加工后回购'},
-      {name:'品牌出口',   level:'strong', note:'品源「菇的辣克」2024签约1亿美元+2025续签3亿美元，品牌溢价已形成，出口竞争力强'}
+      {seg:'上游', nodes:[
+        {name:'菌种研发', level:'weak', local:0, national:87, note:'国外7925/7917品种垄断，本地企业100%依赖进口菌种，育种话语权缺失导致种源成本居高'},
+        {name:'种植采摘', level:'strong', local:'12万+', national:'—', note:'全球白花菇约50%产自随州，种植面积与经验积累30年+，是全产业链最强环节'}
+      ]},
+      {seg:'中游', nodes:[
+        {name:'初加工', level:'mid', local:68, national:3200, note:'已有多家企业入驻做烘干/分级，但设备老旧、标准化程度低，产能利用率不足60%'},
+        {name:'精深加工', level:'weak', local:2, national:1200, note:'仅裕国/肽源2家，覆盖不足原料总量5%，大量鲜菇以低价原料形式外流，附加值损失巨大'}
+      ]},
+      {seg:'下游', nodes:[
+        {name:'多糖/功能成分提取', level:'weak', local:1, national:410, note:'香菇多糖市场价超8万元/kg，本地几乎空白，高端提取物全部依赖外省企业加工后回购'},
+        {name:'品牌出口', level:'strong', local:3, national:600, note:'品源「菇的辣克」2024签约1亿美元+2025续签3亿美元，品牌溢价已形成，出口竞争力强'}
+      ]}
     ],
     '氢能':[
-      {name:'氢气制备',   level:'weak',   note:'本地无制氢装置，车用氢气全部从武汉/十堰外购，运输成本高且供应链稳定性差'},
-      {name:'储氢系统',   level:'weak',   note:'占整车14%成本，高压瓶阀/管路全部外采，新楚风量产后需求剧增但本地零供应商'},
-      {name:'氢燃料电堆', level:'weak',   note:'占整车53%核心成本，是最大缺口；新楚风49T氢重卡已量产，电堆依赖外购严重压缩利润'},
-      {name:'电控系统',   level:'mid',    note:'泰晶车规级晶振(AEC-Q200)、犇星电解液已配套，覆盖部分电控需求，但整体配套率仍偏低'},
-      {name:'车身驾驶室', level:'strong', note:'齐星本地自供，驾驶室年产能超2万套，质量与交期稳定，是整车降本的核心支撑环节'},
-      {name:'整车改装',   level:'strong', note:'97家整车改装资质企业，全国占比>10%；程力/新楚风/齐星量产能力强，专汽集群效应显著'}
+      {seg:'上游', nodes:[
+        {name:'氢气制备', level:'weak', local:0, national:460, note:'本地无制氢装置，车用氢气全部从武汉/十堰外购，运输成本高且供应链稳定性差'}
+      ]},
+      {seg:'中游', nodes:[
+        {name:'储氢系统', level:'weak', local:0, national:180, note:'占整车14%成本，高压瓶阀/管路全部外采，新楚风量产后需求剧增但本地零供应商'},
+        {name:'氢燃料电堆', level:'weak', local:0, national:120, note:'占整车53%核心成本，是最大缺口；新楚风49T氢重卡已量产，电堆依赖外购严重压缩利润'},
+        {name:'电控系统', level:'mid', local:2, national:800, note:'泰晶车规级晶振(AEC-Q200)、犇星电解液已配套，覆盖部分电控需求，但整体配套率仍偏低'},
+        {name:'车身驾驶室', level:'strong', local:1, national:150, note:'齐星本地自供，驾驶室年产能超2万套，质量与交期稳定，是整车降本的核心支撑环节'}
+      ]},
+      {seg:'下游', nodes:[
+        {name:'整车改装', level:'strong', local:97, national:900, note:'97家整车改装资质企业，全国占比>10%；程力/新楚风/齐星量产能力强，专汽集群效应显著'}
+      ]}
     ],
     '应急':[
-      {name:'无人机本体', level:'weak',   note:'指挥车搭载无人机全部外采迅北斗，本地无整机制造能力，核心部件受制于人'},
-      {name:'应急机器人', level:'weak',   note:'消防/救援机器人依赖外采启灵等品牌，随州整车平台有集成需求但无本地机器人供应商'},
-      {name:'5G通信模块', level:'mid',    note:'政策已引导布局，但尚无企业实质落地；应急指挥对5G低延迟通信需求强，缺口正在放大'},
-      {name:'篷布/风机',  level:'strong', note:'金龙篷布全国市场占比30%，材料工艺积累深厚，军民两用认证齐全，是国内应急装备核心供应商'},
-      {name:'移动应急整车',level:'strong',note:'国家安全应急产业示范基地，博利特高空系留无人机消防车、齐星无人机指挥车、江南泡沫车均已量产，年产值超300亿'}
+      {seg:'上游', nodes:[
+        {name:'无人机本体', level:'weak', local:0, national:260, note:'指挥车搭载无人机全部外采迅北斗，本地无整机制造能力，核心部件受制于人'},
+        {name:'应急机器人', level:'weak', local:0, national:340, note:'消防/救援机器人依赖外采启灵等品牌，随州整车平台有集成需求但无本地机器人供应商'},
+        {name:'5G通信模块', level:'mid', local:0, national:120, note:'政策已引导布局，但尚无企业实质落地；应急指挥对5G低延迟通信需求强，缺口正在放大'}
+      ]},
+      {seg:'中游', nodes:[
+        {name:'篷布/风机', level:'strong', local:1, national:80, note:'金龙篷布全国市场占比30%，材料工艺积累深厚，军民两用认证齐全，是国内应急装备核心供应商'}
+      ]},
+      {seg:'下游', nodes:[
+        {name:'移动应急整车', level:'strong', local:12, national:220, note:'国家安全应急产业示范基地，博利特高空系留无人机消防车、齐星无人机指挥车、江南泡沫车均已量产，年产值超300亿'}
+      ]}
     ],
     '产业转移':[
-      {name:'沿海存量产能', level:'weak',  note:'沿海用工成本年均涨幅8-10%，土地稀缺，制造企业有强烈转移意愿但尚未找到合适承接地'},
-      {name:'本地承载能力', level:'mid',   note:'经开区/高新区标准厂房充裕，用工成本比沿海低35-40%，但配套服务与物流效率仍有差距'},
-      {name:'配套供应链',   level:'mid',   note:'汽车零部件/食品包装等配套已有基础，但电子/精密制造配套薄弱，承接高端制造仍有短板'},
-      {name:'品牌/研发',    level:'strong',note:'承接后可依托本地专汽/香菇产业链快速形成订单支撑，政府配套政策完善，研发留存率高'}
+      {seg:'上游', nodes:[
+        {name:'沿海存量产能', level:'weak', local:'—', national:'—', note:'沿海用工成本年均涨幅8-10%，土地稀缺，制造企业有强烈转移意愿但尚未找到合适承接地'}
+      ]},
+      {seg:'中游', nodes:[
+        {name:'本地承载能力', level:'mid', local:6, national:'—', note:'经开区/高新区标准厂房充裕，用工成本比沿海低35-40%，但配套服务与物流效率仍有差距'},
+        {name:'配套供应链', level:'mid', local:220, national:'—', note:'汽车零部件/食品包装等配套已有基础，但电子/精密制造配套薄弱，承接高端制造仍有短板'}
+      ]},
+      {seg:'下游', nodes:[
+        {name:'品牌/研发', level:'strong', local:45, national:'—', note:'承接后可依托本地专汽/香菇产业链快速形成订单支撑，政府配套政策完善，研发留存率高'}
+      ]}
     ]
   };
 
@@ -5094,13 +5120,19 @@ function chainMapHtml(p){
   else if(/产业转移|承接/.test(topic)) key='产业转移';
   else if(/香菇|蘑菇|菌/.test(topic)) key='香菇';
 
-  var nodes=CHAINS[key]||CHAINS['香菇'];
+  var segments=CHAINS[key]||CHAINS['香菇'];
   var recs=RECS[key]||RECS['香菇'];
 
   var LEVEL={
     strong:{bg:'#f0fdf4',bd:'#16a34a',fc:'#15803d',tag:'优势',tbg:'#dcfce7',tfc:'#15803d'},
     mid:   {bg:'#fefce8',bd:'#d97706',fc:'#92400e',tag:'培育',tbg:'#fef9c3',tfc:'#92400e'},
     weak:  {bg:'#fef2f2',bd:'#ef4444',fc:'#991b1b',tag:'缺口',tbg:'#fee2e2',tfc:'#b91c1c'}
+  };
+
+  var SEGMETA={
+    '上游':{bg:'#eef2ff',fc:'#4338ca',bd:'#c7d2fe',tag:'UPSTREAM'},
+    '中游':{bg:'#f0fdf4',fc:'#166534',bd:'#bbf7d0',tag:'MIDSTREAM'},
+    '下游':{bg:'#fff7ed',fc:'#9a3412',bd:'#fed7aa',tag:'DOWNSTREAM'}
   };
 
   var chainIcon={'香菇':'🍄','氢能':'⚡','应急':'🚨','产业转移':'🏭'};
@@ -5112,7 +5144,7 @@ function chainMapHtml(p){
   h+='<div style="padding:12px 18px;background:linear-gradient(135deg,#1e3a5f,#1a56db);display:flex;align-items:center;gap:10px">';
   h+='<span style="font-size:20px">'+icon+'</span>';
   h+='<div><div style="font-size:13.5px;font-weight:800;color:#fff;letter-spacing:.3px">'+key+'产业链图谱</div>';
-  h+='<div style="font-size:11px;color:rgba(255,255,255,0.7);margin-top:1px">当前产业分析方向 · '+topic+'</div></div>';
+  h+='<div style="font-size:11px;color:rgba(255,255,255,0.7);margin-top:1px">上游 → 中游 → 下游 · 当前产业分析方向「'+topic+'」</div></div>';
   /* 图例 */
   h+='<div style="margin-left:auto;display:flex;gap:8px">';
   [{t:'优势',bg:'#16a34a'},{t:'培育',bg:'#d97706'},{t:'缺口',bg:'#ef4444'}].forEach(function(lg){
@@ -5120,23 +5152,35 @@ function chainMapHtml(p){
   });
   h+='</div></div>';
 
-  /* 链条流向 */
-  h+='<div style="padding:18px 16px;background:#f8faff">';
-  h+='<div style="display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:4px">';
-  nodes.forEach(function(nd,i){
-    var lv=LEVEL[nd.level]||LEVEL.weak;
-    /* 节点卡片 */
-    h+='<div style="flex:1;min-width:88px;background:'+lv.bg+';border:2px solid '+lv.bd+';border-radius:12px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;text-align:center">';
-    h+='<span style="background:'+lv.tbg+';color:'+lv.tfc+';border-radius:10px;padding:1px 8px;font-size:10px;font-weight:800;margin-bottom:5px">'+lv.tag+'</span>';
-    h+='<div style="font-size:12px;font-weight:700;color:'+lv.fc+';line-height:1.35;margin-bottom:4px">'+nd.name+'</div>';
-    h+='<div style="font-size:10px;color:#64748b;line-height:1.4">'+nd.note+'</div>';
+  /* 三段泳道 */
+  h+='<div style="padding:16px;background:#f8faff;display:flex;flex-direction:column;gap:12px">';
+  segments.forEach(function(seg){
+    var sm=SEGMETA[seg.seg]||SEGMETA['中游'];
+    h+='<div style="display:flex;gap:12px;align-items:stretch">';
+    /* 泳道标签 */
+    h+='<div style="flex-shrink:0;width:44px;border-radius:10px;background:'+sm.bg+';border:1.5px solid '+sm.bd+';display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:8px 2px">';
+    h+='<span style="font-size:13px;font-weight:800;color:'+sm.fc+';letter-spacing:2px;writing-mode:vertical-rl">'+seg.seg+'</span>';
+    h+='<span style="font-size:7.5px;color:'+sm.fc+';opacity:.55;letter-spacing:.5px;writing-mode:vertical-rl">'+sm.tag+'</span>';
     h+='</div>';
-    /* 箭头 */
-    if(i<nodes.length-1){
-      h+='<div style="display:flex;align-items:center;flex-shrink:0;padding:0 4px;color:#94a3b8;font-size:16px">→</div>';
-    }
+    /* 节点链 */
+    h+='<div style="flex:1;display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:2px">';
+    seg.nodes.forEach(function(nd,i){
+      var lv=LEVEL[nd.level]||LEVEL.weak;
+      h+='<div style="flex:1;min-width:96px;background:'+lv.bg+';border:2px solid '+lv.bd+';border-radius:12px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;text-align:center">';
+      h+='<span style="background:'+lv.tbg+';color:'+lv.tfc+';border-radius:10px;padding:1px 8px;font-size:10px;font-weight:800;margin-bottom:5px">'+lv.tag+'</span>';
+      h+='<div style="font-size:12px;font-weight:700;color:'+lv.fc+';line-height:1.35;margin-bottom:5px">'+nd.name+'</div>';
+      /* 企业数量气泡 */
+      h+='<div style="font-size:10.5px;font-weight:700;color:#0f172a;background:#fff;border:1px solid '+lv.bd+';border-radius:20px;padding:2px 9px;margin-bottom:6px;white-space:nowrap">本地 '+nd.local+' · 全国 '+nd.national+'</div>';
+      h+='<div style="font-size:10px;color:#64748b;line-height:1.4">'+nd.note+'</div>';
+      h+='</div>';
+      /* 箭头 */
+      if(i<seg.nodes.length-1){
+        h+='<div style="display:flex;align-items:center;flex-shrink:0;padding:0 4px;color:#94a3b8;font-size:16px">→</div>';
+      }
+    });
+    h+='</div></div>';
   });
-  h+='</div></div>';
+  h+='</div>';
 
   /* 补链推荐 */
   h+='<div style="padding:12px 16px;background:#fff;border-top:1px solid #e8edf5">';
