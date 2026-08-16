@@ -5665,6 +5665,42 @@ function reportHtml(p){
   '</div>';
 }
 
+/* 产业隔离检索：识别 RAG 库里的独立产业集群，每个产业均衡取片段。
+   避免某个片段密度高的产业(如香菇)霸占检索结果，保证 AI 归纳的方向覆盖多产业。
+   做法：用产业关键词把 corpus 分桶，每桶各取最相关的 N 条，再合并去重。 */
+function balancedIndustryChunks(city, corpus){
+  if(!corpus || !corpus.length) return [];
+  // 城市级产业簇定义(可扩展)：每个产业一组关键词。随州=专汽/氢能/应急/香菇。
+  var INDUSTRY_CLUSTERS = {
+    '随州': [
+      {name:'专用汽车', kw:'专用汽车 专汽 整车 改装 底盘 动力总成 程力 齐星 楚胜'},
+      {name:'氢能专用车', kw:'氢能 氢燃料电池 电堆 储氢瓶 新楚风 氢重卡'},
+      {name:'安全应急装备', kw:'安全应急 应急装备 消防 无人机 应急机器人 移动应急 卫星通信'},
+      {name:'香菇产业', kw:'香菇 菌种 食用菌 多糖 多肽 精深加工 裕国 品源 肽源'}
+    ]
+  };
+  var clusters = INDUSTRY_CLUSTERS[city];
+  // 无预定义簇的城市：按 chunk 的 topic 字段自动分桶(每个 topic 一个产业)
+  if(!clusters){
+    var byTopic={};
+    corpus.forEach(function(c){ var t=c.topic||'其它'; (byTopic[t]=byTopic[t]||[]).push(c); });
+    var out0=[];
+    Object.keys(byTopic).forEach(function(t){ out0=out0.concat(byTopic[t].slice(0,3)); });
+    return out0.slice(0,14);
+  }
+  // 每个产业簇各检索最相关的 4 条片段
+  var picked=[], seen={};
+  clusters.forEach(function(cl){
+    var hits=kbSearch(city+' '+cl.kw, corpus, 4);
+    hits.forEach(function(h){
+      var id=h.id||h.text;
+      if(seen[id]) return;
+      seen[id]=true; picked.push(h);
+    });
+  });
+  return picked;
+}
+
 /* AI 驱动的招商方向推荐：读 RAG 库让 DeepSeek 归纳该城市 3-5 个方向。
    结果缓存到 PROJECTS[cur].aiTopics（含 ts），完成后刷新方向卡片。
    AI 未就绪/失败时页面用正则兜底(generateTopicsFromKb)，路演无感知。 */
@@ -5680,11 +5716,15 @@ function ensureAiTopics(){
   var corpus, chunks;
   try {
     corpus=buildKBCorpus(city);
-    chunks=kbSearch(city+' 主导产业 产业链 缺口 补链 精深加工 承接转移 龙头企业', corpus, 10);
+    // 产业隔离：先识别 RAG 库里的独立产业集群，每个产业均衡取片段，
+    // 避免笼统 query 让片段密度高的产业(如香菇)霸占检索结果、导致方向全集中在单一产业。
+    chunks=balancedIndustryChunks(city, corpus);
   } catch(e){ return; }
   if(!chunks || !chunks.length) return;
   _aiTopicsGenerating[key]=true;
-  var q='请归纳'+city+'当前最值得推进的3-5个产业招商分析方向。';
+  var q='请归纳'+city+'当前最值得推进的产业招商分析方向。知识片段覆盖多个不同产业，'+
+    '你必须让方向分布到不同产业上，每个有明显缺口/升级空间的产业至少归纳1个方向，'+
+    '禁止把方向全集中在单一产业。';
   fetch('/api/kb-chat',{
     method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({question:q, chunks:chunks, city:city, mode:'topics', stream:false})
