@@ -2021,7 +2021,7 @@ function sidebar(){
       return conf>0?(conf+'条已确认 · '+uploads+'份材料 · '+r.score+'%'):'待完善 · 产业/园区/企业/政策';
     })(),
     report: '生成缺口分析与招引方向',
-    home: '报告派生项目·对接需求',
+    home: '项目列表·对接进度',
     docking: (function(){
       if(!p||!p.clues||!p.clues.length) return '候选企业·可达性核验';
       var amber=p.clues.filter(function(c){return c.tag==='amber';}).length;
