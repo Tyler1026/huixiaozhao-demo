@@ -745,6 +745,8 @@ function stageTimelineHtml(p){
 
 /* ===== 运营端（周总·全局）：跨城市需求池 ===== */
 var DEMANDS=[];
+/* 目标企业库（管理端录入，跨端同步供政府端产业链图谱关联展示） */
+var OPS_ENT=OPS_ENT||[];
 
 
 
@@ -5043,6 +5045,48 @@ function chainMapHtml(p){
   if(!p) return '';
   var topic=p.topic||'';
 
+  /* P2：图谱环节名 → 企业库(OPS_ENT)对标企业匹配
+     按环节名关键词匹配企业 kind/gap 字段，动态关联，不再硬编码 */
+  var ENT_KW = {
+    '菌种':['菌种','育种'],
+    '种植':['种植','菌'],
+    '初加工':['加工','食用菌'],
+    '精深加工':['提取','加工','食用菌','多糖'],
+    '多糖':['提取','多糖','植物提取'],
+    '品牌':['品牌','出口'],
+    '氢气制备':['制氢','氢'],
+    '储氢':['储氢','瓶','氢能'],
+    '电堆':['电堆','燃料电池','氢燃料'],
+    '电控':['电控','晶振','动力'],
+    '驾驶室':['驾驶室','车身','整车'],
+    '整车':['整车','改装','专用车','动力'],
+    '无人机':['无人机'],
+    '机器人':['机器人'],
+    '5G':['5G','通信'],
+    '篷布':['篷布','风机'],
+    '应急整车':['应急','消防','整车'],
+    '沿海存量':['转移','承接'],
+    '承载':['园区','厂房'],
+    '配套':['零部件','配套'],
+    '研发':['研发','品牌']
+  };
+  function matchEnts(nodeName){
+    if(!(window.OPS_ENT && window.OPS_ENT.length)) return [];
+    var kws = null;
+    for(var k in ENT_KW){
+      if(nodeName.indexOf(k)>=0){ kws=ENT_KW[k]; break; }
+    }
+    if(!kws) return [];
+    var hits=[];
+    window.OPS_ENT.forEach(function(e){
+      var hay=(e.kind||'')+' '+(e.gap||'');
+      var ok=kws.some(function(kw){ return hay.indexOf(kw)>=0; });
+      if(ok && hits.length<3) hits.push({name:e.name, kind:e.kind});
+    });
+    return hits;
+  }
+
+
   /* ── 各产业链节点数据（三段泳道：上游/中游/下游 + 企业数量）──
      local=本地企业数(或种植主体数)，national=全国企业数；'—' 表示不适用/待统计
      说明：企业数量为演示数据，上线前需替换为真实统计口径 */
@@ -5135,6 +5179,39 @@ function chainMapHtml(p){
   var segments=CHAINS[key]||CHAINS['香菇'];
   var recs=RECS[key]||RECS['香菇'];
 
+  /* ── P2：图谱节点关联目标企业库（OPS_ENT，跨端同步）──
+     根据环节名关键词，从企业库匹配目标企业，展示"对标企业" */
+  var ENT_HINTS={
+    '菌种研发':['菌种','育种'],
+    '种植采摘':['种植'],
+    '初加工':['初加工','烘干','分级'],
+    '精深加工':['精深','多糖','多肽','提取'],
+    '多糖/功能成分提取':['多糖','多肽','提取'],
+    '品牌出口':['品牌','出口','菇'],
+    '氢气制备':['制氢','氢'],
+    '储氢系统':['储氢','瓶阀'],
+    '氢燃料电堆':['电堆','燃料电池'],
+    '电控系统':['电控','晶振','电解液'],
+    '车身驾驶室':['驾驶室'],
+    '整车改装':['整车','改装','专用车'],
+    '无人机本体':['无人机'],
+    '应急机器人':['机器人'],
+    '5G通信模块':['5G','通信'],
+    '篷布/风机':['篷布','风机'],
+    '移动应急整车':['应急','消防','指挥车'],
+    '沿海存量产能':['转移','沿海'],
+    '本地承载能力':['承载','厂房'],
+    '配套供应链':['配套','零部件'],
+    '品牌/研发':['研发','品牌']
+  };
+  function matchEnts(ndName){
+    var hints=ENT_HINTS[ndName]||[ndName];
+    return (OPS_ENT||[]).filter(function(e){
+      var hay=((e.kind||'')+' '+(e.gap||'')+' '+(e.signal||''));
+      return hints.some(function(k){ return hay.indexOf(k)>=0; });
+    });
+  }
+
   var LEVEL={
     strong:{bg:'#f0fdf4',bd:'#16a34a',fc:'#15803d',tag:'优势',tbg:'#dcfce7',tfc:'#15803d'},
     mid:   {bg:'#fefce8',bd:'#d97706',fc:'#92400e',tag:'培育',tbg:'#fef9c3',tfc:'#92400e'},
@@ -5184,6 +5261,17 @@ function chainMapHtml(p){
       /* 企业数量气泡 */
       h+='<div style="font-size:10.5px;font-weight:700;color:#0f172a;background:#fff;border:1px solid '+lv.bd+';border-radius:20px;padding:2px 9px;margin-bottom:6px;white-space:nowrap">本地 '+nd.local+' · 全国 '+nd.national+'</div>';
       h+='<div style="font-size:10px;color:#64748b;line-height:1.4">'+nd.note+'</div>';
+      /* 对标企业（P2：企业库动态关联） */
+      var _ents=matchEnts(nd.name);
+      if(_ents.length){
+        h+='<div style="margin-top:7px;padding-top:6px;border-top:1px dashed '+lv.bd+';width:100%;text-align:center">';
+        h+='<div style="font-size:9px;color:#94a3b8;font-weight:700;letter-spacing:.3px;margin-bottom:3px">🎯 对标企业</div>';
+        h+='<div style="display:flex;flex-wrap:wrap;gap:3px;justify-content:center">';
+        _ents.slice(0,3).forEach(function(e){
+          h+='<span style="font-size:9.5px;color:#0f172a;background:#fff;border:1px solid '+lv.bd+';border-radius:10px;padding:1px 6px;white-space:nowrap">'+e.name+'</span>';
+        });
+        h+='</div></div>';
+      }
       h+='</div>';
       /* 箭头 */
       if(i<seg.nodes.length-1){
@@ -5873,6 +5961,7 @@ function persist(){
       KB_CHAT:KB_CHAT,
       REPORT_HISTORY:REPORT_HISTORY,
       USER_PROFILES:USER_PROFILES,
+      OPS_ENT:typeof OPS_ENT!=='undefined'?OPS_ENT:[],
       syncTs:Date.now()
     };
     // 同时写入 localStorage（保证同账号任何设备刷新都读到最新快照）
@@ -5902,6 +5991,7 @@ function restore(){
       KB_CHAT=data.KB_CHAT||{};
       if(data.REPORT_HISTORY) REPORT_HISTORY=data.REPORT_HISTORY;
       if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
+      if(data.OPS_ENT) OPS_ENT=data.OPS_ENT;
       console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
       return true;
     }
@@ -5933,6 +6023,8 @@ function restoreFromServer(callback){
     DOCK_LOGS        = srv.DOCK_LOGS        || {};
     if(srv.DEMANDS) window.DEMANDS=srv.DEMANDS;
     KB_CHAT          = srv.KB_CHAT          || {};
+    // 企业库：管理端录入的目标企业，供政府端产业链图谱关联展示
+    if(srv.OPS_ENT) OPS_ENT = srv.OPS_ENT;
     // 历史报告：服务器有则用服务器，否则保留本地已加载的（避免旧记录被空值冲掉）
     if(srv.REPORT_HISTORY && Object.keys(srv.REPORT_HISTORY).length) REPORT_HISTORY = srv.REPORT_HISTORY;
     // 注册用户资料：合并服务器与本地(不丢本地新注册未同步的)
@@ -5944,7 +6036,7 @@ function restoreFromServer(callback){
       KB_CONFIRMS:KB_CONFIRMS,KB_FILE_CHUNKS:KB_FILE_CHUNKS,
       KB_UNLOCKED:KB_UNLOCKED,REPORTSTATE:REPORTSTATE,
       PENDING_CONFIRMS:PENDING_CONFIRMS,DOCK_LOGS:DOCK_LOGS,
-      KB_CHAT:KB_CHAT,syncTs:Date.now()};
+      KB_CHAT:KB_CHAT,OPS_ENT:OPS_ENT,syncTs:Date.now()};
     try{localStorage.setItem(LS_KEY,JSON.stringify(flat));}catch(_){}
     try{localStorage.setItem('hxz_uploads',JSON.stringify(UPLOADS));}catch(_){}
     // 若 Postgres 是旧包装格式，顺手更新成扁平格式
