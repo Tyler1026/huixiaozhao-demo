@@ -5308,12 +5308,15 @@ function chainMapHtml(p){
     ]
   };
 
-  /* 匹配产业链 */
-  var key='香菇';
-  if(/氢能|汽车|专用车/.test(topic)) key='氢能';
-  else if(/应急|安全/.test(topic)) key='应急';
-  else if(/产业转移|承接/.test(topic)) key='产业转移';
-  else if(/香菇|蘑菇|菌/.test(topic)) key='香菇';
+  /* 匹配产业链（按 topic 关键词选链；顺序：先匹配更具体的产业词）
+     注意：topic 可能是「氢燃料电池电堆及系统招引」这类全称，
+     不含「氢能」二字，故必须覆盖 氢燃料/电堆/储氢/燃料电池 等变体。 */
+  var key=null;
+  if(/氢能|氢燃料|燃料电池|电堆|储氢|专用车|专汽|汽车|底盘|动力总成/.test(topic)) key='氢能';
+  else if(/应急|安全|无人机|机器人|消防|篷布/.test(topic)) key='应急';
+  else if(/产业转移|承接|沿海|转移/.test(topic)) key='产业转移';
+  else if(/香菇|蘑菇|菌|多糖|多肽|食用菌|精深加工/.test(topic)) key='香菇';
+  else key='香菇';  // 兜底
 
   var segments=CHAINS[key]||CHAINS['香菇'];
   var recs=RECS[key]||RECS['香菇'];
