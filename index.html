@@ -3189,6 +3189,8 @@ function projMgmtPage(p){
           '<div style="font-size:12px;color:#8492a6;margin-top:3px">'+x.city+' · '+stageNameOf(x,x.stage)+' · '+clues.length+'条线索</div>'+
         '</div>'+
         '<span style="padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:600;background:'+sc.bg+';color:'+sc.c+'">'+stageNameOf(x,x.stage)+'</span>'+
+        '<span onclick="event.stopPropagation();confirmDeleteProject(\''+k+'\')" title="取消该方向的招商申请" '+
+          'style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;cursor:pointer;font-size:14px;flex-shrink:0;margin-left:2px">🗑</span>'+
         '<span style="font-size:13px;color:#9aa5b5;margin-left:4px">'+(expanded?'▲':'▼')+'</span>'+
       '</button>'+
       expandedContent+
@@ -3245,6 +3247,40 @@ function advanceStage(projKey){
 function toggleProjGroup(k){
   window.__projOpen=(window.__projOpen===k)?null:k;
   render();
+}
+/* 取消该方向的招商申请（删除项目）— 弹窗确认后执行 */
+function confirmDeleteProject(k){
+  var x=PROJECTS[k]; if(!x) return;
+  var safeTopic=(x.topic||'该方向').replace(/'/g,'’');
+  var body='<div class="confirm-summary" style="border-color:#fecaca;background:#fef2f2">'+
+      '<i class="i" style="color:#dc2626">⚠️</i>'+
+      '<div><strong>确认取消「'+x.topic+'」的招商申请？</strong>'+
+      '<p>该方向的研判报告、候选企业线索、对接进度将一并删除，此操作不可撤销。</p></div>'+
+    '</div>';
+  var foot='<button class="secondary-button" onclick="closeModal()">再想想</button>'+
+    '<button class="primary-button" style="background:#dc2626;border-color:#dc2626" '+
+      'onclick="doDeleteProject(\''+k+'\')">确认取消申请</button>';
+  openModal('取消招商申请', body, foot);
+}
+function doDeleteProject(k){
+  var x=PROJECTS[k]; if(!x){ closeModal(); return; }
+  var topic=x.topic||'该方向';
+  // 删除项目及其关联状态
+  delete PROJECTS[k];
+  if(typeof REPORTSTATE!=='undefined') delete REPORTSTATE[k];
+  if(typeof PENDING_CONFIRMS!=='undefined') delete PENDING_CONFIRMS[k];
+  if(typeof UPLOADS!=='undefined') delete UPLOADS[k];
+  if(typeof KB_FILE_CHUNKS!=='undefined') delete KB_FILE_CHUNKS[k];
+  if(window.__projOpen===k) window.__projOpen=null;
+  // 若删除的是当前项目，切回同城其它项目或空
+  if(cur===k){
+    var _rest=Object.keys(PROJECTS);
+    cur=_rest.length?_rest[0]:null;
+  }
+  persist();
+  closeModal();
+  render();
+  toast('✓ 已取消「'+topic+'」的招商申请');
 }
 // 招引项目独立工作页 = 该方向的"对话作战室"（雷总三栏：中=持续对话，右=证据卡片）
 function subWorkPage(p){
