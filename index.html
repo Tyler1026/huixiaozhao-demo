@@ -4291,26 +4291,58 @@ function restoreConfirmPanel(){
   return reanalyzeBtn + renderConfirmPanel(PENDING_CONFIRMS[cur], cur);
 }
 
+/* 从产业链图谱 AI 研判结果(segmentLevels)派生可立项招引方向：
+   weak(缺口)第一梯队、mid(培育)第二梯队；携带判定依据 + 对标企业(type=target)。
+   图谱研判一次，招引方向/补链清单/报告清单全部从这份结果派生，保证单一事实源。 */
+function deriveActionItemsFromChain(){
+  if(!cur || !PROJECTS[cur]) return null;
+  var sl = PROJECTS[cur].segmentLevels;
+  if(!sl) return null;
+  var entries=[];
+  for(var k in sl){
+    if(k==='__chainKey') continue;
+    entries.push({name:k, level:sl[k].level||'mid', basis:sl[k].basis||'', confidence:sl[k].confidence||'medium'});
+  }
+  var order={weak:0, mid:1};
+  var candidates=entries.filter(function(e){ return e.level==='weak'||e.level==='mid'; });
+  if(!candidates.length) return null;
+  candidates.sort(function(a,b){
+    var oa = order[a.level]!=null ? order[a.level] : 9;
+    var ob = order[b.level]!=null ? order[b.level] : 9;
+    return oa-ob;
+  });
+  var attrMap={weak:'补链缺口', mid:'培育增强'};
+  var confPct={high:'85%', medium:'70%', low:'55%'};
+  return candidates.slice(0,3).map(function(e, i){
+    var bench=(OPS_ENT||[]).filter(function(ent){
+      if(ent.type==='local') return false;
+      if(ent.segment===e.name) return true;
+      if((ent.gap||'').indexOf(e.name)>=0) return true;
+      return (ent.matches||[]).some(function(m){ return (m.gap||'').indexOf(e.name)>=0; });
+    });
+    return {rank:i+1, gap:e.name, attr:attrMap[e.level]||'', score:'', level:e.level, basis:e.basis,
+            confidencePct: confPct[e.confidence]||'70%', fromChain:true,
+            benchEnts: bench.map(function(b){ return b.name; })};
+  });
+}
+
 /* 从REPORTSTATE恢复已保存的招引方向卡片 */
 function restoreActionItems(){
   if(!cur || !REPORTSTATE[cur]) return '';
   var p=P();
   var topic=p?p.topic:'';
-  var byTopic=REPORTSTATE[cur].actionItemsByTopic||{};
-  var items=byTopic[topic];
-  // 预埋方向：始终从该方向的报告实时解析，避免历史脏缓存导致招引方向错位（如香菇方向下显示氢能招引方向）
-  var _pre=getTopicReport(topic);
-  if(_pre){
-    items=parseActionItems(_pre);
-    if(items.length){
-      if(!REPORTSTATE[cur].actionItemsByTopic) REPORTSTATE[cur].actionItemsByTopic={};
-      REPORTSTATE[cur].actionItemsByTopic[topic]=items;
+  // 优先：从产业链图谱 AI 研判结果(segmentLevels)派生招引方向，单一事实源。
+  // 只有图谱尚未研判（无 weak/mid 环节）时才回退到报告文本解析。
+  var items = deriveActionItemsFromChain();
+  if(!items || !items.length){
+    var byTopic=REPORTSTATE[cur].actionItemsByTopic||{};
+    var _pre=getTopicReport(topic);
+    if(_pre){
+      items=parseActionItems(_pre);
+    } else {
+      items=parseActionItems(REPORTSTATE[cur].text||'');
     }
-  } else if(!items||!items.length){
-    // 自定义/无预埋报告方向：从当前报告文本实时解析（不再回退到旧方向的 actionItems）
-    var _txt=REPORTSTATE[cur].text||'';
-    items=parseActionItems(_txt);
-    if(items.length){
+    if(items && items.length){
       if(!REPORTSTATE[cur].actionItemsByTopic) REPORTSTATE[cur].actionItemsByTopic={};
       REPORTSTATE[cur].actionItemsByTopic[topic]=items;
     }
@@ -4333,9 +4365,12 @@ function restoreActionItems(){
           '<span style="font-size:13px;font-weight:700;color:#fff;flex:1">'+it.gap+'</span>'+
           (it.attr?'<span style="padding:2px 8px;background:rgba(255,255,255,.2);border-radius:8px;font-size:11px;color:#fff">'+it.attr+'</span>':'')+
         '</div>'+
-        '<div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between">'+
-          '<div style="font-size:12px;color:#4a5568">'+safeCity+' · '+safeTopic+'<br>置信度 100% · 来源：慧小招实测报告</div>'+
-          '<button onclick="importToProject(\''+safeGap+'\',\''+safeCity+'\',\''+safeTopic+'\',this)" style="padding:8px 18px;background:'+color+';color:#fff;border:none;border-radius:10px;font-size:12.5px;font-weight:650;cursor:pointer">提交招商需求 →</button>'+
+        '<div style="padding:12px 16px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">'+
+          '<div style="font-size:12px;color:#4a5568;flex:1;min-width:0">'+safeCity+' · '+safeTopic+'<br>置信度 '+(it.confidencePct||'100%')+' · 来源：'+(it.fromChain?'慧小招 AI 产业链研判':'慧小招实测报告')+
+            (it.basis?'<div style="margin-top:4px;font-size:11px;color:#94a3b8;line-height:1.5">'+String(it.basis).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</div>':'')+
+            (it.benchEnts&&it.benchEnts.length?'<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">'+it.benchEnts.slice(0,3).map(function(b){return '<span style="font-size:10.5px;color:#1a56db;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:1px 6px;white-space:nowrap">🎯 '+String(b).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>';}).join('')+'</div>':'')+
+          '</div>'+
+          '<button onclick="importToProject(\''+safeGap+'\',\''+safeCity+'\',\''+safeTopic+'\',this)" style="padding:8px 18px;background:'+color+';color:#fff;border:none;border-radius:10px;font-size:12.5px;font-weight:650;cursor:pointer;flex-shrink:0">提交招商需求 →</button>'+
         '</div>'+
       '</div>';
     }).join('')+
@@ -5385,14 +5420,25 @@ function researchChain(chainKey, topic, city, nodeNames){
     }
 
     // 2) 落地本地代表企业（type=local）与对标企业（type=target）
+    // 先清理本链历史研判企业：字段名 bug 曾导致 gap="undefined环节" 的脏数据；
+    // 以及本轮环节（nodeNames）名下已落地的旧记录，保证重跑结果干净、不重复。
+    OPS_ENT = (OPS_ENT||[]).filter(function(e){
+      var gapBad = (e.gap||'').indexOf('undefined')>=0;
+      var inChain = e.segment && nodeNames.indexOf(e.segment)>=0;
+      var matchesChain = (e.matches||[]).some(function(m){
+        return nodeNames.some(function(n){ return (m.gap||'').indexOf(n)>=0; });
+      });
+      return !(gapBad || inChain || matchesChain);
+    });
     var addedLocal=0, addedBench=0;
     segResults.forEach(function(sr){
       if(!sr) return;
+      var segName = sr.segment || sr.name;
       (sr.local_leaders||[]).forEach(function(t){
         if(!t || !t.name) return;
         if(OPS_ENT.some(function(e){return e.name===t.name;})) return;
         OPS_ENT.push({name:t.name, kind:'', region:city, type:'local',
-          revenue:'待核实', gap:(sr.segment+'环节·本地'),
+          segment:segName, revenue:'待核实', gap:(segName+'环节·本地'),
           signal:'', signalSrc:t.source||'', hasMoveSignal:false,
           source:t.source||'', note:t.role||'', matches:[]});
         addedLocal++;
@@ -5401,11 +5447,11 @@ function researchChain(chainKey, topic, city, nodeNames){
         if(!t || !t.name) return;
         if(OPS_ENT.some(function(e){return e.name===t.name;})) return;
         OPS_ENT.push({name:t.name, kind:t.kind||'', region:t.region||'', type:'target',
-          revenue:'待核实', gap:(t.match||(sr.segment+'环节')),
+          segment:segName, revenue:'待核实', gap:(t.match||(segName+'环节')),
           signal:t.signal||'', signalSrc:t.source||'',
           hasMoveSignal:!!(t.signal),
           source:t.source||'', note:t.match||'',
-          matches:[{city:city, gap:(sr.segment+'环节')}]});
+          matches:[{city:city, gap:(segName+'环节')}]});
         addedBench++;
       });
     });
@@ -5418,6 +5464,50 @@ function researchChain(chainKey, topic, city, nodeNames){
   }).finally(function(){
     _chainResearching[chainKey]=false;
   });
+}
+
+/* 从图谱研判结果(segmentLevels)生成「补链优先级清单」markdown 表格，
+   供报告正文第三章对齐：weak(缺口)→mid(培育)→strong(优势) 排序，携带对标企业。 */
+function chainPriorityMarkdown(){
+  if(!cur || !PROJECTS[cur]) return '';
+  var sl = PROJECTS[cur].segmentLevels;
+  if(!sl) return '';
+  var entries=[];
+  for(var k in sl){ if(k==='__chainKey') continue; entries.push({name:k, level:sl[k].level||'mid'}); }
+  var order={weak:0, mid:1, strong:2};
+  entries.sort(function(a,b){
+    var oa = order[a.level]!=null ? order[a.level] : 9;
+    var ob = order[b.level]!=null ? order[b.level] : 9;
+    return oa-ob;
+  });
+  if(!entries.length) return '';
+  var lvlTxt={weak:'缺口', mid:'培育', strong:'优势'};
+  var rows=entries.map(function(e,i){
+    var bench=(OPS_ENT||[]).filter(function(ent){
+      if(ent.type==='local') return false;
+      if(ent.segment===e.name) return true;
+      if((ent.gap||'').indexOf(e.name)>=0) return true;
+      return (ent.matches||[]).some(function(m){ return (m.gap||'').indexOf(e.name)>=0; });
+    });
+    var benchStr = bench.length ? bench.slice(0,2).map(function(b){return b.name;}).join('、') : '—';
+    return '| '+(i+1)+' | '+e.name+' | '+lvlTxt[e.level]+' | '+benchStr+' |';
+  }).join('\n');
+  return '## 三、补链优先级清单（AI 产业链研判）\n\n'
+    + '| 排名 | 缺口/环节 | 强弱判定 | 对标企业 |\n'
+    + '|---|---|---|---|\n'
+    + rows + '\n';
+}
+
+/* 报告正文第三章「补链优先级清单」跟随图谱研判结果：
+   若已有整链研判，用 chainPriorityMarkdown 替换报告文本里的第三章（或文末追加），
+   保证报告正文与产业链图谱的缺口/强弱判定完全一致。 */
+function alignChainToReport(text){
+  if(!text) return text;
+  var tbl = chainPriorityMarkdown();
+  if(!tbl) return text;
+  var re = /##\s*三[、.](?:补链优先级清单|补链优先级|承接优先方向)[^\n]*[\s\S]*?(?=\n\s*##\s|$)/;
+  if(re.test(text)) return text.replace(re, tbl);
+  return text + '\n\n' + tbl;
 }
 
 function reportHtml(p){
@@ -5463,7 +5553,7 @@ function reportHtml(p){
       '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
     '</div>'+
     '<div style="padding:16px 18px;font-size:13px;color:#1e293b;line-height:1.8">'+
-      '<p style="margin:0">'+renderMd(rs.text||'')+'</p>'+
+      '<p style="margin:0">'+renderMd(alignChainToReport(rs.text||''))+'</p>'+
     '</div>'+
   '</div>';
 }
