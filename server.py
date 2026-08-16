@@ -443,7 +443,7 @@ class Handler(BaseHTTPRequestHandler):
             if role in ("user", "assistant") and content:
                 hist_msgs.append({"role": role, "content": content[:1500]})
 
-        payload = json.dumps({
+        payload_dict = {
             "model": MODEL,
             "max_tokens": max_tokens,
             "stream": stream,
@@ -452,7 +452,12 @@ class Handler(BaseHTTPRequestHandler):
                 *hist_msgs,
                 {"role": "user",   "content": f"城市：{city}\n\n知识片段：\n{ctx}\n\n问题：{q}"}
             ]
-        }).encode()
+        }
+        # research 模式：关闭 thinking（查资料返回 JSON，不需深度推理，避免 CoT 耗尽
+        # max_tokens 导致 content 为空、也避免响应慢）
+        if mode == "research":
+            payload_dict["thinking"] = {"type": "disabled"}
+        payload = json.dumps(payload_dict).encode()
 
         req = urllib.request.Request(
             DS_URL, data=payload, method="POST",
