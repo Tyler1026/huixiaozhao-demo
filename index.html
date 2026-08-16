@@ -5254,31 +5254,57 @@ function chainMapHtml(p){
     /* 节点链 */
     h+='<div style="flex:1;display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:2px">';
     seg.nodes.forEach(function(nd,i){
-      var lv=LEVEL[nd.level]||LEVEL.weak;
-      /* P2：企业库(OPS_ENT)动态统计 —— 本地=region含随州/随县，对标=外地目标企业 */
-      var _ents=matchEnts(nd.name);
-      var _local=_ents.filter(function(e){return /随州|随县/.test(e.region||'');}).length;
-      var _bench=_ents.length-_local;
+      /* 调研结果优先：PROJECTS[cur].segmentLevels[环节名] 有 AI 研判则用它，否则用硬编码兜底 */
+      var _sl = (PROJECTS[cur] && PROJECTS[cur].segmentLevels) ? PROJECTS[cur].segmentLevels[nd.name] : null;
+      var effLevel = _sl ? _sl.level : nd.level;
+      var lv=LEVEL[effLevel]||LEVEL.mid;
+      /* 企业匹配（区分 type=local 本地存量 / 其余=对标招引） */
+      var _hints = ENT_HINTS[nd.name] || [nd.name];
+      var _localEnts = (OPS_ENT||[]).filter(function(e){
+        if(e.type!=='local') return false;
+        var hay=((e.kind||'')+' '+(e.gap||'')+' '+(e.note||'')+' '+(e.signal||''));
+        return _hints.some(function(k){ return hay.indexOf(k)>=0; });
+      });
+      var _benchEnts = (OPS_ENT||[]).filter(function(e){
+        if(e.type==='local') return false;
+        var hay=((e.kind||'')+' '+(e.gap||'')+' '+(e.note||'')+' '+(e.signal||''));
+        return _hints.some(function(k){ return hay.indexOf(k)>=0; });
+      });
+
       h+='<div style="flex:1;min-width:96px;background:'+lv.bg+';border:2px solid '+lv.bd+';border-radius:12px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;text-align:center">';
       h+='<span style="background:'+lv.tbg+';color:'+lv.tfc+';border-radius:10px;padding:1px 8px;font-size:10px;font-weight:800;margin-bottom:5px">'+lv.tag+'</span>';
       h+='<div style="font-size:12px;font-weight:700;color:'+lv.fc+';line-height:1.35;margin-bottom:5px">'+nd.name+'</div>';
-      /* 企业数量气泡（企业库动态统计：本地/对标，替代原硬编码 本地/全国） */
-      h+='<div style="font-size:10.5px;font-weight:700;color:'+(_ents.length?'#0f172a':'#94a3b8')+';background:#fff;border:1px solid '+lv.bd+';border-radius:20px;padding:2px 9px;margin-bottom:6px;white-space:nowrap">'+(_ents.length?('本地 '+_local+' 家 · 对标 '+_bench+' 家'):'目标企业待录入')+'</div>';
-      /* AI 收集按钮：待录入/缺口节点可一键调研对标企业 */
-      if(!_ents.length && nd.level==='weak'){
-        h+='<div id="ai-collect-'+encodeURIComponent(nd.name)+'" onclick="researchSegment(\''+nd.name.replace(/'/g,'')+'\')" style="cursor:pointer;font-size:9.5px;font-weight:700;color:#6d28d9;background:#f5f3ff;border:1px dashed #c4b5fd;border-radius:10px;padding:3px 8px;margin-bottom:6px;white-space:nowrap">🤖 AI 收集</div>';
+      /* 状态气泡：按 level 区分，未调研时标注"待研判" */
+      if(effLevel==='strong'){
+        h+='<div style="font-size:10.5px;font-weight:700;color:#15803d;background:#f0fdf4;border:1px solid #16a34a;border-radius:20px;padding:2px 9px;margin-bottom:6px;white-space:nowrap">✅ 本地优势'+(_sl?'':' · 待研判')+'</div>';
+      } else if(effLevel==='weak'){
+        h+='<div style="font-size:10.5px;font-weight:700;color:#b91c1c;background:#fef2f2;border:1px solid #ef4444;border-radius:20px;padding:2px 9px;margin-bottom:6px;white-space:nowrap">❌ 缺口'+(_sl?'':' · 待研判')+'</div>';
+      } else {
+        h+='<div style="font-size:10.5px;font-weight:700;color:#92400e;background:#fefce8;border:1px solid #d97706;border-radius:20px;padding:2px 9px;margin-bottom:6px;white-space:nowrap">🔶 培育中'+(_sl?'':' · 待研判')+'</div>';
       }
       h+='<div style="font-size:10px;color:#64748b;line-height:1.4">'+nd.note+'</div>';
-      /* 对标企业（P2：企业库动态关联） */
-      if(_ents.length){
+      /* 本地代表企业（优势/培育环节展示本地企业） */
+      if(_localEnts.length){
         h+='<div style="margin-top:7px;padding-top:6px;border-top:1px dashed '+lv.bd+';width:100%;text-align:center">';
-        h+='<div style="font-size:9px;color:#94a3b8;font-weight:700;letter-spacing:.3px;margin-bottom:3px">🎯 对标企业</div>';
+        h+='<div style="font-size:9px;color:#94a3b8;font-weight:700;letter-spacing:.3px;margin-bottom:3px">🏠 本地代表企业</div>';
         h+='<div style="display:flex;flex-wrap:wrap;gap:3px;justify-content:center">';
-        _ents.slice(0,3).forEach(function(e){
+        _localEnts.slice(0,3).forEach(function(e){
           h+='<span style="font-size:9.5px;color:#0f172a;background:#fff;border:1px solid '+lv.bd+';border-radius:10px;padding:1px 6px;white-space:nowrap">'+e.name+'</span>';
         });
         h+='</div></div>';
       }
+      /* 对标企业（缺口环节展示招引目标） */
+      if(_benchEnts.length){
+        h+='<div style="margin-top:7px;padding-top:6px;border-top:1px dashed '+lv.bd+';width:100%;text-align:center">';
+        h+='<div style="font-size:9px;color:#94a3b8;font-weight:700;letter-spacing:.3px;margin-bottom:3px">🎯 对标企业</div>';
+        h+='<div style="display:flex;flex-wrap:wrap;gap:3px;justify-content:center">';
+        _benchEnts.slice(0,3).forEach(function(e){
+          h+='<span style="font-size:9.5px;color:#0f172a;background:#fff;border:1px solid '+lv.bd+';border-radius:10px;padding:1px 6px;white-space:nowrap">'+e.name+'</span>';
+        });
+        h+='</div></div>';
+      }
+      /* AI 研判按钮：每个节点都可一键调研该环节的真实判定（数据工作流入口） */
+      h+='<div id="ai-collect-'+encodeURIComponent(nd.name)+'" onclick="researchSegment(\''+nd.name.replace(/'/g,'')+'\')" style="cursor:pointer;font-size:9.5px;font-weight:700;color:#6d28d9;background:#f5f3ff;border:1px dashed #c4b5fd;border-radius:10px;padding:3px 8px;margin-top:7px;white-space:nowrap">🤖 AI 研判</div>';
       h+='</div>';
       /* 箭头 */
       if(i<seg.nodes.length-1){
@@ -5304,10 +5330,13 @@ function chainMapHtml(p){
   return h;
 }
 
-/* ── P3a：AI 调研某产业链环节的对标企业与全国企业数量/市场规模 ──
+/* ── P3a：AI 调研某产业链环节的完整画像（强弱判定 + 本地代表企业 + 对标企业 + 企业数量）──
    调用 /api/kb-chat mode=research（后端 SYSTEM_RESEARCH 强约束来源），
-   把结果写入企业库 OPS_ENT（对标企业），供图谱「对标 N 家」动态统计。
-   数字可靠性：后端铁律约束 value 无来源则 null，前端只落地 targets 企业名单。 */
+   把结果落地：
+   - level/level_basis → PROJECTS[cur].segmentLevels[环节名]
+   - local_leaders → 企业库 OPS_ENT（type='local'，本地存量企业）
+   - benchmarks → 企业库 OPS_ENT（type='target'，外地对标企业）
+   数字可靠性：后端铁律约束 value 无来源则 null，前端不落地编造数字。 */
 var _researching = {};
 function researchSegment(nodeName){
   if(_researching[nodeName]){ toast('正在调研「'+nodeName+'」，请稍候…'); return; }
@@ -5316,50 +5345,74 @@ function researchSegment(nodeName){
   var _bid = 'ai-collect-' + encodeURIComponent(nodeName);
   var btn=document.getElementById(_bid);
   if(btn){ btn.textContent='调研中…'; btn.style.opacity='.6'; btn.style.pointerEvents='none'; }
-  var q='请调研'+city+'产业链「'+nodeName+'」环节：(1)全国头部/代表性企业(招引对标名单3~5家) (2)该环节全国企业数量与市场规模。';
+  var q='请调研'+city+'产业链「'+nodeName+'」环节：本地强弱判定(优势/培育/缺口)、本地代表企业、全国对标企业、企业数量与市场规模。';
   fetch('/api/kb-chat',{
     method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({question:q, city:city, mode:'research', stream:false})
   }).then(function(r){return r.json();}).then(function(resp){
-    // 后端非流式返回 OpenAI 格式：{choices:[{message:{content:'...'}}]}
     var content='';
     if(resp && resp.choices && resp.choices[0] && resp.choices[0].message){
       content = resp.choices[0].message.content || '';
     } else if(typeof resp==='string'){
       content = resp;
     }
-    // 提取 JSON（容忍 markdown 代码块包裹）
     var m = content.match(/\{[\s\S]*\}/);
     if(!m){ throw new Error('AI 未返回有效数据'); }
     var data = JSON.parse(m[0]);
-    var targets = (data && data.targets) || [];
-    if(!targets.length){ toast('「'+nodeName+'」未查到可靠对标企业（AI 已按来源约束留空）'); return; }
-    // 落地到企业库 OPS_ENT（去重）
-    var added=0;
-    targets.forEach(function(t){
+
+    // 1) 落地强弱判定（优势/培育/缺口 + 依据）
+    if(!PROJECTS[cur].segmentLevels) PROJECTS[cur].segmentLevels={};
+    PROJECTS[cur].segmentLevels[nodeName]={
+      level: data.level || 'mid',
+      basis: data.level_basis || '',
+      confidence: data.confidence || 'low',
+      ts: Date.now()
+    };
+
+    // 2) 落地本地代表企业（type=local）
+    var leaders = (data && data.local_leaders) || [];
+    var addedLocal=0;
+    leaders.forEach(function(t){
       if(!t || !t.name) return;
       var exist = OPS_ENT.some(function(e){ return e.name===t.name; });
       if(exist) return;
       OPS_ENT.push({
-        name:t.name, kind:t.kind||'', region:t.region||'',
-        revenue:'待核实', gap:(t.match||('随州-'+nodeName+'环节')),
+        name:t.name, kind:'', region:city, type:'local',
+        revenue:'待核实', gap:(nodeName+'环节·本地'),
+        signal:'', signalSrc:t.source||'', hasMoveSignal:false,
+        source:t.source||'', note:t.role||'', matches:[]
+      });
+      addedLocal++;
+    });
+
+    // 3) 落地对标企业（type=target）
+    var benchmarks = (data && data.benchmarks) || [];
+    var addedBench=0;
+    benchmarks.forEach(function(t){
+      if(!t || !t.name) return;
+      var exist = OPS_ENT.some(function(e){ return e.name===t.name; });
+      if(exist) return;
+      OPS_ENT.push({
+        name:t.name, kind:t.kind||'', region:t.region||'', type:'target',
+        revenue:'待核实', gap:(t.match||(nodeName+'环节')),
         signal:t.signal||'', signalSrc:t.source||'',
         hasMoveSignal:!!(t.signal),
         source:t.source||'', note:t.match||'',
         matches:[{city:city, gap:(nodeName+'环节')}]
       });
-      added++;
+      addedBench++;
     });
+
     persist();
-    toast('✓ 「'+nodeName+'」已收集 '+added+' 家对标企业');
-    // 重新渲染图谱
+    var lvName={strong:'优势',mid:'培育',weak:'缺口'}[(data.level)||'mid'];
+    toast('✓ 「'+nodeName+'」研判为「'+lvName+'」· 本地 '+addedLocal+' 家 · 对标 '+addedBench+' 家');
     render();
   }).catch(function(e){
     toast('调研失败：'+(e && e.message ? e.message : '网络错误'));
   }).finally(function(){
     _researching[nodeName]=false;
     var b2=document.getElementById('ai-collect-' + encodeURIComponent(nodeName));
-    if(b2){ b2.textContent='🤖 AI 收集'; b2.style.opacity='1'; b2.style.pointerEvents='auto'; }
+    if(b2){ b2.textContent='🤖 AI 研判'; b2.style.opacity='1'; b2.style.pointerEvents='auto'; }
   });
 }
 
