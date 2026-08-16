@@ -123,7 +123,7 @@ def _load_ds_key():
 DS_KEY      = _load_ds_key()
 MODEL       = "deepseek-v4-pro"
 MAX_TOKENS_DRAFT = 800
-MAX_TOKENS_FULL  = 3000
+MAX_TOKENS_FULL  = 5000
 MAX_TOKENS_CHAT  = 400
 # research 模式需返回结构化 JSON（对标企业3~5家+数量+来源），且 v4-pro 默认 thinking
 # 会消耗 token，故单独放大并预留思考空间
@@ -502,9 +502,9 @@ class Handler(BaseHTTPRequestHandler):
                 {"role": "user",   "content": f"城市：{city}\n\n知识片段：\n{ctx}\n\n问题：{q}"}
             ]
         }
-        # research / chain 模式：关闭 thinking（查资料返回 JSON，不需深度推理，避免 CoT 耗尽
-        # max_tokens 导致 content 为空、也避免响应慢）
-        if mode in ("research", "chain"):
+        # v4-pro 默认开启 thinking，CoT 会吃光 max_tokens 导致 content 为空。
+        # 除 chat/suggest 外全部关闭 thinking（报告/研判要的是结构化产出，不需深度推理链）。
+        if mode in ("research", "chain", "full", "draft"):
             payload_dict["thinking"] = {"type": "disabled"}
         payload = json.dumps(payload_dict).encode()
 
