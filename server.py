@@ -457,7 +457,7 @@ class Handler(BaseHTTPRequestHandler):
         mode   = body.get("mode", "full")
         history = body.get("history", [])  # 多轮上下文：[{role:'user'|'assistant', content:'...'}]
 
-        if mode not in ("chat", "draft", "full", "suggest", "research", "chain"):
+        if mode not in ("chat", "draft", "full", "suggest", "research", "chain", "topics"):
             mode = "full"
 
         if not q:
