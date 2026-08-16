@@ -3269,8 +3269,17 @@ function confirmDeleteProject(k){
 function isMainProject(k){
   if(k==='sz') return true;
   var x=PROJECTS[k]; if(!x) return false;
-  // 城市锚点：id 等于城市名(如 '上海'/'武汉')，或 topic 是「XX主导产业补链招引」形态
+  // 城市锚点：id 等于城市名(如 '上海'/'武汉')
   if(x.id===x.city) return true;
+  // 城市锚点主题：「XX主导产业补链招引」——承载城市智库 kb，不可删除
+  if(/主导产业补链招引/.test(x.topic||'')) return true;
+  // 兜底：某城市只剩一个项目时，它就是该城市锚点，禁止删空
+  if(x.city){
+    var _sameCity=Object.keys(PROJECTS).filter(function(pk){
+      return PROJECTS[pk] && PROJECTS[pk].city===x.city;
+    });
+    if(_sameCity.length<=1) return true;
+  }
   return false;
 }
 function doDeleteProject(k){
