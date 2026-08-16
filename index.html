@@ -4448,11 +4448,19 @@ function restoreConfirmPanel(){
    图谱研判一次，招引方向/补链清单/报告清单全部从这份结果派生，保证单一事实源。 */
 function deriveActionItemsFromChain(){
   if(!cur || !PROJECTS[cur]) return null;
+  var p=P();
   var sl = PROJECTS[cur].segmentLevels;
   if(!sl) return null;
+  // 只取【当前方向对应链】的研判结果，杜绝跨链污染（如香菇方向混入氢气环节）：
+  //   ① segmentLevels 必须是当前链的（__chainKey===pickChainKey(topic)）
+  //   ② 环节名必须属于当前链的节点清单（CHAINS[key] 的 nodes）
+  var _chainKey = pickChainKey(p ? p.topic : '');
+  if(!_chainKey || sl.__chainKey!==_chainKey) return null;
+  var _chainNodes = _chainNodeNames(_chainKey);
   var entries=[];
   for(var k in sl){
     if(k==='__chainKey') continue;
+    if(_chainNodes.length && _chainNodes.indexOf(k)<0) continue;  // 过滤掉不属于本链的残留环节
     entries.push({name:k, level:sl[k].level||'mid', basis:sl[k].basis||'', confidence:sl[k].confidence||'medium'});
   }
   var order={weak:0, mid:1};
@@ -5232,6 +5240,16 @@ function submitDemand(){
 // REPORTSTATE: 存储已生成的报告
 
 // reportHtml: 如果已有报告，直接渲染
+/* 各产业链的环节节点名清单（与 chainMapHtml 里的 CHAINS 保持一致），
+   供 deriveActionItemsFromChain 等做"当前链环节隔离"，杜绝跨链污染。 */
+var CHAIN_NODE_NAMES = {
+  '香菇': ['菌种研发','种植采摘','初加工','精深加工','多糖/功能成分提取','品牌出口'],
+  '氢能': ['氢气制备','储氢系统','氢燃料电堆','电控系统','车身驾驶室','整车改装'],
+  '应急': ['无人机本体','应急机器人','5G通信模块','篷布/风机','移动应急整车'],
+  '产业转移': ['沿海存量产能','本地承载能力','配套供应链','品牌/研发']
+};
+function _chainNodeNames(chainKey){ return CHAIN_NODE_NAMES[chainKey] || []; }
+
 /* 统一选链：topic 关键词 → 产业链 key。匹配不到返回 null（不兜底香菇）。
    覆盖 topic 全称的各种变体（AI 生成的方向名可能是「氢燃料电池电堆及系统招引」）。 */
 function pickChainKey(topic){
