@@ -1043,6 +1043,9 @@ function doRegister(){
     // 一个城市只能注册一个账号：同城市已有注册账号则拒绝
     var _dup=Object.keys(USER_PROFILES).filter(function(uk){return USER_PROFILES[uk]&&USER_PROFILES[uk].city===city;});
     if(_dup.length){ regErr('「'+city+'」已有账号注册（'+USER_PROFILES[_dup[0]].name+'），每个城市仅限一个账号，请直接登录'); return; }
+    // 系统常驻账号占用的城市（如随州=suizhou）也不允许重复注册
+    var _sysDup=Object.keys(ACCOUNTS).filter(function(ak){return ACCOUNTS[ak]&&ACCOUNTS[ak].city===city;});
+    if(_sysDup.length){ regErr('「'+city+'」为系统已开通城市，请使用已有账号直接登录'); return; }
     USER_PROFILES[u]={name:name,phone:phone,wechat:wechat,org:org,dept:dept,title:title,city:city,pwd:pw,ts:Date.now()};
     persist();
     AUTH={user:u, city:city, projKey:null, resident:false, who:name, org:org};
