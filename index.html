@@ -806,6 +806,18 @@ function render(){
   if(view==='setup'||!cur||!PROJECTS[cur]){var _root=$('#root');if(_root){_root.innerHTML='<div style="height:100vh;background:#f5f7fb">'+setupPage()+'</div>';bind();} return;}
   if(role==='ops')return renderOps();
   var p=P();
+  // 修复方向/报告错位：报告正文必须跟随当前方向 topic。刷新后缓存里 REPORTSTATE[cur].topic(旧方向)
+  // 与 PROJECTS[cur].topic(当前方向) 可能不一致，导致标题显示当前方向、正文却是旧方向的报告。
+  if(cur && REPORTSTATE[cur] && p.topic && REPORTSTATE[cur].topic!==p.topic){
+    var _syncTxt=getTopicReport(p.topic);
+    REPORTSTATE[cur].topic=p.topic;
+    if(_syncTxt){
+      REPORTSTATE[cur].text=_syncTxt;
+    }else{
+      // 当前方向无预埋报告(如自定义/新能源配套)：清空旧报告正文，避免标题(当前)与正文(旧方向)错位
+      REPORTSTATE[cur].text='';
+    }
+  }
   $('#root').innerHTML=
    '<div class="app-shell">'+
     topbar(p)+
