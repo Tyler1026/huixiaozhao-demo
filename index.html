@@ -903,6 +903,8 @@ function render(){
       // 当前方向无预埋报告(如自定义/新能源配套)：清空旧报告正文，避免标题(当前)与正文(旧方向)错位
       REPORTSTATE[cur].text='';
     }
+    // 后台从 RAG 库生成该方向的真实 AI 报告（预埋文本先占位，AI 就绪后替换）
+    ensureAiReport(p.topic, p.city);
     // 同根因连带修复：可立项招引方向卡片(actionItemsByTopic)历史脏缓存可能存了旧方向的招引方向，
     // 导致切换方向后仍显示旧方向的 TOP3(如香菇方向却显示燃料电池电堆)。此处按当前方向实时重解析覆盖。
     var _items=parseActionItems(_syncTxt||REPORTSTATE[cur].text||'');
@@ -1446,7 +1448,8 @@ var TOPIC_REPORTS={
   '\u667a\u6167\u5e94\u6025\u88c5\u5907\u8865\u94fe': '## 一、产业基础判断\n\n随州安全应急产业2023年总产值**502亿元**，其中移动应急装备324亿，是国家安全应急产业示范基地。博利特高空系留无人机消防车、齐星无人机指挥车已量产，金龙篷布全国占比30%。但感知层（机器人/传感器）与通信层（5G模块）本地几乎空白。\n\n## 二、产业链缺口分析\n\n- ✅ 已有：移动应急整车（博利特/齐星/江南）、篷布风机（金龙30%全国市场）\n- ❌ 缺失：应急机器人本体（依赖外采启灵，B=可跨区域）\n- ❌ 缺失：5G/卫星应急通信模块（本地零布局）\n- ⚠️ 薄弱：无人机本体（依赖外采迅北斗，未本地化）\n\n## 三、补链优先级TOP3\n\n| 排名 | 缺口节点 | 属性 | 综合优先级 |\n|---|---|---|---|\n| 1 | 应急机器人本体 | B=可跨区域 | 第一优先 |\n| 2 | 无人机本体 | B=可跨区域 | 第二优先 |\n| 3 | 5G应急通信模块 | B=可跨区域 | 第三优先 |\n\n## 四、目标企业画像\n\n**应急机器人（第一优先）**\n- 目标：消防/救援机器人制造企业，具备防爆/耐高温认证\n- 话术：随州是国家安全应急示范基地，博利特/齐星整车平台就是机器人最好的集成搭载场景。\n\n## 五、待确认事项\n\n⚠️ 国家示范基地配套用地指标与政策，需主管部门确认\n⚠️ 博利特/齐星对机器人本地化配套采购意向，需走访核实',
   '\u4ea7\u4e1a\u8f6c\u79fb\u627f\u63a5': '## 一、产业基础判断\n\n随州地处中部交通枢纽，用工/土地成本较沿海低30-40%，经开区/高新区厂房资源充裕。专用汽车产业链为承接汽车零部件配套提供了天然需求端，香菇产业为食品加工提供了原料优势。当前沿海制造业向中部转移窗口明确，随州承接条件具备。\n\n## 二、适合承接的产业方向\n\n- ✅ 优先：汽车零部件配套（就近供应程力/新楚风/齐星，需求稳定）\n- ✅ 优先：劳动密集型轻工制造（篷布/纺织/包装，人力成本优势显著）\n- ⚠️ 潜力：食品精深加工（香菇/农产品原料丰富，冷链待完善）\n- ⚠️ 培育：电子零部件组装（泰晶晶振生态初步形成）\n\n## 三、承接优先方向TOP3\n\n| 排名 | 方向 | 核心优势 | 综合评级 |\n|---|---|---|---|\n| 1 | 汽车零部件配套 | 专汽产业链需求牵引 | 第一优先 |\n| 2 | 劳动密集型制造 | 用工/土地成本优势 | 第二优先 |\n| 3 | 食品精深加工 | 农业原料资源丰富 | 第三优先 |\n\n## 四、目标企业画像\n\n**汽车零部件（第一优先）**\n- 目标：沿海汽车零部件企业，寻求降本转移，年产值5000万以上\n- 话术：随州16万辆/年专用车产量就是您稳定的本地订单，就近配套可节省15-20%物流成本。\n\n## 五、待确认事项\n\n⚠️ 各园区可承接厂房面积与租金优惠政策，需园区管委会确认\n⚠️ 转移企业税收减免与人才补贴，需招商局确认'
 };
-function getTopicReport(topic){
+/* 预埋报告（兜底）：仅当无 AI 生成报告时使用 */
+function getEmbeddedReport(topic){
   if(!topic) return null;
   var keys=Object.keys(TOPIC_REPORTS);
   for(var i=0;i<keys.length;i++){ if(topic===keys[i]) return TOPIC_REPORTS[keys[i]]; }
@@ -1455,6 +1458,64 @@ function getTopicReport(topic){
   if(/\u5e94\u6025|\u5b89\u5168/.test(topic)) return TOPIC_REPORTS['\u667a\u6167\u5e94\u6025\u88c5\u5907\u8865\u94fe'];
   if(/\u8f6c\u79fb|\u627f\u63a5/.test(topic)) return TOPIC_REPORTS['\u4ea7\u4e1a\u8f6c\u79fb\u627f\u63a5'];
   return null;
+}
+/* 报告文本获取：AI 生成为主（aiReportByTopic 缓存），预埋兜底。
+   这样默认/预埋方向也走真实 RAG+AI 生成的报告，AI 尚未就绪时先用预埋文本占位，
+   后台 ensureAiReport 生成完成后自动替换。 */
+function getTopicReport(topic){
+  if(!topic) return null;
+  if(cur && REPORTSTATE[cur] && REPORTSTATE[cur].aiReportByTopic){
+    var _ai=REPORTSTATE[cur].aiReportByTopic[topic];
+    if(_ai && _ai.length) return _ai;
+  }
+  return getEmbeddedReport(topic);
+}
+
+/* 后台从 RAG 库生成该方向的 AI 报告（非阻塞，静默）。
+   完成后写入 REPORTSTATE[cur].aiReportByTopic[topic] 并刷新报告区。
+   路演稳定性：AI 未就绪/失败时页面继续用预埋文本，用户无感知。 */
+var _aiReportGenerating = {};
+function ensureAiReport(topic, city){
+  if(!topic || !cur || !REPORTSTATE[cur]) return;
+  var key=cur+'::'+topic;
+  if(_aiReportGenerating[key]) return;
+  // 已有 AI 报告则不重复生成
+  if(REPORTSTATE[cur].aiReportByTopic && REPORTSTATE[cur].aiReportByTopic[topic]) return;
+  city = city || (P()&&P().city) || '随州';
+  var corpus, chunks;
+  try {
+    corpus=buildKBCorpus(city);
+    var q=(topic)+' 产业基础 产业链缺口 补链优先级 目标企业 待确认事项';
+    chunks=kbSearch(q, corpus, 8);
+  } catch(e){ return; }
+  // 无任何 RAG 片段则不生成（避免空跑；保留预埋兜底）
+  if(!chunks || !chunks.length) return;
+  _aiReportGenerating[key]=true;
+  var fullQuery='请基于'+city+'城市智库数据，针对「'+topic+'」方向，输出完整招商研判报告，严格按五章结构：\n一、产业基础判断（具体数字，来自知识片段）\n二、产业链缺口分析（逐环节标注✅已有/⚠️薄弱/❌缺失，标注本地化属性A必须本地化/B可跨区域/C优先本地化）\n三、补链优先级清单TOP5（表格格式：缺口节点|本地化属性|经济拉动★|招引可行性★|综合优先级）\n四、目标企业画像（每个TOP缺口：目标企业类型+规模+开口话术模板）\n五、待确认事项（⚠️标注每条需确认的专项资金/园区地块/政策口径）';
+  fetch('/api/kb-chat',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question:fullQuery, chunks:chunks, city:city, mode:'full', stream:false})
+  }).then(function(r){return r.json();}).then(function(resp){
+    var txt='';
+    if(resp && resp.choices && resp.choices[0] && resp.choices[0].message){
+      txt = resp.choices[0].message.content || '';
+    }
+    if(!txt || txt.length<80) return;  // 生成失败/过短：保留预埋兜底
+    if(!REPORTSTATE[cur].aiReportByTopic) REPORTSTATE[cur].aiReportByTopic={};
+    REPORTSTATE[cur].aiReportByTopic[topic]=txt;
+    // 当前正显示该方向：同步替换正文
+    var _p=P();
+    if(_p && _p.topic===topic){
+      REPORTSTATE[cur].text=txt;
+      REPORTSTATE[cur].topic=topic;
+    }
+    persist();
+    if(view==='report') render();
+  }).catch(function(e){
+    console.warn('ensureAiReport failed:', e && e.message);
+  }).finally(function(){
+    _aiReportGenerating[key]=false;
+  });
 }
 var SZ_REPORT_TEXT='## 一、产业基础判断\n\n随州是中国专用汽车之都。2025年专用汽车与应急产业总产值**703亿元**（+12.1%），年产专用车约**16万辆**，全国占比>10%，专汽出口+71%全省第一。安全应急产业2023年总产值502亿，其中移动应急装备324亿。香菇全产业链2024年产值超500亿，区域品牌价值205.8亿，连续3年全国食药用菌第一。\n\n本地配套率仅**41%**，远低于山东梁山65%和十堰75%+。链主企业：程力（整车）、新楚风（氢能整车，49T氢重卡已量产，百公里氢耗7.1kg续航1000km）、齐星（整车/无人机指挥车）、江南专汽（泡沫消防车600-1000万/台）、品源（"菇的辣克"2024签1亿美元+2025续签3亿美元）。\n\n## 二、产业链缺口分析\n\n### 氢能专用车方向\n- ✅ 已有：整车/改装（程力/新楚风/齐星）、车身驾驶室（齐星）、车规级晶振（泰晶AEC-Q200）、电解液（犇星）\n- ❌ 缺失：燃料电池电堆（占整车成本53%，A=必须本地化，全部外购）\n- ❌ 缺失：高压储氢瓶阀与管路（占整车成本14%，A=必须本地化）\n- ⚠️ 薄弱：底盘/动力总成（占整车成本50%，外购十堰潍柴/法士特/汉德，C=优先本地化）\n\n### 智慧应急装备方向\n- ✅ 已有：整机平台（博利特高空系留无人机消防车、齐星6架无人机指挥车）、软体材料（金龙篷布全国30%）\n- ❌ 缺失：应急机器人本体（依赖启灵外采，B=可跨区域）\n- ❌ 缺失：5G/卫星应急通信模块（本地零布局，B=可跨区域）\n\n### 香菇精深加工方向\n- ✅ 已有：初加工出口（品源辣酱，年产70万吨）、多糖提取（裕国药业）、多肽提取（肽源）\n- ❌ 缺失：香菇多糖/多肽规模化提取平台（仅2家布局，A=必须本地化）\n- ❌ 缺失：菌种自主研发（国外7925/7917品种垄断，A=必须本地化）\n\n## 三、补链优先级清单TOP5\n\n| 排名 | 缺口节点 | 本地化属性 | 经济拉动★ | 招引可行性★ | 综合优先级 |\n|---|---|---|---|---|---|\n| 1 | 燃料电池电堆 | A=必须本地化 | ★★★★★ | ★★★★ | 第一优先 |\n| 2 | 高压储氢瓶阀与管路 | A=必须本地化 | ★★★★ | ★★★★ | 第二优先 |\n| 3 | 应急机器人本体 | B=可跨区域 | ★★★★ | ★★★ | 第三优先 |\n| 4 | 香菇多糖/多肽提取 | A=必须本地化 | ★★★★ | ★★★★ | 第四优先 |\n| 5 | 菌种自主研发基地 | A=必须本地化 | ★★★ | ★★★ | 第五优先 |\n\n## 四、目标企业画像\n\n**燃料电池电堆（第一优先）**\n- 目标类型：商用车功率段燃料电池系统集成商或电堆制造企业，年产能≥3000台，掌握金属双极板或膜电极核心工艺\n- 开口话术：「随州新楚风49T氢重卡已量产，年产能16万辆整车基地就是您进入商用车场景最快的验证通道，落地即锁定程力/新楚风的稳定采购订单。」\n\n**高压储氢瓶阀（第二优先）**\n- 目标类型：35MPa/70MPa高压储氢瓶阀、管路及集成模块制造企业\n- 开口话术：「随州16万辆/年专用车产量是稳定的储氢系统需求方，与电堆企业同步落地可降低整体物流成本。」\n\n**香菇多糖/多肽提取（第四优先）**\n- 目标类型：香菇多糖/多肽功能成分提取与功能性食品企业，寻求中部原料产地合作\n- 开口话术：「随州年产香菇约70万吨，全球白花菇约50%，就近落地可将原料采购成本降低40%+，与裕国/肽源形成产能协作。」\n\n## 五、待确认事项\n\n⚠️ 湖北省氢能专项补贴额度与首选承接园区（高新区/曾都经开区/专汽产业园）需向领导确认\n⚠️ 程力/新楚风的首批电堆采购意向与数量，需走访链主企业核实\n⚠️ 菌种自主研发基地的用地指标与洁净厂房条件，需园区管委会确认\n⚠️ 随县香菇产业园精深加工区的GMP洁净厂房现状，需现场核实';
 function generateKbConclusions(city){
@@ -3828,6 +3889,8 @@ function selectTopic(val, isCustom){
       var _nt=getTopicReport(p.topic);
       if(_nt){ _rs.text=_nt; }
       _rs.topic=p.topic;
+      // 后台从 RAG 生成该方向真实 AI 报告（预埋占位，就绪后替换）
+      ensureAiReport(p.topic, p.city);
       setReportAreaHtml(_ra,reportHtml(p));
       var _cmEl=document.getElementById('chainMapBlock');
       if(_cmEl){ _cmEl.innerHTML=chainMapHtml(p); }
