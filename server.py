@@ -128,6 +128,8 @@ MAX_TOKENS_CHAT  = 400
 # research 模式需返回结构化 JSON（对标企业3~5家+数量+来源），且 v4-pro 默认 thinking
 # 会消耗 token，故单独放大并预留思考空间
 MAX_TOKENS_RESEARCH = 6000
+# 整链研判：一次返回整条链所有环节（6~8个），需更大 token 预算
+MAX_TOKENS_CHAIN = 12000
 # 云端：单端口读 $PORT（Railway 注入）；本地默认 5050。政府端/管理端同端口，ops 走 /ops 路由
 PORT_GOV    = int(os.environ.get("PORT", "5050"))
 PORT_OPS    = 5051
@@ -245,6 +247,73 @@ SYSTEM_RESEARCH = """你是慧小招产业调研员，负责针对某个产业�
 3. local_leaders 只列本地（该城市/下辖区县）真实存在的企业；查不到本地企业就返回空数组 []，禁止拿外地企业冒充。
 4. benchmarks 只列外地（非本地）真实对标企业，每家有 source；查不到就不列。
 5. 企业必须真实存在，禁止虚构企业名；宁可少列，不可编造。"""
+
+SYSTEM_RESEARCH_CHAIN = """你是慧小招产业调研员，负责针对某城市的一整条产业链做完整调研。对给定链上的每个「环节」，分别给出：①本地强弱判定（优势/培育/缺口）②本地代表企业 ③外地对标企业。
+
+## 输出格式（严格输出 JSON，不要 markdown 代码块、不要任何 JSON 之外的文字）
+{
+  "segments": [
+    {
+      "segment": "环节名",
+      "level": "strong|mid|weak",
+      "level_basis": "判定依据（一句话，必须标注来源）",
+      "local_leaders": [
+        {"name": "本地代表企业名", "role": "它在本地该环节中的角色", "source": "信息来源"}
+      ],
+      "benchmarks": [
+        {"name": "外地对标企业名", "region": "总部城市", "kind": "主营业务(简短)",
+         "match": "为何匹配该环节", "signal": "扩张/迁移信号(无则空)", "source": "信息来源"}
+      ]
+    }
+  ],
+  "caveats": ["需人工核实的事项"]
+}
+
+## level 判定标准（必须基于可查证事实，不能拍脑袋）
+- strong（优势）：本地已有全国知名龙头/产业集群，或产量/规模居全国前列（须有权威来源佐证）
+- mid（培育）：本地已有一定基础，但规模/实力不足，需培育或增强
+- weak（缺口）：本地该环节缺失、或严重依赖外购（须有"缺失/外购"的可查证事实）
+
+## 铁律（违反即为重大错误）
+1. 每个环节的 level 必须有 level_basis 依据 + 来源；拿不准就判 mid 并在 caveats 标"待核实"。
+2. local_leaders 只列本地（该城市/下辖区县）真实存在的企业；查不到本地企业就返回空数组 []，禁止拿外地企业冒充。
+3. benchmarks 只列外地（非本地）真实对标企业，每家有 source；查不到就不列。
+4. 企业必须真实存在，禁止虚构企业名；宁可少列，不可编造。
+5. 环节清单必须与用户给出的完全一致，一个不多一个不少，顺序保持。"""
+
+SYSTEM_RESEARCH_CHAIN = """你是慧小招产业调研员，负责对某城市一条完整产业链的「所有环节」一次性做研判。每个环节都要给出：强弱判定（优势/培育/缺口）+ 判定依据 + 本地代表企业 + 外地对标企业。
+
+## 输出格式（严格输出 JSON，不要 markdown 代码块、不要任何 JSON 之外的文字）
+{
+  "chain": "产业链名",
+  "segments": [
+    {
+      "name": "环节名",
+      "level": "strong|mid|weak",
+      "level_basis": "判定依据（一句话，必须标注来源与年份）",
+      "local_leaders": [{"name": "本地代表企业名", "role": "角色", "source": "来源"}],
+      "benchmarks": [{"name": "外地对标企业名", "region": "总部城市", "kind": "主营业务",
+                      "match": "为何匹配", "signal": "扩张/迁移信号(无则空)", "source": "来源"}],
+      "local_count": {"value": "本地企业数或null", "source": "来源或null"},
+      "national_count": {"value": "全国企业数或null", "source": "来源或null"}
+    }
+  ],
+  "confidence": "high|medium|low",
+  "caveats": ["需人工核实的事项"]
+}
+
+## level 判定标准（必须基于可查证事实，不能拍脑袋）
+- strong（优势）：本地已有全国知名龙头/产业集群，或产量/规模居全国前列（须有权威来源佐证）
+- mid（培育）：本地已有一定基础，但规模/实力不足，需培育或增强
+- weak（缺口）：本地该环节缺失、或严重依赖外购（须有"缺失/外购"的可查证事实）
+
+## 铁律（违反即为重大错误）
+1. 每个环节的 level 判定必须有 level_basis 依据 + 来源；拿不准就判 mid 并在 caveats 标"待核实"。
+2. 每一个数字（企业数量）都必须有可靠来源；拿不到就 value=null，禁止编造、禁止给一个看似合理的估算值。
+3. local_leaders 只列本地（该城市/下辖区县）真实存在的企业；查不到就返回空数组 []，禁止拿外地企业冒充。
+4. benchmarks 只列外地（非本地）真实对标企业，每家有 source；查不到就不列。
+5. 企业必须真实存在，禁止虚构企业名；宁可少列，不可编造。
+6. 环节名必须与用户给出的环节清单完全一致，不要增删改。"""
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -399,7 +468,7 @@ class Handler(BaseHTTPRequestHandler):
         mode   = body.get("mode", "full")
         history = body.get("history", [])  # 多轮上下文：[{role:'user'|'assistant', content:'...'}]
 
-        if mode not in ("chat", "draft", "full", "suggest", "research"):
+        if mode not in ("chat", "draft", "full", "suggest", "research", "chain"):
             mode = "full"
 
         if not q:
@@ -441,6 +510,9 @@ class Handler(BaseHTTPRequestHandler):
         elif mode == "research":
             system_prompt = SYSTEM_RESEARCH
             max_tokens    = MAX_TOKENS_RESEARCH
+        elif mode == "chain":
+            system_prompt = SYSTEM_RESEARCH_CHAIN
+            max_tokens    = MAX_TOKENS_CHAIN
         else:
             system_prompt = SYSTEM_FULL
             max_tokens    = MAX_TOKENS_FULL
@@ -463,9 +535,9 @@ class Handler(BaseHTTPRequestHandler):
                 {"role": "user",   "content": f"城市：{city}\n\n知识片段：\n{ctx}\n\n问题：{q}"}
             ]
         }
-        # research 模式：关闭 thinking（查资料返回 JSON，不需深度推理，避免 CoT 耗尽
+        # research / chain 模式：关闭 thinking（查资料返回 JSON，不需深度推理，避免 CoT 耗尽
         # max_tokens 导致 content 为空、也避免响应慢）
-        if mode == "research":
+        if mode in ("research", "chain"):
             payload_dict["thinking"] = {"type": "disabled"}
         payload = json.dumps(payload_dict).encode()
 
