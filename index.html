@@ -3899,16 +3899,25 @@ function selectTopic(val, isCustom){
 // 待确认事项状态 {projKey: [{text, status:'pending'|'confirmed'|'edited', editedText, files:[]}]}
 var PENDING_CONFIRMS = PENDING_CONFIRMS || {};
 
-/* 解析草稿文本，提取⚠️条目 */
+/* 解析草稿文本，提取⚠️条目（仅在「待确认事项」章节内提取，排除标题行与缺口分析标记） */
 function parsePendingItems(text){
   var items = [];
   var lines = text.split('\n');
+  var inPending = false;
   lines.forEach(function(line){
     var clean = line.replace(/^[\s\-•*]+/, '').trim();
     if(!clean) return;
-    // 含⚠️的行
-    if(clean.indexOf('⚠️') >= 0 || clean.indexOf('⚠') >= 0){
-      var t = clean.replace('⚠️','').replace('⚠','').replace(/^[\s:：]+/,'').trim();
+    // 章节标题行：一、/① 开头，或 ## / ### 开头
+    var isHead = /^([一二三四五六七八九十]+[、．.]|[①②③④⑤⑥⑦⑧⑨⑩]|#{1,3}\s)/.test(clean);
+    if(isHead){
+      // 进入「待确认事项」章节（标题行本身不是待确认条目，故 return）
+      inPending = /待确认事项/.test(clean);
+      return;
+    }
+    if(!inPending) return;
+    // 章节内仅提取 ⚠️ 开头的行（排除「⚠️薄弱/缺失」这类缺口分析标记）
+    if(clean.indexOf('⚠️') === 0 || clean.indexOf('⚠') === 0){
+      var t = clean.replace(/^⚠️?\s*[:：]?/,'').replace(/^⚠\s*[:：]?/,'').trim();
       if(t.length > 5) items.push({text: t, status:'pending', editedText:'', files:[]});
     }
   });
@@ -4254,6 +4263,9 @@ function ciAttachFiles(files, projKey, idx){
 /* 立项卡片 */
 /* 恢复确认面板（如果有待确认事项） */
 function restoreConfirmPanel(){
+  // 完整报告（phase=2 / finalized）不显示待确认面板：待确认事项已是报告正文第五章的一部分
+  var _rs = cur && REPORTSTATE[cur];
+  if(_rs && (_rs.phase===2 || _rs.finalized)) return '';
   // 若当前方向待确认事项为空，按方向缓存/报告文本恢复
   if(cur && REPORTSTATE[cur] && (!PENDING_CONFIRMS[cur] || !PENDING_CONFIRMS[cur].length)){
     var _p=P(); var _topic=_p?_p.topic:'';
