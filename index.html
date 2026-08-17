@@ -4697,13 +4697,15 @@ function importToProject(gap, city, topic, btnEl){
   persist();
   // 更新按钮为「已提交·可撤回」状态
   if(btnEl){
+    // 先捕获原按钮底色（color 在本函数作用域并不存在，此前撤回回调引用它会抛 ReferenceError 导致按钮点不动）
+    var _origColor=btnEl.style.background||'#1a56db';
     btnEl.textContent='↩ 撤回提交';
     btnEl.style.background='#fff';
     btnEl.style.color='#dc2626';
     btnEl.style.border='1.5px solid #fca5a5';
     btnEl.style.cursor='pointer';
     btnEl.setAttribute('data-projkey', key);
-    btnEl.onclick=function(){ withdrawDemand(key, btnEl, gap, city, topic, color); };
+    btnEl.onclick=function(){ withdrawDemand(key, btnEl, gap, city, topic, _origColor); };
   }
   toast('✓ 已提交招商需求（可撤回）');
 }
