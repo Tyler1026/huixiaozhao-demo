@@ -8204,9 +8204,14 @@ function kbIncrementalAnalysis(){
       reader.read().then(function(d){
         if(d.done){
           var elapsed=Date.now()-t0;
-          // 提取纯文本行作为候选新要点
-          var newFacts=accText.split('\n').map(function(l){return l.trim();}).filter(function(l){
-            return l.length>8 && !/^[\*\-\s]*$/.test(l);
+          // AI 判定与现有数据一致/无新增：不展示“新要点”面板，避免把结论句本身误当新要点
+          var _noNew=/与现有数据一致|无需更新|未发现新增|没有新增|无新增|未发现新的|无新的信息|均已(收录|覆盖|包含)/.test(accText);
+          // 提取纯文本行作为候选新要点，并过滤掉状态/结论类句子
+          var newFacts=_noNew?[]:accText.split('\n').map(function(l){return l.trim();}).filter(function(l){
+            if(l.length<=8 || /^[\*\-\s]*$/.test(l)) return false;
+            // 过滤 AI 的状态描述句（非真正的新增信息）
+            if(/与现有数据一致|无需更新|未发现新增|没有新增|无新增|未发现新的|无新的信息|以下是|新发现如下|新增(信息|要点)如下|经对比|综上/.test(l)) return false;
+            return true;
           });
           if(newFacts.length>0){
             var safeJson=JSON.stringify(newFacts).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
@@ -8233,6 +8238,10 @@ function kbIncrementalAnalysis(){
               '<span style="font-size:11px;color:#64748b">标记为⚠️待确认，原有内容不变</span>'+
               '</div>'+
               '</div>');
+          } else {
+            // 无新增：明确提示，不展示追加面板
+            bubble.insertAdjacentHTML('beforeend',
+              '<div style="margin-top:12px;padding:10px 14px;background:#f0fdf4;border-radius:10px;border:1px solid #bbf7d0;font-size:12.5px;color:#059669;font-weight:600">✓ 该材料未发现需要补充的新信息，智库结论无需更新</div>');
           }
           bubble.insertAdjacentHTML('beforeend','<div style="font-size:10.5px;color:#b0bac8;margin-top:6px">仅基于新材料 · '+elapsed+'ms · '+newChunks.length+' 个片段</div>');
           var _ib=document.querySelector('#kbIngestActions button:first-child');
