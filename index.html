@@ -2044,6 +2044,13 @@ function topicScore(topic){
 function isLocked(v){
   if(['report','home','docking'].indexOf(v)<0) return false;
   if(!cur) return true;
+  var p=P();
+  // 随州种子数据始终解锁
+  if(p && p.city && p.city.indexOf('随州')>=0) return false;
+  // 关键修复：无真实数据(仅AI初判占位)时一律锁定，忽略任何历史/脏的 KB_UNLOCKED 解锁标记。
+  // 杜绝"旧代码把新城市写成解锁并持久化，刷新后仍解锁"的问题。
+  if(!hasRealKbData(p)) return true;
+  // 有真实数据后：尊重手动强制解锁，或完成度达 80% 自动解锁
   if(KB_UNLOCKED[cur]&&KB_UNLOCKED[cur][v]) return false;
   return kbReadiness().score<80;
 }
@@ -5985,6 +5992,15 @@ function ensureAiTopics(){
 
 /* 正则兜底方向推荐（AI 未就绪时用）：按关键词匹配 RAG 文本 */
 function generateTopicsFromKb(p){
+  if(!p) return [];
+  // 关键修复：数据门槛置于最前，忽略历史脏的 aiTopics 缓存。
+  // 无真实数据(仅AI初判占位)时不产出任何方向，避免"零上传却凭空出方向"（含旧数据残留的 aiTopics）。
+  // 用户手动添加的 customTopics 属于显式操作，始终保留。
+  if(!hasRealKbData(p)){
+    return (p.customTopics||[]).map(function(ct){
+      return {label:ct, icon:'\ud83d\udccc', type:'custom', desc:'\u81ea\u5b9a\u4e49\u65b9\u5411'};
+    });
+  }
   // AI 生成的方向优先（RAG 驱动，单一事实源）
   if(p && p.aiTopics && p.aiTopics.list && p.aiTopics.list.length){
     var aiList=p.aiTopics.list.slice();
@@ -5997,8 +6013,6 @@ function generateTopicsFromKb(p){
     return aiList;
   }
   if(!p||!p.kb) return [];
-  // 无真实数据(仅AI初判占位)时不产出任何方向，避免"零上传却凭空出方向"
-  if(!hasRealKbData(p)) return [];
   var allKnown=[];
   p.kb.forEach(function(k){ (k.known||[]).forEach(function(x){ allKnown.push(x); }); });
   var patterns=[
