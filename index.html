@@ -8063,6 +8063,16 @@ function kbVerifyMaterial(){
             '">'+badgeText+
             '<span style="font-weight:400;color:#94a3b8;margin-left:8px">· 校验耗时 '+elapsed+'ms · 对比 '+topicKnown.length+' 条现有结论</span>'+
             '</div>');
+          // 发现高危矛盾：提供「确认数据·是否覆盖原有结论」入口
+          if(hasHighRisk){
+            window._lastVerifyText=accText;
+            window._lastVerifyKbIdx=(kbIdx!=null?kbIdx:0);
+            bubble.insertAdjacentHTML('beforeend',
+              '<div style="margin-top:10px" data-verify-overwrite="1">'+
+              '<button onclick="kbConfirmOverwrite()" style="padding:8px 16px;background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer">⚑ 确认数据 · 是否覆盖原有结论</button>'+
+              '<div style="font-size:11px;color:#94a3b8;margin-top:6px">将逐条列出冲突项，由你选择“保留原数据”或“用新材料覆盖”</div>'+
+              '</div>');
+          }
           // 兜底：bodyDiv 为空但 accText 有内容时直接渲染纯文本
           if(accText && !bodyDiv.innerHTML.trim()){
             bodyDiv.innerHTML='<p style="margin:0;line-height:1.75;white-space:pre-wrap">'+accText.replace(/</g,'&lt;')+'</p>';
@@ -8092,6 +8102,42 @@ function kbVerifyMaterial(){
     thinking.remove(); c.appendChild(ansNode);
     bodyDiv.innerHTML='<span style="color:#ef4444">连接失败：'+err.message+'</span>';
   });
+}
+
+/* ── 校验发现矛盾后：解析冲突项并弹出「是否覆盖原有数据」确认面板 ── */
+function kbConfirmOverwrite(){
+  var txt=window._lastVerifyText||'';
+  var kbIdx=(window._lastVerifyKbIdx!=null?window._lastVerifyKbIdx:0);
+  var p=P(); if(!p||!p.kb||!p.kb[kbIdx]){ toast('未找到对应智库主题'); return; }
+  var k=p.kb[kbIdx];
+
+  // 从 AI 校验文本解析冲突对：优先匹配「文件说XXX，智库记录是YYY」句式
+  var conflicts=[];
+  var re=/文件[说称记录为是]*[:：]?\s*([^，,。；;]+)[，,].{0,6}智库[记录数据结论]*[是为][:：]?\s*([^，,。；;不]+)/g;
+  var m;
+  while((m=re.exec(txt))!==null){
+    var fileVal=m[1].replace(/\*\*/g,'').trim();
+    var kbVal=m[2].replace(/\*\*/g,'').trim();
+    if(!fileVal||!kbVal) continue;
+    // 在现有 known 里定位与 kbVal 最接近的条目
+    var idx=-1;
+    (k.known||[]).forEach(function(existing,ei){
+      var ec=existing.replace(/^[\u2705\u26a0\ufe0f\s]+/,'');
+      if(idx<0 && (ec.indexOf(kbVal)>=0 || (kbVal.length>=3 && ec.indexOf(kbVal.substring(0,Math.min(6,kbVal.length)))>=0))) idx=ei;
+    });
+    if(idx<0) continue;  // 找不到对应现有结论则跳过（不新增，只做覆盖确认）
+    var oldClean=k.known[idx].replace(/^[\u2705\u26a0\ufe0f\s]+/,'');
+    // 用新值替换旧值中的数字/关键片段，生成“覆盖后”的完整结论文本
+    var newClean=oldClean.indexOf(kbVal)>=0 ? oldClean.replace(kbVal, fileVal) : (oldClean+'（新材料：'+fileVal+'）');
+    conflicts.push({idx:idx, old:oldClean, new:newClean});
+  }
+
+  if(!conflicts.length){
+    toast('未能自动定位到冲突条目，请在对应主题卡内手动核实');
+    return;
+  }
+  window._pendingConflicts={kbIdx:kbIdx, conflicts:conflicts};
+  showConflictPanel(kbIdx, conflicts);
 }
 
 /* ── 增量分析：只对本次上传的新材料生成补充结论，原有结论完全不变 ── */
