@@ -822,7 +822,7 @@ function render(){
             var _ac=AUTH.city||'';
             var _mine=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k]&&PROJECTS[k].city===_ac;});
             if(_mine.length){ if(!cur || _mine.indexOf(cur)<0){ cur=_mine[0]; } view='knowledge'; }
-            else if(_ac){ cur=autoProvisionCity(_ac); view='knowledge'; KB_UNLOCKED[cur]=KB_UNLOCKED[cur]||{report:true,home:true,docking:true}; persist(); }
+            else if(_ac){ cur=autoProvisionCity(_ac); view='knowledge'; /* 新城市不预解锁：产业分析/招商对接保持上锁，待智库完成度达80%或手动强制解锁 */ persist(); }
             else { cur=null; view='setup'; }
           }
         } else {
@@ -5898,9 +5898,25 @@ function balancedIndustryChunks(city, corpus){
 /* AI 驱动的招商方向推荐：读 RAG 库让 DeepSeek 归纳该城市 3-5 个方向。
    结果缓存到 PROJECTS[cur].aiTopics（含 ts），完成后刷新方向卡片。
    AI 未就绪/失败时页面用正则兜底(generateTopicsFromKb)，路演无感知。 */
+/* 是否已有可支撑方向生成的真实数据：随州种子数据 / 已上传材料 / 已确认结论。
+   新城市仅有 generateKbConclusions 的"AI初判"占位文本时，视为无真实数据——
+   此时不生成任何研究方向，避免"零上传却凭空出方向"。 */
+function hasRealKbData(p){
+  p=p||P(); if(!p) return false;
+  if(p.city && p.city.indexOf('随州')>=0) return true;               // 随州真实种子
+  if(cur && (UPLOADS[cur]||[]).length>0) return true;                 // 已上传材料
+  if(cur && (KB_FILE_CHUNKS[cur]||[]).length>0) return true;          // 已解析文件片段
+  if(cur && KB_CONFIRMS[cur]){                                        // 已确认过任一结论
+    var kc=KB_CONFIRMS[cur];
+    for(var ki in kc){ if(kc[ki]){ for(var xi in kc[ki]){ if(kc[ki][xi]) return true; } } }
+  }
+  return false;
+}
+
 var _aiTopicsGenerating = {};
 function ensureAiTopics(){
   var p=P(); if(!p||!cur) return;
+  if(!hasRealKbData(p)) return;   // 无真实数据不生成方向
   var city=p.city||'随州';
   var key=cur;
   if(_aiTopicsGenerating[key]) return;
@@ -5965,6 +5981,8 @@ function generateTopicsFromKb(p){
     return aiList;
   }
   if(!p||!p.kb) return [];
+  // 无真实数据(仅AI初判占位)时不产出任何方向，避免"零上传却凭空出方向"
+  if(!hasRealKbData(p)) return [];
   var allKnown=[];
   p.kb.forEach(function(k){ (k.known||[]).forEach(function(x){ allKnown.push(x); }); });
   var patterns=[
@@ -6035,6 +6053,15 @@ function homePage(p){
   var topicCards=recommendedTopics.map(function(t){
     return topicCardHtml(t, p.topic===t.label);
   }).join('');
+  // 无真实数据(未上传材料)时不显示凭空方向，改为引导先上传/确认智库
+  if(!recommendedTopics.length){
+    topicCards='<div style="flex:1;padding:22px 18px;background:#f8faff;border:1.5px dashed #cbd5e1;border-radius:14px;text-align:center">'+
+      '<div style="font-size:22px;margin-bottom:8px">📥</div>'+
+      '<div style="font-size:13px;font-weight:700;color:#0b183b;margin-bottom:4px">暂无产业分析方向</div>'+
+      '<div style="font-size:12px;color:#8492a6;line-height:1.6">请先到「城市智库」上传政府/产业材料并确认结论，<br>系统将据此生成该城市的招商分析方向</div>'+
+      '<button onclick="go(\'knowledge\')" style="margin-top:12px;padding:8px 18px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:12.5px;font-weight:650;cursor:pointer">去完善城市智库 →</button>'+
+    '</div>';
+  }
 
   var topicSelector=
     '<div style="padding:0 0 20px">'+
