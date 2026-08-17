@@ -6207,8 +6207,19 @@ function clearMemChat(){
   renderMemTabs(); renderMemBody();
   toast('问答记忆已清空');
 }
+/* 招商问答：一键回到顶部 */
+function kbScrollTop(){
+  var sc=document.getElementById('kbScroll');
+  if(sc) sc.scrollTo({top:0,behavior:'smooth'});
+}
+/* 滚动超过一屏时显示回到顶部按钮 */
+function kbToggleTopBtn(){
+  var sc=document.getElementById('kbScroll'), btn=document.getElementById('kbTopBtn');
+  if(!sc||!btn) return;
+  btn.style.display = sc.scrollTop>300 ? 'flex' : 'none';
+}
 function kbPage(p){
-  return '<div class="page">'+
+  return '<div class="page" style="position:relative">'+
     (function(){
       var r=kbReadiness();
       return '<div class="page-header"><div>'+
@@ -6229,7 +6240,7 @@ function kbPage(p){
         '</div>';
     })()+
 
-    '<div class="knowledge-scroll"><div class="topic-grid">'+
+    '<div class="knowledge-scroll" id="kbScroll" onscroll="kbToggleTopBtn()"><div class="topic-grid">'+
       p.kb.map(function(k,i){
         var tagColor=k.known&&k.known.length?
           (k.tag.indexOf('待')>=0?'color:#c08a2a;background:#fff8e6':'color:#006d70;background:#e4f5f3'):
@@ -6267,7 +6278,13 @@ function kbPage(p){
       '<ul id="kbSuggestList" style="margin:6px 0 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px">'+
       '<li style="font-size:12.5px;color:#9aa5b5">· 正在生成建议问题…</li>'+
       '</ul></div></div>'+
-    '</div></div></div>'+composer()+'</div>';
+    '</div></div></div>'+composer()+
+    '<button id="kbTopBtn" onclick="kbScrollTop()" title="回到顶部" '+
+      'style="position:absolute;right:26px;bottom:190px;z-index:30;width:44px;height:44px;'+
+      'display:none;align-items:center;justify-content:center;border:1px solid #d6e0f0;'+
+      'border-radius:50%;background:#fff;color:#1a56db;font-size:20px;cursor:pointer;'+
+      'box-shadow:0 4px 14px rgba(11,41,82,.16);transition:opacity .2s">↑</button>'+
+    '</div>';
 }
 function settingsPage(p){
   return '<div class="page">'+
