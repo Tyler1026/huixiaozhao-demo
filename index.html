@@ -7208,33 +7208,8 @@ function generateKBAnswer(query, chunks, city){
 /* ── KB RAG: 流式渲染 + 追问按钮 ── */
 var KB_API = '/api/kb-chat';  // 同源相对路径：线上走 Railway 后端，本地走 localhost:5050
 
-function kbAnswerRender(container, query, chunks, city){
-  // 1. 思考气泡
-  var thinking = document.createElement('div');
-  thinking.className = 'message';
-  thinking.innerHTML = '<img src="'+aiAvatar()+'">'+
-    '<div class="message-bubble" style="display:flex;align-items:center;gap:8px;color:#9aa5b5;font-size:13px">'+
-    '<span class="kb-thinking-dot"></span>正在调用 AI 分析…</div>';
-  container.appendChild(thinking);
-  container.scrollTop = container.scrollHeight;
-
-  // 2. 创建回答气泡（流式填充）
-  var ansNode = document.createElement('div');
-  ansNode.className = 'message';
-  ansNode.style.display = 'none';
-  var bodyDiv = document.createElement('div');
-  bodyDiv.className = 'kb-stream-body';
-  ansNode.innerHTML = '<img src="'+aiAvatar()+'">';
-  var bubble = document.createElement('div');
-  bubble.className = 'message-bubble';
-  bubble.appendChild(bodyDiv);
-  ansNode.appendChild(bubble);
-  container.appendChild(ansNode);
-
-  var accText = '';
-  var t0 = Date.now();
-
-  function renderMarkdown(md){
+/* Markdown 轻量渲染（顶层函数：kbAnswerRender/kbVerifyMaterial/kbIncrementalAnalysis 共用；此前为 kbAnswerRender 内部函数，另两处调用会抛 ReferenceError） */
+function renderMarkdown(md){
     // 简单 markdown: **bold**, - list, 表格转列表, \n段落
     var lines=md.split('\n'), out=[], tbl=[];
     function flushTbl(){
@@ -7263,7 +7238,33 @@ function kbAnswerRender(container, query, chunks, city){
       .replace(/(<li[\s\S]*?<\/li>)+/g,'<ul style="margin:6px 0;padding:0 0 0 18px;list-style:disc">$&</ul>')
       .replace(/\n{2,}/g,'</p><p style="margin:8px 0">')
       .replace(/\n/g,'<br>');
-  }
+}
+function kbAnswerRender(container, query, chunks, city){
+  // 1. 思考气泡
+  var thinking = document.createElement('div');
+  thinking.className = 'message';
+  thinking.innerHTML = '<img src="'+aiAvatar()+'">'+
+    '<div class="message-bubble" style="display:flex;align-items:center;gap:8px;color:#9aa5b5;font-size:13px">'+
+    '<span class="kb-thinking-dot"></span>正在调用 AI 分析…</div>';
+  container.appendChild(thinking);
+  container.scrollTop = container.scrollHeight;
+
+  // 2. 创建回答气泡（流式填充）
+  var ansNode = document.createElement('div');
+  ansNode.className = 'message';
+  ansNode.style.display = 'none';
+  var bodyDiv = document.createElement('div');
+  bodyDiv.className = 'kb-stream-body';
+  ansNode.innerHTML = '<img src="'+aiAvatar()+'">';
+  var bubble = document.createElement('div');
+  bubble.className = 'message-bubble';
+  bubble.appendChild(bodyDiv);
+  ansNode.appendChild(bubble);
+  container.appendChild(ansNode);
+
+  var accText = '';
+  var t0 = Date.now();
+
 
   fetch(KB_API, {
     method: 'POST',
