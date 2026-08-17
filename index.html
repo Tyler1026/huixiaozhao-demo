@@ -6689,13 +6689,33 @@ function kbGenSuggestions(){
     fill(qs);
   }).catch(function(){ fill(null); });
 }
+// 上传后三个分析按钮的 HTML（供首次追加与 replay 复用，保持样式一致）
+function ingestActionsHtml(){
+  return '<div id="kbIngestActions" style="margin:10px 0 4px 60px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
+    '<span style="font-size:12px;color:#8492a6;margin-right:2px">选择分析方式：</span>'+
+    '<button onclick="kbIncrementalAnalysis()" style="padding:7px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:20px;font-size:12.5px;font-weight:600;cursor:pointer">📄 仅分析新材料（推荐）</button>'+
+    '<button onclick="kbRAGQueryFull()" style="padding:7px 14px;background:#f5f7fb;color:#334155;border:1.5px solid #e2e8f0;border-radius:20px;font-size:12.5px;cursor:pointer">🔄 结合全库重新分析</button>'+
+    '<button data-action="verify" onclick="kbVerifyMaterial()" style="padding:7px 14px;background:#fff7ed;color:#c2410c;border:1.5px solid #fed7aa;border-radius:20px;font-size:12.5px;cursor:pointer">🔍 校验材料可信度</button>'+
+  '</div>';
+}
+// 从持久化标记恢复上传上下文，让三个按钮点击后能拿到本批 chunks
+function restoreIngestCtx(m){
+  if(!m||!cur) return;
+  var arr=KB_FILE_CHUNKS[cur]||[];
+  window._lastIngestChunks = m.n ? arr.slice(-m.n) : [];
+  window._lastIngestTopicLabel = m.label||'城市智库';
+  window._lastIngestKbIdx = (m.kbIdx===undefined||m.kbIdx===null?null:m.kbIdx);
+}
 // 把已存的历史对话回放进 #kbConv（在 render 重建容器后调用）
 function kbChatReplay(){
   if(document.getElementById('kbSuggestList')) kbGenSuggestions();
   var c=document.getElementById('kbConv');
   if(!c||!cur||!KB_CHAT[cur]||!KB_CHAT[cur].length) return;
   var frag='';
+  var _lastActions=null;
   KB_CHAT[cur].forEach(function(m){
+    // 上传后的三个分析按钮：重建并恢复本批上下文（否则 render/刷新/跨标签后按钮会丢）
+    if(m.role==='ingest-actions'){ frag+=ingestActionsHtml(); _lastActions=m; return; }
     // 兼容旧格式 {role,html}，新格式 {role,text,ts}
     if(!m.text && m.html){ frag+=m.html; return; }
     var content=m.text||'';
@@ -6709,6 +6729,8 @@ function kbChatReplay(){
 
   });
   c.insertAdjacentHTML('beforeend', frag);
+  // 恢复最近一批上传的分析上下文，使重建的按钮点击后仍能拿到 chunks
+  if(_lastActions) try{ restoreIngestCtx(_lastActions); }catch(_){}
   c.scrollTop=c.scrollHeight;
 }
 // 招引方向派生的项目（方案A三层：产业方向→报告→招引方向项目）{产业key:[{name,stage,from}]}
@@ -7905,24 +7927,17 @@ function finalizeIngest(chunks, files, kbTopicIdx, p){
     window._lastIngestChunks=chunks;
     window._lastIngestTopicLabel=topicLabel;
     window._lastIngestKbIdx=kbTopicIdx;
+    // 持久化一条“待分析”标记，使三个按钮在 render/刷新/跨标签后可由 kbChatReplay 重建
+    try{
+      if(!KB_CHAT[cur]) KB_CHAT[cur]=[];
+      KB_CHAT[cur].push({role:'ingest-actions', n:chunks.length, label:topicLabel, kbIdx:(kbTopicIdx===undefined?null:kbTopicIdx), ts:Date.now()});
+      if(KB_CHAT[cur].length>100) KB_CHAT[cur]=KB_CHAT[cur].slice(-100);
+      persist();
+    }catch(_){}
     setTimeout(function(){
-      var ad=document.createElement('div');
-      ad.id='kbIngestActions';
-      ad.style.cssText='margin:10px 0 4px 60px;display:flex;gap:8px;flex-wrap:wrap;align-items:center';
-      ad.innerHTML=
-        '<span style="font-size:12px;color:#8492a6;margin-right:2px">选择分析方式：</span>'+
-        '<button onclick="kbIncrementalAnalysis()" '+
-          'style="padding:7px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;'+
-          'border-radius:20px;font-size:12.5px;font-weight:600;cursor:pointer">'+
-          '📄 仅分析新材料（推荐）</button>'+
-        '<button onclick="kbRAGQueryFull()" '+
-          'style="padding:7px 14px;background:#f5f7fb;color:#334155;border:1.5px solid #e2e8f0;'+
-          'border-radius:20px;font-size:12.5px;cursor:pointer">'+
-          '🔄 结合全库重新分析</button>'+
-        '<button data-action="verify" onclick="kbVerifyMaterial()" '+
-          'style="padding:7px 14px;background:#fff7ed;color:#c2410c;border:1.5px solid #fed7aa;'+
-          'border-radius:20px;font-size:12.5px;cursor:pointer">'+
-          '🔍 校验材料可信度</button>';
+      var wrap=document.createElement('div');
+      wrap.innerHTML=ingestActionsHtml();
+      var ad=wrap.firstChild;
       c.appendChild(ad);
       c.scrollTop=c.scrollHeight;
       // 上传完成后确保整个问答区也滚到底
