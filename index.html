@@ -8065,10 +8065,13 @@ function kbVerifyMaterial(){
   var prompt=
     '【新上传文件原文】\n'+newText+'\n\n'
     +'【智库已有结论（正确基准）】\n'+topicKnown.join('\n')+'\n\n'
-    +'任务：上方是两份原文，请直接逐字对比。'
-    +'对每一处不一致，必须明确说：「文件说XXX，智库记录是YYY，不一致」。'
-    +'逐条用【严重程度:高/中/低】标注。'
-    +'如确实完全一致则说明“未发现矛盾”。不要用“若”“假设”等语气。';
+    +'任务：把上方两份原文逐字交叉比对，逐个核对每一个数字、数量、占比、金额、企业家数是否一致。\n'
+    +'输出格式严格遵守：\n'
+    +'第一行必须是结论标记，二选一：\n'
+    +'  · 若有任意一处对不上 → 写「结论：发现矛盾N处」（N为不一致处数，N≥1）\n'
+    +'  · 若逐字完全一致 → 写「结论：未发现矛盾」\n'
+    +'随后逐条列出，每条格式固定为：【严重程度:高】文件说XXX，智库记录是YYY，不一致。\n'
+    +'硬性规则：只要有一个数字/事实对不上，第一行就必须写「发现矛盾」，绝不允许写「未发现矛盾」；数字不同一律判【严重程度:高】。不要用「若」「假设」等推测语气。';
 
   // 思考气泡
   var thinking=document.createElement('div');
@@ -8103,9 +8106,17 @@ function kbVerifyMaterial(){
       reader.read().then(function(d){
         if(d.done){
           var elapsed=Date.now()-t0;
-          // 根据文本判断是否发现高危问题
-          var hasHighRisk=accText.indexOf('高')>=0 && (accText.indexOf('矛盾')>=0||accText.indexOf('错误')>=0||accText.indexOf('异常')>=0);
-          var allClear=accText.indexOf('未发现')>=0||accText.indexOf('可信')>=0;
+          // 判定优先级：先看 AI 首行的结构化结论标记，最可靠；关键词兜底只作为补充。
+          // 关键修复：旧逻辑把"文件说A，智库记录B，不一致"这类真实矛盾误判为 allClear（因命中"未发现"字样），
+          // 导致假数据漏报。现改为：只要出现矛盾结论/不一致标志，一律判为高危，绝不 allClear。
+          var _firstLine=(accText.split('\n').find(function(l){return l.trim();})||'').trim();
+          var _saysConflict=/结论[：:]\s*发现矛盾|发现矛盾\s*\d*\s*处/.test(_firstLine)||/发现矛盾/.test(accText);
+          var _saysClear=/结论[：:]\s*(未发现矛盾|无矛盾|完全一致)/.test(_firstLine);
+          // 正文里出现"不一致 / 【严重程度:高】 / 数据不符 / 矛盾 / 错误"等矛盾信号
+          var _conflictSignal=/不一致|不符|对不上|矛盾|【?严重程度[:：]\s*高|数据错误|明显偏差|差异较大/.test(accText);
+          var hasHighRisk=_saysConflict||(!_saysClear&&_conflictSignal);
+          // 仅当明确判定一致、且正文无任何矛盾信号时，才算"未发现错误"
+          var allClear=!hasHighRisk&&(_saysClear||accText.indexOf('未发现矛盾')>=0||accText.indexOf('完全一致')>=0);
           var badgeBg=hasHighRisk?'#fff1f2':'(allClear?\'#f0fdf4\':\'#fffbeb\')';
           var badgeColor=hasHighRisk?'#dc2626':'(allClear?\'#059669\':\'#d97706\')';
           var badgeText=hasHighRisk?'⚠ 发现疑点，建议人工核实':(allClear?'✓ 未发现明显错误':'ℹ 存在部分模糊信息');
