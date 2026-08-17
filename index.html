@@ -1474,6 +1474,20 @@ function getTopicReport(topic){
   return getEmbeddedReport(topic);
 }
 
+/* 取某方向的最佳报告文本：AI/预埋 → 当前已生成报告(topic匹配) → 历史报告(topic匹配)。
+   均无则返回 null（表示该方向尚未生成过任何报告，报告区应显示空状态而非沿用旧方向报告）。*/
+function reportTextForTopic(topic){
+  if(!topic) return null;
+  var _t=getTopicReport(topic);
+  if(_t && _t.length) return _t;
+  if(cur && REPORTSTATE[cur] && REPORTSTATE[cur].topic===topic && REPORTSTATE[cur].text) return REPORTSTATE[cur].text;
+  if(cur && typeof REPORT_HISTORY!=='undefined' && REPORT_HISTORY[cur]){
+    var _h=REPORT_HISTORY[cur].filter(function(h){return h && h.topic===topic && h.text;});
+    if(_h.length) return _h[0].text;
+  }
+  return null;
+}
+
 /* 后台从 RAG 库生成该方向的 AI 报告（非阻塞，静默）。
    完成后写入 REPORTSTATE[cur].aiReportByTopic[topic] 并刷新报告区。
    路演稳定性：AI 未就绪/失败时页面继续用预埋文本，用户无感知。 */
@@ -3961,9 +3975,13 @@ function selectTopic(val, isCustom){
   var _ra=document.getElementById('reportArea');
   if(_ra){
     var _rs=REPORTSTATE[cur];
-    if(_rs&&(_rs.finalized||_rs.phase===2||_rs.text||(PENDING_CONFIRMS[cur]&&PENDING_CONFIRMS[cur].length))){
-      var _nt=getTopicReport(p.topic);
-      if(_nt){ _rs.text=_nt; }
+    // 该方向是否已有报告（AI/预埋/当前/历史），据此决定渲染报告 or 空状态。
+    // 修复：切到从未生成过报告的新方向时，不再沿用旧方向(如香菇)的报告文本。
+    var _nt=reportTextForTopic(p.topic);
+    var _hasPend=(PENDING_CONFIRMS[cur]&&PENDING_CONFIRMS[cur].length);
+    if(_rs&&(_nt||_hasPend)){
+      if(_nt){ _rs.text=_nt; _rs.phase=_rs.phase||2; }
+      else { _rs.text=''; }
       _rs.topic=p.topic;
       // 后台从 RAG 生成该方向真实 AI 报告（预埋占位，就绪后替换）
       ensureAiReport(p.topic, p.city);
@@ -4017,17 +4035,7 @@ function selectTopic(val, isCustom){
   if(!cardGrid) return;
   var topics=generateTopicsFromKb(p);
   cardGrid.innerHTML=topics.map(function(t){
-    var act=p.topic===t.label;
-    return '<button onclick="selectTopic(this.getAttribute(\'data-v\'))" data-v="'+t.label+'" style="'+
-      'display:flex;flex-direction:column;align-items:flex-start;padding:14px 16px;'+
-      'background:'+(act?'linear-gradient(135deg,#eff6ff,#f0f9ff)':'#fff')+';'+
-      'border:2px solid '+(act?'#1a56db':'#e8edf5')+';'+
-      'border-radius:14px;cursor:pointer;text-align:left;flex:1;min-width:0">'+
-      '<span style="font-size:20px;margin-bottom:6px">'+t.icon+'</span>'+
-      '<span style="font-size:13px;font-weight:700;color:#0b183b;display:block;margin-bottom:4px">'+t.label+'</span>'+
-      '<span style="font-size:11.5px;color:#8492a6;line-height:1.4">'+t.desc+'</span>'+
-      (act?'<div style="margin-top:8px;width:8px;height:8px;border-radius:50%;background:#1a56db"></div>':'')+
-    '</button>';
+    return topicCardHtml(t, p.topic===t.label);
   }).join('');
 }
 
@@ -4816,6 +4824,64 @@ function addCustomTopic(){
   // 清空输入框
   if(inp) inp.value='';
   toast('✓ 已添加方向「'+val+'」');
+}
+
+/* 统一的方向卡片 HTML。自定义方向(type==='custom')右上角带删除键。 */
+function topicCardHtml(t, isActive){
+  var isCustom=(t.type==='custom');
+  var delBtn=isCustom
+    ? '<span onclick="event.stopPropagation();deleteCustomTopic(this.getAttribute(\'data-del\'))" data-del="'+String(t.label).replace(/"/g,'&quot;')+'" title="删除该自定义方向" '+
+        'style="position:absolute;top:8px;right:8px;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;'+
+        'border-radius:50%;background:#fef2f2;border:1px solid #fecaca;color:#dc2626;font-size:13px;line-height:1;cursor:pointer;z-index:2">×</span>'
+    : '';
+  return '<button onclick="selectTopic(this.getAttribute(\'data-v\'))" data-v="'+String(t.label).replace(/"/g,'&quot;')+'" style="'+
+    'position:relative;display:flex;flex-direction:column;align-items:flex-start;padding:14px 16px;'+
+    'background:'+(isActive?'linear-gradient(135deg,#eff6ff,#f0f9ff)':'#fff')+';'+
+    'border:2px solid '+(isActive?'#1a56db':'#e8edf5')+';'+
+    'border-radius:14px;cursor:pointer;text-align:left;transition:all .15s;flex:1;min-width:0">'+
+    delBtn+
+    '<span style="font-size:20px;margin-bottom:6px">'+t.icon+'</span>'+
+    '<span style="font-size:13px;font-weight:700;color:#0b183b;display:block;margin-bottom:4px">'+t.label+'</span>'+
+    '<span style="font-size:11.5px;color:#8492a6;line-height:1.4">'+t.desc+'</span>'+
+    (isActive?'<div style="margin-top:8px;width:8px;height:8px;border-radius:50%;background:#1a56db"></div>':'')+
+  '</button>';
+}
+
+/* 删除自定义方向卡片 */
+function deleteCustomTopic(label){
+  var p=P(); if(!p||!label) return;
+  if(!p.customTopics||p.customTopics.indexOf(label)<0){toast('仅可删除自定义方向');return;}
+  if(!confirm('确定删除自定义方向「'+label+'」？该方向下的报告与历史将一并清除。')) return;
+  // 从自定义方向列表移除
+  p.customTopics=p.customTopics.filter(function(t){return t!==label;});
+  // 清理该方向相关缓存：AI报告、待确认、招引方向、历史
+  if(cur && REPORTSTATE[cur]){
+    var _rs=REPORTSTATE[cur];
+    if(_rs.aiReportByTopic) delete _rs.aiReportByTopic[label];
+    if(_rs.pendingByTopic) delete _rs.pendingByTopic[label];
+    if(_rs.actionItemsByTopic) delete _rs.actionItemsByTopic[label];
+  }
+  if(cur && typeof REPORT_HISTORY!=='undefined' && REPORT_HISTORY[cur]){
+    REPORT_HISTORY[cur]=REPORT_HISTORY[cur].filter(function(h){return !h||h.topic!==label;});
+    saveReportHistory();
+  }
+  // 若删的是当前选中方向，切回第一个推荐方向
+  if(p.topic===label){
+    var _tps=generateTopicsFromKb(p).filter(function(t){return t.type!=='custom';});
+    var _fallback=(_tps[0]&&_tps[0].label)||(p.city+'主导产业补链');
+    persist();
+    selectTopic(_fallback);
+    toast('✓ 已删除方向「'+label+'」');
+    return;
+  }
+  persist();
+  // 仅刷新卡片网格
+  var cardGrid=document.getElementById('topicCardGrid');
+  if(cardGrid){
+    var topics=generateTopicsFromKb(p);
+    cardGrid.innerHTML=topics.map(function(t){return topicCardHtml(t,p.topic===t.label);}).join('');
+  }
+  toast('✓ 已删除方向「'+label+'」');
 }
 
 function startAiInterview(){
@@ -5967,17 +6033,7 @@ function homePage(p){
   var recommendedTopics=generateTopicsFromKb(p);
 
   var topicCards=recommendedTopics.map(function(t){
-    var isActive=p.topic===t.label;
-    return '<button onclick="selectTopic(\''+t.label+'\')" style="'+
-      'display:flex;flex-direction:column;align-items:flex-start;padding:14px 16px;'+
-      'background:'+(isActive?'linear-gradient(135deg,#eff6ff,#f0f9ff)':'#fff')+';'+
-      'border:2px solid '+(isActive?'#1a56db':'#e8edf5')+';'+
-      'border-radius:14px;cursor:pointer;text-align:left;transition:all .15s;flex:1;min-width:0">'+
-      '<div style="font-size:20px;margin-bottom:6px">'+t.icon+'</div>'+
-      '<div style="font-size:13px;font-weight:700;color:#0b183b;margin-bottom:4px">'+t.label+'</div>'+
-      '<div style="font-size:11.5px;color:#8492a6;line-height:1.4">'+t.desc+'</div>'+
-      (isActive?'<div style="margin-top:8px;width:8px;height:8px;border-radius:50%;background:#1a56db"></div>':'')+
-    '</button>';
+    return topicCardHtml(t, p.topic===t.label);
   }).join('');
 
   var topicSelector=
