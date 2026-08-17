@@ -1498,6 +1498,12 @@ function ensureAiReport(topic, city){
   if(_aiReportGenerating[key]) return;
   // 已有 AI 报告则不重复生成
   if(REPORTSTATE[cur].aiReportByTopic && REPORTSTATE[cur].aiReportByTopic[topic]) return;
+  // 关键修复：只为「已有报告基础」的方向做后台刷新（预埋报告 / 用户已显式生成过）。
+  // 自定义新方向没有任何基础时，绝不自动生成——报告只能由用户点击「产业智能分析」按需生成，
+  // 彻底杜绝"刷新后凭空冒出一份报告"。
+  var _hasBasis = !!getEmbeddedReport(topic)
+    || (REPORTSTATE[cur].userGeneratedTopics && REPORTSTATE[cur].userGeneratedTopics[topic]);
+  if(!_hasBasis) return;
   city = city || (P()&&P().city) || '随州';
   var corpus, chunks;
   try {
@@ -5208,7 +5214,17 @@ function triggerReport(phase){
           // 归档旧报告
           archiveCurrentReport(cur);
           renderHistoryReports(cur);
-          REPORTSTATE[cur]={text:accText,topic:p.topic,ts:Date.now(),score:topicScore(p.topic),phase:phase};
+          // 保留累积字段(aiReportByTopic/userGeneratedTopics/pendingByTopic 等)，避免整体覆盖丢失
+          var _prevRs=REPORTSTATE[cur]||{};
+          REPORTSTATE[cur]={text:accText,topic:p.topic,ts:Date.now(),score:topicScore(p.topic),phase:phase,
+            aiReportByTopic:_prevRs.aiReportByTopic||{},
+            userGeneratedTopics:_prevRs.userGeneratedTopics||{},
+            pendingByTopic:_prevRs.pendingByTopic||{},
+            actionItemsByTopic:_prevRs.actionItemsByTopic||{}};
+          // 标记该方向为「用户已显式生成」，允许日后后台 AI 刷新（新方向在此之前不会凭空生成报告）
+          REPORTSTATE[cur].userGeneratedTopics[p.topic]=true;
+          // 用户生成的报告也作为该方向的 AI 报告缓存，刷新后可正确恢复
+          REPORTSTATE[cur].aiReportByTopic[p.topic]=accText;
           persist();
           var sp=document.getElementById('reportSpinner');if(sp)sp.style.display='none';
           var footer=document.getElementById('reportFooter');
