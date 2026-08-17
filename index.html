@@ -8043,7 +8043,7 @@ function kbVerifyMaterial(){
             ';font-size:12px;font-weight:650;color:'+
             (hasHighRisk?'#dc2626':(allClear?'#059669':'#d97706'))+
             '">'+badgeText+
-            '<span style="font-weight:400;color:#94a3b8;margin-left:8px">· 校验耗时 '+elapsed+'ms · 对比 '+allKnown.length+' 条现有结论</span>'+
+            '<span style="font-weight:400;color:#94a3b8;margin-left:8px">· 校验耗时 '+elapsed+'ms · 对比 '+topicKnown.length+' 条现有结论</span>'+
             '</div>');
           // 兜底：bodyDiv 为空但 accText 有内容时直接渲染纯文本
           if(accText && !bodyDiv.innerHTML.trim()){
