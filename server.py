@@ -527,10 +527,10 @@ class Handler(BaseHTTPRequestHandler):
                 {"role": "user",   "content": f"城市：{city}\n\n知识片段：\n{ctx}\n\n问题：{q}"}
             ]
         }
-        # v4-pro 默认开启 thinking，CoT 会吃光 max_tokens 导致 content 为空。
-        # 除 chat/suggest 外全部关闭 thinking（报告/研判要的是结构化产出，不需深度推理链）。
-        if mode in ("research", "chain", "full", "draft", "topics"):
-            payload_dict["thinking"] = {"type": "disabled"}
+        # v4-pro 默认开启 thinking，CoT 会先吐 reasoning_content 并吃光 max_tokens，
+        # 导致 content 迟迟不出/为空。前端只渲染 delta.content、不显示思考链，
+        # 所以对所有 mode（含 chat/suggest）一律关闭 thinking，避免问答“出不来答案”。
+        payload_dict["thinking"] = {"type": "disabled"}
         payload = json.dumps(payload_dict).encode()
 
         req = urllib.request.Request(
