@@ -1510,7 +1510,9 @@ function reportTextForTopic(topic){
 function topicHasFullReport(topic){
   if(!topic || !cur) return false;
   var _rs=REPORTSTATE[cur];
-  if(_rs && _rs.topic===topic && (_rs.phase===2 || _rs.finalized) && _rs.text) return true;
+  // 方向级 phase 是权威判据（项目级 phase 是单例，切方向会污染）
+  if(_rs && _rs.phaseByTopic && _rs.phaseByTopic[topic]===2) return true;
+  // 兼容旧数据：无 phaseByTopic 记录时，回退到历史报告里该方向的完整报告
   if(typeof REPORT_HISTORY!=='undefined' && REPORT_HISTORY[cur]){
     if(REPORT_HISTORY[cur].some(function(h){return h && h.topic===topic && h.phase===2 && h.text;})) return true;
   }
@@ -4022,9 +4024,11 @@ function selectTopic(val, isCustom){
     var _nt=reportTextForTopic(p.topic);
     var _hasPend=(PENDING_CONFIRMS[cur]&&PENDING_CONFIRMS[cur].length);
     if(_rs&&(_nt||_hasPend)){
-      if(_nt){ _rs.text=_nt; _rs.phase=_rs.phase||2; }
+      // 用方向级 phase 同步项目级 phase，避免"切到新方向仍停在旧方向 phase=2"污染确认面板/按钮
+      if(_nt){ _rs.text=_nt; }
       else { _rs.text=''; }
       _rs.topic=p.topic;
+      _rs.phase=(_rs.phaseByTopic&&_rs.phaseByTopic[p.topic])||(_nt?2:1);
       // 后台从 RAG 生成该方向真实 AI 报告（预埋占位，就绪后替换）
       ensureAiReport(p.topic, p.city);
       setReportAreaHtml(_ra,reportHtml(p));
@@ -4501,9 +4505,12 @@ function ciAttachFiles(files, projKey, idx){
 /* 立项卡片 */
 /* 恢复确认面板（如果有待确认事项） */
 function restoreConfirmPanel(){
-  // 完整报告（phase=2 / finalized）不显示待确认面板：待确认事项已是报告正文第五章的一部分
+  // 完整报告（该方向 phase=2）不显示待确认面板：待确认事项已是报告正文第五章的一部分。
+  // 注意：必须用方向级 phaseByTopic 判据——项目级 phase 是单例，切到新方向仍停在旧方向的 2，
+  // 会错误地抑制新方向的确认面板（表现为"待确认事项没点就消失"）。
   var _rs = cur && REPORTSTATE[cur];
-  if(_rs && (_rs.phase===2 || _rs.finalized)) return '';
+  var _tp = (P()||{}).topic;
+  if(_rs && _tp && _rs.phaseByTopic && _rs.phaseByTopic[_tp]===2) return '';
   // 若当前方向待确认事项为空，按方向缓存/报告文本恢复
   if(cur && REPORTSTATE[cur] && (!PENDING_CONFIRMS[cur] || !PENDING_CONFIRMS[cur].length)){
     var _p=P(); var _topic=_p?_p.topic:'';
@@ -5285,11 +5292,14 @@ function triggerReport(phase){
             aiReportByTopic:_prevRs.aiReportByTopic||{},
             userGeneratedTopics:_prevRs.userGeneratedTopics||{},
             pendingByTopic:_prevRs.pendingByTopic||{},
+            phaseByTopic:_prevRs.phaseByTopic||{},
             actionItemsByTopic:_prevRs.actionItemsByTopic||{}};
           // 标记该方向为「用户已显式生成」，允许日后后台 AI 刷新（新方向在此之前不会凭空生成报告）
           REPORTSTATE[cur].userGeneratedTopics[p.topic]=true;
           // 用户生成的报告也作为该方向的 AI 报告缓存，刷新后可正确恢复
           REPORTSTATE[cur].aiReportByTopic[p.topic]=accText;
+          // 按方向记录阶段（1=草稿/2=完整）：项目级 phase 是单例、切方向会污染，方向级才是权威判据
+          REPORTSTATE[cur].phaseByTopic[p.topic]=phase;
           persist();
           var sp=document.getElementById('reportSpinner');if(sp)sp.style.display='none';
           var footer=document.getElementById('reportFooter');
@@ -5932,7 +5942,8 @@ function reportHtml(p){
       '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
     '</div>'+
     '<div style="padding:16px 18px;font-size:13px;color:#1e293b;line-height:1.8">'+
-      '<p style="margin:0">'+renderMd(alignChainToReport(rs.text||''))+'</p>'+
+      // 按方向取报告正文：项目级 rs.text 是单例，切到未生成报告的新方向会串显旧方向正文
+      '<p style="margin:0">'+renderMd(alignChainToReport((typeof reportTextForTopic==='function'?reportTextForTopic(p.topic):null)||rs.text||''))+'</p>'+
     '</div>'+
   '</div>';
 }
