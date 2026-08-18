@@ -2916,8 +2916,8 @@ function projMgmtPage(p){
     var sc = stColor(x.stage);
     var expanded = (window.__projOpen === k);
 
-    // 自动派生线索（如有报告）
-    deriveCluesFromReport(k);
+    // 政府端不再自动派生「脱敏企业」假线索——待接触企业只由管理端 AI 漏斗推送
+    // deriveCluesFromReport(k);
     // 自动加载 AI 扫描线索（首次，静默不弹 toast）
     if(!window.__scanLoaded) window.__scanLoaded={};
     if(!window.__scanLoaded[k]){
@@ -5232,10 +5232,10 @@ function submitDemand(){
     submit:'刚刚', res:'none', resLabel:'待研判', clues:0,
     note:rs.text?rs.text.slice(0,120)+'…':'', ai:''
   });
-  // 针对子项目派生线索（父项目工作区完全不动）
-  deriveCluesFromReport(key);
+  // 待接触企业只由管理端 AI 漏斗精选推送，政府端不再自动派生「脱敏企业」假线索
+  // deriveCluesFromReport(key);
   persist();
-  toast('✓ 招引需求已提交，候选线索已自动派生');
+  toast('✓ 招引需求已提交，待管理端 AI 漏斗推送精准企业');
 }
 
 // REPORTSTATE: 存储已生成的报告

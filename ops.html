@@ -1648,7 +1648,7 @@ function pushFunnelTopToGov(projKey, n){
   var added=0;
   top.forEach(function(c){
     if(existNames[c.name]) return;
-    p.clues.push({id:c.id, name:c.name, kind:c.kind, region:c.region, gap:p.funnel.topic||p.topic||'', tone:'slate', status:'gov_push', fit:c.fit, fit_score:c.fit_score, signal:c.signal, listed:c.listed, source:c.source, scale:(c.listed?c.listed+' · ':'')+(c.region||''), techRoute:c.fit||'', signalSrc:c.source||'AI推断，待核验', matchPoints:[c.fit].filter(Boolean), questions:['是否有在'+(p.city||'本地')+'布局/投资意向','与本地链主的配套匹配度','落地所需政策与承载条件'], priority:Math.max(1,Math.min(5,Math.round((c.fit_score||0)/20))), localAttr:'B'});
+    p.clues.push({id:c.id, name:c.name, kind:c.kind, region:c.region, gap:p.funnel.topic||p.topic||'', tone:'slate', status:'gov_push', fit:c.fit, fit_score:c.fit_score, reason:c.fit||('AI 漏斗按「'+(p.funnel.topic||p.topic||'该方向')+'」精筛，适配度 '+(c.fit_score||0)+' 分，建议资源团队核验投资意向。'), signal:c.signal, listed:c.listed, source:c.source, scale:(c.listed?c.listed+' · ':'')+(c.region||''), techRoute:c.fit||'', signalSrc:c.source||'AI推断，待核验', matchPoints:[c.fit].filter(Boolean), questions:['是否有在'+(p.city||'本地')+'布局/投资意向','与本地链主的配套匹配度','落地所需政策与承载条件'], priority:Math.max(1,Math.min(5,Math.round((c.fit_score||0)/20))), localAttr:'B'});
     added++;
   });
   p.funnel.pushed=true; p.funnel.pushedAt=Date.now(); p.funnel.pushedNames=top.map(function(c){return c.name;});
