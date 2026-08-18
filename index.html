@@ -889,6 +889,21 @@ function render(){
     _dk_proj.stage=3;  // 推进到「确认需求」阶段
   }}
   }
+  // ── 城市隔离护栏（每次渲染都生效）──────────────────────────────
+  // 全局 /api/sync 是单块存储，服务端返回的顶层 cur/view 恒为主账号(随州)的值。
+  // 非随州账号绝不信任该 cur：强制把 cur 钉回本账号城市的项目，杜绝串到随州。
+  if(AUTH && !AUTH.resident && AUTH.city && role!=='ops'){
+    var _gc=AUTH.city;
+    var _mineKeys=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k]&&PROJECTS[k].city===_gc;});
+    var _curOk=cur&&PROJECTS[cur]&&PROJECTS[cur].city===_gc;
+    if(!_curOk){
+      if(_mineKeys.length){ cur=_mineKeys[0]; }
+      else { cur=autoProvisionCity(_gc); }
+      // 串城时 view 也可能停在随州的 report；本城市无报告则回落到智库，避免展示随州报告空壳
+      if(view==='report' && !(cur&&REPORTSTATE[cur]&&REPORTSTATE[cur].text)) view='knowledge';
+      persist();
+    }
+  }
   if(view==='setup'||!cur||!PROJECTS[cur]){var _root=$('#root');if(_root){_root.innerHTML='<div style="height:100vh;background:#f5f7fb">'+setupPage()+'</div>';bind();} return;}
   if(role==='ops')return renderOps();
   var p=P();
@@ -1050,7 +1065,7 @@ function doRegister(){
     persist();
     AUTH={user:u, city:city, projKey:null, resident:false, who:name, org:org};
     saveAuth();
-    cur=null; view='setup'; render._restored=false; render._routed=false;
+    cur=null; view='setup'; render._restored=false; render._routed=false; render._serverSynced=false;
     var done=false; var fb=setTimeout(function(){ if(!done){done=true;render();} },2000);
     restoreFromServer(function(){ if(!done){done=true;clearTimeout(fb);render();} });
     toast('✓ 注册成功，欢迎 '+name);
