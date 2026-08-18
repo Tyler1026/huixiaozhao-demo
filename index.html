@@ -8619,16 +8619,21 @@ function showConflictPanel(kbIdx, conflicts){
       '<div style="font-size:16px;font-weight:750;color:#0b183b;margin-bottom:4px">数据冲突确认</div>'+
       '<div style="font-size:12.5px;color:#8492a6;margin-bottom:16px">新上传材料中发现与现有数据不一致的内容，请逐条确认采用哪一项：</div>'+
       conflicts.map(function(c,ci){
-        return '<div style="border:1.5px solid #e8edf5;border-radius:12px;padding:14px;margin-bottom:12px">'+
-          '<div style="font-size:11px;color:#9aa5b5;margin-bottom:8px">冲突 '+(ci+1)+'</div>'+
+        return '<div style="border:1.5px solid #e8edf5;border-radius:12px;padding:14px;margin-bottom:12px" id="conflict-card-'+ci+'">'+
+          '<div style="display:flex;align-items:center;margin-bottom:8px">'+
+            '<div style="font-size:11px;color:#9aa5b5">冲突 '+(ci+1)+'</div>'+
+            '<div id="conflict-status-'+ci+'" style="margin-left:auto;font-size:11px;font-weight:600;color:#cbd5e1">未确认</div>'+
+          '</div>'+
           '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
-            '<div style="padding:10px 12px;background:#fff5f5;border:1.5px solid #fecaca;border-radius:8px;cursor:pointer" onclick="resolveConflict('+kbIdx+','+ci+',\'old\')" id="conflict-old-'+ci+'">'+
+            '<div style="padding:10px 12px;background:#fff5f5;border:1.5px solid #fecaca;border-radius:8px" id="conflict-old-'+ci+'">'+
               '<div style="font-size:11px;font-weight:600;color:#ef4444;margin-bottom:4px">现有数据</div>'+
-              '<div style="font-size:12.5px;color:#1e293b;line-height:1.6">'+c.old+'</div>'+
+              '<div style="font-size:12.5px;color:#1e293b;line-height:1.6;margin-bottom:10px">'+c.old+'</div>'+
+              '<button onclick="resolveConflict('+kbIdx+','+ci+',\'old\')" style="width:100%;padding:7px;background:#fff;border:1.5px solid #fca5a5;border-radius:7px;font-size:12px;font-weight:600;color:#ef4444;cursor:pointer">采用此项（保留旧）</button>'+
             '</div>'+
-            '<div style="padding:10px 12px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;cursor:pointer" onclick="resolveConflict('+kbIdx+','+ci+',\'new\')" id="conflict-new-'+ci+'">'+
+            '<div style="padding:10px 12px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px" id="conflict-new-'+ci+'">'+
               '<div style="font-size:11px;font-weight:600;color:#166534;margin-bottom:4px">新材料数据</div>'+
-              '<div style="font-size:12.5px;color:#1e293b;line-height:1.6">'+c.new+'</div>'+
+              '<div style="font-size:12.5px;color:#1e293b;line-height:1.6;margin-bottom:10px">'+c.new+'</div>'+
+              '<button onclick="resolveConflict('+kbIdx+','+ci+',\'new\')" style="width:100%;padding:7px;background:#16a34a;border:none;border-radius:7px;font-size:12px;font-weight:600;color:#fff;cursor:pointer">采用此项（用新）</button>'+
             '</div>'+
           '</div>'+
         '</div>';
@@ -8659,12 +8664,15 @@ function resolveConflict(kbIdx, conflictIdx, choice){
   c.resolved=choice;
   var oldEl=document.getElementById('conflict-old-'+conflictIdx);
   var newEl=document.getElementById('conflict-new-'+conflictIdx);
+  var statusEl=document.getElementById('conflict-status-'+conflictIdx);
   if(choice==='new'){
     if(newEl) newEl.style.border='3px solid #22c55e';
     if(oldEl) oldEl.style.opacity='0.4';
+    if(statusEl){ statusEl.textContent='✓ 已采用新材料数据'; statusEl.style.color='#16a34a'; }
   } else {
     if(oldEl) oldEl.style.border='3px solid #3b82f6';
     if(newEl) newEl.style.opacity='0.4';
+    if(statusEl){ statusEl.textContent='✓ 已保留现有数据'; statusEl.style.color='#3b82f6'; }
   }
 
   // 检查是否全部已处理
