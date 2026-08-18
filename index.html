@@ -4975,12 +4975,25 @@ function deleteCustomTopic(label){
   if(!confirm('确定删除自定义方向「'+label+'」？该方向下的报告与历史将一并清除。')) return;
   // 从自定义方向列表移除
   p.customTopics=p.customTopics.filter(function(t){return t!==label;});
-  // 清理该方向相关缓存：AI报告、待确认、招引方向、历史
+  // 清理该方向相关缓存：AI报告、待确认、招引方向、历史、方向级阶段标记
+  // 关键修复：必须连同 phaseByTopic / userGeneratedTopics 一起删除，否则刷新后从服务端
+  // restore，这两个字段还在，报告会被判定为「已生成」而重新渲染出来（删了又回来的 bug）。
   if(cur && REPORTSTATE[cur]){
     var _rs=REPORTSTATE[cur];
     if(_rs.aiReportByTopic) delete _rs.aiReportByTopic[label];
     if(_rs.pendingByTopic) delete _rs.pendingByTopic[label];
     if(_rs.actionItemsByTopic) delete _rs.actionItemsByTopic[label];
+    if(_rs.phaseByTopic) delete _rs.phaseByTopic[label];
+    if(_rs.userGeneratedTopics) delete _rs.userGeneratedTopics[label];
+    if(_rs.reportByTopic) delete _rs.reportByTopic[label];
+    if(_rs.scoreByTopic) delete _rs.scoreByTopic[label];
+    // 若被删方向正是项目级 REPORTSTATE 当前指向的方向，清空残留的项目级正文/阶段，
+    // 避免刷新后 reportHtml 仍读到旧方向的 text。
+    if(_rs.topic===label){ _rs.text=''; _rs.phase=1; _rs.topic=''; _rs.finalized=false; }
+  }
+  // 清理该方向的待确认事项（PENDING_CONFIRMS 若按方向细分）
+  if(cur && typeof PENDING_CONFIRMS!=='undefined' && PENDING_CONFIRMS[cur]){
+    if(P()&&P().topic===label) PENDING_CONFIRMS[cur]=[];
   }
   if(cur && typeof REPORT_HISTORY!=='undefined' && REPORT_HISTORY[cur]){
     REPORT_HISTORY[cur]=REPORT_HISTORY[cur].filter(function(h){return !h||h.topic!==label;});
