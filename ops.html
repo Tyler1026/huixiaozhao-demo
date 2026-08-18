@@ -6462,7 +6462,7 @@ function opsOverview(){
             '</div>'+
             '<div style="font-size:11px;color:#8492a6;margin-top:2px">'+(c.region||'')+(c.kind?' \u00b7 '+c.kind:'')+'</div>'+
             (c.fit?'<div style="font-size:11px;color:#4a5568;margin-top:3px;line-height:1.5">'+c.fit+'</div>':'')+
-            (c.signal?'<div style="font-size:10.5px;color:#b45309;margin-top:3px;line-height:1.5">\U0001F4E1 '+c.signal+'</div>':'')+
+            (c.signal?'<div style="font-size:10.5px;color:#b45309;margin-top:3px;line-height:1.5">📡 '+c.signal+'</div>':'')+
           '</div>'+
           '<span style="flex-shrink:0;font-size:13px;font-weight:800;color:'+(c.fit_score>=80?'#16a34a':c.fit_score>=60?'#d97706':'#6b7280')+'">'+(c.fit_score||0)+'<span style="font-size:10px;font-weight:600">\u5206</span></span>'+
         '</div>';
