@@ -6984,7 +6984,20 @@ window.addEventListener('storage', function(e){
     var data=JSON.parse(e.newValue);
     if(!data.PROJECTS) return;
     // 同步关键数据（保留当前 view/cur）
-    PROJECTS=data.PROJECTS;
+    // 关键修复：整体覆盖 PROJECTS 会把本地刚定义、尚未同步出去的 customTopics 冲掉，
+    // 表现为"自定义方向自己消失，重新定义才回来"。这里合并保护本地的 customTopics（并集）。
+    (function(){
+      var incoming=data.PROJECTS||{};
+      Object.keys(PROJECTS).forEach(function(k){
+        var localP=PROJECTS[k], inP=incoming[k];
+        if(localP && inP && localP.customTopics && localP.customTopics.length){
+          var merged=(inP.customTopics||[]).slice();
+          localP.customTopics.forEach(function(ct){ if(merged.indexOf(ct)<0) merged.push(ct); });
+          inP.customTopics=merged;
+        }
+      });
+      PROJECTS=incoming;
+    })();
     DEMANDS=data.DEMANDS||[];
     REPORTSTATE=data.REPORTSTATE||{};
     KB_FILE_CHUNKS=data.KB_FILE_CHUNKS||{};
