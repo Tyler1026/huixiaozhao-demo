@@ -2097,11 +2097,12 @@ function isLocked(v){
   var p=P();
   // 随州种子数据始终解锁
   if(p && p.city && p.city.indexOf('随州')>=0) return false;
-  // 关键修复：无真实数据(仅AI初判占位)时一律锁定，忽略任何历史/脏的 KB_UNLOCKED 解锁标记。
-  // 杜绝"旧代码把新城市写成解锁并持久化，刷新后仍解锁"的问题。
-  if(!hasRealKbData(p)) return true;
-  // 有真实数据后：尊重手动强制解锁，或完成度达 80% 自动解锁
+  // 用户手动强制解锁（点了"强制解锁"）优先级最高：明确表达了意愿就尊重，
+  // 即使数据可靠性较低也放行。必须在 hasRealKbData 检查之前判断，否则新城市永远解不开锁。
   if(KB_UNLOCKED[cur]&&KB_UNLOCKED[cur][v]) return false;
+  // 无真实数据(仅AI初判占位)且未手动解锁时锁定。
+  if(!hasRealKbData(p)) return true;
+  // 有真实数据后：完成度达 80% 自动解锁
   return kbReadiness().score<80;
 }
 
