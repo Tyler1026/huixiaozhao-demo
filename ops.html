@@ -6297,6 +6297,12 @@ function opsOverview(){
   function opsProjCard(k){
     var p  = PROJECTS[k];
     var rs = REPORTSTATE[k];
+    // 自动触发真实 AI 企业漏斗（每个项目首次进入静默后台跑）
+    if(!window.__funnelAuto) window.__funnelAuto={};
+    if(!window.__funnelAuto[k] && p && !p.funnel && (p.topic||'').trim()){
+      window.__funnelAuto[k]=true;
+      runAIFunnel(k, function(err){ if(!err){ try{ render(); }catch(e){} } });
+    }
     var ups = (UPLOADS[k]||[]);
     var clues = (p.clues||[]);
     // 已确认结论：按该项目「当前产业方向」自己确认的待确认事项数统计
@@ -6400,12 +6406,55 @@ function opsOverview(){
           '<div style="font-size:12px;color:#b0bac8">尚未生成研判报告</div>' +
         '</div>'
       ) +
+      // AI 企业漏斗（真实 DeepSeek 分析）
+      funnelBlock(k) +
       // 操作
-      '<div style="padding:12px 20px;display:flex;gap:8px">' +
-        '<button onclick="opsPushEntToCity(\'' + k + '\')" style="padding:7px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12.5px;color:#6d28d9;cursor:pointer;font-weight:600">📤 推送企业</button>' +
+      '<div style="padding:12px 20px;display:flex;gap:8px;flex-wrap:wrap">' +
         (rs ? '<button onclick="opsViewCityReport(\'' + k + '\')" style="padding:7px 14px;background:#f8faff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer">📋 查看报告</button>' : '') +
       '</div>' +
     '</div>';
+  }
+
+  // AI 企业漏斗展示块（真实 DeepSeek 分析结果 + 一键推送 Top8）
+  function funnelBlock(k){
+    var p=PROJECTS[k]; if(!p) return '';
+    var fn=p.funnel; var running=(typeof _funnelRunning!=='undefined')&&_funnelRunning[k];
+    var head='<div style="padding:12px 20px 4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
+      '<span style="font-size:12.5px;font-weight:750;color:#0b183b">🔻 AI 企业漏斗</span>'+
+      (fn?'<span style="font-size:11px;padding:2px 8px;background:#f5f3ff;color:#6d28d9;border-radius:10px">扫描'+(fn.total||fn.companies.length)+'家 · 精筛'+fn.companies.length+'家</span>':'')+
+      '<span style="font-size:11px;color:#9aa5b5">· DeepSeek 真实分析，企业需人工核验</span>'+
+      '<div style="flex:1"></div>'+
+      (running?'<span style="font-size:11.5px;color:#6d28d9">⏳ 分析中…</span>':'<button onclick="loadAIScanClues(\''+k+'\')" style="padding:4px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:11.5px;color:#6d28d9;cursor:pointer;font-weight:600">🔄 重新分析</button>')+
+    '</div>';
+    var body;
+    if(running && !fn){
+      body='<div style="margin:6px 20px 14px;text-align:center;padding:20px;background:#faf9ff;border-radius:10px;border:1px solid #ede9fe;font-size:12.5px;color:#6d28d9">⏳ AI 正在按该方向缺口分析适配企业，约需 30-60 秒…</div>';
+    } else if(!fn){
+      body='<div style="margin:6px 20px 14px;text-align:center;padding:18px;background:#f9fafb;border-radius:10px;border:1px solid #e8edf5">'+
+        '<div style="font-size:12.5px;color:#9aa5b5;margin-bottom:8px">尚未生成企业漏斗</div>'+
+        '<button onclick="loadAIScanClues(\''+k+'\')" style="padding:6px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600">🔍 立即 AI 分析</button>'+
+      '</div>';
+    } else {
+      var pushedTip=fn.pushed?'<span style="font-size:11px;color:#166534;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:3px 9px">✓ 已推送 '+(fn.pushedNames?fn.pushedNames.length:0)+' 家到政府端</span>':'';
+      var pushBtn='<button onclick="pushFunnelTopToGov(\''+k+'\',8)" style="padding:7px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer">🚀 推送 Top8 精准企业到政府端</button>';
+      var rows=fn.companies.slice(0,10).map(function(c,i){
+        return '<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid #f3f4f6">'+
+          '<span style="flex-shrink:0;width:22px;height:22px;background:'+(i<8?'#eef2ff':'#f5f7fb')+';color:'+(i<8?'#4338ca':'#9aa5b5')+';border-radius:50%;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">'+(i+1)+'</span>'+
+          '<div style="flex:1;min-width:0">'+
+            '<div style="font-size:12.5px;font-weight:650;color:#0b183b">'+c.name+(c.listed?'<span style="font-size:10.5px;color:#6d28d9;margin-left:6px">'+c.listed+'</span>':'')+'</div>'+
+            '<div style="font-size:11px;color:#8492a6;margin-top:1px">'+(c.region||'')+(c.kind?' · '+c.kind:'')+'</div>'+
+            (c.fit?'<div style="font-size:11px;color:#4a5568;margin-top:2px;line-height:1.5">'+c.fit+'</div>':'')+
+          '</div>'+
+          '<span style="flex-shrink:0;font-size:12px;font-weight:700;color:'+(c.fit_score>=80?'#16a34a':c.fit_score>=60?'#d97706':'#6b7280')+'">'+(c.fit_score||0)+'分</span>'+
+        '</div>';
+      }).join('');
+      body='<div style="margin:6px 20px 14px;padding:12px 14px;background:#fbfcff;border:1px solid #e8edf5;border-radius:10px">'+
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">'+pushBtn+pushedTip+'</div>'+
+        rows+
+        (fn.companies.length>10?'<div style="text-align:center;font-size:11px;color:#9aa5b5;padding:8px 0 0">共 '+fn.companies.length+' 家，展示适配度最高前 10 家（推送取 Top8）</div>':'')+
+      '</div>';
+    }
+    return head+body;
   }
 
   // 按城市分组
