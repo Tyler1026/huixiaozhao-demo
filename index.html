@@ -6950,6 +6950,12 @@ function kbChatReplay(){
   KB_CHAT[cur].forEach(function(m){
     // 上传后的三个分析按钮：重建并恢复本批上下文（否则 render/刷新/跨标签后按钮会丢）
     if(m.role==='ingest-actions'){ frag+=ingestActionsHtml(); _lastActions=m; return; }
+    // 新要点追加面板：用结构化数据重建按钮（否则下方正则会把「+加入/全部追加」按钮删掉）
+    if(m.role==='new-facts' && m.facts && m.facts.length){
+      frag+='<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble">'+
+        newFactsPanelHtml((m.kbIdx===undefined||m.kbIdx===null)?0:m.kbIdx, m.facts, m.label||'城市智库')+'</div></div>';
+      return;
+    }
     // 兼容旧格式 {role,html}，新格式 {role,text,ts}
     if(!m.text && m.html){ frag+=m.html; return; }
     var content=m.text||'';
@@ -8476,30 +8482,13 @@ function kbIncrementalAnalysis(){
             return true;
           });
           if(newFacts.length>0){
-            var safeJson=JSON.stringify(newFacts).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
             window._lastNewFacts=newFacts;
-            // 生成每条要点列表，每条旁边有单独「+ 加入」按鈕
-            var factsListHtml=newFacts.map(function(f,fi){
-              f=f.replace(/\*\*/g,'');
-              var safeF=f.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-              return '<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid #e0eaff">'+
-                '<span style="flex-shrink:0;width:20px;height:20px;background:#dbeafe;color:#1d4ed8;border-radius:50%;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:2px">'+(fi+1)+'</span>'+
-                '<span style="flex:1;font-size:12.5px;color:#1e293b;line-height:1.6">'+f.replace(/</g,'&lt;')+'</span>'+
-                '<button onclick="kbAppendSingleFact('+kbIdx+','+fi+',this)" data-kbidx="'+kbIdx+'" '+
-                  'data-factidx="'+fi+'" data-fact="'+encodeURIComponent(f)+'" '+
-                  'style="flex-shrink:0;padding:3px 10px;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:6px;font-size:11.5px;cursor:pointer;white-space:nowrap;margin-top:1px">'+'\u271a 加入</button>'+
-              '</div>';
-            }).join('');
-            bubble.insertAdjacentHTML('beforeend',
-              '<div style="margin-top:12px;padding:12px 14px;background:#f0f7ff;border-radius:10px;border:1px solid #bfdbfe">'+
-              '<div style="font-size:12px;color:#1d4ed8;font-weight:700;margin-bottom:8px">📥 发现 '+newFacts.length+' 条新要点，可选择追加到智库待确认：</div>'+
-              '<div style="margin-bottom:10px" id="factsListDiv">'+factsListHtml+'</div>'+
-              '<div style="display:flex;align-items:center;gap:10px;margin-top:6px">'+
-              '<button onclick="kbAppendNewFacts('+kbIdx+',window._lastNewFacts,this)" data-kbidx="'+kbIdx+'" '+
-                'style="padding:7px 16px;background:#1d4ed8;color:#fff;border:none;border-radius:8px;font-size:12.5px;cursor:pointer;font-weight:600">'+'\u271a 全部追加到「'+topicLabel+'」</button>'+
-              '<span style="font-size:11px;color:#64748b">标记为⚠️待确认，原有内容不变</span>'+
-              '</div>'+
-              '</div>');
+            bubble.insertAdjacentHTML('beforeend', newFactsPanelHtml(kbIdx, newFacts, topicLabel));
+            // 结构化存储，回放时可重建按钮（否则 kbChatReplay 会把按钮正则删掉）
+            if(!KB_CHAT[cur]) KB_CHAT[cur]=[];
+            KB_CHAT[cur].push({role:'new-facts', kbIdx:(kbIdx===undefined?null:kbIdx), facts:newFacts, label:topicLabel, ts:Date.now()});
+            if(KB_CHAT[cur].length>100) KB_CHAT[cur]=KB_CHAT[cur].slice(-100);
+            persist();
           } else {
             // 无新增：明确提示，不展示追加面板
             bubble.insertAdjacentHTML('beforeend',
@@ -8527,6 +8516,29 @@ function kbIncrementalAnalysis(){
     thinking.remove(); c.appendChild(ansNode);
     bodyDiv.innerHTML='<span style="color:#ef4444">连接失败：'+err.message+'</span>';
   });
+}
+
+/* 新要点追加面板 HTML（供首次渲染与 kbChatReplay 回放复用，保持按钮一致且可点击） */
+function newFactsPanelHtml(kbIdx, newFacts, topicLabel){
+  var factsListHtml=newFacts.map(function(f,fi){
+    f=f.replace(/\*\*/g,'');
+    return '<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid #e0eaff">'+
+      '<span style="flex-shrink:0;width:20px;height:20px;background:#dbeafe;color:#1d4ed8;border-radius:50%;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:2px">'+(fi+1)+'</span>'+
+      '<span style="flex:1;font-size:12.5px;color:#1e293b;line-height:1.6">'+f.replace(/</g,'&lt;')+'</span>'+
+      '<button onclick="kbAppendSingleFact('+kbIdx+','+fi+',this)" data-kbidx="'+kbIdx+'" '+
+        'data-factidx="'+fi+'" data-fact="'+encodeURIComponent(f)+'" '+
+        'style="flex-shrink:0;padding:3px 10px;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:6px;font-size:11.5px;cursor:pointer;white-space:nowrap;margin-top:1px">'+'\u271a 加入</button>'+
+    '</div>';
+  }).join('');
+  return '<div style="margin-top:12px;padding:12px 14px;background:#f0f7ff;border-radius:10px;border:1px solid #bfdbfe">'+
+    '<div style="font-size:12px;color:#1d4ed8;font-weight:700;margin-bottom:8px">📥 发现 '+newFacts.length+' 条新要点，可选择追加到智库待确认：</div>'+
+    '<div style="margin-bottom:10px" id="factsListDiv">'+factsListHtml+'</div>'+
+    '<div style="display:flex;align-items:center;gap:10px;margin-top:6px">'+
+    '<button onclick="window._lastNewFacts='+JSON.stringify(newFacts).replace(/"/g,'&quot;')+';kbAppendNewFacts('+kbIdx+',window._lastNewFacts,this)" data-kbidx="'+kbIdx+'" '+
+      'style="padding:7px 16px;background:#1d4ed8;color:#fff;border:none;border-radius:8px;font-size:12.5px;cursor:pointer;font-weight:600">'+'\u271a 全部追加到「'+topicLabel+'」</button>'+
+    '<span style="font-size:11px;color:#64748b">标记为⚠️待确认，原有内容不变</span>'+
+    '</div>'+
+    '</div>';
 }
 
 /* 单独追加一条新要点到智库 */
