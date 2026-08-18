@@ -3535,7 +3535,10 @@ function pickDock(key){
 }
 
 function dockingPage(p){
-  var projKeys=cityKeys().filter(function(k){return PROJECTS[k].stage>=3;});
+  // 只显示「已正式提交的招商需求」子项目(isDemand)。父项目(城市产业分析工作区,如 sz / p*)
+  // 绝不进招商对接——它的 topic 会随选中方向变化、stage 也可能被推进,之前误入导致
+  // 「没提交就出现在招商对接」「线索/进度全堆到某个产业」。
+  var projKeys=cityKeys().filter(function(k){return PROJECTS[k]&&PROJECTS[k].isDemand===true&&PROJECTS[k].stage>=3;});
 
   if(!projKeys.length){
     return '<div class="page">'+
@@ -4775,6 +4778,7 @@ function importToProject(gap, city, topic, btnEl){
   PROJECTS[key]={
     id:key, city:city||p.city, org:(city||p.city)+'市招商局', who:p?p.who:'负责人',
     topic:gap, stage:3,  // 立项即跳过研判，直接到「确认需求」
+    isDemand:true,       // 标记为「已正式提交的招商需求项目」——只有它们才进招商对接列表
     kb: p ? JSON.parse(JSON.stringify(p.kb)) : [],
     report: REPORTSTATE[cur] ? {
       title:(city||p.city)+'·'+gap+'招商研判报告',
@@ -5408,26 +5412,40 @@ function submitDemand(){
   var p=P(); if(!p) return;
   var rs=REPORTSTATE[cur];
   if(!rs){toast('请先生成研判报告'); return;}
-  // 检查是否已提交
-  var existing=DEMANDS.find(function(d){return d.projKey===cur;});
-  if(existing){toast('该方向已提交需求池'); return;}
+  var topic=p.topic;
+  // 关键修复：招商需求必须针对「当前研判方向」创建一个独立的 isDemand 子项目，
+  // 而不是把父项目工作区(cur, 如 sz)本身推进 stage/派生线索——那会让父项目连同它
+  // 随方向变化的 topic 一起混入招商对接，且各方向线索全堆到父项目上。
+  // 幂等：同一城市同一方向已提交过则不重复建。
+  var dupKey=Object.keys(PROJECTS).find(function(k){
+    var x=PROJECTS[k]; return x&&x.isDemand&&x.city===p.city&&x.topic===topic;
+  });
+  if(dupKey){toast('该方向已提交需求池'); return;}
+
+  var key='proj_'+Date.now().toString(36);
+  PROJECTS[key]={
+    id:key, city:p.city, org:p.org, who:p.who,
+    topic:topic, stage:3, isDemand:true,
+    kb: JSON.parse(JSON.stringify(p.kb||[])),
+    report:null, clues:[],
+    stageLog:[{ts:Date.now(), from:2, to:3, note:'招商需求已正式递交', who:'政府端'}]
+  };
+  // 把当前方向的报告复制给子项目，供招商对接/线索派生使用
+  REPORTSTATE[key]=JSON.parse(JSON.stringify(rs));
+  REPORTSTATE[key].topic=topic;
+  REPORTSTATE[key].phase=2;
+
   DEMANDS.push({
     id:'d'+Date.now().toString(36),
-    projKey:cur,
+    projKey:key,
     city:p.city, gov:p.org+'·'+p.who,
-    topic:p.topic, domain:p.topic.replace('补链','').replace('升级',''),
-    need:'基于研判报告（置信度'+topicScore(P()&&P().topic)+'%），见报告全文',
+    topic:topic, domain:topic.replace('补链','').replace('升级',''),
+    need:'基于研判报告（置信度'+topicScore(topic)+'%），见报告全文',
     submit:'刚刚', res:'none', resLabel:'待研判', clues:0,
     note:rs.text?rs.text.slice(0,120)+'…':'', ai:''
   });
-  p.stage=Math.max(p.stage,3);
-  // 提交即写入阶段留痕（时间线起点），供前台"递交时间线"动态展示
-  if(!p.stageLog) p.stageLog=[];
-  if(!p.stageLog.length || p.stageLog[0].note!=='招商需求已正式递交'){
-    p.stageLog.unshift({ts:Date.now(), from:2, to:3, note:'招商需求已正式递交', who:'政府端'});
-  }
-  // 立即派生线索（如果有报告）
-  deriveCluesFromReport(cur);
+  // 针对子项目派生线索（父项目工作区完全不动）
+  deriveCluesFromReport(key);
   persist();
   toast('✓ 招引需求已提交，候选线索已自动派生');
 }
