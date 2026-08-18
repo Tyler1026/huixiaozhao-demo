@@ -6824,7 +6824,7 @@ function opsEntListV2(list){
   return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
     list.map(function(e){
       var idx=OPS_ENT.indexOf(e);
-      var matchCount=(e.matches||[]).length;
+      var matchCount=(e.matches||[]).filter(function(m){return !m.pushed;}).length;
       var statusColor=e.status==='scanned'?'#6d28d9':e.status==='pushed'?'#166534':'#9aa5b5';
       var statusBg=e.status==='scanned'?'#f5f3ff':e.status==='pushed'?'#f0fdf4':'#f5f7fb';
       var statusLabel=e.status==='scanned'?'已扫描'+matchCount+'匹配':e.status==='pushed'?'已推送':'待扫描';
@@ -6875,8 +6875,9 @@ function opsEntEmpty(){
 function opsEntList(){
   return '<div style="display:flex;flex-direction:column;gap:10px">' +
     OPS_ENT.map(function(e,idx){
-      var matchCount = (e.matches||[]).length;
+      var totalMatch = (e.matches||[]).length;
       var pushed = (e.matches||[]).filter(function(m){return m.pushed;}).length;
+      var matchCount = totalMatch - pushed;
       var statusColor = e.status==='scanned'?'#6d28d9':e.status==='pushed'?'#166534':'#9aa5b5';
       var statusBg    = e.status==='scanned'?'#f5f3ff':e.status==='pushed'?'#f0fdf4':'#f5f7fb';
       var statusLabel = e.status==='scanned'?'已扫描 '+matchCount+'个匹配':e.status==='pushed'?'已推送':e.status==='manual'?'待扫描':'待扫描';
