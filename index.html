@@ -6690,7 +6690,14 @@ function detailNeeds(p){
         '<div class="detail-block"><h3>提示</h3><div class="info-callout" style="margin-top:0">右侧随所选方向联动；点击左侧其它方向可切换查看。企业真实联系方式由资源团队线下保管。</div></div>'+
       '</div>';
   }
-  var ks=cityKeys();var byStage={};ks.forEach(function(k){var s=PROJECTS[k].stage;byStage[s]=(byStage[s]||0)+1});
+  // 与左侧招商对接列表(projMgmtPage)用同一过滤口径：只统计已提交的招商需求子项目，
+  // 排除父项目/城市产业分析工作区(sz、城市锚点)，否则右侧「研判总数」会比左侧列表多算父项目。
+  var ks=cityKeys().filter(function(k){
+    var x=PROJECTS[k]; if(!x) return false;
+    if(x.isDemand===true) return true;
+    return !isMainProject(k) && x.stage>=3;
+  });
+  var byStage={};ks.forEach(function(k){var s=PROJECTS[k].stage;byStage[s]=(byStage[s]||0)+1});
   return '<div class="detail-header"><div><span class="eyebrow">OVERVIEW</span><h2>需求概览</h2><p>'+p.who+' 名下研判汇总</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>研判总数</h3><p class="detail-copy" style="font-size:22px;font-weight:700;color:#013582">'+ks.length+' 个产业方向</p></div>'+
