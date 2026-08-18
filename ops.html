@@ -6461,7 +6461,21 @@ function opsTabBar(){
 /* ══ Tab1: 城市需求概览 ══ */
 function opsOverview(){
   // 管理端（运营方）跨城市查看所有项目
-  var projKeys = Object.keys(PROJECTS);
+  // 关键修复：只显示「已正式提交招商需求」的子项目。父项目/城市产业分析工作区
+  // (如 sz、id==城市名、topic 形如「XX产业链招引」的占位项目) 的 topic 会随政府端
+  // 选中的产业方向实时变化，绝不能当招商项目展示——否则政府端点氢气，管理端就跟着变。
+  function _isParentProj(k){
+    var x=PROJECTS[k]; if(!x) return true;
+    if(k==='sz') return true;
+    if(x.id && x.city && x.id===x.city) return true;
+    if(typeof x.topic==='string' && /产业链招引$/.test(x.topic)) return true;
+    return false;
+  }
+  var projKeys = Object.keys(PROJECTS).filter(function(k){
+    var x=PROJECTS[k]; if(!x) return false;
+    if(x.isDemand===true) return true;
+    return !_isParentProj(k) && (x.stage||1)>=3;
+  });
 
   if(!projKeys.length){
     return '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:#9aa5b5;padding:60px">' +
