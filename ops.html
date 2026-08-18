@@ -1573,198 +1573,6 @@ function mainPane(p){
    ══════════════════════════════════════════════════════════════ */
 
 /* ── 从研判报告文本派生候选线索 ── */
-/* ══════════════════════════════════════════════════════════════
-   AI 扫描推荐企业 — 基于随州慧小招2026-07实测报告
-   数据来源：慧小招产业链缺口测绘 + 公开企业信息
-   结构：每条 scanClue = {
-     id, gap, name, kind, region, scale, techRoute,
-     signal, signalSrc, matchPoints:[], questions:[],
-     priority: 1-5, localAttr: 'A'|'B'|'C',
-     status: 'ai_scan'  ← 区别于 'slate'手动录入
-   }
-   ══════════════════════════════════════════════════════════════ */
-
-/* ── 随州专项 AI 扫描企业数据（慧小招2026-07实测） ── */
-var SUIZHOU_SCAN_CLUES = [
-  // ─── 氢能专用车方向 ─────────────────────────────────────────
-  {
-    id: 'scan_sz_h2_001',
-    gap: '燃料电池电堆',
-    name: '亿华通动力科技（代号：氢驰A）',
-    kind: '商用车燃料电池系统集成商',
-    region: '北京/华北',
-    scale: '上市公司（688339），2024年营收4.2亿，商用车功率段主力',
-    techRoute: '金属双极板PEMFC，120-200kW商用车段，客户含宇通/福田/北汽',
-    signal: '⚠️ 目前无明确中部建厂公告。2024年报显示产能利用率不足60%，以华北/西北市场为主，中部扩张尚无公开计划',
-    signalSrc: '公司年报2024 + A股公告（核实截至2026-07）',
-    hasMoveSignal: false,
-    matchPoints: [
-      '技术路线与新楚风49T氢重卡需求高度契合（商用车功率段）',
-      '直补随州电堆53%最大缺口，一旦落地即锁定程力/新楚风稳定采购',
-      '华北产能过剩（利用率<60%），存在异地扩产动机，但需主动沟通'
-    ],
-    questions: [
-      '是否有在湖北/中部地区建立生产或协同基地的计划？',
-      '与新楚风/程力的技术路线匹配度及联合开发意向',
-      '在随州落地需要哪些政策支持和配套条件'
-    ],
-    priority: 3,
-    localAttr: 'A',
-    status: 'ai_scan'
-  },
-  {
-    id: 'scan_sz_h2_002',
-    gap: '燃料电池电堆',
-    name: '国鸿氢能科技（代号：氢驰B）',
-    kind: '燃料电池电堆制造企业',
-    region: '广东云浮/华南',
-    scale: '港股上市（02498），2025年H1营收3.8亿，电堆年产能超10万台',
-    techRoute: '石墨板电堆，已有多款重卡应用，成本低于金属板约15%',
-    signal: '✅ 2025年7月公告：与湖北省政府签署战略合作备忘录，明确在武汉城市圈内布局中部生产基地，计划2026年投产',
-    signalSrc: '港交所公告（2025-07-15）+ 湖北省政府官网新闻',
-    hasMoveSignal: true,
-    matchPoints: [
-      '已明确在湖北布局，随州专汽整车产量可成为配套基地最优落点',
-      '石墨板成本优势契合随州专用车降本需求，性价比高于金属板方案',
-      '战略备忘录已签，政府关系成熟，落地阻力小于从零开始谈判'
-    ],
-    questions: [
-      '湖北布局的具体选址进展，随州是否在候选名单中',
-      '石墨板电堆与新楚风49T氢重卡的功率匹配测试情况',
-      '随州与武汉基地协同配套的供应链方案'
-    ],
-    priority: 5,
-    localAttr: 'A',
-    status: 'ai_scan'
-  },
-  {
-    id: 'scan_sz_h2_003',
-    gap: '高压储氢瓶阀与管路',
-    name: '中材科技储氢（代号：储氢A）',
-    kind: '高压储氢瓶（III/IV型）制造企业',
-    region: '江苏南京/华东',
-    scale: 'A股上市（002080），储氢业务2025年H1收入增长280%',
-    techRoute: 'IV型70MPa储氢瓶，已配套多款商用车氢能示范车型',
-    signal: '✅ 2025年5月公告：储氢业务拟独立融资8亿元，明确新建中部生产基地，选址湖北/湖南，计划2026年Q2投产',
-    signalSrc: '深交所公告（2025-05-12），融资说明书',
-    hasMoveSignal: true,
-    matchPoints: [
-      '已公告中部建厂，随州是湖北内最优的专用车配套选址',
-      '与电堆企业同步落地可降低储氢系统整体物流成本',
-      'IV型轻量化优势契合专用车对整车自重的严格控制要求'
-    ],
-    questions: [
-      '中部选址是否已确定具体城市，随州是否在考察名单',
-      '随州产业园的洁净厂房条件是否满足储氢瓶生产要求',
-      '首期产能规模与随州整车厂采购量的匹配度'
-    ],
-    priority: 5,
-    localAttr: 'A',
-    status: 'ai_scan'
-  },
-  // ─── 智慧应急装备方向 ─────────────────────────────────────
-  {
-    id: 'scan_sz_emg_001',
-    gap: '应急机器人本体',
-    name: '宇树科技（代号：机器人A）',
-    kind: '四足/人形机器人研发与制造',
-    region: '浙江杭州/长三角',
-    scale: '独角兽，2025年B轮融资10亿，四足机器人出货量全球第一',
-    techRoute: 'B2/Go2系列四足机器人，IP68防护，已有消防/应急实地部署案例',
-    signal: '⚠️ 目前无中部建厂计划。2025年主要布局华东研发中心和海外出口，随州方向需主动接触',
-    signalSrc: '融资公告（2025-06）+ 公司官网',
-    hasMoveSignal: false,
-    matchPoints: [
-      '产品已在消防应急场景验证，与曾都区国家安全应急产业示范基地场景高度契合',
-      '可替代江南专汽/齐星对启灵机器人的外采依赖',
-      '随州提供场景落地机会，对独角兽企业有吸引力（无需立刻建厂）'
-    ],
-    questions: [
-      '是否考虑在中部地区设立应急场景验证基地或合作研发中心',
-      '与随州应急整机厂的OEM/联合开发合作模式意向',
-      '政府示范项目的合作条件与预算规模'
-    ],
-    priority: 3,
-    localAttr: 'B',
-    status: 'ai_scan'
-  },
-  {
-    id: 'scan_sz_emg_002',
-    gap: '无人机本体与系统集成',
-    name: '天津云圣智能（代号：无人机A）',
-    kind: '工业/应急无人机系统集成商',
-    region: '天津/华北',
-    scale: '2025年C轮融资5亿，专注消防救援无人机',
-    techRoute: '5G通信集成+固定翼/多旋翼混合，消防实地部署超200套',
-    signal: '✅ 2025年6月：与湖北孝感经济开发区签署合作协议，拟在湖北设立应急无人机制造基地，面积约5000平方米',
-    signalSrc: '孝感市政府新闻（2025-06-18）+ 公司公告',
-    hasMoveSignal: true,
-    matchPoints: [
-      '已在湖北选址（孝感），随州可作为协同配套或分布式部署点',
-      '5G通信集成能力直接补齐随州智慧应急感知层空白',
-      '孝感是直接竞争对手—随州需快速锁定差异化合作（整机平台配套）'
-    ],
-    questions: [
-      '孝感基地落地后，是否考虑在随州设置应急装备联合实验室或场景验证基地',
-      '与博利特系留无人机平台的技术互补与配套合作可能性',
-      '同时与孝感/随州合作的商业逻辑与谈判窗口'
-    ],
-    priority: 4,
-    localAttr: 'B',
-    status: 'ai_scan'
-  },
-  // ─── 香菇精深加工方向 ─────────────────────────────────────
-  {
-    id: 'scan_sz_mush_001',
-    gap: '香菇多糖/多肽功能成分提取',
-    name: '晨光生物科技集团（代号：提取A）',
-    kind: '天然植物提取物制造企业',
-    region: '河北曲周/华北',
-    scale: 'A股上市（300138），2024年营收36亿，天然提取物行业前三',
-    techRoute: '超临界提取+膜分离，多糖/多肽/功能性食品原料规模化生产',
-    signal: '✅ 2024年年报：明确提出"向食药用菌品类延伸"战略，2025年在湖南岳阳设立食用菌提取试验线，计划2026年选址正式建厂，优先考虑原料产地城市',
-    signalSrc: '公司年报2024（第37页战略规划章节）',
-    hasMoveSignal: true,
-    matchPoints: [
-      '正在选址建厂且优先考虑原料产地—随州年产70万吨香菇是最强竞争力',
-      '落地随州可将香菇多糖原料采购成本降低约40%，逻辑自洽',
-      '与裕国药业/肽源形成互补而非竞争，可共建提取产业集群'
-    ],
-    questions: [
-      '2026年建厂选址是否已进入随州调研阶段',
-      '对洁净厂房等级（GMP）和废水处理的具体要求',
-      '首期投资规模与达产周期预期'
-    ],
-    priority: 5,
-    localAttr: 'A',
-    status: 'ai_scan'
-  },
-  {
-    id: 'scan_sz_mush_002',
-    gap: '菌种自主研发基地',
-    name: '中农科院食用菌研究所（代号：菌种A）',
-    kind: '食用菌育种与品种保护科研机构',
-    region: '福建漳州/华南',
-    scale: '国家级院所，承担"十四五"国家食用菌新品种选育重点项目',
-    techRoute: '杂交育种+分子标记辅助选择，已获3个国家级新品种权',
-    signal: '✅ 2025年农业农村部科研计划公示：该所拟在中部香菇主产区建立"食用菌种质资源保护与利用示范基地"，优先选择具备菌种繁育基础的城市，计划2026年启动',
-    signalSrc: '农业农村部科研计划公示（2025-04）+ 院所官网',
-    hasMoveSignal: true,
-    matchPoints: [
-      '随州菌种基地占全省60%/全国15%，是"菌种繁育基础"最强候选城市',
-      '解决7925/7917老品种国外垄断，自主品种知识产权归属随州可大幅提升品牌价值',
-      '科研合作模式风险低，适合政府先行推动，后引入产业化配套'
-    ],
-    questions: [
-      '示范基地选址评估标准及随州菌种基地现状是否符合',
-      '新品种知识产权共有机制与随州政府的利益分配方案',
-      '建立示范基地需要的政府配套支持（土地/启动资金/种植基地）'
-    ],
-    priority: 4,
-    localAttr: 'A',
-    status: 'ai_scan'
-  },
-];
 
 /* ── 从报告文本提取缺口（供通用城市动态扫描用）── */
 function extractGapsForScan(p){
@@ -1797,54 +1605,68 @@ function extractGapsForScan(p){
   return gaps.slice(0,4);
 }
 
-/* ── 统一扫描入口：随州走真实企业库，其他城市按缺口动态生成 ── */
-function computeScanClues(p){
-  if(!p)return [];
-  var city=(p.city||''); var topic=(p.topic||'').toLowerCase();
-  if(city.indexOf('随州')>=0){
-    return SUIZHOU_SCAN_CLUES.filter(function(sc){
-      if(topic.indexOf('氢能')>=0||topic.indexOf('电堆')>=0||topic.indexOf('储氢')>=0)
-        return sc.gap.indexOf('电堆')>=0||sc.gap.indexOf('储氢')>=0;
-      if(topic.indexOf('应急')>=0||topic.indexOf('机器人')>=0||topic.indexOf('无人机')>=0)
-        return sc.gap.indexOf('机器人')>=0||sc.gap.indexOf('无人机')>=0;
-      if(topic.indexOf('香菇')>=0||topic.indexOf('菌种')>=0||topic.indexOf('提取')>=0)
-        return sc.gap.indexOf('多糖')>=0||sc.gap.indexOf('多肽')>=0||sc.gap.indexOf('菌种')>=0;
-      return true; // 通用 topic → 返回随州全部方向候选（不再兜底为0条）
-    });
-  }
-  return genGenericScanClues(p);
+/* AI 企业漏斗 — 真实调用 DeepSeek(/api/kb-chat mode=funnel) 按项目分析，不用任何硬编码企业库 */
+var _funnelRunning = {};
+var KB_API_OPS = '/api/kb-chat';
+function _funnelInput(p){
+  var rsx=(typeof REPORTSTATE!=='undefined')?(REPORTSTATE[p.id]||REPORTSTATE[cur]):null;
+  var text=(rsx&&rsx.text)||'';
+  var gaps=[]; try{ gaps=extractGapsForScan(p); }catch(e){}
+  return {text:text, gaps:gaps};
+}
+function runAIFunnel(projKey, done){
+  var p=PROJECTS[projKey]; if(!p){ done&&done('no project'); return; }
+  if(_funnelRunning[projKey]){ return; }
+  _funnelRunning[projKey]=true;
+  var inp=_funnelInput(p); var topic=p.topic||'';
+  var q='招商方向：'+topic+' 城市：'+(p.city||'')+'\n\n产业研判报告：\n'+(inp.text? inp.text.slice(0,4000) : '（暂无完整报告，请基于招商方向与常识分析）')+'\n\n已识别缺口：'+(inp.gaps&&inp.gaps.length?inp.gaps.join('、'):'（见报告）')+'\n\n请针对该招商方向筛选真实存在的适配企业构成企业漏斗，按 fit_score 从高到低排序，目标100家（至少60家），严格按 SYSTEM 要求输出 JSON。';
+  fetch(KB_API_OPS,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q, city:(p.city||''), chunks:[], stream:false, mode:'funnel'})})
+  .then(function(r){return r.json();}).then(function(data){
+    _funnelRunning[projKey]=false;
+    var content=''; try{ content=data.choices[0].message.content; }catch(e){}
+    if(!content){ done&&done('empty'); return; }
+    var obj=_parseFunnelJson(content);
+    if(!obj||!obj.companies||!obj.companies.length){ done&&done('parse'); return; }
+    var companies=obj.companies.map(function(c,i){ return {id:'f_'+projKey+'_'+i, name:c.name||'', region:c.region||'', kind:c.kind||'', fit:c.fit||'', fit_score:(typeof c.fit_score==='number'?c.fit_score:parseInt(c.fit_score)||0), signal:c.signal||'', listed:c.listed||'', source:c.source||'公开信息（AI推断，待核验）'}; }).filter(function(c){return c.name;}).sort(function(a,b){return b.fit_score-a.fit_score;});
+    PROJECTS[projKey].funnel={ ts:Date.now(), topic:obj.topic||topic, total:(obj.total_scanned||companies.length), companies:companies, pushed:false };
+    persist(); done&&done(null, PROJECTS[projKey].funnel);
+  }).catch(function(e){ _funnelRunning[projKey]=false; done&&done(e&&e.message||'network'); });
+}
+function _parseFunnelJson(s){
+  if(!s) return null; var t=String(s).trim();
+  t=t.replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,'');
+  try{ return JSON.parse(t); }catch(e){}
+  var a=t.indexOf('{'), b=t.lastIndexOf('}');
+  if(a>=0&&b>a){ try{ return JSON.parse(t.slice(a,b+1)); }catch(e){} }
+  return null;
+}
+function pushFunnelTopToGov(projKey, n){
+  var p=PROJECTS[projKey]; if(!p||!p.funnel||!p.funnel.companies.length){ toast('请先运行 AI 漏斗分析'); return; }
+  n=n||8; var top=p.funnel.companies.slice(0, n);
+  if(!p.clues) p.clues=[];
+  var existNames={}; (p.clues||[]).forEach(function(c){ if(c.name) existNames[c.name]=1; });
+  var added=0;
+  top.forEach(function(c){
+    if(existNames[c.name]) return;
+    p.clues.push({id:c.id, name:c.name, kind:c.kind, region:c.region, gap:p.funnel.topic||p.topic||'', tone:'slate', status:'gov_push', fit:c.fit, fit_score:c.fit_score, signal:c.signal, listed:c.listed, source:c.source, scale:(c.listed?c.listed+' · ':'')+(c.region||''), techRoute:c.fit||'', signalSrc:c.source||'AI推断，待核验', matchPoints:[c.fit].filter(Boolean), questions:['是否有在'+(p.city||'本地')+'布局/投资意向','与本地链主的配套匹配度','落地所需政策与承载条件'], priority:Math.max(1,Math.min(5,Math.round((c.fit_score||0)/20))), localAttr:'B'});
+    added++;
+  });
+  p.funnel.pushed=true; p.funnel.pushedAt=Date.now(); p.funnel.pushedNames=top.map(function(c){return c.name;});
+  persist(); render();
+  toast('已把 '+added+' 家精准适配企业推送到政府端「待接触企业」');
 }
 
-/* ── 通用城市动态候选企业（脱敏代号，基于报告缺口）── */
-function genGenericScanClues(p){
-  var city=p.city||'该市';
-  var gaps=extractGapsForScan(p);
-  var regionPool=['长三角(江浙沪)','珠三角(广东)','成渝地区','环渤海(京津冀)','华中(武汉城市圈)'];
-  var kindPool=['系统集成商','核心部件制造企业','精深加工龙头','智能装备供应商'];
-  var laPool=['A','A','B','C']; var prPool=[5,4,4,3];
-  return gaps.map(function(gap,idx){
-    var g=gap.slice(0,10);
-    return {
-      id:'scan_'+(p.id||'x')+'_'+idx, gap:gap,
-      name:'脱敏企业 '+String.fromCharCode(65+idx)+'（'+g+'·代号）',
-      kind:g+kindPool[idx%kindPool.length], region:regionPool[idx%regionPool.length],
-      scale:'该细分领域头部之一，规模适配'+city+'配套需求（具体以核验为准）',
-      techRoute:'掌握「'+g+'」核心工艺，产品与'+city+'主导产业上下游匹配',
-      signal:'⚠️ 基于公开信息与行业布局初判存在异地扩产/配套下沉动机，'+city+'方向需资源团队主动接触核实',
-      signalSrc:'慧小招公开信息扫描（截至'+new Date().toLocaleDateString('zh-CN')+'）',
-      hasMoveSignal:false,
-      matchPoints:[
-        '直接补齐'+city+'「'+g+'」产业链缺口，与本地链主形成配套需求',
-        '落地即可锁定'+city+'本地整机/龙头企业的稳定采购订单',
-        '产业配套就近集聚，可降低整体物流与协同成本'
-      ],
-      questions:[
-        '企业是否有在'+city+'或周边区域布局产能/配套基地的计划',
-        '与'+city+'本地链主的技术匹配度与联合开发意向',
-        '落地'+city+'所需的政策支持与承载条件'
-      ],
-      priority:prPool[idx%prPool.length], localAttr:laPool[idx%laPool.length], status:'ai_scan'
-    };
+/* 企业线索来源：读真实 AI 漏斗结果（p.funnel.companies），不再有硬编码 */
+function computeScanClues(p){
+  if(!p||!p.funnel||!p.funnel.companies) return [];
+  return p.funnel.companies.map(function(c){
+    return {id:c.id, gap:(p.funnel.topic||p.topic||''), name:c.name, kind:c.kind, region:c.region,
+      scale:(c.listed?c.listed+' · ':'')+(c.region||''), techRoute:c.fit||'',
+      signal:c.signal||'', signalSrc:c.source||'AI推断，待核验', hasMoveSignal:!!c.signal,
+      matchPoints:[c.fit].filter(Boolean),
+      questions:['是否有在'+(p.city||'本地')+'布局/投资意向','与本地链主的配套匹配度','落地所需政策与承载条件'],
+      priority:Math.max(1,Math.min(5,Math.round((c.fit_score||0)/20))), localAttr:'B', status:'ai_scan',
+      fit_score:c.fit_score};
   });
 }
 
@@ -1854,26 +1676,37 @@ function renderCluesTwoPanel(projKey){
   var manualClues = (p.clues||[]).filter(function(c){return c.status!=='ai_scan';});
   var aiClues     = (p.clues||[]).filter(function(c){return c.status==='ai_scan';});
 
-  // AI 扫描栏
-  var aiPanel = '<div>'+
-    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'+
+  // AI 企业漏斗栏
+  var fn = p.funnel;
+  var running = _funnelRunning[projKey];
+  var funnelHead = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'+
       '<div style="display:flex;align-items:center;gap:6px">'+
         '<span style="width:8px;height:8px;border-radius:50%;background:#6366f1"></span>'+
-        '<span style="font-size:12px;font-weight:750;color:#0b183b;letter-spacing:.3px">AI 扫描推荐</span>'+
+        '<span style="font-size:12px;font-weight:750;color:#0b183b;letter-spacing:.3px">AI 企业漏斗</span>'+
       '</div>'+
-      '<span style="font-size:11px;padding:2px 7px;background:#f5f3ff;color:#6d28d9;border-radius:10px">'+aiClues.length+'家</span>'+
-      '<span style="font-size:11px;color:#9aa5b5;margin-left:2px">· 基于报告缺口+公开信息扫描</span>'+
+      (fn?'<span style="font-size:11px;padding:2px 7px;background:#f5f3ff;color:#6d28d9;border-radius:10px">扫描'+ (fn.total||fn.companies.length) +'家 · 精筛'+fn.companies.length+'家</span>':'')+
+      '<span style="font-size:11px;color:#9aa5b5;margin-left:2px">· DeepSeek 真实分析，企业需人工核验</span>'+
       '<div style="flex:1"></div>'+
-      '<button onclick="loadAIScanClues(\''+projKey+'\')" style="padding:4px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:11.5px;color:#6d28d9;cursor:pointer;font-weight:600">🔍 重新扫描</button>'+
-    '</div>'+
-    (aiClues.length
-      ? aiClues.map(function(c,ci){ return scanClueCard(c, projKey, ci); }).join('')
-      : '<div style="text-align:center;padding:20px;background:#f9fafb;border-radius:10px;border:1px solid #e8edf5">'+
-          '<div style="font-size:12.5px;color:#9aa5b5;margin-bottom:8px">暂无 AI 扫描结果</div>'+
-          '<button onclick="loadAIScanClues(\''+projKey+'\')" style="padding:6px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600">🔍 立即扫描</button>'+
-        '</div>'
-    )+
-  '</div>';
+      (running?'<span style="font-size:11.5px;color:#6d28d9">⏳ 分析中…</span>':'<button onclick="loadAIScanClues(\''+projKey+'\')" style="padding:4px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:11.5px;color:#6d28d9;cursor:pointer;font-weight:600">🔄 重新分析</button>')+
+    '</div>';
+  var funnelBody;
+  if(running && !fn){
+    funnelBody='<div style="text-align:center;padding:22px;background:#faf9ff;border-radius:10px;border:1px solid #ede9fe;font-size:12.5px;color:#6d28d9">⏳ AI 正在按该方向缺口分析适配企业，约需 30-60 秒…</div>';
+  } else if(!fn){
+    funnelBody='<div style="text-align:center;padding:20px;background:#f9fafb;border-radius:10px;border:1px solid #e8edf5">'+
+      '<div style="font-size:12.5px;color:#9aa5b5;margin-bottom:8px">尚未生成企业漏斗</div>'+
+      '<button onclick="loadAIScanClues(\''+projKey+'\')" style="padding:6px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600">🔍 立即 AI 分析</button>'+
+    '</div>';
+  } else {
+    var pushedTip = fn.pushed
+      ? '<span style="font-size:11px;color:#166534;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:3px 9px">✓ 已推送 '+(fn.pushedNames?fn.pushedNames.length:0)+' 家到政府端</span>'
+      : '';
+    var pushBtn = '<button onclick="pushFunnelTopToGov(\''+projKey+'\',8)" style="padding:7px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer">🚀 推送 Top8 精准企业到政府端</button>';
+    funnelBody='<div style="margin-bottom:10px;display:flex;align-items:center;gap:10px">'+pushBtn+pushedTip+'</div>'+
+      aiClues.slice(0,20).map(function(c,ci){ return scanClueCard(c, projKey, ci); }).join('')+
+      (aiClues.length>20?'<div style="text-align:center;font-size:11.5px;color:#9aa5b5;padding:8px">共 '+aiClues.length+' 家，已展示适配度最高的前 20 家</div>':'');
+  }
+  var aiPanel = '<div>'+funnelHead+funnelBody+'</div>';
 
   // 手动录入栏
   var manualPanel = '<div style="margin-top:20px">'+
@@ -2001,31 +1834,17 @@ function dismissScanClue(projKey, clueId){
 
 /* ── 加载 AI 扫描结果到项目 ── */
 function loadAIScanClues(projKey){
-  var p = PROJECTS[projKey]; if(!p) return;
-  if(!p.clues) p.clues=[];
-
-  // 根据项目 topic 匹配相关线索
-  var topic=(p.topic||'').toLowerCase();
-  var relevant=SUIZHOU_SCAN_CLUES.filter(function(sc){
-    // 按缺口方向匹配
-    if(topic.indexOf('氢能')>=0||topic.indexOf('电堆')>=0||topic.indexOf('储氢')>=0)
-      return sc.gap.indexOf('电堆')>=0||sc.gap.indexOf('储氢')>=0;
-    if(topic.indexOf('应急')>=0||topic.indexOf('机器人')>=0||topic.indexOf('无人机')>=0)
-      return sc.gap.indexOf('机器人')>=0||sc.gap.indexOf('无人机')>=0;
-    if(topic.indexOf('香菇')>=0||topic.indexOf('菌种')>=0||topic.indexOf('提取')>=0)
-      return sc.gap.indexOf('多糖')>=0||sc.gap.indexOf('多肽')>=0||sc.gap.indexOf('菌种')>=0;
-    // 默认：全部三大方向各取1条
-    return sc.priority===5||sc.id.endsWith('001');
+  // 触发真实 AI 企业漏斗分析（不再用硬编码假数据）
+  var p=PROJECTS[projKey]; if(!p) return;
+  if(_funnelRunning[projKey]){ toast('AI 正在分析中，请稍候…'); return; }
+  toast('AI 企业漏斗分析中，约需30-60秒…');
+  runAIFunnel(projKey, function(err, funnel){
+    if(err){ toast('AI 漏斗分析失败：'+err); return; }
+    try{ renderOpsV2&&renderOpsV2(); }catch(e){ try{render();}catch(_){}}
+    toast('✓ AI 漏斗完成，共分析 '+(funnel.total||funnel.companies.length)+' 家，精筛 '+funnel.companies.length+' 家适配企业');
   });
-
-  // 去重（已存在的不重复加）
-  var existIds=(p.clues||[]).map(function(c){return c.id;});
-  var newOnes=relevant.filter(function(sc){return existIds.indexOf(sc.id)<0;});
-  p.clues=p.clues.concat(newOnes);
-  persist();
-  render();
-  toast('✓ AI扫描完成，新增'+newOnes.length+'家候选企业（基于慧小招2026-07实测数据）');
 }
+
 
 
 function deriveCluesFromReport(projKey){
@@ -2311,26 +2130,13 @@ function projMgmtPage(p){
 
     // 自动派生线索（如有报告）
     deriveCluesFromReport(k);
-    // 自动加载 AI 扫描线索（首次，静默不弹 toast）
-    if(!window.__scanLoaded) window.__scanLoaded={};
-    if(!window.__scanLoaded[k]){
-      window.__scanLoaded[k]=true;
-      var _p2=PROJECTS[k];if(_p2&&!_p2.clues)_p2.clues=[];
-      var existIds=(_p2&&_p2.clues||[]).map(function(c){return c.id;});
-      var _topic=(_p2&&_p2.topic||'').toLowerCase();
-      var relevant=SUIZHOU_SCAN_CLUES.filter(function(sc){
-        if(_topic.indexOf('氢能')>=0||_topic.indexOf('电堆')>=0||_topic.indexOf('储氢')>=0)
-          return sc.gap.indexOf('电堆')>=0||sc.gap.indexOf('储氢')>=0;
-        if(_topic.indexOf('应急')>=0||_topic.indexOf('机器人')>=0||_topic.indexOf('无人机')>=0)
-          return sc.gap.indexOf('机器人')>=0||sc.gap.indexOf('无人机')>=0;
-        if(_topic.indexOf('香菇')>=0||_topic.indexOf('菌种')>=0||_topic.indexOf('提取')>=0)
-          return sc.gap.indexOf('多糖')>=0||sc.gap.indexOf('多肽')>=0||sc.gap.indexOf('菌种')>=0;
-        return sc.priority===5;
-      });
-      var newOnes=relevant.filter(function(sc){return existIds.indexOf(sc.id)<0;});
-      if(newOnes.length&&_p2){
-        _p2.clues=(_p2.clues||[]).concat(newOnes);
-        persist();
+    // 自动触发真实 AI 企业漏斗分析（每个项目首次进入时，静默后台跑；不再用硬编码假数据）
+    if(!window.__funnelAuto) window.__funnelAuto={};
+    if(!window.__funnelAuto[k]){
+      window.__funnelAuto[k]=true;
+      var _pf=PROJECTS[k];
+      if(_pf && !_pf.funnel && (_pf.topic||'').trim()){
+        runAIFunnel(k, function(err){ if(!err){ try{ renderOpsV2&&renderOpsV2(); }catch(e){ try{render();}catch(_){}} } });
       }
     }
 

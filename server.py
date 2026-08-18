@@ -305,6 +305,36 @@ SYSTEM_TOPICS = """你是慧小招产业招商策略师。根据某城市的调�
 5. icon 用单个 emoji；type 从给定四类里选最贴切的。"""
 
 
+SYSTEM_FUNNEL = """你是慧小招招商情报分析师。针对某个具体的「招商项目方向」，基于其产业研判报告与缺口分析，筛选出真实存在的、有异地设厂/投资/合作可能的适配企业，构成一个企业漏斗。
+
+## 输出格式（严格输出 JSON，不要 markdown 代码块、不要 JSON 之外的任何文字）
+{
+  "topic": "该招商方向名",
+  "total_scanned": 100,
+  "companies": [
+    {
+      "name": "企业规范全称（真实存在的公司，如「亿华通科技股份有限公司」）",
+      "region": "总部所在城市",
+      "kind": "主营业务（简短，一句话）",
+      "fit": "为何适配该招商方向（结合缺口，一句话）",
+      "fit_score": 88,
+      "signal": "扩张/迁移/投资信号（有则写，无则空字符串）",
+      "listed": "上市情况（如 A股/新三板/未上市/港股）",
+      "source": "信息来源（如 公开工商信息 / 上市公司公告 / 行业协会名录）"
+    }
+  ]
+}
+
+## 要求
+1. companies 输出尽量多（目标 100 家，至少 60 家），覆盖该方向缺口环节的上下游真实企业，按 fit_score 从高到低排序。
+2. 企业必须是你「确定真实存在」的公司，用规范全称，优先列上市公司/细分龙头/专精特新/已有扩张信号的企业。禁止虚构企业名——宁可少列，绝不编造。
+3. fit_score（0-100）：综合"业务与缺口的匹配度 + 异地投资/迁移可能性 + 企业实力"打分，分数要有区分度，不要都给高分。
+4. fit 必须具体说明该企业能补上这个方向的哪个缺口环节，不要空话。
+5. signal 只写你确有依据的公开扩张/投资动向；没有就留空字符串，禁止编造融资/建厂消息。
+6. total_scanned 写你本轮实际扫描评估的企业规模（约等于 companies 长度或更多）。
+7. 全部用中文。这是 AI 推理结果，前端会标注"待人工核验"，你只需保证企业真实存在、匹配理由可信。"""
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print(f"[kb] {self.address_string()} {fmt % args}")
@@ -457,7 +487,7 @@ class Handler(BaseHTTPRequestHandler):
         mode   = body.get("mode", "full")
         history = body.get("history", [])  # 多轮上下文：[{role:'user'|'assistant', content:'...'}]
 
-        if mode not in ("chat", "draft", "full", "suggest", "research", "chain", "topics"):
+        if mode not in ("chat", "draft", "full", "suggest", "research", "chain", "topics", "funnel"):
             mode = "full"
 
         if not q:
@@ -505,6 +535,9 @@ class Handler(BaseHTTPRequestHandler):
         elif mode == "topics":
             system_prompt = SYSTEM_TOPICS
             max_tokens    = 1200
+        elif mode == "funnel":
+            system_prompt = SYSTEM_FUNNEL
+            max_tokens    = 12000   # 100 家企业结构化 JSON，需大 token 预算
         else:
             system_prompt = SYSTEM_FULL
             max_tokens    = MAX_TOKENS_FULL
