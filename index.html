@@ -4928,6 +4928,14 @@ function addCustomTopic(){
 }
 
 /* 统一的方向卡片 HTML。自定义方向(type==='custom')右上角带删除键。 */
+/* 方向卡片标题显示：统一加「产业」二字（仅显示层，不改底层 label 身份标识）。
+   已含「产业」的不重复加，避免出现「服装产业产业」。 */
+function topicDisplayLabel(label){
+  var s=String(label||'').trim();
+  if(!s) return s;
+  if(s.indexOf('产业')>=0) return s;   // 已包含则不再追加
+  return s+'产业';
+}
 function topicCardHtml(t, isActive){
   var isCustom=(t.type==='custom');
   var delBtn=isCustom
@@ -4942,7 +4950,7 @@ function topicCardHtml(t, isActive){
     'border-radius:14px;cursor:pointer;text-align:left;transition:all .15s;flex:1;min-width:0">'+
     delBtn+
     '<span style="font-size:20px;margin-bottom:6px">'+t.icon+'</span>'+
-    '<span style="font-size:13px;font-weight:700;color:#0b183b;display:block;margin-bottom:4px">'+t.label+'</span>'+
+    '<span style="font-size:13px;font-weight:700;color:#0b183b;display:block;margin-bottom:4px">'+topicDisplayLabel(t.label)+'</span>'+
     '<span style="font-size:11.5px;color:#8492a6;line-height:1.4">'+t.desc+'</span>'+
     (isActive?'<div style="margin-top:8px;width:8px;height:8px;border-radius:50%;background:#1a56db"></div>':'')+
   '</button>';
