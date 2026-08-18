@@ -1656,6 +1656,12 @@ function pushFunnelTopToGov(projKey, n){
   toast('已把 '+added+' 家精准适配企业推送到政府端「待接触企业」');
 }
 
+function toggleFunnelExpand(k){
+  if(!window.__funnelExpand) window.__funnelExpand={};
+  window.__funnelExpand[k]=!window.__funnelExpand[k];
+  try{ render(); }catch(e){}
+}
+
 /* 企业线索来源：读真实 AI 漏斗结果（p.funnel.companies），不再有硬编码 */
 function computeScanClues(p){
   if(!p||!p.funnel||!p.funnel.companies) return [];
@@ -6437,21 +6443,37 @@ function opsOverview(){
     } else {
       var pushedTip=fn.pushed?'<span style="font-size:11px;color:#166534;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:3px 9px">✓ 已推送 '+(fn.pushedNames?fn.pushedNames.length:0)+' 家到政府端</span>':'';
       var pushBtn='<button onclick="pushFunnelTopToGov(\''+k+'\',8)" style="padding:7px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer">🚀 推送 Top8 精准企业到政府端</button>';
-      var rows=fn.companies.slice(0,10).map(function(c,i){
-        return '<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid #f3f4f6">'+
-          '<span style="flex-shrink:0;width:22px;height:22px;background:'+(i<8?'#eef2ff':'#f5f7fb')+';color:'+(i<8?'#4338ca':'#9aa5b5')+';border-radius:50%;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">'+(i+1)+'</span>'+
+      if(!window.__funnelExpand) window.__funnelExpand={};
+      var expandAll=window.__funnelExpand[k]===true;
+      var COLLAPSE_N=8;
+      var showList=expandAll?fn.companies:fn.companies.slice(0,COLLAPSE_N);
+      var rows=showList.map(function(c,i){
+        var isTop=i<8;
+        return '<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid #f1f3f7">'+
+          '<span style="flex-shrink:0;width:22px;height:22px;background:'+(isTop?'#eef2ff':'#f5f7fb')+';color:'+(isTop?'#4338ca':'#9aa5b5')+';border-radius:50%;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">'+(i+1)+'</span>'+
           '<div style="flex:1;min-width:0">'+
-            '<div style="font-size:12.5px;font-weight:650;color:#0b183b">'+c.name+(c.listed?'<span style="font-size:10.5px;color:#6d28d9;margin-left:6px">'+c.listed+'</span>':'')+'</div>'+
-            '<div style="font-size:11px;color:#8492a6;margin-top:1px">'+(c.region||'')+(c.kind?' · '+c.kind:'')+'</div>'+
-            (c.fit?'<div style="font-size:11px;color:#4a5568;margin-top:2px;line-height:1.5">'+c.fit+'</div>':'')+
+            '<div style="font-size:12.5px;font-weight:650;color:#0b183b;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
+              '<span>'+c.name+'</span>'+
+              (c.listed?'<span style="font-size:10px;color:#6d28d9;background:#f5f3ff;border-radius:6px;padding:1px 6px">'+c.listed+'</span>':'')+
+              (isTop?'<span style="font-size:10px;color:#1a56db;background:#eff6ff;border-radius:6px;padding:1px 6px">Top8</span>':'')+
+            '</div>'+
+            '<div style="font-size:11px;color:#8492a6;margin-top:2px">'+(c.region||'')+(c.kind?' \u00b7 '+c.kind:'')+'</div>'+
+            (c.fit?'<div style="font-size:11px;color:#4a5568;margin-top:3px;line-height:1.5">'+c.fit+'</div>':'')+
+            (c.signal?'<div style="font-size:10.5px;color:#b45309;margin-top:3px;line-height:1.5">\U0001F4E1 '+c.signal+'</div>':'')+
           '</div>'+
-          '<span style="flex-shrink:0;font-size:12px;font-weight:700;color:'+(c.fit_score>=80?'#16a34a':c.fit_score>=60?'#d97706':'#6b7280')+'">'+(c.fit_score||0)+'分</span>'+
+          '<span style="flex-shrink:0;font-size:13px;font-weight:800;color:'+(c.fit_score>=80?'#16a34a':c.fit_score>=60?'#d97706':'#6b7280')+'">'+(c.fit_score||0)+'<span style="font-size:10px;font-weight:600">\u5206</span></span>'+
         '</div>';
       }).join('');
+      var toggle='';
+      if(fn.companies.length>COLLAPSE_N){
+        toggle=expandAll
+          ? '<div onclick="toggleFunnelExpand(\'' +k+ '\')" style="text-align:center;font-size:12px;color:#6d28d9;padding:10px 0 2px;cursor:pointer;font-weight:600">\u6536\u8d77 \u25b2</div>'
+          : '<div onclick="toggleFunnelExpand(\'' +k+ '\')" style="text-align:center;font-size:12px;color:#6d28d9;padding:10px 0 2px;cursor:pointer;font-weight:600">\u5c55\u5f00\u5168\u90e8 '+fn.companies.length+' \u5bb6 \u25bc</div>';
+      }
       body='<div style="margin:6px 20px 14px;padding:12px 14px;background:#fbfcff;border:1px solid #e8edf5;border-radius:10px">'+
-        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">'+pushBtn+pushedTip+'</div>'+
-        rows+
-        (fn.companies.length>10?'<div style="text-align:center;font-size:11px;color:#9aa5b5;padding:8px 0 0">共 '+fn.companies.length+' 家，展示适配度最高前 10 家（推送取 Top8）</div>':'')+
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">'+pushBtn+pushedTip+'</div>'+
+        rows+toggle+
+      '</div>';
       '</div>';
     }
     return head+body;
