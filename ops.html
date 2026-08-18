@@ -6615,9 +6615,12 @@ function opsOverview(){
     var keys = cityGroups[city];
     var isOpen = window.__opsCityOpen[city] !== false;
     var maxStage = Math.max.apply(null, keys.map(function(k){ return (PROJECTS[k]||{}).stage||1; }));
-    var totalUps = keys.reduce(function(n,k){ return n+((UPLOADS[k]||[]).length); }, 0);
+    // 材料/城市智库确认是「城市级共享数据」，政府端上传在城市工作区(父项目 sz)上，
+    // 而 keys 已过滤掉父项目 → 必须按「该城市全部项目」统计，否则显示「暂无材料」。
+    var allCityKeys = Object.keys(PROJECTS).filter(function(k){ return (PROJECTS[k]||{}).city === city; });
+    var totalUps = allCityKeys.reduce(function(n,k){ return n+((UPLOADS[k]||[]).length); }, 0);
     // 城市智库确认（城市级共享数据）：汇总该城市各项目的 KB_CONFIRMS
-    var cityKbConfirms = keys.reduce(function(n,k){
+    var cityKbConfirms = allCityKeys.reduce(function(n,k){
       var cf = KB_CONFIRMS[k]||{};
       return n + Object.keys(cf).reduce(function(m,ki){return m+Object.keys(cf[ki]).length;},0);
     }, 0);
