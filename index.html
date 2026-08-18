@@ -7800,6 +7800,32 @@ function addKbItem(kbIdx){
   setTimeout(function(){editKbItem(kbIdx,k.known.length-1);},50);
 }
 
+/* 删除某条 known 条目（待确认/已确认均可）。同步删除其确认记录，并把后续条目的
+   确认记录索引整体前移一位（KB_CONFIRMS 以 itemIdx 为键，删除后必须重排，否则错位）。 */
+function deleteKbItem(kbIdx,itemIdx){
+  var p=P();if(!p||!p.kb)return;
+  var k=p.kb[kbIdx];if(!k||!k.known||itemIdx>=k.known.length)return;
+  if(!confirm('确定删除这条内容吗？删除后不可恢复。')) return;
+  // 删除 known 条目
+  k.known.splice(itemIdx,1);
+  // 重排该 kbIdx 下的确认记录：删除 itemIdx，itemIdx 之后的键 -1
+  if(KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][kbIdx]){
+    var oldMap=KB_CONFIRMS[cur][kbIdx];
+    var newMap={};
+    Object.keys(oldMap).forEach(function(key){
+      var ki=parseInt(key,10);
+      if(ki===itemIdx) return;            // 被删除的条目
+      newMap[ki>itemIdx?ki-1:ki]=oldMap[key];
+    });
+    KB_CONFIRMS[cur][kbIdx]=newMap;
+  }
+  persist();
+  refreshKbCorpus&&refreshKbCorpus();
+  refreshKbProgress&&refreshKbProgress();
+  kbDetail(kbIdx);
+  toast('已删除该条内容');
+}
+
 function kbDetail(i){
   var k=P().kb[i]; if(!k) return;
   curKb=i;
@@ -7844,11 +7870,17 @@ function kbDetail(i){
                 'onmouseover="this.style.background=\'#ede9fe\'" onmouseout="this.style.background=\'#f5f3ff\'">'+
                 '\u270e 修改内容'+
               '</button>'+
+              '<button onclick="deleteKbItem('+i+','+xi+')" title="删除该条待确认事项" '+
+                'style="padding:6px 10px;background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;font-size:12px;color:#dc2626;cursor:pointer;font-weight:600" '+
+                'onmouseover="this.style.background=\'#fee2e2\'" onmouseout="this.style.background=\'#fef2f2\'">'+
+                '\u2715 删除'+
+              '</button>'+
             '</div>';
           } else if(isConfirmed){
             actionBtns='<div style="margin-top:6px;font-size:11px;color:#22c55e;display:flex;align-items:center;gap:4px">'+
               '<span>\u2713 已由确认</span>'+
               '<button onclick="editKbItem('+i+','+xi+')" style="background:none;border:none;color:#94a3b8;font-size:11px;cursor:pointer;margin-left:6px">修改</button>'+
+              '<button onclick="deleteKbItem('+i+','+xi+')" style="background:none;border:none;color:#cbd5e1;font-size:11px;cursor:pointer;margin-left:2px">删除</button>'+
             '</div>';
           }
           return '<div id="kb-card-'+i+'-'+xi+'" style="border-radius:12px;background:'+bg+';border:1.5px solid '+bd+';overflow:hidden;transition:border-color .15s">'+
