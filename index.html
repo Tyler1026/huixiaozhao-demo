@@ -3102,7 +3102,15 @@ function projMgmtPage(p){
   // 账号按城市独立：只显示当前登录城市（cur 项目所在城市）的项目
   var _myCity = (cur && PROJECTS[cur] && PROJECTS[cur].city) ? PROJECTS[cur].city : null;
   var projKeys = Object.keys(PROJECTS).filter(function(k){
-    return !_myCity || (PROJECTS[k] && PROJECTS[k].city === _myCity);
+    var x = PROJECTS[k]; if(!x) return false;
+    if(_myCity && x.city !== _myCity) return false;
+    // 关键修复：招商对接只显示「已正式提交的招商需求」子项目。
+    // 父项目/城市产业分析工作区(如 sz、p*)的 topic 会随产业分析选中方向变化，
+    // 绝不能进列表——否则「招商对接第一条随选中方向变」。
+    // 兼容旧数据：老的立项子项目没有 isDemand 标记，用 isMainProject 兜底排除主项目，
+    // 并要求 stage>=3（真正提交过需求才会到确认需求阶段）。
+    if(x.isDemand === true) return true;
+    return !isMainProject(k) && x.stage >= 3;
   });
   if(!projKeys.length){
     return '<div class="page">'+
