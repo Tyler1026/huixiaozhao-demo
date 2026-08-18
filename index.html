@@ -2167,9 +2167,10 @@ function sidebar(){
     report: '生成缺口分析与招引方向',
     home: '项目列表·对接进度',
     docking: (function(){
-      if(!p||!p.clues||!p.clues.length) return '候选企业·可达性核验';
-      var amber=p.clues.filter(function(c){return c.tag==='amber';}).length;
-      return p.clues.length+'条线索 · '+amber+'条待核验';
+      var _vc=visibleClues(p);
+      if(!_vc.length) return '候选企业·可达性核验';
+      var amber=_vc.filter(function(c){return c.tag==='amber';}).length;
+      return _vc.length+'条线索 · '+amber+'条待核验';
     })()
   };
   return '<div class="sidebar"><div class="nav-list">'+
@@ -2328,16 +2329,22 @@ function mainPane(p){
 /* ── 从研判报告文本派生候选线索 ── */
 
 /* ── 企业线索两栏布局渲染 ── */
-function renderCluesTwoPanel(projKey){
-  var p = PROJECTS[projKey]; if(!p) return '';
-  // 政府端「待接触企业」只显示管理端 AI 漏斗推送(gov_push)或人工录入的真实线索；
-  // 过滤掉历史遗留的自动派生假数据（脱敏企业占位）与演示用扫描企业(ai_scan)
-  var all = (p.clues||[]).filter(function(c){
+/* 政府端「待接触企业」统一口径：只显示管理端 AI 漏斗推送(gov_push)或人工录入的真实线索；
+   过滤掉历史遗留的自动派生假数据（脱敏企业占位）与演示用扫描企业(ai_scan）。
+   所有计数与列表渲染都必须走这个函数，避免头部数字与实际列表不一致。 */
+function visibleClues(p){
+  if(!p||!p.clues) return [];
+  return p.clues.filter(function(c){
     if(!c) return false;
     if(c.status==='ai_scan') return false;
     if(typeof c.name==='string' && c.name.indexOf('脱敏企业')===0) return false;
     return true;
   });
+}
+
+function renderCluesTwoPanel(projKey){
+  var p = PROJECTS[projKey]; if(!p) return '';
+  var all = visibleClues(p);
   if(!window.__clueGroupOpen) window.__clueGroupOpen={};
   var gkey = function(seg){ return projKey+'::'+seg; };
   // 默认展开策略：teal 与 amber 默认展开，slate 默认折叠
@@ -2933,10 +2940,10 @@ function projMgmtPage(p){
       // 待接触企业不再注入任何硬编码假数据——只显示管理端 AI 漏斗精选推送来的企业(status:'gov_push')
     }
 
-    var clues = x.clues || [];
+    var clues = visibleClues(x);
     var teal  = clues.filter(function(c){return c.tone==='teal';}).length;
     var amber = clues.filter(function(c){return c.tone==='amber';}).length;
-    var slate = clues.filter(function(c){return c.tone==='slate';}).length;
+    var slate = clues.filter(function(c){return (c.tone||'slate')==='slate';}).length;
 
     // 线索摘要标签
     var cluesSummary = clues.length
