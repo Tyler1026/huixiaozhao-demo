@@ -7475,9 +7475,10 @@ function opsEntScanAll(){
 /* 推送弹窗 */
 function opsEntPushModal(idx){
   var e=OPS_ENT[idx]; if(!e) return;
-  var matches=(e.matches||[]).filter(function(m){return !m.pushed;});
+  var matches=(e.matches||[]).map(function(m,i){return {m:m,i:i};}).filter(function(x){return !x.m.pushed;});
   if(!matches.length){toast('所有匹配方向已推送');return;}
-  var rows=matches.map(function(m,mi){
+  var rows=matches.map(function(x){
+    var m=x.m, mi=x.i;
     return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f9fafb;border-radius:10px;margin-bottom:8px">'+
       '<input type="checkbox" id="pm-'+mi+'" checked style="width:16px;height:16px;cursor:pointer"/>'+
       '<label for="pm-'+mi+'" style="flex:1;cursor:pointer">'+
@@ -7493,7 +7494,7 @@ function opsEntPushModal(idx){
     '推送后政府端可见：脱敏名称、扩张信号、匹配理由，不可见企业真实联系方式。</div>';
   openModal('📤 推送「'+e.name.substring(0,20)+'」', body,
     '<button class="secondary-button" onclick="closeModal()">取消</button>'+
-    '<button class="primary-button" onclick="opsEntDoPush('+idx+','+JSON.stringify(matches.map(function(m,mi){return mi;}))+')">'+'确认推送</button>');
+    '<button class="primary-button" onclick="opsEntDoPush('+idx+','+JSON.stringify(matches.map(function(x){return x.i;}))+')">'+'确认推送</button>');
 }
 
 function opsEntDoPush(entIdx, miArr){
@@ -7726,9 +7727,10 @@ function opsEntScanAll(){
 /* 推送弹窗 */
 function opsEntPushModal(idx){
   var e=OPS_ENT[idx]; if(!e) return;
-  var matches=(e.matches||[]).filter(function(m){return !m.pushed;});
+  var matches=(e.matches||[]).map(function(m,i){return {m:m,i:i};}).filter(function(x){return !x.m.pushed;});
   if(!matches.length){toast('所有匹配方向已推送');return;}
-  var rows=matches.map(function(m,mi){
+  var rows=matches.map(function(x){
+    var m=x.m, mi=x.i;
     return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f9fafb;border-radius:10px;margin-bottom:8px">'+
       '<input type="checkbox" id="pm-'+mi+'" checked style="width:16px;height:16px;cursor:pointer"/>'+
       '<label for="pm-'+mi+'" style="flex:1;cursor:pointer">'+
@@ -7744,7 +7746,7 @@ function opsEntPushModal(idx){
     '推送后政府端可见：脱敏名称、扩张信号、匹配理由，不可见企业真实联系方式。</div>';
   openModal('📤 推送「'+e.name.substring(0,20)+'」', body,
     '<button class="secondary-button" onclick="closeModal()">取消</button>'+
-    '<button class="primary-button" onclick="opsEntDoPush('+idx+','+JSON.stringify(matches.map(function(m,mi){return mi;}))+')">'+'确认推送</button>');
+    '<button class="primary-button" onclick="opsEntDoPush('+idx+','+JSON.stringify(matches.map(function(x){return x.i;}))+')">'+'确认推送</button>');
 }
 
 function opsEntDoPush(entIdx, miArr){
