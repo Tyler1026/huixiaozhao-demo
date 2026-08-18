@@ -6319,7 +6319,7 @@ function opsOverview(){
     var stageColor = stageColors[stage-1]||'#8b5cf6';
 
     // 需求摘要：从 DEMANDS 里找关联的
-    var demand = DEMANDS.find(function(d){return d.projKey===k||d.city===p.city;});
+    var demand = DEMANDS.find(function(d){return d.projKey===k;});
 
     // 候选线索统计
     var aiClues  = clues.filter(function(c){return c.status==='ai_scan';});
@@ -6389,7 +6389,7 @@ function opsOverview(){
       (demand ?
         '<div style="padding:14px 20px;background:#fffbeb;border-bottom:1px solid #fde68a">' +
           '<div style="font-size:11.5px;font-weight:650;color:#92400e;margin-bottom:6px">📤 招引需求</div>' +
-          '<div style="font-size:13px;color:#1e293b;line-height:1.65"><strong>' + demand.topic + '</strong> · ' + demand.domain + '</div>' +
+          '<div style="font-size:13px;color:#1e293b;line-height:1.65"><strong>' + (demand.topic||p.topic||'') + '</strong>' + (demand.domain?' · ' + demand.domain:'') + '</div>' +
           '<div style="font-size:12px;color:#8492a6;margin-top:3px">' + (demand.need||'需求详情见研判报告') + '</div>' +
         '</div>'
       : rs ?
