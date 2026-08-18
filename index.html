@@ -1516,6 +1516,8 @@ function topicHasFullReport(topic){
   if(typeof REPORT_HISTORY!=='undefined' && REPORT_HISTORY[cur]){
     if(REPORT_HISTORY[cur].some(function(h){return h && h.topic===topic && h.phase===2 && h.text;})) return true;
   }
+  // 兼容旧数据兜底：该方向有 AI 报告缓存文本（修复前生成的方向 phaseByTopic 为空），视为已生成完整报告
+  if(_rs && _rs.aiReportByTopic && typeof _rs.aiReportByTopic[topic]==='string' && _rs.aiReportByTopic[topic].length>800) return true;
   return false;
 }
 
@@ -4076,6 +4078,9 @@ function selectTopic(val, isCustom){
     if(!_ha2){ _ha2=document.createElement('div'); _ha2.id='reportHistoryArea'; _ra2.insertBefore(_ha2, _ra2.firstChild); }
     renderHistoryReports(cur, p.topic);
   }
+  // 切换方向后刷新底部行动栏（按新方向重判：产业智能分析 / 重新产业分析）
+  var _bb=document.querySelector('.report-bottom-bar');
+  if(_bb) _bb.innerHTML=reportBottomBarInner(p);
   // 重渲染卡片高亮
   var cardGrid=document.getElementById('topicCardGrid');
   if(!cardGrid) return;
@@ -6212,24 +6217,31 @@ function homePage(p){
       topicSelector+
       reportArea+
     '</div>'+
-    // 底部行动栏（替代 composer）
+    // 底部行动栏（替代 composer）—— 内容按当前方向渲染，切换方向时同步刷新
     '<div class="report-bottom-bar" style="border-top:1px solid #f0f4ff;background:#fff;padding:12px 22px;display:flex;gap:10px;align-items:center">'+
-      (topicHasFullReport(p.topic)
-        ? ('<button onclick="viewCurrentReport()" '+
-            'style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">📊 查看完整报告</button>'+
-           '<button onclick="downloadReport(\'full\')" style="padding:13px 16px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;font-size:13px;color:#1a56db;cursor:pointer;font-weight:600">⬇ 下载</button>'+
-           '<button onclick="startAiInterview()" style="padding:13px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:12.5px;color:#4a5568;cursor:pointer">🔄 重新产业分析</button>')
-        : ('<button id="generateBtn" onclick="startAiInterview()" '+
-            'style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">'+
-            '🔍 产业智能分析'+
-      '</button>'))+
-      '<button onclick="doUpload()" style="padding:13px 16px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>'+
-      (REPORTSTATE[cur]
-        ? '<button onclick="submitDemand()" style="padding:13px 16px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;font-size:13px;color:#166534;cursor:pointer;font-weight:600">提交招引需求 →</button>'
-        : ''
-      )+
+      reportBottomBarInner(p)+
     '</div>'+
   '</div>';
+}
+
+/* 底部行动栏内容（按当前方向 topic 判断）。抽成函数，供初次渲染与切换方向时复用刷新。 */
+function reportBottomBarInner(p){
+  var _hasFull = topicHasFullReport(p.topic);
+  return (_hasFull
+      ? ('<button onclick="viewCurrentReport()" '+
+          'style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">📊 查看完整报告</button>'+
+         '<button onclick="downloadReport(\'full\')" style="padding:13px 16px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;font-size:13px;color:#1a56db;cursor:pointer;font-weight:600">⬇ 下载</button>'+
+         '<button onclick="startAiInterview()" style="padding:13px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:12.5px;color:#4a5568;cursor:pointer">🔄 重新产业分析</button>')
+      : ('<button id="generateBtn" onclick="startAiInterview()" '+
+          'style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">'+
+          '🔍 产业智能分析'+
+    '</button>'))+
+    '<button onclick="doUpload()" style="padding:13px 16px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>'+
+    // 提交招引需求：仅在该方向已有完整报告时才出现（无报告不该能提交）
+    (_hasFull
+      ? '<button onclick="submitDemand()" style="padding:13px 16px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;font-size:13px;color:#166534;cursor:pointer;font-weight:600">提交招引需求 →</button>'
+      : ''
+    );
 }
 
 
@@ -6572,13 +6584,17 @@ function detailSub(s){
 // 产业分析页 → 右侧：本次研判（版本/进度/待核实/已传材料）
 function detailReport(p){
   var st=REPORTSTATE[cur]; var ups=(UPLOADS[cur]||[]);
+  // 按当前方向判断该方向是否已生成报告/是否完整报告（项目级 st.phase/st.ts 是单例，切方向会串）
+  var _topicFull = topicHasFullReport(p.topic);
+  var _topicText = (typeof reportTextForTopic==='function') ? reportTextForTopic(p.topic) : null;
+  var _topicHasReport = _topicFull || !!_topicText || (st&&st.phaseByTopic&&st.phaseByTopic[p.topic]);
   return '<div class="detail-header"><div><span class="eyebrow">CURRENT STUDY</span><h2>本次产业分析</h2><p>'+p.topic+'</p></div></div>'+
     '<div class="detail-scroll">'+
-      '<div class="detail-block"><h3>报告状态</h3>'+(st
+      '<div class="detail-block"><h3>报告状态</h3>'+(_topicHasReport
         ? '<ul class="check-list">'+
-            '<li><i class="i">'+(st.phase===2?'✅':'✎')+'</i>'+(st.phase===2?'完整报告已生成':'初步草稿')+' · 置信度 '+topicScore(p.topic)+'%</li>'+
+            '<li><i class="i">'+(_topicFull?'✅':'✎')+'</i>'+(_topicFull?'完整报告已生成':'初步草稿')+' · 置信度 '+topicScore(p.topic)+'%</li>'+
             '<li><i class="i"></i>产业分析方向：'+p.topic+'</li>'+
-            '<li><i class="i"></i>生成时间：'+(st.ts?new Date(st.ts).toLocaleDateString('zh-CN'):'未知')+'</li>'+
+            '<li><i class="i"></i>生成时间：'+(st&&st.ts?new Date(st.ts).toLocaleDateString('zh-CN'):'未知')+'</li>'+
           '</ul>'
         : '<div class="info-callout" style="margin-top:0">尚未生成报告。请先在「产业分析」选择方向并点击生成。</div>'      )+'</div>'+
       '<div class="detail-block"><h3>当前阶段</h3>'+
