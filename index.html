@@ -2029,13 +2029,9 @@ function kbReadiness(){
       if(conf||isDone) warnConfirmed++;
     });
   });
-  // 同步纳入报告页「确认」（PENDING_CONFIRMS）的确认状态，
-  // 否则报告页确认后顶部大进度条不动（两套确认系统互不相通的 bug 修复）
-  var pend=PENDING_CONFIRMS[cur]||[];
-  pend.forEach(function(it){
-    warnTotal++;
-    if(it&&(it.status==='confirmed'||it.status==='edited')) warnConfirmed++;
-  });
+  // 注意：城市智库进度只统计智库条目（⚠️/✅）+ 上传材料，不纳入产业分析报告页的
+  // 待确认事项（PENDING_CONFIRMS）。报告页确认待确认事项属于「某个研判方向」的动作，
+  // 只应提升该方向的报告置信度（见 topicScore），不应改变城市智库整体完成度。
   var uploads=(UPLOADS[cur]||[]).length;
   // 评分：⚠️确认率×60 + 上传加分×40
   var warnRate=warnTotal>0?warnConfirmed/warnTotal:1; // 无⚠️时视为全部完成
@@ -2070,7 +2066,12 @@ function topicScore(topic){
   // 上传文件额外加分（每份+3，上限+15）
   var uploads = (UPLOADS[cur]||[]).filter(function(u){return !!u.size||!!u.ts;}).length;
   var uploadAdj = Math.min(15, uploads * 3);
-  var final = Math.min(96, Math.max(42, base + adj + uploadAdj));
+  // 报告页待确认事项确认加分（每确认一条 +2，上限 +12）：
+  // 确认待确认事项属于该研判方向的动作，应提升本方向报告置信度，而非城市智库进度。
+  var pend = PENDING_CONFIRMS[cur]||[];
+  var pendDone = pend.filter(function(it){return it&&(it.status==='confirmed'||it.status==='edited');}).length;
+  var pendAdj = Math.min(12, pendDone * 2);
+  var final = Math.min(96, Math.max(42, base + adj + uploadAdj + pendAdj));
   return final;
 }
 
