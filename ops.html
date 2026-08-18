@@ -5448,13 +5448,16 @@ function finalizeIngest(chunks, files, kbTopicIdx, p){
     var rec={name:f.name, size:f.size, ts:Date.now(),
       chunks:chunks.filter(function(c){return c.cite===f.name;}).length,
       kbIdx:kbTopicIdx};
-    // Store file content as dataUrl for later viewing
+    UPLOADS[cur].push(rec);
+    // 关键修复：dataUrl 靠 FileReader 异步补写，之前 rec 先入库若在补写前 persist/刷新，
+    // 同步到服务器的记录就没有 dataUrl → 管理端下载提示「该文件无原始数据」。
+    // 改为读完(或失败)后都再 persist 一次，保证原始数据落库。
     (function(record, file){
       var fr=new FileReader();
       fr.onload=function(ev){ record.dataUrl=ev.target.result; persist(); };
+      fr.onerror=function(){ persist(); };
       fr.readAsDataURL(file);
     })(rec, f);
-    UPLOADS[cur].push(rec);
   });
 
   if(kbTopicIdx!=null && p.kb && p.kb[kbTopicIdx]){

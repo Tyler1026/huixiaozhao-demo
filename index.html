@@ -8299,8 +8299,21 @@ function finalizeIngest(chunks, files, kbTopicIdx, p){
     for(var i=UPLOADS[cur].length-1;i>=0;i--){
       if(UPLOADS[cur][i].pending && UPLOADS[cur][i].name===f.name){ existing=UPLOADS[cur][i]; break; }
     }
-    if(existing){ existing.chunks=n; existing.kbIdx=kbTopicIdx; delete existing.pending; }
-    else { UPLOADS[cur].push({name:f.name, size:f.size, ts:Date.now(), chunks:n, kbIdx:kbTopicIdx}); }
+    var rec;
+    if(existing){ existing.chunks=n; existing.kbIdx=kbTopicIdx; delete existing.pending; rec=existing; }
+    else { rec={name:f.name, size:f.size, ts:Date.now(), chunks:n, kbIdx:kbTopicIdx}; UPLOADS[cur].push(rec); }
+    // 关键修复：保存原始文件为 dataUrl，否则管理端下载提示「该文件无原始数据」。
+    // 之前 index.html(政府端)上传入库根本没存 dataUrl —— 材料从源头就没有原始数据。
+    if(f && (typeof Blob!=='undefined') && (f instanceof Blob) && !rec.dataUrl){
+      (function(record, file){
+        try{
+          var fr=new FileReader();
+          fr.onload=function(ev){ record.dataUrl=ev.target.result; persist(); };
+          fr.onerror=function(){ persist(); };
+          fr.readAsDataURL(file);
+        }catch(e){}
+      })(rec, f);
+    }
   });
 
   if(kbTopicIdx!=null && p.kb && p.kb[kbTopicIdx]){
