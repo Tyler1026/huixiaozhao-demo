@@ -7820,9 +7820,13 @@ function deleteKbItem(kbIdx,itemIdx){
     KB_CONFIRMS[cur][kbIdx]=newMap;
   }
   persist();
-  refreshKbCorpus&&refreshKbCorpus();
-  refreshKbProgress&&refreshKbProgress();
+  // 同步清理该条在 corpus 里的钉选片段（与 confirmKbItem 一致的清理方式）
+  if(KB_FILE_CHUNKS[cur]){
+    KB_FILE_CHUNKS[cur]=KB_FILE_CHUNKS[cur].filter(function(c){return c.id!=='pin:'+kbIdx+':'+itemIdx;});
+  }
+  // 重新渲染 modal + 即时刷新顶部完成度条（顺序与 confirmKbItem 保持一致）
   kbDetail(kbIdx);
+  if(typeof refreshKbProgress==='function') refreshKbProgress();
   toast('已删除该条内容');
 }
 
