@@ -6698,9 +6698,9 @@ function detailNeeds(p){
     return !isMainProject(k) && x.stage>=3;
   });
   var byStage={};ks.forEach(function(k){var s=PROJECTS[k].stage;byStage[s]=(byStage[s]||0)+1});
-  return '<div class="detail-header"><div><span class="eyebrow">OVERVIEW</span><h2>需求概览</h2><p>'+p.who+' 名下研判汇总</p></div></div>'+
+  return '<div class="detail-header"><div><span class="eyebrow">OVERVIEW</span><h2>需求概览</h2><p>'+p.who+' 名下产业分析汇总</p></div></div>'+
     '<div class="detail-scroll">'+
-      '<div class="detail-block"><h3>研判总数</h3><p class="detail-copy" style="font-size:22px;font-weight:700;color:#013582">'+ks.length+' 个产业方向</p></div>'+
+      '<div class="detail-block"><h3>产业分析总数</h3><p class="detail-copy" style="font-size:22px;font-weight:700;color:#013582">'+ks.length+' 个产业方向</p></div>'+
       '<div class="detail-block"><h3>阶段分布</h3><ul class="check-list">'+
         STAGES.map(function(s,i){var n=byStage[i+1]||0;return n?'<li><i class="i">•</i>'+s[0]+'：'+n+' 个</li>':''}).join('')+'</ul></div>'+
       '<div class="detail-block"><h3>提示</h3><div class="info-callout" style="margin-top:0">展开任一产业方向后，这里会显示该方向的阶段与线索进度；每条为独立研判线，进度互不干扰。</div></div>'+
