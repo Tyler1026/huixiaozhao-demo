@@ -2043,36 +2043,52 @@ function kbReadiness(){
 }
 
 
-/* 按研判方向计算置信度（基础分 + 话题数据加权） */
+/* 按研判方向计算置信度。
+   核心：每个方向的置信度应反映「该方向报告自身」的数据充实度，而非城市级共享分——
+   否则所有方向都等于同一个 kbReadiness 基础分，显示成一样（如全部 96%）。
+   构成：方向报告数据充实度（量化数据点数、待核实/待确认缺口数、报告完整度）
+        + 城市智库基础背书（占小头）+ 上传/确认加分。分数按 topic 稳定可复现。 */
 function topicScore(topic){
-  var base = kbReadiness().score;
-  // 各方向数据丰富度权重（基于随州实测数据覆盖情况）
-  var weights = {
-    '香菇': +8,   // 香菇：本地数据最全，产值/出口数据翔实
-    '蘑菇': +8,
-    '氢能': +5,   // 氢能：新楚风量产数据完整，但电堆缺口数据待补
-    '専用车': +5,
-    '应急': -3,   // 应急：感知层数据较薄，机器人/5G缺口依赖外部数据
-    '安全': -3,
-    '产业转移': -8,  // 产业转移：依赖沿海调研，本地数据少
-    '承接': -8,
-  };
-  var adj = 0;
-  if(topic){
-    Object.keys(weights).forEach(function(k){
-      if(topic.indexOf(k) >= 0) adj += weights[k];
-    });
+  var cityBase = kbReadiness().score;   // 城市智库整体就绪度（所有方向共享的背书，占小头）
+  if(!topic) return Math.min(96, Math.max(42, cityBase));
+
+  // ── 取该方向报告文本，度量其数据充实度 ──
+  var txt = (typeof reportTextForTopic==='function' ? reportTextForTopic(topic) : '') || '';
+  var dataScore;
+  if(txt){
+    // 量化数据点：报告中出现的数字（含百分比/金额/年份等），越多说明有据可依
+    var numHits = (txt.match(/\d[\d,\.]*\s*(%|亿|万|元|家|台|辆|吨|个|km|公里|年|月)/g)||[]).length;
+    // 缺口标记：待核实/待确认/待补充 越多说明数据越不足
+    var gapHits = (txt.match(/待核实|待确认|待补充|暂无|缺失|未收录|无数据/g)||[]).length;
+    // 报告完整度：长度（章节丰富度）
+    var lenScore = Math.min(20, Math.round(txt.length/400));  // 每400字+1，上限+20
+    var numScore = Math.min(28, numHits * 2);                 // 每个量化点+2，上限+28
+    var gapPenalty = Math.min(30, gapHits * 3);               // 每个缺口-3，上限-30
+    dataScore = 45 + numScore + lenScore - gapPenalty;        // 方向自身基准45
+  } else {
+    // 该方向尚未生成报告：给一个「仅基于城市数据的初判」低分，且各方向按名称稳定微调避免全同
+    dataScore = 40 + (hashTopic(topic) % 7);  // 40~46 之间，方向间有区分
   }
-  // 上传文件额外加分（每份+3，上限+15）
+
+  // ── 城市智库背书（占小头，避免完全脱离城市数据）──
+  var cityAdj = Math.round((cityBase - 60) * 0.15);  // cityBase 高于60加分、低于60减分，幅度小
+
+  // ── 上传/确认加分（作用于当前操作方向）──
   var uploads = (UPLOADS[cur]||[]).filter(function(u){return !!u.size||!!u.ts;}).length;
-  var uploadAdj = Math.min(15, uploads * 3);
-  // 报告页待确认事项确认加分（每确认一条 +2，上限 +12）：
-  // 确认待确认事项属于该研判方向的动作，应提升本方向报告置信度，而非城市智库进度。
+  var uploadAdj = Math.min(12, uploads * 3);
   var pend = PENDING_CONFIRMS[cur]||[];
   var pendDone = pend.filter(function(it){return it&&(it.status==='confirmed'||it.status==='edited');}).length;
   var pendAdj = Math.min(12, pendDone * 2);
-  var final = Math.min(96, Math.max(42, base + adj + uploadAdj + pendAdj));
-  return final;
+
+  var final = Math.round(dataScore + cityAdj + uploadAdj + pendAdj);
+  return Math.min(96, Math.max(42, final));
+}
+
+/* 方向名 → 稳定散列（用于未生成报告时给各方向一个可复现的区分微调，避免显示全同） */
+function hashTopic(s){
+  var h=0; s=String(s||'');
+  for(var i=0;i<s.length;i++){ h=(h*31 + s.charCodeAt(i))>>>0; }
+  return h;
 }
 
 function isLocked(v){
