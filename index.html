@@ -4090,12 +4090,19 @@ function selectTopic(val, isCustom){
 // 待确认事项状态 {projKey: [{text, status:'pending'|'confirmed'|'edited', editedText, files:[]}]}
 var PENDING_CONFIRMS = PENDING_CONFIRMS || {};
 
-/* 解析草稿文本，提取⚠️条目（仅在「待确认事项」章节内提取，排除标题行与缺口分析标记） */
+/* 解析草稿文本，提取待确认事项。兼容两种格式：
+   ① 列表：每条一行（可能以 ⚠️/•/- 开头）
+   ② markdown 表格：|序号|待确认事项|影响|关联决策|  —— 需跳过表头/分隔行，只取「待确认事项」列 */
 function parsePendingItems(text){
   var items = [];
   var lines = text.split('\n');
   var inPending = false;
+  var tableItemCol = -1;   // 表格中「待确认事项」列的索引；-1 表示尚未确定
+  function stripMd(s){
+    return (s||'').replace(/\*\*/g,'').replace(/^⚠️?\s*[:：]?/,'').replace(/^⚠\s*[:：]?/,'').trim();
+  }
   lines.forEach(function(line){
+    var raw = line.trim();
     var clean = line.replace(/^[\s\-•*]+/, '').trim();
     if(!clean) return;
     // 章节标题行：一、/① 开头，或 ## / ### 开头
@@ -4103,16 +4110,38 @@ function parsePendingItems(text){
     if(isHead){
       // 进入「待确认」章节：兼容 draft 的「③待确认：」与 full 报告的「五、待确认事项」
       inPending = /待确认/.test(clean);
+      tableItemCol = -1;   // 切换章节时重置表格列定位
       return;
     }
     if(!inPending) return;
-    // 待确认章节内：提取所有条目行。AI 草稿常把 ⚠️ 放在章节标题（如「③待确认事项（⚠️）」）
-    // 而不是每条前面，若强制要求每行以 ⚠️ 开头会一条都解析不到 → 出现「无确认按钮」的 bug。
-    // 做法：去掉行首可能的 ⚠️ 标记后作为条目文本；跳过 ✅/❌ 这类缺口分析标记行。
-    var t = clean.replace(/^⚠️?\s*[:：]?/,'').replace(/^⚠\s*[:：]?/,'').trim();
-    if(/^[✅❌]/.test(t)) return;
-    // 阈值 2 字：待确认事项常有短标题（如"园区地块""用地指标"）。
-    if(t.length >= 2) items.push({text: t, status:'pending', editedText:'', files:[]});
+
+    // ── markdown 表格行处理 ──
+    if(raw.indexOf('|') >= 0){
+      // 分隔行 |:---:|---|：整行只由 | - : 空格组成 → 跳过
+      if(/^\|?[\s:\-|]+\|?$/.test(raw)) return;
+      var cells = raw.replace(/^\|/,'').replace(/\|$/,'').split('|').map(function(c){return c.trim();});
+      // 表头行：含「待确认事项」或「序号」等列名 → 记录目标列后跳过，不作为条目
+      var headerIdx = cells.findIndex(function(c){return /待确认事项|确认事项|事项/.test(c) && c.length<=8;});
+      var looksHeader = headerIdx>=0 || cells.some(function(c){return /^序号$|^影响$|^关联决策$/.test(c);});
+      if(looksHeader){ if(headerIdx>=0) tableItemCol=headerIdx; return; }
+      // 数据行：优先取「待确认事项」列，否则取最长的非纯符号单元格
+      var pick='';
+      if(tableItemCol>=0 && cells[tableItemCol]) pick=cells[tableItemCol];
+      if(!pick){
+        cells.forEach(function(c){
+          var cc=stripMd(c);
+          if(cc.length>pick.length && !/^[✅❌⚠️\d\s]*$/.test(cc)) pick=cc;
+        });
+      }
+      var t = stripMd(pick);
+      if(t.length>=2 && !/^[✅❌]/.test(t)) items.push({text:t, status:'pending', editedText:'', files:[]});
+      return;
+    }
+
+    // ── 普通列表行 ──
+    var t2 = stripMd(clean);
+    if(/^[✅❌]/.test(t2)) return;
+    if(t2.length >= 2) items.push({text: t2, status:'pending', editedText:'', files:[]});
   });
   return items;
 }
