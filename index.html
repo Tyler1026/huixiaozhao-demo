@@ -2330,7 +2330,14 @@ function mainPane(p){
 /* ── 企业线索两栏布局渲染 ── */
 function renderCluesTwoPanel(projKey){
   var p = PROJECTS[projKey]; if(!p) return '';
-  var all = p.clues||[];
+  // 政府端「待接触企业」只显示管理端 AI 漏斗推送(gov_push)或人工录入的真实线索；
+  // 过滤掉历史遗留的自动派生假数据（脱敏企业占位）与演示用扫描企业(ai_scan)
+  var all = (p.clues||[]).filter(function(c){
+    if(!c) return false;
+    if(c.status==='ai_scan') return false;
+    if(typeof c.name==='string' && c.name.indexOf('脱敏企业')===0) return false;
+    return true;
+  });
   if(!window.__clueGroupOpen) window.__clueGroupOpen={};
   var gkey = function(seg){ return projKey+'::'+seg; };
   // 默认展开策略：teal 与 amber 默认展开，slate 默认折叠
@@ -2593,7 +2600,7 @@ function clueCard(clue, projKey, idx){
     ? '<div style="padding:12px 16px 14px;border-top:1px solid '+t.border+';background:'+t.bg+'">'+
         '<div style="margin-bottom:8px">'+
           '<div style="font-size:11px;font-weight:650;color:#6b7280;letter-spacing:.3px;margin-bottom:4px">为什么值得核验</div>'+
-          '<div style="font-size:13px;color:#1f2937;line-height:1.65">'+clue.reason+'</div>'+
+          '<div style="font-size:13px;color:#1f2937;line-height:1.65">'+(clue.reason||clue.fit||('AI 漏斗按「'+(clue.gap||'该方向')+'」精筛，适配度 '+(clue.fit_score||0)+' 分，建议资源团队核验企业投资意向。'))+'</div>'+
         '</div>'+
         '<div style="margin-bottom:8px">'+
           '<div style="font-size:11px;font-weight:650;color:#6b7280;letter-spacing:.3px;margin-bottom:4px">公开信号与资源边界</div>'+
