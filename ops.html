@@ -1691,7 +1691,7 @@ function renderCluesTwoPanel(projKey){
     '</div>';
   var funnelBody;
   if(running && !fn){
-    funnelBody='<div style="text-align:center;padding:22px;background:#faf9ff;border-radius:10px;border:1px solid #ede9fe;font-size:12.5px;color:#6d28d9">⏳ AI 正在按该方向缺口分析适配企业，约需 30-60 秒…</div>';
+    funnelBody='<div style="text-align:center;padding:22px;background:#faf9ff;border-radius:10px;border:1px solid #ede9fe;font-size:12.5px;color:#6d28d9">⏳ AI 正在按该方向缺口分析适配企业，约需 1-2 分钟…</div>';
   } else if(!fn){
     funnelBody='<div style="text-align:center;padding:20px;background:#f9fafb;border-radius:10px;border:1px solid #e8edf5">'+
       '<div style="font-size:12.5px;color:#9aa5b5;margin-bottom:8px">尚未生成企业漏斗</div>'+
@@ -1837,7 +1837,7 @@ function loadAIScanClues(projKey){
   // 触发真实 AI 企业漏斗分析（不再用硬编码假数据）
   var p=PROJECTS[projKey]; if(!p) return;
   if(_funnelRunning[projKey]){ toast('AI 正在分析中，请稍候…'); return; }
-  toast('AI 企业漏斗分析中，约需30-60秒…');
+  toast('AI 企业漏斗分析中，约需 1-2 分钟…');
   runAIFunnel(projKey, function(err, funnel){
     if(err){ toast('AI 漏斗分析失败：'+err); return; }
     try{ renderOpsV2&&renderOpsV2(); }catch(e){ try{render();}catch(_){}}
@@ -6428,7 +6428,7 @@ function opsOverview(){
     '</div>';
     var body;
     if(running && !fn){
-      body='<div style="margin:6px 20px 14px;text-align:center;padding:20px;background:#faf9ff;border-radius:10px;border:1px solid #ede9fe;font-size:12.5px;color:#6d28d9">⏳ AI 正在按该方向缺口分析适配企业，约需 30-60 秒…</div>';
+      body='<div style="margin:6px 20px 14px;text-align:center;padding:20px;background:#faf9ff;border-radius:10px;border:1px solid #ede9fe;font-size:12.5px;color:#6d28d9">⏳ AI 正在按该方向缺口分析适配企业，约需 1-2 分钟…</div>';
     } else if(!fn){
       body='<div style="margin:6px 20px 14px;text-align:center;padding:18px;background:#f9fafb;border-radius:10px;border:1px solid #e8edf5">'+
         '<div style="font-size:12.5px;color:#9aa5b5;margin-bottom:8px">尚未生成企业漏斗</div>'+

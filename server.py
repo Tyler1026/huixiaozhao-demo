@@ -326,7 +326,7 @@ SYSTEM_FUNNEL = """你是慧小招招商情报分析师。针对某个具体的�
 }
 
 ## 要求
-1. companies 输出尽量多（目标 100 家，至少 60 家），覆盖该方向缺口环节的上下游真实企业，按 fit_score 从高到低排序。
+1. companies 输出目标 40 家（至少 30 家），聚焦该方向缺口环节适配度最高的真实企业，按 fit_score 从高到低排序；宁可精不可滥，不要为凑数拉低质量。
 2. 企业必须是你「确定真实存在」的公司，用规范全称，优先列上市公司/细分龙头/专精特新/已有扩张信号的企业。禁止虚构企业名——宁可少列，绝不编造。
 3. fit_score（0-100）：综合"业务与缺口的匹配度 + 异地投资/迁移可能性 + 企业实力"打分，分数要有区分度，不要都给高分。
 4. fit 必须具体说明该企业能补上这个方向的哪个缺口环节，不要空话。
@@ -537,7 +537,7 @@ class Handler(BaseHTTPRequestHandler):
             max_tokens    = 1200
         elif mode == "funnel":
             system_prompt = SYSTEM_FUNNEL
-            max_tokens    = 12000   # 100 家企业结构化 JSON，需大 token 预算
+            max_tokens    = 7000    # 约40家企业结构化 JSON
         else:
             system_prompt = SYSTEM_FULL
             max_tokens    = MAX_TOKENS_FULL
