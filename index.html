@@ -1503,6 +1503,20 @@ function reportTextForTopic(topic){
   return null;
 }
 
+/* 判断“当前方向”是否已生成过完整报告（用于底部按钮文案：产业智能分析 vs 重新产业分析）。
+   注意：REPORTSTATE[cur].phase 是项目级的，切到新方向不会重置，不能拿它判断当前方向。
+   这里改为按 topic 判断——只有该方向的历史报告存在完整报告(phase===2)，或当前 REPORTSTATE
+   正指向该方向且为完整报告，才算“已分析过”。*/
+function topicHasFullReport(topic){
+  if(!topic || !cur) return false;
+  var _rs=REPORTSTATE[cur];
+  if(_rs && _rs.topic===topic && (_rs.phase===2 || _rs.finalized) && _rs.text) return true;
+  if(typeof REPORT_HISTORY!=='undefined' && REPORT_HISTORY[cur]){
+    if(REPORT_HISTORY[cur].some(function(h){return h && h.topic===topic && h.phase===2 && h.text;})) return true;
+  }
+  return false;
+}
+
 /* 后台从 RAG 库生成该方向的 AI 报告（非阻塞，静默）。
    完成后写入 REPORTSTATE[cur].aiReportByTopic[topic] 并刷新报告区。
    路演稳定性：AI 未就绪/失败时页面继续用预埋文本，用户无感知。 */
@@ -4092,13 +4106,13 @@ function parsePendingItems(text){
       return;
     }
     if(!inPending) return;
-    // 章节内仅提取 ⚠️ 开头的行（排除「⚠️薄弱/缺失」这类缺口分析标记）
-    if(clean.indexOf('⚠️') === 0 || clean.indexOf('⚠') === 0){
-      var t = clean.replace(/^⚠️?\s*[:：]?/,'').replace(/^⚠\s*[:：]?/,'').trim();
-      // 阈值放宽到2字：待确认事项常有短标题（如"园区地块""用地指标"），
-      // 之前 >5 会误过滤掉合法的短条目导致只解析出第一条。
-      if(t.length >= 2) items.push({text: t, status:'pending', editedText:'', files:[]});
-    }
+    // 待确认章节内：提取所有条目行。AI 草稿常把 ⚠️ 放在章节标题（如「③待确认事项（⚠️）」）
+    // 而不是每条前面，若强制要求每行以 ⚠️ 开头会一条都解析不到 → 出现「无确认按钮」的 bug。
+    // 做法：去掉行首可能的 ⚠️ 标记后作为条目文本；跳过 ✅/❌ 这类缺口分析标记行。
+    var t = clean.replace(/^⚠️?\s*[:：]?/,'').replace(/^⚠\s*[:：]?/,'').trim();
+    if(/^[✅❌]/.test(t)) return;
+    // 阈值 2 字：待确认事项常有短标题（如"园区地块""用地指标"）。
+    if(t.length >= 2) items.push({text: t, status:'pending', editedText:'', files:[]});
   });
   return items;
 }
@@ -6160,7 +6174,7 @@ function homePage(p){
     '</div>'+
     // 底部行动栏（替代 composer）
     '<div class="report-bottom-bar" style="border-top:1px solid #f0f4ff;background:#fff;padding:12px 22px;display:flex;gap:10px;align-items:center">'+
-      (REPORTSTATE[cur]&&(REPORTSTATE[cur].phase===2||REPORTSTATE[cur].finalized)
+      (topicHasFullReport(p.topic)
         ? ('<button onclick="viewCurrentReport()" '+
             'style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">📊 查看完整报告</button>'+
            '<button onclick="downloadReport(\'full\')" style="padding:13px 16px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;font-size:13px;color:#1a56db;cursor:pointer;font-weight:600">⬇ 下载</button>'+
