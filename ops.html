@@ -6511,7 +6511,8 @@ function opsOverview(){
   });
 
   if(!projKeys.length){
-    return '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:#9aa5b5;padding:60px">' +
+    return '<div style="padding:24px">' + rrPanel() + '</div>' +
+      '<div style="display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:#9aa5b5;padding:60px">' +
       '<div style="font-size:36px">🏙️</div>' +
       '<div style="font-size:14px;font-weight:700;color:#0b183b">暂无城市数据</div>' +
       '<div style="font-size:13px;text-align:center;line-height:1.7">政府端完成城市智库分析并提交招引需求后，<br>城市用户信息会出现在这里</div>' +
@@ -6752,6 +6753,7 @@ function opsOverview(){
       '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">城市需求概览</h1>' +
       '<span style="font-size:12px;color:#9aa5b5">共 ' + cityOrder.length + ' 个城市 · ' + projKeys.length + ' 个项目</span>' +
     '</div>' +
+    rrPanel() +
     groups +
   '</div>';
 }
