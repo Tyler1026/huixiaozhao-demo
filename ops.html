@@ -572,12 +572,41 @@ function rrStatusBadge(s){
          s==='failed'?'<span class="ops-badge orange">失败·可重试</span>':
          '<span class="ops-badge">排队中</span>';
 }
+function rrElapsed(ms){
+  var m=Math.floor(ms/60000);
+  return m<1?'刚刚':m<60?m+' 分钟':Math.floor(m/60)+' 小时 '+(m%60)+' 分';
+}
+function rrProgress(r){
+  if(r.status!=='running') return '';
+  var start=r.claimTs||r.ts;
+  var elapsed=rrElapsed(Date.now()-start);
+  var fd=r.filesDone||0, ft=r.filesTotal||17;
+  var pct=Math.min(96, Math.round(fd/ft*100));
+  var step=r.step||'流水线启动中…';
+  var eta=(r.etaMin!=null)?('预计还需 '+r.etaMin+' 分钟'):'预计约 40 分钟';
+  var stale=r.progressTs?(Date.now()-r.progressTs>5*60000):false;
+  return '<div style="margin-top:8px;padding:10px 12px;border:1px solid #e3ebf6;border-radius:8px;background:#f8fbff">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#3d5471;margin-bottom:7px">'+
+      '<span><b style="color:#0757ad">'+step+'</b>'+(stale?' <span style="color:#c85b09">（进度更新延迟）</span>':'')+'</span>'+
+      '<span>已运行 '+elapsed+'</span></div>'+
+    '<div style="height:8px;border-radius:4px;background:#e6edf6;overflow:hidden;margin-bottom:7px">'+
+      '<div style="height:100%;width:'+pct+'%;border-radius:4px;background:linear-gradient(90deg,#0757ad,#007f82);transition:width .6s"></div></div>'+
+    '<div style="display:flex;justify-content:space-between;font-size:11.5px;color:#667590">'+
+      '<span>已产出章节 '+fd+' / '+ft+'</span><span>'+eta+'</span></div></div>';
+}
 function rrPanel(){
   var rows=REPORT_REQUESTS.slice().reverse().map(function(r){
     var t=new Date(r.ts);var tm=(t.getMonth()+1)+'/'+t.getDate()+' '+t.getHours()+':'+('0'+t.getMinutes()).slice(-2);
-    return '<div class="ops-row" style="align-items:center"><div class="r-ic"></div>'+
+    var doneInfo='';
+    if(r.status==='done'){
+      var dur=(r.doneTs&&(r.claimTs||r.ts))?(' · 耗时 '+rrElapsed(r.doneTs-(r.claimTs||r.ts))):'';
+      doneInfo=' · 智库材料 '+r.chunks+' 条已入库'+dur;
+    }
+    return '<div class="ops-row" style="align-items:flex-start;flex-direction:column"><div style="display:flex;align-items:center;gap:10px;width:100%">'+
+      '<div class="r-ic"></div>'+
       '<div class="r-main"><div style="display:flex;align-items:center;gap:8px"><strong>'+r.province+' · '+r.city+'</strong>'+rrStatusBadge(r.status)+'</div>'+
-      '<small>'+r.by+' · '+tm+' 发起'+(r.status==='done'?' · 智库材料 '+r.chunks+' 条已入库':'')+'</small></div></div>';
+      '<small>'+r.by+' · '+tm+' 发起'+doneInfo+(r.status==='failed'&&r.failReason?' · '+r.failReason:'')+'</small></div></div>'+
+      rrProgress(r)+'</div>';
   }).join('')||'<div style="color:#8492a6;font-size:13px;padding:8px 2px">暂无申请记录</div>';
   return '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:18px 20px;margin:0 0 16px">'+
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><strong style="font-size:15px">发起城市报告生成</strong>'+
