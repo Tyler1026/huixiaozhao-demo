@@ -1982,47 +1982,44 @@ function showFunnelPyramid(k){
   var esc=function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
   var S=[],A=[],B=[];
   fn.companies.forEach(function(c){ var sc=c.fit_score||0; if(sc>=85)S.push(c); else if(sc>=70)A.push(c); else B.push(c); });
+  [S,A,B].forEach(function(arr){ arr.sort(function(a,b){return (b.fit_score||0)-(a.fit_score||0);}); });
   var tiers=[
-    {name:'S 级 · 核心适配',hint:'综合评分 ≥85，优先重点对接',color:'#d97706',bg:'linear-gradient(135deg,#fbbf24,#f59e0b)',soft:'#fffbeb',border:'#fde68a',w:'44%',list:S},
-    {name:'A 级 · 高适配',hint:'综合评分 70-84，积极跟进',color:'#1a56db',bg:'linear-gradient(135deg,#3b82f6,#6366f1)',soft:'#eff6ff',border:'#bfdbfe',w:'70%',list:A},
-    {name:'B 级 · 潜力观察',hint:'综合评分 <70，储备观察',color:'#64748b',bg:'linear-gradient(135deg,#94a3b8,#64748b)',soft:'#f8fafc',border:'#e2e8f0',w:'100%',list:B}
+    {name:'S 级 · 核心适配',hint:'评分 ≥85，优先重点对接',accent:'#c2740a',bar:'linear-gradient(135deg,#fbbf24,#f59e0b)',soft:'#fffdf6',border:'#f6d79b',w:60,list:S},
+    {name:'A 级 · 高适配',hint:'评分 70-84，积极跟进',accent:'#2f54d6',bar:'linear-gradient(135deg,#60a5fa,#5b6ef0)',soft:'#f6f9ff',border:'#c8d6fb',w:80,list:A},
+    {name:'B 级 · 潜力观察',hint:'评分 <70，储备观察',accent:'#5c6b7a',bar:'linear-gradient(135deg,#a4b0be,#6b7684)',soft:'#f9fafb',border:'#e3e8ef',w:100,list:B}
   ];
-  var pyramid=tiers.map(function(t){
-    return '<div style="display:flex;justify-content:center;margin-bottom:6px">'+
-      '<div style="width:'+t.w+';min-width:180px;padding:12px 16px;background:'+t.bg+';color:#fff;text-align:center;border-radius:8px;box-shadow:0 4px 14px rgba(11,24,59,.12)">'+
-        '<div style="font-size:14px;font-weight:750">'+t.name+'</div>'+
-        '<div style="font-size:12px;font-weight:800;margin-top:2px">'+t.list.length+' 家</div>'+
+  var body=tiers.map(function(t){
+    var chips = t.list.length ? t.list.map(function(c){
+      return '<span title="'+esc((c.region||'')+(c.region?' · ':'')+(c.name||''))+'" style="display:inline-flex;align-items:center;gap:7px;padding:6px 11px;background:#fff;border:1px solid '+t.border+';border-radius:999px;font-size:12px;line-height:1.15;box-shadow:0 1px 2px rgba(11,24,59,.04)">'+
+        '<span style="font-weight:600;color:#0b183b">'+esc(c.name)+'</span>'+
+        '<span style="font-weight:800;color:'+t.accent+'">'+(c.fit_score||0)+'</span>'+
+      '</span>';
+    }).join('') : '<span style="font-size:12px;color:#b0bac8;padding:2px 4px">该级暂无企业</span>';
+    return '<div style="width:'+t.w+'%;margin:0 auto 12px;border:1px solid '+t.border+';border-radius:16px;overflow:hidden;background:'+t.soft+';box-shadow:0 3px 14px rgba(11,24,59,.06);transition:width .2s">'+
+      '<div style="background:'+t.bar+';color:#fff;padding:9px 16px;display:flex;align-items:center;gap:9px">'+
+        '<span style="font-size:13.5px;font-weight:750;letter-spacing:.2px">'+t.name+'</span>'+
+        '<span style="font-size:11px;opacity:.92;font-weight:500">'+t.hint+'</span>'+
+        '<span style="margin-left:auto;font-size:12.5px;font-weight:800;background:rgba(255,255,255,.22);padding:1px 10px;border-radius:999px">'+t.list.length+' 家</span>'+
       '</div>'+
+      '<div style="padding:13px 15px;display:flex;flex-wrap:wrap;gap:8px">'+chips+'</div>'+
     '</div>';
   }).join('');
-  var tierLists=tiers.map(function(t){
-    var items = t.list.length ? t.list.map(function(c){
-      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#fff;border:1px solid '+t.border+';border-radius:8px;margin-bottom:6px">'+
-        '<span style="flex:1;min-width:0;font-size:12.5px;font-weight:600;color:#0b183b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.name)+'</span>'+
-        (c.region?'<span style="flex:0 0 auto;font-size:11px;color:#8492a6">'+esc(c.region)+'</span>':'')+
-        '<span style="flex:0 0 auto;font-size:13px;font-weight:800;color:'+t.color+'">'+(c.fit_score||0)+'<span style="font-size:10px">分</span></span>'+
-      '</div>';
-    }).join('') : '<div style="font-size:12px;color:#b0bac8;padding:8px 12px">该级暂无企业</div>';
-    return '<div style="margin-bottom:14px">'+
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
-        '<span style="width:10px;height:10px;border-radius:2px;background:'+t.color+'"></span>'+
-        '<span style="font-size:13px;font-weight:700;color:'+t.color+'">'+t.name+'</span>'+
-        '<span style="font-size:11px;color:#9aa5b5">'+t.hint+'</span>'+
-      '</div>'+ items +
-    '</div>';
-  }).join('');
-  var modal='<div id="funnelPyramidModal" style="position:fixed;inset:0;background:rgba(11,24,59,.45);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px);padding:20px" onclick="if(event.target.id===\'funnelPyramidModal\')closeFunnelPyramid()">'+
-    '<div style="background:#fff;border-radius:20px;max-width:560px;width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 60px rgba(11,24,59,.2);animation:fadeUp .35s ease">'+
-      '<div style="padding:22px 26px 12px;border-bottom:1px solid #f1f3f7">'+
-        '<div style="display:flex;align-items:center;justify-content:space-between">'+
-          '<div><div style="font-size:12px;font-weight:650;color:#1a56db;letter-spacing:.5px">企业适配分级图谱</div>'+
-          '<h2 style="font-size:18px;font-weight:750;color:#0b183b;margin:2px 0 0">「'+esc(fn.topic||p.topic||'该方向')+'」</h2></div>'+
-          '<button onclick="closeFunnelPyramid()" style="width:32px;height:32px;border:none;background:#f4f6f9;border-radius:8px;font-size:16px;color:#64748b;cursor:pointer">✕</button>'+
+  var modal='<div id="funnelPyramidModal" style="position:fixed;inset:0;background:rgba(11,24,59,.5);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px);padding:22px" onclick="if(event.target.id===\'funnelPyramidModal\')closeFunnelPyramid()">'+
+    '<div style="background:#fff;border-radius:22px;max-width:660px;width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 12px 64px rgba(11,24,59,.28);animation:fadeUp .32s ease;overflow:hidden">'+
+      '<div style="padding:22px 26px 16px;border-bottom:1px solid #f1f3f7">'+
+        '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">'+
+          '<div><div style="font-size:11.5px;font-weight:700;color:#5b6ef0;letter-spacing:.6px">企业适配分级图谱</div>'+
+          '<h2 style="font-size:18px;font-weight:750;color:#0b183b;margin:3px 0 0;line-height:1.35">「'+esc(fn.topic||p.topic||'该方向')+'」</h2></div>'+
+          '<button onclick="closeFunnelPyramid()" style="flex:0 0 auto;width:32px;height:32px;border:none;background:#f2f4f8;border-radius:9px;font-size:15px;color:#64748b;cursor:pointer;line-height:1">✕</button>'+
         '</div>'+
-        '<div style="font-size:12px;color:#8492a6;margin-top:6px">共 '+fn.companies.length+' 家 · 按综合评分自动分级：S '+S.length+' / A '+A.length+' / B '+B.length+'</div>'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-top:11px;flex-wrap:wrap">'+
+          '<span style="font-size:12px;color:#8492a6">共 '+fn.companies.length+' 家 · 按综合评分自动分级</span>'+
+          '<span style="font-size:11px;font-weight:700;color:#c2740a;background:#fffbeb;border:1px solid #fbe6c0;border-radius:999px;padding:2px 9px">S '+S.length+'</span>'+
+          '<span style="font-size:11px;font-weight:700;color:#2f54d6;background:#f0f5ff;border:1px solid #d3ddfb;border-radius:999px;padding:2px 9px">A '+A.length+'</span>'+
+          '<span style="font-size:11px;font-weight:700;color:#5c6b7a;background:#f4f6f9;border:1px solid #e3e8ef;border-radius:999px;padding:2px 9px">B '+B.length+'</span>'+
+        '</div>'+
       '</div>'+
-      '<div style="padding:20px 26px 8px">'+pyramid+'</div>'+
-      '<div style="padding:6px 26px 24px;overflow:auto">'+tierLists+'</div>'+
+      '<div style="padding:22px 24px;overflow:auto;background:linear-gradient(180deg,#fcfdff,#f7f9fc)">'+body+'</div>'+
     '</div>'+
   '</div>';
   if(!document.getElementById('fadeUpStyle')){var st=document.createElement('style');st.id='fadeUpStyle';st.textContent='@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes fspin{to{transform:rotate(360deg)}}.funnelSpin{animation:fspin .8s linear infinite}';document.head.appendChild(st);}
