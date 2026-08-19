@@ -1727,6 +1727,7 @@ function renderCluesTwoPanel(projKey){
       (fn?'<span style="font-size:11px;padding:2px 7px;background:#f5f3ff;color:#6d28d9;border-radius:10px">扫描'+ (fn.total||fn.companies.length) +'家 · 精筛'+fn.companies.length+'家</span>':'')+
       '<span style="font-size:11px;color:#9aa5b5;margin-left:2px">· DeepSeek 真实分析，企业需人工核验</span>'+
       '<div style="flex:1"></div>'+
+      (fn&&fn.companies&&fn.companies.length?'<button onclick="showFunnelPyramid(\''+projKey+'\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:11.5px;color:#1a56db;cursor:pointer;font-weight:600;margin-right:8px">📊 分级图谱</button>':'')+
       (running?'<span style="font-size:11.5px;color:#6d28d9">⏳ 分析中…</span>':'<button onclick="loadAIScanClues(\''+projKey+'\')" style="padding:4px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:11.5px;color:#6d28d9;cursor:pointer;font-weight:600">🔄 重新分析</button>')+
     '</div>';
   var funnelBody;
@@ -1972,6 +1973,64 @@ function updateFunnelProgress(pct){
 function closeFunnelProgressModal(){
   clearInterval(_funnelProg.timer);
   var wrap=document.getElementById('funnelProgWrap'); if(wrap)wrap.remove();
+}
+
+/* ── AI 漏斗企业分级金字塔可视化 ── */
+function showFunnelPyramid(k){
+  var p=PROJECTS[k]||{}; var fn=p.funnel;
+  if(!fn||!fn.companies||!fn.companies.length){ toast('暂无漏斗数据'); return; }
+  var esc=function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
+  var S=[],A=[],B=[];
+  fn.companies.forEach(function(c){ var sc=c.fit_score||0; if(sc>=85)S.push(c); else if(sc>=70)A.push(c); else B.push(c); });
+  var tiers=[
+    {name:'S 级 · 核心适配',hint:'综合评分 ≥85，优先重点对接',color:'#d97706',bg:'linear-gradient(135deg,#fbbf24,#f59e0b)',soft:'#fffbeb',border:'#fde68a',w:'44%',list:S},
+    {name:'A 级 · 高适配',hint:'综合评分 70-84，积极跟进',color:'#1a56db',bg:'linear-gradient(135deg,#3b82f6,#6366f1)',soft:'#eff6ff',border:'#bfdbfe',w:'70%',list:A},
+    {name:'B 级 · 潜力观察',hint:'综合评分 <70，储备观察',color:'#64748b',bg:'linear-gradient(135deg,#94a3b8,#64748b)',soft:'#f8fafc',border:'#e2e8f0',w:'100%',list:B}
+  ];
+  var pyramid=tiers.map(function(t){
+    return '<div style="display:flex;justify-content:center;margin-bottom:6px">'+
+      '<div style="width:'+t.w+';min-width:180px;padding:12px 16px;background:'+t.bg+';color:#fff;text-align:center;border-radius:8px;box-shadow:0 4px 14px rgba(11,24,59,.12)">'+
+        '<div style="font-size:14px;font-weight:750">'+t.name+'</div>'+
+        '<div style="font-size:12px;font-weight:800;margin-top:2px">'+t.list.length+' 家</div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  var tierLists=tiers.map(function(t){
+    var items = t.list.length ? t.list.map(function(c){
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#fff;border:1px solid '+t.border+';border-radius:8px;margin-bottom:6px">'+
+        '<span style="flex:1;min-width:0;font-size:12.5px;font-weight:600;color:#0b183b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.name)+'</span>'+
+        (c.region?'<span style="flex:0 0 auto;font-size:11px;color:#8492a6">'+esc(c.region)+'</span>':'')+
+        '<span style="flex:0 0 auto;font-size:13px;font-weight:800;color:'+t.color+'">'+(c.fit_score||0)+'<span style="font-size:10px">分</span></span>'+
+      '</div>';
+    }).join('') : '<div style="font-size:12px;color:#b0bac8;padding:8px 12px">该级暂无企业</div>';
+    return '<div style="margin-bottom:14px">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
+        '<span style="width:10px;height:10px;border-radius:2px;background:'+t.color+'"></span>'+
+        '<span style="font-size:13px;font-weight:700;color:'+t.color+'">'+t.name+'</span>'+
+        '<span style="font-size:11px;color:#9aa5b5">'+t.hint+'</span>'+
+      '</div>'+ items +
+    '</div>';
+  }).join('');
+  var modal='<div id="funnelPyramidModal" style="position:fixed;inset:0;background:rgba(11,24,59,.45);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px);padding:20px" onclick="if(event.target.id===\'funnelPyramidModal\')closeFunnelPyramid()">'+
+    '<div style="background:#fff;border-radius:20px;max-width:560px;width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 60px rgba(11,24,59,.2);animation:fadeUp .35s ease">'+
+      '<div style="padding:22px 26px 12px;border-bottom:1px solid #f1f3f7">'+
+        '<div style="display:flex;align-items:center;justify-content:space-between">'+
+          '<div><div style="font-size:12px;font-weight:650;color:#1a56db;letter-spacing:.5px">企业适配分级图谱</div>'+
+          '<h2 style="font-size:18px;font-weight:750;color:#0b183b;margin:2px 0 0">「'+esc(fn.topic||p.topic||'该方向')+'」</h2></div>'+
+          '<button onclick="closeFunnelPyramid()" style="width:32px;height:32px;border:none;background:#f4f6f9;border-radius:8px;font-size:16px;color:#64748b;cursor:pointer">✕</button>'+
+        '</div>'+
+        '<div style="font-size:12px;color:#8492a6;margin-top:6px">共 '+fn.companies.length+' 家 · 按综合评分自动分级：S '+S.length+' / A '+A.length+' / B '+B.length+'</div>'+
+      '</div>'+
+      '<div style="padding:20px 26px 8px">'+pyramid+'</div>'+
+      '<div style="padding:6px 26px 24px;overflow:auto">'+tierLists+'</div>'+
+    '</div>'+
+  '</div>';
+  if(!document.getElementById('fadeUpStyle')){var st=document.createElement('style');st.id='fadeUpStyle';st.textContent='@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes fspin{to{transform:rotate(360deg)}}.funnelSpin{animation:fspin .8s linear infinite}';document.head.appendChild(st);}
+  var old=document.getElementById('funnelPyramidWrap'); if(old)old.remove();
+  var wrap=document.createElement('div'); wrap.id='funnelPyramidWrap'; wrap.innerHTML=modal; document.body.appendChild(wrap);
+}
+function closeFunnelPyramid(){
+  var wrap=document.getElementById('funnelPyramidWrap'); if(wrap)wrap.remove();
 }
 
 
@@ -6553,6 +6612,7 @@ function opsOverview(){
       (fn?'<span style="font-size:11px;padding:2px 8px;background:#f5f3ff;color:#6d28d9;border-radius:10px">扫描'+(fn.total||fn.companies.length)+'家 · 精筛'+fn.companies.length+'家</span>':'')+
       '<span style="font-size:11px;color:#9aa5b5">· DeepSeek 真实分析，企业需人工核验</span>'+
       '<div style="flex:1"></div>'+
+      (fn&&fn.companies&&fn.companies.length?'<button onclick="showFunnelPyramid(\''+k+'\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:11.5px;color:#1a56db;cursor:pointer;font-weight:600;margin-right:8px">📊 分级图谱</button>':'')+
       (running?'<span style="font-size:11.5px;color:#6d28d9">⏳ 分析中…</span>':'<button onclick="loadAIScanClues(\''+k+'\')" style="padding:4px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:11.5px;color:#6d28d9;cursor:pointer;font-weight:600">🔄 重新分析</button>')+
     '</div>';
     if(collapsed) return head;
