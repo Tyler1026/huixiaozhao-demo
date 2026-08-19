@@ -1614,7 +1614,7 @@ function _funnelInput(p){
   var gaps=[]; try{ gaps=extractGapsForScan(p); }catch(e){}
   return {text:text, gaps:gaps};
 }
-function runAIFunnel(projKey, done){
+function runAIFunnel(projKey, done, onProgress){
   var p=PROJECTS[projKey]; if(!p){ done&&done('no project'); return; }
   if(_funnelRunning[projKey]){ return; }
   _funnelRunning[projKey]=true;
@@ -1659,6 +1659,7 @@ function runAIFunnel(projKey, done){
           if(dd==='[DONE]'||!dd) return;
           try{ var j=JSON.parse(dd); var delta=(j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||''; if(delta) acc+=delta; }catch(_){}
         });
+        if(onProgress){ var pct=Math.min(90, 5+Math.round(acc.length/15000*85)); try{ onProgress(pct, acc); }catch(_){} }
         return pump();
       });
     }
@@ -1876,12 +1877,13 @@ function loadAIScanClues(projKey){
   // 触发真实 AI 企业漏斗分析（不再用硬编码假数据）
   var p=PROJECTS[projKey]; if(!p) return;
   if(_funnelRunning[projKey]){ toast('AI 正在分析中，请稍候…'); return; }
-  toast('AI 企业漏斗分析中，约需 1-2 分钟…');
+  showFunnelProgressModal(projKey);
   runAIFunnel(projKey, function(err, funnel){
-    if(err){ toast('AI 漏斗分析失败：'+err); return; }
+    if(err){ closeFunnelProgressModal(); toast('AI 漏斗分析失败：'+err); return; }
     try{ renderOpsV2&&renderOpsV2(); }catch(e){ try{render();}catch(_){}}
-    try{ showFunnelDoneModal(projKey, funnel); }catch(e){ toast('✓ AI 漏斗完成，共精筛 '+funnel.companies.length+' 家适配企业'); }
-  });
+    updateFunnelProgress(100);
+    setTimeout(function(){ closeFunnelProgressModal(); try{ showFunnelDoneModal(projKey, funnel); }catch(e){ toast('✓ AI 漏斗完成，共精筛 '+funnel.companies.length+' 家适配企业'); } }, 420);
+  }, function(pct){ updateFunnelProgress(pct); });
 }
 
 /* ── AI 漏斗分析完成提醒弹窗 ── */
@@ -1927,6 +1929,49 @@ function showFunnelDoneModal(projKey, funnel){
 }
 function closeFunnelDoneModal(){
   var wrap=document.getElementById('funnelDoneWrap'); if(wrap)wrap.remove();
+}
+/* ── AI 漏斗分析进度弹窗 ── */
+var _funnelProg={pct:0,timer:null,phase:0};
+function showFunnelProgressModal(projKey){
+  var p=PROJECTS[projKey]||{};
+  var esc=function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
+  var modal='<div id="funnelProgModal" style="position:fixed;inset:0;background:rgba(11,24,59,.45);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)">'+
+    '<div style="background:#fff;border-radius:22px;padding:34px 34px 30px;max-width:460px;width:92%;box-shadow:0 8px 60px rgba(11,24,59,.18);animation:fadeUp .35s ease">'+
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">'+
+        '<div class="funnelSpin" style="width:20px;height:20px;border:2.5px solid #dbe3f7;border-top-color:#4f46e5;border-radius:50%"></div>'+
+        '<span style="font-size:13px;font-weight:700;color:#4338ca;letter-spacing:.3px">AI 企业漏斗分析中</span>'+
+      '</div>'+
+      '<h2 style="font-size:18px;font-weight:750;color:#0b183b;margin:0 0 4px">「'+esc(p.topic||'该方向')+'」</h2>'+
+      '<p id="funnelProgPhase" style="font-size:13px;color:#8492a6;margin:0 0 18px">正在检索全国适配企业…</p>'+
+      '<div style="height:8px;background:#eef1f6;border-radius:6px;overflow:hidden">'+
+        '<div id="funnelProgBar" style="height:100%;width:0%;background:linear-gradient(90deg,#1a56db,#6366f1);border-radius:6px;transition:width .5s ease"></div>'+
+      '</div>'+
+      '<div style="display:flex;justify-content:space-between;margin-top:8px"><span id="funnelProgPct" style="font-size:12px;color:#4338ca;font-weight:650">0%</span>'+
+        '<span style="font-size:11px;color:#9aa5b5">约需 1-2 分钟，请稍候</span></div>'+
+    '</div>'+
+  '</div>';
+  if(!document.getElementById('fadeUpStyle')){var st=document.createElement('style');st.id='fadeUpStyle';st.textContent='@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes fspin{to{transform:rotate(360deg)}}.funnelSpin{animation:fspin .8s linear infinite}';document.head.appendChild(st);}
+  var oldw=document.getElementById('funnelProgWrap'); if(oldw)oldw.remove();
+  var oldd=document.getElementById('funnelDoneWrap'); if(oldd)oldd.remove();
+  var wrap=document.createElement('div'); wrap.id='funnelProgWrap'; wrap.innerHTML=modal; document.body.appendChild(wrap);
+  _funnelProg.pct=0; _funnelProg.phase=0;
+  var phases=['正在检索全国适配企业…','正在比对产业链缺口与企业能力…','正在为企业打分与排序…','正在生成适配分析与信号标注…'];
+  clearInterval(_funnelProg.timer);
+  _funnelProg.timer=setInterval(function(){
+    if(_funnelProg.pct<88){ _funnelProg.pct+=Math.max(1,Math.round((90-_funnelProg.pct)/22)); updateFunnelProgress(_funnelProg.pct); }
+    var ph=document.getElementById('funnelProgPhase');
+    if(ph){ var idx=Math.min(phases.length-1, Math.floor(_funnelProg.pct/24)); if(idx!==_funnelProg.phase){ _funnelProg.phase=idx; ph.textContent=phases[idx]; } }
+  },900);
+}
+function updateFunnelProgress(pct){
+  if(pct>_funnelProg.pct) _funnelProg.pct=pct;
+  var bar=document.getElementById('funnelProgBar'), t=document.getElementById('funnelProgPct');
+  if(bar) bar.style.width=_funnelProg.pct+'%';
+  if(t) t.textContent=_funnelProg.pct+'%';
+}
+function closeFunnelProgressModal(){
+  clearInterval(_funnelProg.timer);
+  var wrap=document.getElementById('funnelProgWrap'); if(wrap)wrap.remove();
 }
 
 
