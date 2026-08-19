@@ -4,3 +4,5 @@ rag-audit.log
 server.log
 .DS_Store
 .env
+deepseek_key.txt
+*.key

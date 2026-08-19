@@ -1619,7 +1619,7 @@ function runAIFunnel(projKey, done){
   if(_funnelRunning[projKey]){ return; }
   _funnelRunning[projKey]=true;
   var inp=_funnelInput(p); var topic=p.topic||'';
-  var q='招商方向：'+topic+' 城市：'+(p.city||'')+'\n\n产业研判报告：\n'+(inp.text? inp.text.slice(0,4000) : '（暂无完整报告，请基于招商方向与常识分析）')+'\n\n已识别缺口：'+(inp.gaps&&inp.gaps.length?inp.gaps.join('、'):'（见报告）')+'\n\n请针对该招商方向筛选真实存在的适配企业构成企业漏斗，按 fit_score 从高到低排序，目标100家（至少60家），严格按 SYSTEM 要求输出 JSON。';
+  var q='招商方向：'+topic+' 城市：'+(p.city||'')+'\n\n产业研判报告：\n'+(inp.text? inp.text.slice(0,4000) : '（暂无完整报告，请基于招商方向与常识分析）')+'\n\n已识别缺口：'+(inp.gaps&&inp.gaps.length?inp.gaps.join('、'):'（见报告）')+'\n\n请针对该招商方向筛选真实存在的适配企业构成企业漏斗，目标40家（至少30家）。每家企业按评分卡分别给出 score_match(0-40)/score_relocate(0-30)/score_strength(0-30) 三项分数；如企业有明确扩张需求或领导与本城市/本省有可考的派系关联（校友/籍贯/商会等），填 expansion/faction 字段，无则留空、严禁编造。严格按 SYSTEM 要求输出 JSON。';
   fetch(KB_API_OPS,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q, city:(p.city||''), chunks:[], stream:false, mode:'funnel'})})
   .then(function(r){return r.json();}).then(function(data){
     _funnelRunning[projKey]=false;
@@ -1627,7 +1627,20 @@ function runAIFunnel(projKey, done){
     if(!content){ done&&done('empty'); return; }
     var obj=_parseFunnelJson(content);
     if(!obj||!obj.companies||!obj.companies.length){ done&&done('parse'); return; }
-    var companies=obj.companies.map(function(c,i){ return {id:'f_'+projKey+'_'+i, name:c.name||'', region:c.region||'', kind:c.kind||'', fit:c.fit||'', fit_score:(typeof c.fit_score==='number'?c.fit_score:parseInt(c.fit_score)||0), signal:c.signal||'', listed:c.listed||'', source:c.source||'公开信息（AI推断，待核验）'}; }).filter(function(c){return c.name;}).sort(function(a,b){return b.fit_score-a.fit_score;});
+    var _num=function(v,max){var n=(typeof v==='number')?v:parseInt(v)||0; if(n<0)n=0; if(n>max)n=max; return n;};
+    var companies=obj.companies.map(function(c,i){
+      var sm=_num(c.score_match,40), sr=_num(c.score_relocate,30), ss=_num(c.score_strength,30);
+      var total=sm+sr+ss; if(total>100)total=100;
+      return {id:'f_'+projKey+'_'+i, name:c.name||'', region:c.region||'', kind:c.kind||'', fit:c.fit||'',
+        score_match:sm, score_relocate:sr, score_strength:ss, score_reason:c.score_reason||'',
+        fit_score:total,
+        signal:c.signal||'', expansion:c.expansion||'', faction:c.faction||'',
+        listed:c.listed||'', source:c.source||'公开信息（AI推断，待核验）'};
+    }).filter(function(c){return c.name;}).sort(function(a,b){
+      if(b.fit_score!==a.fit_score) return b.fit_score-a.fit_score;
+      var fa=(a.expansion?1:0)+(a.faction?1:0), fb=(b.expansion?1:0)+(b.faction?1:0);
+      return fb-fa;  // 同分时：有扩张需求/派系关联标注者优先
+    });
     PROJECTS[projKey].funnel={ ts:Date.now(), topic:obj.topic||topic, total:(obj.total_scanned||companies.length), companies:companies, pushed:false };
     persist(); done&&done(null, PROJECTS[projKey].funnel);
   }).catch(function(e){ _funnelRunning[projKey]=false; done&&done(e&&e.message||'network'); });
@@ -1648,7 +1661,7 @@ function pushFunnelTopToGov(projKey, n){
   var added=0;
   top.forEach(function(c){
     if(existNames[c.name]) return;
-    p.clues.push({id:c.id, name:c.name, kind:c.kind, region:c.region, gap:p.funnel.topic||p.topic||'', tone:'slate', status:'gov_push', fit:c.fit, fit_score:c.fit_score, reason:c.fit||('AI 漏斗按「'+(p.funnel.topic||p.topic||'该方向')+'」精筛，适配度 '+(c.fit_score||0)+' 分，建议资源团队核验投资意向。'), signal:c.signal, listed:c.listed, source:c.source, scale:(c.listed?c.listed+' · ':'')+(c.region||''), techRoute:c.fit||'', signalSrc:c.source||'AI推断，待核验', matchPoints:[c.fit].filter(Boolean), questions:['是否有在'+(p.city||'本地')+'布局/投资意向','与本地链主的配套匹配度','落地所需政策与承载条件'], priority:Math.max(1,Math.min(5,Math.round((c.fit_score||0)/20))), localAttr:'B'});
+    p.clues.push({id:c.id, name:c.name, kind:c.kind, region:c.region, gap:p.funnel.topic||p.topic||'', tone:'slate', status:'gov_push', fit:c.fit, fit_score:c.fit_score, score_match:c.score_match, score_relocate:c.score_relocate, score_strength:c.score_strength, score_reason:c.score_reason, expansion:c.expansion, faction:c.faction, reason:c.fit||('AI 漏斗按「'+(p.funnel.topic||p.topic||'该方向')+'」精筛，适配度 '+(c.fit_score||0)+' 分，建议资源团队核验投资意向。'), signal:c.signal, listed:c.listed, source:c.source, scale:(c.listed?c.listed+' · ':'')+(c.region||''), techRoute:c.fit||'', signalSrc:c.source||'AI推断，待核验', matchPoints:[c.fit].filter(Boolean), questions:['是否有在'+(p.city||'本地')+'布局/投资意向','与本地链主的配套匹配度','落地所需政策与承载条件'], priority:Math.max(1,Math.min(5,Math.round((c.fit_score||0)/20))), localAttr:'B'});
     added++;
   });
   p.funnel.pushed=true; p.funnel.pushedAt=Date.now(); p.funnel.pushedNames=top.map(function(c){return c.name;});
@@ -6463,6 +6476,11 @@ function opsOverview(){
             '<div style="font-size:11px;color:#8492a6;margin-top:2px">'+(c.region||'')+(c.kind?' \u00b7 '+c.kind:'')+'</div>'+
             (c.fit?'<div style="font-size:11px;color:#4a5568;margin-top:3px;line-height:1.5">'+c.fit+'</div>':'')+
             (c.signal?'<div style="font-size:10.5px;color:#b45309;margin-top:3px;line-height:1.5">📡 '+c.signal+'</div>':'')+
+            // 优质标注：有扩张需求 / 派系关联（无则不显示）
+            (c.expansion?'<div style="font-size:10.5px;color:#166534;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:2px 7px;margin-top:4px;display:inline-block;line-height:1.5">🚀 有扩张需求：'+c.expansion+'</div>':'')+
+            (c.faction?'<div style="font-size:10.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:2px 7px;margin-top:4px;margin-left:4px;display:inline-block;line-height:1.5">🤝 派系关联：'+c.faction+'</div>':'')+
+            // 评分卡分项构成
+            '<div style="font-size:10px;color:#9aa5b5;margin-top:4px">匹配 '+(c.score_match||0)+' + 可招引 '+(c.score_relocate||0)+' + 实力 '+(c.score_strength||0)+(c.score_reason?' · '+c.score_reason:'')+'</div>'+
           '</div>'+
           '<span style="flex-shrink:0;font-size:13px;font-weight:800;color:'+(c.fit_score>=80?'#16a34a':c.fit_score>=60?'#d97706':'#6b7280')+'">'+(c.fit_score||0)+'<span style="font-size:10px;font-weight:600">\u5206</span></span>'+
         '</div>';

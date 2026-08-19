@@ -107,13 +107,7 @@ def _load_ds_key():
             if ku in ("DEEPSEEK_API_KEY", "DEEPSEEKAPIKEY", "DS_KEY", "DEEPSEEK_KEY") or "DEEPSEEK" in ku:
                 if val and val.strip():
                     v = val; break
-    # 最终兜底：从同目录 deepseek_key.txt 读取（不依赖 Railway 环境变量）
-    if not v.strip():
-        try:
-            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "deepseek_key.txt"), encoding="utf-8") as f:
-                v = f.read()
-        except Exception:
-            pass
+    # key 仅从环境变量读取（Railway Variables 配置 DEEPSEEK_API_KEY）；不再从明文文件兜底，避免密钥入库泄露
     v = v.strip().strip('"').strip("'").strip()
     if v and not v.startswith("sk-"):
         import re as _re
@@ -310,15 +304,20 @@ SYSTEM_FUNNEL = """你是慧小招招商情报分析师。针对某个具体的�
 ## 输出格式（严格输出 JSON，不要 markdown 代码块、不要 JSON 之外的任何文字）
 {
   "topic": "该招商方向名",
-  "total_scanned": 100,
+  "total_scanned": 40,
   "companies": [
     {
       "name": "企业规范全称（真实存在的公司，如「亿华通科技股份有限公司」）",
       "region": "总部所在城市",
       "kind": "主营业务（简短，一句话）",
       "fit": "为何适配该招商方向（结合缺口，一句话）",
-      "fit_score": 88,
+      "score_match": 36,
+      "score_relocate": 22,
+      "score_strength": 25,
+      "score_reason": "三项打分的简要依据（一句话说明为何这样给分）",
       "signal": "扩张/迁移/投资信号（有则写，无则空字符串）",
+      "expansion": "该企业明确的扩张/建厂/异地投资/产能扩产等公开需求信号（务必有公开依据才写，注明信息线索；无则留空字符串）",
+      "faction": "该企业核心领导（董事长/总经理/创始人）与本招商城市或所在省是否存在可考的『同派系』关联——校友（同一母校）、同乡（籍贯）、商会/行业协会共同任职、过往任职交集等（务必有可信线索才写，写明关联类型与具体依据，如『董事长张三为武汉大学校友』；无则留空字符串）",
       "listed": "上市情况（如 A股/新三板/未上市/港股）",
       "source": "信息来源（如 公开工商信息 / 上市公司公告 / 行业协会名录）"
     }
@@ -326,13 +325,18 @@ SYSTEM_FUNNEL = """你是慧小招招商情报分析师。针对某个具体的�
 }
 
 ## 要求
-1. companies 输出目标 40 家（至少 30 家），聚焦该方向缺口环节适配度最高的真实企业，按 fit_score 从高到低排序；宁可精不可滥，不要为凑数拉低质量。
+1. companies 输出目标 40 家（至少 30 家），聚焦该方向缺口环节适配度最高的真实企业；宁可精不可滥，不要为凑数拉低质量。
 2. 企业必须是你「确定真实存在」的公司，用规范全称，优先列上市公司/细分龙头/专精特新/已有扩张信号的企业。禁止虚构企业名——宁可少列，绝不编造。
-3. fit_score（0-100）：综合"业务与缺口的匹配度 + 异地投资/迁移可能性 + 企业实力"打分，分数要有区分度，不要都给高分。
+3. 【评分卡·三个分项，分别独立打分，禁止都给高分，要有区分度】
+   - score_match（0-40）：业务与该方向缺口环节的匹配度。越是精准补上报告识别出的缺口环节，分越高。
+   - score_relocate（0-30）：异地投资/迁移/落地本城市的可能性。有公开扩张/迁移/投资动向或处于产能扩张期的，分越高；总部已在本地或明显无外迁可能的，分低。
+   - score_strength（0-30）：企业实力。上市公司/细分龙头/专精特新/规模大的分高。
+   - 不要输出 fit_score 总分，总分由系统按三项相加得出。score_reason 用一句话说明三项打分依据。
 4. fit 必须具体说明该企业能补上这个方向的哪个缺口环节，不要空话。
-5. signal 只写你确有依据的公开扩张/投资动向；没有就留空字符串，禁止编造融资/建厂消息。
-6. total_scanned 写你本轮实际扫描评估的企业规模（约等于 companies 长度或更多）。
-7. 全部用中文。这是 AI 推理结果，前端会标注"待人工核验"，你只需保证企业真实存在、匹配理由可信。"""
+5. signal / expansion 只写你确有公开依据的动向；没有就留空字符串，【严禁编造】任何融资/建厂/扩张消息。
+6. faction 是稀缺信息：只有当你确有可信线索（公开可考的校友/籍贯/商会/任职关联）时才填，并写清依据；绝大多数企业此项应留空——【严禁为了凑数编造领导背景或人际关联】。找不到就留空，这是正常的，不强求。
+7. total_scanned 写你本轮实际扫描评估的企业规模（约等于 companies 长度或更多）。
+8. 全部用中文。这是 AI 推理结果，前端会标注"待人工核验"。核心底线：所有企业、分数、信号、扩张需求、派系关联都必须基于真实公开信息或合理推断，绝不编造虚假数据；宁可留空、宁可少列，也不许造假。"""
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -537,7 +541,7 @@ class Handler(BaseHTTPRequestHandler):
             max_tokens    = 1200
         elif mode == "funnel":
             system_prompt = SYSTEM_FUNNEL
-            max_tokens    = 7000    # 约40家企业结构化 JSON
+            max_tokens    = 9500    # 约40家企业结构化 JSON（含三分项评分卡+扩张/派系标注，字段增多）
         else:
             system_prompt = SYSTEM_FULL
             max_tokens    = MAX_TOKENS_FULL
