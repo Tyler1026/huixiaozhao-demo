@@ -549,6 +549,23 @@ function submitReportRequest(){
     mode:'deep',status:'pending',by:'管理端·周总',ts:Date.now(),doneTs:null,projectKey:null,chunks:0});
   persist();toast('已发起「'+city+'」报告生成申请，AI 流水线约 40 分钟完成');render();
 }
+/* 轮询服务器刷新申请状态（每30秒，仅状态前进时更新，避免打断输入） */
+setInterval(function(){
+  if(!REPORT_REQUESTS.length) return;
+  var active=REPORT_REQUESTS.some(function(r){return r.status==='pending'||r.status==='running';});
+  if(!active) return;
+  fetch('/api/sync').then(function(r){return r.json();}).then(function(raw){
+    var srv=(raw&&raw.huixiaozhao_kb_v1&&raw.huixiaozhao_kb_v1.REPORT_REQUESTS)?raw.huixiaozhao_kb_v1.REPORT_REQUESTS:(raw&&raw.REPORT_REQUESTS);
+    if(!srv||!srv.length) return;
+    var rank={pending:0,running:1,failed:2,done:3};var changed=false;
+    srv.forEach(function(sr){
+      var loc=REPORT_REQUESTS.find(function(r){return r.id===sr.id;});
+      if(!loc){REPORT_REQUESTS.push(sr);changed=true;}
+      else if((rank[sr.status]||0)>(rank[loc.status]||0)){Object.assign(loc,sr);changed=true;}
+    });
+    if(changed){render();}
+  }).catch(function(){});
+},30000);
 function rrStatusBadge(s){
   return s==='done'?'<span class="ops-badge green">已完成·RAG已初始化</span>':
          s==='running'?'<span class="ops-badge blue">流水线运行中</span>':

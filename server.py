@@ -458,8 +458,27 @@ class Handler(BaseHTTPRequestHandler):
                         existing = {}
                 # 合并：空列表/空字典不覆盖已有非空数据
                 _protected = ['OPS_ENT','DEMANDS','KB_CHAT','PENDING_CONFIRMS','KB_CONFIRMS','REPORT_REQUESTS']
+                # REPORT_REQUESTS 按 id 合并且状态只进不退（pending<running<done/failed）
+                # 防止管理端旧快照 persist 把流水线已推进的状态倒改回 pending
+                _rr_rank = {'pending': 0, 'running': 1, 'failed': 2, 'done': 3}
+                def _merge_rr(old_list, new_list):
+                    by_id = {r.get('id'): dict(r) for r in (old_list or []) if isinstance(r, dict)}
+                    for r in (new_list or []):
+                        if not isinstance(r, dict):
+                            continue
+                        rid = r.get('id')
+                        ex = by_id.get(rid)
+                        if not ex:
+                            by_id[rid] = r
+                        elif _rr_rank.get(r.get('status'), 0) >= _rr_rank.get(ex.get('status'), 0):
+                            ex.update(r)
+                        # 否则丢弃倒退的状态更新，保留服务端已推进的记录
+                    return sorted(by_id.values(), key=lambda x: x.get('ts', 0))
                 for k, v in incoming.items():
                     if k in _protected and not v and existing.get(k):
+                        continue
+                    if k == 'REPORT_REQUESTS':
+                        existing[k] = _merge_rr(existing.get(k), v)
                         continue
                     existing[k] = v
                 data_str = json.dumps(existing, ensure_ascii=False)
