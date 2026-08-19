@@ -2193,6 +2193,7 @@ function sidebar(){
     '<div class="system-status"><span></span>系统运行正常</div></div>';
 }
 function progressFooter(p){
+  return '';  // 底部阶段进度条已按需移除：大产业下有细分小产业，进度不在此统一体现
   p=p||P(); if(!cur||!PROJECTS[cur]||!p||!p.stage)return '';
   if(view==='home')return '';
   var _st=projStages(p);
