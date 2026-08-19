@@ -6471,13 +6471,7 @@ function opsOverview(){
       // 头部
       '<div onclick="toggleOpsProj(\'' + k + '\')" style="padding:16px 20px;background:#f8faff;border-bottom:1px solid ' + (_pOpen?'#e8edf5':'transparent') + ';display:flex;align-items:center;gap:12px;cursor:pointer">' +
         '<span style="font-size:12px;color:#1a56db;display:inline-block;transform:rotate(' + (_pOpen?'90':'0') + 'deg);transition:transform .15s">&#9654;</span>' +
-        '<div>' +
-          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">' +
-            '<span style="font-size:15px;font-weight:750;color:#0b183b">' + p.city + '</span>' +
-            '<span style="font-size:12px;color:#8492a6">' + p.org + ' · ' + p.who + '</span>' +
-          '</div>' +
-          '<div style="font-size:12.5px;color:#4a5568;font-weight:600">' + p.topic + '</div>' +
-        '</div>' +
+        '<div style="font-size:14px;color:#0b183b;font-weight:700">' + p.topic + '</div>' +
         '<div style="margin-left:auto;text-align:right">' +
           '<div style="padding:4px 12px;background:' + stageColor + ';color:#fff;border-radius:20px;font-size:12px;font-weight:650;display:inline-block">' + stageName + '</div>' +
         '</div>' +
