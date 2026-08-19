@@ -577,7 +577,8 @@ class Handler(BaseHTTPRequestHandler):
         )
 
         try:
-            with DS_OPENER.open(req, timeout=60) as resp:
+            _timeout = 150 if mode in ("funnel", "chain", "research") else 60
+            with DS_OPENER.open(req, timeout=_timeout) as resp:
                 if stream:
                     self.send_response(200)
                     self.send_header("Content-Type", "text/event-stream")
