@@ -3109,6 +3109,8 @@ function advanceStage(projKey){
   var p = PROJECTS[projKey]; if(!p) return;
   if(p.stage < 5){
     p.stage++;
+    if(!p.stageByTopic)p.stageByTopic={};
+    if(p.topic!=null)p.stageByTopic[p.topic]=p.stage;
     persist();
     render();
     var stageName = stageNameOf(p, p.stage);
@@ -3805,7 +3807,13 @@ function selectTopic(val, isCustom){
     if(_oldTopic && typeof PENDING_CONFIRMS!=='undefined' && PENDING_CONFIRMS[cur])
       REPORTSTATE[cur].pendingByTopic[_oldTopic]=PENDING_CONFIRMS[cur];
   }
+  // 方向级进度：切换前先保存当前方向的进度阶段
+  if(!p.stageByTopic) p.stageByTopic={};
+  if(p.topic!=null && p.stage!=null) p.stageByTopic[p.topic]=p.stage;
   p.topic=val.trim();
+  // 加载新方向的独立进度阶段（新方向默认从「AI 研判」起步，资料准备为城市级共享已完成）
+  if(p.stageByTopic[p.topic]!=null){ p.stage=p.stageByTopic[p.topic]; }
+  else { p.stage=2; p.stageByTopic[p.topic]=p.stage; }
   // 切换后：加载新方向的待确认事项（无缓存则从该方向报告文本解析）
   if(cur && REPORTSTATE[cur]){
     var _pb=REPORTSTATE[cur].pendingByTopic||{};
@@ -3891,6 +3899,9 @@ function selectTopic(val, isCustom){
   // 切换方向后刷新底部行动栏（按新方向重判：产业智能分析 / 重新产业分析）
   var _bb=document.querySelector('.report-bottom-bar');
   if(_bb) _bb.innerHTML=reportBottomBarInner(p);
+  // 刷新底部进度条（按新方向的独立阶段渲染）
+  var _pf=document.querySelector('.progress-footer');
+  if(_pf) _pf.outerHTML=progressFooter(p);
   // 重渲染卡片高亮
   var cardGrid=document.getElementById('topicCardGrid');
   if(!cardGrid) return;
@@ -6651,6 +6662,8 @@ function updateKbConvCount(){
 }
 
 function persist(){
+  // 兜底：把当前项目的 stage 同步到方向级 stageByTopic，保证方向进度独立且不丢失
+  try{ var _cp=cur&&PROJECTS[cur]; if(_cp&&_cp.topic!=null&&_cp.stage!=null){ if(!_cp.stageByTopic)_cp.stageByTopic={}; _cp.stageByTopic[_cp.topic]=_cp.stage; } }catch(e){}
   try{
     var data={
       cur:cur, view:view,
@@ -6957,7 +6970,7 @@ function addA(html){var c=$('#conv');if(!c)return;var d=document.createElement('
   d.innerHTML='<img src="'+aiAvatar()+'"><div class="message-bubble">'+html+'</div>';c.appendChild(d);sd();return d}
 function addRaw(html){var c=$('#conv');if(!c)return;var d=document.createElement('div');d.style.margin='0 0 20px 60px';d.innerHTML=html;c.appendChild(d);sd();return d}
 function sd(){var c=$('#conv');if(c)c.scrollTop=c.scrollHeight}
-function setStage(n){P().stage=n;var f=$('.progress-footer');if(f)f.outerHTML=progressFooter(P());}
+function setStage(n){var p=P();p.stage=n;if(!p.stageByTopic)p.stageByTopic={};if(p.topic!=null)p.stageByTopic[p.topic]=n;var f=$('.progress-footer');if(f)f.outerHTML=progressFooter(p);}
 
 function startFlow(mode){
   if(view!=='report'){view='report';render();}
