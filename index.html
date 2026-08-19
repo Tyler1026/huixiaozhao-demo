@@ -2196,18 +2196,20 @@ function progressFooter(p){
   p=p||P(); if(!cur||!PROJECTS[cur]||!p||!p.stage)return '';
   if(view==='home')return '';
   var _st=projStages(p);
+  // 只渲染到当前阶段为止：未到达的步骤不预先画出，推进到哪一步才显示到哪一步
+  var _shown=_st.slice(0, p.stage);
   return '<div class="progress-footer"><div class="progress-track">'+
-    _st.map(function(s,si){var n=si+1;var cls=n<p.stage?' done':n===p.stage?' current':'';
+    _shown.map(function(s,si){var n=si+1;var cls=n<p.stage?' done':' current';
       var sv=[null,'report','home','docking',null][si];
       var locked=sv&&isLocked(sv);
       var nodeContent=n<p.stage?'<i class="i">\u2713</i>':locked?'&#128274;':n;
-      var dimStyle=locked&&n!==p.stage?'opacity:.55':'';;
+      var dimStyle=locked&&n!==p.stage?'opacity:.55':'';
       return '<div class="progress-step'+cls+'" style="'+dimStyle+'" '+
         (sv?'onclick="go(\''+sv+'\')" style="cursor:pointer"':'')+'>'+
         '<div class="progress-node">'+nodeContent+'</div>'+
         '<div class="progress-copy"><strong>'+s[0]+(locked?' &#128274;':'')+'</strong><small>'+s[1]+'</small></div></div>'+
-        (n<_st.length?'<div class="progress-line"></div>':'');
-    }).join('')+'</div><div class="progress-mobile">📂 '+p.topic+' · 当前「'+stageNameOf(p,p.stage)+'」· 第 '+p.stage+'/'+_st.length+' 步（进度跟随所选产业方向）</div></div>';
+        (n<_shown.length?'<div class="progress-line"></div>':'');
+    }).join('')+'</div><div class="progress-mobile">📂 '+p.topic+' · 当前「'+stageNameOf(p,p.stage)+'」· 第 '+p.stage+' 步（进度跟随所选产业方向）</div></div>';
 }
 /* ===== 通知：铃铛 + 面板 + 点击落回对应研判 ===== */
 var NOTIFS=[
