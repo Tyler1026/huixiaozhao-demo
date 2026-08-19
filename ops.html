@@ -536,6 +536,41 @@ function stageNameOf(p,n){
 
 /* ===== 运营端（周总·全局）：跨城市需求池 ===== */
 var DEMANDS=[];
+/* ===== 报告生成申请队列（管理端发起 → Agent流水线消费 → RAG回填）===== */
+var REPORT_REQUESTS=[];
+function submitReportRequest(){
+  var city=($('#rrCity')&&$('#rrCity').value||'').trim();
+  var prov=($('#rrProv')&&$('#rrProv').value||'').trim();
+  if(!city||!prov){toast('请填写省份和城市');return;}
+  if(REPORT_REQUESTS.some(function(r){return r.city===city&&(r.status==='pending'||r.status==='running');})){
+    toast(city+' 已有进行中的申请');return;
+  }
+  REPORT_REQUESTS.push({id:'rr'+Date.now().toString(36),city:city,province:prov,
+    mode:'deep',status:'pending',by:'管理端·周总',ts:Date.now(),doneTs:null,projectKey:null,chunks:0});
+  persist();toast('已发起「'+city+'」报告生成申请，AI 流水线约 40 分钟完成');render();
+}
+function rrStatusBadge(s){
+  return s==='done'?'<span class="ops-badge green">已完成·RAG已初始化</span>':
+         s==='running'?'<span class="ops-badge blue">流水线运行中</span>':
+         s==='failed'?'<span class="ops-badge orange">失败·可重试</span>':
+         '<span class="ops-badge">排队中</span>';
+}
+function rrPanel(){
+  var rows=REPORT_REQUESTS.slice().reverse().map(function(r){
+    var t=new Date(r.ts);var tm=(t.getMonth()+1)+'/'+t.getDate()+' '+t.getHours()+':'+('0'+t.getMinutes()).slice(-2);
+    return '<div class="ops-row" style="align-items:center"><div class="r-ic"></div>'+
+      '<div class="r-main"><div style="display:flex;align-items:center;gap:8px"><strong>'+r.province+' · '+r.city+'</strong>'+rrStatusBadge(r.status)+'</div>'+
+      '<small>'+r.by+' · '+tm+' 发起'+(r.status==='done'?' · 智库材料 '+r.chunks+' 条已入库':'')+'</small></div></div>';
+  }).join('')||'<div style="color:#8492a6;font-size:13px;padding:8px 2px">暂无申请记录</div>';
+  return '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:18px 20px;margin:0 0 16px">'+
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><strong style="font-size:15px">发起城市报告生成</strong>'+
+    '<span style="color:#8492a6;font-size:12px">14-Agent 流水线 · 产出后自动初始化该城市智库 RAG</span></div>'+
+    '<div style="display:flex;gap:10px;margin-bottom:14px">'+
+      '<input id="rrProv" placeholder="省份，如 湖北" style="flex:0 0 150px;min-height:40px;padding:8px 11px;border:1px solid var(--line);border-radius:8px">'+
+      '<input id="rrCity" placeholder="城市，如 随州" style="flex:0 0 150px;min-height:40px;padding:8px 11px;border:1px solid var(--line);border-radius:8px">'+
+      '<button class="primary-button" style="min-height:40px" onclick="submitReportRequest()">发起申请</button></div>'+
+    rows+'</div>';
+}
 
 
 
@@ -4237,6 +4272,7 @@ function persist(){
       DOCK_LOGS:DOCK_LOGS,
       OPS_ENT:OPS_ENT,
       DEMANDS:DEMANDS,
+      REPORT_REQUESTS:REPORT_REQUESTS,
       KB_CHAT:typeof KB_CHAT!=='undefined'?KB_CHAT:{},
       USER_PROFILES:USER_PROFILES,
       syncTs:Date.now()
@@ -4265,6 +4301,7 @@ function restore(){
       PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
       DOCK_LOGS=data.DOCK_LOGS||{};
       OPS_ENT=data.OPS_ENT||[];
+      if(data.REPORT_REQUESTS) REPORT_REQUESTS=data.REPORT_REQUESTS;
       if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
       console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
       return true;
@@ -4293,6 +4330,7 @@ function restoreFromServer(callback){
     PENDING_CONFIRMS = srv.PENDING_CONFIRMS || {};
     DOCK_LOGS        = srv.DOCK_LOGS        || {};
     if(srv.DEMANDS) DEMANDS = srv.DEMANDS;
+    if(srv.REPORT_REQUESTS) REPORT_REQUESTS = srv.REPORT_REQUESTS;
     // Merge: server wins if non-empty; otherwise keep local/hardcoded
     if(srv.OPS_ENT && srv.OPS_ENT.length){
       OPS_ENT = srv.OPS_ENT;
@@ -5816,6 +5854,7 @@ function opsMain(){
     '<p>各地招商干部经双确认后递交的正式需求，点任意一条在右侧判断资源、组织对接。</p></div></div>'+
     '<div class="conversation-scroll" style="padding:22px 28px 20px">'+
       briefBubble+
+      rrPanel()+
       '<div class="ops-chips" style="margin:2px 0 12px"><span class="lbl">筛选</span>'+
         '<span class="ops-badge green">已匹配 '+st.matched+'</span><span class="ops-badge blue">核验中 '+st.checking+'</span><span class="ops-badge orange">暂无资源 '+st.none+'</span></div>'+
       '<div class="ops-card"><div class="ops-card-head"><span class="t">📥 全部需求</span><span class="sub">点击查看详情 / 组织对接</span></div>'+

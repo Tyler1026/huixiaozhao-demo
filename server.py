@@ -457,7 +457,7 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception:
                         existing = {}
                 # 合并：空列表/空字典不覆盖已有非空数据
-                _protected = ['OPS_ENT','DEMANDS','KB_CHAT','PENDING_CONFIRMS','KB_CONFIRMS']
+                _protected = ['OPS_ENT','DEMANDS','KB_CHAT','PENDING_CONFIRMS','KB_CONFIRMS','REPORT_REQUESTS']
                 for k, v in incoming.items():
                     if k in _protected and not v and existing.get(k):
                         continue
