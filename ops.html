@@ -1620,30 +1620,49 @@ function runAIFunnel(projKey, done){
   _funnelRunning[projKey]=true;
   var inp=_funnelInput(p); var topic=p.topic||'';
   var q='招商方向：'+topic+' 城市：'+(p.city||'')+'\n\n产业研判报告：\n'+(inp.text? inp.text.slice(0,4000) : '（暂无完整报告，请基于招商方向与常识分析）')+'\n\n已识别缺口：'+(inp.gaps&&inp.gaps.length?inp.gaps.join('、'):'（见报告）')+'\n\n请针对该招商方向筛选真实存在的适配企业构成企业漏斗，目标40家（至少30家）。每家企业按评分卡分别给出 score_match(0-40)/score_relocate(0-30)/score_strength(0-30) 三项分数；如企业有明确扩张需求或领导与本城市/本省有可考的派系关联（校友/籍贯/商会等），填 expansion/faction 字段，无则留空、严禁编造。严格按 SYSTEM 要求输出 JSON。';
-  fetch(KB_API_OPS,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q, city:(p.city||''), chunks:[], stream:false, mode:'funnel'})})
-  .then(function(r){return r.json();}).then(function(data){
-    _funnelRunning[projKey]=false;
-    var content=''; try{ content=data.choices[0].message.content; }catch(e){}
-    if(data&&data.error){ done&&done('服务繁忙或超时，请重试'); return; }
-    if(!content){ done&&done('模型未返回内容，请重试'); return; }
-    var obj=_parseFunnelJson(content);
-    if(!obj||!obj.companies||!obj.companies.length){ done&&done('parse'); return; }
-    var _num=function(v,max){var n=(typeof v==='number')?v:parseInt(v)||0; if(n<0)n=0; if(n>max)n=max; return n;};
-    var companies=obj.companies.map(function(c,i){
-      var sm=_num(c.score_match,40), sr=_num(c.score_relocate,30), ss=_num(c.score_strength,30);
-      var total=sm+sr+ss; if(total>100)total=100;
-      return {id:'f_'+projKey+'_'+i, name:c.name||'', region:c.region||'', kind:c.kind||'', fit:c.fit||'',
-        score_match:sm, score_relocate:sr, score_strength:ss, score_reason:c.score_reason||'',
-        fit_score:total,
-        signal:c.signal||'', expansion:c.expansion||'', faction:c.faction||'',
-        listed:c.listed||'', source:c.source||'公开信息（AI推断，待核验）'};
-    }).filter(function(c){return c.name;}).sort(function(a,b){
-      if(b.fit_score!==a.fit_score) return b.fit_score-a.fit_score;
-      var fa=(a.expansion?1:0)+(a.faction?1:0), fb=(b.expansion?1:0)+(b.faction?1:0);
-      return fb-fa;  // 同分时：有扩张需求/派系关联标注者优先
-    });
-    PROJECTS[projKey].funnel={ ts:Date.now(), topic:obj.topic||topic, total:(obj.total_scanned||companies.length), companies:companies, pushed:false };
-    persist(); done&&done(null, PROJECTS[projKey].funnel);
+  fetch(KB_API_OPS,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q, city:(p.city||''), chunks:[], stream:true, mode:'funnel'})})
+  .then(function(resp){
+    if(!resp.ok){ _funnelRunning[projKey]=false; return resp.json().then(function(e){ done&&done('服务繁忙或超时，请重试（'+((e&&e.error)||resp.status)+'）'); }).catch(function(){ done&&done('服务繁忙或超时，请重试'); }); }
+    var acc='';
+    function _finishFunnel(content){
+      _funnelRunning[projKey]=false;
+      if(!content){ done&&done('模型未返回内容，请重试'); return; }
+      var obj=_parseFunnelJson(content);
+      if(!obj||!obj.companies||!obj.companies.length){ done&&done('parse'); return; }
+      var _num=function(v,max){var n=(typeof v==='number')?v:parseInt(v)||0; if(n<0)n=0; if(n>max)n=max; return n;};
+      var companies=obj.companies.map(function(c,i){
+        var sm=_num(c.score_match,40), sr=_num(c.score_relocate,30), ss=_num(c.score_strength,30);
+        var total=sm+sr+ss; if(total>100)total=100;
+        return {id:'f_'+projKey+'_'+i, name:c.name||'', region:c.region||'', kind:c.kind||'', fit:c.fit||'',
+          score_match:sm, score_relocate:sr, score_strength:ss, score_reason:c.score_reason||'',
+          fit_score:total,
+          signal:c.signal||'', expansion:c.expansion||'', faction:c.faction||'',
+          listed:c.listed||'', source:c.source||'公开信息（AI推断，待核验）'};
+      }).filter(function(c){return c.name;}).sort(function(a,b){
+        if(b.fit_score!==a.fit_score) return b.fit_score-a.fit_score;
+        var fa=(a.expansion?1:0)+(a.faction?1:0), fb=(b.expansion?1:0)+(b.faction?1:0);
+        return fb-fa;
+      });
+      PROJECTS[projKey].funnel={ ts:Date.now(), topic:obj.topic||topic, total:(obj.total_scanned||companies.length), companies:companies, pushed:false };
+      persist(); done&&done(null, PROJECTS[projKey].funnel);
+    }
+    if(!resp.body||!resp.body.getReader){ return resp.text().then(function(txt){ txt.split('\n').forEach(function(line){ if(line.indexOf('data:')!==0) return; var d=line.slice(5).trim(); if(d==='[DONE]'||!d) return; try{ var j=JSON.parse(d); var dt=(j.choices&&j.choices[0]&&((j.choices[0].delta&&j.choices[0].delta.content)||(j.choices[0].message&&j.choices[0].message.content)))||''; acc+=dt; }catch(_){}}); _finishFunnel(acc); }); }
+    var reader=resp.body.getReader(), decoder=new TextDecoder(), buf='';
+    function pump(){
+      return reader.read().then(function(d){
+        if(d.done){ _finishFunnel(acc); return; }
+        buf+=decoder.decode(d.value,{stream:true});
+        var lines=buf.split('\n'); buf=lines.pop();
+        lines.forEach(function(line){
+          if(line.indexOf('data:')!==0) return;
+          var dd=line.slice(5).trim();
+          if(dd==='[DONE]'||!dd) return;
+          try{ var j=JSON.parse(dd); var delta=(j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||''; if(delta) acc+=delta; }catch(_){}
+        });
+        return pump();
+      });
+    }
+    return pump();
   }).catch(function(e){ _funnelRunning[projKey]=false; done&&done(e&&e.message||'network'); });
 }
 function _parseFunnelJson(s){
