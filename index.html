@@ -7055,6 +7055,23 @@ function startFlow(mode){
   setTimeout(function(){ p.report?showReport():addA('<p>正在基于城市智库生成「'+p.topic+'」研判报告，请稍候…</p>'); },600);
 }
 // 报告：复刻雷总 report-document 结构 + 版本迭代/人工可编辑/定稿
+// 工作台常驻：任何时候重绘后，若当前城市有 running 申请，自动拉取并固定渲染工作台（不依赖手动注入）
+function govEnsureWorkbench(){
+  var city=(typeof P==='function'&&P())?P().city:null;
+  if(!city) return;
+  fetch('/api/sync').then(function(r){return r.json();}).then(function(raw){
+    var reqs=(raw&&raw.huixiaozhao_kb_v1&&raw.huixiaozhao_kb_v1.REPORT_REQUESTS)||(raw&&raw.REPORT_REQUESTS)||[];
+    var rec=reqs.filter(function(x){return x.status==='running'&&x.city===city;})[0];
+    if(!rec||!rec.activity){return;}
+    GOV_ACTIVITY=rec;GOV_ACT_CITY=rec.city;
+    if(document.getElementById('govWorkbench')) return; // 已在则不重复
+    var host=document.querySelector('.report-scroll')||document.querySelector('.main-pane');
+    if(!host) return;
+    var wrap=document.createElement('div'); wrap.innerHTML=govWorkbench();
+    if(wrap.firstChild) host.insertBefore(wrap.firstChild, host.firstChild);
+    govStartPolling(city);
+  }).catch(function(){});
+}
 function showReport(){
   var r=P().report;if(!r){startFlow('direction');return;}
   var st=rs();
@@ -7093,7 +7110,7 @@ function showReport(){
       '<button class="ghost-button" style="flex:0 0 auto;white-space:nowrap" onclick="exportReport()"><i class="i">📤</i>导出报告</button></div>'+
     band+secs+
     '<div class="report-footnote">'+r.footnote+'</div>'+patchLog+optArea+confirmArea+'</div>');
-  govStartPolling(P().city);
+  govEnsureWorkbench();
 }
 // 报告页在研判进行中时轮询专员活动流（每20秒）
 var _govPollTimer=null;
