@@ -631,9 +631,14 @@ function rrWaveRows(r){
         w.files.map(function(f){
           var isNew=f.done&&!(window.__rrSeenDone&&window.__rrSeenDone[f.n]);
           if(f.done){window.__rrSeenDone=window.__rrSeenDone||{};window.__rrSeenDone[f.n]=1;}
-          return '<span class="'+(isNew?'rr-chip-new':'')+'" style="font-size:10.5px;padding:2px 8px;border-radius:9px;'+
-            (f.done?'background:#e4f5f3;color:#006d70':'background:#eef1f5;color:#8492a6')+'">'+
-            (f.done?'✓ ':'· ')+f.n+'</span>';
+          var fs=f.fstate||(f.done?'done':'missing');
+          var sty,mark;
+          if(fs==='done'){sty='background:#e4f5f3;color:#006d70';mark='✓ ';}
+          else if(fs==='partial'){sty='background:#fdeef0;color:#b0364a;cursor:help';mark='⚠ ';}
+          else {sty='background:#eef1f5;color:#8492a6';mark='· ';}
+          var tip=f.detail?' title="'+String(f.detail).replace(/"/g,'&quot;')+'"':'';
+          return '<span class="'+(isNew?'rr-chip-new':'')+'"'+tip+' style="font-size:10.5px;padding:2px 8px;border-radius:9px;'+sty+'">'+
+            mark+f.n+(fs==='partial'&&f.detail?' <span style="opacity:.75">('+f.detail+')</span>':'')+'</span>';
         }).join('')+'</div>';
     }
     return '<div style="padding:5px 0;border-bottom:1px dashed #e9eef5">'+
@@ -674,7 +679,22 @@ function rrProgress(r){
     '<div style="display:flex;justify-content:space-between;font-size:11.5px;color:#667590">'+
       '<span>已产出章节 '+fd+' / '+ft+' · '+pct+'%</span>'+
       '<span><span id="rrLastUpd">'+(lastUpd||'')+'</span>'+(lastUpd?' · ':'')+eta+'</span></div>'+
+    rrIssuesBanner(r)+
     rrWaveRows(r)+'</div>';
+}
+function rrIssuesBanner(r){
+  var iss=r.issues||[];
+  if(!iss.length) return '';
+  return '<div style="margin-top:8px;padding:9px 12px;border:1px solid #f2c3cb;border-radius:8px;background:#fdeef0">'+
+    '<div style="font-size:11.5px;font-weight:700;color:#b0364a;margin-bottom:5px;display:flex;align-items:center;gap:6px">'+
+      '<span>⚠ '+iss.length+' 个环节未达标</span>'+
+      '<span style="font-weight:400;color:#c47080">自愈机制将自动重跑（每轮最多 3 个）</span></div>'+
+    '<div style="display:flex;flex-direction:column;gap:3px">'+
+      iss.map(function(s){
+        var parts=String(s).split('：');
+        return '<div style="font-size:11.5px;color:#7a2836;line-height:1.5">'+
+          '<b style="color:#b0364a">'+(parts[0]||'')+'</b>'+(parts[1]?' — '+parts[1]:'')+'</div>';
+      }).join('')+'</div></div>';
 }
 function rrPanel(){
   var rows=REPORT_REQUESTS.slice().reverse().map(function(r){
