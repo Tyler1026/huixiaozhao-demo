@@ -860,7 +860,9 @@ function render(){
             var _isSz=function(k){return PROJECTS[k]&&PROJECTS[k].city&&PROJECTS[k].city.indexOf('随州')>=0;};
             // 常驻账号始终落到数据最全的 sz 主项目(避免落到空白随州派生项目导致'信息丢失'错觉)
             if(PROJECTS['sz']){ cur='sz'; } else if(!cur || !_isSz(cur)){ cur = Object.keys(PROJECTS).filter(_isSz)[0]||null; }
-            view=view||'knowledge'; KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true};
+            // 随州数据被清空(无任何随州项目)时，走空白 onboarding，让常驻账号也从零重跑，不自动重建预置数据
+            if(!cur){ view='setup'; }
+            else { view=view||'knowledge'; KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true}; }
           } else {
             // 非常驻账号：只认本账号城市，忽略残留的其他城市 cur；本城市无项目则自动建并直接进入分析
             var _ac=AUTH.city||'';
@@ -871,7 +873,7 @@ function render(){
           }
         } else {
           // 服务器无数据，本地初始化
-          if(AUTH.resident){ provisionSuizhou(); cur='sz'; view='knowledge'; KB_UNLOCKED.sz=KB_UNLOCKED.sz||{report:true,home:true,docking:true}; persist(); }
+          if(AUTH.resident){ cur=null; view='setup'; /* 随州清空后不再自动重建预置，走空白 onboarding 从零重跑 */ }
           else { if(AUTH.projKey&&PROJECTS[AUTH.projKey]){cur=AUTH.projKey;view='knowledge';}else{cur=null;view='setup';} }
         }
         render();
@@ -1163,7 +1165,6 @@ function doLogin(){
 /* 任意城市自动建项：非随州账号登录后名下无项目时调用 */
 function autoProvisionCity(city){
   city=(city||'').trim(); if(!city) return null;
-  if(city.indexOf('随州')>=0){ provisionSuizhou(); return 'sz'; }
   var exist=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k]&&PROJECTS[k].city===city;});
   if(exist.length) return exist[0];
   var key='p'+Date.now().toString(36);
