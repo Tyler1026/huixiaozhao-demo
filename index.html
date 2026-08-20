@@ -782,6 +782,9 @@ function _captureScroll(){
 function _restoreScroll(prevKey, tops){
   // 仅当重渲染后仍是同一 view+cur 才还原（否则说明用户切了模块/项目，应停在顶部）
   if(!tops || prevKey!==(view+'::'+cur)) return;
+  // 是否有任何需要还原的非零位置；全为 0 则无需处理（避免无谓循环）
+  var _has=false; for(var _k in tops){ if(tops[_k]>0){ _has=true; break; } }
+  if(!_has) return;
   var apply=function(){
     try{
       document.querySelectorAll(_SCROLL_SELECTORS).forEach(function(el,i){
@@ -792,9 +795,10 @@ function _restoreScroll(prevKey, tops){
     }catch(e){}
   };
   apply();
-  // 下一帧再还原一次，防止异步重排（图片/字体/kbChatReplay）把 scrollTop 又归零
   if(window.requestAnimationFrame) requestAnimationFrame(apply);
-  setTimeout(apply, 60);
+  // 报告正文/对话等内容是异步渲染的，scrollHeight 需要时间才能撑起来；
+  // 多次延时还原，直到内容高度足够能容纳目标位置或超时，防止"刚还原又被异步重排归零"。
+  [30,80,160,300,500,800].forEach(function(ms){ setTimeout(apply, ms); });
 }
 
 /* AUTH: 当前登录态 {user,city,projKey,resident,who,org}；null=未登录 */
@@ -969,8 +973,10 @@ function render(){
     }
   }
   // 重建 DOM 前：记录当前滚动位置（供"原地重渲染"后还原，避免阅读时弹回顶部）
-  var _prevScrollKey=_scrollMemory.key, _prevScrollTops=_scrollMemory.tops;
+  // 注意：必须用"本次重建前"刚捕获的位置来还原（_captureScroll 会写入 _scrollMemory），
+  // 而不是上一轮的旧值，否则跨标签同步/异步 render 会把滚动错误还原到过时位置或顶部。
   _captureScroll();
+  var _prevScrollKey=_scrollMemory.key, _prevScrollTops=_scrollMemory.tops;
   $('#root').innerHTML=
    '<div class="app-shell">'+
     topbar(p)+
