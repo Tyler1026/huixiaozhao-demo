@@ -8412,10 +8412,12 @@ function kbVerifyMaterial(){
   var accText='';
   var t0=Date.now();
 
+  // 涉 AI 必过 RAG：校验也要吃进该城市智库语料（否则无从比对）
+  var _vChunks=[]; try{ _vChunks=kbSearch(prompt, buildKBCorpus(p.city), 6)||[]; }catch(e){ _vChunks=[]; }
   fetch(KB_API,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:prompt, chunks:[], city:p.city, stream:true, mode:'chat'})
+    body:JSON.stringify({question:prompt, chunks:_vChunks, city:p.city, stream:true, mode:'chat'})
   }).then(function(resp){
     thinking.remove();
     c.appendChild(ansNode); c.scrollTop=c.scrollHeight;
