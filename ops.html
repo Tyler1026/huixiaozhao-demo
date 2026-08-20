@@ -6976,7 +6976,8 @@ function ragChunkList(p){
   var t=p.kb[ragTopic]||p.kb[0];
   var items=(t.known||[]);
   var f=(ragFilter||'').trim();
-  var shown=f?items.filter(function(x){return x.indexOf(f)>=0;}):items;
+  var _txt=function(x){return (x&&typeof x==='object')?(x.text||''):String(x);};
+  var shown=f?items.filter(function(x){return _txt(x).indexOf(f)>=0;}):items;
   return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fbfcfe;padding:0 14px 14px;max-height:560px;overflow-y:auto">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fbfcfe;padding:14px 0 10px;z-index:2;border-bottom:1px solid #eef2f7;margin-bottom:10px">'+
       '<div style="font-size:13px;font-weight:700;color:#0b183b">'+t.t+' <span style="color:#9aa5b5;font-weight:400">'+shown.length+(f?' / '+items.length:'')+' 条</span></div>'+
