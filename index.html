@@ -658,6 +658,9 @@ var PROJECTS={};
 
 
 var STAGES=[['资料准备','上传与授权材料'],['AI 研判','生成缺口与方向'],['确认需求','双确认'],['资源匹配','资源端核验匹配'],['招商对接','安排正式沟通']];
+// 兼容结构化 chunk（对象含 text/origin/nature）与旧字符串：统一取文本
+function _kbText(x){ return (x&&typeof x==='object')?(x.text||''):String(x==null?'':x); }
+function _kbMeta(x){ return (x&&typeof x==='object')?x:{text:String(x==null?'':x),origin:'ai',nature:'base'}; }
 
 /* ===== AI 招商团队实时工作台（政府端可见，业务化，无内部术语）===== */
 
@@ -1697,16 +1700,16 @@ function showDownloadReport(){
     '════════════════════════════════',
     '',
     '一、主导产业与产业链',
-    c.industry.known.map(function(x){return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
+    c.industry.known.map(function(x){x=_kbText(x);return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
     '',
     '二、园区与承载条件',
-    c.park.known.map(function(x){return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
+    c.park.known.map(function(x){x=_kbText(x);return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
     '',
     '三、链主与存量企业',
-    c.firm.known.map(function(x){return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
+    c.firm.known.map(function(x){x=_kbText(x);return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
     '',
     '四、政策方向与领导关注',
-    c.policy.known.map(function(x){return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
+    c.policy.known.map(function(x){x=_kbText(x);return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
     '',
     '════════════════════════════════',
     '研判建议：',
@@ -6390,7 +6393,7 @@ function kbPage(p){
           (k.tag.indexOf('待')>=0?'color:#c08a2a;background:#fff8e6':'color:#006d70;background:#e4f5f3'):
           'color:#9aa5b5;background:#f5f7fb';
         var dot=k.known&&k.known.length?'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:5px;vertical-align:middle"></span>':'';
-        var firstKnown=k.known&&k.known.length?k.known.filter(function(x){return x.indexOf('⚠️')<0;})[0]:'';
+        var firstKnown=k.known&&k.known.length?k.known.map(_kbText).filter(function(x){return x.indexOf('⚠️')<0;})[0]:'';
         return '<button class="topic-row" onclick="kbDetail('+i+')">'+
           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
             '<span style="font-size:20px">'+k.icon+'</span>'+
@@ -7599,7 +7602,7 @@ function kbAsk(q,k){
   kbChatPush('user', _uHtml);
   c.scrollTop=c.scrollHeight;
   var p0=P();
-  var bullet0=k.known.map(function(x){return '<li style="margin-bottom:5px">'+x+'</li>';}).join('');
+  var bullet0=k.known.map(function(x){return '<li style="margin-bottom:5px">'+_kbText(x)+'</li>';}).join('');
   var intro0='结合'+p0.city+'「'+k.t+'」当前已知情况：<ul style="margin:8px 0 8px 18px;padding:0;line-height:1.7">'+bullet0+'</ul>';
   var tip0=(k.t.indexOf('产业')>-1||k.t.indexOf('主导')>-1)?
     '<p style="margin-top:5px">本地配套率不足与核心系统外购是当前最大补链切入点，建议优先针对这些缺口方向招引。</p>':
@@ -7805,6 +7808,7 @@ function kbDetail(i){
   var knownHtml=(k.known&&k.known.length)
     ? '<div style="display:flex;flex-direction:column;gap:8px">'+
         k.known.map(function(x,xi){
+          x=_kbText(x);
           var warn=x.indexOf('⚠️')>=0;
           var isFile=x.indexOf('📎')===0;
           var clean=x.replace('⚠️ ','');
