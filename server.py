@@ -15,6 +15,61 @@ except ImportError:
 
 LOG_PATH    = os.path.expanduser("~/.violoop/services/kb-server/rag-audit.log")
 
+def _chunk_text(c):
+    """从 chunk 提取纯文本，兼容字符串 / 结构化对象。"""
+    if isinstance(c, str):
+        return c
+    if isinstance(c, dict):
+        return str(c.get("text", "") or "")
+    return ""
+
+import re as _re
+_STOP = set("的了和与及在是有为对以及等就都也很更最这那你我他她它们个之其而或且被把从向到于对由于关于以为")
+def _tokenize(s):
+    """中英文混合粗分词：英文按词，中文按 2-gram + 单字，去停用词/短词。"""
+    s = (s or "").lower()
+    toks = set()
+    # 英文/数字词
+    for w in _re.findall(r"[a-z0-9]+", s):
+        if len(w) >= 2:
+            toks.add(w)
+    # 中文串
+    for seg in _re.findall(r"[\u4e00-\u9fff]+", s):
+        for ch in seg:
+            if ch not in _STOP:
+                toks.add(ch)
+        for i in range(len(seg) - 1):
+            bg = seg[i:i+2]
+            if bg[0] not in _STOP or bg[1] not in _STOP:
+                toks.add(bg)
+    return toks
+
+def _retrieve_chunks(question, chunks, top_k=8, min_score=1):
+    """按问题与 chunk 文本的词重合度打分，返回 TopK 真实命中（不足则少返，无命中返空）。
+    - 上传/标注材料给予权重加成（origin=admin/user 更权威，应优先吃进）。
+    返回: (selected_chunks, scored_debug)"""
+    q_toks = _tokenize(question)
+    if not q_toks or not chunks:
+        # 无法打分（空问题）时退回原顺序前 top_k，保持可用
+        return list(chunks)[:top_k], []
+    scored = []
+    for c in chunks:
+        txt = _chunk_text(c)
+        c_toks = _tokenize(txt)
+        if not c_toks:
+            continue
+        overlap = q_toks & c_toks
+        score = len(overlap)
+        # 上传/标注材料加成：命中即 +2，鼓励优先采纳用户提供的证据
+        if score > 0 and _is_upload_chunk(c):
+            score += 2
+        if score >= min_score:
+            scored.append((score, c))
+    # 按分数降序，稳定保留原相对顺序
+    scored.sort(key=lambda x: x[0], reverse=True)
+    selected = [c for _s, c in scored[:top_k]]
+    return selected, scored[:top_k]
+
 def _is_upload_chunk(c):
     """判断一个知识片段是否来自用户上传/标注（非 AI 采集）。"""
     if not isinstance(c, dict):
@@ -714,26 +769,32 @@ class Handler(BaseHTTPRequestHandler):
         if not q:
             self.send_error(400, "question required"); return
 
-        # 拼 RAG context
-        used = chunks[:6]
+        # 拼 RAG context —— 真实检索：按问题与语料词重合度打分取 TopK，而非盲切前 N
+        # 报告类 mode（full/research/chain/funnel）吃进更多语料，对话类少吃
+        _top_k = 12 if mode in ("full", "research", "chain", "funnel") else 6
+        used, _scored = _retrieve_chunks(q, chunks, top_k=_top_k, min_score=1)
         ctx = "\n\n".join(
-            f"[{c.get('cite','')}·{c.get('topic','')}]\n{c.get('text','')}"
+            f"[{(c.get('cite','') if isinstance(c, dict) else '')}·{(c.get('topic','') if isinstance(c, dict) else '')}]\n{_chunk_text(c)}"
             for c in used
         ) or "暂无检索到相关内容，请基于通用招商知识回答。"
 
         # —— RAG 审计日志：证明本次分析实际吃进了哪些数据、其中多少来自用户上传 ——
+        # total_available = 前端送来的候选总数；total_chunks = 真实命中并吃进的数量（可能 0~top_k）
         upload_used = [c for c in used if _is_upload_chunk(c)]
         audit_log({
             "city": city,
             "mode": mode,
             "question": q,
+            "total_available": len(chunks),
             "total_chunks": len(used),
             "upload_chunks": len(upload_used),
             "kb_chunks": len(used) - len(upload_used),
-            "all_cites": [c.get("cite", "") for c in used],
+            "all_cites": [(c.get("cite", "") if isinstance(c, dict) else "") for c in used],
+            "top_scores": [s for s, _c in _scored],
             "upload_samples": [
-                {"cite": c.get("cite", ""), "id": c.get("id", ""),
-                 "text": c.get("text", "")[:120]}
+                {"cite": (c.get("cite", "") if isinstance(c, dict) else ""),
+                 "id": (c.get("id", "") if isinstance(c, dict) else ""),
+                 "text": _chunk_text(c)[:120]}
                 for c in upload_used
             ],
         })
