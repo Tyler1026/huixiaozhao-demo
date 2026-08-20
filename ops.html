@@ -6622,7 +6622,18 @@ var ragCity=null, ragTopic=0, ragQuery='', ragHits=null, ragLog=null, ragFilter=
 function ragProjKey(){
   var keys=Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&p.kb&&p.kb.length&&p.kb.some(function(t){return (t.known||[]).length;});});
   if(!keys.length) return null;
-  if(!ragCity){ var sz=keys.find(function(k){return (PROJECTS[k].city||'').indexOf('随州')>=0;}); ragCity=sz||keys[0]; }
+  if(!ragCity){
+    // 默认优先：流水线初始化过的项目(kbInitTs) > 材料量最大的项目
+    var best=keys.slice().sort(function(a,b){
+      var pa=PROJECTS[a],pb=PROJECTS[b];
+      var ia=pa.kbInitTs?1:0, ib=pb.kbInitTs?1:0;
+      if(ia!==ib) return ib-ia;
+      var ca=pa.kb.reduce(function(s,t){return s+(t.known||[]).length;},0);
+      var cb=pb.kb.reduce(function(s,t){return s+(t.known||[]).length;},0);
+      return cb-ca;
+    })[0];
+    ragCity=best;
+  }
   return keys.indexOf(ragCity)>=0?ragCity:keys[0];
 }
 function ragCityOptions(){
