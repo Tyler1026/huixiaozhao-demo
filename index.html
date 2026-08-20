@@ -1995,8 +1995,16 @@ function kbReadiness(){
   // 待确认事项（PENDING_CONFIRMS）。报告页确认待确认事项属于「某个研判方向」的动作，
   // 只应提升该方向的报告置信度（见 topicScore），不应改变城市智库整体完成度。
   var uploads=(UPLOADS[cur]||[]).length;
-  // 评分：⚠️确认率×60 + 上传加分×40
-  var warnRate=warnTotal>0?warnConfirmed/warnTotal:1; // 无⚠️时视为全部完成
+  // 统计所有 known 条目总数（不止⚠️/✅），用于判断板块是否真的有数据
+  var knownTotal=0;
+  p.kb.forEach(function(k){ knownTotal += (k.known||[]).length; });
+  // 关键修复：完全无数据（板块空 + 零上传 + 无解析片段/确认）时，完成度必须为 0（未开始），
+  // 而不是把"无⚠️条目"当成"全部完成"错误给到 80 分。
+  if(knownTotal===0 && uploads===0 && !hasRealKbData(p)){
+    return {score:0,total:0,confirmed:0,files:0,label:'未开始',color:'#9aa5b5'};
+  }
+  // 评分：⚠️确认率×80 + 上传加分×20
+  var warnRate=warnTotal>0?warnConfirmed/warnTotal:1; // 有数据但无⚠️条目时视为全部完成
   var uploadBonus=Math.min(20, uploads*10); // 上传材料加分（可选）
   var score=Math.round(warnRate*80 + uploadBonus);
   var label=score>=80?'已就绪':score>=50?'基本完整':score>=20?'待补充':'未开始';
