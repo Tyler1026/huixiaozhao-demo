@@ -6922,10 +6922,35 @@ function ragOriginStyle(origin,nature){
   }
   return null; // AI 基础材料：无标识条
 }
+// markdown 表格 → HTML table（输入已 HTML 转义）
+function ragMdTables(s){
+  var lines=s.split('\n');
+  var out=[], i=0;
+  while(i<lines.length){
+    var ln=lines[i];
+    // 表格起点：以 | 开头、含至少2个 |，下一行是分隔行 |---|---|
+    if(/^\s*\|.*\|/.test(ln) && i+1<lines.length && /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(lines[i+1].replace(/&\w+;/g,''))){
+      var header=ln, sep=lines[i+1], rows=[], j=i+2;
+      while(j<lines.length && /^\s*\|.*\|/.test(lines[j])){ rows.push(lines[j]); j++; }
+      var splitCells=function(r){ return r.trim().replace(/^\||\|$/g,'').split('|').map(function(c){return c.trim();}); };
+      var ths=splitCells(header);
+      var thead='<tr>'+ths.map(function(c){return '<th style="padding:5px 9px;background:#eef3fb;color:#013582;font-weight:650;text-align:left;border:1px solid #d3e0f0;white-space:nowrap">'+c+'</th>';}).join('')+'</tr>';
+      var tbody=rows.map(function(r,ri){
+        var tds=splitCells(r);
+        return '<tr style="background:'+(ri%2?'#f8fbff':'#fff')+'">'+tds.map(function(c){return '<td style="padding:5px 9px;border:1px solid #e6edf6;color:#334155;vertical-align:top">'+c+'</td>';}).join('')+'</tr>';
+      }).join('');
+      out.push('<div style="overflow-x:auto;margin:7px 0"><table style="border-collapse:collapse;font-size:11.5px;min-width:100%;line-height:1.5">'+thead+tbody+'</table></div>');
+      i=j;
+    } else {
+      out.push(ln); i++;
+    }
+  }
+  return out.join('\n');
+}
 function ragRenderChunk(raw, idx, hl){
   // 兼容结构化 chunk（对象）与旧字符串
-  var origin='ai', nature='base', srcName='';
-  if(raw && typeof raw==='object'){ origin=raw.origin||'ai'; nature=raw.nature||'base'; srcName=raw.src||''; raw=raw.text||''; }
+  var origin='ai', nature='base', srcName='', annots=[];
+  if(raw && typeof raw==='object'){ origin=raw.origin||'ai'; nature=raw.nature||'base'; srcName=raw.src||''; annots=raw.annotations||[]; raw=raw.text||''; }
   var text=String(raw);
   // 1) 抽取【标题】前缀
   var title=null; var m=text.match(/^【([^】]{2,40})】\s*/);
@@ -6935,10 +6960,11 @@ function ragRenderChunk(raw, idx, hl){
   text=text.replace(/[（(]来源[:：]\s*(https?:\/\/[^，,）)\s]+)\s*[，,]?\s*([\d]{4}-[\d]{2}-[\d]{2})?\s*[）)]/g,function(_,url,date){
     sources.push({url:url,date:date||''});return '';});
   var pending=/未获公开来源|待核实|二手来源/.test(text);
-  // 3) 转义后做行内渲染
-  var html=ragEsc(text.trim());
+  // 3) 转义后做行内渲染 —— 先把 markdown 表格转成 HTML table
+  var html=ragMdTables(ragEsc(text.trim()));
   html=html.replace(/\*\*([^*]{1,60})\*\*/g,'<b style="color:#0b183b">$1</b>');   // **bold**
-  html=html.replace(/(^|[^\w.])(\d[\d,.]*\s*(?:亿元|万元|亿|万吨|万人|万辆|万平|公里|千米|元\/㎡|元|%|个|家|条|亿千瓦时))/g,
+  // 数字高亮：避开 HTML 标签内部（表格已生成标签）
+  html=html.replace(/(^|[^\w.<])(\d[\d,.]*\s*(?:亿元|万元|亿|万吨|万人|万辆|万平|公里|千米|元\/㎡|元|%|个|家|条|亿千瓦时))(?![^<]*>)/g,
     '$1<span style="color:#0757ad;font-weight:650">$2</span>');                    // 数字+单位高亮
   html=html.replace(/(✅|⚠️|❌|❓)/g,'<span style="font-size:11px">$1</span>');
   if(hl){
@@ -6969,8 +6995,22 @@ function ragRenderChunk(raw, idx, hl){
       origBadge+
     '</div>'+
     '<div style="font-size:12.5px;color:#334155;line-height:1.75;padding-left:24px">'+html+'</div>'+
+    (annots.length?ragAnnots(annots):'')+
     (srcHtml?'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;padding-left:24px">'+srcHtml+'</div>':'')+
   '</div>';
+}
+// 就地标注：已有条目被上传材料佐证/修正时，在条目内嵌入显示
+function ragAnnots(annots){
+  return '<div style="margin-top:7px;margin-left:24px;padding-left:10px;border-left:2px solid #e2e8f2;display:flex;flex-direction:column;gap:5px">'+
+    annots.map(function(a){
+      var os=ragOriginStyle(a.origin,a.nature);
+      if(!os) return '';
+      var who=(a.origin==='admin'?'管理员':'用户');
+      var act=a.nature==='fix'?'修正':(a.nature==='confirm'?'确认':'佐证');
+      return '<div style="font-size:11px;color:'+os.bt+';background:'+os.bg+';border:1px solid '+os.bc+';border-radius:7px;padding:5px 9px">'+
+        '<b>'+(a.nature==='fix'?(a.origin==='user'?'🔴':'🟡'):'🟢')+' '+who+act+'</b>'+(a.src?' · '+ragEsc(a.src):'')+
+        '：'+ragEsc(String(a.text||'').slice(0,140))+'</div>';
+    }).join('')+'</div>';
 }
 function ragChunkList(p){
   var t=p.kb[ragTopic]||p.kb[0];

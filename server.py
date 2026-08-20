@@ -551,13 +551,51 @@ class Handler(BaseHTTPRequestHandler):
                         tp = {'icon': '📎', 't': topic or '管理员补充资料',
                               'sub': '', 'tag': '', 'known': [], 'calls': []}
                         p['kb'].append(tp)
+                    # 就地匹配：新 chunk 与已有条目相似度高 → 在已有条目上打标注，不新增
+                    def _norm(s):
+                        return _re.sub(r'[\s，,。、；;：:（）()【】\[\]|—\-]+', '', str(s or ''))
+                    def _chunk_text(k):
+                        return k.get('text', '') if isinstance(k, dict) else str(k)
+                    def _similar(a, b):
+                        a, b = _norm(a), _norm(b)
+                        if not a or not b:
+                            return 0.0
+                        # 双向包含 or 字符级重叠比例
+                        if a in b or b in a:
+                            return 0.9
+                        short, long = (a, b) if len(a) <= len(b) else (b, a)
+                        # 滑窗取 short 的若干 8-gram 命中率
+                        grams = [short[x:x+8] for x in range(0, max(1, len(short) - 7), 4)] or [short]
+                        hit = sum(1 for g in grams if g and g in long)
+                        return hit / len(grams)
+
+                    matched_ct = 0
                     if mode == 'replace':
-                        # 修正覆盖：只清掉同来源的旧标记材料，保留 AI 基础材料
                         base = [k for k in (tp.get('known') or [])
                                 if isinstance(k, str) or (isinstance(k, dict) and k.get('origin') == 'ai')]
                         tp['known'] = base + chunks
                     else:
-                        tp['known'] = (tp.get('known') or []) + chunks
+                        known = tp.get('known') or []
+                        # 归一化为对象以便挂标注（AI 基础材料原是字符串）
+                        norm_known = []
+                        for k in known:
+                            norm_known.append(k if isinstance(k, dict) else {'text': k, 'origin': 'ai', 'nature': 'base'})
+                        leftover = []
+                        for nc in chunks:
+                            best, best_score = None, 0.55   # 相似度阈值
+                            for ek in norm_known:
+                                sc = _similar(nc['text'], ek.get('text', ''))
+                                if sc > best_score:
+                                    best, best_score = ek, sc
+                            if best is not None:
+                                # 就地标注到已有条目
+                                best.setdefault('annotations', []).append({
+                                    'origin': origin, 'nature': nature, 'src': filename,
+                                    'text': nc['text'], 'ts': _ts})
+                                matched_ct += 1
+                            else:
+                                leftover.append(nc)
+                        tp['known'] = norm_known + leftover
                     # 记录上传审计
                     p.setdefault('kbUploads', []).append({
                         'filename': filename, 'topic': topic, 'mode': mode,
