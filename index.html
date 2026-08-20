@@ -762,6 +762,41 @@ var RES_COLOR={matched:{bg:'#e4f5f3',c:'#006d70'},checking:{bg:'#ebf3fd',c:'#013
 var role='gov';   // 政府端固定，ops端在 localhost:5051
 var cur=null,view='setup',detailOpen=false,detailData=null,curKb=null,curDemand=null,curSub=null;
 
+/* ═══ 全局滚动位置记忆：整页 render() 会用 innerHTML 重建 DOM，导致滚动容器 scrollTop 归零。
+   下面这套机制在重渲染前记录各滚动容器位置，重渲染后——仅当仍停留在同一 view+cur（即"原地重渲染"，
+   如后台 AI 报告生成完成、跨标签数据同步、确认/撤回等操作触发的 render）——把滚动位置还原，
+   避免用户正在往下阅读时莫名弹回顶部；若 view/cur 发生变化（用户主动切模块/切项目）则不还原、正常回到顶部。 ═══ */
+var _SCROLL_SELECTORS='.report-scroll,.clues-scroll,.knowledge-scroll,.conversation-scroll,.docking-scroll,.settings-scroll,.detail-scroll';
+var _scrollMemory={key:null,tops:null};
+function _captureScroll(){
+  var tops={};
+  try{
+    document.querySelectorAll(_SCROLL_SELECTORS).forEach(function(el,i){
+      // 用 class + 序号做键，重建后按同样规则匹配还原
+      var cls=(el.className||'').split(/\s+/)[0]||'sc';
+      tops[cls+'#'+i]=el.scrollTop;
+    });
+  }catch(e){}
+  _scrollMemory={key:view+'::'+cur, tops:tops};
+}
+function _restoreScroll(prevKey, tops){
+  // 仅当重渲染后仍是同一 view+cur 才还原（否则说明用户切了模块/项目，应停在顶部）
+  if(!tops || prevKey!==(view+'::'+cur)) return;
+  var apply=function(){
+    try{
+      document.querySelectorAll(_SCROLL_SELECTORS).forEach(function(el,i){
+        var cls=(el.className||'').split(/\s+/)[0]||'sc';
+        var v=tops[cls+'#'+i];
+        if(v!=null && v>0) el.scrollTop=v;
+      });
+    }catch(e){}
+  };
+  apply();
+  // 下一帧再还原一次，防止异步重排（图片/字体/kbChatReplay）把 scrollTop 又归零
+  if(window.requestAnimationFrame) requestAnimationFrame(apply);
+  setTimeout(apply, 60);
+}
+
 /* AUTH: 当前登录态 {user,city,projKey,resident,who,org}；null=未登录 */
 var AUTH=null;
 var ACCOUNTS={
@@ -933,6 +968,9 @@ function render(){
       REPORTSTATE[cur].actionItemsByTopic[p.topic]=_items;
     }
   }
+  // 重建 DOM 前：记录当前滚动位置（供"原地重渲染"后还原，避免阅读时弹回顶部）
+  var _prevScrollKey=_scrollMemory.key, _prevScrollTops=_scrollMemory.tops;
+  _captureScroll();
   $('#root').innerHTML=
    '<div class="app-shell">'+
     topbar(p)+
@@ -950,6 +988,8 @@ function render(){
   if(cur && REPORT_HISTORY[cur]) { var _rha=document.getElementById('reportHistoryArea'); if(_rha) renderHistoryReports(cur); }
   // 城市智库对话：render 重建了 #kbConv，把已存的历史对话回放回去（切主题/切模块/刷新都不丢）
   if(view==='knowledge'){ setTimeout(kbChatReplay, 50); }
+  // 重建 DOM 后：若仍停留在同一 view+cur（原地重渲染），还原滚动位置，避免阅读时弹回顶部
+  _restoreScroll(_prevScrollKey, _prevScrollTops);
 }
 /* 顶栏角色切换按钮（政府端 ⇄ 运营端）*/
 
