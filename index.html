@@ -2026,6 +2026,7 @@ function kbReadiness(){
   var warnTotal=0, warnConfirmed=0;
   p.kb.forEach(function(k,ki){
     (k.known||[]).forEach(function(x,xi){
+      x=_kbText(x);
       var isWarn=x.indexOf('\u26a0\ufe0f')>=0;
       var isDone=x.indexOf('\u2705')===0;
       if(!isWarn&&!isDone) return;  // 非⚠️且非✅，跳过
@@ -8882,7 +8883,7 @@ function downloadSummary(){
   kb.forEach(function(k,i){
     L.push((i+1)+'、'+k.t+'　（'+k.sub+'）');
     L.push('  当前已知：');
-    k.known.forEach(function(x){L.push('    · '+x)});
+    k.known.forEach(function(x){L.push('    · '+_kbText(x))});
     L.push('  可调用材料（可追溯）：'+k.calls.join('、'));
     L.push('');
   });
