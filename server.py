@@ -36,13 +36,25 @@ def _is_upload_chunk(c):
     return False
 
 def audit_log(entry):
-    """把一条 RAG 调用审计记录追加进 JSONL 日志，并打印人类可读摘要。"""
+    """把一条 RAG 调用审计记录写入：①本地 JSONL 文件 ②云端 DB(RAG_AUDIT数组，跨会话可查)。"""
     entry["ts"] = datetime.datetime.now().isoformat(timespec="seconds")
+    entry["tsMs"] = int(datetime.datetime.now().timestamp() * 1000)
+    # ① 本地文件（开发环境）
     try:
         with open(LOG_PATH, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception as e:
-        print(f"[audit] write failed: {e}")
+        print(f"[audit] file write failed: {e}")
+    # ② 云端 DB 持久化：存进同一 store 的 RAG_AUDIT 数组（最近 200 条）
+    try:
+        if _PG_AVAIL and DATABASE_URL:
+            store = json.loads(_db_get() or '{}')
+            arr = store.get("RAG_AUDIT") or []
+            arr.append(entry)
+            store["RAG_AUDIT"] = arr[-200:]
+            _db_set(json.dumps(store, ensure_ascii=False))
+    except Exception as e:
+        print(f"[audit] db write failed: {e}")
     up = entry.get("upload_chunks", 0)
     tot = entry.get("total_chunks", 0)
     print(f"[audit] {entry['ts']} city={entry.get('city','')} mode={entry.get('mode','')} "
@@ -389,11 +401,21 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/rag-log":
             # RAG 审计日志：JSON（?format=json）或纯文本（默认）
             fmt = "json" if "format=json" in (self.path.split("?")[1] if "?" in self.path else "") else "text"
+            recs = []
+            # ① 云端 DB 优先（生产环境跨会话可查）
             try:
-                lines = open(LOG_PATH, encoding="utf-8").read().splitlines()
-            except FileNotFoundError:
-                lines = []
-            recs = [json.loads(l) for l in lines if l.strip()]
+                if _PG_AVAIL and DATABASE_URL:
+                    store = json.loads(_db_get() or '{}')
+                    recs = store.get("RAG_AUDIT") or []
+            except Exception as e:
+                print(f"[rag-log] db read failed: {e}")
+            # ② 回退本地文件（开发环境）
+            if not recs:
+                try:
+                    lines = open(LOG_PATH, encoding="utf-8").read().splitlines()
+                    recs = [json.loads(l) for l in lines if l.strip()]
+                except FileNotFoundError:
+                    recs = []
             if fmt == "json":
                 out = json.dumps(recs, ensure_ascii=False, indent=2).encode()
                 ctype = "application/json; charset=utf-8"
