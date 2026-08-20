@@ -576,23 +576,56 @@ function rrElapsed(ms){
   var m=Math.floor(ms/60000);
   return m<1?'刚刚':m<60?m+' 分钟':Math.floor(m/60)+' 小时 '+(m%60)+' 分';
 }
+function rrWaveRows(r){
+  if(!r.waves||!r.waves.length) return '';
+  var open=window.__rrWaveOpen&&window.__rrWaveOpen[r.id];
+  var rows=r.waves.map(function(w){
+    var ic=w.state==='done'?'✅':w.state==='running'?'🔵':'⚪';
+    var col=w.state==='done'?'#0aa696':w.state==='running'?'#0757ad':'#9aa5b5';
+    var chips='';
+    if(w.state!=='waiting'){
+      chips='<div style="display:flex;flex-wrap:wrap;gap:5px;margin:4px 0 2px 24px">'+
+        w.files.map(function(f){
+          return '<span style="font-size:10.5px;padding:2px 8px;border-radius:9px;'+
+            (f.done?'background:#e4f5f3;color:#006d70':'background:#eef1f5;color:#8492a6')+'">'+
+            (f.done?'✓ ':'· ')+f.n+'</span>';
+        }).join('')+'</div>';
+    }
+    return '<div style="padding:5px 0;border-bottom:1px dashed #e9eef5">'+
+      '<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:'+col+'">'+
+      '<span>'+ic+'</span><b>'+w.label+'</b>'+
+      '<span style="color:#8492a6;font-weight:400">'+w.done+'/'+w.total+
+      (w.state==='running'?' · 执行中':w.state==='waiting'?' · 等待依赖':'')+'</span></div>'+chips+'</div>';
+  }).join('');
+  return '<div style="margin-top:8px">'+
+    '<button onclick="window.__rrWaveOpen=window.__rrWaveOpen||{};window.__rrWaveOpen[\''+r.id+'\']=!'+(open?'true':'false')+';render()" '+
+      'style="border:0;background:transparent;color:#0757ad;font-size:11.5px;cursor:pointer;padding:0">'+
+      (open?'▾ 收起波次明细':'▸ 展开波次明细（'+r.waves.length+' 个阶段）')+'</button>'+
+    (open?'<div style="margin-top:6px;padding:8px 12px;background:#fff;border:1px solid #eaf0f7;border-radius:8px">'+rows+'</div>':'')+
+  '</div>';
+}
 function rrProgress(r){
   if(r.status!=='running') return '';
   var start=r.claimTs||r.ts;
   var elapsed=rrElapsed(Date.now()-start);
-  var fd=r.filesDone||0, ft=r.filesTotal||17;
+  var fd=r.filesDone||0, ft=r.filesTotal||16;
   var pct=Math.min(96, Math.round(fd/ft*100));
   var step=r.step||'流水线启动中…';
   var eta=(r.etaMin!=null)?('预计还需 '+r.etaMin+' 分钟'):'预计约 40 分钟';
-  var stale=r.progressTs?(Date.now()-r.progressTs>5*60000):false;
+  var staleMin=r.progressTs?Math.floor((Date.now()-r.progressTs)/60000):null;
+  var stale=staleMin!=null&&staleMin>5;
+  var lastUpd=staleMin==null?'':staleMin<1?'刚更新':staleMin+' 分钟前更新';
   return '<div style="margin-top:8px;padding:10px 12px;border:1px solid #e3ebf6;border-radius:8px;background:#f8fbff">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#3d5471;margin-bottom:7px">'+
-      '<span><b style="color:#0757ad">'+step+'</b>'+(stale?' <span style="color:#c85b09">（进度更新延迟）</span>':'')+'</span>'+
+      '<span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+(stale?'#c85b09':'#0aa696')+';margin-right:6px;'+(stale?'':'box-shadow:0 0 0 3px #e7f7f4')+'"></span>'+
+      '<b style="color:#0757ad">'+step+'</b>'+(stale?' <span style="color:#c85b09">（'+staleMin+' 分钟无进展，自愈机制将自动重跑）</span>':'')+'</span>'+
       '<span>已运行 '+elapsed+'</span></div>'+
     '<div style="height:8px;border-radius:4px;background:#e6edf6;overflow:hidden;margin-bottom:7px">'+
       '<div style="height:100%;width:'+pct+'%;border-radius:4px;background:linear-gradient(90deg,#0757ad,#007f82);transition:width .6s"></div></div>'+
     '<div style="display:flex;justify-content:space-between;font-size:11.5px;color:#667590">'+
-      '<span>已产出章节 '+fd+' / '+ft+'</span><span>'+eta+'</span></div></div>';
+      '<span>已产出章节 '+fd+' / '+ft+' · '+pct+'%</span>'+
+      '<span>'+(lastUpd?lastUpd+' · ':'')+eta+'</span></div>'+
+    rrWaveRows(r)+'</div>';
 }
 function rrPanel(){
   var rows=REPORT_REQUESTS.slice().reverse().map(function(r){
