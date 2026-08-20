@@ -676,7 +676,19 @@ function rrWaveRows(r){
   var liveN=act.filter(function(f){return f.state==='working';}).length;
   var doneN=act.filter(function(f){return f.state==='delivered';}).length;
   var summary=act.length?('　<span style="font-size:11px;color:#8492a6">AI 招商团队 '+act.length+' 名专员 · '+doneN+' 已交付 · '+liveN+' 工作中</span>'):'';
-  return '<div style="margin-top:8px">'+
+  // 阶段进度条（第X/共6阶段），与政府端口径统一
+  var stageBar='';
+  var sTot=r.stageTotal||r.waves.length, sCur=r.stageCur||1, sDone=r.stageDone||0;
+  if(sTot){
+    var STLABEL=['基础数据采集','产业链测绘','目标企业挖掘','数据交叉核验','匹配评分与计划','决策报告生成'];
+    stageBar='<div style="margin:8px 0 4px"><div style="display:flex;gap:4px">'+
+      Array.from({length:sTot}).map(function(_,i){
+        var st=i<sDone?'#0aa696':(i===sCur-1?'#0757ad':'#e0e7f0');
+        return '<div style="flex:1;height:5px;border-radius:3px;background:'+st+'"></div>';
+      }).join('')+'</div>'+
+      '<div style="font-size:11px;color:#667590;margin-top:4px">第 '+sCur+' / '+sTot+' 阶段 · '+(r.stageName||STLABEL[Math.min(sCur-1,STLABEL.length-1)]||'')+'</div></div>';
+  }
+  return '<div style="margin-top:8px">'+stageBar+
     '<button onclick="window.__rrWaveOpen=window.__rrWaveOpen||{};window.__rrWaveOpen[\''+r.id+'\']=!'+(open?'true':'false')+';render()" '+
       'style="border:0;background:transparent;color:#0757ad;font-size:11.5px;cursor:pointer;padding:0">'+
       (open?'▾ 收起 AI 团队工作台':'▸ 展开 AI 团队工作台（'+r.waves.length+' 阶段）')+'</button>'+summary+
