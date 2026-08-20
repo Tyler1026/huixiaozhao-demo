@@ -7340,7 +7340,11 @@ function buildKBCorpus(city){
   if(p&&p.kb){
     p.kb.forEach(function(k){
       (k.known||[]).forEach(function(t,i){
-        chunks.push({id:k.t+':'+i, topic:k.t, tags:topicTags(k.t), text:t, cite:k.t});
+        // 兼容结构化 chunk（对象含 origin/nature/src）与旧字符串
+        var txt=t, org='ai', nat='base', src='';
+        if(t&&typeof t==='object'){ txt=t.text||''; org=t.origin||'ai'; nat=t.nature||'base'; src=t.src||''; }
+        chunks.push({id:k.t+':'+i, topic:k.t, tags:topicTags(k.t), text:txt, cite:k.t,
+                     origin:org, nature:nat, src:src});
       });
     });
   }

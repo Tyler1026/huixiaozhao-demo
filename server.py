@@ -16,7 +16,12 @@ except ImportError:
 LOG_PATH    = os.path.expanduser("~/.violoop/services/kb-server/rag-audit.log")
 
 def _is_upload_chunk(c):
-    """判断一个知识片段是否来自用户上传的文件。"""
+    """判断一个知识片段是否来自用户上传/标注（非 AI 采集）。"""
+    if not isinstance(c, dict):
+        return False
+    # 结构化 chunk：origin 为 admin/user 即非 AI 采集
+    if c.get("origin") in ("admin", "user"):
+        return True
     cid  = str(c.get("id", ""))
     cite = str(c.get("cite", ""))
     tags = c.get("tags", []) or []
@@ -527,24 +532,32 @@ class Handler(BaseHTTPRequestHandler):
                     p = projects[key]
                     if not isinstance(p.get('kb'), list):
                         p['kb'] = []
-                    # 切分文档为 chunks（按段落，60-420 字）
+                    # origin: admin(管理员) / user(前端用户)；nature: support(佐证) / fix(修正/修改) / confirm(确认)
+                    origin = body.get('origin', 'admin')
+                    nature = body.get('nature', 'support')   # 默认佐证
+                    import time as _tt
+                    _ts = int(_tt.time() * 1000)
+                    # 切分文档为结构化 chunks（每条带来源标记，前端据此着色）
                     import re as _re
-                    parts = [x.strip() for x in _re.split(r'\n\s*\n', text) if len(x.strip()) >= 30]
-                    chunks, buf = [], ''
+                    parts = [x.strip() for x in _re.split(r'\n\s*\n', text) if len(x.strip()) >= 20]
+                    chunks = []
                     for para in parts:
                         para = _re.sub(r'\s+', ' ', para)[:420]
-                        chunks.append('【管理员补充】' + para)
+                        chunks.append({'text': para, 'origin': origin, 'nature': nature,
+                                       'src': filename, 'ts': _ts})
                     # 找/建目标主题
                     tp = next((t for t in p['kb'] if t.get('t') == topic), None)
                     if not tp:
                         tp = {'icon': '📎', 't': topic or '管理员补充资料',
-                              'sub': '', 'tag': '管理员上传', 'known': [], 'calls': []}
+                              'sub': '', 'tag': '', 'known': [], 'calls': []}
                         p['kb'].append(tp)
                     if mode == 'replace':
-                        tp['known'] = chunks
+                        # 修正覆盖：只清掉同来源的旧标记材料，保留 AI 基础材料
+                        base = [k for k in (tp.get('known') or [])
+                                if isinstance(k, str) or (isinstance(k, dict) and k.get('origin') == 'ai')]
+                        tp['known'] = base + chunks
                     else:
                         tp['known'] = (tp.get('known') or []) + chunks
-                    tp['tag'] = '管理员上传'
                     # 记录上传审计
                     p.setdefault('kbUploads', []).append({
                         'filename': filename, 'topic': topic, 'mode': mode,

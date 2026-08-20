@@ -6771,44 +6771,44 @@ function opsRag(){
     ragPushLog()+
   '</div>';
 }
-/* ── 接口1 UI：管理员上传文档补充/修正 ── */
+/* ── 接口1 UI：管理员上传文件补充/修正（极简：选文件+主题+性质）── */
 function ragUploadPanel(p,key){
   var topicOpts=(p.kb||[]).map(function(t){return '<option value="'+t.t.replace(/"/g,'')+'">'+t.t+'</option>';}).join('')+
-    '<option value="__new__">＋ 新建主题分区</option>';
+    '<option value="__new__">＋ 新建主题</option>';
   var uploads=(p.kbUploads||[]).slice().reverse().slice(0,3);
-  var log=uploads.length?('<div style="margin-top:8px;font-size:11px;color:#8492a6">'+
-    uploads.map(function(u){var t=new Date(u.ts);return '· '+u.filename+' → '+u.topic+'（+'+u.chunks+'条，'+(t.getMonth()+1)+'/'+t.getDate()+' '+t.getHours()+':'+('0'+t.getMinutes()).slice(-2)+'）';}).join('<br>')+'</div>'):'';
+  var log=uploads.length?('<div style="margin-top:9px;font-size:11px;color:#8492a6;line-height:1.7">'+
+    uploads.map(function(u){var t=new Date(u.ts);var nt=u.nature==='fix'?'🟡修正':'🟢佐证';return nt+' '+u.filename+' → '+u.topic+'（+'+u.chunks+'条）';}).join('<br>')+'</div>'):'';
   return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:14px 16px">'+
-    '<div style="font-size:13px;font-weight:700;color:#0b183b;margin-bottom:4px">📎 补充 / 修正资料</div>'+
-    '<div style="font-size:11px;color:#8492a6;margin-bottom:10px">上传文档，AI 会切分入库到指定主题；修正模式将覆盖该主题原有材料</div>'+
-    '<div style="display:flex;gap:8px;margin-bottom:8px">'+
-      '<select id="ragUpTopic" style="flex:1;min-height:36px;padding:4px 9px;border:1px solid #d8e0ed;border-radius:7px;font-size:12px">'+topicOpts+'</select>'+
-      '<select id="ragUpMode" style="flex:0 0 100px;min-height:36px;padding:4px 9px;border:1px solid #d8e0ed;border-radius:7px;font-size:12px"><option value="append">补充追加</option><option value="replace">修正覆盖</option></select>'+
+    '<div style="font-size:13px;font-weight:700;color:#0b183b;margin-bottom:4px">📎 上传文件 · 补充 / 修正</div>'+
+    '<div style="font-size:11px;color:#8492a6;margin-bottom:11px">选择文件即可，AI 自动切分入库；佐证=绿色追加，修正=黄色覆盖</div>'+
+    '<div style="display:flex;gap:8px;margin-bottom:9px">'+
+      '<select id="ragUpTopic" style="flex:1;min-height:38px;padding:4px 9px;border:1px solid #d8e0ed;border-radius:7px;font-size:12px">'+topicOpts+'</select>'+
+      '<select id="ragUpNature" style="flex:0 0 118px;min-height:38px;padding:4px 9px;border:1px solid #d8e0ed;border-radius:7px;font-size:12px"><option value="support">🟢 佐证补充</option><option value="fix">🟡 修正覆盖</option></select>'+
     '</div>'+
-    '<input id="ragUpName" placeholder="文档名称（如：2025招商政策补充.docx）" style="width:100%;min-height:34px;padding:6px 10px;border:1px solid #d8e0ed;border-radius:7px;font-size:12px;margin-bottom:8px;box-sizing:border-box">'+
-    '<textarea id="ragUpText" placeholder="粘贴文档内容（支持多段落，AI 自动切分为检索材料）…" style="width:100%;min-height:70px;padding:8px 10px;border:1px solid #d8e0ed;border-radius:7px;font-size:12px;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea>'+
-    '<div style="display:flex;gap:8px;margin-top:8px"><input type="file" id="ragUpFile" accept=".txt,.md,.csv" onchange="ragReadFile(this)" style="flex:1;font-size:11px">'+
-      '<button class="primary-button" style="min-height:36px;flex:0 0 auto" onclick="ragDoUpload(\''+key+'\')">入库</button></div>'+
+    '<label id="ragDrop" style="display:flex;align-items:center;justify-content:center;gap:8px;min-height:60px;border:1.5px dashed #b9cbe4;border-radius:9px;background:#f8fbff;color:#5a7398;font-size:12.5px;cursor:pointer">'+
+      '<span style="font-size:18px">📁</span><span id="ragUpFileName">点击选择文件（.txt / .md / .csv）</span>'+
+      '<input type="file" id="ragUpFile" accept=".txt,.md,.csv" onchange="ragReadFile(this,\''+key+'\')" style="display:none"></label>'+
     log+'</div>';
 }
-function ragReadFile(inp){
+function ragReadFile(inp,key){
   var f=inp.files&&inp.files[0]; if(!f)return;
+  var nm=document.getElementById('ragUpFileName'); if(nm)nm.textContent='正在读取：'+f.name;
   var rd=new FileReader();
-  rd.onload=function(){var ta=document.getElementById('ragUpText');if(ta)ta.value=rd.result;var nm=document.getElementById('ragUpName');if(nm&&!nm.value)nm.value=f.name;};
+  rd.onload=function(){ ragDoUpload(key, rd.result, f.name); };
   rd.readAsText(f);
 }
-function ragDoUpload(key){
+function ragDoUpload(key, text, name){
   var topic=(document.getElementById('ragUpTopic')||{}).value||'';
-  var mode=(document.getElementById('ragUpMode')||{}).value||'append';
-  var name=(document.getElementById('ragUpName')||{}).value||'上传文档';
-  var text=(document.getElementById('ragUpText')||{}).value||'';
-  if(topic==='__new__'){ topic=prompt('新建主题分区名称：','管理员补充资料')||'管理员补充资料'; }
-  if(!text.trim()){toast&&toast('请粘贴或选择文档内容');return;}
+  var nature=(document.getElementById('ragUpNature')||{}).value||'support';
+  var mode=nature==='fix'?'replace':'append';
+  if(topic==='__new__'){ topic=prompt('新建主题名称：','管理员补充资料')||'管理员补充资料'; }
+  if(!text||!text.trim()){toast&&toast('文件内容为空');return;}
   var p=PROJECTS[key];
   fetch('/api/kb-upload',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({projectKey:key,city:p.city,topic:topic,text:text,filename:name,mode:mode,by:'管理端·周总'})})
+    body:JSON.stringify({projectKey:key,city:p.city,topic:topic,text:text,filename:name||'上传文件',
+      mode:mode,origin:'admin',nature:nature,by:'管理端·周总'})})
     .then(function(r){return r.json();}).then(function(res){
-      if(res.ok){toast&&toast('已入库 '+res.chunks+' 条到「'+res.topic+'」');restoreFromServer(function(){renderOpsV2();});}
+      if(res.ok){toast&&toast('已入库 '+res.chunks+' 条（'+(nature==='fix'?'修正':'佐证')+'）');restoreFromServer(function(){renderOpsV2();});}
       else{toast&&toast('上传失败：'+(res.error||''));}
     }).catch(function(e){toast&&toast('上传出错');});
 }
@@ -6909,7 +6909,23 @@ function ragTopicNav(p){
     }).join('')+'</div>';
 }
 /* 结构化渲染一条智库材料：标题章 → 正文（加粗、数字高亮、关键词高亮）→ 来源徽章 */
+// 来源+性质 → 标识条颜色与徽章
+function ragOriginStyle(origin,nature){
+  // AI 采集=中性；管理员佐证=绿 / 修正=黄；用户佐证或确认=绿 / 修改=红
+  if(origin==='admin'){
+    return nature==='fix'?{bar:'#e0a516',badge:'🟡 管理员修正',bg:'#fffaf0',bc:'#f0d99a',bt:'#8a6d1b'}
+                         :{bar:'#0aa696',badge:'🟢 管理员佐证',bg:'#f2fbf9',bc:'#bfe5e0',bt:'#087067'};
+  }
+  if(origin==='user'){
+    if(nature==='fix') return {bar:'#e0574a',badge:'🔴 用户修改',bg:'#fdf3f2',bc:'#f2c3bd',bt:'#b0362a'};
+    return {bar:'#0aa696',badge:(nature==='confirm'?'🟢 用户确认':'🟢 用户补充'),bg:'#f2fbf9',bc:'#bfe5e0',bt:'#087067'};
+  }
+  return null; // AI 基础材料：无标识条
+}
 function ragRenderChunk(raw, idx, hl){
+  // 兼容结构化 chunk（对象）与旧字符串
+  var origin='ai', nature='base', srcName='';
+  if(raw && typeof raw==='object'){ origin=raw.origin||'ai'; nature=raw.nature||'base'; srcName=raw.src||''; raw=raw.text||''; }
   var text=String(raw);
   // 1) 抽取【标题】前缀
   var title=null; var m=text.match(/^【([^】]{2,40})】\s*/);
@@ -6940,11 +6956,17 @@ function ragRenderChunk(raw, idx, hl){
       (gov?'🏛':'🔗')+' '+dom+(s.date?' · '+s.date:'')+' ↗</a>';
   }).join(' ');
   if(pending) srcHtml+=(srcHtml?' ':'')+'<span style="display:inline-flex;font-size:10.5px;padding:2px 8px;border-radius:9px;background:#fff0de;color:#a34c09;border:1px solid #f2d9b8">⚠ 待核实</span>';
-  return '<div style="border:1px solid #e9eef5;border-radius:10px;padding:11px 14px;margin-bottom:8px;background:#fff;transition:box-shadow .15s" '+
-      'onmouseover="this.style.boxShadow=\'0 2px 10px rgba(7,87,173,.08)\';this.style.borderColor=\'#c8dcf5\'" onmouseout="this.style.boxShadow=\'none\';this.style.borderColor=\'#e9eef5\'">'+
-    '<div style="display:flex;gap:8px;align-items:baseline;margin-bottom:'+((title||srcHtml)?'5px':'0')+'">'+
-      '<span style="flex-shrink:0;font-size:10px;color:#b0bac7;font-variant-numeric:tabular-nums;padding-top:2px">'+String(idx).padStart(2,'0')+'</span>'+
+  // 来源标识：AI 基础材料无条；管理员/用户标注加彩色左条+徽章
+  var os=ragOriginStyle(origin,nature);
+  var origBadge=os?('<span style="display:inline-flex;align-items:center;font-size:10px;padding:2px 8px;border-radius:9px;background:'+os.bg+';color:'+os.bt+';border:1px solid '+os.bc+'">'+os.badge+(srcName?' · '+ragEsc(srcName):'')+'</span>'):'';
+  var barCss=os?('border-left:3px solid '+os.bar+';'):'';
+  var cardBg=os?os.bg:'#fff';
+  return '<div style="border:1px solid #e9eef5;'+barCss+'border-radius:10px;padding:11px 14px;margin-bottom:8px;background:'+cardBg+';transition:box-shadow .15s" '+
+      'onmouseover="this.style.boxShadow=\'0 2px 10px rgba(7,87,173,.08)\'" onmouseout="this.style.boxShadow=\'none\'">'+
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:'+((title||srcHtml||origBadge)?'5px':'0')+'">'+
+      '<span style="flex-shrink:0;font-size:10px;color:#b0bac7;font-variant-numeric:tabular-nums">'+String(idx).padStart(2,'0')+'</span>'+
       (title?'<span style="font-size:12px;font-weight:700;color:#013582;background:#ebf3fd;padding:1px 9px;border-radius:6px">'+ragEsc(title)+'</span>':'')+
+      origBadge+
     '</div>'+
     '<div style="font-size:12.5px;color:#334155;line-height:1.75;padding-left:24px">'+html+'</div>'+
     (srcHtml?'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;padding-left:24px">'+srcHtml+'</div>':'')+
