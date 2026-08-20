@@ -6705,14 +6705,16 @@ function ragDoSearch(){
 }
 function ragHitsView(){
   if(!ragHits.length) return '<div style="margin-top:12px;padding:12px;background:#fff5e9;border:1px solid #efcfaa;border-radius:8px;font-size:12.5px;color:#7a4a1f">未召回任何材料 —— 该问题在当前智库中没有覆盖，政府端问这个问题时 AI 只能靠通用知识回答（幻觉风险），建议补充相关材料。</div>';
+  var qTerms=ragQuery.trim().split(/\s+/)[0];
   return '<div style="margin-top:12px">'+
-    '<div style="font-size:12px;color:#667590;margin-bottom:8px">「'+ragEsc(ragQuery)+'」召回 '+ragHits.length+' 条材料（按相关度排序，即政府端提问时喂给 AI 的上下文）：</div>'+
+    '<div style="font-size:12px;color:#667590;margin-bottom:8px">「'+ragEsc(ragQuery)+'」召回 <b style="color:#0757ad">'+ragHits.length+'</b> 条材料（按相关度排序，即政府端提问时喂给 AI 的上下文）：</div>'+
     ragHits.map(function(h,i){
-      return '<div style="padding:9px 12px;border:1px solid '+(i<3?'#bfdbfe':'#e9eef5')+';border-radius:8px;margin-bottom:6px;background:'+(i<3?'#f6faff':'#fff')+'">'+
-        '<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">'+
-          '<span style="font-size:10px;font-weight:700;color:#fff;background:'+(i<3?'#0757ad':'#9aa5b5')+';border-radius:8px;padding:1px 7px">#'+(i+1)+'</span>'+
-          '<span style="font-size:11px;color:#0757ad">'+h.topic+'</span></div>'+
-        '<div style="font-size:12.5px;color:#334155;line-height:1.65">'+ragEsc(h.text).slice(0,220)+(h.text.length>220?'…':'')+'</div></div>';
+      var card=ragRenderChunk(h.text,i+1,qTerms);
+      // 前3名加蓝框+主题标；其余灰
+      var head='<div style="display:flex;gap:8px;align-items:center;margin:0 0 4px 24px">'+
+        '<span style="font-size:10px;font-weight:700;color:#fff;background:'+(i<3?'#0757ad':'#9aa5b5')+';border-radius:8px;padding:1px 7px">TOP '+(i+1)+'</span>'+
+        '<span style="font-size:11px;color:#0757ad">'+h.topic+'</span></div>';
+      return '<div style="'+(i<3?'border-left:3px solid #0757ad;padding-left:8px;margin-bottom:2px':'padding-left:11px')+'">'+head+card+'</div>';
     }).join('')+'</div>';
 }
 function ragTopicNav(p){
@@ -6725,22 +6727,58 @@ function ragTopicNav(p){
         '<span style="font-size:11px;color:#9aa5b5">'+(t.known||[]).length+'</span></button>';
     }).join('')+'</div>';
 }
+/* 结构化渲染一条智库材料：标题章 → 正文（加粗、数字高亮、关键词高亮）→ 来源徽章 */
+function ragRenderChunk(raw, idx, hl){
+  var text=String(raw);
+  // 1) 抽取【标题】前缀
+  var title=null; var m=text.match(/^【([^】]{2,40})】\s*/);
+  if(m){ title=m[1]; text=text.slice(m[0].length); }
+  // 2) 抽取（来源：URL，日期）尾注（可多个，取全部）
+  var sources=[];
+  text=text.replace(/[（(]来源[:：]\s*(https?:\/\/[^，,）)\s]+)\s*[，,]?\s*([\d]{4}-[\d]{2}-[\d]{2})?\s*[）)]/g,function(_,url,date){
+    sources.push({url:url,date:date||''});return '';});
+  var pending=/未获公开来源|待核实|二手来源/.test(text);
+  // 3) 转义后做行内渲染
+  var html=ragEsc(text.trim());
+  html=html.replace(/\*\*([^*]{1,60})\*\*/g,'<b style="color:#0b183b">$1</b>');   // **bold**
+  html=html.replace(/(^|[^\w.])(\d[\d,.]*\s*(?:亿元|万元|亿|万吨|万人|万辆|万平|公里|千米|元\/㎡|元|%|个|家|条|亿千瓦时))/g,
+    '$1<span style="color:#0757ad;font-weight:650">$2</span>');                    // 数字+单位高亮
+  html=html.replace(/(✅|⚠️|❌|❓)/g,'<span style="font-size:11px">$1</span>');
+  if(hl){
+    var esc=hl.replace(/[.*+?^${}()|[\]\\]/g,'\\' + '$' + '&');
+    html=html.replace(new RegExp('('+esc+')','g'),'<mark style="background:#ffe9a8;padding:0 2px;border-radius:3px">$1</mark>');
+  }
+  // 4) 组装卡片
+  var srcHtml=sources.map(function(s){
+    var dom=(s.url.match(/^https?:\/\/([^\/]+)/)||[])[1]||'';
+    var gov=/gov\.cn|cninfo|sse\.com|szse\.cn|landchina/.test(dom);
+    return '<a href="'+s.url+'" target="_blank" title="'+s.url+'" style="display:inline-flex;align-items:center;gap:4px;font-size:10.5px;padding:2px 8px;border-radius:9px;text-decoration:none;'+
+      (gov?'background:#e4f5f3;color:#006d70;border:1px solid #bfe5e0':'background:#eef3fb;color:#0757ad;border:1px solid #d3e3f8')+'">'+
+      (gov?'🏛':'🔗')+' '+dom+(s.date?' · '+s.date:'')+' ↗</a>';
+  }).join(' ');
+  if(pending) srcHtml+=(srcHtml?' ':'')+'<span style="display:inline-flex;font-size:10.5px;padding:2px 8px;border-radius:9px;background:#fff0de;color:#a34c09;border:1px solid #f2d9b8">⚠ 待核实</span>';
+  return '<div style="border:1px solid #e9eef5;border-radius:10px;padding:11px 14px;margin-bottom:8px;background:#fff;transition:box-shadow .15s" '+
+      'onmouseover="this.style.boxShadow=\'0 2px 10px rgba(7,87,173,.08)\';this.style.borderColor=\'#c8dcf5\'" onmouseout="this.style.boxShadow=\'none\';this.style.borderColor=\'#e9eef5\'">'+
+    '<div style="display:flex;gap:8px;align-items:baseline;margin-bottom:'+((title||srcHtml)?'5px':'0')+'">'+
+      '<span style="flex-shrink:0;font-size:10px;color:#b0bac7;font-variant-numeric:tabular-nums;padding-top:2px">'+String(idx).padStart(2,'0')+'</span>'+
+      (title?'<span style="font-size:12px;font-weight:700;color:#013582;background:#ebf3fd;padding:1px 9px;border-radius:6px">'+ragEsc(title)+'</span>':'')+
+    '</div>'+
+    '<div style="font-size:12.5px;color:#334155;line-height:1.75;padding-left:24px">'+html+'</div>'+
+    (srcHtml?'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;padding-left:24px">'+srcHtml+'</div>':'')+
+  '</div>';
+}
 function ragChunkList(p){
   var t=p.kb[ragTopic]||p.kb[0];
   var items=(t.known||[]);
   var f=(ragFilter||'').trim();
   var shown=f?items.filter(function(x){return x.indexOf(f)>=0;}):items;
-  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:0 16px 14px;max-height:520px;overflow-y:auto">'+
-    '<div style="display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;padding:14px 0 8px;z-index:2;border-bottom:1px solid #eef2f7">'+
+  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fbfcfe;padding:0 14px 14px;max-height:560px;overflow-y:auto">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fbfcfe;padding:14px 0 10px;z-index:2;border-bottom:1px solid #eef2f7;margin-bottom:10px">'+
       '<div style="font-size:13px;font-weight:700;color:#0b183b">'+t.t+' <span style="color:#9aa5b5;font-weight:400">'+shown.length+(f?' / '+items.length:'')+' 条</span></div>'+
       '<input value="'+(ragFilter||'').replace(/"/g,'&quot;')+'" placeholder="筛选本区材料…" oninput="ragFilter=this.value;renderOpsV2();var el=document.querySelectorAll(\'input[placeholder^=筛选]\')[0];if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}" '+
         'style="width:200px;min-height:32px;padding:4px 10px;border:1px solid #d8e0ed;border-radius:8px;font-size:12px"></div>'+
-    (shown.length?shown.map(function(x,i){
-      var src=x.match(/（来源：(https?:\/\/[^，）\s]+)/);
-      return '<div style="padding:9px 0;border-bottom:1px dashed #e9eef5;font-size:12.5px;color:#334155;line-height:1.7">'+
-        '<span style="color:#b0bac7;font-size:10.5px;margin-right:6px">'+(i+1)+'</span>'+ragEsc(x)+
-        (src?' <a href="'+src[1]+'" target="_blank" style="font-size:10.5px;color:#0757ad;text-decoration:none">[溯源↗]</a>':'')+'</div>';
-    }).join(''):'<div style="color:#9aa5b5;font-size:12.5px;padding:14px 0">无匹配材料</div>')+'</div>';
+    (shown.length?shown.map(function(x,i){return ragRenderChunk(x,i+1,f||null);}).join(''):
+     '<div style="color:#9aa5b5;font-size:12.5px;padding:14px 0">无匹配材料</div>')+'</div>';
 }
 function ragPushLog(){
   var logs=(ragLog&&ragLog.recs)||null;
