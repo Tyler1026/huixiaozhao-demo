@@ -568,7 +568,7 @@ setInterval(function(){
 },30000);
 function rrStatusBadge(s){
   return s==='done'?'<span class="ops-badge green">已完成·RAG已初始化</span>':
-         s==='running'?'<span class="ops-badge blue"><span class="rr-spin"></span>流水线运行中</span>':
+         s==='running'?'<span class="ops-badge blue"><span class="rr-spin"></span>AI 研判进行中</span>':
          s==='failed'?'<span class="ops-badge orange">失败·可重试</span>':
          '<span class="ops-badge">排队中</span>';
 }
@@ -619,39 +619,68 @@ function rrTimeSplit(r){
           stall:(r.stallMs?rrElapsed(r.stallMs):null),
           gap:(r.gapMs?rrElapsed(r.gapMs):null), gapCount:r.gapCount||0};
 }
+// 专员归属阶段（按 activity.id 分组到 6 个研判阶段）
+var RR_STAGE_OF={economic_profiler:0,population_profiler:0,transport_land_profiler:0,life_support_profiler:0,industry_analyst:0,competition_scout:0,policy_researcher:0,
+  chain_mapper:1,enterprise_hunter_1:2,enterprise_hunter_2:2,enterprise_hunter_3:2,fact_checker:3,scoring_engine:4,action_planner:4,compact_writer:5};
+function rrSpecialistCard(f){
+  var st=f.state;
+  var dot=st==='delivered'?'#0aa696':st==='working'?'#0757ad':st==='partial'?'#c85b09':'#b0bac7';
+  var badge=st==='delivered'?'<span style="color:#0aa696">已交付</span>':
+            st==='working'?'<span style="color:#0757ad">工作中<span class="rr-runner"></span></span>':
+            st==='partial'?'<span style="color:#c85b09">补充中</span>':
+            '<span style="color:#b0bac7">待命</span>';
+  var pct=f.min?Math.min(100,Math.round((f.lines||0)/f.min*100)):0;
+  var barCol=st==='delivered'?'#0aa696':st==='partial'?'#c85b09':'#0757ad';
+  var mini=(st==='queued')?'':'<div style="height:3px;border-radius:2px;background:#eef1f5;margin-top:4px;overflow:hidden"><div class="'+(st==='working'?'rr-bar-live':'')+'" style="height:100%;width:'+pct+'%;background:'+barCol+'"></div></div>';
+  return '<div style="padding:7px 9px;border:1px solid #eef2f7;border-radius:8px;background:'+(st==='working'?'#f6faff':'#fff')+'">'+
+    '<div style="display:flex;align-items:center;gap:7px">'+
+      '<span style="font-size:15px;position:relative">'+f.avatar+'<span class="'+(st==='working'?'rr-dot-live':'')+'" style="position:absolute;right:-2px;bottom:-1px;width:6px;height:6px;border-radius:50%;background:'+dot+';border:1.5px solid #fff"></span></span>'+
+      '<b style="font-size:12px;color:#0b183b">'+f.name+'</b>'+
+      '<span style="font-size:10.5px;margin-left:auto">'+badge+'</span></div>'+
+    '<div style="font-size:11px;color:#667590;margin-top:3px;line-height:1.5">'+String(f.action||'').replace(/</g,'&lt;')+'</div>'+mini+'</div>';
+}
 function rrWaveRows(r){
   if(!r.waves||!r.waves.length) return '';
   var open=window.__rrWaveOpen&&window.__rrWaveOpen[r.id];
-  var rows=r.waves.map(function(w){
+  var act=r.activity||[];
+  // 按阶段分组专员
+  var byStage={};
+  act.forEach(function(f){var s=RR_STAGE_OF[f.id];if(s==null)return;(byStage[s]=byStage[s]||[]).push(f);});
+  var rows=r.waves.map(function(w,wi){
     var ic=w.state==='done'?'✅':w.state==='running'?'<span class="rr-spin" style="width:11px;height:11px"></span>':'⚪';
     var col=w.state==='done'?'#0aa696':w.state==='running'?'#0757ad':'#9aa5b5';
-    var chips='';
-    if(w.state!=='waiting'){
-      chips='<div style="display:flex;flex-wrap:wrap;gap:5px;margin:4px 0 2px 24px">'+
+    // 优先用专员卡片；无 activity 时回退到原章节芯片
+    var body='';
+    var specs=byStage[wi];
+    if(specs&&specs.length){
+      body='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px;margin:6px 0 2px 24px">'+
+        specs.map(rrSpecialistCard).join('')+'</div>';
+    } else if(w.state!=='waiting'){
+      body='<div style="display:flex;flex-wrap:wrap;gap:5px;margin:4px 0 2px 24px">'+
         w.files.map(function(f){
-          var isNew=f.done&&!(window.__rrSeenDone&&window.__rrSeenDone[f.n]);
-          if(f.done){window.__rrSeenDone=window.__rrSeenDone||{};window.__rrSeenDone[f.n]=1;}
           var fs=f.fstate||(f.done?'done':'missing');
           var sty,mark;
           if(fs==='done'){sty='background:#e4f5f3;color:#006d70';mark='✓ ';}
           else if(fs==='partial'){sty='background:#fdeef0;color:#b0364a;cursor:help';mark='⚠ ';}
           else {sty='background:#eef1f5;color:#8492a6';mark='· ';}
           var tip=f.detail?' title="'+String(f.detail).replace(/"/g,'&quot;')+'"':'';
-          return '<span class="'+(isNew?'rr-chip-new':'')+'"'+tip+' style="font-size:10.5px;padding:2px 8px;border-radius:9px;'+sty+'">'+
-            mark+f.n+(fs==='partial'&&f.detail?' <span style="opacity:.75">('+f.detail+')</span>':'')+'</span>';
+          return '<span'+tip+' style="font-size:10.5px;padding:2px 8px;border-radius:9px;'+sty+'">'+mark+f.n+'</span>';
         }).join('')+'</div>';
     }
-    return '<div style="padding:5px 0;border-bottom:1px dashed #e9eef5">'+
+    return '<div style="padding:6px 0;border-bottom:1px dashed #e9eef5">'+
       '<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:'+col+'">'+
       '<span style="display:inline-flex;align-items:center">'+ic+'</span><b>'+w.label+'</b>'+
       '<span style="color:#8492a6;font-weight:400">'+w.done+'/'+w.total+'</span>'+
-      (w.state==='running'?'<span style="color:#0757ad;font-size:11px">· 执行中<span class="rr-runner"></span></span>':w.state==='waiting'?'<span style="font-size:11px;color:#b0bac7">· 等待依赖</span>':'')+'</div>'+chips+'</div>';
+      (w.state==='running'?'<span style="color:#0757ad;font-size:11px">· 进行中<span class="rr-runner"></span></span>':w.state==='waiting'?'<span style="font-size:11px;color:#b0bac7">· 等待前序完成</span>':'')+'</div>'+body+'</div>';
   }).join('');
+  var liveN=act.filter(function(f){return f.state==='working';}).length;
+  var doneN=act.filter(function(f){return f.state==='delivered';}).length;
+  var summary=act.length?('　<span style="font-size:11px;color:#8492a6">AI 招商团队 '+act.length+' 名专员 · '+doneN+' 已交付 · '+liveN+' 工作中</span>'):'';
   return '<div style="margin-top:8px">'+
     '<button onclick="window.__rrWaveOpen=window.__rrWaveOpen||{};window.__rrWaveOpen[\''+r.id+'\']=!'+(open?'true':'false')+';render()" '+
       'style="border:0;background:transparent;color:#0757ad;font-size:11.5px;cursor:pointer;padding:0">'+
-      (open?'▾ 收起波次明细':'▸ 展开波次明细（'+r.waves.length+' 个阶段）')+'</button>'+
-    (open?'<div style="margin-top:6px;padding:8px 12px;background:#fff;border:1px solid #eaf0f7;border-radius:8px">'+rows+'</div>':'')+
+      (open?'▾ 收起 AI 团队工作台':'▸ 展开 AI 团队工作台（'+r.waves.length+' 阶段）')+'</button>'+summary+
+    (open?'<div style="margin-top:6px;padding:8px 12px;background:#fafcff;border:1px solid #eaf0f7;border-radius:8px">'+rows+'</div>':'')+
   '</div>';
 }
 function rrProgress(r){
@@ -659,20 +688,20 @@ function rrProgress(r){
   var ts=rrTimeSplit(r);
   var fd=r.filesDone||0, ft=r.filesTotal||16;
   var pct=Math.min(96, Math.round(fd/ft*100));
-  var step=r.step||'流水线启动中…';
+  var step=r.step||'AI 研判启动中…';
   var eta=(r.etaMin!=null)?('预计还需 '+r.etaMin+' 分钟'):'预计约 40 分钟';
   var staleMin=r.progressTs?Math.floor((Date.now()-r.progressTs)/60000):null;
   var stale=staleMin!=null&&staleMin>5;
   var lastUpd=staleMin==null?'':staleMin<1?'刚更新':staleMin+' 分钟前更新';
   var gapBadge=ts.gap?('<span title="机器睡眠/离线导致的暂停时长（'+ts.gapCount+' 次断点），不计入有效运行时间" '+
     'style="margin-left:8px;font-size:10.5px;padding:1px 7px;border-radius:9px;background:#fff0de;color:#a34c09;cursor:help">⏸ 断点 '+ts.gap+(ts.gapCount>1?' × '+ts.gapCount:'')+'</span>'):'';
-  var stallBadge=ts.stall?('<span title="机器在线但流水线产出停滞的时长（agent 异常空转），不计入有效运行时间" '+
+  var stallBadge=ts.stall?('<span title="机器在线但流水线产出停滞的时长（研判暂时停滞），不计入有效运行时间" '+
     'style="margin-left:6px;font-size:10.5px;padding:1px 7px;border-radius:9px;background:#fdeef0;color:#b0364a;cursor:help">⚠ 空转 '+ts.stall+'</span>'):'';
   gapBadge=stallBadge+gapBadge;
   return '<div style="margin-top:8px;padding:10px 12px;border:1px solid #e3ebf6;border-radius:8px;background:#f8fbff">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#3d5471;margin-bottom:7px">'+
       '<span><span class="'+(stale?'':'rr-dot-live')+'" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+(stale?'#c85b09':'#0aa696')+';margin-right:6px"></span>'+
-      '<b style="color:#0757ad" class="rr-step-glow">'+step+'</b>'+(stale?' <span style="color:#c85b09">（'+staleMin+' 分钟无进展，自愈机制将自动重跑）</span>':'')+'</span>'+
+      '<b style="color:#0757ad" class="rr-step-glow">'+step+'</b>'+(stale?' <span style="color:#c85b09">（'+staleMin+' 分钟无进展，系统正在自动补全）</span>':'')+'</span>'+
       '<span style="display:inline-flex;align-items:center"><span id="rrElapsed" style="font-variant-numeric:tabular-nums">有效运行 '+ts.active+'</span>'+gapBadge+'</span></div>'+
     '<div style="height:8px;border-radius:4px;background:#e6edf6;overflow:hidden;margin-bottom:7px">'+
       '<div class="'+(stale?'':'rr-bar-live')+'" style="height:100%;width:'+pct+'%;border-radius:4px;background:linear-gradient(90deg,#0757ad,#007f82);transition:width .6s"></div></div>'+
@@ -688,7 +717,7 @@ function rrIssuesBanner(r){
   return '<div style="margin-top:8px;padding:9px 12px;border:1px solid #f2c3cb;border-radius:8px;background:#fdeef0">'+
     '<div style="font-size:11.5px;font-weight:700;color:#b0364a;margin-bottom:5px;display:flex;align-items:center;gap:6px">'+
       '<span>⚠ '+iss.length+' 个环节未达标</span>'+
-      '<span style="font-weight:400;color:#c47080">自愈机制将自动重跑（每轮最多 3 个）</span></div>'+
+      '<span style="font-weight:400;color:#c47080">系统正在自动补全</span></div>'+
     '<div style="display:flex;flex-direction:column;gap:3px">'+
       iss.map(function(s){
         var parts=String(s).split('：');
@@ -714,7 +743,7 @@ function rrPanel(){
   }).join('')||'<div style="color:#8492a6;font-size:13px;padding:8px 2px">暂无申请记录</div>';
   return '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:18px 20px;margin:0 0 16px">'+
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><strong style="font-size:15px">发起城市报告生成</strong>'+
-    '<span style="color:#8492a6;font-size:12px">14-Agent 流水线 · 产出后自动初始化该城市智库 RAG</span></div>'+
+    '<span style="color:#8492a6;font-size:12px">AI 招商智能体 · 产出后自动初始化该城市智库</span></div>'+
     '<div style="display:flex;gap:10px;margin-bottom:14px">'+
       '<input id="rrProv" placeholder="省份，如 湖北" style="flex:0 0 150px;min-height:40px;padding:8px 11px;border:1px solid var(--line);border-radius:8px">'+
       '<input id="rrCity" placeholder="城市，如 随州" style="flex:0 0 150px;min-height:40px;padding:8px 11px;border:1px solid var(--line);border-radius:8px">'+
@@ -4543,7 +4572,7 @@ function getTopicReport(topic){
   try{localStorage.setItem('hxz_seeded_v3','1')}catch(e){}
 })();
 }
-// 历史报告 / 上传材料 弹窗（Ryan要的"第二天在哪看"）
+// 历史报告 / 上传材料 弹窗（历史报告入口）
 function openHistory(){
   var st=REPORTSTATE[cur];var ups=UPLOADS[cur]||[];
   var repHtml = st ? ('<div class="source-list"><li onclick="closeModal();go(\'report\');setTimeout(showReport,60)" style="cursor:pointer"><i class="i">📄</i>'+P().topic+' 研判报告 · v'+st.ver+(st.finalized?'（已定稿）':'（草稿）')+'<small>点击重新打开</small></li></div>') : '<p class="modal-intro">该项目暂无已生成的报告。</p>';
@@ -4674,7 +4703,7 @@ function submitNeed(){
   });
   saveSubproj();
   if(n===0){
-    // 无补链方向可派生（Ryan：高概率一家都没有）——需求仍进入资源池
+    // 无补链方向可派生（高概率一家都没有）——需求仍进入资源池
     addA('<p>✅ 双确认完成，已生成<strong>正式招商需求</strong>并递交资源端。</p>');
     addRaw('<div class="clue-origin"><i class="i">🔗</i>需求已递交<button onclick="scrollToReport()">查看报告</button></div>'+
       '<div style="border:1px dashed #cdd8e8;border-radius:10px;padding:20px;text-align:center;background:#fafbfd">'+
@@ -6686,7 +6715,7 @@ function opsRag(){
       ragStatCard('📦','智库材料总量',total+' 条','来自 14-Agent 流水线')+
       ragStatCard('🗂️','主题分区',p.kb.length+' 个','产业链/园区/企业/政策')+
       ragStatCard('📄','研判报告',(rs.text?Math.round(rs.text.length/100)/10+'k 字':'未生成'),rs.finalized?'已定稿·政府端可见':'')+
-      ragStatCard('🔎','检索方式','关键词加权','与政府端 kbSearch 同源')+
+      ragStatCard('🔎','检索方式','关键词加权','与政府端问答检索同源')+
     '</div>'+
     ragSearchBox()+
     '<div style="display:grid;grid-template-columns:230px 1fr;gap:14px;margin-top:14px">'+ragTopicNav(p)+ragChunkList(p)+'</div>'+
