@@ -1002,6 +1002,8 @@ function render(){
     progressFooter(p)+
    '</div>';
   bind();
+  // 工作台常驻：报告/智库/分析页重绘后自动重挂（幂等，页面重绘不再丢失）
+  if(typeof govEnsureWorkbench==='function' && (view==='report'||view==='knowledge'||view==='home')){ try{govEnsureWorkbench();}catch(e){} }
   if(cur && REPORT_HISTORY[cur]) { var _rha=document.getElementById('reportHistoryArea'); if(_rha) renderHistoryReports(cur); }
   // 城市智库对话：render 重建了 #kbConv，把已存的历史对话回放回去（切主题/切模块/刷新都不丢）
   if(view==='knowledge'){ setTimeout(kbChatReplay, 50); }
@@ -7062,10 +7064,11 @@ function govEnsureWorkbench(){
   fetch('/api/sync').then(function(r){return r.json();}).then(function(raw){
     var reqs=(raw&&raw.huixiaozhao_kb_v1&&raw.huixiaozhao_kb_v1.REPORT_REQUESTS)||(raw&&raw.REPORT_REQUESTS)||[];
     var rec=reqs.filter(function(x){return x.status==='running'&&x.city===city;})[0];
-    if(!rec||!rec.activity){return;}
+    if(!rec||!rec.activity){var _o=document.getElementById('govWorkbench');if(_o)_o.remove();return;}
     GOV_ACTIVITY=rec;GOV_ACT_CITY=rec.city;
     if(document.getElementById('govWorkbench')) return; // 已在则不重复
-    var host=document.querySelector('.report-scroll')||document.querySelector('.main-pane');
+    // 智库页/产业分析页/报告页都挂载（客户在这些页面等 AI 研判）
+    var host=document.querySelector('.report-scroll,.knowledge-scroll,.conversation-scroll')||document.querySelector('.main-pane');
     if(!host) return;
     var wrap=document.createElement('div'); wrap.innerHTML=govWorkbench();
     if(wrap.firstChild) host.insertBefore(wrap.firstChild, host.firstChild);
