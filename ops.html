@@ -6570,7 +6570,7 @@ function opsShell(){
     '<div style="display:flex;height:calc(100vh - 52px);overflow:hidden">' +
       opsTabBar() +
       '<div id="opsContent" style="flex:1;overflow-y:auto">' +
-        (opsTab==='overview' ? opsOverview() : opsTab==='users' ? opsUsers() : opsEnterprises()) +
+        (opsTab==='overview' ? opsOverview() : opsTab==='rag' ? opsRag() : opsTab==='users' ? opsUsers() : opsEnterprises()) +
       '</div>' +
     '</div>' +
   '</div>';
@@ -6598,6 +6598,7 @@ function opsTopbarV2(){
 function opsTabBar(){
   var tabs=[
     {id:'overview', icon:'🏙️', label:'城市需求概览', sub:'用户·进度·需求'},
+    {id:'rag', icon:'📚', label:'城市智库 RAG', sub:'材料·检索·推送日志'},
     {id:'enterprises', icon:'🏭', label:'企业资源库', sub:'录入·扫描·推送'},
     {id:'users', icon:'👤', label:'注册用户', sub:'政府端账号资料'},
   ];
@@ -6616,6 +6617,160 @@ function opsTabBar(){
 }
 
 
+/* ══ Tab: 城市智库 RAG（材料·检索·推送日志）══ */
+var ragCity=null, ragTopic=0, ragQuery='', ragHits=null, ragLog=null, ragFilter='';
+function ragProjKey(){
+  var keys=Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&p.kb&&p.kb.length&&p.kb.some(function(t){return (t.known||[]).length;});});
+  if(!keys.length) return null;
+  if(!ragCity){ var sz=keys.find(function(k){return (PROJECTS[k].city||'').indexOf('随州')>=0;}); ragCity=sz||keys[0]; }
+  return keys.indexOf(ragCity)>=0?ragCity:keys[0];
+}
+function ragCityOptions(){
+  var seen={};
+  return Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&p.kb&&p.kb.some(function(t){return (t.known||[]).length;});})
+    .map(function(k){var c=PROJECTS[k].city||k;var label=c+(seen[c]?' ('+k+')':'');seen[c]=1;
+      return '<option value="'+k+'"'+(k===ragProjKey()?' selected':'')+'>'+label+'</option>';}).join('');
+}
+function opsRag(){
+  var key=ragProjKey();
+  if(!key) return '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:#9aa5b5;padding:60px">'+
+    '<div style="font-size:36px">📚</div><div style="font-size:14px;font-weight:700;color:#0b183b">暂无已初始化的城市智库</div>'+
+    '<div style="font-size:13px;text-align:center;line-height:1.7">在「城市需求概览」发起报告生成，<br>流水线完成后材料会自动入库并出现在这里</div></div>';
+  var p=PROJECTS[key];
+  var total=p.kb.reduce(function(s,t){return s+(t.known||[]).length;},0);
+  var rs=REPORTSTATE[key]||{};
+  var initT=p.kbInitTs?new Date(p.kbInitTs):null;
+  var initStr=initT?(initT.getMonth()+1)+'/'+initT.getDate()+' '+initT.getHours()+':'+('0'+initT.getMinutes()).slice(-2):'—';
+  return '<div style="padding:24px">'+
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'+
+      '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">城市智库 RAG</h1>'+
+      '<select onchange="ragCity=this.value;ragTopic=0;ragHits=null;renderOpsV2()" style="min-height:34px;padding:4px 10px;border:1px solid #d8e0ed;border-radius:8px;font-size:13px">'+ragCityOptions()+'</select>'+
+      '<span style="font-size:12px;color:#9aa5b5">'+p.org+' · 初始化于 '+initStr+'</span></div>'+
+    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">'+
+      ragStatCard('📦','智库材料总量',total+' 条','来自 14-Agent 流水线')+
+      ragStatCard('🗂️','主题分区',p.kb.length+' 个','产业链/园区/企业/政策')+
+      ragStatCard('📄','研判报告',(rs.text?Math.round(rs.text.length/100)/10+'k 字':'未生成'),rs.finalized?'已定稿·政府端可见':'')+
+      ragStatCard('🔎','检索方式','关键词加权','与政府端 kbSearch 同源')+
+    '</div>'+
+    ragSearchBox()+
+    '<div style="display:grid;grid-template-columns:230px 1fr;gap:14px;margin-top:14px">'+ragTopicNav(p)+ragChunkList(p)+'</div>'+
+    ragPushLog()+
+  '</div>';
+}
+function ragStatCard(ic,label,val,sub){
+  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:14px 16px">'+
+    '<div style="font-size:12px;color:#8492a6;display:flex;align-items:center;gap:6px"><span>'+ic+'</span>'+label+'</div>'+
+    '<div style="font-size:20px;font-weight:750;color:#0b183b;margin:6px 0 2px">'+val+'</div>'+
+    '<div style="font-size:11px;color:#9aa5b5">'+(sub||'')+'</div></div>';
+}
+
+function ragEsc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function ragSearchBox(){
+  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:14px 16px">'+
+    '<div style="display:flex;gap:10px;align-items:center">'+
+      '<input id="ragQ" value="'+(ragQuery||'').replace(/"/g,'&quot;')+'" placeholder="检索验证：输入问题，看 RAG 实际召回哪些材料（如：工业用地价格 / 氢能补链）" '+
+        'onkeydown="if(event.key===\'Enter\')ragDoSearch()" '+
+        'style="flex:1;min-height:40px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:8px;font-size:13px">'+
+      '<button class="primary-button" style="min-height:40px" onclick="ragDoSearch()">检索测试</button>'+
+      (ragHits?'<button class="ghost-button" style="min-height:40px" onclick="ragHits=null;ragQuery=\'\';renderOpsV2()">清除</button>':'')+
+    '</div>'+(ragHits?ragHitsView():'')+'</div>';
+}
+function ragDoSearch(){
+  var q=(document.getElementById('ragQ')||{}).value||'';
+  if(!q.trim())return;
+  ragQuery=q;
+  var key=ragProjKey(), p=PROJECTS[key];
+  var corpus=[];
+  p.kb.forEach(function(t){(t.known||[]).forEach(function(txt,i){corpus.push({id:t.t+':'+i,topic:t.t,tags:[],text:txt,cite:t.t});});});
+  var hits=[];
+  try{ hits=(typeof kbSearch==='function')?(kbSearch(q,corpus,8)||[]):[]; }catch(e){ hits=[]; }
+  if(!hits.length){
+    var terms=q.trim().split(/\s+/);
+    hits=corpus.map(function(c){var s=0;terms.forEach(function(t){if(c.text.indexOf(t)>=0)s+=2;if(c.topic.indexOf(t)>=0)s+=1;});return{c:c,s:s};})
+      .filter(function(x){return x.s>0;}).sort(function(a,b){return b.s-a.s;}).slice(0,8).map(function(x){return x.c;});
+  }
+  ragHits=hits;
+  renderOpsV2();
+}
+function ragHitsView(){
+  if(!ragHits.length) return '<div style="margin-top:12px;padding:12px;background:#fff5e9;border:1px solid #efcfaa;border-radius:8px;font-size:12.5px;color:#7a4a1f">未召回任何材料 —— 该问题在当前智库中没有覆盖，政府端问这个问题时 AI 只能靠通用知识回答（幻觉风险），建议补充相关材料。</div>';
+  return '<div style="margin-top:12px">'+
+    '<div style="font-size:12px;color:#667590;margin-bottom:8px">「'+ragEsc(ragQuery)+'」召回 '+ragHits.length+' 条材料（按相关度排序，即政府端提问时喂给 AI 的上下文）：</div>'+
+    ragHits.map(function(h,i){
+      return '<div style="padding:9px 12px;border:1px solid '+(i<3?'#bfdbfe':'#e9eef5')+';border-radius:8px;margin-bottom:6px;background:'+(i<3?'#f6faff':'#fff')+'">'+
+        '<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">'+
+          '<span style="font-size:10px;font-weight:700;color:#fff;background:'+(i<3?'#0757ad':'#9aa5b5')+';border-radius:8px;padding:1px 7px">#'+(i+1)+'</span>'+
+          '<span style="font-size:11px;color:#0757ad">'+h.topic+'</span></div>'+
+        '<div style="font-size:12.5px;color:#334155;line-height:1.65">'+ragEsc(h.text).slice(0,220)+(h.text.length>220?'…':'')+'</div></div>';
+    }).join('')+'</div>';
+}
+function ragTopicNav(p){
+  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:10px;align-self:start">'+
+    '<div style="font-size:11px;font-weight:700;color:#8492a6;letter-spacing:.08em;padding:4px 8px">主题分区</div>'+
+    p.kb.map(function(t,i){
+      var on=(i===ragTopic);
+      return '<button onclick="ragTopic='+i+';ragFilter=\'\';renderOpsV2()" style="display:flex;justify-content:space-between;align-items:center;width:100%;padding:10px 12px;border:none;border-radius:8px;cursor:pointer;text-align:left;background:'+(on?'#eff6ff':'transparent')+'">'+
+        '<span style="font-size:13px;font-weight:'+(on?'700':'500')+';color:'+(on?'#1d4ed8':'#0b183b')+'">'+t.t+'</span>'+
+        '<span style="font-size:11px;color:#9aa5b5">'+(t.known||[]).length+'</span></button>';
+    }).join('')+'</div>';
+}
+function ragChunkList(p){
+  var t=p.kb[ragTopic]||p.kb[0];
+  var items=(t.known||[]);
+  var f=(ragFilter||'').trim();
+  var shown=f?items.filter(function(x){return x.indexOf(f)>=0;}):items;
+  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:0 16px 14px;max-height:520px;overflow-y:auto">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;padding:14px 0 8px;z-index:2;border-bottom:1px solid #eef2f7">'+
+      '<div style="font-size:13px;font-weight:700;color:#0b183b">'+t.t+' <span style="color:#9aa5b5;font-weight:400">'+shown.length+(f?' / '+items.length:'')+' 条</span></div>'+
+      '<input value="'+(ragFilter||'').replace(/"/g,'&quot;')+'" placeholder="筛选本区材料…" oninput="ragFilter=this.value;renderOpsV2();var el=document.querySelectorAll(\'input[placeholder^=筛选]\')[0];if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}" '+
+        'style="width:200px;min-height:32px;padding:4px 10px;border:1px solid #d8e0ed;border-radius:8px;font-size:12px"></div>'+
+    (shown.length?shown.map(function(x,i){
+      var src=x.match(/（来源：(https?:\/\/[^，）\s]+)/);
+      return '<div style="padding:9px 0;border-bottom:1px dashed #e9eef5;font-size:12.5px;color:#334155;line-height:1.7">'+
+        '<span style="color:#b0bac7;font-size:10.5px;margin-right:6px">'+(i+1)+'</span>'+ragEsc(x)+
+        (src?' <a href="'+src[1]+'" target="_blank" style="font-size:10.5px;color:#0757ad;text-decoration:none">[溯源↗]</a>':'')+'</div>';
+    }).join(''):'<div style="color:#9aa5b5;font-size:12.5px;padding:14px 0">无匹配材料</div>')+'</div>';
+}
+function ragPushLog(){
+  var logs=(ragLog&&ragLog.recs)||null;
+  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:14px 16px;margin-top:14px">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
+      '<div><span style="font-size:13px;font-weight:700;color:#0b183b">推送视图 · RAG 调用审计</span>'+
+      '<span style="font-size:11px;color:#9aa5b5;margin-left:8px">政府端每次 AI 问答/研判实际消费了哪些智库材料</span></div>'+
+      '<button class="ghost-button" style="min-height:32px;font-size:12px" onclick="ragLoadLog()">'+(logs?'刷新':'加载调用日志')+'</button></div>'+
+    (logs===null?'<div style="color:#9aa5b5;font-size:12.5px">点击「加载调用日志」拉取 /rag-log 审计记录</div>':
+     !logs.length?'<div style="color:#9aa5b5;font-size:12.5px">暂无调用记录 —— 政府端还没有发起过 AI 问答</div>':
+     ragLogSummary(logs)+'<div style="max-height:340px;overflow-y:auto">'+logs.slice().reverse().slice(0,30).map(function(rec){
+       var t=rec.ts?new Date(rec.ts):null;
+       var tm=t?(t.getMonth()+1)+'/'+t.getDate()+' '+t.getHours()+':'+('0'+t.getMinutes()).slice(-2):'';
+       var up=rec.upload_chunks||0;
+       var kb=rec.kb_chunks!=null?rec.kb_chunks:Math.max(0,(rec.total_chunks||0)-up);
+       var tot=rec.total_chunks||0;
+       var kbPct=tot?Math.round(kb/tot*100):0;
+       return '<div style="padding:8px 0;border-bottom:1px dashed #e9eef5">'+
+         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
+           '<span style="font-size:11px;color:#9aa5b5;font-variant-numeric:tabular-nums">'+tm+'</span>'+
+           '<span style="font-size:11px;padding:1px 7px;border-radius:8px;background:#ebf3fd;color:#013582">'+(rec.mode||'chat')+'</span>'+
+           '<span style="font-size:12.5px;color:#0b183b;font-weight:600">'+ragEsc(rec.question||'').slice(0,60)+'</span></div>'+
+         '<div style="display:flex;align-items:center;gap:10px;margin-top:5px">'+
+           '<div style="flex:0 0 120px;height:6px;border-radius:3px;background:#eef1f5;overflow:hidden">'+
+             '<div style="height:100%;width:'+kbPct+'%;background:linear-gradient(90deg,#0757ad,#007f82)"></div></div>'+
+           '<span style="font-size:11.5px;color:#667590">消费 '+tot+' 条（智库 '+kb+' + 上传 '+up+'）'+(rec.city?' · '+rec.city:'')+'</span></div></div>';
+     }).join('')+'</div>')+'</div>';
+}
+function ragLogSummary(logs){
+  var n=logs.length,tot=0,up=0;
+  logs.forEach(function(r){tot+=(r.total_chunks||0);up+=(r.upload_chunks||0);});
+  return '<div style="display:flex;gap:18px;padding:8px 0 10px;font-size:12px;color:#3d5471;border-bottom:1px solid #eef2f7;margin-bottom:6px">'+
+    '<span>累计调用 <b>'+n+'</b> 次</span><span>消费材料 <b>'+tot+'</b> 条</span>'+
+    '<span>智库占比 <b>'+(tot?Math.round((tot-up)/tot*100):0)+'%</b></span>'+
+    '<span>用户上传占比 <b>'+(tot?Math.round(up/tot*100):0)+'%</b></span></div>';
+}
+function ragLoadLog(){
+  fetch('/rag-log?format=json').then(function(r){return r.json();}).then(function(recs){
+    ragLog={recs:Array.isArray(recs)?recs:[]};renderOpsV2();
+  }).catch(function(){ragLog={recs:[]};renderOpsV2();});
+}
 /* ══ Tab1: 城市需求概览 ══ */
 function opsOverview(){
   // 管理端（运营方）跨城市查看所有项目
