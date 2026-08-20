@@ -1366,12 +1366,15 @@ function runAnalysisAnim(city, fileName, stepsCount, onDone){
       var p=cur&&PROJECTS[cur];
       var city2=p?p.city:'该城市';
       var p0=cur&&PROJECTS[cur];
-      var isSZ=p0&&p0.city&&p0.city.indexOf('随州')>=0;
+      // 已移除随州硬编码假结论：无论哪个城市，onboarding 阶段尚无上传材料，
+      // 不虚构任何研判结论，一律显示"待上传材料"占位。
+      var _hasUp=!!(_setupFiles&&_setupFiles.length);
+      var _ph=_hasUp?'已结合上传材料完成初步归纳，详见城市智库':'待上传材料后由 AI 结合真实数据生成';
       var sectors=[
-        {icon:'🏭', name:'主导产业与产业链', desc:isSZ?'专用汽车703亿+安全应急502亿+香菇500亿，三大集群均已识别':'主导产业集群已识别，具体产值待材料确认'},
-        {icon:'🏢', name:'园区与承载条件',   desc:isSZ?'随州高新区(国家级)+曾都经开区+专汽/香菇产业园，四大载体已评估':'主要工业园区载体与承接条件已梳理'},
-        {icon:'🏗️', name:'链主与存量企业',   desc:isSZ?'程力/新楚风/齐星/江南专汽/品源均已梳理，电堆+机器人+提取三大外采缺口明确':'骨干链主与核心外采依赖已梳理'},
-        {icon:'📜', name:'政策与领导关注',   desc:isSZ?'氢能走廊+安全应急示范基地+香菇精深加工三条主线，口径待确认':'政策主线已提取，专项资金待确认'},
+        {icon:'🏭', name:'主导产业与产业链', desc:_ph},
+        {icon:'🏢', name:'园区与承载条件',   desc:_ph},
+        {icon:'🏗️', name:'链主与存量企业',   desc:_ph},
+        {icon:'📜', name:'政策与领导关注',   desc:_ph},
       ];
       var sumHtml='<div style="background:#fff;border-radius:16px;padding:20px 24px;box-shadow:0 2px 20px rgba(11,24,59,.06),0 0 0 1px rgba(11,24,59,.04)">'+
         '<div style="font-size:12px;font-weight:650;color:#8492a6;letter-spacing:.5px;margin-bottom:14px">分析完成 · '+city2+'城市智库已就位</div>'+
@@ -1740,18 +1743,10 @@ function showDownloadReport(){
 function showSummaryModal(city2,sectors){
   // 生成kb一句话摘要
   var p=cur&&PROJECTS[cur];
-  var _isSZ2=p&&p.city&&p.city.indexOf('随州')>=0;
-  var insights=_isSZ2?[
-    '专用汽车703亿+安全应急502亿+香菇500亿三大集群，本地配套率仅41%，氢电堆53%/底盘50%全靠外购',
-    '随州高新区(国家级)·曾都经开区·专汽/香菇产业园四大载体，汉十高铁至武汉50分钟',
-    '程力/新楚风/齐星/江南专汽/品源均有明确外采诉求；电堆·机器人·香菇提取三大缺口可直接对接',
-    '氢能走廊+安全应急示范基地+香菇精深加工三条政策主线，专项资金口径待确认',
-  ]:[
-    p&&p.city?p.city+'工业基础可承接，上游核心零部件本地配套率偏低，存在明显补链空间':'主导产业集群已识别，链条缺口待明确',
-    '主要工业园区载体已梳理，厂房与能耗条件可满足主流制造业落地需求',
-    '本地链主存在外采依赖，上游供应商招引有直接采购牵引力',
-    '政策方向已提取，专项资金口径与首选承接园区待干部上传领导最新发言确认',
-  ];
+  // 已移除随州硬编码假结论与通用捏造文案：无上传材料时不虚构研判结论。
+  var _hasUp2=!!(_setupFiles&&_setupFiles.length);
+  var _phRow=_hasUp2?'已结合上传材料完成初步归纳，进入城市智库查看':'暂无数据，请上传政府材料后由 AI 生成';
+  var insights=[_phRow,_phRow,_phRow,_phRow];
   var rows=(sectors||[]).map(function(s,i){
     return '<div style="display:flex;gap:14px;padding:14px 0;border-bottom:1px solid #f0f4ff;align-items:flex-start">'+
       '<span style="font-size:20px;flex:0 0 28px;text-align:center;margin-top:2px">'+s.icon+'</span>'+
@@ -1759,7 +1754,7 @@ function showSummaryModal(city2,sectors){
         '<div style="font-size:13px;font-weight:650;color:#0b183b;margin-bottom:3px">'+s.name+'</div>'+
         '<div style="font-size:12px;color:#4a5568;line-height:1.65">'+insights[i]+'</div>'+
       '</div>'+
-      '<span style="font-size:11px;color:#22c55e;background:#f0fdf4;padding:2px 8px;border-radius:20px;flex:0 0 auto;margin-top:2px;white-space:nowrap">已就位</span>'+
+      '<span style="font-size:11px;color:'+(_hasUp2?'#22c55e':'#9aa5b5')+';background:'+(_hasUp2?'#f0fdf4':'#f1f5f9')+';padding:2px 8px;border-radius:20px;flex:0 0 auto;margin-top:2px;white-space:nowrap">'+(_hasUp2?'已就位':'待补充')+'</span>'+
     '</div>';
   }).join('');
 
@@ -1770,7 +1765,7 @@ function showSummaryModal(city2,sectors){
         '<span style="font-size:12px;font-weight:650;color:#22c55e;letter-spacing:.5px">分析完成</span>'+
       '</div>'+
       '<h2 style="font-size:20px;font-weight:750;color:#0b183b;margin:0 0 4px">'+city2+' 城市智库已就位</h2>'+
-      '<p style="font-size:13px;color:#8492a6;margin:0 0 20px">以下为 AI 基于公开信息的初步研判结论，⚠️ 标注项需结合政府材料确认</p>'+
+      '<p style="font-size:13px;color:#8492a6;margin:0 0 20px">'+(_hasUp2?'以下为 AI 结合你上传材料的初步研判结论，⚠️ 标注项需结合政府材料确认':'城市智库已创建，暂无数据。请在城市智库上传政府工作报告/产业报告等材料，由 AI 生成研判结论。')+'</p>'+
       rows+
       '<div style="margin-top:22px;display:flex;gap:10px;align-items:center">'+
         '<button onclick="enterWorkspaceFromModal()" style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">进入城市智库 →</button>'+
