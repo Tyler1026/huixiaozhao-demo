@@ -669,10 +669,11 @@ function rrSrcRow(s){
   var tierMap={1:['#0aa696','权威'],2:['#0757ad','官方'],3:['#c07a12','媒体'],4:['#8492a6','行业'],5:['#9aa5b5','其他']};
   var tm=tierMap[s.tier]||tierMap[5];
   var name=s.url?('<a href="'+s.url+'" target="_blank" style="color:#0757ad;text-decoration:none">'+String(s.name)+' ↗</a>'):String(s.name);
-  return '<div style="display:flex;align-items:center;gap:6px;font-size:10.5px">'+
-    '<span style="flex:0 0 auto;padding:1px 6px;border-radius:8px;color:#fff;background:'+tm[0]+';font-size:9.5px">'+tm[1]+'</span>'+
-    '<span style="color:#8492a6;flex:0 0 auto">'+s.type+'</span>'+
-    '<span style="color:#556;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+name+'</span></div>';
+  return '<div style="display:flex;align-items:center;gap:8px;font-size:11px;padding:7px 8px;border-radius:7px;border-bottom:1px solid #f2f5f9" '+
+    'onmouseover="this.style.background=\'#f6faff\'" onmouseout="this.style.background=\'transparent\'">'+
+    '<span style="flex:0 0 auto;min-width:34px;text-align:center;padding:2px 7px;border-radius:9px;color:#fff;background:'+tm[0]+';font-size:9.5px;font-weight:600">'+tm[1]+'</span>'+
+    '<span style="color:#7a8798;flex:0 0 auto;min-width:56px">'+s.type+'</span>'+
+    '<span style="color:#40506a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">'+name+'</span></div>';
 }
 function rrWaveRows(r){
   if(!r.waves||!r.waves.length) return '';
