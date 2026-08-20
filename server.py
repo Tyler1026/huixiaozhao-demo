@@ -499,6 +499,131 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', str(len(resp)))
             self.cors(); self.end_headers(); self.wfile.write(resp)
             return
+        # ── 接口1：管理员上传文档，补充/修正城市智库 ──
+        if self.path == '/api/kb-upload':
+            try:
+                body = json.loads(raw)
+                city = body.get('city', '')
+                pkey = body.get('projectKey', '')
+                topic = body.get('topic', '')          # 目标主题名
+                text = body.get('text', '')            # 文档全文
+                filename = body.get('filename', '上传文档')
+                mode = body.get('mode', 'append')       # append=补充 / replace=修正覆盖该主题
+                if _PG_AVAIL and DATABASE_URL:
+                    store = json.loads(_db_get() or '{}')
+                else:
+                    with open(SYNC_PATH, 'r', encoding='utf-8') as f2:
+                        store = json.loads(f2.read())
+                projects = store.get('PROJECTS') or {}
+                # 定位项目：优先 projectKey，其次按 city 匹配
+                if pkey and pkey in projects:
+                    key = pkey
+                else:
+                    key = next((k for k, v in projects.items()
+                                if isinstance(v, dict) and v.get('city') == city), None)
+                if not key:
+                    resp = json.dumps({'ok': False, 'error': 'project not found'}).encode()
+                else:
+                    p = projects[key]
+                    if not isinstance(p.get('kb'), list):
+                        p['kb'] = []
+                    # 切分文档为 chunks（按段落，60-420 字）
+                    import re as _re
+                    parts = [x.strip() for x in _re.split(r'\n\s*\n', text) if len(x.strip()) >= 30]
+                    chunks, buf = [], ''
+                    for para in parts:
+                        para = _re.sub(r'\s+', ' ', para)[:420]
+                        chunks.append('【管理员补充】' + para)
+                    # 找/建目标主题
+                    tp = next((t for t in p['kb'] if t.get('t') == topic), None)
+                    if not tp:
+                        tp = {'icon': '📎', 't': topic or '管理员补充资料',
+                              'sub': '', 'tag': '管理员上传', 'known': [], 'calls': []}
+                        p['kb'].append(tp)
+                    if mode == 'replace':
+                        tp['known'] = chunks
+                    else:
+                        tp['known'] = (tp.get('known') or []) + chunks
+                    tp['tag'] = '管理员上传'
+                    # 记录上传审计
+                    p.setdefault('kbUploads', []).append({
+                        'filename': filename, 'topic': topic, 'mode': mode,
+                        'chunks': len(chunks), 'ts': int(__import__('time').time() * 1000),
+                        'by': body.get('by', '管理员')})
+                    store['PROJECTS'] = projects
+                    out_str = json.dumps(store, ensure_ascii=False)
+                    if _PG_AVAIL and DATABASE_URL:
+                        _db_set(out_str)
+                    else:
+                        with open(SYNC_PATH, 'w', encoding='utf-8') as f:
+                            f.write(out_str)
+                    resp = json.dumps({'ok': True, 'chunks': len(chunks),
+                                       'topic': tp['t'], 'total': len(tp['known'])}).encode()
+            except Exception as e:
+                resp = json.dumps({'ok': False, 'error': str(e)}).encode()
+            self.send_response(200); self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(resp)))
+            self.cors(); self.end_headers(); self.wfile.write(resp); return
+
+        # ── 接口2：城市智库版本管理（多次报告按时间快照+覆盖）──
+        if self.path == '/api/kb-version':
+            try:
+                body = json.loads(raw)
+                action = body.get('action', 'snapshot')  # snapshot=存快照 / rollback=回滚到某版本
+                city = body.get('city', ''); pkey = body.get('projectKey', '')
+                if _PG_AVAIL and DATABASE_URL:
+                    store = json.loads(_db_get() or '{}')
+                else:
+                    with open(SYNC_PATH, 'r', encoding='utf-8') as f2:
+                        store = json.loads(f2.read())
+                projects = store.get('PROJECTS') or {}
+                key = pkey if (pkey and pkey in projects) else next(
+                    (k for k, v in projects.items() if isinstance(v, dict) and v.get('city') == city), None)
+                if not key:
+                    resp = json.dumps({'ok': False, 'error': 'project not found'}).encode()
+                else:
+                    import time as _t
+                    p = projects[key]
+                    p.setdefault('kbVersions', [])
+                    if action == 'snapshot':
+                        # 保存当前 kb 为一个带时间戳的历史版本
+                        tot = sum(len(t.get('known', [])) for t in (p.get('kb') or []))
+                        p['kbVersions'].append({
+                            'ver': len(p['kbVersions']) + 1,
+                            'ts': int(_t.time() * 1000),
+                            'label': body.get('label', ''),
+                            'chunks': tot,
+                            'kb': json.loads(json.dumps(p.get('kb') or []))  # 深拷贝
+                        })
+                        # 只保留最近 10 个版本
+                        p['kbVersions'] = p['kbVersions'][-10:]
+                        resp = json.dumps({'ok': True, 'ver': p['kbVersions'][-1]['ver'],
+                                           'versions': len(p['kbVersions'])}).encode()
+                    elif action == 'rollback':
+                        ver = body.get('ver')
+                        target = next((v for v in p['kbVersions'] if v.get('ver') == ver), None)
+                        if target:
+                            p['kb'] = json.loads(json.dumps(target['kb']))
+                            p['kbInitTs'] = int(_t.time() * 1000)
+                            resp = json.dumps({'ok': True, 'restored': ver}).encode()
+                        else:
+                            resp = json.dumps({'ok': False, 'error': 'version not found'}).encode()
+                    else:
+                        resp = json.dumps({'ok': False, 'error': 'unknown action'}).encode()
+                    if b'"ok": true' in resp or b'"ok":true' in resp:
+                        store['PROJECTS'] = projects
+                        out_str = json.dumps(store, ensure_ascii=False)
+                        if _PG_AVAIL and DATABASE_URL:
+                            _db_set(out_str)
+                        else:
+                            with open(SYNC_PATH, 'w', encoding='utf-8') as f:
+                                f.write(out_str)
+            except Exception as e:
+                resp = json.dumps({'ok': False, 'error': str(e)}).encode()
+            self.send_response(200); self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(resp)))
+            self.cors(); self.end_headers(); self.wfile.write(resp); return
+
         if self.path != '/api/kb-chat':
             self.send_error(404); return
 

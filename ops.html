@@ -6760,15 +6760,94 @@ function opsRag(){
       '<select onchange="ragCity=this.value;ragTopic=0;ragHits=null;renderOpsV2()" style="min-height:34px;padding:4px 10px;border:1px solid #d8e0ed;border-radius:8px;font-size:13px">'+ragCityOptions()+'</select>'+
       '<span style="font-size:12px;color:#9aa5b5">'+p.org+' · 初始化于 '+initStr+'</span></div>'+
     '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">'+
-      ragStatCard('📦','智库材料总量',total+' 条','来自 14-Agent 流水线')+
+      ragStatCard('📦','智库材料总量',total+' 条','来自 AI 招商智能体研判')+
       ragStatCard('🗂️','主题分区',p.kb.length+' 个','产业链/园区/企业/政策')+
       ragStatCard('📄','研判报告',(rs.text?Math.round(rs.text.length/100)/10+'k 字':'未生成'),rs.finalized?'已定稿·政府端可见':'')+
-      ragStatCard('🔎','检索方式','关键词加权','与政府端问答检索同源')+
+      ragStatCard('🕐','版本历史',((p.kbVersions||[]).length||1)+' 版','支持时间线回溯')+
     '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">'+ragUploadPanel(p,key)+ragVersionPanel(p,key)+'</div>'+
     ragSearchBox()+
     '<div style="display:grid;grid-template-columns:230px 1fr;gap:14px;margin-top:14px">'+ragTopicNav(p)+ragChunkList(p)+'</div>'+
     ragPushLog()+
   '</div>';
+}
+/* ── 接口1 UI：管理员上传文档补充/修正 ── */
+function ragUploadPanel(p,key){
+  var topicOpts=(p.kb||[]).map(function(t){return '<option value="'+t.t.replace(/"/g,'')+'">'+t.t+'</option>';}).join('')+
+    '<option value="__new__">＋ 新建主题分区</option>';
+  var uploads=(p.kbUploads||[]).slice().reverse().slice(0,3);
+  var log=uploads.length?('<div style="margin-top:8px;font-size:11px;color:#8492a6">'+
+    uploads.map(function(u){var t=new Date(u.ts);return '· '+u.filename+' → '+u.topic+'（+'+u.chunks+'条，'+(t.getMonth()+1)+'/'+t.getDate()+' '+t.getHours()+':'+('0'+t.getMinutes()).slice(-2)+'）';}).join('<br>')+'</div>'):'';
+  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:14px 16px">'+
+    '<div style="font-size:13px;font-weight:700;color:#0b183b;margin-bottom:4px">📎 补充 / 修正资料</div>'+
+    '<div style="font-size:11px;color:#8492a6;margin-bottom:10px">上传文档，AI 会切分入库到指定主题；修正模式将覆盖该主题原有材料</div>'+
+    '<div style="display:flex;gap:8px;margin-bottom:8px">'+
+      '<select id="ragUpTopic" style="flex:1;min-height:36px;padding:4px 9px;border:1px solid #d8e0ed;border-radius:7px;font-size:12px">'+topicOpts+'</select>'+
+      '<select id="ragUpMode" style="flex:0 0 100px;min-height:36px;padding:4px 9px;border:1px solid #d8e0ed;border-radius:7px;font-size:12px"><option value="append">补充追加</option><option value="replace">修正覆盖</option></select>'+
+    '</div>'+
+    '<input id="ragUpName" placeholder="文档名称（如：2025招商政策补充.docx）" style="width:100%;min-height:34px;padding:6px 10px;border:1px solid #d8e0ed;border-radius:7px;font-size:12px;margin-bottom:8px;box-sizing:border-box">'+
+    '<textarea id="ragUpText" placeholder="粘贴文档内容（支持多段落，AI 自动切分为检索材料）…" style="width:100%;min-height:70px;padding:8px 10px;border:1px solid #d8e0ed;border-radius:7px;font-size:12px;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea>'+
+    '<div style="display:flex;gap:8px;margin-top:8px"><input type="file" id="ragUpFile" accept=".txt,.md,.csv" onchange="ragReadFile(this)" style="flex:1;font-size:11px">'+
+      '<button class="primary-button" style="min-height:36px;flex:0 0 auto" onclick="ragDoUpload(\''+key+'\')">入库</button></div>'+
+    log+'</div>';
+}
+function ragReadFile(inp){
+  var f=inp.files&&inp.files[0]; if(!f)return;
+  var rd=new FileReader();
+  rd.onload=function(){var ta=document.getElementById('ragUpText');if(ta)ta.value=rd.result;var nm=document.getElementById('ragUpName');if(nm&&!nm.value)nm.value=f.name;};
+  rd.readAsText(f);
+}
+function ragDoUpload(key){
+  var topic=(document.getElementById('ragUpTopic')||{}).value||'';
+  var mode=(document.getElementById('ragUpMode')||{}).value||'append';
+  var name=(document.getElementById('ragUpName')||{}).value||'上传文档';
+  var text=(document.getElementById('ragUpText')||{}).value||'';
+  if(topic==='__new__'){ topic=prompt('新建主题分区名称：','管理员补充资料')||'管理员补充资料'; }
+  if(!text.trim()){toast&&toast('请粘贴或选择文档内容');return;}
+  var p=PROJECTS[key];
+  fetch('/api/kb-upload',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({projectKey:key,city:p.city,topic:topic,text:text,filename:name,mode:mode,by:'管理端·周总'})})
+    .then(function(r){return r.json();}).then(function(res){
+      if(res.ok){toast&&toast('已入库 '+res.chunks+' 条到「'+res.topic+'」');restoreFromServer(function(){renderOpsV2();});}
+      else{toast&&toast('上传失败：'+(res.error||''));}
+    }).catch(function(e){toast&&toast('上传出错');});
+}
+/* ── 接口2 UI：版本管理（时间线快照+回滚）── */
+function ragVersionPanel(p,key){
+  var vers=(p.kbVersions||[]).slice().reverse();
+  var curTot=(p.kb||[]).reduce(function(s,t){return s+(t.known||[]).length;},0);
+  var rows=vers.length?vers.map(function(v){
+    var t=new Date(v.ts);var tm=(t.getMonth()+1)+'/'+t.getDate()+' '+t.getHours()+':'+('0'+t.getMinutes()).slice(-2);
+    return '<div style="display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:7px;border-bottom:1px solid #f2f5f9" onmouseover="this.style.background=\'#f6faff\'" onmouseout="this.style.background=\'transparent\'">'+
+      '<span style="flex:0 0 auto;padding:2px 7px;border-radius:9px;background:#ebf3fd;color:#013582;font-size:10px;font-weight:600">v'+v.ver+'</span>'+
+      '<span style="font-size:11px;color:#40506a;flex:1">'+tm+(v.label?' · '+v.label:'')+' · '+v.chunks+' 条</span>'+
+      '<button onclick="ragRollback(\''+key+'\','+v.ver+')" style="border:1px solid #d8e0ed;background:#fff;color:#0757ad;border-radius:6px;font-size:10.5px;cursor:pointer;padding:3px 9px">回滚到此版本</button></div>';
+  }).join(''):'<div style="font-size:11.5px;color:#9aa5b5;padding:8px 0">暂无历史版本 —— 每次重新研判会自动存一版</div>';
+  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:14px 16px">'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'+
+      '<div style="font-size:13px;font-weight:700;color:#0b183b">🕐 版本历史</div>'+
+      '<button onclick="ragSnapshot(\''+key+'\')" style="margin-left:auto;border:1px solid #bfe5e0;background:#e4f5f3;color:#006d70;border-radius:6px;font-size:10.5px;cursor:pointer;padding:4px 10px">📸 存当前为快照</button></div>'+
+    '<div style="font-size:11px;color:#8492a6;margin-bottom:10px">同一城市多次研判按时间留存；可随时回滚到任一历史版本（当前 '+curTot+' 条）</div>'+
+    '<div style="max-height:180px;overflow:auto">'+rows+'</div></div>';
+}
+function ragSnapshot(key){
+  var p=PROJECTS[key];var label=prompt('为当前版本加个标注（可选，如：8月政策更新前）：','')||'';
+  fetch('/api/kb-version',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'snapshot',projectKey:key,city:p.city,label:label})})
+    .then(function(r){return r.json();}).then(function(res){
+      if(res.ok){toast&&toast('已存为 v'+res.ver);restoreFromServer(function(){renderOpsV2();});}
+      else{toast&&toast('快照失败：'+(res.error||''));}
+    });
+}
+function ragRollback(key,ver){
+  var p=PROJECTS[key];
+  if(!confirm('确定回滚「'+p.city+'」智库到 v'+ver+'？当前版本会被覆盖（建议先存快照）。'))return;
+  fetch('/api/kb-version',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'rollback',projectKey:key,city:p.city,ver:ver})})
+    .then(function(r){return r.json();}).then(function(res){
+      if(res.ok){toast&&toast('已回滚到 v'+ver);restoreFromServer(function(){renderOpsV2();});}
+      else{toast&&toast('回滚失败：'+(res.error||''));}
+    });
 }
 function ragStatCard(ic,label,val,sub){
   return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:14px 16px">'+
