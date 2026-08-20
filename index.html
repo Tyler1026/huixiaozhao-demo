@@ -660,121 +660,6 @@ var PROJECTS={};
 var STAGES=[['资料准备','上传与授权材料'],['AI 研判','生成缺口与方向'],['确认需求','双确认'],['资源匹配','资源端核验匹配'],['招商对接','安排正式沟通']];
 
 /* ===== AI 招商团队实时工作台（政府端可见，业务化，无内部术语）===== */
-var GOV_ACTIVITY=null, GOV_ACT_CITY=null;
-var GOV_STAGE_LABEL=['城市基础数据采集','产业链测绘','目标企业挖掘','数据交叉核验','匹配评分与行动计划','决策报告生成'];
-var GOV_STAGE_OF={economic_profiler:0,population_profiler:0,transport_land_profiler:0,life_support_profiler:0,industry_analyst:0,competition_scout:0,policy_researcher:0,chain_mapper:1,enterprise_hunter_1:2,enterprise_hunter_2:2,enterprise_hunter_3:2,fact_checker:3,scoring_engine:4,action_planner:4,compact_writer:5};
-function govFetchActivity(city){
-  fetch('/api/sync').then(function(r){return r.json();}).then(function(raw){
-    var reqs=(raw&&raw.huixiaozhao_kb_v1&&raw.huixiaozhao_kb_v1.REPORT_REQUESTS)||(raw&&raw.REPORT_REQUESTS)||[];
-    var rec=reqs.filter(function(x){return x.status==='running'&&(!city||x.city===city);})[0]||reqs.filter(function(x){return x.status==='running';})[0];
-    if(rec&&rec.activity){GOV_ACTIVITY=rec;GOV_ACT_CITY=rec.city;var el=document.getElementById('govWorkbench');if(el)el.outerHTML=govWorkbench();}
-  }).catch(function(){});
-}
-function govSpecCard(f){
-  var st=f.state;
-  var dot=st==='delivered'?'#0aa696':st==='working'?'#0757ad':st==='partial'?'#c85b09':'#b0bac7';
-  var badge=st==='delivered'?'<span style="color:#0aa696">已交付</span>':st==='working'?'<span style="color:#0757ad">工作中</span>':st==='partial'?'<span style="color:#c85b09">补充中</span>':'<span style="color:#b0bac7">待命</span>';
-  var pct=f.min?Math.min(100,Math.round((f.lines||0)/f.min*100)):0;
-  var barCol=st==='delivered'?'#0aa696':st==='partial'?'#c85b09':'#0757ad';
-  var mini=(st==='queued')?'':'<div style="height:3px;border-radius:2px;background:#eef1f5;margin-top:5px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+barCol+';transition:width .5s"></div></div>';
-  // 数据来源 下拉框（点击浮出，按可靠度从高到低）
-  var srcTab='';
-  var srcs=f.sources||[];
-  if(srcs.length){
-    var openKey='__govSrc_'+f.id;
-    var isOpen=window[openKey];
-    var menu=isOpen?('<div style="position:absolute;left:0;right:0;top:calc(100% + 5px);z-index:50;'+
-        'background:#fff;border:1px solid #cdd9e8;border-radius:10px;box-shadow:0 12px 30px rgba(11,31,65,.18);'+
-        'padding:6px 8px 8px;max-height:280px;overflow:auto">'+
-        '<div style="font-size:10px;color:#8492a6;padding:5px 8px 7px;margin-bottom:2px;border-bottom:1px solid #eef2f7;letter-spacing:.02em">按数据可靠度从高到低</div>'+
-        srcs.map(function(s){return govSrcRow(s);}).join('')+'</div>'):'';
-    srcTab='<div style="margin-top:7px;border-top:1px dashed #edf1f6;padding-top:6px">'+
-      '<div style="position:relative">'+
-        '<button onclick="event.stopPropagation();govToggleSrc(\''+f.id+'\')" '+
-          'style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;'+
-          'border:1px solid '+(isOpen?'#91b7e2':'#dce4ef')+';background:'+(isOpen?'#f3f8ff':'#fff')+';'+
-          'border-radius:7px;color:#0757ad;font-size:10.5px;cursor:pointer;padding:5px 9px">'+
-          '<span>📚 数据来源 · '+srcs.length+' 项</span>'+
-          '<span style="color:#8aa0bd">'+(isOpen?'▲':'▼')+'</span></button>'+
-        menu+
-      '</div></div>';
-  }
-  return '<div style="padding:9px 11px;border:1px solid #e9eef5;border-radius:9px;background:'+(st==='working'?'#f6faff':'#fff')+'">'+
-    '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px;position:relative">'+f.avatar+
-    '<span'+(st==='working'?' class="gov-pulse"':'')+' style="position:absolute;right:-2px;bottom:-1px;width:6px;height:6px;border-radius:50%;background:'+dot+';border:1.5px solid #fff"></span></span>'+
-    '<b style="font-size:12.5px;color:#0b183b">'+f.name+'</b><span style="font-size:11px;margin-left:auto">'+badge+'</span></div>'+
-    '<div style="font-size:11px;color:#667590;margin-top:4px;line-height:1.5">'+String(f.action||'').replace(/</g,'&lt;')+'</div>'+mini+srcTab+'</div>';
-}
-// 单条来源行：可靠度徽标 + 类型 + 域名（可点开原文）
-function govSrcRow(s){
-  var tierMap={1:['#0aa696','权威'],2:['#0757ad','官方'],3:['#c07a12','媒体'],4:['#8492a6','行业'],5:['#9aa5b5','其他']};
-  var tm=tierMap[s.tier]||tierMap[5];
-  var name=s.url?('<a href="'+s.url+'" target="_blank" style="color:#0757ad;text-decoration:none">'+String(s.name)+' ↗</a>'):String(s.name);
-  return '<div style="display:flex;align-items:center;gap:8px;font-size:11px;padding:7px 8px;border-radius:7px;border-bottom:1px solid #f2f5f9" '+
-    'onmouseover="this.style.background=\'#f6faff\'" onmouseout="this.style.background=\'transparent\'">'+
-    '<span style="flex:0 0 auto;min-width:34px;text-align:center;padding:2px 7px;border-radius:9px;color:#fff;background:'+tm[0]+';font-size:9.5px;font-weight:600">'+tm[1]+'</span>'+
-    '<span style="color:#7a8798;flex:0 0 auto;min-width:56px">'+s.type+'</span>'+
-    '<span style="color:#40506a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">'+name+'</span></div>';
-}
-// 来源下拉：切换（互斥——同时只开一个），并局部重渲染
-function govToggleSrc(id){
-  var key='__govSrc_'+id;
-  var cur=window[key];
-  // 关闭所有其他来源下拉
-  Object.keys(window).forEach(function(k){ if(k.indexOf('__govSrc_')===0) window[k]=false; });
-  window[key]=!cur;
-  govRerenderWB();
-}
-// 来源 tab 展开/收起后局部重渲染工作台
-function govRerenderWB(){
-  if(!GOV_ACTIVITY) return;
-  var old=document.getElementById('govWorkbench'); if(!old) return;
-  var wrap=document.createElement('div'); wrap.innerHTML=govWorkbench();
-  old.replaceWith(wrap.firstChild);
-}
-// 点击面板外部关闭所有来源下拉
-document.addEventListener('click', function(e){
-  var anyOpen=Object.keys(window).some(function(k){return k.indexOf('__govSrc_')===0 && window[k];});
-  if(!anyOpen) return;
-  if(e.target.closest && e.target.closest('#govWorkbench')) return; // 面板内点击不关
-  Object.keys(window).forEach(function(k){ if(k.indexOf('__govSrc_')===0) window[k]=false; });
-  govRerenderWB();
-});
-function govWorkbench(){
-  var rec=GOV_ACTIVITY;
-  if(!rec||!rec.activity||!rec.activity.length) return '<div id="govWorkbench"></div>';
-  var act=rec.activity;
-  var doneN=act.filter(function(f){return f.state==='delivered';}).length;
-  var liveN=act.filter(function(f){return f.state==='working';}).length;
-  var byStage={};act.forEach(function(f){var s=GOV_STAGE_OF[f.id];if(s==null)return;(byStage[s]=byStage[s]||[]).push(f);});
-  var stages=Object.keys(byStage).sort(function(a,b){return a-b;}).map(function(si){
-    var specs=byStage[si];var allDone=specs.every(function(x){return x.state==='delivered';});
-    var anyLive=specs.some(function(x){return x.state==='working';});
-    var ic=allDone?'✅':anyLive?'<span class="gov-spin"></span>':'○';
-    return '<div style="margin-bottom:9px">'+
-      '<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:650;color:'+(allDone?'#0aa696':anyLive?'#0757ad':'#8492a6')+';margin-bottom:5px">'+
-      '<span style="display:inline-flex;width:16px">'+ic+'</span>第'+(Number(si)+1)+'阶段 · '+GOV_STAGE_LABEL[si]+'</div>'+
-      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;padding-left:24px">'+specs.map(govSpecCard).join('')+'</div></div>';
-  }).join('');
-  // 阶段进度条（第X阶段/共6阶段）
-  var sTot=rec.stageTotal||6, sCur=rec.stageCur||1, sDone=rec.stageDone||0;
-  var eta=(rec.etaMin!=null)?('预计还需 '+rec.etaMin+' 分钟'):'';
-  var stageBar='<div style="display:flex;gap:4px;margin:10px 0 4px">'+
-    Array.from({length:sTot}).map(function(_,i){
-      var st=i<sDone?'#0aa696':(i===sCur-1?'#0757ad':'#e0e7f0');
-      return '<div style="flex:1;height:5px;border-radius:3px;background:'+st+'"></div>';
-    }).join('')+'</div>'+
-    '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#667590;margin-bottom:10px;gap:12px">'+
-      '<span style="white-space:nowrap">第 '+sCur+' / '+sTot+' 阶段 · '+GOV_STAGE_LABEL[Math.min(sCur-1,GOV_STAGE_LABEL.length-1)]+'</span>'+
-      (eta?'<span style="white-space:nowrap;color:#0757ad">'+eta+'</span>':'')+'</div>';
-  return '<div id="govWorkbench" style="margin-bottom:16px;padding:16px 18px;border:1px solid #d8e4f2;border-radius:12px;background:linear-gradient(180deg,#f7fbff,#fff)">'+
-    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">'+
-      '<span class="gov-spin" style="width:14px;height:14px"></span>'+
-      '<strong style="font-size:14px;color:#013582">AI 招商智能体正在为 '+(rec.city||'')+' 研判</strong>'+
-      '<span style="font-size:11.5px;color:#667590;margin-left:auto">'+act.length+' 名专员 · '+doneN+' 已交付 · '+liveN+' 工作中</span></div>'+
-    stageBar+
-    stages+'</div>';
-}
 
 /* 项目级阶段链：标准5阶段 + 该项目自定义追加阶段（客户反馈第4章第3条：后续阶段不写死） */
 function projStages(p){
@@ -1059,8 +944,6 @@ function render(){
     progressFooter(p)+
    '</div>';
   bind();
-  // 工作台常驻：报告/智库/分析页重绘后自动重挂（幂等，页面重绘不再丢失）
-  if(typeof govEnsureWorkbench==='function' && (view==='report'||view==='knowledge'||view==='home')){ try{govEnsureWorkbench();}catch(e){} }
   if(cur && REPORT_HISTORY[cur]) { var _rha=document.getElementById('reportHistoryArea'); if(_rha) renderHistoryReports(cur); }
   // 城市智库对话：render 重建了 #kbConv，把已存的历史对话回放回去（切主题/切模块/刷新都不丢）
   if(view==='knowledge'){ setTimeout(kbChatReplay, 50); }
@@ -7115,23 +6998,6 @@ function startFlow(mode){
 }
 // 报告：复刻雷总 report-document 结构 + 版本迭代/人工可编辑/定稿
 // 工作台常驻：任何时候重绘后，若当前城市有 running 申请，自动拉取并固定渲染工作台（不依赖手动注入）
-function govEnsureWorkbench(){
-  var city=(typeof P==='function'&&P())?P().city:null;
-  if(!city) return;
-  fetch('/api/sync').then(function(r){return r.json();}).then(function(raw){
-    var reqs=(raw&&raw.huixiaozhao_kb_v1&&raw.huixiaozhao_kb_v1.REPORT_REQUESTS)||(raw&&raw.REPORT_REQUESTS)||[];
-    var rec=reqs.filter(function(x){return x.status==='running'&&x.city===city;})[0];
-    if(!rec||!rec.activity){var _o=document.getElementById('govWorkbench');if(_o)_o.remove();return;}
-    GOV_ACTIVITY=rec;GOV_ACT_CITY=rec.city;
-    if(document.getElementById('govWorkbench')) return; // 已在则不重复
-    // 智库页/产业分析页/报告页都挂载（客户在这些页面等 AI 研判）
-    var host=document.querySelector('.report-scroll,.knowledge-scroll,.conversation-scroll')||document.querySelector('.main-pane');
-    if(!host) return;
-    var wrap=document.createElement('div'); wrap.innerHTML=govWorkbench();
-    if(wrap.firstChild) host.insertBefore(wrap.firstChild, host.firstChild);
-    govStartPolling(city);
-  }).catch(function(){});
-}
 function showReport(){
   var r=P().report;if(!r){startFlow('direction');return;}
   var st=rs();
@@ -7165,24 +7031,14 @@ function showReport(){
       '<small>双确认通过后，报告的补链方向将自动建成项目并挂到「招商对接」</small>'+
     '</div>'):
     '<div class="report-footnote" style="color:#a34c09">⚠ 报告定稿后才能进行双确认与递交（避免半成品报告进入流程）。</div>';
-  addRaw(govWorkbench()+'<div class="report-document">'+
+  addRaw('<div class="report-document">'+
     '<div class="report-lead" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px"><div><span>STRATEGY REPORT '+verTag+'</span><p>'+r.lead+'</p></div>'+
       '<button class="ghost-button" style="flex:0 0 auto;white-space:nowrap" onclick="exportReport()"><i class="i">📤</i>导出报告</button></div>'+
     band+secs+
     '<div class="report-footnote">'+r.footnote+'</div>'+patchLog+optArea+confirmArea+'</div>');
-  govEnsureWorkbench();
 }
 // 报告页在研判进行中时轮询专员活动流（每20秒）
 var _govPollTimer=null;
-function govStartPolling(city){
-  govFetchActivity(city);
-  if(_govPollTimer) return;
-  _govPollTimer=setInterval(function(){
-    if(!document.getElementById('govWorkbench')){clearInterval(_govPollTimer);_govPollTimer=null;return;}
-    govFetchActivity(city);
-  },10000);
-}
-// 人工修正某条结论（不依赖AI，直接编辑）
 function editSection(i){
   var st=rs();var cur=st.edits[i]||P().report.sections[i].p;
   var v=prompt('人工修正第'+(i+1)+'条结论（直接改写，标注为人工修正）：',cur);
