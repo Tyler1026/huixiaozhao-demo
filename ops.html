@@ -595,9 +595,11 @@ setInterval(function(){
   if(!r) return;
   var el=document.getElementById('rrElapsed');
   if(el){
-    var ms=Date.now()-(r.claimTs||r.ts);
+    // 正式运行时间 = 服务端累计 activeMs + 距最近一次上报的实时增量（仅当上报未断流时）
+    var liveDelta=r.progressTs?Math.max(0,Math.min(Date.now()-r.progressTs,6*60000)):0;
+    var ms=(r.activeMs!=null)?(r.activeMs+liveDelta):(Date.now()-(r.claimTs||r.ts));
     var s=Math.floor(ms/1000)%60,m=Math.floor(ms/60000)%60,h=Math.floor(ms/3600000);
-    el.textContent='已运行 '+(h?h+':':'')+('0'+m).slice(-2)+':'+('0'+s).slice(-2);
+    el.textContent='正式运行 '+(h?h+':':'')+('0'+m).slice(-2)+':'+('0'+s).slice(-2);
   }
   var up=document.getElementById('rrLastUpd');
   if(up&&r.progressTs){
@@ -608,6 +610,12 @@ setInterval(function(){
 function rrElapsed(ms){
   var m=Math.floor(ms/60000);
   return m<1?'刚刚':m<60?m+' 分钟':Math.floor(m/60)+' 小时 '+(m%60)+' 分';
+}
+function rrTimeSplit(r){
+  // 返回 {active, gap, gapCount}：正式运行/断点时长文本
+  var liveDelta=r.progressTs?Math.max(0,Math.min(Date.now()-r.progressTs,6*60000)):0;
+  var act=(r.activeMs!=null)?(r.activeMs+liveDelta):(Date.now()-(r.claimTs||r.ts));
+  return {active:rrElapsed(act), gap:(r.gapMs?rrElapsed(r.gapMs):null), gapCount:r.gapCount||0};
 }
 function rrWaveRows(r){
   if(!r.waves||!r.waves.length) return '';
@@ -641,8 +649,7 @@ function rrWaveRows(r){
 }
 function rrProgress(r){
   if(r.status!=='running') return '';
-  var start=r.claimTs||r.ts;
-  var elapsed=rrElapsed(Date.now()-start);
+  var ts=rrTimeSplit(r);
   var fd=r.filesDone||0, ft=r.filesTotal||16;
   var pct=Math.min(96, Math.round(fd/ft*100));
   var step=r.step||'流水线启动中…';
@@ -650,11 +657,13 @@ function rrProgress(r){
   var staleMin=r.progressTs?Math.floor((Date.now()-r.progressTs)/60000):null;
   var stale=staleMin!=null&&staleMin>5;
   var lastUpd=staleMin==null?'':staleMin<1?'刚更新':staleMin+' 分钟前更新';
+  var gapBadge=ts.gap?('<span title="机器睡眠/离线导致的暂停时长（'+ts.gapCount+' 次断点），不计入正式运行时间" '+
+    'style="margin-left:8px;font-size:10.5px;padding:1px 7px;border-radius:9px;background:#fff0de;color:#a34c09;cursor:help">⏸ 断点 '+ts.gap+(ts.gapCount>1?' × '+ts.gapCount:'')+'</span>'):'';
   return '<div style="margin-top:8px;padding:10px 12px;border:1px solid #e3ebf6;border-radius:8px;background:#f8fbff">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#3d5471;margin-bottom:7px">'+
       '<span><span class="'+(stale?'':'rr-dot-live')+'" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+(stale?'#c85b09':'#0aa696')+';margin-right:6px"></span>'+
       '<b style="color:#0757ad" class="rr-step-glow">'+step+'</b>'+(stale?' <span style="color:#c85b09">（'+staleMin+' 分钟无进展，自愈机制将自动重跑）</span>':'')+'</span>'+
-      '<span id="rrElapsed" style="font-variant-numeric:tabular-nums">已运行 '+elapsed+'</span></div>'+
+      '<span style="display:inline-flex;align-items:center"><span id="rrElapsed" style="font-variant-numeric:tabular-nums">正式运行 '+ts.active+'</span>'+gapBadge+'</span></div>'+
     '<div style="height:8px;border-radius:4px;background:#e6edf6;overflow:hidden;margin-bottom:7px">'+
       '<div class="'+(stale?'':'rr-bar-live')+'" style="height:100%;width:'+pct+'%;border-radius:4px;background:linear-gradient(90deg,#0757ad,#007f82);transition:width .6s"></div></div>'+
     '<div style="display:flex;justify-content:space-between;font-size:11.5px;color:#667590">'+
@@ -667,7 +676,9 @@ function rrPanel(){
     var t=new Date(r.ts);var tm=(t.getMonth()+1)+'/'+t.getDate()+' '+t.getHours()+':'+('0'+t.getMinutes()).slice(-2);
     var doneInfo='';
     if(r.status==='done'){
-      var dur=(r.doneTs&&(r.claimTs||r.ts))?(' · 耗时 '+rrElapsed(r.doneTs-(r.claimTs||r.ts))):'';
+      var dur='';
+      if(r.activeMs){ dur=' · 正式运行 '+rrElapsed(r.activeMs)+(r.gapMs?'（另有断点 '+rrElapsed(r.gapMs)+'）':''); }
+      else if(r.doneTs&&(r.claimTs||r.ts)){ dur=' · 耗时 '+rrElapsed(r.doneTs-(r.claimTs||r.ts)); }
       doneInfo=' · 智库材料 '+r.chunks+' 条已入库'+dur;
     }
     return '<div class="ops-row" style="align-items:flex-start;flex-direction:column"><div style="display:flex;align-items:center;gap:10px;width:100%">'+
