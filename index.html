@@ -677,18 +677,27 @@ function govSpecCard(f){
   var pct=f.min?Math.min(100,Math.round((f.lines||0)/f.min*100)):0;
   var barCol=st==='delivered'?'#0aa696':st==='partial'?'#c85b09':'#0757ad';
   var mini=(st==='queued')?'':'<div style="height:3px;border-radius:2px;background:#eef1f5;margin-top:5px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+barCol+';transition:width .5s"></div></div>';
-  // 数据来源 tab（按可靠度从高到低）
+  // 数据来源 下拉框（点击浮出，按可靠度从高到低）
   var srcTab='';
   var srcs=f.sources||[];
   if(srcs.length){
     var openKey='__govSrc_'+f.id;
     var isOpen=window[openKey];
+    var menu=isOpen?('<div style="position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:50;'+
+        'background:#fff;border:1px solid #cdd9e8;border-radius:9px;box-shadow:0 10px 28px rgba(11,31,65,.16);'+
+        'padding:8px 10px;max-height:240px;overflow:auto">'+
+        '<div style="font-size:10px;color:#8492a6;margin-bottom:6px">按数据可靠度从高到低</div>'+
+        srcs.map(function(s){return govSrcRow(s);}).join('')+'</div>'):'';
     srcTab='<div style="margin-top:7px;border-top:1px dashed #edf1f6;padding-top:6px">'+
-      '<button onclick="window[\''+openKey+'\']=!window[\''+openKey+'\'];govEnsureWorkbench&&govRerenderWB()" '+
-        'style="border:0;background:transparent;color:#0757ad;font-size:10.5px;cursor:pointer;padding:0;display:flex;align-items:center;gap:4px">'+
-        (isOpen?'▾':'▸')+' 数据来源（'+srcs.length+'，按可靠度排序）</button>'+
-      (isOpen?'<div style="margin-top:5px;display:flex;flex-direction:column;gap:3px">'+
-        srcs.map(function(s){return govSrcRow(s);}).join('')+'</div>':'')+'</div>';
+      '<div style="position:relative">'+
+        '<button onclick="event.stopPropagation();govToggleSrc(\''+f.id+'\')" '+
+          'style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;'+
+          'border:1px solid '+(isOpen?'#91b7e2':'#dce4ef')+';background:'+(isOpen?'#f3f8ff':'#fff')+';'+
+          'border-radius:7px;color:#0757ad;font-size:10.5px;cursor:pointer;padding:5px 9px">'+
+          '<span>📚 数据来源 · '+srcs.length+' 项</span>'+
+          '<span style="color:#8aa0bd">'+(isOpen?'▲':'▼')+'</span></button>'+
+        menu+
+      '</div></div>';
   }
   return '<div style="padding:9px 11px;border:1px solid #e9eef5;border-radius:9px;background:'+(st==='working'?'#f6faff':'#fff')+'">'+
     '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px;position:relative">'+f.avatar+
@@ -706,6 +715,15 @@ function govSrcRow(s){
     '<span style="color:#8492a6;flex:0 0 auto">'+s.type+'</span>'+
     '<span style="color:#556;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+name+'</span></div>';
 }
+// 来源下拉：切换（互斥——同时只开一个），并局部重渲染
+function govToggleSrc(id){
+  var key='__govSrc_'+id;
+  var cur=window[key];
+  // 关闭所有其他来源下拉
+  Object.keys(window).forEach(function(k){ if(k.indexOf('__govSrc_')===0) window[k]=false; });
+  window[key]=!cur;
+  govRerenderWB();
+}
 // 来源 tab 展开/收起后局部重渲染工作台
 function govRerenderWB(){
   if(!GOV_ACTIVITY) return;
@@ -713,6 +731,14 @@ function govRerenderWB(){
   var wrap=document.createElement('div'); wrap.innerHTML=govWorkbench();
   old.replaceWith(wrap.firstChild);
 }
+// 点击面板外部关闭所有来源下拉
+document.addEventListener('click', function(e){
+  var anyOpen=Object.keys(window).some(function(k){return k.indexOf('__govSrc_')===0 && window[k];});
+  if(!anyOpen) return;
+  if(e.target.closest && e.target.closest('#govWorkbench')) return; // 面板内点击不关
+  Object.keys(window).forEach(function(k){ if(k.indexOf('__govSrc_')===0) window[k]=false; });
+  govRerenderWB();
+});
 function govWorkbench(){
   var rec=GOV_ACTIVITY;
   if(!rec||!rec.activity||!rec.activity.length) return '<div id="govWorkbench"></div>';

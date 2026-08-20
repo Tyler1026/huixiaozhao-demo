@@ -632,16 +632,24 @@ function rrSpecialistCard(f){
   var pct=f.min?Math.min(100,Math.round((f.lines||0)/f.min*100)):0;
   var barCol=st==='delivered'?'#0aa696':st==='partial'?'#c85b09':'#0757ad';
   var mini=(st==='queued')?'':'<div style="height:3px;border-radius:2px;background:#eef1f5;margin-top:4px;overflow:hidden"><div class="'+(st==='working'?'rr-bar-live':'')+'" style="height:100%;width:'+pct+'%;background:'+barCol+'"></div></div>';
-  // 数据来源 tab（按可靠度从高到低）
+  // 数据来源 下拉框（点击浮出，按可靠度从高到低）
   var srcTab='';
   var srcs=f.sources||[];
   if(srcs.length){
     var ok='__rrSrc_'+f.id;
     var isOpen=window[ok];
-    srcTab='<div style="margin-top:6px;border-top:1px dashed #edf1f6;padding-top:5px">'+
-      '<button onclick="window[\''+ok+'\']=!window[\''+ok+'\'];render()" style="border:0;background:transparent;color:#0757ad;font-size:10.5px;cursor:pointer;padding:0">'+
-        (isOpen?'▾':'▸')+' 数据来源（'+srcs.length+'，按可靠度排序）</button>'+
-      (isOpen?'<div style="margin-top:5px;display:flex;flex-direction:column;gap:3px">'+srcs.map(rrSrcRow).join('')+'</div>':'')+'</div>';
+    var menu=isOpen?('<div style="position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:50;'+
+        'background:#fff;border:1px solid #cdd9e8;border-radius:9px;box-shadow:0 10px 28px rgba(11,31,65,.16);'+
+        'padding:8px 10px;max-height:240px;overflow:auto">'+
+        '<div style="font-size:10px;color:#8492a6;margin-bottom:6px">按数据可靠度从高到低</div>'+
+        srcs.map(rrSrcRow).join('')+'</div>'):'';
+    srcTab='<div style="margin-top:6px;border-top:1px dashed #edf1f6;padding-top:5px"><div style="position:relative">'+
+      '<button onclick="event.stopPropagation();rrToggleSrc(\''+f.id+'\')" '+
+        'style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;'+
+        'border:1px solid '+(isOpen?'#91b7e2':'#dce4ef')+';background:'+(isOpen?'#f3f8ff':'#fff')+';'+
+        'border-radius:7px;color:#0757ad;font-size:10.5px;cursor:pointer;padding:5px 9px">'+
+        '<span>📚 数据来源 · '+srcs.length+' 项</span><span style="color:#8aa0bd">'+(isOpen?'▲':'▼')+'</span></button>'+
+      menu+'</div></div>';
   }
   return '<div style="padding:7px 9px;border:1px solid #eef2f7;border-radius:8px;background:'+(st==='working'?'#f6faff':'#fff')+'">'+
     '<div style="display:flex;align-items:center;gap:7px">'+
@@ -649,6 +657,13 @@ function rrSpecialistCard(f){
       '<b style="font-size:12px;color:#0b183b">'+f.name+'</b>'+
       '<span style="font-size:10.5px;margin-left:auto">'+badge+'</span></div>'+
     '<div style="font-size:11px;color:#667590;margin-top:3px;line-height:1.5">'+String(f.action||'').replace(/</g,'&lt;')+'</div>'+mini+srcTab+'</div>';
+}
+function rrToggleSrc(id){
+  var key='__rrSrc_'+id;
+  var cur=window[key];
+  Object.keys(window).forEach(function(k){ if(k.indexOf('__rrSrc_')===0) window[k]=false; });
+  window[key]=!cur;
+  render();
 }
 function rrSrcRow(s){
   var tierMap={1:['#0aa696','权威'],2:['#0757ad','官方'],3:['#c07a12','媒体'],4:['#8492a6','行业'],5:['#9aa5b5','其他']};
