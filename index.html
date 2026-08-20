@@ -707,9 +707,9 @@ function govWorkbench(){
       var st=i<sDone?'#0aa696':(i===sCur-1?'#0757ad':'#e0e7f0');
       return '<div style="flex:1;height:5px;border-radius:3px;background:'+st+'"></div>';
     }).join('')+'</div>'+
-    '<div style="display:flex;justify-content:space-between;font-size:11px;color:#667590;margin-bottom:10px">'+
-      '<span>第 '+sCur+' / '+sTot+' 阶段 · '+GOV_STAGE_LABEL[Math.min(sCur-1,GOV_STAGE_LABEL.length-1)]+'</span>'+
-      '<span>'+eta+'</span></div>';
+    '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#667590;margin-bottom:10px;gap:12px">'+
+      '<span style="white-space:nowrap">第 '+sCur+' / '+sTot+' 阶段 · '+GOV_STAGE_LABEL[Math.min(sCur-1,GOV_STAGE_LABEL.length-1)]+'</span>'+
+      (eta?'<span style="white-space:nowrap;color:#0757ad">'+eta+'</span>':'')+'</div>';
   return '<div id="govWorkbench" style="margin-bottom:16px;padding:16px 18px;border:1px solid #d8e4f2;border-radius:12px;background:linear-gradient(180deg,#f7fbff,#fff)">'+
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">'+
       '<span class="gov-spin" style="width:14px;height:14px"></span>'+
