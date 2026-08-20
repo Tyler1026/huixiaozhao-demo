@@ -7091,7 +7091,7 @@ function govStartPolling(city){
   _govPollTimer=setInterval(function(){
     if(!document.getElementById('govWorkbench')){clearInterval(_govPollTimer);_govPollTimer=null;return;}
     govFetchActivity(city);
-  },20000);
+  },10000);
 }
 // 人工修正某条结论（不依赖AI，直接编辑）
 function editSection(i){
