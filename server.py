@@ -242,10 +242,11 @@ def _clean_kb_text(text):
     # 清理多余空格/标点
     text = _re.sub(r'\s{2,}', ' ', text)
     text = _re.sub(r'[。；，]{2,}', '。', text)
-    # 清理 markdown 粗体标记
-    text = _re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
-    # 清理 .shtml 路径碎片
-    text = _re.sub(r'\S*\.shtml\S*', '', text)
+    # 清理 markdown 粗体标记（所有**都删掉）
+    text = text.replace('**', '')
+    # 清理 URL 路径碎片
+    text = _re.sub(r'\S*\.s?html\S*', '', text)
+    text = _re.sub(r'\S*/\d{8}/[a-f0-9]+/\S*', '', text)
     text = text.strip(' 。；，')
     return text
 
@@ -277,14 +278,23 @@ def _is_junk_item(text):
         return True
     if _re.match(r'^\d+\s+\S+\s+★', text):
         return True
-    # .shtml URL碎片
-    if '.shtml' in text:
+    # URL碎片
+    if '.shtml' in text or '.html)' in text:
+        return True
+    # fortune/xx 类残留
+    if _re.search(r'ortune/\d+/', text):
         return True
     # 纯数字串
     if _re.match(r'^[\d\s\.]+$', text.replace(',', '').replace('，', '')):
         return True
     # 趋势判断框架
     if text.startswith('趋势判断'):
+        return True
+    # 含★排名的企业表格行
+    if '★★' in text:
+        return True
+    # 数据残片（如"数据2025年结构比"）
+    if _re.match(r'^数据\d{4}', text):
         return True
     return False
 

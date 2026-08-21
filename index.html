@@ -687,7 +687,7 @@ function _kbText(x){
   t=t.replace(/[。；，]{2,}/g,'。');
   t=t.trim().replace(/^[。；，\s]+/,'').replace(/[。；，\s]+$/,'');
   // 清理 markdown 粗体标记
-  t=t.replace(/\*\*([^*]+)\*\*/g,'$1');
+  t=t.replace(/\*\*/g,'');
   return t;
 }
 // 判断一条known是否为无用条目（纯标题/报告头）
@@ -712,6 +712,13 @@ function _isJunkKbItem(text){
   if(/^[\d\s\.]+$/.test(text.replace(/[,，]/g,''))) return true;
   // 趋势判断等AI分析框架文字
   if(/^趋势判断/.test(text)) return true;
+  // 含★★企业排名
+  if(/★★/.test(text)) return true;
+  // URL碎片
+  if(/\.html[\)）]/.test(text)) return true;
+  if(/ortune\/\d+\//.test(text)) return true;
+  // 数据残片
+  if(/^数据\d{4}/.test(text)) return true;
   return false;
 }
 function _kbMeta(x){ return (x&&typeof x==='object')?x:{text:String(x==null?'':x),origin:'ai',nature:'base'}; }
