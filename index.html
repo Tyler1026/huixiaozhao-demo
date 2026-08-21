@@ -8465,7 +8465,7 @@ function kbVerifyMaterial(){
             bodyDiv.innerHTML='<p style="margin:0;line-height:1.75;white-space:pre-wrap">'+accText.replace(/</g,'&lt;')+'</p>';
           }
           // 校验完成：把按钮改为「已校验」
-          if(verifyBtn){verifyBtn.disabled=false;verifyBtn.textContent='✅ 已校验';verifyBtn.style.background='#f0fdf4';verifyBtn.style.color='#059669';verifyBtn.style.border='1.5px solid #86efac';verifyBtn.onclick=null;}
+          if(verifyBtn){verifyBtn.disabled=false;verifyBtn.textContent='🔍 校验材料可信度'verifyBtn.style.background='#fff7ed';verifyBtn.style.color='#c2410c';verifyBtn.style.border='1.5px solid #fed7aa';}
 
           kbChatPush('ai', ansNode.outerHTML);
           return;
