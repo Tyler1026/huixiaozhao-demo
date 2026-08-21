@@ -164,6 +164,51 @@ def _db_set(data_str):
         conn.commit(); cur.close(); conn.close(); return True
     except Exception as e:
         print(f"[db] 写入失败: {e}"); return False
+
+def _keep_nonempty(existing_val, incoming_val):
+    """入参为空（None/空串/空 list/dict）时不覆盖已有非空值——防止旧快照把刚同步的数据冲掉。"""
+    if incoming_val is None:
+        return existing_val
+    if isinstance(incoming_val, (list, dict, str)) and len(incoming_val) == 0:
+        return existing_val
+    return incoming_val
+
+def _kb_material_count(kb):
+    """统计一个 project.kb 的累计材料条数（4 主题 known[] 之和）。"""
+    if not isinstance(kb, list):
+        return 0
+    n = 0
+    for t in kb:
+        if isinstance(t, dict):
+            n += len(t.get("known") or [])
+    return n
+
+def _merge_map(old, new):
+    """按 key 合并 dict-of-dict（PROJECTS / REPORTSTATE / CITY_ACCOUNTS）：
+    - 逐字段保留非空值；新增 key 直接并入。
+    - kb 字段特判：非空列表也可能是「4 空主题」的占位骨架，按累计材料条数比较，
+      材料更多的一方胜出——防止旧快照(0 材料)冲掉刚推送的 RAG。
+    - REPORTSTATE 的 text 同理：更长的正文胜出。"""
+    merged = {k: (dict(v) if isinstance(v, dict) else v) for k, v in (old or {}).items()}
+    for k, v in (new or {}).items():
+        if not isinstance(v, dict):
+            merged[k] = v; continue
+        base = merged.get(k)
+        if not isinstance(base, dict):
+            merged[k] = dict(v); continue
+        for fk, fv in v.items():
+            if fk == "kb":
+                # 材料多的一方胜出（相等时接受新值，允许内容更新）
+                if _kb_material_count(fv) >= _kb_material_count(base.get("kb")):
+                    base[fk] = fv
+                continue
+            if fk == "text":
+                if len(fv or "") >= len(base.get("text") or ""):
+                    base[fk] = fv
+                continue
+            base[fk] = _keep_nonempty(base.get(fk), fv)
+    return merged
+
 _BASE       = os.path.dirname(os.path.abspath(__file__))
 HTML_GOV    = os.path.join(_BASE, "index.html")
 HTML_OPS    = os.path.join(_BASE, "ops.html")
@@ -539,7 +584,7 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception:
                         existing = {}
                 # 合并：空列表/空字典不覆盖已有非空数据
-                _protected = ['OPS_ENT','DEMANDS','KB_CHAT','PENDING_CONFIRMS','KB_CONFIRMS','REPORT_REQUESTS']
+                _protected = ['OPS_ENT','DEMANDS','KB_CHAT','PENDING_CONFIRMS','KB_CONFIRMS','REPORT_REQUESTS','CITY_ACCOUNTS']
                 # REPORT_REQUESTS 按 id 合并且状态只进不退（pending<running<done/failed）
                 # 防止管理端旧快照 persist 把流水线已推进的状态倒改回 pending
                 _rr_rank = {'pending': 0, 'running': 1, 'failed': 2, 'done': 3}
@@ -561,6 +606,10 @@ class Handler(BaseHTTPRequestHandler):
                         continue
                     if k == 'REPORT_REQUESTS':
                         existing[k] = _merge_rr(existing.get(k), v)
+                        continue
+                    if k in ('PROJECTS', 'REPORTSTATE', 'CITY_ACCOUNTS'):
+                        # 逐 key/逐字段合并，空值不覆盖非空——防止旧快照把已同步的 RAG/账号冲掉
+                        existing[k] = _merge_map(existing.get(k), v)
                         continue
                     existing[k] = v
                 data_str = json.dumps(existing, ensure_ascii=False)
@@ -746,6 +795,42 @@ class Handler(BaseHTTPRequestHandler):
                         else:
                             with open(SYNC_PATH, 'w', encoding='utf-8') as f:
                                 f.write(out_str)
+            except Exception as e:
+                resp = json.dumps({'ok': False, 'error': str(e)}).encode()
+            self.send_response(200); self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(resp)))
+            self.cors(); self.end_headers(); self.wfile.write(resp); return
+
+        # ── 接口3：管理端「推送到RAG」按钮 → 给已完成申请打 pushRequested 标记 ──
+        # 本地议程轮询器消费该标记，执行 sync_to_kb.py 完成 RAG 推送 + 城市账号连接。
+        if self.path == '/api/report-push-request':
+            try:
+                body = json.loads(raw)
+                city = body.get('city', '')
+                if _PG_AVAIL and DATABASE_URL:
+                    store = json.loads(_db_get() or '{}')
+                else:
+                    with open(SYNC_PATH, 'r', encoding='utf-8') as f2:
+                        store = json.loads(f2.read())
+                reqs = store.get('REPORT_REQUESTS') or []
+                done = [r for r in reqs if isinstance(r, dict)
+                        and r.get('city') == city and r.get('status') == 'done']
+                target = (done[-1] if done else
+                          (reqs[-1] if reqs else None))
+                rid = None
+                if target and isinstance(target, dict):
+                    target['pushRequested'] = True
+                    target['pushRequestedTs'] = int(time.time() * 1000)
+                    target['pushed'] = False
+                    rid = target.get('id')
+                    store['REPORT_REQUESTS'] = reqs
+                    out_str = json.dumps(store, ensure_ascii=False)
+                    if _PG_AVAIL and DATABASE_URL:
+                        _db_set(out_str)
+                    else:
+                        with open(SYNC_PATH, 'w', encoding='utf-8') as f:
+                            f.write(out_str)
+                resp = json.dumps({'ok': bool(rid), 'id': rid, 'city': city}).encode()
             except Exception as e:
                 resp = json.dumps({'ok': False, 'error': str(e)}).encode()
             self.send_response(200); self.send_header('Content-Type', 'application/json')

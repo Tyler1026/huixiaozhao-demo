@@ -808,6 +808,7 @@ var ACCOUNTS={
   'admin':   {pwd:'admin',   city:null,  projKey:null, resident:false, who:'招商干部', org:'招商局'}
 };
 var USER_PROFILES={};  // 注册用户资料库，按账号存 {name,phone,wechat,org,dept,title,city,pwd,ts}，跨端同步供管理端查看
+var CITY_ACCOUNTS={};  // 城市账号连接表（推送到RAG时自动建立）{slug:{city,who,org,pwd,resident,projKey}}
 function saveAuth(){ try{ AUTH?localStorage.setItem('hxz_auth',JSON.stringify(AUTH)):localStorage.removeItem('hxz_auth'); }catch(e){} }
 function loadAuth(){ try{ var d=localStorage.getItem('hxz_auth'); if(d)AUTH=JSON.parse(d); }catch(e){ AUTH=null; } }
 function logout(){ AUTH=null; saveAuth(); cur=null; view='setup'; render._restored=false; render._routed=false; render(); }
@@ -1146,8 +1147,10 @@ function doLogin(){
   u=u.trim().toLowerCase();
   var _verify=function(){
     var acc=ACCOUNTS[u];
+    // 城市账号连接表（推送RAG时自动建立，resident账号直接进工作区）
+    if(!acc && CITY_ACCOUNTS[u]){ var ca=CITY_ACCOUNTS[u]; acc={pwd:ca.pwd, city:ca.city||null, projKey:ca.projKey||null, resident:true, who:ca.who||u, org:ca.org||''}; }
     // 内置账号不存在时，查注册用户库
-    if(!acc && USER_PROFILES[u]){ var up=USER_PROFILES[u]; acc={pwd:up.pwd, city:up.city||null, projKey:null, resident:false, who:up.name||u, org:up.org||''}; }
+    if(!acc && USER_PROFILES[u]){ var up=USER_PROFILES[u]; acc={pwd:up.pwd, city:up.city||null, projKey:up.projKey||null, resident:!!up.resident, who:up.name||u, org:up.org||''}; }
     if(!acc){ loginErr('账号不存在'); return; }
     if(acc.pwd!==pw){ loginErr('密码错误'); return; }
     AUTH={user:u, city:acc.city, projKey:acc.projKey, resident:!!acc.resident, who:acc.who, org:acc.org};
@@ -6721,6 +6724,7 @@ function restoreFromServer(callback){
     if(srv.REPORT_HISTORY && Object.keys(srv.REPORT_HISTORY).length) REPORT_HISTORY = srv.REPORT_HISTORY;
     // 注册用户资料：合并服务器与本地(不丢本地新注册未同步的)
     if(srv.USER_PROFILES){ Object.keys(srv.USER_PROFILES).forEach(function(uk){ USER_PROFILES[uk]=srv.USER_PROFILES[uk]; }); }
+    if(srv.CITY_ACCOUNTS){ CITY_ACCOUNTS = srv.CITY_ACCOUNTS; }
     cur  = srv.cur  || Object.keys(PROJECTS)[0] || null;
     view = srv.view || 'setup';
     // 写回 localStorage（统一扁平格式）
@@ -6773,6 +6777,8 @@ window.addEventListener('storage', function(e){
     PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
     DOCK_LOGS=data.DOCK_LOGS||{};
     KB_UNLOCKED=data.KB_UNLOCKED||{};
+    if(data.CITY_ACCOUNTS) CITY_ACCOUNTS=data.CITY_ACCOUNTS;
+    if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
     // 重渲染（仅影响当前视图）
     render();
     console.log('[sync] 已同步管理端数据');
