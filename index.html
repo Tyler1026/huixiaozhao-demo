@@ -661,26 +661,46 @@ var STAGES=[['资料准备','上传与授权材料'],['AI 研判','生成缺口�
 // 兼容结构化 chunk（对象含 text/origin/nature）与旧字符串：统一取文本
 function _kbText(x){
   var t=(x&&typeof x==='object')?(x.text||''):String(x==null?'':x);
-  // 清理URL、来源标注、系统prompt残留等冗余内容
-  t=t.replace(/[\(（]?来源[:：]?\s*https?:\/\/[^\s\)）]*/g,'');
+  // 删除URL
   t=t.replace(/https?:\/\/[^\s\)）,，。]*/g,'');
-  t=t.replace(/[\(（]\s*\d{4}-\d{2}-\d{2}\s*[\)）]/g,'');
-  t=t.replace(/来源[:：][^。；\n]*[。；]?/g,'');
-  // 清理系统prompt残留（编制单位/引用铁律/数据基准等）
+  // 删除来源标注
+  t=t.replace(/[\(（]?来源[:：]?\s*[^\)）\n]*[\)）]?/g,'');
+  t=t.replace(/数据[来源]+[:：][^。；\n]*[。；]?/g,'');
+  // 删除日期标注
+  t=t.replace(/[\(（]\s*\d{4}[-\/]\d{2}[-\/]\d{2}\s*[\)）]/g,'');
+  t=t.replace(/[,，]\s*\d{4}[-\/]\d{2}[-\/]\d{2}/g,'');
+  // 删除系统prompt残留
   t=t.replace(/编制单位[:：][^。\n]*/g,'');
   t=t.replace(/数据基准[:：][^。\n]*/g,'');
   t=t.replace(/引用铁律[:：][^。\n]*/g,'');
   t=t.replace(/地价只认[^。\n]*[。]?/g,'');
   t=t.replace(/政策必标[^。\n]*[。]?/g,'');
-  // 清理 > 开头的指令行
   t=t.replace(/>\s*[^\n]*/g,'');
-  // 清理括号中的日期标注 如 , 2025-03-31
-  t=t.replace(/[,，]\s*\d{4}-\d{2}-\d{2}/g,'');
-  // 清理章节标题前缀
+  // 删除章节标题前缀
   t=t.replace(/【[一二三四五六七八九十\d\.]+[、.][^】]*】\s*/g,'');
   t=t.replace(/【[\d\.]+\s*[^】]*】\s*/g,'');
-  t=t.replace(/\s{2,}/g,' ').trim();
+  // 删除报告标题类前缀
+  t=t.replace(/【[^】]*报告[^】]*】\s*/g,'');
+  t=t.replace(/【[^】]*清单[^】]*】\s*/g,'');
+  // 删除生成时间/分析对象等元信息
+  t=t.replace(/生成时间[:：][^。；\n]*[。；]?/g,'');
+  t=t.replace(/分析对象[:：][^。；\n]*[。；]?/g,'');
+  t=t.replace(/gov\.cn\s*权威源为主[）\)]?/g,'');
+  // 清理多余空格/标点
+  t=t.replace(/\s{2,}/g,' ');
+  t=t.replace(/[。；，]{2,}/g,'。');
+  t=t.trim().replace(/^[。；，\s]+/,'').replace(/[。；，\s]+$/,'');
   return t;
+}
+// 判断一条known是否为无用条目（纯标题/报告头）
+function _isJunkKbItem(text){
+  if(!text||text.length<6) return true;
+  if(/^[✅⚠️\s]*[\[【]?.*招商方向研判报告/.test(text)) return true;
+  if(/^[✅⚠️\s]*[\[【]?.*经济数据报告/.test(text)) return true;
+  if(/^[✅⚠️\s]*[\[【]?.*竞争格局分析报告/.test(text)) return true;
+  if(/^[✅⚠️\s]*[\[【]?.*招商作战清单/.test(text)) return true;
+  if(/^[✅⚠️\s]*[\[【]?.*市方向[一二三四五六七八九十\d]/.test(text)) return true;
+  return false;
 }
 function _kbMeta(x){ return (x&&typeof x==='object')?x:{text:String(x==null?'':x),origin:'ai',nature:'base'}; }
 
@@ -6438,7 +6458,7 @@ function kbPage(p){
           (k.tag.indexOf('待')>=0?'color:#c08a2a;background:#fff8e6':'color:#006d70;background:#e4f5f3'):
           'color:#9aa5b5;background:#f5f7fb';
         var dot=k.known&&k.known.length?'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:5px;vertical-align:middle"></span>':'';
-        var firstKnown=k.known&&k.known.length?k.known.map(_kbText).filter(function(x){return x.indexOf('⚠️')<0;})[0]:'';
+        var firstKnown=k.known&&k.known.length?k.known.map(_kbText).filter(function(x){return x.indexOf('⚠️')<0&&!_isJunkKbItem(x);})[0]:'';
         if(firstKnown&&firstKnown.length>80) firstKnown=firstKnown.substring(0,80)+'…';
         return '<button class="topic-row" onclick="kbDetail('+i+')">'+
           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
@@ -7864,6 +7884,7 @@ function kbDetail(i){
     ? '<div style="display:flex;flex-direction:column;gap:8px">'+
         k.known.map(function(x,xi){
           x=_kbText(x);
+          if(_isJunkKbItem(x)) return '';
           var warn=x.indexOf('⚠️')>=0;
           var isFile=x.indexOf('📎')===0;
           var clean=x.replace('⚠️ ','');

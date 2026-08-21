@@ -213,46 +213,95 @@ _BASE       = os.path.dirname(os.path.abspath(__file__))
 HTML_GOV    = os.path.join(_BASE, "index.html")
 
 def _clean_kb_text(text):
-    """清洗 known 条目：删除URL/来源标注/系统prompt残留"""
+    """清洗 known 条目：删除URL/来源/元信息/系统prompt/章节标题等冗余"""
     if not isinstance(text, str):
         return text
-    text = _re.sub(r'[\(（]?来源[:：]?\s*https?://[^\s\)）]*', '', text)
+    # 删除所有 URL
     text = _re.sub(r'https?://[^\s\)）,，。]*', '', text)
-    text = _re.sub(r'[\(（]\s*\d{4}-\d{2}-\d{2}\s*[\)）]', '', text)
-    text = _re.sub(r'来源[:：][^。；\n]*[。；]?', '', text)
+    # 删除来源标注
+    text = _re.sub(r'[\(（]?来源[:：]?\s*[^\)）\n]*[\)）]?', '', text)
+    text = _re.sub(r'数据[来源]+[:：][^。；\n]*[。；]?', '', text)
+    # 删除日期标注
+    text = _re.sub(r'[\(（]\s*\d{4}[-/]\d{2}[-/]\d{2}\s*[\)）]', '', text)
+    text = _re.sub(r'[,，]\s*\d{4}[-/]\d{2}[-/]\d{2}', '', text)
+    # 删除系统prompt残留
     text = _re.sub(r'编制单位[:：][^。\n]*', '', text)
     text = _re.sub(r'数据基准[:：][^。\n]*', '', text)
     text = _re.sub(r'引用铁律[:：][^。\n]*', '', text)
     text = _re.sub(r'地价只认[^。\n]*[。]?', '', text)
     text = _re.sub(r'政策必标[^。\n]*[。]?', '', text)
     text = _re.sub(r'>\s*[^\n]*', '', text)
-    text = _re.sub(r'[,，]\s*\d{4}-\d{2}-\d{2}', '', text)
-    # 清理章节标题前缀
+    # 删除章节标题前缀 【一、...】【2.1 ...】
     text = _re.sub(r'【[一二三四五六七八九十\d\.]+[、.][^】]*】\s*', '', text)
     text = _re.sub(r'【[\d\.]+\s*[^】]*】\s*', '', text)
-    text = _re.sub(r'\s{2,}', ' ', text).strip()
+    # 删除生成时间/分析对象等元信息
+    text = _re.sub(r'生成时间[:：][^。；\n]*[。；]?', '', text)
+    text = _re.sub(r'分析对象[:：][^。；\n]*[。；]?', '', text)
+    text = _re.sub(r'gov\.cn\s*权威源为主[）\)]?', '', text)
+    # 删除文号标注 如 （鄂政发〔2021〕29 号）
+    text = _re.sub(r'[\(（][^\)）]*〔\d+〕\d+\s*号[\)）]', '', text)
+    # 清理多余空格/标点
+    text = _re.sub(r'\s{2,}', ' ', text)
+    text = _re.sub(r'[。；，]{2,}', '。', text)
+    text = text.strip(' 。；，')
     return text
 
+def _is_junk_item(text):
+    """判断一条 known 是否为无用条目（纯标题/元信息/报告头）应被丢弃"""
+    if not text or len(text) < 6:
+        return True
+    # 纯报告标题类（不含有用数据）
+    junk_patterns = [
+        r'^[✅⚠️\s]*[\[【]?.*招商方向研判报告[】\]]?[。\s]*$',
+        r'^[✅⚠️\s]*[\[【]?.*经济数据报告[】\]]?.*$',
+        r'^[✅⚠️\s]*[\[【]?.*竞争格局分析报告[】\]]?.*$',
+        r'^[✅⚠️\s]*[\[【]?.*招商作战清单[】\]]?.*$',
+        r'^[✅⚠️\s]*[\[【]?.*市方向[一二三四五六七八九十\d]+.*$',
+        r'^[✅\s]*\d+年各产业链方向.*请领导确认$',
+        r'^[✅\s]*(首选|拟优先|专项资金).*请(领导|主管).*确认$',
+    ]
+    for pat in junk_patterns:
+        if _re.search(pat, text):
+            return True
+    return False
+
 def _clean_sync_data(data):
-    """清洗 sync 数据中 kb.known 数组：清理URL、截断过长、精选条目"""
+    """清洗 sync 数据中 kb 的冗余内容：过滤无用条目、截断、精选、修正sub/tag"""
     if not isinstance(data, dict):
         return data
     projects = data.get('PROJECTS') or {}
     for pkey, proj in projects.items():
+        city = proj.get('city', '')
         kb = proj.get('kb') or []
         for section in kb:
             known = section.get('known') or []
             cleaned = []
             for item in known:
                 t = _clean_kb_text(item)
-                if not t or len(t) < 4:
+                # 跳过空/过短/无用条目
+                if _is_junk_item(t):
                     continue
-                # 截断过长条目（保留前150字核心信息）
-                if len(t) > 150:
-                    t = t[:150] + '\u2026'
+                # 截断过长条目（保留前120字核心信息）
+                if len(t) > 120:
+                    t = t[:120] + '…'
                 cleaned.append(t)
-            # 每个板块最多保留8条精选（避免60条刷屏）
-            section['known'] = cleaned[:8]
+            # 每个板块最多保留6条核心内容
+            section['known'] = cleaned[:6]
+            # 修正 sub：如果是无意义的"AI流水线产出·N条材料"则替换为板块概述
+            sub = section.get('sub', '')
+            if 'AI流水线' in sub or '流水线产出' in sub or not sub:
+                _sub_map = {
+                    '主导产业与产业链': city + '主导产业集群与核心缺口',
+                    '园区与承载条件': city + '主要园区与承载能力',
+                    '链主与存量企业': city + '链主企业与配套格局',
+                    '政策、规划与领导关注': city + '政策方向与竞争态势',
+                }
+                section['sub'] = _sub_map.get(section.get('t', ''), city + '产业数据')
+            # 修正 tag：如果是"已初始化"等无意义标签
+            tag = section.get('tag', '')
+            if tag in ('已初始化', '') or 'AI流水线' in tag:
+                n = len(section['known'])
+                section['tag'] = f'AI研判 · {n}条' if n else '待补充'
     return data
 HTML_OPS    = os.path.join(_BASE, "ops.html")
 DS_URL      = "https://api.deepseek.com/v1/chat/completions"
