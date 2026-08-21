@@ -694,9 +694,46 @@ function _kbText(x){
 // 判断一条known是否为无用条目（纯标题/报告头）
 function _isJunkKbItem(text){
   if(!text||text.length<6) return true;
-  // Only filter pure report titles with no data
   if(/^[\s✅⚠️]*$/.test(text)) return true;
   return false;
+}
+
+// === AI精选概括：从/api/kb-summary获取概括后的展示数据（不修改原始数据）===
+var _kbSummaryData=null; // {city, kb:[{t,sub,tag,known:[]}]}
+function loadKbSummary(){
+  fetch('/api/kb-summary').then(function(r){return r.json();}).then(function(res){
+    if(res.ok){
+      _kbSummaryData=res;
+      console.log('[kb-summary] loaded:', res.city, res.kb.length, 'sections');
+      render(); // 重新渲染使用概括数据
+    }
+  }).catch(function(e){console.warn('[kb-summary] failed:',e);});
+}
+// 页面加载后延迟获取概括数据
+setTimeout(loadKbSummary, 2000);
+
+// 获取某个板块的展示用known（优先用AI概括，没有则用原始数据清洗）
+function _getDisplayKnown(kbIdx){
+  if(_kbSummaryData && _kbSummaryData.kb && _kbSummaryData.kb[kbIdx]){
+    return _kbSummaryData.kb[kbIdx].known||[];
+  }
+  // fallback: 用原始数据
+  var p=P(); if(!p||!p.kb||!p.kb[kbIdx]) return [];
+  return (p.kb[kbIdx].known||[]).map(_kbText).filter(function(x){return x&&x.length>10;});
+}
+function _getDisplaySub(kbIdx){
+  if(_kbSummaryData && _kbSummaryData.kb && _kbSummaryData.kb[kbIdx]){
+    return _kbSummaryData.kb[kbIdx].sub||'';
+  }
+  var p=P(); if(!p||!p.kb||!p.kb[kbIdx]) return '';
+  return p.kb[kbIdx].sub||'';
+}
+function _getDisplayTag(kbIdx){
+  if(_kbSummaryData && _kbSummaryData.kb && _kbSummaryData.kb[kbIdx]){
+    return _kbSummaryData.kb[kbIdx].tag||'';
+  }
+  var p=P(); if(!p||!p.kb||!p.kb[kbIdx]) return '';
+  return p.kb[kbIdx].tag||'';
 }
 function _kbMeta(x){ return (x&&typeof x==='object')?x:{text:String(x==null?'':x),origin:'ai',nature:'base'}; }
 
@@ -6457,7 +6494,7 @@ function kbPage(p){
           (k.tag.indexOf('待')>=0?'color:#c08a2a;background:#fff8e6':'color:#006d70;background:#e4f5f3'):
           'color:#9aa5b5;background:#f5f7fb';
         var dot=k.known&&k.known.length?'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:5px;vertical-align:middle"></span>':'';
-        var firstKnown=k.known&&k.known.length?k.known.map(_kbText).filter(function(x){return x&&x.length>10;})[0]:'';
+        var firstKnown=_getDisplayKnown(i)[0]||'';
         if(firstKnown&&firstKnown.length>80) firstKnown=firstKnown.substring(0,80)+'…';
         return '<button class="topic-row" onclick="kbDetail('+i+')">'+
           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
@@ -7890,12 +7927,12 @@ function kbDetail(i){
   var k=P().kb[i]; if(!k) return;
   curKb=i;
 
-  // 已知条目列表
-  var knownHtml=(k.known&&k.known.length)
+  // 已知条目列表（使用AI精选概括展示，不修改原始数据）
+  var displayKnown=_getDisplayKnown(i);
+  var knownHtml=(displayKnown&&displayKnown.length)
     ? '<div style="display:flex;flex-direction:column;gap:8px">'+
-        k.known.map(function(x,xi){
-          x=_kbText(x);
-          if(_isJunkKbItem(x)) return '';
+        displayKnown.map(function(x,xi){
+          if(!x||x.length<6) return '';
           var warn=x.indexOf('⚠️')>=0;
           var isFile=x.indexOf('📎')===0;
           var clean=x.replace('⚠️ ','');

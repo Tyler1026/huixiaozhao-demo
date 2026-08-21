@@ -689,6 +689,82 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', str(len(data)))
             self.cors(); self.end_headers(); self.wfile.write(data)
             return
+        # 政府端城市智库AI精选概括（只读，不修改数据库）
+        if path == '/api/kb-summary':
+            try:
+                # 读取原始数据
+                if _PG_AVAIL and DATABASE_URL:
+                    result = _db_get()
+                    raw_str = result or '{}'
+                else:
+                    try:
+                        with open(SYNC_PATH, encoding='utf-8') as f2:
+                            raw_str = f2.read()
+                    except FileNotFoundError:
+                        raw_str = '{}'
+                sync_obj = json.loads(raw_str)
+                projects = sync_obj.get('PROJECTS') or {}
+                cur_proj = sync_obj.get('cur', '')
+                proj = projects.get(cur_proj) or {}
+                city = proj.get('city', '')
+                kb = proj.get('kb') or []
+                if not kb or not city:
+                    data = json.dumps({"ok": False, "error": "no kb data"}).encode()
+                else:
+                    # 收集所有板块的cleaned items
+                    all_cleaned = []
+                    for section in kb:
+                        known = section.get('known') or []
+                        for item in known:
+                            t = _clean_kb_text(item)
+                            if not _is_junk_item(t):
+                                all_cleaned.append(t)
+                    # AI分类+概括（有缓存）
+                    classified = _classify_and_summarize(city, kb, all_cleaned)
+                    # 构建返回结果
+                    result_kb = []
+                    for section in kb:
+                        topic = section.get('t', '')
+                        if classified and topic in classified:
+                            items = classified[topic]
+                        else:
+                            # AI未返回时，用清洗后的前6条
+                            cleaned = []
+                            for item in (section.get('known') or []):
+                                t = _clean_kb_text(item)
+                                if not _is_junk_item(t) and len(t) > 10:
+                                    cleaned.append(t)
+                            items = cleaned[:6]
+                        # 修正 sub/tag
+                        sub = section.get('sub', '')
+                        if 'AI流水线' in sub or '流水线产出' in sub or not sub:
+                            _sub_map = {
+                                '主导产业与产业链': city + '主导产业集群与核心缺口',
+                                '园区与承载条件': city + '主要园区与承载能力',
+                                '链主与存量企业': city + '链主企业与配套格局',
+                                '政策、规划与领导关注': city + '政策方向与竞争态势',
+                            }
+                            sub = _sub_map.get(topic, city + '产业数据')
+                        tag = section.get('tag', '')
+                        if tag in ('已初始化', '') or 'AI流水线' in tag:
+                            n = len(items)
+                            tag = f'AI研判 · {n}条' if n else '待补充'
+                        result_kb.append({
+                            "t": topic,
+                            "icon": section.get("icon", ""),
+                            "sub": sub,
+                            "tag": tag,
+                            "known": items
+                        })
+                    data = json.dumps({"ok": True, "city": city, "kb": result_kb}, ensure_ascii=False).encode()
+            except Exception as e:
+                import traceback; traceback.print_exc()
+                data = json.dumps({"ok": False, "error": str(e)}).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Length', str(len(data)))
+            self.cors(); self.end_headers(); self.wfile.write(data)
+            return
         # 原始报告下载：GET /api/report-file?city=随州&kind=full|short
         # 从云端存储的 base64 docx 里取出并回传，供管理端「下载原始报告」按钮使用。
         if path == '/api/report-file':
