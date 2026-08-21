@@ -686,22 +686,32 @@ function _kbText(x){
   t=t.replace(/\s{2,}/g,' ');
   t=t.replace(/[。；，]{2,}/g,'。');
   t=t.trim().replace(/^[。；，\s]+/,'').replace(/[。；，\s]+$/,'');
+  // 清理 markdown 粗体标记
+  t=t.replace(/\*\*([^*]+)\*\*/g,'$1');
   return t;
 }
 // 判断一条known是否为无用条目（纯标题/报告头）
 function _isJunkKbItem(text){
   if(!text||text.length<6) return true;
-  if(/^[✅⚠️\s]*[\[【]?.*招商方向研判报告/.test(text)) return true;
-  if(/^[✅⚠️\s]*[\[【]?.*经济数据报告/.test(text)) return true;
-  if(/^[✅⚠️\s]*[\[【]?.*竞争格局分析报告/.test(text)) return true;
-  if(/^[✅⚠️\s]*[\[【]?.*招商作战清单/.test(text)) return true;
-  if(/^[✅⚠️\s]*[\[【]?.*市方向[一二三四五六七八九十\d]/.test(text)) return true;
-  if(/^\d{3,4}\/t\d+/.test(text)) return true;
+  // 纯报告/清单标题
+  if(/招商方向研判报告/.test(text)) return true;
+  if(/经济数据报告/.test(text)) return true;
+  if(/竞争格局分析报告/.test(text)) return true;
+  if(/招商作战清单/.test(text)) return true;
+  if(/市方向[一二三四五六七八九十\d]/.test(text)) return true;
+  // URL碎片/路径
+  if(/^\d{2,4}\/t\d+/.test(text)) return true;
+  if(/\.shtml/.test(text)) return true;
+  // 表格/数据行
   if(/^注[:：]/.test(text)) return true;
   if(/^年份\s+GDP/.test(text)) return true;
   if(/^排名\s+企业/.test(text)) return true;
-  if(/---{3,}/.test(text)) return true;
+  if(/------/.test(text)) return true;
   if(/^\d+\s+\S+\s+★/.test(text)) return true;
+  // 纯数字串（如 2021 1241.45 12.0 61102）
+  if(/^[\d\s\.]+$/.test(text.replace(/[,，]/g,''))) return true;
+  // 趋势判断等AI分析框架文字
+  if(/^趋势判断/.test(text)) return true;
   return false;
 }
 function _kbMeta(x){ return (x&&typeof x==='object')?x:{text:String(x==null?'':x),origin:'ai',nature:'base'}; }
@@ -1431,7 +1441,7 @@ function runAnalysisAnim(city, fileName, stepsCount, onDone){
             '<div><div style="font-size:13px;font-weight:650;color:#0b183b">'+s.name+'</div>'+
             '<div style="font-size:11.5px;color:#8492a6;margin-top:1px">'+s.desc+'</div></div>'+
           '</div>';
-        }).join('')+
+        }).filter(function(h){return h!=='';}).join('')+
       '</div>';
       // 关键修复：先直接渲染工作区（保证绝不白屏），再把 summary 弹窗作为浮层叠加
       try{ enterWorkspace(); }catch(e){ console.error('[enterWorkspace]',e); }

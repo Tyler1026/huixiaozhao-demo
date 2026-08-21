@@ -242,6 +242,10 @@ def _clean_kb_text(text):
     # 清理多余空格/标点
     text = _re.sub(r'\s{2,}', ' ', text)
     text = _re.sub(r'[。；，]{2,}', '。', text)
+    # 清理 markdown 粗体标记
+    text = _re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+    # 清理 .shtml 路径碎片
+    text = _re.sub(r'\S*\.shtml\S*', '', text)
     text = text.strip(' 。；，')
     return text
 
@@ -272,6 +276,15 @@ def _is_junk_item(text):
     if '------' in text or '---' * 3 in text:
         return True
     if _re.match(r'^\d+\s+\S+\s+★', text):
+        return True
+    # .shtml URL碎片
+    if '.shtml' in text:
+        return True
+    # 纯数字串
+    if _re.match(r'^[\d\s\.]+$', text.replace(',', '').replace('，', '')):
+        return True
+    # 趋势判断框架
+    if text.startswith('趋势判断'):
         return True
     return False
 
