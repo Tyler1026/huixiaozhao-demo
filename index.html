@@ -8453,6 +8453,7 @@ function kbVerifyMaterial(){
             (hasHighRisk?'#dc2626':(allClear?'#059669':'#d97706'))+
             '">'+badgeText+
             '<span style="font-weight:400;color:#94a3b8;margin-left:8px">· 校验耗时 '+elapsed+'ms · 对比 '+topicKnown.length+' 条现有结论</span>'+
+            (hasHighRisk?'<button onclick="kbConfirmOverwrite()" style="margin-left:12px;padding:4px 12px;background:#dc2626;color:#fff;border:none;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer">人工核实</button>':'')+
             '</div>');
                     // 发现高危矛盾：直接弹出逐条确认面板
           if(hasHighRisk){
