@@ -212,40 +212,62 @@ def _merge_map(old, new):
 _BASE       = os.path.dirname(os.path.abspath(__file__))
 HTML_GOV    = os.path.join(_BASE, "index.html")
 
-# ===== AI 摘要缓存 =====
-_SUMMARY_CACHE = {}  # key: md5(city+topic+raw_text) -> summarized list
+# ===== AI 分类+摘要 =====
+_KB_SUMMARY_CACHE = {}  # key: md5(city+all_raw) -> {topic: [items]}
 
-SYSTEM_SUMMARIZE = """你是招商数据分析师。把下面的原始材料精选概括为4-6条核心结论。
+SYSTEM_KB_CLASSIFY = """你是招商数据分析师。将以下城市的原始调研材料分类整理到4个板块中，每个板块提炼4-6条核心结论。
+
+四个板块定义：
+1. 主导产业与产业链：该城市有哪些主导产业、产业规模、产值、增速、全国地位、核心缺口
+2. 园区与承载条件：经济总量(GDP)、园区面积/产能/入驻率、土地/人力/物流成本、基建条件
+3. 链主与存量企业：具体龙头企业名称、产能、营收、在建项目、配套率、可对接标的
+4. 政策、规划与领导关注：政策文件、补贴力度、竞争城市对比、招商方向优劣势
+
+输出格式（严格遵守，不要额外文字）：
+[主导产业与产业链]
+结论1
+结论2
+...
+[园区与承载条件]
+结论1
+结论2
+...
+[链主与存量企业]
+结论1
+结论2
+...
+[政策、规划与领导关注]
+结论1
+结论2
+...
 
 要求：
-- 每条结论独立成句，包含关键数字（金额/产量/增速/占比）
-- 删除重复信息，只保留对招商决策最有价值的事实
-- 不要加序号、不要加标题前缀、不要输出"来源"
-- 每条控制在50-80字
-- 直接输出结论，每条一行，不要任何额外格式"""
+- 每条结论带关键数字（金额/产量/增速/占比），50-80字
+- 覆盖材料中的所有产业方向（不要只挑一个产业）
+- 严格按内容归类，不要混淆
+- 不要加序号、不要加来源、不要加标题前缀"""
 
-def _summarize_known(city, topic, raw_items):
-    """调用 DeepSeek 对一组 known 条目做精选概括，返回概括后的列表"""
-    if not DS_KEY or not raw_items:
-        return raw_items
-    # 缓存 key：基于内容 hash
-    raw_text = '\n'.join(raw_items)
-    cache_key = hashlib.md5((city + topic + raw_text).encode()).hexdigest()
-    if cache_key in _SUMMARY_CACHE:
-        return _SUMMARY_CACHE[cache_key]
-    # 如果内容本身已经很精简（每条<80字且总共<=6条），不需要概括
-    if len(raw_items) <= 6 and all(len(x) <= 80 for x in raw_items):
-        _SUMMARY_CACHE[cache_key] = raw_items
-        return raw_items
-    # 调用 DeepSeek
-    prompt = f"城市：{city}\n板块：{topic}\n\n原始材料（{len(raw_items)}条）：\n" + raw_text
+def _classify_and_summarize(city, kb_sections, all_cleaned_items):
+    """把一个城市的所有cleaned材料汇总，调用DeepSeek一次性分类+概括到四个板块"""
+    if not DS_KEY or not all_cleaned_items:
+        return None
+    raw_text = '\n'.join(all_cleaned_items)
+    cache_key = hashlib.md5((city + raw_text).encode()).hexdigest()
+    if cache_key in _KB_SUMMARY_CACHE:
+        return _KB_SUMMARY_CACHE[cache_key]
+    # 如果所有板块内容都已很精简，跳过
+    total_items = len(all_cleaned_items)
+    if total_items <= 16 and all(len(x) <= 80 for x in all_cleaned_items):
+        return None
+    # 调用 DeepSeek 一次性分类+概括
+    prompt = f"城市：{city}\n\n原始材料共{total_items}条：\n" + raw_text
     payload = json.dumps({
         "model": MODEL,
         "messages": [
-            {"role": "system", "content": SYSTEM_SUMMARIZE},
+            {"role": "system", "content": SYSTEM_KB_CLASSIFY},
             {"role": "user", "content": prompt}
         ],
-        "max_tokens": 800,
+        "max_tokens": 1500,
         "temperature": 0.3,
         "stream": False,
         "thinking": {"type": "disabled"}
@@ -256,23 +278,43 @@ def _summarize_known(city, topic, raw_items):
                  "Authorization": f"Bearer {DS_KEY}"}
     )
     try:
-        with DS_OPENER.open(req, timeout=30) as resp:
+        with DS_OPENER.open(req, timeout=45) as resp:
             result = json.loads(resp.read())
         content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-        if content:
-            # 按行拆分，过滤空行
-            lines = [l.strip().lstrip('•·-  ') for l in content.strip().split('\n') if l.strip()]
-            # 过滤太短的行（可能是格式残留）
-            lines = [l for l in lines if len(l) >= 10]
-            if lines:
-                _SUMMARY_CACHE[cache_key] = lines
-                print(f"[summarize] {city}/{topic}: {len(raw_items)} -> {len(lines)} items")
-                return lines
+        if not content:
+            return None
+        # 解析分类结果
+        classified = {}
+        current_topic = None
+        topic_map = {
+            '主导产业与产业链': '主导产业与产业链',
+            '园区与承载条件': '园区与承载条件',
+            '链主与存量企业': '链主与存量企业',
+            '政策、规划与领导关注': '政策、规划与领导关注',
+        }
+        for line in content.strip().split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            # 检查是否是板块标题
+            for key in topic_map:
+                if key in line and '[' in line:
+                    current_topic = key
+                    break
+            else:
+                if current_topic and len(line) >= 10:
+                    clean_line = line.lstrip('•·-0123456789. ')
+                    if len(clean_line) >= 10:
+                        classified.setdefault(current_topic, []).append(clean_line)
+        if classified:
+            _KB_SUMMARY_CACHE[cache_key] = classified
+            for t, items in classified.items():
+                print(f"[classify] {city}/{t}: {len(items)} items")
+            return classified
     except Exception as e:
-        print(f"[summarize] failed for {city}/{topic}: {e}")
-    # 失败时返回原始（截取前6条）
-    _SUMMARY_CACHE[cache_key] = raw_items[:6]
-    return raw_items[:6]
+        print(f"[classify] failed for {city}: {e}")
+    return None
+
 
 
 def _clean_kb_text(text):
@@ -363,25 +405,40 @@ def _is_junk_item(text):
     return False
 
 def _clean_sync_data(data):
-    """清洗 sync 数据中 kb 的冗余内容：过滤无用条目、截断、精选、修正sub/tag"""
+    """清洗+AI分类概括：把所有材料汇总后让AI按板块主题分类+精选概括"""
     if not isinstance(data, dict):
         return data
     projects = data.get('PROJECTS') or {}
     for pkey, proj in projects.items():
         city = proj.get('city', '')
         kb = proj.get('kb') or []
+        if not kb:
+            continue
+        # 第一步：收集所有板块的cleaned items（汇总）
+        all_cleaned = []
         for section in kb:
             known = section.get('known') or []
-            cleaned = []
             for item in known:
                 t = _clean_kb_text(item)
-                # 跳过空/过短/无用条目
-                if _is_junk_item(t):
-                    continue
-                cleaned.append(t)
-            # AI 精选概括：内容过长时调用 DeepSeek 提炼核心结论
-            section['known'] = _summarize_known(city, section.get('t', ''), cleaned)
-            # 修正 sub：如果是无意义的"AI流水线产出·N条材料"则替换为板块概述
+                if not _is_junk_item(t):
+                    all_cleaned.append(t)
+        # 第二步：AI一次性分类+概括
+        classified = _classify_and_summarize(city, kb, all_cleaned)
+        # 第三步：把分类结果写回各板块
+        for section in kb:
+            topic = section.get('t', '')
+            if classified and topic in classified:
+                section['known'] = classified[topic]
+            else:
+                # AI未返回或失败，保留清洗后的前6条
+                known = section.get('known') or []
+                cleaned = []
+                for item in known:
+                    t = _clean_kb_text(item)
+                    if not _is_junk_item(t):
+                        cleaned.append(t)
+                section['known'] = cleaned[:6]
+            # 修正 sub
             sub = section.get('sub', '')
             if 'AI流水线' in sub or '流水线产出' in sub or not sub:
                 _sub_map = {
@@ -390,8 +447,8 @@ def _clean_sync_data(data):
                     '链主与存量企业': city + '链主企业与配套格局',
                     '政策、规划与领导关注': city + '政策方向与竞争态势',
                 }
-                section['sub'] = _sub_map.get(section.get('t', ''), city + '产业数据')
-            # 修正 tag：如果是"已初始化"等无意义标签
+                section['sub'] = _sub_map.get(topic, city + '产业数据')
+            # 修正 tag
             tag = section.get('tag', '')
             if tag in ('已初始化', '') or 'AI流水线' in tag:
                 n = len(section['known'])
