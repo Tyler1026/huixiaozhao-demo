@@ -904,8 +904,14 @@ class Handler(BaseHTTPRequestHandler):
         # 报告类 mode（full/research/chain/funnel）吃进更多语料，对话类少吃
         _top_k = 12 if mode in ("full", "research", "chain", "funnel") else 6
         used, _scored = _retrieve_chunks(q, chunks, top_k=_top_k, min_score=1)
+        # 注意：本方法体内(第729行附近)另有一个局部 def _chunk_text，会遮蔽模块级同名函数，
+        # 导致此处 genexpr 引用报 NameError。故内联提取文本，不调用 _chunk_text。
+        def _ctext(c):
+            if isinstance(c, str): return c
+            if isinstance(c, dict): return str(c.get("text", "") or "")
+            return ""
         ctx = "\n\n".join(
-            f"[{(c.get('cite','') if isinstance(c, dict) else '')}·{(c.get('topic','') if isinstance(c, dict) else '')}]\n{_chunk_text(c)}"
+            f"[{(c.get('cite','') if isinstance(c, dict) else '')}·{(c.get('topic','') if isinstance(c, dict) else '')}]\n{_ctext(c)}"
             for c in used
         ) or "暂无检索到相关内容，请基于通用招商知识回答。"
 
@@ -925,7 +931,7 @@ class Handler(BaseHTTPRequestHandler):
             "upload_samples": [
                 {"cite": (c.get("cite", "") if isinstance(c, dict) else ""),
                  "id": (c.get("id", "") if isinstance(c, dict) else ""),
-                 "text": _chunk_text(c)[:120]}
+                 "text": _ctext(c)[:120]}
                 for c in upload_used
             ],
         })
