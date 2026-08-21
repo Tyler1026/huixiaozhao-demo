@@ -1048,11 +1048,16 @@ class Handler(BaseHTTPRequestHandler):
                                 if isinstance(k, str) or (isinstance(k, dict) and k.get('origin') == 'ai')]
                         tp['known'] = base + chunks
                     else:
-                        known = tp.get('known') or []
-                        # 归一化为对象以便挂标注（AI 基础材料原是字符串）
+                        # 跨主题匹配：原文（如GDP在园区主题、产业事实在产业链主题）分布在
+                        # 不同主题，佐证应挂到全库任何一条命中原文上；未命中才追加到目标主题
                         norm_known = []
-                        for k in known:
-                            norm_known.append(k if isinstance(k, dict) else {'text': k, 'origin': 'ai', 'nature': 'base'})
+                        for _tpc in p['kb']:
+                            _kn = _tpc.get('known') or []
+                            for _i, _k in enumerate(_kn):
+                                if not isinstance(_k, dict):
+                                    _kn[_i] = {'text': _k, 'origin': 'ai', 'nature': 'base'}
+                            _tpc['known'] = _kn
+                            norm_known.extend(_kn)
                         leftover = []
                         for nc in chunks:
                             best, best_score = None, 0.55   # 相似度阈值
@@ -1080,7 +1085,7 @@ class Handler(BaseHTTPRequestHandler):
                                 matched_ct += 1
                             else:
                                 leftover.append(nc)
-                        tp['known'] = norm_known + leftover
+                        tp['known'] = (tp.get('known') or []) + leftover
                     # 记录上传审计
                     p.setdefault('kbUploads', []).append({
                         'filename': filename, 'topic': topic, 'mode': mode,
