@@ -694,32 +694,8 @@ function _kbText(x){
 // 判断一条known是否为无用条目（纯标题/报告头）
 function _isJunkKbItem(text){
   if(!text||text.length<6) return true;
-  // 纯报告/清单标题
-  if(/招商方向研判报告/.test(text)) return true;
-  if(/经济数据报告/.test(text)) return true;
-  if(/竞争格局分析报告/.test(text)) return true;
-  if(/招商作战清单/.test(text)) return true;
-  if(/市方向[一二三四五六七八九十\d]/.test(text)) return true;
-  // URL碎片/路径
-  if(/^\d{2,4}\/t\d+/.test(text)) return true;
-  if(/\.shtml/.test(text)) return true;
-  // 表格/数据行
-  if(/^注[:：]/.test(text)) return true;
-  if(/^年份\s+GDP/.test(text)) return true;
-  if(/^排名\s+企业/.test(text)) return true;
-  if(/------/.test(text)) return true;
-  if(/^\d+\s+\S+\s+★/.test(text)) return true;
-  // 纯数字串（如 2021 1241.45 12.0 61102）
-  if(/^[\d\s\.]+$/.test(text.replace(/[,，]/g,''))) return true;
-  // 趋势判断等AI分析框架文字
-  if(/^趋势判断/.test(text)) return true;
-  // 含★★企业排名
-  if(/★★/.test(text)) return true;
-  // URL碎片
-  if(/\.html[\)）]/.test(text)) return true;
-  if(/ortune\/\d+\//.test(text)) return true;
-  // 数据残片
-  if(/^数据\d{4}/.test(text)) return true;
+  // Only filter pure report titles with no data
+  if(/^[\s✅⚠️]*$/.test(text)) return true;
   return false;
 }
 function _kbMeta(x){ return (x&&typeof x==='object')?x:{text:String(x==null?'':x),origin:'ai',nature:'base'}; }
@@ -1833,7 +1809,7 @@ function showSummaryModal(city2,sectors){
   // 生成kb一句话摘要
   var p=cur&&PROJECTS[cur];
   // 已移除随州硬编码假结论与通用捏造文案：无上传材料时不虚构研判结论。
-  var _hasUp2=!!(_setupFiles&&_setupFiles.length);
+  var _hasUp2=k.known&&k.known.length>0;
   var _phRow=_hasUp2?'已结合上传材料完成初步归纳，进入城市智库查看':'暂无数据，请上传政府材料后由 AI 生成';
   var insights=[_phRow,_phRow,_phRow,_phRow];
   var rows=(sectors||[]).map(function(s,i){
@@ -6481,7 +6457,7 @@ function kbPage(p){
           (k.tag.indexOf('待')>=0?'color:#c08a2a;background:#fff8e6':'color:#006d70;background:#e4f5f3'):
           'color:#9aa5b5;background:#f5f7fb';
         var dot=k.known&&k.known.length?'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:5px;vertical-align:middle"></span>':'';
-        var firstKnown=k.known&&k.known.length?k.known.map(_kbText).filter(function(x){return x.indexOf('⚠️')<0&&!_isJunkKbItem(x);})[0]:'';
+        var firstKnown=k.known&&k.known.length?k.known.map(_kbText).filter(function(x){return x&&x.length>10;})[0]:'';
         if(firstKnown&&firstKnown.length>80) firstKnown=firstKnown.substring(0,80)+'…';
         return '<button class="topic-row" onclick="kbDetail('+i+')">'+
           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
