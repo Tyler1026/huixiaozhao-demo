@@ -231,8 +231,9 @@ def _clean_kb_text(text):
     text = _re.sub(r'地价只认[^。\n]*[。]?', '', text)
     text = _re.sub(r'政策必标[^。\n]*[。]?', '', text)
     text = _re.sub(r'>\s*[^\n]*', '', text)
-    # 删除所有【...】前缀（章节/报告/弹药盘点等）
+    # 删除所有【...】及孤立的】
     text = _re.sub(r'【[^】]*】\s*', '', text)
+    text = text.replace('】', '')
     # 删除生成时间/分析对象等元信息
     text = _re.sub(r'生成时间[:：][^。；\n]*[。；]?', '', text)
     text = _re.sub(r'分析对象[:：][^。；\n]*[。；]?', '', text)
@@ -314,9 +315,6 @@ def _clean_sync_data(data):
                 # 跳过空/过短/无用条目
                 if _is_junk_item(t):
                     continue
-                # 截断过长条目（保留前120字核心信息）
-                if len(t) > 120:
-                    t = t[:120] + '…'
                 cleaned.append(t)
             # 每个板块最多保留6条核心内容
             section['known'] = cleaned[:6]
