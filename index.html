@@ -1061,6 +1061,9 @@ function render(){
   if(view==='knowledge'){ setTimeout(kbChatReplay, 50); }
   // 重建 DOM 后：若仍停留在同一 view+cur（原地重渲染），还原滚动位置，避免阅读时弹回顶部
   _restoreScroll(_prevScrollKey, _prevScrollTops);
+  // 兜底：异步渲染(kbChatReplay/报告回放)可能在50-800ms后reset scrollTop，加长延时再恢复
+  var _fk=_prevScrollKey,_ft=_prevScrollTops;
+  [1200,2000].forEach(function(ms){setTimeout(function(){_restoreScroll(_fk,_ft);},ms);});
 }
 /* 顶栏角色切换按钮（政府端 ⇄ 运营端）*/
 
@@ -8432,15 +8435,11 @@ function kbVerifyMaterial(){
             '">'+badgeText+
             '<span style="font-weight:400;color:#94a3b8;margin-left:8px">· 校验耗时 '+elapsed+'ms · 对比 '+topicKnown.length+' 条现有结论</span>'+
             '</div>');
-          // 发现高危矛盾：提供「确认数据·是否覆盖原有结论」入口
+                    // 发现高危矛盾：直接弹出逐条确认面板
           if(hasHighRisk){
             window._lastVerifyText=accText;
             window._lastVerifyKbIdx=(kbIdx!=null?kbIdx:0);
-            bubble.insertAdjacentHTML('beforeend',
-              '<div style="margin-top:10px" data-verify-overwrite="1">'+
-              '<button onclick="kbConfirmOverwrite()" style="padding:8px 16px;background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer">⚑ 确认数据 · 是否覆盖原有结论</button>'+
-              '<div style="font-size:11px;color:#94a3b8;margin-top:6px">将逐条列出冲突项，由你选择“保留原数据”或“用新材料覆盖”</div>'+
-              '</div>');
+            setTimeout(function(){ kbConfirmOverwrite(); }, 300);
           }
           // 兜底：bodyDiv 为空但 accText 有内容时直接渲染纯文本
           if(accText && !bodyDiv.innerHTML.trim()){
