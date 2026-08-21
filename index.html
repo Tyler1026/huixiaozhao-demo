@@ -8368,13 +8368,19 @@ function kbVerifyMaterial(){
   var prompt=
     '【新上传文件原文】\n'+newText+'\n\n'
     +'【智库已有结论（正确基准）】\n'+topicKnown.join('\n')+'\n\n'
-    +'任务：把上方两份原文逐字交叉比对，逐个核对每一个数字、数量、占比、金额、企业家数是否一致。\n'
+    +'任务：找出新上传文件与智库已有结论中【同一个数据指标但数值不同】的地方。\n'
+    +'重要规则：\n'
+    +'- 只对比双方都提到的同一指标（如产值、增速、产量等），数值不同才算矛盾\n'
+    +'- 文件中有但智库没有的新信息，不是矛盾，不要列出\n'
+    +'- 智库有但文件没提的内容，也不是矛盾，不要列出\n'
+    +'- 年份不同（如智库是2024年数据，文件是2025年数据）属于数据更新，标注为矛盾让用户确认\n\n'
     +'输出格式严格遵守：\n'
     +'第一行必须是结论标记，二选一：\n'
-    +'  · 若有任意一处对不上 → 写「结论：发现矛盾N处」（N为不一致处数，N≥1）\n'
-    +'  · 若逐字完全一致 → 写「结论：未发现矛盾」\n'
-    +'随后逐条列出，每条格式固定为：【严重程度:高】文件说XXX，智库记录是YYY，不一致。\n'
-    +'硬性规则：只要有一个数字/事实对不上，第一行就必须写「发现矛盾」，绝不允许写「未发现矛盾」；数字不同一律判【严重程度:高】。不要用「若」「假设」等推测语气。';
+    +'  · 若有数值冲突 → 写「结论：发现矛盾N处」（N为冲突数，N≥1）\n'
+    +'  · 若无数值冲突 → 写「结论：未发现矛盾」\n'
+    +'随后逐条列出每个冲突，格式固定为：\n'
+    +'【严重程度:高】文件说[具体指标+数值]，智库记录是[同一指标+数值]，不一致。\n'
+    +'要求：每条必须说清楚是哪个指标，不要只写数字。';
 
   // 思考气泡
   var thinking=document.createElement('div');
@@ -8767,42 +8773,35 @@ function showConflictPanel(kbIdx, conflicts){
       '<div style="font-size:16px;font-weight:750;color:#0b183b;margin-bottom:4px">数据冲突确认</div>'+
       '<div style="font-size:12.5px;color:#8492a6;margin-bottom:16px">新上传材料中发现与现有数据不一致的内容，请逐条确认采用哪一项：</div>'+
       conflicts.map(function(c,ci){
-        // 找出新旧文本中的差异部分并高亮
-        var oldWords=c.old.split(/([\d,.]+[亿万%元辆吨]+|\+[\d.]+%)/);
-        var newWords=c.new.split(/([\d,.]+[亿万%元辆吨]+|\+[\d.]+%)/);
-        // 提取差异数字
-        var oldNums=c.old.match(/[\d,.]+[亿万%元辆吨]+|\+[\d.]+%/g)||[];
-        var newNums=c.new.match(/[\d,.]+[亿万%元辆吨]+|\+[\d.]+%/g)||[];
-        var diffOld=[],diffNew=[];
-        var maxLen=Math.max(oldNums.length,newNums.length);
-        for(var di=0;di<maxLen;di++){
-          if(oldNums[di]!==newNums[di]){
-            if(oldNums[di]) diffOld.push(oldNums[di]);
-            if(newNums[di]) diffNew.push(newNums[di]);
-          }
+        // 高亮差异：在完整文本中把不同的数值加粗标红/标绿
+        function highlightDiff(text, otherText){
+          // 提取两边所有数字+单位
+          var nums=text.match(/[\d,.]+[亿万%元辆吨GWh千米平方公里个家条]+|\+[\d.]+%/g)||[];
+          var otherNums=otherText.match(/[\d,.]+[亿万%元辆吨GWh千米平方公里个家条]+|\+[\d.]+%/g)||[];
+          var result=text;
+          nums.forEach(function(n){
+            if(otherNums.indexOf(n)<0){
+              result=result.replace(n,'<b style="background:#fef08a;padding:1px 3px;border-radius:3px">'+n+'</b>');
+            }
+          });
+          return result;
         }
-        // 如果没找到数字差异，直接截取差异片段
-        var diffDesc='';
-        if(diffOld.length||diffNew.length){
-          diffDesc='<div style="font-size:12px;color:#64748b;margin-bottom:8px;padding:6px 10px;background:#f8fafc;border-radius:6px">'+
-            '相关内容：'+c.old.substring(0,60)+(c.old.length>60?'…':'')+
-          '</div>';
-        }
-        return '<div style="border:1.5px solid #e8edf5;border-radius:12px;padding:14px;margin-bottom:12px" id="conflict-card-'+ci+'">'+
-          '<div style="display:flex;align-items:center;margin-bottom:8px">'+
-            '<div style="font-size:12px;font-weight:600;color:#475569">冲突 '+(ci+1)+'</div>'+
+        var oldHighlighted=highlightDiff(c.old, c.new);
+        var newHighlighted=highlightDiff(c.new, c.old);
+        return '<div style="border:1.5px solid #e8edf5;border-radius:12px;padding:16px;margin-bottom:12px" id="conflict-card-'+ci+'">'+
+          '<div style="display:flex;align-items:center;margin-bottom:10px">'+
+            '<div style="font-size:12px;font-weight:650;color:#475569">冲突 '+(ci+1)+'</div>'+
             '<div id="conflict-status-'+ci+'" style="margin-left:auto;font-size:11px;font-weight:600;color:#cbd5e1">未确认</div>'+
           '</div>'+
-          diffDesc+
           '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
-            '<div style="padding:10px 12px;background:#fff5f5;border:1.5px solid #fecaca;border-radius:8px" id="conflict-old-'+ci+'">'+
-              '<div style="font-size:11px;font-weight:600;color:#ef4444;margin-bottom:6px">现有数据</div>'+
-              '<div style="font-size:14px;font-weight:700;color:#dc2626;margin-bottom:10px">'+(diffOld.length?diffOld.join(' / '):c.old.substring(0,80))+'</div>'+
+            '<div style="padding:12px;background:#fff5f5;border:1.5px solid #fecaca;border-radius:8px" id="conflict-old-'+ci+'">'+
+              '<div style="font-size:11px;font-weight:600;color:#ef4444;margin-bottom:6px">智库现有数据</div>'+
+              '<div style="font-size:13px;color:#1e293b;line-height:1.7;margin-bottom:10px">'+oldHighlighted+'</div>'+
               '<button onclick="resolveConflict('+kbIdx+','+ci+',\'old\')" style="width:100%;padding:8px;background:#fff;border:1.5px solid #fca5a5;border-radius:7px;font-size:12px;font-weight:600;color:#ef4444;cursor:pointer">保留旧数据</button>'+
             '</div>'+
-            '<div style="padding:10px 12px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px" id="conflict-new-'+ci+'">'+
+            '<div style="padding:12px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px" id="conflict-new-'+ci+'">'+
               '<div style="font-size:11px;font-weight:600;color:#166534;margin-bottom:6px">新材料数据</div>'+
-              '<div style="font-size:14px;font-weight:700;color:#16a34a;margin-bottom:10px">'+(diffNew.length?diffNew.join(' / '):c.new.substring(0,80))+'</div>'+
+              '<div style="font-size:13px;color:#1e293b;line-height:1.7;margin-bottom:10px">'+newHighlighted+'</div>'+
               '<button onclick="resolveConflict('+kbIdx+','+ci+',\'new\')" style="width:100%;padding:8px;background:#16a34a;border:none;border-radius:7px;font-size:12px;font-weight:600;color:#fff;cursor:pointer">采用新数据</button>'+
             '</div>'+
           '</div>'+
