@@ -278,7 +278,7 @@ def _classify_and_summarize(city, kb_sections, all_cleaned_items):
                  "Authorization": f"Bearer {DS_KEY}"}
     )
     try:
-        with DS_OPENER.open(req, timeout=45) as resp:
+        with DS_OPENER.open(req, timeout=60) as resp:
             result = json.loads(resp.read())
         content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
         if not content:
@@ -409,21 +409,24 @@ def _clean_sync_data(data):
     if not isinstance(data, dict):
         return data
     projects = data.get('PROJECTS') or {}
+    cur_proj = data.get('cur', '')  # 当前查看的项目ID
     for pkey, proj in projects.items():
         city = proj.get('city', '')
         kb = proj.get('kb') or []
         if not kb:
             continue
-        # 第一步：收集所有板块的cleaned items（汇总）
-        all_cleaned = []
-        for section in kb:
-            known = section.get('known') or []
-            for item in known:
-                t = _clean_kb_text(item)
-                if not _is_junk_item(t):
-                    all_cleaned.append(t)
-        # 第二步：AI一次性分类+概括
-        classified = _classify_and_summarize(city, kb, all_cleaned)
+        # 只对当前查看的城市做AI分类（避免批量超时）
+        if pkey == cur_proj:
+            all_cleaned = []
+            for section in kb:
+                known = section.get('known') or []
+                for item in known:
+                    t = _clean_kb_text(item)
+                    if not _is_junk_item(t):
+                        all_cleaned.append(t)
+            classified = _classify_and_summarize(city, kb, all_cleaned)
+        else:
+            classified = None
         # 第三步：把分类结果写回各板块
         for section in kb:
             topic = section.get('t', '')
