@@ -5,7 +5,7 @@
 - GET  /health      → 健康检查
 - POST /api/kb-chat → RAG 问答，流式调用 DeepSeek API
 """
-import json, os, urllib.request, urllib.error, time, datetime, hashlib
+import json, os, urllib.request, urllib.error, urllib.parse, time, datetime, hashlib
 from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 try:
     import psycopg2
@@ -718,7 +718,8 @@ class Handler(BaseHTTPRequestHandler):
         # /ops 和 /ops.html 路径在两个端口都服务管理端
         # 5051 访问 / 也直接服务管理端（和 5050/ops 共享 origin→不行，但5050/ops 共享 origin 可以）
         path = self.path.split('?')[0]
-        # 云端数据同步：GET /api/sync 读取（返回前清洗冗余内容）
+        # 云端数据同步：GET /api/sync 读取
+        # 管理端传 ?raw=1 获取原始数据，政府端不带参数则做AI概括清洗
         if path == '/api/sync':
             if _PG_AVAIL and DATABASE_URL:
                 result = _db_get()
@@ -729,12 +730,18 @@ class Handler(BaseHTTPRequestHandler):
                         raw_str = f2.read()
                 except FileNotFoundError:
                     raw_str = '{}'
-            try:
-                sync_obj = json.loads(raw_str)
-                sync_obj = _clean_sync_data(sync_obj)
-                data = json.dumps(sync_obj, ensure_ascii=False).encode()
-            except Exception:
+            # 管理端请求原始数据（?raw=1），不做任何清洗/概括
+            _qs = urllib.parse.urlparse(self.path).query
+            _is_raw = 'raw=1' in _qs
+            if _is_raw:
                 data = raw_str.encode()
+            else:
+                try:
+                    sync_obj = json.loads(raw_str)
+                    sync_obj = _clean_sync_data(sync_obj)
+                    data = json.dumps(sync_obj, ensure_ascii=False).encode()
+                except Exception:
+                    data = raw_str.encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.send_header('Content-Length', str(len(data)))

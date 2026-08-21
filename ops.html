@@ -614,7 +614,7 @@ setInterval(function(){
   if(!REPORT_REQUESTS.length) return;
   var active=REPORT_REQUESTS.some(function(r){return r.status==='pending'||r.status==='running';});
   if(!active) return;
-  fetch('/api/sync').then(function(r){return r.json();}).then(function(raw){
+  fetch('/api/sync?raw=1').then(function(r){return r.json();}).then(function(raw){
     var srv=(raw&&raw.huixiaozhao_kb_v1&&raw.huixiaozhao_kb_v1.REPORT_REQUESTS)?raw.huixiaozhao_kb_v1.REPORT_REQUESTS:(raw&&raw.REPORT_REQUESTS);
     if(!srv||!srv.length) return;
     var rank={pending:0,running:1,failed:2,done:3};var changed=false;
@@ -4616,7 +4616,7 @@ function restore(){
 
 function restoreFromServer(callback){
   var localENT = OPS_ENT && OPS_ENT.length ? OPS_ENT.slice() : [];
-  fetch('/api/sync').then(function(r){return r.json();}).then(function(raw){
+  fetch('/api/sync?raw=1').then(function(r){return r.json();}).then(function(raw){
     if(!raw){ window._opsDataReady=true; if(callback)callback(false); return; }
     var srv = (raw.huixiaozhao_kb_v1 && raw.huixiaozhao_kb_v1.PROJECTS)
               ? raw.huixiaozhao_kb_v1 : raw;
