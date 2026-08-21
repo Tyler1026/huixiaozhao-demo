@@ -676,6 +676,9 @@ function _kbText(x){
   t=t.replace(/>\s*[^\n]*/g,'');
   // 清理括号中的日期标注 如 , 2025-03-31
   t=t.replace(/[,，]\s*\d{4}-\d{2}-\d{2}/g,'');
+  // 清理章节标题前缀
+  t=t.replace(/【[一二三四五六七八九十\d\.]+[、.][^】]*】\s*/g,'');
+  t=t.replace(/【[\d\.]+\s*[^】]*】\s*/g,'');
   t=t.replace(/\s{2,}/g,' ').trim();
   return t;
 }

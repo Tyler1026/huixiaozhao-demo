@@ -227,11 +227,14 @@ def _clean_kb_text(text):
     text = _re.sub(r'政策必标[^。\n]*[。]?', '', text)
     text = _re.sub(r'>\s*[^\n]*', '', text)
     text = _re.sub(r'[,，]\s*\d{4}-\d{2}-\d{2}', '', text)
+    # 清理章节标题前缀
+    text = _re.sub(r'【[一二三四五六七八九十\d\.]+[、.][^】]*】\s*', '', text)
+    text = _re.sub(r'【[\d\.]+\s*[^】]*】\s*', '', text)
     text = _re.sub(r'\s{2,}', ' ', text).strip()
     return text
 
 def _clean_sync_data(data):
-    """清洗 sync 数据中 kb.known 数组的冗余内容"""
+    """清洗 sync 数据中 kb.known 数组：清理URL、截断过长、精选条目"""
     if not isinstance(data, dict):
         return data
     projects = data.get('PROJECTS') or {}
@@ -239,7 +242,17 @@ def _clean_sync_data(data):
         kb = proj.get('kb') or []
         for section in kb:
             known = section.get('known') or []
-            section['known'] = [_clean_kb_text(item) for item in known]
+            cleaned = []
+            for item in known:
+                t = _clean_kb_text(item)
+                if not t or len(t) < 4:
+                    continue
+                # 截断过长条目（保留前150字核心信息）
+                if len(t) > 150:
+                    t = t[:150] + '\u2026'
+                cleaned.append(t)
+            # 每个板块最多保留8条精选（避免60条刷屏）
+            section['known'] = cleaned[:8]
     return data
 HTML_OPS    = os.path.join(_BASE, "ops.html")
 DS_URL      = "https://api.deepseek.com/v1/chat/completions"
