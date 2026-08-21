@@ -1029,6 +1029,13 @@ class Handler(BaseHTTPRequestHandler):
                         grams = [short[x:x+8] for x in range(0, max(1, len(short) - 7), 4)] or [short]
                         hit = sum(1 for g in grams if g and g in long)
                         return hit / len(grams)
+                    _IND_WORDS = ('生产总值', 'GDP', '增加值', '产值', '产量', '增速', '增长',
+                                  '配套率', '城镇化率', '常住人口', '进出口', '进口', '出口',
+                                  '财政收入', '投资', '用电', '客运', '货运', '面积', '营收',
+                                  '利润', '税收', '就业', '工资', '房价', '地价')
+                    def _ind_hit(a, b):
+                        # 指标核心词共现：两段文本含同一个指标词才允许数字佐证通道生效
+                        return any(w in a and w in b for w in _IND_WORDS)
 
                     matched_ct = 0
                     if mode == 'replace':
@@ -1050,11 +1057,14 @@ class Handler(BaseHTTPRequestHandler):
                                 sc = _similar(nc['text'], et)
                                 # 数字佐证通道：同一显著数值 → 视为佐证同一事实
                                 if sc <= best_score and nc_nums:
+                                    # 数字佐证必须同时命中"指标核心词"，防止碰巧同数值的不同指标误挂
+                                    # （如增速10% vs 市场占有率10%、进口额2.6亿 vs 产业规模2.6万亿）
                                     shared = nc_nums & _sal_nums(et)
-                                    if any('.' in n or n.endswith('%') for n in shared):
-                                        sc = max(sc, 0.8)   # 共享小数/百分数，几乎必为同一指标
-                                    elif shared and sc >= 0.15:
-                                        sc = max(sc, 0.7)   # 共享整数值且文本弱相关
+                                    if shared and _ind_hit(nc['text'], et):
+                                        if any('.' in n or n.endswith('%') for n in shared):
+                                            sc = max(sc, 0.8)   # 共享小数/百分数+指标词命中
+                                        else:
+                                            sc = max(sc, 0.7)   # 共享整数值+指标词命中
                                 if sc > best_score:
                                     best, best_score = ek, sc
                             if best is not None:
