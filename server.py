@@ -405,48 +405,9 @@ def _is_junk_item(text):
     return False
 
 def _clean_sync_data(data):
-    """清洗+AI分类概括：把所有材料汇总后让AI按板块主题分类+精选概括"""
-    if not isinstance(data, dict):
-        return data
-    projects = data.get('PROJECTS') or {}
-    cur_proj = data.get('cur', '')  # 当前查看的项目ID
-    for pkey, proj in projects.items():
-        city = proj.get('city', '')
-        kb = proj.get('kb') or []
-        if not kb:
-            continue
-        # AI分类暂时禁用（防超时502），只做基础清洗
-        classified = None
-        # 第三步：把分类结果写回各板块
-        for section in kb:
-            topic = section.get('t', '')
-            if classified and topic in classified:
-                section['known'] = classified[topic]
-            else:
-                # AI未返回或失败，保留清洗后的前6条
-                known = section.get('known') or []
-                cleaned = []
-                for item in known:
-                    t = _clean_kb_text(item)
-                    if not _is_junk_item(t):
-                        cleaned.append(t)
-                section['known'] = cleaned[:6]
-            # 修正 sub
-            sub = section.get('sub', '')
-            if 'AI流水线' in sub or '流水线产出' in sub or not sub:
-                _sub_map = {
-                    '主导产业与产业链': city + '主导产业集群与核心缺口',
-                    '园区与承载条件': city + '主要园区与承载能力',
-                    '链主与存量企业': city + '链主企业与配套格局',
-                    '政策、规划与领导关注': city + '政策方向与竞争态势',
-                }
-                section['sub'] = _sub_map.get(topic, city + '产业数据')
-            # 修正 tag
-            tag = section.get('tag', '')
-            if tag in ('已初始化', '') or 'AI流水线' in tag:
-                n = len(section['known'])
-                section['tag'] = f'AI研判 · {n}条' if n else '待补充'
+    """直接返回原始数据（紧急恢复，不做任何修改）"""
     return data
+
 HTML_OPS    = os.path.join(_BASE, "ops.html")
 DS_URL      = "https://api.deepseek.com/v1/chat/completions"
 # 直连 DeepSeek，绕过系统代理(Clash 7897)——否则请求会挂死
