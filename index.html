@@ -676,12 +676,8 @@ function _kbText(x){
   t=t.replace(/地价只认[^。\n]*[。]?/g,'');
   t=t.replace(/政策必标[^。\n]*[。]?/g,'');
   t=t.replace(/>\s*[^\n]*/g,'');
-  // 删除章节标题前缀
-  t=t.replace(/【[一二三四五六七八九十\d\.]+[、.][^】]*】\s*/g,'');
-  t=t.replace(/【[\d\.]+\s*[^】]*】\s*/g,'');
-  // 删除报告标题类前缀
-  t=t.replace(/【[^】]*报告[^】]*】\s*/g,'');
-  t=t.replace(/【[^】]*清单[^】]*】\s*/g,'');
+  // 删除所有【...】前缀
+  t=t.replace(/【[^】]*】\s*/g,'');
   // 删除生成时间/分析对象等元信息
   t=t.replace(/生成时间[:：][^。；\n]*[。；]?/g,'');
   t=t.replace(/分析对象[:：][^。；\n]*[。；]?/g,'');
@@ -700,6 +696,12 @@ function _isJunkKbItem(text){
   if(/^[✅⚠️\s]*[\[【]?.*竞争格局分析报告/.test(text)) return true;
   if(/^[✅⚠️\s]*[\[【]?.*招商作战清单/.test(text)) return true;
   if(/^[✅⚠️\s]*[\[【]?.*市方向[一二三四五六七八九十\d]/.test(text)) return true;
+  if(/^\d{3,4}\/t\d+/.test(text)) return true;
+  if(/^注[:：]/.test(text)) return true;
+  if(/^年份\s+GDP/.test(text)) return true;
+  if(/^排名\s+企业/.test(text)) return true;
+  if(/---{3,}/.test(text)) return true;
+  if(/^\d+\s+\S+\s+★/.test(text)) return true;
   return false;
 }
 function _kbMeta(x){ return (x&&typeof x==='object')?x:{text:String(x==null?'':x),origin:'ai',nature:'base'}; }

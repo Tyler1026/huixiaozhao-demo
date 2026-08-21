@@ -231,9 +231,8 @@ def _clean_kb_text(text):
     text = _re.sub(r'地价只认[^。\n]*[。]?', '', text)
     text = _re.sub(r'政策必标[^。\n]*[。]?', '', text)
     text = _re.sub(r'>\s*[^\n]*', '', text)
-    # 删除章节标题前缀 【一、...】【2.1 ...】
-    text = _re.sub(r'【[一二三四五六七八九十\d\.]+[、.][^】]*】\s*', '', text)
-    text = _re.sub(r'【[\d\.]+\s*[^】]*】\s*', '', text)
+    # 删除所有【...】前缀（章节/报告/弹药盘点等）
+    text = _re.sub(r'【[^】]*】\s*', '', text)
     # 删除生成时间/分析对象等元信息
     text = _re.sub(r'生成时间[:：][^。；\n]*[。；]?', '', text)
     text = _re.sub(r'分析对象[:：][^。；\n]*[。；]?', '', text)
@@ -263,6 +262,17 @@ def _is_junk_item(text):
     for pat in junk_patterns:
         if _re.search(pat, text):
             return True
+    # 纯表格行/URL碎片/分隔线
+    if _re.match(r'^\d{3,4}/t\d+', text):
+        return True
+    if _re.match(r'^注[:：]', text):
+        return True
+    if _re.match(r'^(年份|排名)\s+(GDP|企业)', text):
+        return True
+    if '------' in text or '---' * 3 in text:
+        return True
+    if _re.match(r'^\d+\s+\S+\s+★', text):
+        return True
     return False
 
 def _clean_sync_data(data):
