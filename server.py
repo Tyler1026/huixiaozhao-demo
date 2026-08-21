@@ -1001,10 +1001,22 @@ class Handler(BaseHTTPRequestHandler):
                               'sub': '', 'tag': '', 'known': [], 'calls': []}
                         p['kb'].append(tp)
                     # 就地匹配：新 chunk 与已有条目相似度高 → 在已有条目上打标注，不新增
+                    def _strip_tag(s):
+                        # 剥掉结构化导入的 [对象ID|状态] 前缀，避免稀释相似度
+                        return _re.sub(r'^\s*[\[【][^\]】]{0,50}[\]】]\s*', '', str(s or ''))
                     def _norm(s):
-                        return _re.sub(r'[\s，,。、；;：:（）()【】\[\]|—\-]+', '', str(s or ''))
+                        return _re.sub(r'[\s，,。、；;：:（）()【】\[\]|—\-]+', '', _strip_tag(s))
                     def _chunk_text(k):
                         return k.get('text', '') if isinstance(k, dict) else str(k)
+                    def _sal_nums(s):
+                        # 显著数字：带小数点 / 百分数 / ≥3位非年份——用于"同一指标同一数值"佐证通道
+                        out = set()
+                        for m in _re.findall(r'\d+(?:\.\d+)?%?', _strip_tag(s)):
+                            if m.endswith('%') or '.' in m:
+                                out.add(m.rstrip('%') + ('%' if m.endswith('%') else ''))
+                            elif len(m) >= 3 and not (1900 <= int(m) <= 2100):
+                                out.add(m)
+                        return out
                     def _similar(a, b):
                         a, b = _norm(a), _norm(b)
                         if not a or not b:
@@ -1032,8 +1044,17 @@ class Handler(BaseHTTPRequestHandler):
                         leftover = []
                         for nc in chunks:
                             best, best_score = None, 0.55   # 相似度阈值
+                            nc_nums = _sal_nums(nc['text'])
                             for ek in norm_known:
-                                sc = _similar(nc['text'], ek.get('text', ''))
+                                et = ek.get('text', '')
+                                sc = _similar(nc['text'], et)
+                                # 数字佐证通道：同一显著数值 → 视为佐证同一事实
+                                if sc <= best_score and nc_nums:
+                                    shared = nc_nums & _sal_nums(et)
+                                    if any('.' in n or n.endswith('%') for n in shared):
+                                        sc = max(sc, 0.8)   # 共享小数/百分数，几乎必为同一指标
+                                    elif shared and sc >= 0.15:
+                                        sc = max(sc, 0.7)   # 共享整数值且文本弱相关
                                 if sc > best_score:
                                     best, best_score = ek, sc
                             if best is not None:
