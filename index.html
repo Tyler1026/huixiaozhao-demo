@@ -7340,7 +7340,13 @@ function kbSearch(query, chunks, topK){
   });
 
   scored.sort(function(a,b){return b.score-a.score;});
-  return scored.slice(0,topK).filter(function(x){return x.score>0;}).map(function(x){return x.chunk;});
+  var hit=scored.slice(0,topK).filter(function(x){return x.score>0;}).map(function(x){return x.chunk;});
+  // 空召回兜底：宽泛问题(如"XX有哪些主导产业")可能一条都匹配不上BM25正分，
+  // 但绝不能给后端传空chunks(否则RAG裸奔、审计候选=0)。退回该corpus前topK条核心语料。
+  if(hit.length===0 && chunks.length>0){
+    hit=chunks.slice(0,topK);
+  }
+  return hit;
 }
 
 /* ── 3. 结构化 Answer 生成 ── */
