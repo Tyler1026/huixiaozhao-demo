@@ -1606,25 +1606,46 @@ function ensureAiReport(topic, city){
   if(!chunks || !chunks.length) return;
   _aiReportGenerating[key]=true;
   var fullQuery='请基于'+city+'城市智库数据，针对「'+topic+'」方向，输出完整招商研判报告，严格按五章结构：\n一、产业基础判断（具体数字，来自知识片段）\n二、产业链缺口分析（逐环节标注✅已有/⚠️薄弱/❌缺失，标注本地化属性A必须本地化/B可跨区域/C优先本地化）\n三、补链优先级清单TOP5（表格格式：缺口节点|本地化属性|经济拉动★|招引可行性★|综合优先级）\n四、目标企业画像（每个TOP缺口：目标企业类型+规模+开口话术模板）\n五、待确认事项（⚠️标注每条需确认的专项资金/园区地块/政策口径）';
+  // 改流式：mode=full 生成需 60~90s，非流式会被 Railway 网关(~60s)判超时→502。
+  // 走 SSE 立即吐首字节喂活网关计时器，永不超时；累积 accText 后按原逻辑落地。
   fetch('/api/kb-chat',{
     method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:fullQuery, chunks:chunks, city:city, mode:'full', stream:false})
-  }).then(function(r){return r.json();}).then(function(resp){
-    var txt='';
-    if(resp && resp.choices && resp.choices[0] && resp.choices[0].message){
-      txt = resp.choices[0].message.content || '';
+    body:JSON.stringify({question:fullQuery, chunks:chunks, city:city, mode:'full', stream:true})
+  }).then(function(resp){
+    if(!resp.ok || !resp.body) throw new Error('HTTP '+resp.status);
+    var reader=resp.body.getReader(), decoder=new TextDecoder(), buf='', accText='';
+    function done(){
+      var txt=accText;
+      if(!txt || txt.length<80) return;  // 生成失败/过短：保留预埋兜底
+      if(!REPORTSTATE[cur].aiReportByTopic) REPORTSTATE[cur].aiReportByTopic={};
+      REPORTSTATE[cur].aiReportByTopic[topic]=txt;
+      // 当前正显示该方向：同步替换正文
+      var _p=P();
+      if(_p && _p.topic===topic){
+        REPORTSTATE[cur].text=txt;
+        REPORTSTATE[cur].topic=topic;
+      }
+      persist();
+      if(view==='report') render();
     }
-    if(!txt || txt.length<80) return;  // 生成失败/过短：保留预埋兜底
-    if(!REPORTSTATE[cur].aiReportByTopic) REPORTSTATE[cur].aiReportByTopic={};
-    REPORTSTATE[cur].aiReportByTopic[topic]=txt;
-    // 当前正显示该方向：同步替换正文
-    var _p=P();
-    if(_p && _p.topic===topic){
-      REPORTSTATE[cur].text=txt;
-      REPORTSTATE[cur].topic=topic;
+    function pump(){
+      return reader.read().then(function(d){
+        if(d.done){ done(); return; }
+        buf+=decoder.decode(d.value,{stream:true});
+        var lines2=buf.split('\n'); buf=lines2.pop();
+        lines2.forEach(function(line){
+          if(!line.startsWith('data:')) return;
+          var d2=line.slice(5).trim(); if(d2==='[DONE]') return;
+          try{
+            var j=JSON.parse(d2);
+            var delta=j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content||'';
+            if(delta) accText+=delta;
+          }catch(e){}
+        });
+        return pump();
+      });
     }
-    persist();
-    if(view==='report') render();
+    return pump();
   }).catch(function(e){
     console.warn('ensureAiReport failed:', e && e.message);
   }).finally(function(){
@@ -5598,16 +5619,34 @@ function researchChain(chainKey, topic, city, nodeNames, chunks){
   // 用 chainKey（干净的链名，如「香菇」）而非 topic（方向全称，如「香菇产业精深加工升级」）构造问题，
   // 避免方向全称里的限定词（精深加工升级）误导模型缩小范围、返回空 local_leaders。
   var q='请对'+city+'产业链「'+chainKey+'」的以下环节逐一研判（强弱判定/本地代表企业/外地对标企业）：'+nodeNames.join('、');
+  // 改流式：mode=chain 生成慢，非流式易被 Railway 网关(~60s)判超时→502。
+  // SSE 累积成完整 content 后，后续 JSON 解析逻辑保持不变。
   fetch('/api/kb-chat',{
     method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:q, city:city, mode:'chain', stream:false, chunks:chunks})
-  }).then(function(r){return r.json();}).then(function(resp){
-    var content='';
-    if(resp && resp.choices && resp.choices[0] && resp.choices[0].message){
-      content = resp.choices[0].message.content || '';
-    } else if(typeof resp==='string'){
-      content = resp;
+    body:JSON.stringify({question:q, city:city, mode:'chain', stream:true, chunks:chunks})
+  }).then(function(resp){
+    if(!resp.ok || !resp.body) throw new Error('HTTP '+resp.status);
+    var reader=resp.body.getReader(), decoder=new TextDecoder(), buf='', content='';
+    function pump(){
+      return reader.read().then(function(d){
+        if(d.done) return content;
+        buf+=decoder.decode(d.value,{stream:true});
+        var lines2=buf.split('\n'); buf=lines2.pop();
+        lines2.forEach(function(line){
+          if(!line.startsWith('data:')) return;
+          var d2=line.slice(5).trim(); if(d2==='[DONE]') return;
+          try{
+            var j=JSON.parse(d2);
+            var delta=j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content||'';
+            if(delta) content+=delta;
+          }catch(e){}
+        });
+        return pump();
+      });
     }
+    return pump();
+  }).then(function(content){
+    content = content || '';
     var m = content.match(/\{[\s\S]*\}/);
     if(!m){ throw new Error('AI 未返回有效数据'); }
     var data = JSON.parse(m[0]);
@@ -5873,14 +5912,34 @@ function ensureAiTopics(){
   } else {
     q+='知识片段覆盖多个不同产业，你必须让方向分布到不同产业上，每个有明显缺口/升级空间的产业至少归纳1个方向，禁止把方向全集中在单一产业。';
   }
+  // 改流式：mode=topics 非流式易被 Railway 网关(~60s)判超时→502。
+  // SSE 累积成完整 txt 后，后续 JSON 解析逻辑保持不变。
   fetch('/api/kb-chat',{
     method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:q, chunks:chunks, city:city, mode:'topics', stream:false})
-  }).then(function(r){return r.json();}).then(function(resp){
-    var txt='';
-    if(resp && resp.choices && resp.choices[0] && resp.choices[0].message){
-      txt = resp.choices[0].message.content || '';
+    body:JSON.stringify({question:q, chunks:chunks, city:city, mode:'topics', stream:true})
+  }).then(function(resp){
+    if(!resp.ok || !resp.body) throw new Error('HTTP '+resp.status);
+    var reader=resp.body.getReader(), decoder=new TextDecoder(), buf='', txt='';
+    function pump(){
+      return reader.read().then(function(d){
+        if(d.done) return txt;
+        buf+=decoder.decode(d.value,{stream:true});
+        var lines2=buf.split('\n'); buf=lines2.pop();
+        lines2.forEach(function(line){
+          if(!line.startsWith('data:')) return;
+          var d2=line.slice(5).trim(); if(d2==='[DONE]') return;
+          try{
+            var j=JSON.parse(d2);
+            var delta=j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content||'';
+            if(delta) txt+=delta;
+          }catch(e){}
+        });
+        return pump();
+      });
     }
+    return pump();
+  }).then(function(txt){
+    txt = txt || '';
     var m=txt.match(/\{[\s\S]*\}/);
     if(!m) return;
     var data; try{ data=JSON.parse(m[0]); }catch(e){ return; }
