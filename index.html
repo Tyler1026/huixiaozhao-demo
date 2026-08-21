@@ -659,7 +659,26 @@ var PROJECTS={};
 
 var STAGES=[['资料准备','上传与授权材料'],['AI 研判','生成缺口与方向'],['确认需求','双确认'],['资源匹配','资源端核验匹配'],['招商对接','安排正式沟通']];
 // 兼容结构化 chunk（对象含 text/origin/nature）与旧字符串：统一取文本
-function _kbText(x){ return (x&&typeof x==='object')?(x.text||''):String(x==null?'':x); }
+function _kbText(x){
+  var t=(x&&typeof x==='object')?(x.text||''):String(x==null?'':x);
+  // 清理URL、来源标注、系统prompt残留等冗余内容
+  t=t.replace(/[\(（]?来源[:：]?\s*https?:\/\/[^\s\)）]*/g,'');
+  t=t.replace(/https?:\/\/[^\s\)）,，。]*/g,'');
+  t=t.replace(/[\(（]\s*\d{4}-\d{2}-\d{2}\s*[\)）]/g,'');
+  t=t.replace(/来源[:：][^。；\n]*[。；]?/g,'');
+  // 清理系统prompt残留（编制单位/引用铁律/数据基准等）
+  t=t.replace(/编制单位[:：][^。\n]*/g,'');
+  t=t.replace(/数据基准[:：][^。\n]*/g,'');
+  t=t.replace(/引用铁律[:：][^。\n]*/g,'');
+  t=t.replace(/地价只认[^。\n]*[。]?/g,'');
+  t=t.replace(/政策必标[^。\n]*[。]?/g,'');
+  // 清理 > 开头的指令行
+  t=t.replace(/>\s*[^\n]*/g,'');
+  // 清理括号中的日期标注 如 , 2025-03-31
+  t=t.replace(/[,，]\s*\d{4}-\d{2}-\d{2}/g,'');
+  t=t.replace(/\s{2,}/g,' ').trim();
+  return t;
+}
 function _kbMeta(x){ return (x&&typeof x==='object')?x:{text:String(x==null?'':x),origin:'ai',nature:'base'}; }
 
 /* ===== AI 招商团队实时工作台（政府端可见，业务化，无内部术语）===== */
@@ -6417,6 +6436,7 @@ function kbPage(p){
           'color:#9aa5b5;background:#f5f7fb';
         var dot=k.known&&k.known.length?'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:5px;vertical-align:middle"></span>':'';
         var firstKnown=k.known&&k.known.length?k.known.map(_kbText).filter(function(x){return x.indexOf('⚠️')<0;})[0]:'';
+        if(firstKnown&&firstKnown.length>80) firstKnown=firstKnown.substring(0,80)+'…';
         return '<button class="topic-row" onclick="kbDetail('+i+')">'+
           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
             '<span style="font-size:20px">'+k.icon+'</span>'+
@@ -7885,19 +7905,32 @@ function kbDetail(i){
             '</div>';
           } else if(isConfirmed){
             actionBtns='<div style="margin-top:6px;font-size:11px;color:#22c55e;display:flex;align-items:center;gap:4px">'+
-              '<span>\u2713 已由确认</span>'+
+              '<span>\u2713 已确认</span>'+
               '<button onclick="editKbItem('+i+','+xi+')" style="background:none;border:none;color:#94a3b8;font-size:11px;cursor:pointer;margin-left:6px">修改</button>'+
               '<button onclick="deleteKbItem('+i+','+xi+')" style="background:none;border:none;color:#cbd5e1;font-size:11px;cursor:pointer;margin-left:2px">删除</button>'+
             '</div>';
+          } else {
+            actionBtns='<div style="display:flex;gap:6px;margin-top:8px">'+
+              '<button onclick="editKbItem('+i+','+xi+')" '+
+                'style="flex:1;padding:6px 0;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600" '+
+                'onmouseover="this.style.background=\'#ede9fe\'" onmouseout="this.style.background=\'#f5f3ff\'">'+
+                '\u270e 修改内容'+
+              '</button>'+
+              '<button onclick="deleteKbItem('+i+','+xi+')" title="删除该条" '+
+                'style="padding:6px 10px;background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;font-size:12px;color:#dc2626;cursor:pointer;font-weight:600" '+
+                'onmouseover="this.style.background=\'#fee2e2\'" onmouseout="this.style.background=\'#fef2f2\'">'+
+                '\u2715 删除'+
+              '</button>'+
+            '</div>';
           }
-          return '<div id="kb-card-'+i+'-'+xi+'" style="border-radius:12px;background:'+bg+';border:1.5px solid '+bd+';overflow:hidden;transition:border-color .15s">'+
+          return '<div id="kb-card-'+i+'-'+xi+'" style="border-radius:12px;background:'+bg+';border:1.5px solid '+bd+';overflow:visible;transition:border-color .15s">'+
             '<div style="display:flex">'+
               '<div style="width:4px;background:'+accent+';flex-shrink:0"></div>'+
               '<div style="padding:10px 13px;flex:1">'+
                 '<div style="display:flex;gap:8px;align-items:flex-start">'+
                   '<span style="font-size:12px;flex-shrink:0;margin-top:2px;color:'+accent+'">'+icon+'</span>'+
                   '<div style="flex:1">'+
-                    '<span style="font-size:13px;color:'+txtColor+';line-height:1.7">'+highlightKeyData(clean)+'</span>'+
+                    '<span style="font-size:13px;color:'+txtColor+';line-height:1.7;word-break:break-all;overflow-wrap:break-word">'+highlightKeyData(clean)+'</span>'+
                     badgeHtml+
                     actionBtns+
                   '</div>'+

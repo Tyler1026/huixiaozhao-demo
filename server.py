@@ -211,6 +211,36 @@ def _merge_map(old, new):
 
 _BASE       = os.path.dirname(os.path.abspath(__file__))
 HTML_GOV    = os.path.join(_BASE, "index.html")
+
+def _clean_kb_text(text):
+    """清洗 known 条目：删除URL/来源标注/系统prompt残留"""
+    if not isinstance(text, str):
+        return text
+    text = _re.sub(r'[\(（]?来源[:：]?\s*https?://[^\s\)）]*', '', text)
+    text = _re.sub(r'https?://[^\s\)）,，。]*', '', text)
+    text = _re.sub(r'[\(（]\s*\d{4}-\d{2}-\d{2}\s*[\)）]', '', text)
+    text = _re.sub(r'来源[:：][^。；\n]*[。；]?', '', text)
+    text = _re.sub(r'编制单位[:：][^。\n]*', '', text)
+    text = _re.sub(r'数据基准[:：][^。\n]*', '', text)
+    text = _re.sub(r'引用铁律[:：][^。\n]*', '', text)
+    text = _re.sub(r'地价只认[^。\n]*[。]?', '', text)
+    text = _re.sub(r'政策必标[^。\n]*[。]?', '', text)
+    text = _re.sub(r'>\s*[^\n]*', '', text)
+    text = _re.sub(r'[,，]\s*\d{4}-\d{2}-\d{2}', '', text)
+    text = _re.sub(r'\s{2,}', ' ', text).strip()
+    return text
+
+def _clean_sync_data(data):
+    """清洗 sync 数据中 kb.known 数组的冗余内容"""
+    if not isinstance(data, dict):
+        return data
+    projects = data.get('PROJECTS') or {}
+    for pkey, proj in projects.items():
+        kb = proj.get('kb') or []
+        for section in kb:
+            known = section.get('known') or []
+            section['known'] = [_clean_kb_text(item) for item in known]
+    return data
 HTML_OPS    = os.path.join(_BASE, "ops.html")
 DS_URL      = "https://api.deepseek.com/v1/chat/completions"
 # 直连 DeepSeek，绕过系统代理(Clash 7897)——否则请求会挂死
@@ -472,17 +502,23 @@ class Handler(BaseHTTPRequestHandler):
         # /ops 和 /ops.html 路径在两个端口都服务管理端
         # 5051 访问 / 也直接服务管理端（和 5050/ops 共享 origin→不行，但5050/ops 共享 origin 可以）
         path = self.path.split('?')[0]
-        # 云端数据同步：GET /api/sync 读取
+        # 云端数据同步：GET /api/sync 读取（返回前清洗冗余内容）
         if path == '/api/sync':
             if _PG_AVAIL and DATABASE_URL:
                 result = _db_get()
-                data = (result or '{}').encode()
+                raw_str = result or '{}'
             else:
                 try:
-                    with open(SYNC_PATH, encoding='utf-8') as f:
-                        data = f.read().encode()
+                    with open(SYNC_PATH, encoding='utf-8') as f2:
+                        raw_str = f2.read()
                 except FileNotFoundError:
-                    data = b'{}'
+                    raw_str = '{}'
+            try:
+                sync_obj = json.loads(raw_str)
+                sync_obj = _clean_sync_data(sync_obj)
+                data = json.dumps(sync_obj, ensure_ascii=False).encode()
+            except Exception:
+                data = raw_str.encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.send_header('Content-Length', str(len(data)))
