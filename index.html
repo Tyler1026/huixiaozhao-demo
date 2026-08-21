@@ -8499,10 +8499,15 @@ function kbConfirmOverwrite(){
       var ec=existing.replace(/^[\u2705\u26a0\ufe0f\s]+/,'');
       if(idx<0 && (ec.indexOf(kbVal)>=0 || (kbVal.length>=3 && ec.indexOf(kbVal.substring(0,Math.min(6,kbVal.length)))>=0))) idx=ei;
     });
-    if(idx<0) continue;  // 找不到对应现有结论则跳过（不新增，只做覆盖确认）
-    var oldClean=k.known[idx].replace(/^[\u2705\u26a0\ufe0f\s]+/,'');
-    // 用新值替换旧值中的数字/关键片段，生成“覆盖后”的完整结论文本
-    var newClean=oldClean.indexOf(kbVal)>=0 ? oldClean.replace(kbVal, fileVal) : (oldClean+'（新材料：'+fileVal+'）');
+    // idx<0 时也保留冲突（用AI返回的对比文本直接展示）
+    var oldClean, newClean;
+    if(idx>=0){
+      oldClean=k.known[idx].replace(/^[\u2705\u26a0\ufe0f\s]+/,'');
+      newClean=oldClean.indexOf(kbVal)>=0 ? oldClean.replace(kbVal, fileVal) : (oldClean+'\uff08\u65b0\u6750\u6599\uff1a'+fileVal+'\uff09');
+    } else {
+      oldClean='\u667a\u5e93\u8bb0\u5f55\uff1a'+kbVal;
+      newClean='\u65b0\u6750\u6599\uff1a'+fileVal;
+    }
     conflicts.push({idx:idx, old:oldClean, new:newClean});
   }
 
@@ -8824,8 +8829,13 @@ function resolveConflict(kbIdx, conflictIdx, choice){
   var k=p.kb[kbIdx];
 
   if(choice==='new'){
-    // 用新数据替换旧数据
-    k.known[c.idx]='\u2705 '+c.new;
+    if(c.idx>=0){
+      // 替换已定位的旧数据
+      k.known[c.idx]='\u2705 '+c.new;
+    } else {
+      // 未精确定位时，追加为新条目
+      k.known.push('\u2705 '+c.new);
+    }
   }
   // choice==='old' 保持不变
 

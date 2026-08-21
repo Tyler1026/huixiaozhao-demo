@@ -1225,6 +1225,7 @@ class Handler(BaseHTTPRequestHandler):
             "model": MODEL,
             "max_tokens": max_tokens,
             "stream": stream,
+            "temperature": 0,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 *hist_msgs,
