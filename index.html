@@ -7734,8 +7734,12 @@ function confirmKbItem(kbIdx,itemIdx){
   if(KB_FILE_CHUNKS[cur]){
     KB_FILE_CHUNKS[cur]=KB_FILE_CHUNKS[cur].filter(function(c){return c.id!=='pin:'+kbIdx+':'+itemIdx;});
   }
-  // 重新渲染 modal + 即时刷新顶部完成度条
+  // 重新渲染 modal（保持滚动位置）
+  var _sc=document.querySelector('#kbDetailModal [style*="overflow-y:auto"]');
+  var _st=_sc?_sc.scrollTop:0;
   kbDetail(kbIdx);
+  var _sc2=document.querySelector('#kbDetailModal [style*="overflow-y:auto"]');
+  if(_sc2)_sc2.scrollTop=_st;
   refreshKbProgress();
   toast('已确认：'+clean.slice(0,20)+'…');
 }
@@ -7849,7 +7853,11 @@ function saveKbEdit(kbIdx,itemIdx){
   KB_CONFIRMS[cur][kbIdx][itemIdx]={status:'edited',text:newText,ts:Date.now()};
   persist();
   buildKBCorpus(p.city);
+  var _sc=document.querySelector('#kbDetailModal [style*="overflow-y:auto"]');
+  var _st=_sc?_sc.scrollTop:0;
   kbDetail(kbIdx);
+  var _sc2=document.querySelector('#kbDetailModal [style*="overflow-y:auto"]');
+  if(_sc2)_sc2.scrollTop=_st;
   refreshKbProgress();
   toast('\u2705 已更新并写入知识库');
 }
@@ -7889,8 +7897,12 @@ function deleteKbItem(kbIdx,itemIdx){
   if(KB_FILE_CHUNKS[cur]){
     KB_FILE_CHUNKS[cur]=KB_FILE_CHUNKS[cur].filter(function(c){return c.id!=='pin:'+kbIdx+':'+itemIdx;});
   }
-  // 重新渲染 modal + 即时刷新顶部完成度条（顺序与 confirmKbItem 保持一致）
+  // 重新渲染 modal（保持滚动位置）
+  var _sc=document.querySelector('#kbDetailModal [style*="overflow-y:auto"]');
+  var _st=_sc?_sc.scrollTop:0;
   kbDetail(kbIdx);
+  var _sc2=document.querySelector('#kbDetailModal [style*="overflow-y:auto"]');
+  if(_sc2)_sc2.scrollTop=_st;
   if(typeof refreshKbProgress==='function') refreshKbProgress();
   toast('已删除该条内容');
 }
