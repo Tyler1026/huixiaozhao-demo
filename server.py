@@ -415,18 +415,8 @@ def _clean_sync_data(data):
         kb = proj.get('kb') or []
         if not kb:
             continue
-        # 只对当前查看的城市做AI分类（避免批量超时）
-        if pkey == cur_proj:
-            all_cleaned = []
-            for section in kb:
-                known = section.get('known') or []
-                for item in known:
-                    t = _clean_kb_text(item)
-                    if not _is_junk_item(t):
-                        all_cleaned.append(t)
-            classified = _classify_and_summarize(city, kb, all_cleaned)
-        else:
-            classified = None
+        # AI分类暂时禁用（防超时502），只做基础清洗
+        classified = None
         # 第三步：把分类结果写回各板块
         for section in kb:
             topic = section.get('t', '')
