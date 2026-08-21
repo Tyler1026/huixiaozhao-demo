@@ -5,7 +5,7 @@
 - GET  /health      → 健康检查
 - POST /api/kb-chat → RAG 问答，流式调用 DeepSeek API
 """
-import json, os, urllib.request, urllib.error, time, datetime
+import json, os, urllib.request, urllib.error, time, datetime, hashlib
 from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 try:
     import psycopg2
@@ -212,6 +212,69 @@ def _merge_map(old, new):
 _BASE       = os.path.dirname(os.path.abspath(__file__))
 HTML_GOV    = os.path.join(_BASE, "index.html")
 
+# ===== AI 摘要缓存 =====
+_SUMMARY_CACHE = {}  # key: md5(city+topic+raw_text) -> summarized list
+
+SYSTEM_SUMMARIZE = """你是招商数据分析师。把下面的原始材料精选概括为4-6条核心结论。
+
+要求：
+- 每条结论独立成句，包含关键数字（金额/产量/增速/占比）
+- 删除重复信息，只保留对招商决策最有价值的事实
+- 不要加序号、不要加标题前缀、不要输出"来源"
+- 每条控制在50-80字
+- 直接输出结论，每条一行，不要任何额外格式"""
+
+def _summarize_known(city, topic, raw_items):
+    """调用 DeepSeek 对一组 known 条目做精选概括，返回概括后的列表"""
+    if not DS_KEY or not raw_items:
+        return raw_items
+    # 缓存 key：基于内容 hash
+    raw_text = '\n'.join(raw_items)
+    cache_key = hashlib.md5((city + topic + raw_text).encode()).hexdigest()
+    if cache_key in _SUMMARY_CACHE:
+        return _SUMMARY_CACHE[cache_key]
+    # 如果内容本身已经很精简（每条<80字且总共<=6条），不需要概括
+    if len(raw_items) <= 6 and all(len(x) <= 80 for x in raw_items):
+        _SUMMARY_CACHE[cache_key] = raw_items
+        return raw_items
+    # 调用 DeepSeek
+    prompt = f"城市：{city}\n板块：{topic}\n\n原始材料（{len(raw_items)}条）：\n" + raw_text
+    payload = json.dumps({
+        "model": MODEL,
+        "messages": [
+            {"role": "system", "content": SYSTEM_SUMMARIZE},
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 800,
+        "temperature": 0.3,
+        "stream": False,
+        "thinking": {"type": "disabled"}
+    }).encode()
+    req = urllib.request.Request(
+        DS_URL, data=payload, method="POST",
+        headers={"Content-Type": "application/json",
+                 "Authorization": f"Bearer {DS_KEY}"}
+    )
+    try:
+        with DS_OPENER.open(req, timeout=30) as resp:
+            result = json.loads(resp.read())
+        content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+        if content:
+            # 按行拆分，过滤空行
+            lines = [l.strip().lstrip('•·-  ') for l in content.strip().split('\n') if l.strip()]
+            # 过滤太短的行（可能是格式残留）
+            lines = [l for l in lines if len(l) >= 10]
+            if lines:
+                _SUMMARY_CACHE[cache_key] = lines
+                print(f"[summarize] {city}/{topic}: {len(raw_items)} -> {len(lines)} items")
+                return lines
+    except Exception as e:
+        print(f"[summarize] failed for {city}/{topic}: {e}")
+    # 失败时返回原始（截取前6条）
+    _SUMMARY_CACHE[cache_key] = raw_items[:6]
+    return raw_items[:6]
+
+
 def _clean_kb_text(text):
     """清洗 known 条目：删除URL/来源/元信息/系统prompt/章节标题等冗余"""
     if not isinstance(text, str):
@@ -316,8 +379,8 @@ def _clean_sync_data(data):
                 if _is_junk_item(t):
                     continue
                 cleaned.append(t)
-            # 每个板块最多保留6条核心内容
-            section['known'] = cleaned[:6]
+            # AI 精选概括：内容过长时调用 DeepSeek 提炼核心结论
+            section['known'] = _summarize_known(city, section.get('t', ''), cleaned)
             # 修正 sub：如果是无意义的"AI流水线产出·N条材料"则替换为板块概述
             sub = section.get('sub', '')
             if 'AI流水线' in sub or '流水线产出' in sub or not sub:
