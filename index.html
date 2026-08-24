@@ -683,6 +683,16 @@ function _kbText(x){
   t=t.replace(/生成时间[:：][^。；\n]*[。；]?/g,'');
   t=t.replace(/分析对象[:：][^。；\n]*[。；]?/g,'');
   t=t.replace(/gov\.cn\s*权威源为主[）\)]?/g,'');
+  // 删除.shtml路径碎片
+  t=t.replace(/\d*\/t\d+_\d+\.shtml/g,'');
+  // 删除表格分隔线(----连续)
+  t=t.replace(/-{3,}/g,'');
+  // 删除系统编号标签 [XXX-X-NNNN|状态]
+  t=t.replace(/\[\w+-\w+-\d+\|[^\]]*\]/g,'');
+  // 删除英文大写下划线标识符(如INVESTMENT_INTENT_NOT_EVIDENCED)
+  t=t.replace(/[A-Z_]{10,}/g,'');
+  // 删除"优先级P0/P1"等系统标记
+  t=t.replace(/[，,]?\s*优先级\s*P\d/g,'');
   // 清理多余空格/标点
   t=t.replace(/\s{2,}/g,' ');
   t=t.replace(/[。；，]{2,}/g,'。');
@@ -691,10 +701,23 @@ function _kbText(x){
   t=t.replace(/\*\*/g,'');
   return t;
 }
-// 判断一条known是否为无用条目（纯标题/报告头）
+// 判断一条known是否为无用条目（纯标题/报告头/表格数据/碎片）
 function _isJunkKbItem(text){
   if(!text||text.length<6) return true;
   if(/^[\s✅⚠️]*$/.test(text)) return true;
+  // 纯报告标题（无实质数据，如"XX市招商方向研判报告"）
+  if(/^[✅⚠️\s]*.{2,6}(市|区|县).{0,20}(报告|纲要|规划|方案|清单|简介)\s*$/.test(text)) return true;
+  // 纯表格行：数字占比>50%且含多个连续数字段
+  var digits=text.replace(/[^0-9.]/g,'').length;
+  if(digits/text.length>0.45&&(text.match(/\d+\.?\d*/g)||[]).length>=5) return true;
+  // .shtml碎片残留
+  if(/\.shtml/.test(text)) return true;
+  // 纯表头行（如"年份 GDP 增速 人均GDP 数据"）
+  if(/^[\s年份GDP增速人均数据亿元万%（）\(\)\s]+$/.test(text)) return true;
+  // 过短且无中文实质内容
+  if(text.length<15&&!/[\u4e00-\u9fff]{4,}/.test(text)) return true;
+  // 纯数据标注（如"数据2025年结构比"）
+  if(/^数据\d{4}年/.test(text)) return true;
   return false;
 }
 
@@ -720,7 +743,7 @@ function _getDisplayKnown(kbIdx){
   }
   // fallback: 用原始数据清洗后前6条
   var p=P(); if(!p||!p.kb||!p.kb[kbIdx]) return [];
-  return (p.kb[kbIdx].known||[]).map(_kbText).filter(function(x){return x&&x.length>10;}).slice(0,6);
+  return (p.kb[kbIdx].known||[]).map(_kbText).filter(function(x){return !_isJunkKbItem(x);}).slice(0,6);
 }
 function _getDisplaySub(kbIdx){
   if(_kbSummaryData && _kbSummaryData.kb && _kbSummaryData.kb[kbIdx]){
@@ -7945,7 +7968,7 @@ function kbDetail(i){
   var knownHtml=(displayKnown&&displayKnown.length)
     ? '<div style="display:flex;flex-direction:column;gap:8px">'+
         displayKnown.map(function(x,xi){
-          if(!x||x.length<6) return '';
+          if(_isJunkKbItem(x)) return '';
           var warn=x.indexOf('⚠️')>=0;
           var isFile=x.indexOf('📎')===0;
           var clean=x.replace('⚠️ ','');
