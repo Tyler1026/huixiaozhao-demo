@@ -430,6 +430,9 @@ def _load_ds_key():
     return v
 DS_KEY      = _load_ds_key()
 MODEL       = "deepseek-v4-pro"
+# chat 模式走 Responses API + 原生联网搜索（仅 v4-flash 支持 web_search，pro 暂不支持）
+DS_RESP_URL = "https://api.deepseek.com/responses"
+MODEL_CHAT  = "deepseek-v4-flash"
 MAX_TOKENS_DRAFT = 800
 MAX_TOKENS_FULL  = 5000
 MAX_TOKENS_CHAT  = 400
@@ -458,7 +461,8 @@ SYSTEM_CHAT = """你是慧小招城市智库的AI问答助手，在招商问答�
 - 像聊天一样简短直接地回答，控制在150字以内。
 - 只回答用户当前问的这一个问题，不要输出报告结构、不要分章节、不要生成表格。
 - 优先引用提供的城市智库数据与用户上传材料中的具体数字。
-- 无数据支撑的判断用⚠️标注。
+- 当问题涉及最新动态、时效信息（如近期政策、行业新闻、企业动向）或智库数据无法覆盖时，使用联网搜索获取最新信息，并注明「（联网）」。
+- 无数据支撑且未联网核实的判断用⚠️标注。
 - 如果用户只是补充/更新了一条数据，简短确认已收到并说明它对研判的意义即可，不要展开长篇分析。
 - 使用中文，口语化、精炼。"""
 
@@ -1335,28 +1339,71 @@ class Handler(BaseHTTPRequestHandler):
         # 导致 content 迟迟不出/为空。前端只渲染 delta.content、不显示思考链，
         # 所以对所有 mode（含 chat/suggest）一律关闭 thinking，避免问答“出不来答案”。
         payload_dict["thinking"] = {"type": "disabled"}
-        payload = json.dumps(payload_dict).encode()
+
+        # chat 模式改走 Responses API + v4-flash 原生联网搜索（web_search 仅 flash 支持）。
+        # 后端把 Responses 流式事件翻译回 chat-completions SSE 格式，前端零改动。
+        if mode == "chat":
+            resp_payload = {
+                "model": MODEL_CHAT,
+                "max_output_tokens": max_tokens + 600,  # 预留搜索/工具调用的输出开销
+                "stream": stream,
+                "instructions": system_prompt,
+                "input": [*hist_msgs,
+                          {"role": "user", "content": f"城市：{city}\n\n知识片段：\n{ctx}\n\n问题：{q}"}],
+                "tools": [{"type": "web_search"}],
+                "thinking": {"type": "disabled"},
+            }
+            payload = json.dumps(resp_payload).encode()
+            ds_url = DS_RESP_URL
+        else:
+            payload = json.dumps(payload_dict).encode()
+            ds_url = DS_URL
 
         req = urllib.request.Request(
-            DS_URL, data=payload, method="POST",
+            ds_url, data=payload, method="POST",
             headers={"Content-Type": "application/json",
                      "Authorization": f"Bearer {DS_KEY}"}
         )
 
         try:
-            _timeout = 150 if mode in ("funnel", "chain", "research") else 60
+            _timeout = 150 if mode in ("funnel", "chain", "research") else 90
             with DS_OPENER.open(req, timeout=_timeout) as resp:
                 if stream:
                     self.send_response(200)
                     self.send_header("Content-Type", "text/event-stream")
                     self.send_header("Cache-Control", "no-cache")
                     self.cors(); self.end_headers()
-                    while True:
-                        line = resp.readline()
-                        if not line: break
-                        self.wfile.write(line); self.wfile.flush()
+                    if mode == "chat":
+                        # Responses SSE → chat-completions SSE 翻译层
+                        for raw_line in resp:
+                            line = raw_line.decode("utf-8", errors="replace").strip()
+                            if not line.startswith("data:"): continue
+                            data = line[5:].strip()
+                            if not data: continue
+                            try: ev = json.loads(data)
+                            except Exception: continue
+                            et = ev.get("type", "")
+                            if et == "response.output_text.delta":
+                                out = json.dumps({"choices": [{"delta": {"content": ev.get("delta", "")}}]}, ensure_ascii=False)
+                                self.wfile.write(f"data: {out}\n\n".encode()); self.wfile.flush()
+                            elif et in ("response.completed", "response.failed", "response.incomplete"):
+                                self.wfile.write(b"data: [DONE]\n\n"); self.wfile.flush()
+                    else:
+                        while True:
+                            line = resp.readline()
+                            if not line: break
+                            self.wfile.write(line); self.wfile.flush()
                 else:
                     data = resp.read()
+                    if mode == "chat":
+                        # Responses JSON → chat-completions JSON 翻译
+                        d = json.loads(data)
+                        txt = "".join(
+                            c.get("text", "")
+                            for i in d.get("output", []) if i.get("type") == "message"
+                            for c in i.get("content", []) if c.get("type") == "output_text"
+                        )
+                        data = json.dumps({"choices": [{"message": {"role": "assistant", "content": txt}}]}, ensure_ascii=False).encode()
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.cors(); self.end_headers(); self.wfile.write(data)
