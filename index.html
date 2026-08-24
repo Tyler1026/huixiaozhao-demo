@@ -1650,7 +1650,7 @@ function reportTextForTopic(topic){
   if(!topic) return null;
   var _t=getTopicReport(topic);
   if(_t && _t.length) return _t;
-  if(cur && REPORTSTATE[cur] && REPORTSTATE[cur].topic===topic && REPORTSTATE[cur].text) return REPORTSTATE[cur].text;
+  /* 移除全局 text fallback：rs.text 是单例，切方向后会残留旧方向报告导致串显 */
   if(cur && typeof REPORT_HISTORY!=='undefined' && REPORT_HISTORY[cur]){
     var _h=REPORT_HISTORY[cur].filter(function(h){return h && h.topic===topic && h.text;});
     if(_h.length) return _h[0].text;
@@ -4437,7 +4437,7 @@ function restoreConfirmPanel(){
     var _pb=REPORTSTATE[cur].pendingByTopic||{};
     var _np=_topic?_pb[_topic]:null;
     if((!_np||!_np.length)&&_topic){
-      var _rtxt=getTopicReport(_topic)||REPORTSTATE[cur].text||'';
+      var _rtxt=getTopicReport(_topic)||'';
       _np=parsePendingItems(_rtxt);
     }
     if(_np&&_np.length){
@@ -4511,7 +4511,7 @@ function restoreActionItems(){
     if(_pre){
       items=parseActionItems(_pre);
     } else {
-      items=parseActionItems(REPORTSTATE[cur].text||'');
+      items=parseActionItems(reportTextForTopic(P().topic)||'');
     }
     if(items && items.length){
       if(!REPORTSTATE[cur].actionItemsByTopic) REPORTSTATE[cur].actionItemsByTopic={};
@@ -5924,7 +5924,7 @@ function reportHtml(p){
     '</div>'+
     '<div style="padding:16px 18px;font-size:13px;color:#1e293b;line-height:1.8">'+
       // 按方向取报告正文：项目级 rs.text 是单例，切到未生成报告的新方向会串显旧方向正文
-      '<p style="margin:0">'+renderMd(alignChainToReport((typeof reportTextForTopic==='function'?reportTextForTopic(p.topic):null)||rs.text||''))+'</p>'+
+      '<p style="margin:0">'+renderMd(alignChainToReport((typeof reportTextForTopic==='function'?reportTextForTopic(p.topic):null)||''))+'</p>'+
     '</div>'+
   '</div>';
 }
