@@ -6502,6 +6502,7 @@ function kbPage(p){
     '<div class="knowledge-scroll" id="kbScroll" onscroll="kbToggleTopBtn()"><div class="topic-grid">'+
       p.kb.map(function(k,i){
         if(!k.known||!k.known.length) return '';
+        if(!k.sub&&!k.tag) return '';
         var tagColor=k.known&&k.known.length?
           (k.tag.indexOf('待')>=0?'color:#c08a2a;background:#fff8e6':'color:#006d70;background:#e4f5f3'):
           'color:#9aa5b5;background:#f5f7fb';
