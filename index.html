@@ -1723,7 +1723,7 @@ function ensureAiReport(topic, city){
         REPORTSTATE[cur].topic=topic;
       }
       persist();
-      if(view==='report') render();
+      if(view==='report' && !window._reportGenerating) render();
     }
     function pump(){
       return reader.read().then(function(d){
@@ -1746,7 +1746,7 @@ function ensureAiReport(topic, city){
   }).catch(function(e){
     console.warn('ensureAiReport failed:', e && e.message);
   }).finally(function(){
-    _aiReportGenerating[key]=false;
+    _aiReportGenerating[key]=false; window._reportGenerating=false;
   });
 }
 var SZ_REPORT_TEXT=''; /* 移除硬编码报告文本 */
@@ -5030,6 +5030,7 @@ function interviewDone(){
 }
 
 function triggerReport(phase){
+  window._reportGenerating=true;
   phase=phase||1;
   var p=P(); if(!p) return;
   var inp=document.getElementById('topicCustomInput');
@@ -5232,6 +5233,7 @@ function triggerReport(phase){
         return;
 
         function revealReport(){
+          window._reportGenerating=false;
           var elapsed=Date.now()-t0;
           if(content) content.innerHTML='<p style="margin:0">'+renderMd(accText)+'</p>';
           // 归档旧报告
@@ -6055,7 +6057,7 @@ function ensureAiTopics(){
     if(!list.length) return;
     PROJECTS[cur].aiTopics={list:list, ts:Date.now()};
     persist();
-    if(view==='report') render();
+    if(view==='report' && !window._reportGenerating) render();
   }).catch(function(e){
     console.warn('ensureAiTopics failed:', e && e.message);
   }).finally(function(){
