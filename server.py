@@ -953,6 +953,39 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', str(len(resp)))
             self.cors(); self.end_headers(); self.wfile.write(resp)
             return
+        # ── 接口0：管理员清理城市智库（强制覆盖kb，绕过材料计数保护） ──
+        if self.path == '/api/kb-clean':
+            try:
+                body = json.loads(raw)
+                pkey = body.get('projectKey', '')
+                new_kb = body.get('kb')
+                if _PG_AVAIL and DATABASE_URL:
+                    store = json.loads(_db_get() or '{}')
+                else:
+                    with open(SYNC_PATH, 'r', encoding='utf-8') as f2:
+                        store = json.loads(f2.read())
+                projects = store.get('PROJECTS') or {}
+                if pkey not in projects:
+                    resp = json.dumps({'ok': False, 'error': 'project not found'}).encode()
+                elif not isinstance(new_kb, list):
+                    resp = json.dumps({'ok': False, 'error': 'kb must be a list'}).encode()
+                else:
+                    projects[pkey]['kb'] = new_kb
+                    data_str = json.dumps(store, ensure_ascii=False)
+                    if _PG_AVAIL and DATABASE_URL:
+                        _db_set(data_str)
+                    else:
+                        with open(SYNC_PATH, 'w', encoding='utf-8') as fw:
+                            fw.write(data_str)
+                    total = sum(len(t.get('known', [])) for t in new_kb)
+                    resp = json.dumps({'ok': True, 'total': total}).encode()
+            except Exception as e:
+                resp = json.dumps({'ok': False, 'error': str(e)}).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(resp)
+            return
         # ── 接口1：管理员上传文档，补充/修正城市智库 ──
         if self.path == '/api/kb-upload':
             try:
