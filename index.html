@@ -4865,7 +4865,7 @@ function deleteCustomTopic(label){
   // 允许删除AI推荐方向和自定义方向
   if(!confirm('确定删除自定义方向「'+label+'」？该方向下的报告与历史将一并清除。')) return;
   // 从自定义方向列表移除
-  p.customTopics=p.customTopics.filter(function(t){return t!==label;});
+  if(p.customTopics) p.customTopics=p.customTopics.filter(function(t){return t!==label;});
   // 记录已删除的方向（防止AI缓存刷新后复活）
   if(!p.deletedTopics) p.deletedTopics=[];
   if(p.deletedTopics.indexOf(label)<0) p.deletedTopics.push(label);
@@ -6073,7 +6073,7 @@ function generateTopicsFromKb(p){
   // 无真实数据(仅AI初判占位)时不产出任何方向，避免"零上传却凭空出方向"（含旧数据残留的 aiTopics）。
   // 用户手动添加的 customTopics 属于显式操作，始终保留。
   if(!hasRealKbData(p)){
-    return (p.customTopics||[]).map(function(ct){
+    var _del0=p.deletedTopics||[]; return (p.customTopics||[]).filter(function(ct){return _del0.indexOf(ct)<0;}).map(function(ct){
       return {label:ct, icon:'\ud83d\udccc', type:'custom', desc:'\u81ea\u5b9a\u4e49\u65b9\u5411'};
     });
   }
@@ -6086,6 +6086,7 @@ function generateTopicsFromKb(p){
         aiList.push({label:ct, icon:'\ud83d\udccc', type:'custom', desc:'\u81ea\u5b9a\u4e49\u65b9\u5411'});
       }
     });
+    var _del1=p.deletedTopics||[]; aiList=aiList.filter(function(t){return _del1.indexOf(t.label)<0;});
     return aiList;
   }
   if(!p||!p.kb) return [];
