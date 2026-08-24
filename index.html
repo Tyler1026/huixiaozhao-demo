@@ -1004,11 +1004,29 @@ function render(){
   if(location.search.indexOf('demo')<0&&!render._restored){
     render._restored=true;
     var _hasLocal = restore();
+    // 防止 cur 指向空项目：如果当前项目无 kb 数据但有其他有数据的项目，切过去
+    if(cur && PROJECTS[cur]){
+      var _curKbCount=(PROJECTS[cur].kb||[]).reduce(function(s,t){return s+(t.known||[]).length;},0);
+      if(_curKbCount===0){
+        var _allKeys=Object.keys(PROJECTS);
+        var _best=null,_bestC=0;
+        _allKeys.forEach(function(k){var c=0;(PROJECTS[k].kb||[]).forEach(function(t){c+=(t.known||[]).length;});if(c>_bestC){_bestC=c;_best=k;}});
+        if(_best&&_bestC>0) cur=_best;
+      }
+    }
     // 无论本地是否有数据，都从服务器拉取最新状态（保证多端同步）
     if(!render._serverSynced){
       render._serverSynced=true;
       restoreFromServer(function(ok){
-        if(ok) render(); // 服务器数据覆盖本地，重新渲染
+        if(ok){
+          // 服务器数据覆盖本地后，确保cur指向数据最多的随州项目（防落空项目）
+          var _szK2=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k]&&PROJECTS[k].city&&PROJECTS[k].city.indexOf('随州')>=0;});
+          if(_szK2.length){
+            _szK2.sort(function(a,b){var ca=0,cb=0;(PROJECTS[a].kb||[]).forEach(function(t){ca+=(t.known||[]).length;});(PROJECTS[b].kb||[]).forEach(function(t){cb+=(t.known||[]).length;});return cb-ca;});
+            if(!cur||!PROJECTS[cur]||(PROJECTS[cur].kb||[]).reduce(function(s,t){return s+(t.known||[]).length;},0)===0) cur=_szK2[0];
+          }
+          render();
+        }
       });
     }
     if(_hasLocal){ render(); return; }
