@@ -3893,6 +3893,8 @@ function selectTopic(val, isCustom){
     if(!p.customTopics) p.customTopics=[];
     var _v=val.trim();
     if(p.customTopics.indexOf(_v)<0) p.customTopics.push(_v);
+    // 重新添加时从已删除列表移除，否则会被过滤不显示
+    if(p.deletedTopics){ p.deletedTopics=p.deletedTopics.filter(function(d){return d!==_v;}); }
   }
   // 切换方向前：把当前方向的待确认事项存回该方向的桶
   if(cur && REPORTSTATE[cur]){
