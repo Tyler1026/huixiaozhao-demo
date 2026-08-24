@@ -1035,13 +1035,13 @@ function render(){
   // 给 demo 项目注入示例报告状态，以便测试线索派生
   if(!REPORTSTATE[_dk]){
     REPORTSTATE[_dk]={
-      text:SZ_REPORT_TEXT,
-      topic:'随州主导产业补链招引',
+      text:'',
+      topic:'',
       ts: Date.now(),
-      score: 75,
-      phase: 2
+      score: 0,
+      phase: 1
     };
-    _dk_proj.stage=3;  // 推进到「确认需求」阶段
+    _dk_proj.stage=1;  // 推进到「确认需求」阶段
   }}
   }
   // ── 城市隔离护栏（每次渲染都生效）──────────────────────────────
@@ -1304,16 +1304,7 @@ function provisionSuizhou(){
         {icon:'\ud83d\udcdc',t:'政策、规划与领导关注',sub:_c.policy.sub,tag:_c.policy.tag,known:_c.policy.known,calls:['政策规划研究']}
       ],report:null,clues:[]};
   }
-  if(!REPORTSTATE.sz){
-    REPORTSTATE.sz={text:SZ_REPORT_TEXT,topic:'随州主导产业补链招引',ts:Date.now(),score:75,phase:2,ver:2,finalized:true,patches:[],edits:{}};
-  } else {
-    // 补齐 Postgres 同步时可能丢失的字段（旧数据缺 text/phase/topic/score）
-    if(!REPORTSTATE.sz.text)               REPORTSTATE.sz.text    = SZ_REPORT_TEXT;
-    if(!REPORTSTATE.sz.topic)              REPORTSTATE.sz.topic   = '随州主导产业补链招引';
-    if(!REPORTSTATE.sz.phase)              REPORTSTATE.sz.phase   = 2;
-    if(!REPORTSTATE.sz.score)              REPORTSTATE.sz.score   = 75;
-    if(REPORTSTATE.sz.finalized===undefined) REPORTSTATE.sz.finalized = true;
-  }
+  /* 移除硬编码报告：产业分析报告由用户主动触发AI生成，不预设 */
   /* 不再默认解锁随州：与新城市一致，产业分析/招商对接默认上锁 */
   // 不在此处persist - 等restoreFromServer完成后再决定是否写回
   return 'sz';
@@ -4871,10 +4862,17 @@ function topicCardHtml(t, isActive){
 /* 删除自定义方向卡片 */
 function deleteCustomTopic(label){
   var p=P(); if(!p||!label) return;
-  if(!p.customTopics||p.customTopics.indexOf(label)<0){toast('仅可删除自定义方向');return;}
+  // 允许删除AI推荐方向和自定义方向
   if(!confirm('确定删除自定义方向「'+label+'」？该方向下的报告与历史将一并清除。')) return;
   // 从自定义方向列表移除
   p.customTopics=p.customTopics.filter(function(t){return t!==label;});
+  // 记录已删除的方向（防止AI缓存刷新后复活）
+  if(!p.deletedTopics) p.deletedTopics=[];
+  if(p.deletedTopics.indexOf(label)<0) p.deletedTopics.push(label);
+  // 同时从AI推荐缓存中移除
+  if(p.aiTopics&&p.aiTopics.list){
+    p.aiTopics.list=p.aiTopics.list.filter(function(t){return t.label!==label;});
+  }
   // 清理该方向相关缓存：AI报告、待确认、招引方向、历史、方向级阶段标记
   // 关键修复：必须连同 phaseByTopic / userGeneratedTopics 一起删除，否则刷新后从服务端
   // restore，这两个字段还在，报告会被判定为「已生成」而重新渲染出来（删了又回来的 bug）。
@@ -6093,31 +6091,12 @@ function generateTopicsFromKb(p){
   if(!p||!p.kb) return [];
   var allKnown=[];
   p.kb.forEach(function(k){ (k.known||[]).forEach(function(x){ allKnown.push(x); }); });
-  var patterns=[
-    {re:/氢能|电堆|储氢|燃料电池/, type:'补链', icon:'⚡', label:'氢能专用车产业补链',
-     descFn:function(t){var m=t.match(/(\d+%)/);return m?'电堆'+m[0]+'外购，新楚风已量产':'氢能核心零部件本地空白';}},
-    {re:/应急机器人|无人机|5G通信|智慧应急/, type:'补链', icon:'🚨', label:'智慧应急装备补链',
-     descFn:function(t){return t.indexOf('启灵')>=0?'机器人靠启灵外采，无人机靠迅北斗':'感知层核心系统依赖外采';}},
-    {re:/香菇|菌种|多糖|精深加工/, type:'精深加工', icon:'🍄', label:'香菇产业精深加工升级',
-     descFn:function(t){return (t.indexOf('2家')>=0||t.indexOf('仅')>=0)?'功能成分提取仅2家布局':'香菇向高附加值延伸';}},
-    {re:/底盘|动力总成|新能源配套/, type:'补链', icon:'🔧', label:'新能源专用车零部件配套',
-     descFn:function(t){var m=t.match(/(\d+%)/);return m?'底盘动力总成占成本'+m[0]+'外购':'核心零部件本地空白';}},
-    {re:/产业转移|承接|沿海/, type:'承接转移', icon:'🏭', label:'产业转移承接',
-     descFn:function(){return '承接沿海制造业转移，利用区位成本优势';}},
-  ];
-  var topics=[]; var matched={};
-  allKnown.forEach(function(text){
-    patterns.forEach(function(pat){
-      if(!matched[pat.label]&&pat.re.test(text)){
-        matched[pat.label]=true;
-        topics.push({label:pat.label,icon:pat.icon,type:pat.type,desc:pat.descFn(text)});
-      }
-    });
-  });
-  if(!topics.length) topics=[
-    {label:p.city+'主导产业补链',icon:'🏭',type:'补链',desc:'基于城市智库产业链缺口分析'},
-    {label:p.city+'产业转移承接',icon:'🔄',type:'承接转移',desc:'承接沿海转移，利用区位成本优势'},
-    {label:p.city+'特色产业升级',icon:'⬆️',type:'精深加工',desc:'现有产业向高附加值延伸'},
+  // 通用方向推荐：不硬编码特定城市关键词，直接从RAG库内容提取产业关键词
+  // 当AI推荐不可用时，给出通用占位方向
+  topics=[
+    {label:p.city+'主导产业补链',icon:'\ud83c\udfed',type:'补链',desc:'基于城市智库产业链缺口分析'},
+    {label:p.city+'产业转移承接',icon:'\ud83d\udd04',type:'承接转移',desc:'承接产业转移，利用区位成本优势'},
+    {label:p.city+'特色产业升级',icon:'\u2b06\ufe0f',type:'精深加工',desc:'现有产业向高附加值延伸'},
   ];
   // Append user-defined custom topics
   var customs = (p.customTopics||[]);
@@ -6126,6 +6105,9 @@ function generateTopicsFromKb(p){
       topics.push({label:ct, icon:'\ud83d\udccc', type:'custom', desc:'\u81ea\u5b9a\u4e49\u65b9\u5411'});
     }
   });
+  // 过滤掉用户明确删除过的方向
+  var _del=p.deletedTopics||[];
+  topics=topics.filter(function(t){return _del.indexOf(t.label)<0;});
   return topics;
 }
 
