@@ -6837,7 +6837,11 @@ function persist(){
     try{ localStorage.setItem(LS_KEY, JSON.stringify(data)); }catch(_){}
     try{ localStorage.setItem('hxz_uploads', JSON.stringify(UPLOADS)); }catch(_){}
     // 同步到服务器（静默，不影响主流程）
-    try{ fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(function(){}); }catch(_){}
+    // 防抖sync：最多5秒同步一次，避免堆积请求占满连接池影响AI问答
+    if(!window._syncTimer){ window._syncTimer=setTimeout(function(){ window._syncTimer=null;
+      try{var _sd=JSON.parse(localStorage.getItem('huixiaozhao_kb_v1')||'{}');
+      fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:localStorage.getItem('huixiaozhao_kb_v1')||'{}'}).catch(function(){});}catch(_){}
+    },5000); }
   }catch(e){ console.warn('[persist] failed:',e.message); }
 }
 
