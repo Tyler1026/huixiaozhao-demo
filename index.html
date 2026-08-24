@@ -8404,13 +8404,13 @@ function kbVerifyMaterial(){
   var topicKnown=[];
   if(kbIdx!=null && p.kb && p.kb[kbIdx]){
     (p.kb[kbIdx].known||[]).forEach(function(x){
-      if(x.indexOf('📎')!==0)
-        topicKnown.push(x.replace(/^[\u2705\u26a0\ufe0f\s]+/,''));
+      var _xt=_kbText(x); if(_xt.indexOf('📎')!==0)
+        topicKnown.push(_xt.replace(/^[\u2705\u26a0\ufe0f\s]+/,''));
     });
   } else if(p.kb && p.kb[0]){
     (p.kb[0].known||[]).forEach(function(x){
-      if(x.indexOf('📎')!==0)
-        topicKnown.push(x.replace(/^[\u2705\u26a0\ufe0f\s]+/,''));
+      var _xt=_kbText(x); if(_xt.indexOf('📎')!==0)
+        topicKnown.push(_xt.replace(/^[\u2705\u26a0\ufe0f\s]+/,''));
     });
   }
   var knownHint=topicKnown.length ? '（智库已有结论：'+topicKnown.join('；')+'）' : '';
@@ -8597,7 +8597,7 @@ function kbIncrementalAnalysis(){
   var existingTitles=[];
   if(kbIdx!=null && p.kb && p.kb[kbIdx]){
     (p.kb[kbIdx].known||[]).forEach(function(x){
-      if(x.indexOf('📎')!==0) existingTitles.push(x.replace(/^[\u2705\u26a0\ufe0f\s]+/,'').substring(0,40));
+      var _xt2=_kbText(x); if(_xt2.indexOf('📎')!==0) existingTitles.push(x.replace(/^[\u2705\u26a0\ufe0f\s]+/,'').substring(0,40));
     });
   }
   var existingHint=existingTitles.length ? '（已有结论摘要：'+existingTitles.slice(0,6).join('；')+'）' : '';
@@ -8950,7 +8950,7 @@ function kbRAGQueryFull(){
   // 和主题 known 结论一起作为上下文
   var kHint=kbIdx!=null&&p.kb ? p.kb[kbIdx] : null;
   var knownChunks=kHint ? (kHint.known||[]).slice(0,4).map(function(t,i){
-    return {id:'known:'+i,topic:kHint.t,tags:[],text:t.replace(/^[\u2705\u26a0\ufe0f\s]+/,''),cite:kHint.t+'（已有结论）'};
+    return {id:'known:'+i,topic:kHint.t,tags:[],text:_kbText(t).replace(/^[\u2705\u26a0\ufe0f\s]+/,''),cite:kHint.t+'（已有结论）'};
   }) : [];
   var chunks=knownChunks.concat(allUploadChunks).slice(0,12);
 
