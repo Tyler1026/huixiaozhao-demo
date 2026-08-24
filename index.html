@@ -968,7 +968,16 @@ function render(){
             // 常驻=随州账号：强制落到随州项目，忽略服务器残留的其他城市 cur（如上海）
             var _isSz=function(k){return PROJECTS[k]&&PROJECTS[k].city&&PROJECTS[k].city.indexOf('随州')>=0;};
             // 常驻账号始终落到数据最全的 sz 主项目(避免落到空白随州派生项目导致'信息丢失'错觉)
-            if(PROJECTS['sz']){ cur='sz'; } else if(!cur || !_isSz(cur)){ cur = Object.keys(PROJECTS).filter(_isSz)[0]||null; }
+            // 常驻账号：选数据最多的随州项目（避免落到空白项目）
+            var _szKeys=Object.keys(PROJECTS).filter(_isSz);
+            if(_szKeys.length){
+              _szKeys.sort(function(a,b){
+                var ka=PROJECTS[a].kb||[], kb2=PROJECTS[b].kb||[];
+                var ca=0,cb=0; ka.forEach(function(t){ca+=(t.known||[]).length;}); kb2.forEach(function(t){cb+=(t.known||[]).length;});
+                return cb-ca; // 数据多的排前面
+              });
+              cur=_szKeys[0];
+            } else { cur=null; }
             // 随州数据被清空(无任何随州项目)时，走空白 onboarding，让常驻账号也从零重跑，不自动重建预置数据
             if(!cur){ view='setup'; }
             else { view=view||'knowledge'; /* 不再默认解锁随州：产业分析/招商对接保持上锁，待智库达标或手动解锁 */ }
