@@ -6903,8 +6903,11 @@ function restoreFromServer(callback){
     // 注册用户资料：合并服务器与本地(不丢本地新注册未同步的)
     if(srv.USER_PROFILES){ Object.keys(srv.USER_PROFILES).forEach(function(uk){ USER_PROFILES[uk]=srv.USER_PROFILES[uk]; }); }
     if(srv.CITY_ACCOUNTS){ CITY_ACCOUNTS = srv.CITY_ACCOUNTS; }
-    cur  = srv.cur  || Object.keys(PROJECTS)[0] || null;
-    view = srv.view || 'setup';
+    // 不盲目用srv.cur（可能指向空项目）：选数据最多的项目
+    var _allK=Object.keys(PROJECTS); var _bestK=null,_bestKC=0;
+    _allK.forEach(function(k){var c=0;(PROJECTS[k].kb||[]).forEach(function(t){c+=(t.known||[]).length;});if(c>_bestKC){_bestKC=c;_bestK=k;}});
+    cur = (_bestK && _bestKC > 0) ? _bestK : (srv.cur || _allK[0] || null);
+    view = (_bestKC > 0) ? 'knowledge' : (srv.view || 'setup');
     // 写回 localStorage（统一扁平格式）
     var flat={cur:cur,view:view,PROJECTS:PROJECTS,UPLOADS:UPLOADS,
       KB_CONFIRMS:KB_CONFIRMS,KB_FILE_CHUNKS:KB_FILE_CHUNKS,
