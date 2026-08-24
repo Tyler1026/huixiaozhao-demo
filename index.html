@@ -6413,7 +6413,8 @@ function delMemText(kbIdx, itemIdx){
   var p=P();
   if(p&&p.kb&&p.kb[kbIdx]&&p.kb[kbIdx].known&&p.kb[kbIdx].known[itemIdx]){
     var t=p.kb[kbIdx].known[itemIdx];
-    if(t.indexOf('\u2705')===0) p.kb[kbIdx].known[itemIdx]=t.replace(/^\u2705\s*/,'\u26a0\ufe0f ');
+    var _tx=(t&&typeof t==='object')?t.text:String(t||'');
+    if(_tx.indexOf('\u2705')===0){ if(t&&typeof t==='object') t.text=_tx.replace(/^\u2705\s*/,'\u26a0\ufe0f '); else p.kb[kbIdx].known[itemIdx]=_tx.replace(/^\u2705\s*/,'\u26a0\ufe0f '); }
   }
   persist();
   if(typeof refreshKbProgress==='function') refreshKbProgress();
@@ -6430,7 +6431,7 @@ function clearMemText(){
     Object.keys(KB_CONFIRMS[cur][ki]||{}).forEach(function(ii){
       if(p&&p.kb&&p.kb[ki]&&p.kb[ki].known&&p.kb[ki].known[ii]){
         var t=p.kb[ki].known[ii];
-        if(t.indexOf('\u2705')===0) p.kb[ki].known[ii]=t.replace(/^\u2705\s*/,'\u26a0\ufe0f ');
+        var _tx2=(t&&typeof t==='object')?t.text:String(t||''); if(_tx2.indexOf('\u2705')===0){ if(t&&typeof t==='object') t.text=_tx2.replace(/^\u2705\s*/,'\u26a0\ufe0f '); else p.kb[ki].known[ii]=_tx2.replace(/^\u2705\s*/,'\u26a0\ufe0f '); }
       }
     });
   });
@@ -8071,7 +8072,7 @@ function kbDetail(i){
 
         // 确认进度条
         (function(){
-          var warns=k.known.filter(function(x){return x.indexOf('\u26a0\ufe0f')>=0;});
+          var warns=k.known.filter(function(x){return _kbText(x).indexOf('\u26a0\ufe0f')>=0;});
           var total=warns.length;
           var done=(KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][i])?Object.keys(KB_CONFIRMS[cur][i]).length:0;
           if(!total)return '';
