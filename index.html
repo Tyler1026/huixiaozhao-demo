@@ -8385,7 +8385,7 @@ function finalizeIngest(chunks, files, kbTopicIdx, p){
 
 /* ── 材料可信度校验：交叉比对新材料与现有智库结论，标出疑点 ── */
 function kbVerifyMaterial(){
-  var newChunks=window._lastIngestChunks||[];
+  var newChunks=window._lastIngestChunks||(KB_FILE_CHUNKS[cur]||[]); // fallback到已上传的文件chunks
   var topicLabel=window._lastIngestTopicLabel||'城市智库';
   var kbIdx=window._lastIngestKbIdx;
   var p=P(); if(!p) return; if(!newChunks.length){ toast('请先上传材料后再校验'); return; }
@@ -8579,7 +8579,7 @@ function kbConfirmOverwrite(){
 
 /* ── 增量分析：只对本次上传的新材料生成补充结论，原有结论完全不变 ── */
 function kbIncrementalAnalysis(){
-  var newChunks=window._lastIngestChunks||[];
+  var newChunks=window._lastIngestChunks||(KB_FILE_CHUNKS[cur]||[]); // fallback到已上传的文件chunks
   var topicLabel=window._lastIngestTopicLabel||'城市智库';
   var kbIdx=window._lastIngestKbIdx;
   var p=P(); if(!p) return; if(!newChunks.length){ toast('请先上传材料后再分析'); return; }
