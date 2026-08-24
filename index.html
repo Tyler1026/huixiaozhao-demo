@@ -8388,7 +8388,7 @@ function kbVerifyMaterial(){
   var newChunks=window._lastIngestChunks||[];
   var topicLabel=window._lastIngestTopicLabel||'城市智库';
   var kbIdx=window._lastIngestKbIdx;
-  var p=P(); if(!p||!newChunks.length) return;
+  var p=P(); if(!p) return; if(!newChunks.length){ toast('请先上传材料后再校验'); return; }
 
   // 只把校验按钮变为加载态，其他两个按钮保留
   var verifyBtn=document.querySelector('#kbIngestActions [data-action="verify"]'); if(verifyBtn){verifyBtn.disabled=true;verifyBtn.textContent='🔍 校验中…';}
@@ -8416,6 +8416,7 @@ function kbVerifyMaterial(){
         topicKnown.push(_xt.replace(/^[\u2705\u26a0\ufe0f\s]+/,''));
     });
   }
+  topicKnown=topicKnown.slice(0,30); // 限制最多30条，避免prompt过大导致请求超时
   var knownHint=topicKnown.length ? '（智库已有结论：'+topicKnown.join('；')+'）' : '';
 
   // 新文件原文（直接拼入 question）
@@ -8581,7 +8582,7 @@ function kbIncrementalAnalysis(){
   var newChunks=window._lastIngestChunks||[];
   var topicLabel=window._lastIngestTopicLabel||'城市智库';
   var kbIdx=window._lastIngestKbIdx;
-  var p=P(); if(!p||!newChunks.length) return;
+  var p=P(); if(!p) return; if(!newChunks.length){ toast('请先上传材料后再分析'); return; }
 
   var incrBtn=document.querySelector('#kbIngestActions button:first-child'); if(incrBtn){incrBtn.disabled=true;incrBtn.textContent='📄 分析中…';}
 
