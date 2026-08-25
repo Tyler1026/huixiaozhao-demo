@@ -5461,7 +5461,7 @@ function generateChainFromReport(topic, reportText, city){
   if(!reportText || reportText.length<100) return;
   rs.chainByTopic[topic]='loading';
   var prompt='根据以下产业分析报告，提取该产业链的关键环节，按上游/中游/下游分类。\n\n'
-    +'报告内容：\n'+reportText.substring(0,3000)+'\n\n'
+    +'报告内容：\n'+reportText.substring(0,1500)+'\n\n'
     +'请严格输出JSON数组格式（不要markdown代码块），结构如下：\n'
     +'[{"seg":"上游","nodes":[{"name":"环节名","level":"strong或mid或weak","note":"30字内现状描述"}]},{"seg":"中游","nodes":[...]},{"seg":"下游","nodes":[...]}]\n'
     +'规则：\n'
@@ -5470,7 +5470,7 @@ function generateChainFromReport(topic, reportText, city){
     +'- note要基于报告中的具体数据（产值、企业数、配套率等）\n'
     +'- 只输出JSON，不要其他文字';
   var _abortCtrl=new AbortController();
-  var _chainTimeout=setTimeout(function(){ _abortCtrl.abort(); rs.chainByTopic[topic]=null; var _b=document.getElementById('chainMapBlock'); if(_b) _b.innerHTML='<div style="padding:20px;text-align:center;color:#94a3b8;font-size:12.5px">图谱生成超时，请重新进入产业分析触发</div>'; },30000);
+  var _chainTimeout=setTimeout(function(){ _abortCtrl.abort(); rs.chainByTopic[topic]=null; var _b=document.getElementById('chainMapBlock'); if(_b) _b.innerHTML='<div style="padding:20px;text-align:center;color:#94a3b8;font-size:12.5px">图谱生成超时，请重新进入产业分析触发</div>'; },60000);
   fetch(KB_API,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
