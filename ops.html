@@ -7159,8 +7159,8 @@ function opsOverview(){
   }
   var projKeys = Object.keys(PROJECTS).filter(function(k){
     var x=PROJECTS[k]; if(!x) return false;
-    if(x.isDemand===true) return true;
-    return !_isParentProj(k) && (x.stage||1)>=3;
+    // 只显示政府端正式提交的招商需求（isDemand=true），与政府端保持一致
+    return x.isDemand===true;
   });
 
   if(!projKeys.length){
