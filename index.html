@@ -7112,6 +7112,10 @@ function restore(){
 
 // 从服务器拉取数据并覆盖本地（登录后调用）
 function restoreFromServer(callback){
+  // 保存用户当前操作状态，避免服务器数据覆盖用户刚做的方向切换
+  var _userCur = cur;
+  var _userTopic = (cur && PROJECTS[cur]) ? PROJECTS[cur].topic : null;
+  var _userView = view;
   fetch('/api/sync').then(function(r){return r.json();}).then(function(raw){
     if(!raw){ if(callback)callback(false); return; }
     // 兼容两种存储格式：
@@ -7159,7 +7163,13 @@ function restoreFromServer(callback){
       try{fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify(flat)}).catch(function(){});}catch(_){}
     }
-    console.log('[sync] restored from server, projects:',Object.keys(PROJECTS).length);
+    // 恢复用户当前操作状态：服务器数据不覆盖用户刚切换的方向
+    if(_userCur && PROJECTS[_userCur]){
+      cur = _userCur;
+      if(_userTopic) PROJECTS[_userCur].topic = _userTopic;
+    }
+    if(_userView) view = _userView;
+    console.log('[sync] restored from server, projects:',Object.keys(PROJECTS).length,', preserved topic:', _userTopic);
     if(callback)callback(true);
   }).catch(function(){ if(callback)callback(false); });
 }
