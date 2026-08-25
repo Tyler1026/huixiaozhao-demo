@@ -6899,7 +6899,7 @@ function persist(){
       DEMANDS:typeof DEMANDS!=='undefined'?DEMANDS:[],
       KB_CHAT:KB_CHAT,
       REPORT_HISTORY:REPORT_HISTORY,
-      USER_PROFILES:USER_PROFILES,
+      USER_PROFILES:(Object.keys(USER_PROFILES||{}).length?USER_PROFILES:undefined),
       OPS_ENT:typeof OPS_ENT!=='undefined'?OPS_ENT:[],
       syncTs:Date.now()
     };
