@@ -4992,8 +4992,8 @@ function renderInterviewUI(){
   var answeredHtml = _interviewState.answers.map(function(a, i){
     if(!a.text) return '';
     return '<div style="margin-bottom:8px;padding:8px 12px;background:#f8faff;border-radius:8px;font-size:12px">'+
-      '<div style="color:#9aa5b5;margin-bottom:2px">Q'+(i+1)+'：'+_interviewState.questions[i].q.substring(0,30)+'…</div>'+
-      '<div style="color:#1e293b">'+a.text.substring(0,60)+(a.text.length>60?'…':'')+'</div>'+
+      '<div style="color:#9aa5b5;margin-bottom:2px">Q'+(i+1)+'：'+_interviewState.questions[i].q+'</div>'+
+      '<div style="color:#1e293b">'+a.text+'</div>'+
     '</div>';
   }).filter(Boolean).join('');
 
