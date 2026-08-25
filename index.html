@@ -5252,6 +5252,8 @@ function triggerReport(phase){
 
         function revealReport(){
           window._reportGenerating=false;
+  // 报告完成后自动生成产业链图谱
+  var _rp=P(); if(_rp&&_rp.topic){ generateChainFromReport(_rp.topic, accText, _rp.city); }
           var elapsed=Date.now()-t0;
           if(content) content.innerHTML='<p style="margin:0">'+renderMd(accText)+'</p>';
           // 归档旧报告
@@ -5411,6 +5413,45 @@ function pickChainKey(topic){
 }
 
 /* ══════ 产业链图谱 — 研判后自动生成 ══════ */
+
+/* ── AI 动态生成产业链图谱数据 ── */
+function generateChainFromReport(topic, reportText, city){
+  if(!topic||!reportText) return;
+  var rs=REPORTSTATE[cur]; if(!rs) return;
+  if(!rs.chainByTopic) rs.chainByTopic={};
+  // 已有缓存且非空则跳过
+  if(rs.chainByTopic[topic] && rs.chainByTopic[topic].length) return;
+  rs.chainByTopic[topic]='loading';
+  var prompt='根据以下产业分析报告，提取该产业链的关键环节，按上游/中游/下游分类。\n\n'
+    +'报告内容：\n'+reportText.substring(0,3000)+'\n\n'
+    +'请严格输出JSON数组格式（不要markdown代码块），结构如下：\n'
+    +'[{"seg":"上游","nodes":[{"name":"环节名","level":"strong或mid或weak","note":"30字内现状描述"}]},{"seg":"中游","nodes":[...]},{"seg":"下游","nodes":[...]}]\n'
+    +'规则：\n'
+    +'- level判断：本地有成熟企业=strong，有但不足=mid，空白或依赖外购=weak\n'
+    +'- 每个seg下2-4个节点，总共6-10个节点\n'
+    +'- note要基于报告中的具体数据（产值、企业数、配套率等）\n'
+    +'- 只输出JSON，不要其他文字';
+  fetch(KB_API,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question:prompt, chunks:[], city:city||'', stream:false, mode:'chat'})
+  }).then(function(r){return r.json();}).then(function(d){
+    var txt=(d.choices&&d.choices[0]&&d.choices[0].message&&d.choices[0].message.content)||'';
+    try{
+      // 提取JSON（可能被markdown包裹）
+      var jsonStr=txt.replace(/```json?\n?/g,'').replace(/```/g,'').trim();
+      var chain=JSON.parse(jsonStr);
+      if(Array.isArray(chain) && chain.length>=2){
+        rs.chainByTopic[topic]=chain;
+        persist();
+        // 刷新图谱区域
+        var block=document.getElementById('chainMapBlock');
+        if(block){ block.innerHTML=chainMapHtml(P()); }
+      } else { rs.chainByTopic[topic]=null; }
+    }catch(e){ console.warn('[chain] parse failed:',e.message); rs.chainByTopic[topic]=null; }
+  }).catch(function(){ rs.chainByTopic[topic]=null; });
+}
+
 function chainMapHtml(p){
   if(!p) return '';
   var topic=p.topic||'';
@@ -5542,10 +5583,39 @@ function chainMapHtml(p){
   /* 匹配产业链：调用统一的 pickChainKey（topic 关键词 → 链）。
      匹配不到时返回 null，不再无脑兜底香菇。 */
   var key=pickChainKey(topic);
+  // 优先使用AI动态生成的图谱数据
+  var _dynChain=null;
+  if(cur && REPORTSTATE[cur] && REPORTSTATE[cur].chainByTopic){ _dynChain=REPORTSTATE[cur].chainByTopic[topic]; }
+  if(_dynChain==='loading'){
+    return '<div style="margin-top:16px;padding:20px;border-radius:14px;border:1.5px dashed #cbd5e1;background:#f8fafc;text-align:center;color:#64748b;font-size:12.5px">'+'<div style="font-size:26px;margin-bottom:8px">⏳</div>正在生成产业链图谱…</div>';
+  }
+  if(Array.isArray(_dynChain) && _dynChain.length>=2){
+    var _dHtml='<div style="margin-top:16px;border-radius:14px;border:1.5px solid #e2e8f0;padding:16px;background:#ffffff">';
+    _dHtml+='<div style="font-size:13px;font-weight:700;color:#1e293b;margin-bottom:12px">🔗 '+topic+' · 产业链全景</div>';
+    _dHtml+='<div style="display:flex;gap:12px;overflow-x:auto">';
+    _dynChain.forEach(function(seg){
+      _dHtml+='<div style="flex:1;min-width:180px;background:#f8fafc;border-radius:10px;padding:12px">';
+      _dHtml+='<div style="font-size:11.5px;font-weight:700;color:#475569;margin-bottom:8px;text-align:center">'+seg.seg+'</div>';
+      (seg.nodes||[]).forEach(function(nd){
+        var clr=nd.level==='strong'?'#22c55e':nd.level==='mid'?'#f59e0b':'#ef4444';
+        var bg2=nd.level==='strong'?'#f0fdf4':nd.level==='mid'?'#fffbeb':'#fef2f2';
+        _dHtml+='<div style="margin-bottom:8px;padding:8px 10px;border-radius:8px;border-left:3px solid '+clr+';background:'+bg2+'">';
+        _dHtml+='<div style="font-size:12px;font-weight:600;color:#1e293b">'+nd.name+'</div>';
+        if(nd.note) _dHtml+='<div style="font-size:10.5px;color:#64748b;margin-top:3px">'+nd.note+'</div>';
+        _dHtml+='</div>';
+      });
+      _dHtml+='</div>';
+    });
+    _dHtml+='</div></div>';
+    return _dHtml;
+  }
   if(!key){
     // 该方向无对应产业链图谱：明确提示，绝不塞香菇误导用户
     return '<div style="margin-top:16px;padding:20px;border-radius:14px;border:1.5px dashed #cbd5e1;background:#f8fafc;text-align:center;color:#64748b;font-size:12.5px;line-height:1.7">'+
       '<div style="font-size:26px;margin-bottom:8px">🧭</div>'+
+    // 尝试触发AI动态生成图谱
+    var _rpt2=typeof reportTextForTopic==='function'?reportTextForTopic(topic):null;
+    if(_rpt2 && !_dynChain){ generateChainFromReport(topic, _rpt2, p.city); }
       '「'+topic+'」暂未匹配到对应的产业链图谱<br>'+
       '<span style="font-size:11.5px;color:#94a3b8">当前支持：氢能专用车 / 安全应急 / 香菇 / 产业转移。可在城市智库补充该产业数据后重试。</span>'+
     '</div>';
