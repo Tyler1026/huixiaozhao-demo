@@ -1699,7 +1699,8 @@ function topicHasFullReport(topic){
    路演稳定性：AI 未就绪/失败时页面继续用预埋文本，用户无感知。 */
 var _aiReportGenerating = {};
 function ensureAiReport(topic, city){
-  if(!topic || !cur || !REPORTSTATE[cur]) return;
+  // 禁止后台静默生成报告：报告只能由用户手动点击「产业智能分析」/「生成完整报告」触发
+  return;
   var key=cur+'::'+topic;
   if(_aiReportGenerating[key]) return;
   // 已有 AI 报告则不重复生成
@@ -3962,7 +3963,7 @@ function selectTopic(val, isCustom){
       if(_nt){ _rs.text=_nt; }
       else { _rs.text=''; }
       _rs.topic=p.topic;
-      _rs.phase=(_rs.phaseByTopic&&_rs.phaseByTopic[p.topic])||(_nt?2:1);
+      _rs.phase=(_rs.phaseByTopic&&_rs.phaseByTopic[p.topic])||1;
       // 后台从 RAG 生成该方向真实 AI 报告（预埋占位，就绪后替换）
       ensureAiReport(p.topic, p.city);
       setReportAreaHtml(_ra,reportHtml(p));
