@@ -5470,7 +5470,7 @@ function generateChainFromReport(topic, reportText, city){
     +'- note要基于报告中的具体数据（产值、企业数、配套率等）\n'
     +'- 只输出JSON，不要其他文字';
   var _abortCtrl=new AbortController();
-  var _chainTimeout=setTimeout(function(){ _abortCtrl.abort(); rs.chainByTopic[topic]=null; var _b=document.getElementById('chainMapBlock'); if(_b) _b.innerHTML='<div style="padding:20px;text-align:center;color:#94a3b8;font-size:12.5px">图谱生成超时，请重新进入产业分析触发</div>'; },60000);
+  var _chainTimeout=setTimeout(function(){ _abortCtrl.abort(); rs.chainByTopic[topic]=null; persist(); var _b=document.getElementById('chainMapBlock'); if(_b) _b.innerHTML='<div style="padding:20px;text-align:center;color:#94a3b8;font-size:12.5px">图谱生成超时，请重新进入产业分析触发</div>'; },90000);
   fetch(KB_API,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -5490,10 +5490,25 @@ function generateChainFromReport(topic, reportText, city){
               rs.chainByTopic[topic]=chain; persist();
               var block=document.getElementById('chainMapBlock');
               if(block){block.innerHTML=chainMapHtml(P());}
-            } else { rs.chainByTopic[topic]=null; }
-          }catch(e){console.warn('[chain] parse:',e.message); rs.chainByTopic[topic]=null;
-            var block2=document.getElementById('chainMapBlock');
-            if(block2) block2.innerHTML='<div style="padding:20px;text-align:center;color:#94a3b8;font-size:12.5px">图谱数据解析失败，请点击"重新分析"重试</div>';
+            } else { rs.chainByTopic[topic]=null; persist(); }
+          }catch(e){console.warn('[chain] parse:',e.message);
+            // 容错：尝试手动修复常见JSON格式问题
+            var _fixedChain=null;
+            try{
+              var _f=acc.replace(/```json?\n?/g,'').replace(/```/g,'').trim();
+              _f=_f.replace(/"level":\s*([a-z]+)"/g,'"level": "$1"').replace(/"level\s+"([a-z]+)"/g,'"level": "$1"').replace(/"seg\s+"([^"]+)"/g,'"seg": "$1"');
+              var _a=_f.indexOf('['), _b2=_f.lastIndexOf(']');
+              if(_a>=0&&_b2>_a){ _fixedChain=JSON.parse(_f.slice(_a,_b2+1)); }
+            }catch(_){}
+            if(Array.isArray(_fixedChain)&&_fixedChain.length>=2){
+              rs.chainByTopic[topic]=_fixedChain; persist();
+              var block2f=document.getElementById('chainMapBlock');
+              if(block2f){block2f.innerHTML=chainMapHtml(P());}
+            } else {
+              rs.chainByTopic[topic]=null; persist();
+              var block2=document.getElementById('chainMapBlock');
+              if(block2) block2.innerHTML='<div style="padding:20px;text-align:center;color:#94a3b8;font-size:12.5px">图谱数据解析失败，请点击"重新分析"重试</div>';
+            }
           }
           return;
         }
@@ -5510,7 +5525,7 @@ function generateChainFromReport(topic, reportText, city){
       });
     }
     return pump();
-  }).catch(function(e){ rs.chainByTopic[topic]=null;
+  }).catch(function(e){ rs.chainByTopic[topic]=null; persist();
     var block3=document.getElementById('chainMapBlock');
     if(block3&&e.name!=='AbortError') block3.innerHTML='<div style="padding:20px;text-align:center;color:#94a3b8;font-size:12.5px">图谱生成失败：'+e.message+'</div>';
   });
