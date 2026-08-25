@@ -8722,7 +8722,7 @@ function kbVerifyMaterial(){
   fetch(KB_API,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:prompt, chunks:_vChunks, city:p.city, stream:true, mode:'chat'})
+    body:JSON.stringify({question:prompt, chunks:_vChunks, city:p.city, stream:true, mode:'verify'})
   }).then(function(resp){
     thinking.remove();
     bodyDiv.innerHTML='<span style="color:#9aa5b5;font-size:12px"><span class="gov-spin" style="margin-right:6px"></span>AI 正在逐条核验数据点…</span>';
