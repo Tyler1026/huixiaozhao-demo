@@ -8807,34 +8807,49 @@ function kbConfirmOverwrite(){
   var p=P(); if(!p||!p.kb||!p.kb[kbIdx]){ toast('未找到对应智库主题'); return; }
   var k=p.kb[kbIdx];
 
-  // 从 AI 校验文本解析冲突对：优先匹配「文件说XXX，智库记录是YYY」句式
+  // 从 AI 校验文本解析冲突：只取 ❌ 开头的行（不一致项）
   var conflicts=[];
-  // 匹配多种AI输出格式：
-  // 格式A: ❌ 指标名：文件写 XXX，智库记录 YYY → 不一致
-  // 格式B: 文件说XXX，智库记录是YYY，不一致
-  var re=/(?:[❌✅⚠️]\s*)?(?:[^：:]*[：:])?文件[写说称记录为是]*\s*([^，,→]+)[，,→].{0,6}智库[记录数据结论]*\s*([^，,→\n]+)/g;
-  var m;
-  while((m=re.exec(txt))!==null){
-    var fileVal=m[1].replace(/\*\*/g,'').trim();
-    var kbVal=m[2].replace(/\*\*/g,'').trim();
-    if(!fileVal||!kbVal) continue;
-    // 在现有 known 里定位与 kbVal 最接近的条目
+  var lines=txt.split('\n');
+  lines.forEach(function(line){
+    if(line.indexOf('\u274c')<0 && line.indexOf('❌')<0) return; // 只处理❌行
+    // 提取指标名、文件值、智库值
+    var rm=/[：:]\s*文件[写说]*\s*([^，,→]+)[，,→].*?智库[记录]*\s*([^，,→\n]+)/;
+    var m2=rm.exec(line);
+    if(!m2) return;
+    var fileVal=m2[1].replace(/\*\*/g,'').trim();
+    var kbVal=m2[2].replace(/\*\*/g,'').trim();
+    if(!fileVal||!kbVal) return;
+    // 提取指标名（❌后到：之间的文字）
+    var nameM=/[❌\u274c]\s*([^：:]+)/;
+    var nm=nameM.exec(line);
+    var indicatorName=nm?nm[1].trim():'数据项';
+    // 在智库known里用指标关键词模糊匹配
     var idx=-1;
+    var keywords=indicatorName.replace(/[\s\d%+\-().（）]+/g,'');
     (k.known||[]).forEach(function(existing,ei){
-      var ec=existing.replace(/^[\u2705\u26a0\ufe0f\s]+/,'');
-      if(idx<0 && (ec.indexOf(kbVal)>=0 || (kbVal.length>=3 && ec.indexOf(kbVal.substring(0,Math.min(6,kbVal.length)))>=0))) idx=ei;
+      var ec=typeof existing==='string'?existing:(existing.text||'');
+      if(idx<0 && keywords.length>=2 && ec.indexOf(keywords)>=0) idx=ei;
     });
-    // idx<0 时也保留冲突（用AI返回的对比文本直接展示）
+    // 如果关键词匹配失败，尝试用kbVal中的数字匹配
+    if(idx<0){
+      var numM=kbVal.match(/[\d.]+/);
+      if(numM){
+        (k.known||[]).forEach(function(existing,ei){
+          var ec=typeof existing==='string'?existing:(existing.text||'');
+          if(idx<0 && ec.indexOf(numM[0])>=0) idx=ei;
+        });
+      }
+    }
     var oldClean, newClean;
     if(idx>=0){
-      oldClean=k.known[idx].replace(/^[\u2705\u26a0\ufe0f\s]+/,'');
-      newClean=oldClean.indexOf(kbVal)>=0 ? oldClean.replace(kbVal, fileVal) : (oldClean+'\uff08\u65b0\u6750\u6599\uff1a'+fileVal+'\uff09');
+      oldClean=(typeof k.known[idx]==='string'?k.known[idx]:(k.known[idx].text||'')).replace(/^[\u2705\u26a0\ufe0f\s]+/,'');
+      newClean=indicatorName+'：'+fileVal+'（原记录：'+kbVal+'）';
     } else {
-      oldClean='\u667a\u5e93\u8bb0\u5f55\uff1a'+kbVal;
-      newClean='\u65b0\u6750\u6599\uff1a'+fileVal;
+      oldClean=indicatorName+'：智库记录 '+kbVal;
+      newClean=indicatorName+'：新材料写 '+fileVal;
     }
     conflicts.push({idx:idx, old:oldClean, new:newClean});
-  }
+  });
 
   if(!conflicts.length){
     toast('未能自动定位到冲突条目，请在对应主题卡内手动核实');
