@@ -941,10 +941,13 @@ function openModal(title,bodyHtml,footHtml){
     '<div class="modal-body">'+bodyHtml+'</div>'+(footHtml?('<footer>'+footHtml+'</footer>'):'')+'</div>';
   document.body.appendChild(l);
 }
-function closeModal(){var l=$('#modalLayer');if(l)l.remove();var cm=$('#conflictModal');if(cm)cm.remove();}
+function closeModal(){
+  window._verifyInProgress=false;var l=$('#modalLayer');if(l)l.remove();var cm=$('#conflictModal');if(cm)cm.remove();}
 var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','产业分析','产业分析·可来回优化'],['home','🤝','招商对接','项目列表·对接进度'],['settings','⚙️','设置','账号与提醒']];
 
 function render(){
+  // 跳过重渲染：用户正在查看校验结果或冲突面板时不重建DOM
+  if(window._verifyInProgress || document.getElementById('conflictModal')) return;
   // ── 登录门禁：未登录 → 登录页 ──
   if(location.search.indexOf('demo')<0 && !AUTH){
     var _r=document.getElementById('root');
@@ -8639,6 +8642,7 @@ function kbVerifyMaterial(){
   var p=P(); if(!p) return; if(!newChunks.length){ toast('请先上传材料后再校验'); return; }
 
   // 只把校验按钮变为加载态，其他两个按钮保留
+  window._verifyInProgress=true;
   var verifyBtn=document.querySelector('#kbIngestActions [data-action="verify"]'); if(verifyBtn){verifyBtn.disabled=true;verifyBtn.textContent='🔍 校验中…';}
 
   var c=document.getElementById('kbConv'); if(!c) return;
@@ -8771,6 +8775,7 @@ function kbVerifyMaterial(){
             bodyDiv.innerHTML='<p style="margin:0;line-height:1.75;white-space:pre-wrap">'+accText.replace(/</g,'&lt;')+'</p>';
           }
           // 校验完成：把按钮改为「已校验」
+          window._verifyInProgress=false;
           if(verifyBtn){verifyBtn.disabled=false;verifyBtn.textContent='🔍 校验材料可信度';verifyBtn.style.background='#fff7ed';verifyBtn.style.color='#c2410c';verifyBtn.style.border='1.5px solid #fed7aa';}
 
           kbChatPush('ai', ansNode.outerHTML);
