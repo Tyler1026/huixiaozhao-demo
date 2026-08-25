@@ -8654,7 +8654,7 @@ function kbVerifyMaterial(){
         topicKnown.push(_xt.replace(/^[\u2705\u26a0\ufe0f\s]+/,''));
     });
   }
-  topicKnown=topicKnown.slice(0,30); // 限制最多30条，避免prompt过大导致请求超时
+  topicKnown=topicKnown.slice(0,15); // 限制最多15条，缩短prompt降低校验延迟
   var knownHint=topicKnown.length ? '（智库已有结论：'+topicKnown.join('；')+'）' : '';
 
   // 新文件原文（直接拼入 question）
@@ -8737,10 +8737,10 @@ function kbVerifyMaterial(){
             (hasHighRisk?'#dc2626':(allClear?'#059669':'#d97706'))+
             '">'+badgeText+
             '<span style="font-weight:400;color:#94a3b8;margin-left:8px">· 校验耗时 '+elapsed+'ms · 对比 '+topicKnown.length+' 条现有结论</span>'+
-            (hasHighRisk?'<button onclick="kbConfirmOverwrite()" style="margin-left:12px;padding:4px 12px;background:#dc2626;color:#fff;border:none;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer">人工核实</button>':'')+
+            (hasHighRisk?'<button onclick="kbConfirmOverwrite()" style="margin-left:12px;padding:4px 12px;background:#dc2626;color:#fff;border:none;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer">人工核实</button>':(allClear?'':'<button onclick="kbConfirmOverwrite()" style="margin-left:12px;padding:4px 12px;background:#d97706;color:#fff;border:none;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer">逐条确认</button>'))+
             '</div>');
-                    // 发现高危矛盾：直接弹出逐条确认面板
-          if(hasHighRisk){
+                    // 发现矛盾或模糊信息：弹出逐条确认面板让用户核实
+          if(hasHighRisk || !allClear){
             window._lastVerifyText=accText;
             window._lastVerifyKbIdx=(kbIdx!=null?kbIdx:0);
             setTimeout(function(){ kbConfirmOverwrite(); }, 300);
