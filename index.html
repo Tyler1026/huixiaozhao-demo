@@ -8642,19 +8642,25 @@ function kbVerifyMaterial(){
   kbChatPush('user', qd.outerHTML);
 
   // 把新文件原文和智库结论都直接嵌入 question，让模型两份原文逐字对比
-  var topicKnown=[];
-  if(kbIdx!=null && p.kb && p.kb[kbIdx]){
-    (p.kb[kbIdx].known||[]).forEach(function(x){
-      var _xt=_kbText(x); if(_xt.indexOf('📎')!==0)
-        topicKnown.push(_xt.replace(/^[\u2705\u26a0\ufe0f\s]+/,''));
-    });
-  } else if(p.kb && p.kb[0]){
-    (p.kb[0].known||[]).forEach(function(x){
-      var _xt=_kbText(x); if(_xt.indexOf('📎')!==0)
-        topicKnown.push(_xt.replace(/^[\u2705\u26a0\ufe0f\s]+/,''));
+  // 智能匹配：从全部智库条目中找与新文件内容最相关的条目对比
+  var _allKnown=[];
+  if(p.kb){
+    p.kb.forEach(function(t){
+      (t.known||[]).forEach(function(x){
+        var _xt=_kbText(x); if(_xt.indexOf('\ud83d\udcce')!==0)
+          _allKnown.push(_xt.replace(/^[\u2705\u26a0\ufe0f\s]+/,''));
+      });
     });
   }
-  topicKnown=topicKnown.slice(0,15); // 限制最多15条，缩短prompt降低校验延迟
+  // 从新文件提取关键词，筛选包含相关关键词的智库条目
+  var _fileKeywords=newText.replace(/[\d\.%+\-()\uff08\uff09\uff1a:\uff0c\u3002\u3001/]+/g,' ').split(/\s+/).filter(function(w){return w.length>=2;});
+  _fileKeywords=_fileKeywords.filter(function(w,i,a){return a.indexOf(w)===i;}).slice(0,20);
+  var topicKnown=_allKnown.filter(function(item){
+    return _fileKeywords.some(function(kw){ return item.indexOf(kw)>=0; });
+  });
+  // 如果匹配太少则补充前几条通用数据
+  if(topicKnown.length<3) topicKnown=_allKnown.slice(0,10);
+  topicKnown=topicKnown.slice(0,12); // 限制最多12条，保证prompt精准且不过大
   var knownHint=topicKnown.length ? '（智库已有结论：'+topicKnown.join('；')+'）' : '';
 
   // 新文件原文（直接拼入 question）
@@ -8663,19 +8669,21 @@ function kbVerifyMaterial(){
   var prompt=
     '【新上传文件原文】\n'+newText+'\n\n'
     +'【智库已有结论（正确基准）】\n'+topicKnown.join('\n')+'\n\n'
-    +'任务：逐条对比新上传文件与智库已有结论，找出所有数据差异或模糊点。\n'
-    +'重要规则：\n'
-    +'- 只对比双方都提到的同一指标（如产值、增速、产量等），数值不同才算矛盾\n'
-    +'- 文件中有但智库没有的新信息，不是矛盾，不要列出\n'
-    +'- 智库有但文件没提的内容，也不是矛盾，不要列出\n'
-    +'- 年份不同（如智库是2024年数据，文件是2025年数据）属于数据更新，标注为矛盾让用户确认\n\n'
-    +'输出格式严格遵守：\n'
-    +'第一行必须是结论标记，二选一：\n'
-    +'  · 若有数值冲突 → 写「结论：发现矛盾N处」（N为冲突数，N≥1）\n'
-    +'  · 若无数值冲突 → 写「结论：未发现矛盾」\n'
-    +'随后逐条列出每个冲突，格式固定为：\n'
-    +'文件说[具体指标+数值]，智库记录是[同一指标+数值]，不一致。\n'
-    +'要求：每条必须说清楚是哪个指标及新旧数值对比。即使无明显矛盾，也需逐条列出文件中的关键数据点并标注是否与智库一致。不可只给一句总结性结论。';
+    +'任务：逐条核验新上传文件中每一个数据点。\n\n'
+    +'核验方法：文件中的每个数字/百分比/数量，都去智库已有结论里找同一指标。\n'
+    +'- 数值一致 → 标记 ✅\n'
+    +'- 数值不同 → 标记 ❌ 并写明双方数值\n'
+    +'- 智库无此数据无法核验 → 标记 ⚠️ 新增数据\n\n'
+    +'输出格式（严格遵守，不要多余文字）：\n'
+    +'第一行：「结论：发现矛盾N处」或「结论：未发现矛盾」\n'
+    +'然后逐条列出文件中的每个数据点：\n'
+    +'❌ [指标名]：文件写 [XX]，智库记录 [YY] → 不一致\n'
+    +'✅ [指标名]：文件写 [XX]，智库记录一致\n'
+    +'⚠️ [指标名]：文件写 [XX]，智库无此数据\n\n'
+    +'重要：\n'
+    +'- 必须逐个数据点列出，不可跳过任何数字\n'
+    +'- 年份不同的同一指标视为矛盾（数据可能已更新）\n'
+    +'- 绝对不可只输出一句笼统总结';
 
   // 思考气泡
   var thinking=document.createElement('div');
