@@ -3021,7 +3021,7 @@ function projMgmtPage(p){
     // 兼容旧数据：老的立项子项目没有 isDemand 标记，用 isMainProject 兜底排除主项目，
     // 并要求 stage>=3（真正提交过需求才会到确认需求阶段）。
     if(x.isDemand === true) return true;
-    return !isMainProject(k) && x.stage >= 3;
+    return false; // 只认isDemand===true，不再用stage>=3兜底（防止产业分析项目误入招商对接）
   });
   if(!projKeys.length){
     return '<div class="page">'+
@@ -6708,7 +6708,7 @@ function detailNeeds(p){
   var ks=cityKeys().filter(function(k){
     var x=PROJECTS[k]; if(!x) return false;
     if(x.isDemand===true) return true;
-    return !isMainProject(k) && x.stage>=3;
+    return false; // 只认isDemand===true，不再用stage>=3兜底（防止产业分析项目误入招商对接）
   });
   var byStage={};ks.forEach(function(k){var s=PROJECTS[k].stage;byStage[s]=(byStage[s]||0)+1});
   return '<div class="detail-header"><div><span class="eyebrow">OVERVIEW</span><h2>需求概览</h2><p>'+p.who+' 名下产业分析汇总</p></div></div>'+
