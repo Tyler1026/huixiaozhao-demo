@@ -6113,9 +6113,9 @@ function ensureAiTopics(){
   var city=p.city||'随州';
   var key=cur;
   if(_aiTopicsGenerating[key]) return;
-  // 已有较新的 AI 方向缓存(24h内)则不重复生成
-  if(p.aiTopics && p.aiTopics.list && p.aiTopics.list.length &&
-     p.aiTopics.ts && (Date.now()-p.aiTopics.ts < 24*3600*1000)) return;
+  // 已有AI方向缓存则不重复生成（永不自动过期，只有用户主动"重新分析"才刷新）
+  // 避免方向名自动变化导致报告/待确认/图谱等数据key全部失配
+  if(p.aiTopics && p.aiTopics.list && p.aiTopics.list.length) return;
   var corpus, chunks;
   try {
     corpus=buildKBCorpus(city);
