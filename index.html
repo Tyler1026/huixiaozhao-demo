@@ -5444,11 +5444,21 @@ function pickChainKey(topic){
 
 /* ── AI 动态生成产业链图谱数据 ── */
 function generateChainFromReport(topic, reportText, city){
-  if(!topic||!reportText) return;
+  if(!topic) return;
   var rs=REPORTSTATE[cur]; if(!rs) return;
   if(!rs.chainByTopic) rs.chainByTopic={};
   // 已有缓存且非空则跳过
   if(rs.chainByTopic[topic] && rs.chainByTopic[topic].length) return;
+  // 报告太短时模糊匹配aiReportByTopic找更完整的版本
+  if((!reportText || reportText.length<800) && rs.aiReportByTopic){
+    var _core=topic.replace(/[补链引入引育升级招商培育系统软硬件本地配套软性Tier1新能源]/g,'');
+    Object.keys(rs.aiReportByTopic).forEach(function(k){
+      var kc=k.replace(/[补链引入引育升级招商培育系统软硬件本地配套软性Tier1新能源]/g,'');
+      var ov=0; for(var i=0;i<_core.length;i++){if(kc.indexOf(_core[i])>=0)ov++;}
+      if(_core.length>0&&ov/_core.length>0.5){var t=rs.aiReportByTopic[k]; if(t&&t.length>(reportText?reportText.length:0)) reportText=t;}
+    });
+  }
+  if(!reportText || reportText.length<100) return;
   rs.chainByTopic[topic]='loading';
   var prompt='根据以下产业分析报告，提取该产业链的关键环节，按上游/中游/下游分类。\n\n'
     +'报告内容：\n'+reportText.substring(0,3000)+'\n\n'
