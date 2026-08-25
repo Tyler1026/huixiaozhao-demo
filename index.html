@@ -5611,11 +5611,14 @@ function chainMapHtml(p){
   }
   if(!key){
     // 该方向无对应产业链图谱：明确提示，绝不塞香菇误导用户
+    // 尝试触发AI动态生成图谱
+
+    var _rpt2=typeof reportTextForTopic==='function'?reportTextForTopic(topic):null;
+
+    if(_rpt2 && !_dynChain){ generateChainFromReport(topic, _rpt2, p.city); }
+
     return '<div style="margin-top:16px;padding:20px;border-radius:14px;border:1.5px dashed #cbd5e1;background:#f8fafc;text-align:center;color:#64748b;font-size:12.5px;line-height:1.7">'+
       '<div style="font-size:26px;margin-bottom:8px">🧭</div>'+
-    // 尝试触发AI动态生成图谱
-    var _rpt2=typeof reportTextForTopic==='function'?reportTextForTopic(topic):null;
-    if(_rpt2 && !_dynChain){ generateChainFromReport(topic, _rpt2, p.city); }
       '「'+topic+'」暂未匹配到对应的产业链图谱<br>'+
       '<span style="font-size:11.5px;color:#94a3b8">当前支持：氢能专用车 / 安全应急 / 香菇 / 产业转移。可在城市智库补充该产业数据后重试。</span>'+
     '</div>';
