@@ -5464,23 +5464,46 @@ function generateChainFromReport(topic, reportText, city){
   fetch(KB_API,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:prompt, chunks:[], city:city||'', stream:false, mode:'chat'}),
+    body:JSON.stringify({question:prompt, chunks:[], city:city||'', stream:true, mode:'chat'}),
     signal:_abortCtrl.signal
-  }).then(function(r){clearTimeout(_chainTimeout);return r.json();}).then(function(d){
-    var txt=(d.choices&&d.choices[0]&&d.choices[0].message&&d.choices[0].message.content)||'';
-    try{
-      // 提取JSON（可能被markdown包裹）
-      var jsonStr=txt.replace(/```json?\n?/g,'').replace(/```/g,'').trim();
-      var chain=JSON.parse(jsonStr);
-      if(Array.isArray(chain) && chain.length>=2){
-        rs.chainByTopic[topic]=chain;
-        persist();
-        // 刷新图谱区域
-        var block=document.getElementById('chainMapBlock');
-        if(block){ block.innerHTML=chainMapHtml(P()); }
-      } else { rs.chainByTopic[topic]=null; }
-    }catch(e){ console.warn('[chain] parse failed:',e.message); rs.chainByTopic[topic]=null; }
-  }).catch(function(){ rs.chainByTopic[topic]=null; });
+  }).then(function(r){
+    clearTimeout(_chainTimeout);
+    var reader=r.body.getReader(); var decoder=new TextDecoder(); var acc='';
+    function pump(){
+      return reader.read().then(function(res){
+        if(res.done){
+          // 流结束，解析累积的JSON
+          try{
+            var jsonStr=acc.replace(/```json?\n?/g,'').replace(/```/g,'').trim();
+            var chain=JSON.parse(jsonStr);
+            if(Array.isArray(chain)&&chain.length>=2){
+              rs.chainByTopic[topic]=chain; persist();
+              var block=document.getElementById('chainMapBlock');
+              if(block){block.innerHTML=chainMapHtml(P());}
+            } else { rs.chainByTopic[topic]=null; }
+          }catch(e){console.warn('[chain] parse:',e.message); rs.chainByTopic[topic]=null;
+            var block2=document.getElementById('chainMapBlock');
+            if(block2) block2.innerHTML='<div style="padding:20px;text-align:center;color:#94a3b8;font-size:12.5px">图谱数据解析失败，请点击"重新分析"重试</div>';
+          }
+          return;
+        }
+        var chunk=decoder.decode(res.value,{stream:true});
+        // 解析SSE格式
+        chunk.split('\n').forEach(function(line){
+          if(line.indexOf('data: ')===0){
+            var d=line.slice(6).trim();
+            if(d==='[DONE]') return;
+            try{var j=JSON.parse(d); var c=j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content; if(c) acc+=c;}catch(_){}
+          }
+        });
+        return pump();
+      });
+    }
+    return pump();
+  }).catch(function(e){ rs.chainByTopic[topic]=null;
+    var block3=document.getElementById('chainMapBlock');
+    if(block3&&e.name!=='AbortError') block3.innerHTML='<div style="padding:20px;text-align:center;color:#94a3b8;font-size:12.5px">图谱生成失败：'+e.message+'</div>';
+  });
 }
 
 
