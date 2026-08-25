@@ -5474,7 +5474,7 @@ function generateChainFromReport(topic, reportText, city){
   fetch(KB_API,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:prompt, chunks:[], city:city||'', stream:true, mode:'chat'}),
+    body:JSON.stringify({question:prompt, chunks:[], city:city||'', stream:true, mode:'chain'}),
     signal:_abortCtrl.signal
   }).then(function(r){
     clearTimeout(_chainTimeout);
