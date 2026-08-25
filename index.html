@@ -1741,7 +1741,7 @@ function ensureAiReport(topic, city){
         REPORTSTATE[cur].topic=topic;
       }
       persist();
-      if(view==='report' && !window._reportGenerating) render();
+      /* 不再从ensureAiReport触发render()，避免打断用户操作导致方向跳转 */
     }
     function pump(){
       return reader.read().then(function(d){
@@ -4455,7 +4455,7 @@ function restoreConfirmPanel(){
   if(cur && REPORTSTATE[cur] && (!PENDING_CONFIRMS[cur] || !PENDING_CONFIRMS[cur].length)){
     var _p=P(); var _topic=_p?_p.topic:'';
     var _pb=REPORTSTATE[cur].pendingByTopic||{};
-    var _np=_topic?_pb[_topic]:null;
+    var _np=_topic?_findPendingForTopic(REPORTSTATE[cur],_topic):null;
     if((!_np||!_np.length)&&_topic){
       var _rtxt=getTopicReport(_topic)||'';
       _np=parsePendingItems(_rtxt);
@@ -5431,11 +5431,14 @@ function generateChainFromReport(topic, reportText, city){
     +'- 每个seg下2-4个节点，总共6-10个节点\n'
     +'- note要基于报告中的具体数据（产值、企业数、配套率等）\n'
     +'- 只输出JSON，不要其他文字';
+  var _abortCtrl=new AbortController();
+  var _chainTimeout=setTimeout(function(){ _abortCtrl.abort(); rs.chainByTopic[topic]=null; var _b=document.getElementById('chainMapBlock'); if(_b) _b.innerHTML='<div style="padding:20px;text-align:center;color:#94a3b8;font-size:12.5px">图谱生成超时，请重新进入产业分析触发</div>'; },30000);
   fetch(KB_API,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:prompt, chunks:[], city:city||'', stream:false, mode:'chat'})
-  }).then(function(r){return r.json();}).then(function(d){
+    body:JSON.stringify({question:prompt, chunks:[], city:city||'', stream:false, mode:'chat'}),
+    signal:_abortCtrl.signal
+  }).then(function(r){clearTimeout(_chainTimeout);return r.json();}).then(function(d){
     var txt=(d.choices&&d.choices[0]&&d.choices[0].message&&d.choices[0].message.content)||'';
     try{
       // 提取JSON（可能被markdown包裹）
@@ -5450,6 +5453,27 @@ function generateChainFromReport(topic, reportText, city){
       } else { rs.chainByTopic[topic]=null; }
     }catch(e){ console.warn('[chain] parse failed:',e.message); rs.chainByTopic[topic]=null; }
   }).catch(function(){ rs.chainByTopic[topic]=null; });
+}
+
+
+/* 模糊匹配 pendingByTopic key：topic名可能随AI推荐变化，用关键词重叠度匹配 */
+function _findPendingForTopic(rs, topic){
+  if(!rs||!rs.pendingByTopic||!topic) return [];
+  // 精确匹配优先
+  if(rs.pendingByTopic[topic]) return rs.pendingByTopic[topic];
+  // 模糊匹配：提取topic中的核心关键词（去掉"补链/引入/升级/招商"等后缀）
+  var core=topic.replace(/[补链|引入|引育|升级|招商|培育|Tier1|系统|软硬件]/g,'').replace(/\s+/g,'');
+  var bestKey=null, bestScore=0;
+  Object.keys(rs.pendingByTopic).forEach(function(k){
+    var kCore=k.replace(/[补链|引入|引育|升级|招商|培育|Tier1|系统|软硬件|本地配套|软性]/g,'').replace(/\s+/g,'');
+    // 计算重叠字符数
+    var overlap=0;
+    for(var i=0;i<core.length;i++){ if(kCore.indexOf(core[i])>=0) overlap++; }
+    var score=core.length>0?overlap/core.length:0;
+    if(score>bestScore){ bestScore=score; bestKey=k; }
+  });
+  // 重叠度>60%认为是同一方向
+  return (bestScore>0.6 && bestKey) ? rs.pendingByTopic[bestKey] : [];
 }
 
 function chainMapHtml(p){
@@ -6269,7 +6293,7 @@ function homePage(p){
   var reportArea=
     '<div id="reportArea">'+
       '<div id="reportHistoryArea"></div>'+
-      ((REPORTSTATE[cur]&&(REPORTSTATE[cur].phase===2||REPORTSTATE[cur].finalized))||(REPORTSTATE[cur]&&REPORTSTATE[cur].text)||(PENDING_CONFIRMS[cur]&&PENDING_CONFIRMS[cur].length)||(REPORTSTATE[cur]&&REPORTSTATE[cur].pendingByTopic&&p&&REPORTSTATE[cur].pendingByTopic[p.topic]&&REPORTSTATE[cur].pendingByTopic[p.topic].length)
+      ((REPORTSTATE[cur]&&(REPORTSTATE[cur].phase===2||REPORTSTATE[cur].finalized))||(REPORTSTATE[cur]&&REPORTSTATE[cur].text)||(PENDING_CONFIRMS[cur]&&PENDING_CONFIRMS[cur].length)||(REPORTSTATE[cur]&&p&&_findPendingForTopic(REPORTSTATE[cur],p.topic).length)
         ? reportHtml(p)+'<div id="chainMapBlock">'+chainMapHtml(p)+'</div>'+'<div id="actionItemsBlock">'+restoreActionItems()+'</div>'+restoreConfirmPanel()
         : '<div style="text-align:center;padding:48px 20px">'+
             '<div style="font-size:40px;margin-bottom:12px">📋</div>'+
