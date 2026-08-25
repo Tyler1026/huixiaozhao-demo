@@ -4097,15 +4097,36 @@ var REPORT_HISTORY = REPORT_HISTORY || {};
 function saveReportHistory(){try{localStorage.setItem('hxz_rpt_history',JSON.stringify(REPORT_HISTORY));}catch(e){}}
 function loadReportHistory(){try{var d=localStorage.getItem('hxz_rpt_history');if(d)REPORT_HISTORY=JSON.parse(d);}catch(e){}}
 loadReportHistory();
+// 补充：从 aiReportByTopic 构建历史（解决 rs.text 清空后历史报告为空的问题）
+function getReportHistoryForProject(key){
+  var rs=REPORTSTATE[key]; if(!rs) return [];
+  // 优先用 aiReportByTopic 构建（每个有完整报告的方向是一条历史）
+  var fromAi=[];
+  if(rs.aiReportByTopic){
+    Object.keys(rs.aiReportByTopic).forEach(function(t){
+      var txt=rs.aiReportByTopic[t];
+      if(txt && txt.length>100) fromAi.push({topic:t, text:txt, rep:txt, ts:rs.ts||Date.now(), score:0, phase:2});
+    });
+  }
+  // 合并 REPORT_HISTORY（去重）
+  var hist=REPORT_HISTORY[key]||[];
+  var merged=fromAi.slice();
+  hist.forEach(function(h){
+    if(h.text && h.text.length>100 && !merged.some(function(m){return m.topic===h.topic;})){
+      merged.push(h);
+    }
+  });
+  return merged;
+}
 
 function archiveCurrentReport(key){
   var rs=REPORTSTATE[key];
-  if(!rs||!rs.text) return;
+  var _archTxt=(rs.aiReportByTopic&&rs.topic)?rs.aiReportByTopic[rs.topic]||rs.text:''; if(!rs||!_archTxt) return;
   if(!REPORT_HISTORY[key]) REPORT_HISTORY[key]=[];
   // 避免重复归档（同 ts）
   var exists=REPORT_HISTORY[key].some(function(h){return h.ts===rs.ts;});
   if(!exists){
-    REPORT_HISTORY[key].unshift({text:rs.text,topic:rs.topic,ts:rs.ts,score:rs.score,phase:rs.phase});
+    REPORT_HISTORY[key].unshift({text:_archTxt,topic:rs.topic, rep:_archTxt,ts:rs.ts,score:rs.score,phase:rs.phase});
     if(REPORT_HISTORY[key].length>10) REPORT_HISTORY[key]=REPORT_HISTORY[key].slice(0,10);
     saveReportHistory();
   }
@@ -4134,12 +4155,19 @@ function renderHistoryReports(key, topicFilter){
   if(!container) return;
   var p=P();
   var currentTopic=topicFilter || (p?p.topic:'');
-  var allReports=REPORT_HISTORY[key]||[];
+  var allReports=getReportHistoryForProject(key);
   var totalCount=allReports.length;
   // 携带原始索引（删除/展开用），再按时间降序排序
   var list=allReports.map(function(rep,oi){return {rep:rep,oi:oi};});
   // _histShowAll=true 时列出该城市全部方向的历史（含自定义方向），否则只看当前方向
-  if(currentTopic && !_histShowAll) list=list.filter(function(x){return x.rep.topic===currentTopic;});
+  if(currentTopic && !_histShowAll) list=list.filter(function(x){
+    if(x.rep.topic===currentTopic) return true;
+    // 模糊匹配：核心关键词重叠>60%视为同方向
+    var a=currentTopic.replace(/[补链引入引育升级招商培育系统软硬件本地配套软性Tier1]/g,'');
+    var b=(x.rep.topic||'').replace(/[补链引入引育升级招商培育系统软硬件本地配套软性Tier1]/g,'');
+    var overlap=0; for(var i=0;i<a.length;i++){if(b.indexOf(a[i])>=0)overlap++;}
+    return a.length>0&&overlap/a.length>0.6;
+  });
   list.sort(function(a,b){return (b.rep.ts||0)-(a.rep.ts||0);});
   // 无任何历史报告则整块隐藏；有历史但当前方向为空时仍显示切换入口
   if(!totalCount){container.innerHTML='';return;}
