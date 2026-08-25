@@ -8642,7 +8642,10 @@ function kbVerifyMaterial(){
   kbChatPush('user', qd.outerHTML);
 
   // 把新文件原文和智库结论都直接嵌入 question，让模型两份原文逐字对比
-  // 智能匹配：从全部智库条目中找与新文件内容最相关的条目对比
+  // 新文件原文
+  var newText=newChunks.map(function(ck){return ck.text;}).join('\n');
+
+    // 智能匹配：从全部智库条目中找与新文件内容最相关的条目对比
   var _allKnown=[];
   if(p.kb){
     p.kb.forEach(function(t){
@@ -8663,8 +8666,7 @@ function kbVerifyMaterial(){
   topicKnown=topicKnown.slice(0,12); // 限制最多12条，保证prompt精准且不过大
   var knownHint=topicKnown.length ? '（智库已有结论：'+topicKnown.join('；')+'）' : '';
 
-  // 新文件原文（直接拼入 question）
-  var newText=newChunks.map(function(ck){return ck.text;}).join('\n');
+
 
   var prompt=
     '【新上传文件原文】\n'+newText+'\n\n'
