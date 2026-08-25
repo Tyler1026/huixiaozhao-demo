@@ -5280,8 +5280,8 @@ function triggerReport(phase){
 
         function revealReport(){
           window._reportGenerating=false;
-  // 报告完成后自动生成产业链图谱
-  var _rp=P(); if(_rp&&_rp.topic){ generateChainFromReport(_rp.topic, accText, _rp.city); }
+  // 报告完成后自动生成产业链图谱（仅无硬编码链的方向才需要动态生成）
+  var _rp=P(); if(_rp&&_rp.topic&&!pickChainKey(_rp.topic)){ generateChainFromReport(_rp.topic, accText, _rp.city); }
           var elapsed=Date.now()-t0;
           if(content) content.innerHTML='<p style="margin:0">'+renderMd(accText)+'</p>';
           // 归档旧报告
@@ -5552,6 +5552,87 @@ function _findPendingForTopic(rs, topic){
   return (bestScore>0.6 && bestKey) ? rs.pendingByTopic[bestKey] : [];
 }
 
+/* 丰富泳道格式渲染（动态AI图谱也用此格式，与硬编码链一致） */
+function _renderRichChain(topic, segments, recs, p){
+  var LEVEL={
+    strong:{bg:'#f0fdf4',bd:'#16a34a',fc:'#15803d',tag:'优势',tbg:'#dcfce7',tfc:'#15803d'},
+    mid:   {bg:'#fefce8',bd:'#d97706',fc:'#92400e',tag:'培育',tbg:'#fef9c3',tfc:'#92400e'},
+    weak:  {bg:'#fef2f2',bd:'#ef4444',fc:'#991b1b',tag:'缺口',tbg:'#fee2e2',tfc:'#b91c1c'}
+  };
+  var SEGMETA={
+    '上游':{bg:'#eef2ff',fc:'#4338ca',bd:'#c7d2fe',tag:'UPSTREAM'},
+    '中游':{bg:'#f0fdf4',fc:'#166534',bd:'#bbf7d0',tag:'MIDSTREAM'},
+    '下游':{bg:'#fff7ed',fc:'#9a3412',bd:'#fed7aa',tag:'DOWNSTREAM'}
+  };
+  var h='<div style="margin-top:16px;border-radius:16px;border:1.5px solid #e2e8f0;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.06)">';
+  h+='<div style="padding:12px 18px;background:linear-gradient(135deg,#1e3a5f,#1a56db);display:flex;align-items:center;gap:10px">';
+  h+='<span style="font-size:20px">\ud83d\udcca</span>';
+  h+='<div><div style="font-size:13.5px;font-weight:800;color:#fff;letter-spacing:.3px">'+topic+' 产业链图谱</div>';
+  h+='<div style="font-size:11px;color:rgba(255,255,255,0.7);margin-top:1px">上游 → 中游 → 下游 · 当前产业分析方向「'+topic+'」</div></div>';
+  h+='<div style="margin-left:auto;display:flex;gap:8px">';
+  [{t:'优势',bg:'#16a34a'},{t:'培育',bg:'#d97706'},{t:'缺口',bg:'#ef4444'}].forEach(function(lg){
+    h+='<span style="background:'+lg.bg+';color:#fff;border-radius:20px;padding:2px 9px;font-size:10.5px;font-weight:700">'+lg.t+'</span>';
+  });
+  h+='</div></div>';
+  h+='<div style="padding:16px;background:#f8faff;display:flex;flex-direction:column;gap:12px">';
+  segments.forEach(function(seg){
+    var sm=SEGMETA[seg.seg]||SEGMETA['中游'];
+    h+='<div style="display:flex;gap:12px;align-items:stretch">';
+    h+='<div style="flex-shrink:0;width:44px;border-radius:10px;background:'+sm.bg+';border:1.5px solid '+sm.bd+';display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:8px 2px">';
+    h+='<span style="font-size:13px;font-weight:800;color:'+sm.fc+';letter-spacing:2px;writing-mode:vertical-rl">'+seg.seg+'</span>';
+    h+='<span style="font-size:7.5px;color:'+sm.fc+';opacity:.55;letter-spacing:.5px;writing-mode:vertical-rl">'+sm.tag+'</span>';
+    h+='</div>';
+    h+='<div style="flex:1;display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:2px">';
+    (seg.nodes||[]).forEach(function(nd,i){
+      var lv=LEVEL[nd.level]||LEVEL.mid;
+      h+='<div style="flex:1;min-width:96px;background:'+lv.bg+';border:2px solid '+lv.bd+';border-radius:12px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;text-align:center">';
+      h+='<span style="background:'+lv.tbg+';color:'+lv.tfc+';border-radius:10px;padding:1px 8px;font-size:10px;font-weight:800;margin-bottom:5px">'+lv.tag+'</span>';
+      h+='<div style="font-size:12px;font-weight:700;color:'+lv.fc+';line-height:1.35;margin-bottom:5px">'+nd.name+'</div>';
+      if(nd.level==='strong'){
+        h+='<div style="font-size:10.5px;font-weight:700;color:#15803d;background:#f0fdf4;border:1px solid #16a34a;border-radius:20px;padding:2px 9px;margin-bottom:6px;white-space:nowrap">\u2705 本地优势</div>';
+      } else if(nd.level==='weak'){
+        h+='<div style="font-size:10.5px;font-weight:700;color:#b91c1c;background:#fef2f2;border:1px solid #ef4444;border-radius:20px;padding:2px 9px;margin-bottom:6px;white-space:nowrap">\u274c 缺口</div>';
+      } else {
+        h+='<div style="font-size:10.5px;font-weight:700;color:#92400e;background:#fefce8;border:1px solid #d97706;border-radius:20px;padding:2px 9px;margin-bottom:6px;white-space:nowrap">\ud83d\udd36 培育中</div>';
+      }
+      if(nd.note) h+='<div style="font-size:10px;color:#64748b;line-height:1.4">'+nd.note+'</div>';
+      if(nd.local_leaders&&nd.local_leaders.length){
+        h+='<div style="margin-top:7px;padding-top:6px;border-top:1px dashed '+lv.bd+';width:100%;text-align:center">';
+        h+='<div style="font-size:9px;color:#94a3b8;font-weight:700;margin-bottom:3px">\ud83c\udfe0 本地代表企业</div>';
+        h+='<div style="display:flex;flex-wrap:wrap;gap:3px;justify-content:center">';
+        nd.local_leaders.slice(0,3).forEach(function(e){h+='<span style="font-size:9.5px;color:#0f172a;background:#fff;border:1px solid '+lv.bd+';border-radius:10px;padding:1px 6px;white-space:nowrap">'+(typeof e==="string"?e:e.name)+'</span>';});
+        h+='</div></div>';
+      }
+      if(nd.benchmark&&nd.benchmark.length){
+        h+='<div style="margin-top:7px;padding-top:6px;border-top:1px dashed '+lv.bd+';width:100%;text-align:center">';
+        h+='<div style="font-size:9px;color:#94a3b8;font-weight:700;margin-bottom:3px">\ud83c\udfaf 对标企业</div>';
+        h+='<div style="display:flex;flex-wrap:wrap;gap:3px;justify-content:center">';
+        nd.benchmark.slice(0,3).forEach(function(e){h+='<span style="font-size:9.5px;color:#0f172a;background:#fff;border:1px solid '+lv.bd+';border-radius:10px;padding:1px 6px;white-space:nowrap">'+(typeof e==="string"?e:e.name)+'</span>';});
+        h+='</div></div>';
+      }
+      h+='</div>';
+      if(i<(seg.nodes||[]).length-1) h+='<div style="display:flex;align-items:center;flex-shrink:0;padding:0 4px;color:#94a3b8;font-size:16px">→</div>';
+    });
+    h+='</div></div>';
+  });
+  h+='</div>';
+  if(recs&&recs.length){
+    h+='<div style="padding:12px 16px;background:#fff;border-top:1px solid #e8edf5">';
+    h+='<div style="font-size:12px;font-weight:700;color:#1d4ed8;margin-bottom:8px">\ud83c\udfaf 补链优先推荐</div>';
+    h+='<div style="display:flex;flex-direction:column;gap:6px">';
+    recs.forEach(function(rec,i){
+      h+='<div style="display:flex;align-items:flex-start;gap:8px">';
+      h+='<span style="background:#dbeafe;color:#1d4ed8;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:700;flex-shrink:0;line-height:1.6">'+(i+1)+'</span>';
+      h+='<div style="font-size:12px;color:#1e293b"><strong>'+(rec.l||rec.name||'')+'</strong> <span style="color:#64748b">· '+(rec.why||rec.reason||'')+'</span></div>';
+      h+='</div>';
+    });
+    h+='</div></div>';
+  }
+  h+='</div>';
+  return h;
+}
+
+
 function chainMapHtml(p){
   if(!p) return '';
   var topic=p.topic||'';
@@ -5683,40 +5764,23 @@ function chainMapHtml(p){
   /* 匹配产业链：调用统一的 pickChainKey（topic 关键词 → 链）。
      匹配不到时返回 null，不再无脑兜底香菇。 */
   var key=pickChainKey(topic);
-  // 优先使用AI动态生成的图谱数据
+  // AI动态生成的图谱数据（仅在无硬编码链时使用）
   var _dynChain=null;
   if(cur && REPORTSTATE[cur] && REPORTSTATE[cur].chainByTopic){ _dynChain=REPORTSTATE[cur].chainByTopic[topic]; }
-  if(_dynChain==='loading'){
-    return '<div style="margin-top:16px;padding:20px;border-radius:14px;border:1.5px dashed #cbd5e1;background:#f8fafc;text-align:center;color:#64748b;font-size:12.5px">'+'<div style="font-size:26px;margin-bottom:8px">⏳</div>正在生成产业链图谱…</div>';
-  }
-  if(Array.isArray(_dynChain) && _dynChain.length>=2){
-    var _dHtml='<div style="margin-top:16px;border-radius:14px;border:1.5px solid #e2e8f0;padding:16px;background:#ffffff">';
-    _dHtml+='<div style="font-size:13px;font-weight:700;color:#1e293b;margin-bottom:12px">🔗 '+topic+' · 产业链全景</div>';
-    _dHtml+='<div style="display:flex;gap:12px;overflow-x:auto">';
-    _dynChain.forEach(function(seg){
-      _dHtml+='<div style="flex:1;min-width:180px;background:#f8fafc;border-radius:10px;padding:12px">';
-      _dHtml+='<div style="font-size:11.5px;font-weight:700;color:#475569;margin-bottom:8px;text-align:center">'+seg.seg+'</div>';
-      (seg.nodes||[]).forEach(function(nd){
-        var clr=nd.level==='strong'?'#22c55e':nd.level==='mid'?'#f59e0b':'#ef4444';
-        var bg2=nd.level==='strong'?'#f0fdf4':nd.level==='mid'?'#fffbeb':'#fef2f2';
-        _dHtml+='<div style="margin-bottom:8px;padding:8px 10px;border-radius:8px;border-left:3px solid '+clr+';background:'+bg2+'">';
-        _dHtml+='<div style="font-size:12px;font-weight:600;color:#1e293b">'+nd.name+'</div>';
-        if(nd.note) _dHtml+='<div style="font-size:10.5px;color:#64748b;margin-top:3px">'+nd.note+'</div>';
-        _dHtml+='</div>';
-      });
-      _dHtml+='</div>';
-    });
-    _dHtml+='</div></div>';
-    return _dHtml;
-  }
+
+  // 硬编码链优先：有对应key则直接用硬编码数据走丰富渲染，忽略动态数据
   if(!key){
-    // 该方向无对应产业链图谱：明确提示，绝不塞香菇误导用户
-    // 尝试触发AI动态生成图谱
-
+    // 无硬编码链：用动态数据走丰富渲染，或触发生成
+    if(_dynChain==='loading'){
+      return '<div style="margin-top:16px;padding:20px;border-radius:14px;border:1.5px dashed #cbd5e1;background:#f8fafc;text-align:center;color:#64748b;font-size:12.5px">'+'<div style="font-size:26px;margin-bottom:8px">⏳</div>正在生成产业链图谱…</div>';
+    }
+    if(Array.isArray(_dynChain) && _dynChain.length>=2){
+      // 动态数据也用丰富泳道格式渲染（与硬编码完全一致的视觉风格）
+      return _renderRichChain(topic, _dynChain, null, p);
+    }
+    // 无数据：尝试触发AI动态生成
     var _rpt2=typeof reportTextForTopic==='function'?reportTextForTopic(topic):null;
-
     if(_rpt2 && !_dynChain){ generateChainFromReport(topic, _rpt2, p.city); }
-
     return '<div style="margin-top:16px;padding:20px;border-radius:14px;border:1.5px dashed #cbd5e1;background:#f8fafc;text-align:center;color:#64748b;font-size:12.5px;line-height:1.7">'+
       '<div style="font-size:26px;margin-bottom:8px">🧭</div>'+
       '「'+topic+'」暂未匹配到对应的产业链图谱<br>'+
