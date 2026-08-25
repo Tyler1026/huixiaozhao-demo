@@ -3963,7 +3963,7 @@ function selectTopic(val, isCustom){
       if(_nt){ _rs.text=_nt; }
       else { _rs.text=''; }
       _rs.topic=p.topic;
-      _rs.phase=(_rs.phaseByTopic&&_rs.phaseByTopic[p.topic])||1;
+      _rs.phase=(_rs.phaseByTopic&&_rs.phaseByTopic[p.topic])||((_nt&&_nt.length>1000)?2:1);
       // 后台从 RAG 生成该方向真实 AI 报告（预埋占位，就绪后替换）
       ensureAiReport(p.topic, p.city);
       setReportAreaHtml(_ra,reportHtml(p));
