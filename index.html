@@ -8842,7 +8842,12 @@ function kbConfirmOverwrite(){
     }
     var oldClean, newClean;
     if(idx>=0){
-      oldClean=(typeof k.known[idx]==='string'?k.known[idx]:(k.known[idx].text||'')).replace(/^[\u2705\u26a0\ufe0f\s]+/,'');
+      var _fullText=(typeof k.known[idx]==='string'?k.known[idx]:(k.known[idx].text||'')).replace(/^[\u2705\u26a0\ufe0f\s]+/,'');
+      // 只截取包含冲突数值的那一句（按句号/分号切分，找到含kbVal数字的句子）
+      var _numInKb=(kbVal.match(/[\d.]+/)||[''])[0];
+      var _sentences=_fullText.split(/[。；;]/);
+      var _relevantSentence=_sentences.find(function(s){ return _numInKb && s.indexOf(_numInKb)>=0; })||'';
+      oldClean=_relevantSentence.trim() || _fullText.substring(0,80);
       newClean=indicatorName+'：'+fileVal+'（原记录：'+kbVal+'）';
     } else {
       oldClean=indicatorName+'：智库记录 '+kbVal;
