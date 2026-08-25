@@ -8425,7 +8425,7 @@ function kbVerifyMaterial(){
   var prompt=
     '【新上传文件原文】\n'+newText+'\n\n'
     +'【智库已有结论（正确基准）】\n'+topicKnown.join('\n')+'\n\n'
-    +'任务：找出新上传文件与智库已有结论中【同一个数据指标但数值不同】的地方。\n'
+    +'任务：逐条对比新上传文件与智库已有结论，找出所有数据差异或模糊点。\n'
     +'重要规则：\n'
     +'- 只对比双方都提到的同一指标（如产值、增速、产量等），数值不同才算矛盾\n'
     +'- 文件中有但智库没有的新信息，不是矛盾，不要列出\n'
@@ -8437,7 +8437,7 @@ function kbVerifyMaterial(){
     +'  · 若无数值冲突 → 写「结论：未发现矛盾」\n'
     +'随后逐条列出每个冲突，格式固定为：\n'
     +'文件说[具体指标+数值]，智库记录是[同一指标+数值]，不一致。\n'
-    +'要求：每条必须说清楚是哪个指标，不要只写数字。';
+    +'要求：每条必须说清楚是哪个指标及新旧数值对比。即使无明显矛盾，也需逐条列出文件中的关键数据点并标注是否与智库一致。不可只给一句总结性结论。';
 
   // 思考气泡
   var thinking=document.createElement('div');
@@ -8477,6 +8477,8 @@ function kbVerifyMaterial(){
           // 判定优先级：先看 AI 首行的结构化结论标记，最可靠；关键词兜底只作为补充。
           // 关键修复：旧逻辑把"文件说A，智库记录B，不一致"这类真实矛盾误判为 allClear（因命中"未发现"字样），
           // 导致假数据漏报。现改为：只要出现矛盾结论/不一致标志，一律判为高危，绝不 allClear。
+          // 确保正文内容一定渲染到bodyDiv（不管后续判定结果如何）
+          if(accText.trim()){ bodyDiv.innerHTML='<p style="margin:0;line-height:1.75">'+renderMarkdown(accText)+'</p>'; }
           var _firstLine=(accText.split('\n').find(function(l){return l.trim();})||'').trim();
           var _saysConflict=/结论[：:]\s*发现矛盾|发现矛盾\s*\d*\s*处/.test(_firstLine)||/发现矛盾/.test(accText);
           var _saysClear=/结论[：:]\s*(未发现矛盾|无矛盾|完全一致)/.test(_firstLine);
