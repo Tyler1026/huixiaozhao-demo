@@ -8713,9 +8713,10 @@ function kbVerifyMaterial(){
     body:JSON.stringify({question:prompt, chunks:_vChunks, city:p.city, stream:true, mode:'chat'})
   }).then(function(resp){
     thinking.remove();
+    bodyDiv.innerHTML='<span style="color:#9aa5b5;font-size:12px"><span class="gov-spin" style="margin-right:6px"></span>AI 正在逐条核验数据点…</span>';
     c.appendChild(ansNode); c.scrollTop=c.scrollHeight;
     if(!resp.ok){ bodyDiv.innerHTML='<span style="color:#ef4444">服务错误：'+resp.status+'</span>'; return; }
-    var reader=resp.body.getReader(), dec=new TextDecoder(), buf='';
+    var reader=resp.body.getReader(), dec=new TextDecoder(), buf='', _firstChunk=true;
     function pump(){
       reader.read().then(function(d){
         if(d.done){
@@ -8773,6 +8774,9 @@ function kbVerifyMaterial(){
               try{bodyDiv.innerHTML='<p style="margin:0;line-height:1.75">'+renderMarkdown(accText)+'</p>';}
               catch(e2){bodyDiv.innerHTML='<p style="margin:0;line-height:1.75;white-space:pre-wrap">'+accText.replace(/</g,'&lt;')+'</p>';}
               c.scrollTop=c.scrollHeight;}}catch(e){}
+          /* reasoning_content 阶段也显示进度 */
+          try{var j2=JSON.parse(data);var rc=(j2.choices&&j2.choices[0]&&j2.choices[0].delta&&j2.choices[0].delta.reasoning_content)||'';
+            if(rc && !accText){ bodyDiv.innerHTML='<span style="color:#9aa5b5;font-size:12px"><span class="gov-spin" style="margin-right:6px"></span>AI 深度推理中（已思考 '+Math.round((Date.now()-t0)/1000)+'s）…</span>'; c.scrollTop=c.scrollHeight; }}catch(e3){}
         });
         pump();
       });
