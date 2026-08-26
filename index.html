@@ -5416,8 +5416,8 @@ function triggerReport(phase){
             if(delta){ accText+=delta; window._liveAccText=accText; var _liveC=document.getElementById('reportContent'); if(_liveC && phase!==2) _liveC.innerHTML='<p style="margin:0">'+renderMd(accText)+'</p>'; }
           }catch(e){}
         });
-        }catch(_pumpErr){console.warn('[pump] error:',_pumpErr.message);}
         pump();
+        }catch(_pumpErr){console.warn('[pump] error:',_pumpErr.message);}
         return;
 
         function revealReport(){
