@@ -5351,7 +5351,7 @@ function triggerReport(phase){
           '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">\ud83d\udcce 补充材料</button>';
       } else { persist(); }
     }
-  }, 45000);
+  }, phase===2?120000:45000); // phase2需要>62s动画+AI响应时间
   fetch('/api/kb-chat',{
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({question:query,chunks:chunks,city:p.city,stream:true,mode:phase===1?'draft':'full'}),
