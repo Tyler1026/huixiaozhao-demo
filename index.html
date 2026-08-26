@@ -727,6 +727,8 @@ function _kbText(x){
 function _isJunkKbItem(text){
   if(!text||text.length<6) return true;
   if(/^[\s✅⚠️]*$/.test(text)) return true;
+  // 占位文本（空的补充条目模板）
+  if(/请在此输入|保存后写入|请输入补充/.test(text)) return true;
   // 纯报告标题（无实质数据，如"XX市招商方向研判报告"）
   if(/^[✅⚠️\s]*.{2,6}(市|区|县).{0,20}(报告|纲要|规划|方案|清单|简介)\s*$/.test(text)) return true;
   // 纯表格行：数字占比>50%且含多个连续数字段
