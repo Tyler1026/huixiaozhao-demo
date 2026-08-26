@@ -6577,8 +6577,8 @@ function homePage(p){
   var topicCards=recommendedTopics.map(function(t){
     return topicCardHtml(t, p.topic===t.label);
   }).join('');
-  // AI方向正在生成中 → 显示loading占位
-  if(!recommendedTopics.length && _aiTopicsGenerating[cur]){
+  // AI方向正在生成中（无AI缓存）→ 显示loading占位（不管正则兜底有没有结果）
+  if(_aiTopicsGenerating[cur] && !(p.aiTopics && p.aiTopics.list && p.aiTopics.list.length)){
     topicCards='<div style="flex:1;padding:22px 18px;background:#f8faff;border:1.5px solid #e8edf5;border-radius:14px;text-align:center">'+
       '<div style="display:inline-block;width:24px;height:24px;border:3px solid #e2e8f0;border-top-color:#6366f1;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:10px"></div>'+
       '<div style="font-size:13px;font-weight:700;color:#0b183b;margin-bottom:4px">AI 正在分析产业方向…</div>'+
@@ -7234,7 +7234,7 @@ function loadReportState(){try{var d=localStorage.getItem('hxz_reportstate');if(
 /* ── localStorage 持久化 ── */
 var LS_KEY='huixiaozhao_kb_v1';
 // 版本标记：数据结构有变时递增，自动清除旧缓存防止旧数据污染服务器
-var _DATA_VER='20260826a';
+var _DATA_VER='20260826b';
 if(localStorage.getItem('hxz_data_ver')!==_DATA_VER){
   localStorage.removeItem(LS_KEY);
   localStorage.removeItem('hxz_uploads');
