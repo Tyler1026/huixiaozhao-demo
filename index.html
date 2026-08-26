@@ -759,15 +759,38 @@ function loadKbSummary(){
 // 页面加载后延迟获取概括数据
 setTimeout(loadKbSummary, 2000);
 
-// 获取某个板块的展示用known（优先用AI概括，没有则用原始数据清洗）
+// 获取某个板块的展示用known（用户确认/补充的优先显示，其余用AI概括或原始数据）
 function _getDisplayKnown(kbIdx){
-  if(_kbSummaryData && _kbSummaryData.kb && _kbSummaryData.kb[kbIdx]){
-    var items=_kbSummaryData.kb[kbIdx].known||[];
-    if(items.length>0) return items;
-  }
-  // fallback: 用原始数据清洗后前6条
   var p=P(); if(!p||!p.kb||!p.kb[kbIdx]) return [];
-  return (p.kb[kbIdx].known||[]).map(_kbText).filter(function(x){return !_isJunkKbItem(x);}).slice(0,6);
+  var raw=p.kb[kbIdx].known||[];
+  // 1. 提取用户确认(✅)或补充(origin=user)的条目 — 这些必须优先显示
+  var userItems=[];
+  raw.forEach(function(x){
+    var t=_kbText(x);
+    var isUser=(typeof x==='object' && (x.origin==='user'||x.nature==='confirm'||x.nature==='fix'));
+    var isConfirmed=t.indexOf('\u2705')===0;
+    if((isUser||isConfirmed) && !_isJunkKbItem(t)) userItems.push(t);
+  });
+  // 2. AI概括数据作为补充
+  var aiItems=[];
+  if(_kbSummaryData && _kbSummaryData.kb && _kbSummaryData.kb[kbIdx]){
+    aiItems=(_kbSummaryData.kb[kbIdx].known||[]).filter(function(x){return !_isJunkKbItem(x);});
+  }
+  // 3. 合并：用户条目在前 + AI概括补充，总共最多6条
+  var result=userItems.slice(0,4);
+  var need=6-result.length;
+  if(need>0 && aiItems.length){
+    aiItems.forEach(function(x){if(result.length<6 && result.indexOf(x)<0) result.push(x);});
+  }
+  // 4. 仍不够则用原始数据fallback
+  if(result.length<3){
+    raw.forEach(function(x){
+      if(result.length>=6) return;
+      var t=_kbText(x);
+      if(!_isJunkKbItem(t) && result.indexOf(t)<0) result.push(t);
+    });
+  }
+  return result.slice(0,6);
 }
 function _getDisplaySub(kbIdx){
   if(_kbSummaryData && _kbSummaryData.kb && _kbSummaryData.kb[kbIdx]){
