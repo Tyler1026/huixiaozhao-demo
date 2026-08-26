@@ -5600,8 +5600,8 @@ function generateChainFromReport(topic, reportText, city){
             var chain=JSON.parse(jsonStr);
             if(Array.isArray(chain)&&chain.length>=2){
               rs.chainByTopic[topic]=chain; persist();
-              var block=document.getElementById('chainMapBlock');
-              if(block){block.innerHTML=chainMapHtml(P());}
+              // 图谱生成完毕，刷新整个页面确保图谱+actionItems正确显示
+              if(view==='report') render();
             } else { rs.chainByTopic[topic]=null; persist(); }
           }catch(e){console.warn('[chain] parse:',e.message);
             // 容错：尝试手动修复常见JSON格式问题
