@@ -5390,7 +5390,7 @@ function triggerReport(phase){
     }
     var reader=resp.body.getReader(); var decoder=new TextDecoder(); var buf='';
     function pump(){
-      reader.read().then(function(d){
+      return reader.read().then(function(d){
         if(d.done){
           // phase 2：DeepSeek 已返回，但报告须等「定点分析」动画走完（≥60s）才揭示
           if(phase===2 && !analysisGate.minElapsed){
