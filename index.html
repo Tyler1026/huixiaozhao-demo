@@ -5188,7 +5188,7 @@ function triggerReport(phase){
   var corpus=buildKBCorpus(p.city);
   var interviewCtx=window._interviewContext||'';
   var query=phase===1
-    ? '请基于'+p.city+'城市智库数据，针对「'+p.topic+'」方向'+(interviewCtx?'，结合以下访谈信息：\n'+interviewCtx+'\n':'')+',严格按以下格式快速输出（总计300字以内）：\n\n①关键缺口：\n- 缺口1（附数据）\n- 缺口2（附数据）\n- 缺口3（附数据）\n\n②招引方向：\n- 方向1｜类型\n- 方向2｜类型\n- 方向3｜类型\n\n③待确认事项：\n- ⚠️ 事项1\n- ⚠️ 事项2\n- ⚠️ 事项3\n\n④数据可靠性：\n简要说明哪些有数据支撑，哪些需补充。\n\n要求：每条用⚠️标注不确定的判断；语言精炼；禁止输出完整五章报告结构。'
+    ? '请基于'+p.city+'城市智库数据，针对「'+p.topic+'」方向'+(interviewCtx?'，结合以下访谈信息：\n'+interviewCtx+'\n':'')+',快速输出300字以内草稿：①3个关键缺口（附数据）②3个招引方向（标类型）③3条待确认事项（⚠️开头）④数据可靠性。用⚠️标注不确定判断。'
     : '请基于'+p.city+'城市智库数据，针对「'+p.topic+'」方向，输出完整招商研判报告，严格按五章结构：\n一、产业基础判断（具体数字，来自知识片段）\n二、产业链缺口分析（逐环节标注✅已有/⚠️薄弱/❌缺失，标注本地化属性A必须本地化/B可跨区域/C优先本地化）\n三、补链优先级清单TOP5（表格格式：缺口节点|本地化属性|经济拉动★|招引可行性★|综合优先级）\n四、目标企业画像（每个TOP缺口：目标企业类型+规模+开口话术模板）\n五、待确认事项（⚠️标注每条需确认的专项资金/园区地块/政策口径）';
   var chunks=kbSearch(query,corpus,phase===1?5:8);
   var t0=Date.now(); var accText='';
@@ -5378,7 +5378,7 @@ function triggerReport(phase){
           '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">\ud83d\udcce 补充材料</button>';
       } else { persist(); }
     }
-  }, phase===2?120000:45000); // phase2需要>62s动画+AI响应时间
+  }, phase===2?180000:90000); // phase2需要>62s动画+AI响应时间
   fetch('/api/kb-chat',{
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({question:query,chunks:chunks,city:p.city,stream:true,mode:phase===1?'draft':'full'}),
