@@ -5346,7 +5346,7 @@ function triggerReport(phase){
             var j=JSON.parse(d2);
             var delta=j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content||'';
             // phase 2 分析动画期间先缓冲，不实时冲掉分析步骤
-            if(delta){ accText+=delta; var _liveC=document.getElementById('reportContent'); if(_liveC && phase!==2) _liveC.innerHTML='<p style="margin:0">'+renderMd(accText)+'</p>'; }
+            if(delta){ accText+=delta; window._liveAccText=accText; var _liveC=document.getElementById('reportContent'); if(_liveC && phase!==2) _liveC.innerHTML='<p style="margin:0">'+renderMd(accText)+'</p>'; }
           }catch(e){}
         });
         pump();
@@ -5354,6 +5354,7 @@ function triggerReport(phase){
 
         function revealReport(){
           if(_reportTimeout) clearTimeout(_reportTimeout);
+          window._liveAccText=null; // 生成完毕，清除临时文本
   // 报告完成后自动生成产业链图谱（仅无硬编码链的方向才需要动态生成）
   var _rp=P(); if(_rp&&_rp.topic&&!pickChainKey(_rp.topic)){ generateChainFromReport(_rp.topic, accText, _rp.city); }
           var elapsed=Date.now()-t0;
@@ -6576,6 +6577,13 @@ function homePage(p){
           '</div>'
       )+
     '</div>';
+  // 生成中切换方向后切回：恢复reportContent中已有的流式文本
+  if(window._reportGenerating && window._liveAccText){
+    setTimeout(function(){
+      var _rc=document.getElementById('reportContent');
+      if(_rc && !_rc.textContent.trim()) _rc.innerHTML='<p style="margin:0">'+window._liveAccText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')+'</p>';
+    },0);
+  }
   // 自动触发 Phase 1（若非完整报告）
   setTimeout(function(){ renderHistoryReports(cur); }, 0);
 
@@ -8880,7 +8888,7 @@ function kbVerifyMaterial(){
   ansNode.appendChild(imgEl);
   ansNode.appendChild(bubble);
 
-  var accText='';
+  var accText=''; window._liveAccText=null;
   var t0=Date.now();
 
   // 涉 AI 必过 RAG：校验也要吃进该城市智库语料（否则无从比对）
