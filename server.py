@@ -1421,6 +1421,8 @@ class Handler(BaseHTTPRequestHandler):
                             line = resp.readline()
                             if not line: break
                             self.wfile.write(line); self.wfile.flush()
+                        # 显式发送[DONE]确保前端reader.read()收到done=true
+                        self.wfile.write(b"data: [DONE]\n\n"); self.wfile.flush()
                 else:
                     data = resp.read()
                     if mode == "chat":

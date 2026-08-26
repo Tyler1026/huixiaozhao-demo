@@ -5281,8 +5281,10 @@ function triggerReport(phase){
     }).filter(Boolean).join('\n');
     return md;
   }
-  // 超时保护：45秒内未完成流式响应则强制显示已有文本
+  // 超时保护：45秒后abort挂起的流式连接，强制触发catch处理部分文本
+  var _abortCtrl=new AbortController();
   var _reportTimeout=setTimeout(function(){
+    _abortCtrl.abort();
     if(accText.length>50 && window._reportGenerating){
       console.warn('[report] timeout 45s, forcing reveal with partial text');
       window._reportGenerating=false;
@@ -5307,7 +5309,8 @@ function triggerReport(phase){
   }, 45000);
   fetch('/api/kb-chat',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:query,chunks:chunks,city:p.city,stream:true,mode:phase===1?'draft':'full'})
+    body:JSON.stringify({question:query,chunks:chunks,city:p.city,stream:true,mode:phase===1?'draft':'full'}),
+    signal:_abortCtrl.signal
   }).then(function(resp){
     if(!resp.ok){
       if(content) content.innerHTML='<span style="color:#ef4444">服务错误：'+resp.status+'<br><small>AI 服务暂时不可用，请稍后重试</small></span>';
