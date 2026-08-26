@@ -5393,7 +5393,6 @@ function triggerReport(phase){
     var reader=resp.body.getReader(); var decoder=new TextDecoder(); var buf='';
     function pump(){
       reader.read().then(function(d){
-        try{
         if(d.done){
           // phase 2：DeepSeek 已返回，但报告须等「定点分析」动画走完（≥60s）才揭示
           if(phase===2 && !analysisGate.minElapsed){
@@ -5417,7 +5416,7 @@ function triggerReport(phase){
           }catch(e){}
         });
         pump();
-        }catch(_pumpErr){console.warn('[pump] error:',_pumpErr.message);}
+        return;
         return;
 
         function revealReport(){
