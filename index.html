@@ -5123,6 +5123,30 @@ function interviewDone(){
   }).join('\n');
   // Store interview context for use in triggerReport
   window._interviewContext=context;
+  // 将有答案的问答存入kb"产业分析AI问答"板块（供管理端城市智库RAG查看）
+  var _qaItems=_interviewState.answers.filter(function(a){return a&&a.text;}).map(function(a){
+    var qObj=_interviewState.questions.find(function(q){return q.id===a.id;});
+    return {text:'【'+_interviewState.topic+'】'+qObj.q+'\n答：'+a.text, origin:'user', nature:'interview'};
+  });
+  if(_qaItems.length){
+    var p=P(); if(p&&p.kb){
+      // 查找或创建"产业分析AI问答"板块
+      var _qaSection=p.kb.find(function(s){return s.t==='产业分析AI问答';});
+      if(!_qaSection){
+        _qaSection={icon:'🤖',t:'产业分析AI问答',sub:'政府端访谈问答记录',tag:'ai-interview',known:[],calls:[]};
+        p.kb.push(_qaSection);
+      }
+      // 追加新的问答条目（去重：同方向同问题不重复添加）
+      _qaItems.forEach(function(item){
+        var exists=_qaSection.known.some(function(k){
+          var kt=typeof k==='string'?k:(k.text||'');
+          return kt===item.text;
+        });
+        if(!exists) _qaSection.known.push(item);
+      });
+      persist();
+    }
+  }
   // Now trigger the actual analysis
   triggerReport(1);
 }
