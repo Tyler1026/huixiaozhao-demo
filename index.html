@@ -4125,6 +4125,19 @@ function parsePendingItems(text){
     if(/^[✅❌]/.test(t2)) return;
     if(t2.length >= 2) items.push({text: t2, status:'pending', editedText:'', files:[]});
   });
+  // 兜底：如果未找到待确认章节内的条目，则提取所有含⚠️的行作为待确认
+  if(!items.length){
+    lines.forEach(function(line){
+      var raw=line.trim();
+      if(raw.indexOf('\u26a0\ufe0f')>=0 || raw.indexOf('\u26a0')>=0){
+        var clean=raw.replace(/^[\s\-•*|#]+/,'').replace(/\*\*/g,'').replace(/^\u26a0\ufe0f?\s*[:：]?/,'').trim();
+        if(clean.length>8 && clean.length<200){
+          var seen2=items.some(function(it){return it.text===clean;});
+          if(!seen2) items.push({text:clean,confirmed:false,status:'pending',editedText:'',files:[]});
+        }
+      }
+    });
+  }
   return items;
 }
 
@@ -5127,7 +5140,7 @@ function triggerReport(phase){
   var corpus=buildKBCorpus(p.city);
   var interviewCtx=window._interviewContext||'';
   var query=phase===1
-    ? '请基于'+p.city+'城市智库数据，针对「'+p.topic+'」方向'+(interviewCtx?'，结合以下访谈信息：\n'+interviewCtx+'\n':'')+',快速输出：①最关键的3个产业链缺口（每条附具体数据）②建议的3个招引方向（标注方向类型：补链/承接转移/精深加工/协同枢纽）③需要确认的待确认事项（用⚠️标注）④数据可靠性评估（哪些有数据支撑，哪些需补充）'
+    ? '请基于'+p.city+'城市智库数据，针对「'+p.topic+'」方向'+(interviewCtx?'，结合以下访谈信息：\n'+interviewCtx+'\n':'')+',严格按以下格式快速输出（总计300字以内）：\n\n①关键缺口：\n- 缺口1（附数据）\n- 缺口2（附数据）\n- 缺口3（附数据）\n\n②招引方向：\n- 方向1｜类型\n- 方向2｜类型\n- 方向3｜类型\n\n③待确认事项：\n- ⚠️ 事项1\n- ⚠️ 事项2\n- ⚠️ 事项3\n\n④数据可靠性：\n简要说明哪些有数据支撑，哪些需补充。\n\n要求：每条用⚠️标注不确定的判断；语言精炼；禁止输出完整五章报告结构。'
     : '请基于'+p.city+'城市智库数据，针对「'+p.topic+'」方向，输出完整招商研判报告，严格按五章结构：\n一、产业基础判断（具体数字，来自知识片段）\n二、产业链缺口分析（逐环节标注✅已有/⚠️薄弱/❌缺失，标注本地化属性A必须本地化/B可跨区域/C优先本地化）\n三、补链优先级清单TOP5（表格格式：缺口节点|本地化属性|经济拉动★|招引可行性★|综合优先级）\n四、目标企业画像（每个TOP缺口：目标企业类型+规模+开口话术模板）\n五、待确认事项（⚠️标注每条需确认的专项资金/园区地块/政策口径）';
   var chunks=kbSearch(query,corpus,phase===1?5:8);
   var t0=Date.now(); var accText='';
@@ -5437,9 +5450,21 @@ function triggerReport(phase){
               }
             }
           }
-          // 数据已全部保存，解锁并触发完整render重建页面（图谱+actionItems+确认面板全部通过render恢复）
+          // 数据已全部保存，解锁
           window._reportGenerating=false;
-          if(view==='report') render();
+          if(phase===2){
+            // phase2完整报告：等图谱生成完再render（图谱+招引方向一并显示）
+            var _chainDone=REPORTSTATE[cur]&&REPORTSTATE[cur].chainByTopic&&REPORTSTATE[cur].chainByTopic[p.topic]&&REPORTSTATE[cur].chainByTopic[p.topic]!=='loading';
+            if(_chainDone){
+              if(view==='report') render();
+            } else {
+              // 图谱还在生成，先显示报告正文，图谱完成后会自动触发render
+              if(view==='report') render();
+            }
+          } else {
+            // phase1草稿：直接render显示草稿+待确认面板
+            if(view==='report') render();
+          }
           return;
         }
       });
