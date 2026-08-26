@@ -2169,10 +2169,12 @@ function kbReadiness(){
   if(knownTotal===0 && uploads===0 && !hasRealKbData(p)){
     return {score:0,total:0,confirmed:0,files:0,label:'未开始',color:'#9aa5b5'};
   }
-  // 评分：⚠️确认率×80 + 上传加分×20
-  var warnRate=warnTotal>0?warnConfirmed/warnTotal:1; // 有数据但无⚠️条目时视为全部完成
-  var uploadBonus=Math.min(20, uploads*10); // 上传材料加分（可选）
-  var score=Math.round(warnRate*80 + uploadBonus);
+  // 评分：数据覆盖度×50 + 上传材料×20 + ⚠️确认率×30
+  // 确保有数据+上传材料就能达到80%解锁线，⚠️确认只是额外加分
+  var coverRate=Math.min(1, knownTotal/20); // 有20条以上数据视为数据覆盖满分
+  var uploadBonus=Math.min(20, uploads*10); // 每份材料10分，最多20
+  var warnRate=warnTotal>0?warnConfirmed/warnTotal:1;
+  var score=Math.round(coverRate*50 + uploadBonus + warnRate*30);
   var label=score>=80?'已就绪':score>=50?'基本完整':score>=20?'待补充':'未开始';
   var color=score>=80?'#22c55e':score>=50?'#f59e0b':score>=20?'#3b82f6':'#9aa5b5';
   return {score:score,total:warnTotal,confirmed:warnConfirmed,files:uploads,label:label,color:color};
@@ -8262,13 +8264,20 @@ function kbDetail(i){
   var k=P().kb[i]; if(!k) return;
   curKb=i;
 
-  // 已知条目列表（弹窗中使用原始数据+原始索引，确保edit/delete操作正确）
+  // 已知条目列表（优先显示⚠️待确认条目，确保用户能操作确认）
   var _rawKnown=k.known||[];
-  var _displayPairs=[]; // [{text, origIdx}]
+  var _warnPairs=[], _donePairs=[], _normalPairs=[]; // [{text, origIdx}]
   for(var _di=0;_di<_rawKnown.length;_di++){
     var _dt=_kbText(_rawKnown[_di]);
-    if(!_isJunkKbItem(_dt)) _displayPairs.push({text:_dt, origIdx:_di});
+    if(_isJunkKbItem(_dt)) continue;
+    var _pair={text:_dt, origIdx:_di};
+    if(_dt.indexOf('\u26a0\ufe0f')>=0) _warnPairs.push(_pair);
+    else if(_dt.indexOf('\u2705')===0) _donePairs.push(_pair);
+    else _normalPairs.push(_pair);
   }
+  // 组合：⚠️全显示 + ✅全显示 + 普通条目最多8条
+  var _displayPairs=_warnPairs.concat(_donePairs).concat(_normalPairs.slice(0,8));
+  var _moreCount=_normalPairs.length>8?(_normalPairs.length-8):0;
   var displayKnown=_displayPairs.map(function(p2){return p2.text;});
   var knownHtml=(displayKnown&&displayKnown.length)
     ? '<div style="display:flex;flex-direction:column;gap:8px">'+
@@ -8355,6 +8364,9 @@ function kbDetail(i){
         }).join('')+
       '</div>'
     : '<div style="color:#9aa5b5;font-size:13px;padding:12px 0">暂无已知内容，点击下方按钮基于此主题提问。</div>';
+  if(_moreCount>0){
+    knownHtml+='<div style="text-align:center;padding:8px;font-size:12px;color:#8492a6;background:#f8faff;border-radius:8px;margin-top:6px">还有 '+_moreCount+' 条基础数据未展示（仅显示待确认项+精选摘要）</div>';
+  }
 
   // 数据来源标签
   var callsHtml=(k.calls&&k.calls.length)
