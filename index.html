@@ -995,8 +995,9 @@ var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/
 function render(){
   // 跳过重渲染：用户正在查看校验结果或冲突面板时不重建DOM
   if(window._verifyInProgress || document.getElementById('conflictModal')) return;
-  // 报告生成中切回report时：不阻塞render，让页面正常重建（会通过REPORTSTATE恢复已有内容）
-  // 流式数据持续写入accText，revealReport最终会保存完整结果
+  // 报告生成中且当前在report view时不重建DOM（保护流式输出的reportContent）
+  // 切到其他view不阻塞；revealReport完成后会主动调render()
+  if(window._reportGenerating && view==='report') return;
   // ── 登录门禁：未登录 → 登录页 ──
   if(location.search.indexOf('demo')<0 && !AUTH){
     var _r=document.getElementById('root');
