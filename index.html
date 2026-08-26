@@ -6502,8 +6502,16 @@ function homePage(p){
   var topicCards=recommendedTopics.map(function(t){
     return topicCardHtml(t, p.topic===t.label);
   }).join('');
+  // AI方向正在生成中 → 显示loading占位
+  if(!recommendedTopics.length && _aiTopicsGenerating[cur]){
+    topicCards='<div style="flex:1;padding:22px 18px;background:#f8faff;border:1.5px solid #e8edf5;border-radius:14px;text-align:center">'+
+      '<div style="display:inline-block;width:24px;height:24px;border:3px solid #e2e8f0;border-top-color:#6366f1;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:10px"></div>'+
+      '<div style="font-size:13px;font-weight:700;color:#0b183b;margin-bottom:4px">AI 正在分析产业方向…</div>'+
+      '<div style="font-size:12px;color:#8492a6;line-height:1.6">基于城市智库数据生成推荐方向，约 10-20 秒</div>'+
+    '</div>';
+  }
   // 无真实数据(未上传材料)时不显示凭空方向，改为引导先上传/确认智库
-  if(!recommendedTopics.length){
+  else if(!recommendedTopics.length){
     topicCards='<div style="flex:1;padding:22px 18px;background:#f8faff;border:1.5px dashed #cbd5e1;border-radius:14px;text-align:center">'+
       '<div style="font-size:22px;margin-bottom:8px">📥</div>'+
       '<div style="font-size:13px;font-weight:700;color:#0b183b;margin-bottom:4px">暂无产业分析方向</div>'+
