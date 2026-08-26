@@ -7027,6 +7027,14 @@ function loadReportState(){try{var d=localStorage.getItem('hxz_reportstate');if(
 
 /* ── localStorage 持久化 ── */
 var LS_KEY='huixiaozhao_kb_v1';
+// 版本标记：数据结构有变时递增，自动清除旧缓存防止旧数据污染服务器
+var _DATA_VER='20260826a';
+if(localStorage.getItem('hxz_data_ver')!==_DATA_VER){
+  localStorage.removeItem(LS_KEY);
+  localStorage.removeItem('hxz_uploads');
+  localStorage.setItem('hxz_data_ver',_DATA_VER);
+  console.log('[ver] cleared stale localStorage, ver='+_DATA_VER);
+}
 
 
 /* 问答区折叠/展开 */
@@ -7080,7 +7088,9 @@ function persist(){
     try{ localStorage.setItem('hxz_uploads', JSON.stringify(UPLOADS)); }catch(_){}
     // 同步到服务器（静默，不影响主流程）
     // 防抖sync：最多5秒同步一次，避免堆积请求占满连接池影响AI问答
+    if(window._serverSyncLock) return;
     if(!window._syncTimer){ window._syncTimer=setTimeout(function(){ window._syncTimer=null;
+      if(window._serverSyncLock) return;
       try{var _sd=JSON.parse(localStorage.getItem('huixiaozhao_kb_v1')||'{}');
       fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:localStorage.getItem('huixiaozhao_kb_v1')||'{}'}).catch(function(){});}catch(_){}
     },5000); }
@@ -7116,6 +7126,7 @@ function restore(){
 
 // 从服务器拉取数据并覆盖本地（登录后调用）
 function restoreFromServer(callback){
+  window._serverSyncLock=true;
   // 保存用户当前操作状态，避免服务器数据覆盖用户刚做的方向切换
   var _userCur = cur;
   var _userTopic = (cur && PROJECTS[cur]) ? PROJECTS[cur].topic : null;
@@ -7173,9 +7184,10 @@ function restoreFromServer(callback){
       if(_userTopic) PROJECTS[_userCur].topic = _userTopic;
     }
     if(_userView) view = _userView;
+    window._serverSyncLock=false;
     console.log('[sync] restored from server, projects:',Object.keys(PROJECTS).length,', preserved topic:', _userTopic);
     if(callback)callback(true);
-  }).catch(function(){ if(callback)callback(false); });
+  }).catch(function(){ window._serverSyncLock=false; if(callback)callback(false); });
 }
 function clearPersist(){
   localStorage.removeItem(LS_KEY);
