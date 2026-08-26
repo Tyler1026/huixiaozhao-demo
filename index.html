@@ -5343,7 +5343,8 @@ function triggerReport(phase){
 
         function revealReport(){
           if(_reportTimeout) clearTimeout(_reportTimeout);
-          window._reportGenerating=false;
+          // 延迟解锁：给底部按钮渲染留时间，防止ensureAiTopics回调立刻触发render()覆盖
+          setTimeout(function(){ window._reportGenerating=false; }, 2000);
   // 报告完成后自动生成产业链图谱（仅无硬编码链的方向才需要动态生成）
   var _rp=P(); if(_rp&&_rp.topic&&!pickChainKey(_rp.topic)){ generateChainFromReport(_rp.topic, accText, _rp.city); }
           var elapsed=Date.now()-t0;
@@ -6568,6 +6569,13 @@ function homePage(p){
 /* 底部行动栏内容（按当前方向 topic 判断）。抽成函数，供初次渲染与切换方向时复用刷新。 */
 function reportBottomBarInner(p){
   var _hasFull = topicHasFullReport(p.topic);
+  // 检测该方向是否已完成草稿(phase1)但尚未生成完整报告
+  var _hasDraft = !_hasFull && REPORTSTATE[cur] && REPORTSTATE[cur].phaseByTopic && REPORTSTATE[cur].phaseByTopic[p.topic]===1;
+  if(_hasDraft){
+    return '<div style="flex:1;font-size:12.5px;color:#92400e;background:#fffbeb;padding:10px 14px;border-radius:10px;border:1px solid #fde68a;line-height:1.6">初步研判已完成，确认待确认事项后生成完整五章报告</div>'+
+      '<button onclick="triggerReport(2)" style="padding:12px 20px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:13.5px;font-weight:650;cursor:pointer;white-space:nowrap">生成完整产业报告 \u2192</button>'+
+      '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">\ud83d\udcce 补充材料</button>';
+  }
   return (_hasFull
       ? ('<button onclick="viewCurrentReport()" '+
           'style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">📊 查看完整报告</button>'+
