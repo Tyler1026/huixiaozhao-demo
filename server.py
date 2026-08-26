@@ -958,6 +958,33 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', str(len(resp)))
             self.cors(); self.end_headers(); self.wfile.write(resp)
             return
+        # ── 接口：管理员全量覆写（绕过merge保护，用于重置数据） ──
+        if self.path == '/api/admin-reset':
+            try:
+                body = json.loads(raw)
+                secret = body.get('secret', '')
+                if secret != 'hxz-reset-2026':
+                    resp = json.dumps({'ok': False, 'error': 'unauthorized'}).encode()
+                else:
+                    new_data = body.get('data')
+                    if not isinstance(new_data, dict):
+                        resp = json.dumps({'ok': False, 'error': 'data must be dict'}).encode()
+                    else:
+                        data_str = json.dumps(new_data, ensure_ascii=False)
+                        if _PG_AVAIL and DATABASE_URL:
+                            ok = _db_set(data_str)
+                        else:
+                            with open(SYNC_PATH, 'w', encoding='utf-8') as fw:
+                                fw.write(data_str)
+                            ok = True
+                        resp = json.dumps({'ok': ok}).encode()
+            except Exception as e:
+                resp = json.dumps({'ok': False, 'error': str(e)}).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(resp)
+            return
         # ── 接口0：管理员清理城市智库（强制覆盖kb，绕过材料计数保护） ──
         if self.path == '/api/kb-clean':
             try:
