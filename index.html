@@ -5385,6 +5385,7 @@ function triggerReport(phase){
     signal:_abortCtrl.signal
   }).then(function(resp){
     console.log('[triggerReport] fetch response:', resp.status, resp.ok, !!resp.body);
+    var content=document.getElementById('reportContent'); // live re-acquire
     if(!resp.ok){
       if(content) content.innerHTML='<span style="color:#ef4444">服务错误：'+resp.status+'<br><small>AI 服务暂时不可用，请稍后重试</small></span>';
       return;
@@ -5392,6 +5393,7 @@ function triggerReport(phase){
     var reader=resp.body.getReader(); var decoder=new TextDecoder(); var buf='';
     function pump(){
       reader.read().then(function(d){
+        try{
         if(d.done){
           // phase 2：DeepSeek 已返回，但报告须等「定点分析」动画走完（≥60s）才揭示
           if(phase===2 && !analysisGate.minElapsed){
@@ -5414,6 +5416,7 @@ function triggerReport(phase){
             if(delta){ accText+=delta; window._liveAccText=accText; var _liveC=document.getElementById('reportContent'); if(_liveC && phase!==2) _liveC.innerHTML='<p style="margin:0">'+renderMd(accText)+'</p>'; }
           }catch(e){}
         });
+        }catch(_pumpErr){console.warn('[pump] error:',_pumpErr.message);}
         pump();
         return;
 
