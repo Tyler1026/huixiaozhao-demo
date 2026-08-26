@@ -5354,8 +5354,6 @@ function triggerReport(phase){
 
         function revealReport(){
           if(_reportTimeout) clearTimeout(_reportTimeout);
-          // 延迟解锁：给底部按钮渲染留时间，防止ensureAiTopics回调立刻触发render()覆盖
-          setTimeout(function(){ window._reportGenerating=false; }, 2000);
   // 报告完成后自动生成产业链图谱（仅无硬编码链的方向才需要动态生成）
   var _rp=P(); if(_rp&&_rp.topic&&!pickChainKey(_rp.topic)){ generateChainFromReport(_rp.topic, accText, _rp.city); }
           var elapsed=Date.now()-t0;
@@ -5436,9 +5434,11 @@ function triggerReport(phase){
                 _cmEl.innerHTML=chainMapHtml(p);
                 _raEl.appendChild(_cmEl);
               }
-            setTimeout(function(){renderActionItems(accText,p,r);},300);
             }
           }
+          // 数据已全部保存，解锁并触发完整render重建页面（图谱+actionItems+确认面板全部通过render恢复）
+          window._reportGenerating=false;
+          if(view==='report') render();
           return;
         }
       });
