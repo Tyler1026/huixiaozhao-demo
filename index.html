@@ -5384,8 +5384,6 @@ function triggerReport(phase){
     body:JSON.stringify({question:query,chunks:chunks,city:p.city,stream:true,mode:phase===1?'draft':'full'}),
     signal:_abortCtrl.signal
   }).then(function(resp){
-    console.log('[triggerReport] fetch response:', resp.status, resp.ok, !!resp.body);
-    var content=document.getElementById('reportContent'); // live re-acquire
     if(!resp.ok){
       if(content) content.innerHTML='<span style="color:#ef4444">服务错误：'+resp.status+'<br><small>AI 服务暂时不可用，请稍后重试</small></span>';
       return;
