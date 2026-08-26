@@ -947,7 +947,7 @@ var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/
 
 function render(){
   // 跳过重渲染：用户正在查看校验结果或冲突面板时不重建DOM
-  if(window._verifyInProgress || document.getElementById('conflictModal')) return;
+  if(window._verifyInProgress || window._reportGenerating || document.getElementById('conflictModal')) return;
   // ── 登录门禁：未登录 → 登录页 ──
   if(location.search.indexOf('demo')<0 && !AUTH){
     var _r=document.getElementById('root');
@@ -4968,6 +4968,7 @@ function startAiInterview(){
   var inp=document.getElementById('topicCustomInput');
   if(inp&&inp.value.trim()) p.topic=inp.value.trim();
   if(!p.topic){toast('请先选择或输入产业方向');return;}
+  window._reportGenerating=true; // 阻止ensureAiTopics回调触发render()覆盖访谈UI
   persist();
 
   _interviewState = { answers: [], currentQ: 0, topic: p.topic };
