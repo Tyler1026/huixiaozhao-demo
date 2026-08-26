@@ -1,3 +1,4 @@
+# deploy v20260826-1535
 #!/usr/bin/env python3
 """
 慧小招 KB Chat Server — localhost:5050
