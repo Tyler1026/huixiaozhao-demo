@@ -5342,7 +5342,10 @@ function triggerReport(phase){
     return md;
   }
   // 超时保护：45秒后abort挂起的流式连接，强制触发catch处理部分文本
+  // Abort之前的请求（防止多次triggerReport并行冲突）
+  if(window._activeReportAbort) try{window._activeReportAbort.abort();}catch(e){}
   var _abortCtrl=new AbortController();
+  window._activeReportAbort=_abortCtrl;
   var _reportTimeout=setTimeout(function(){
     _abortCtrl.abort();
     if(accText.length>50){
