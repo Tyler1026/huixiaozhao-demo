@@ -6482,6 +6482,13 @@ function ensureAiTopics(){
       return {label:String(t.label).trim(), icon:t.icon||'📌', type:t.type||'补链', desc:t.desc||'', fromAi:true};
     });
     if(!list.length) return;
+    // 保留用户自定义方向（custom:true），不被AI刷新覆盖
+    var _prevList=(PROJECTS[cur].aiTopics&&PROJECTS[cur].aiTopics.list)||[];
+    var _customTopics=_prevList.filter(function(t){return t.custom;});
+    _customTopics.forEach(function(ct){
+      var dup=list.some(function(t){return t.label===ct.label;});
+      if(!dup) list.push(ct);
+    });
     PROJECTS[cur].aiTopics={list:list, ts:Date.now()};
     persist();
     if(view==='report' && !window._reportGenerating) render();
