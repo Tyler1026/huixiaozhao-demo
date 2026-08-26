@@ -5644,32 +5644,42 @@ function generateChainFromReport(topic, reportText, city){
     function pump(){
       return reader.read().then(function(res){
         if(res.done){
-          // 流结束，解析累积的JSON
+          // 流结束，解析累积的JSON（增强容错）
           try{
             var jsonStr=acc.replace(/```json?\n?/g,'').replace(/```/g,'').trim();
+            var _ja=jsonStr.indexOf('['), _jb=jsonStr.lastIndexOf(']');
+            if(_ja>=0&&_jb>_ja) jsonStr=jsonStr.slice(_ja,_jb+1);
+            // 修复AI常见错误：name/note值缺结尾引号后紧跟下一个key
+            jsonStr=jsonStr.replace(/"([^"\\]{4,80})\s{2,}"?(level|note|seg|name)/g,'"$1","$2');
             var chain=JSON.parse(jsonStr);
             if(Array.isArray(chain)&&chain.length>=2){
               rs.chainByTopic[topic]=chain; persist();
-              // 图谱生成完毕，刷新整个页面确保图谱+actionItems正确显示
               if(view==='report') render();
             } else { rs.chainByTopic[topic]=null; persist(); }
-          }catch(e){console.warn('[chain] parse:',e.message);
-            // 容错：尝试手动修复常见JSON格式问题
+          }catch(e){console.warn('[chain] parse error:',e.message);
+            // 终极兜底：逐行正则提取seg和node
             var _fixedChain=null;
             try{
-              var _f=acc.replace(/```json?\n?/g,'').replace(/```/g,'').trim();
-              _f=_f.replace(/"level":\s*([a-z]+)"/g,'"level": "$1"').replace(/"level\s+"([a-z]+)"/g,'"level": "$1"').replace(/"seg\s+"([^"]+)"/g,'"seg": "$1"');
-              var _a=_f.indexOf('['), _b2=_f.lastIndexOf(']');
-              if(_a>=0&&_b2>_a){ _fixedChain=JSON.parse(_f.slice(_a,_b2+1)); }
-            }catch(_){}
+              var _raw=acc.replace(/```json?\n?/g,'').replace(/```/g,'');
+              var segs=[]; var curSeg=null;
+              _raw.split('\n').forEach(function(line){
+                var segM=line.match(/"seg"\s*:\s*"([^"]+)"/);
+                if(segM){ curSeg={seg:segM[1],nodes:[]}; segs.push(curSeg); }
+                var nodeM=line.match(/"name"\s*:\s*"([^"]{2,60})"/);
+                if(nodeM&&curSeg){
+                  var lvlM=line.match(/"level"\s*:\s*"(strong|mid|weak)"/)||['','mid'];
+                  var noteM=line.match(/"note"\s*:\s*"([^"]{0,80})"/)||['',''];
+                  curSeg.nodes.push({name:nodeM[1],level:lvlM[1],note:noteM[1]});
+                }
+              });
+              if(segs.length>=2) _fixedChain=segs;
+            }catch(_e2){}
             if(Array.isArray(_fixedChain)&&_fixedChain.length>=2){
               rs.chainByTopic[topic]=_fixedChain; persist();
-              var block2f=document.getElementById('chainMapBlock');
-              if(block2f){block2f.innerHTML=chainMapHtml(P());}
+              if(view==='report') render();
             } else {
               rs.chainByTopic[topic]=null; persist();
-              var block2=document.getElementById('chainMapBlock');
-              if(block2) block2.innerHTML='<div style="padding:20px;text-align:center;color:#94a3b8;font-size:12.5px">图谱数据解析失败，请点击"重新分析"重试</div>';
+              if(view==='report') render();
             }
           }
           return;
