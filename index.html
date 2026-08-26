@@ -380,7 +380,29 @@ function reportMdToHtml(md){
 /* 生成专业排版报告并触发打印为 PDF */
 function downloadReportPDF(mode){
   var rs=REPORTSTATE[cur]; var p=P();
-  if(!rs||!rs.text){ toast('暂无报告'); return; }
+  if(!rs||!rs.text){
+    // 无产业分析报告时，下载城市智库概览文本
+    if(p&&p.kb&&p.kb.length){
+      var _kb=p.kb; var _city=p.city||'';
+      var _titles=['主导产业与产业链','园区与承载条件','链主与存量企业','政策规划与领导关注'];
+      var _lines=[_city+'城市智库概览','生成时间：'+new Date().toLocaleDateString('zh-CN'),''];
+      _kb.forEach(function(sect,si){
+        _lines.push((['一','二','三','四'][si]||'')+'、'+(sect.t||_titles[si]||''));
+        (sect.known||[]).forEach(function(x){
+          var t=_kbText(x); if(t&&!_isJunkKbItem(t)) _lines.push('  • '+t.replace('⚠️ ','').slice(0,200));
+        });
+        _lines.push('');
+      });
+      var _blob=new Blob([_lines.join('\n')],{type:'text/plain;charset=utf-8'});
+      var _url=URL.createObjectURL(_blob);
+      var _a=document.createElement('a');_a.href=_url;_a.download=_city+'城市智库概览.txt';
+      document.body.appendChild(_a);_a.click();
+      setTimeout(function(){URL.revokeObjectURL(_url);_a.remove();},300);
+      toast('✓ 已下载城市智库概览（产业分析报告需先点击「产业智能分析」生成）');
+      return;
+    }
+    toast('暂无报告，请先完成产业分析'); return;
+  }
   var city=p?p.city:''; var topic=rs.topic||'';
   var date=new Date(rs.ts).toLocaleDateString('zh-CN',{year:'numeric',month:'long',day:'numeric'});
   var score=rs.score||'—';
@@ -1793,51 +1815,57 @@ function showDownloadReport(){
   var p=P();
   if(!p||!p.city){toast('请先完成城市分析');return;}
   var city=p.city;
-  var c=generateKbConclusions(city);
+  // 直接从项目kb数据生成报告（不依赖generateKbConclusions）
+  var kb=p.kb||[];
+  var sections=['主导产业与产业链','园区与承载条件','链主与存量企业','政策、规划与领导关注'];
+  var sectionData=sections.map(function(title,si){
+    var sect=kb[si];
+    if(!sect) return {title:title,items:[]};
+    return {title:title, items:(sect.known||[]).map(function(x){return _kbText(x);}).filter(function(x){return x&&!_isJunkKbItem(x);})};
+  });
+  if(sectionData.every(function(s){return s.items.length===0;})){toast('城市智库暂无数据，请先上传材料');return;}
 
-  // 完整版内容（基于 generateKbConclusions 真实数据）
+  // 完整版内容
   var fullLines=[
     city+'城市智库 · 招商研判报告（完整版）',
-    '生成时间：'+new Date().toLocaleDateString('zh-CN')+'  |  数据来源：公开信息 AI 初判',
+    '生成时间：'+new Date().toLocaleDateString('zh-CN')+'  |  数据来源：城市智库RAG知识库',
     '════════════════════════════════',
-    '',
-    '一、主导产业与产业链',
-    c.industry.known.map(function(x){x=_kbText(x);return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
-    '',
-    '二、园区与承载条件',
-    c.park.known.map(function(x){x=_kbText(x);return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
-    '',
-    '三、链主与存量企业',
-    c.firm.known.map(function(x){x=_kbText(x);return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
-    '',
-    '四、政策方向与领导关注',
-    c.policy.known.map(function(x){x=_kbText(x);return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
-    '',
-    '════════════════════════════════',
-    '研判建议：',
-    '  1. 优先补链方向：链主外采依赖最集中的核心零部件/系统集成环节',
-    '  2. 推荐承接园区：'+city+'国家级/省级开发区（具体园区需向招商局确认）',
-    '  3. 招引目标画像：具备落地意向、产品与缺口直接匹配的细分领域龙头',
-    '  4. 待确认事项：专项资金额度、首选地块、领导最新交办口径',
-    '',
-    '⚠ 本报告为 AI 基于公开信息的初判，正式招商决策需结合政府授权材料与确认。',
-  ].join('\n');
+    ''
+  ];
+  sectionData.forEach(function(s,idx){
+    fullLines.push((['一','二','三','四'][idx]||'')+'、'+s.title);
+    if(s.items.length){
+      s.items.slice(0,15).forEach(function(x){
+        fullLines.push((x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ',''));
+      });
+      if(s.items.length>15) fullLines.push('  … 共'+s.items.length+'条');
+    } else {
+      fullLines.push('  （暂无数据）');
+    }
+    fullLines.push('');
+  });
+  fullLines.push('════════════════════════════════');
+  fullLines.push('研判建议：');
+  fullLines.push('  1. 优先补链方向：链主外采依赖最集中的核心零部件/系统集成环节');
+  fullLines.push('  2. 推荐承接园区：'+city+'国家级/省级开发区（具体园区需向招商局确认）');
+  fullLines.push('  3. 招引目标画像：具备落地意向、产品与缺口直接匹配的细分领域龙头');
+  fullLines.push('');
+  fullLines.push('⚠ 本报告为 AI 基于公开信息的初判，正式招商决策需结合政府授权材料与确认。');
+  var fullText=fullLines.join('\n');
 
   // 精简版内容
+  var shortItems=sectionData.map(function(s){return '【'+s.title+'】'+(s.items[0]||'暂无数据');});
   var shortLines=[
     city+'招商研判报告 · 精简版',
     '生成时间：'+new Date().toLocaleDateString('zh-CN'),
     '────────────────────',
-    '',
-    '【产业基础】'+c.industry.known[0],
-    '【园区承载】'+c.park.known[0],
-    '【链主缺口】'+c.firm.known[2],
-    '【政策方向】'+c.policy.known[0],
+    ''
+  ].concat(shortItems).concat([
     '',
     '【核心建议】优先招引链主外采依赖最重的关键环节企业，结合园区政策争取一事一议。',
     '',
     '⚠ 以上为 AI 初判，需干部结合实际材料确认。',
-  ].join('\n');
+  ]).join('\n');
 
   function dlFile(content, filename){
     var blob=new Blob([content],{type:'text/plain;charset=utf-8'});
@@ -8047,10 +8075,10 @@ function confirmKbItem(kbIdx,itemIdx){
   if(!KB_CONFIRMS[cur])KB_CONFIRMS[cur]={};
   if(!KB_CONFIRMS[cur][kbIdx])KB_CONFIRMS[cur][kbIdx]={};
   var k=p.kb[kbIdx];if(!k)return;
-  var orig=k.known[itemIdx]||'';
+  var _rawC=k.known[itemIdx]||''; var orig=_kbText(_rawC);
   var clean=orig.replace('\u26a0\ufe0f ','');
-  // 写回 known：去掉 ⚠️，前缀改为 ✅
-  k.known[itemIdx]='\u2705 '+clean;
+  // 写回 known：去掉 ⚠️，前缀改为 ✅（保留对象格式）
+  if(_rawC&&typeof _rawC==='object'){_rawC.text='\u2705 '+clean;k.known[itemIdx]=_rawC;}else{k.known[itemIdx]='\u2705 '+clean;}
   KB_CONFIRMS[cur][kbIdx][itemIdx]={status:'confirmed',text:clean,ts:Date.now()};
   persist();
   // 刷新 corpus（确认项从待核实变为已确认）
@@ -8131,7 +8159,7 @@ function editKbItem(kbIdx,itemIdx){
   if(!card)return;
   var p=P();if(!p)return;
   var k=p.kb[kbIdx];if(!k)return;
-  var orig=(k.known[itemIdx]||'').replace('\u26a0\ufe0f ','').replace('\u2705 ','');
+  var _raw=k.known[itemIdx]||''; var orig=_kbText(_raw).replace('\u26a0\ufe0f ','').replace('\u2705 ','');
   card.innerHTML=
     '<div style="padding:10px 13px">'+
       '<div style="font-size:11px;color:#6366f1;font-weight:650;margin-bottom:6px">修改内容（确认后写入知识库）</div>'+
@@ -8169,8 +8197,8 @@ function saveKbEdit(kbIdx,itemIdx){
   if(!newText){toast('内容不能为空');return;}
   var p=P();if(!p)return;
   var k=p.kb[kbIdx];if(!k)return;
-  // 写回 known，添加 ✅ 已确认标记
-  k.known[itemIdx]='\u2705 '+newText;
+  // 写回 known，添加 ✅ 已确认标记（保留对象格式）
+  var _oldItem=k.known[itemIdx]; if(_oldItem&&typeof _oldItem==='object'){_oldItem.text='\u2705 '+newText;k.known[itemIdx]=_oldItem;}else{k.known[itemIdx]='\u2705 '+newText;}
   if(!KB_CONFIRMS[cur])KB_CONFIRMS[cur]={};
   if(!KB_CONFIRMS[cur][kbIdx])KB_CONFIRMS[cur][kbIdx]={};
   KB_CONFIRMS[cur][kbIdx][itemIdx]={status:'edited',text:newText,ts:Date.now()};
@@ -8234,8 +8262,14 @@ function kbDetail(i){
   var k=P().kb[i]; if(!k) return;
   curKb=i;
 
-  // 已知条目列表（使用AI精选概括展示，不修改原始数据）
-  var displayKnown=_getDisplayKnown(i);
+  // 已知条目列表（弹窗中使用原始数据+原始索引，确保edit/delete操作正确）
+  var _rawKnown=k.known||[];
+  var _displayPairs=[]; // [{text, origIdx}]
+  for(var _di=0;_di<_rawKnown.length;_di++){
+    var _dt=_kbText(_rawKnown[_di]);
+    if(!_isJunkKbItem(_dt)) _displayPairs.push({text:_dt, origIdx:_di});
+  }
+  var displayKnown=_displayPairs.map(function(p2){return p2.text;});
   var knownHtml=(displayKnown&&displayKnown.length)
     ? '<div style="display:flex;flex-direction:column;gap:8px">'+
         displayKnown.map(function(x,xi){
@@ -8256,7 +8290,8 @@ function kbDetail(i){
           var icon=warn?'⚠':isFile?'📎':xi===0?'★':'•';
           var txtColor=warn?'#78350f':isFile?'#14532d':'#1e293b';
           // 检查是否已确认
-          var confirmed=KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][i]&&KB_CONFIRMS[cur][i][xi];
+          var _oi=(_displayPairs[xi]?_displayPairs[xi].origIdx:xi);
+          var confirmed=KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][i]&&KB_CONFIRMS[cur][i][_oi];
           var isConfirmed=!!confirmed;
           // 已确认条目：绿色样式
           if(isConfirmed){
@@ -8266,17 +8301,17 @@ function kbDetail(i){
           var actionBtns='';
           if(warn&&!isConfirmed){
             actionBtns='<div style="display:flex;gap:6px;margin-top:8px">'+
-              '<button onclick="confirmKbItem('+i+','+xi+')" '+
+              '<button onclick="confirmKbItem('+i+','+(_displayPairs[xi]?_displayPairs[xi].origIdx:xi)+')" '+
                 'style="flex:1;padding:6px 0;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12px;color:#166534;cursor:pointer;font-weight:600" '+
                 'onmouseover="this.style.background=\'#dcfce7\'" onmouseout="this.style.background=\'#f0fdf4\'">'+
                 '\u2713 确认'+
               '</button>'+
-              '<button onclick="editKbItem('+i+','+xi+')" '+
+              '<button onclick="editKbItem('+i+','+(_displayPairs[xi]?_displayPairs[xi].origIdx:xi)+')" '+
                 'style="flex:1;padding:6px 0;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600" '+
                 'onmouseover="this.style.background=\'#ede9fe\'" onmouseout="this.style.background=\'#f5f3ff\'">'+
                 '\u270e 修改内容'+
               '</button>'+
-              '<button onclick="deleteKbItem('+i+','+xi+')" title="删除该条待确认事项" '+
+              '<button onclick="deleteKbItem('+i+','+(_displayPairs[xi]?_displayPairs[xi].origIdx:xi)+')" title="删除该条待确认事项" '+
                 'style="padding:6px 10px;background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;font-size:12px;color:#dc2626;cursor:pointer;font-weight:600" '+
                 'onmouseover="this.style.background=\'#fee2e2\'" onmouseout="this.style.background=\'#fef2f2\'">'+
                 '\u2715 删除'+
@@ -8285,24 +8320,24 @@ function kbDetail(i){
           } else if(isConfirmed){
             actionBtns='<div style="margin-top:6px;font-size:11px;color:#22c55e;display:flex;align-items:center;gap:4px">'+
               '<span>\u2713 已确认</span>'+
-              '<button onclick="editKbItem('+i+','+xi+')" style="background:none;border:none;color:#94a3b8;font-size:11px;cursor:pointer;margin-left:6px">修改</button>'+
-              '<button onclick="deleteKbItem('+i+','+xi+')" style="background:none;border:none;color:#cbd5e1;font-size:11px;cursor:pointer;margin-left:2px">删除</button>'+
+              '<button onclick="editKbItem('+i+','+_oi+')" style="background:none;border:none;color:#94a3b8;font-size:11px;cursor:pointer;margin-left:6px">修改</button>'+
+              '<button onclick="deleteKbItem('+i+','+(_displayPairs[xi]?_displayPairs[xi].origIdx:xi)+')" style="background:none;border:none;color:#cbd5e1;font-size:11px;cursor:pointer;margin-left:2px">删除</button>'+
             '</div>';
           } else {
             actionBtns='<div style="display:flex;gap:6px;margin-top:8px">'+
-              '<button onclick="editKbItem('+i+','+xi+')" '+
+              '<button onclick="editKbItem('+i+','+(_displayPairs[xi]?_displayPairs[xi].origIdx:xi)+')" '+
                 'style="flex:1;padding:6px 0;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600" '+
                 'onmouseover="this.style.background=\'#ede9fe\'" onmouseout="this.style.background=\'#f5f3ff\'">'+
                 '\u270e 修改内容'+
               '</button>'+
-              '<button onclick="deleteKbItem('+i+','+xi+')" title="删除该条" '+
+              '<button onclick="deleteKbItem('+i+','+(_displayPairs[xi]?_displayPairs[xi].origIdx:xi)+')" title="删除该条" '+
                 'style="padding:6px 10px;background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;font-size:12px;color:#dc2626;cursor:pointer;font-weight:600" '+
                 'onmouseover="this.style.background=\'#fee2e2\'" onmouseout="this.style.background=\'#fef2f2\'">'+
                 '\u2715 删除'+
               '</button>'+
             '</div>';
           }
-          return '<div id="kb-card-'+i+'-'+xi+'" style="border-radius:12px;background:'+bg+';border:1.5px solid '+bd+';overflow:visible;transition:border-color .15s">'+
+          return '<div id="kb-card-'+i+'-'+_oi+'" style="border-radius:12px;background:'+bg+';border:1.5px solid '+bd+';overflow:visible;transition:border-color .15s">'+
             '<div style="display:flex">'+
               '<div style="width:4px;background:'+accent+';flex-shrink:0"></div>'+
               '<div style="padding:10px 13px;flex:1">'+
