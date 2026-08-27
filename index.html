@@ -4196,7 +4196,8 @@ function getReportHistoryForProject(key){
 
 function archiveCurrentReport(key){
   var rs=REPORTSTATE[key];
-  var _archTxt=(rs.aiReportByTopic&&rs.topic)?rs.aiReportByTopic[rs.topic]||rs.text:''; if(!rs||!_archTxt) return;
+  if(!rs) return; // 首次生成报告时 REPORTSTATE[key] 尚不存在，归档旧报告时可能为空
+  var _archTxt=(rs.aiReportByTopic&&rs.topic)?rs.aiReportByTopic[rs.topic]||rs.text:''; if(!_archTxt) return;
   if(!REPORT_HISTORY[key]) REPORT_HISTORY[key]=[];
   // 避免重复归档（同 ts）
   var exists=REPORT_HISTORY[key].some(function(h){return h.ts===rs.ts;});
