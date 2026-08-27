@@ -5702,6 +5702,39 @@ function _normalizeChain(parsed){
   ['上游','中游','下游'].forEach(function(s){ if(segMap[s].length) out.push({seg:s, nodes:segMap[s]}); });
   return out;
 }
+/* 鲁棒提取器：不依赖整体JSON合法（AI常输出破损JSON）。
+   核心：环节名带"上游/中游/下游："前缀，据此切块，块内正则提取 level/note/企业。
+   企业对象里的 "name" 不会被误当环节（因其无上/中/下游前缀）。 */
+function _extractChainRobust(raw){
+  var re=/"name"\s*:\s*"((?:上游|中游|下游)[：:][^"]{1,50})"/g;
+  var marks=[], m;
+  while((m=re.exec(raw))!==null){ marks.push({name:m[1], idx:m.index}); }
+  if(marks.length<2) return null;
+  var segMap={'上游':[], '中游':[], '下游':[]};
+  for(var i=0;i<marks.length;i++){
+    var blk=raw.slice(marks[i].idx, (i+1<marks.length)?marks[i+1].idx:raw.length);
+    var seg=marks[i].name.match(/^(上游|中游|下游)/)[1];
+    var name=marks[i].name.replace(/^(上游|中游|下游)[：:]\s*/,'');
+    var lvlM=blk.match(/"level"\s*:\s*"(strong|mid|weak)"/);
+    var basisM=blk.match(/"(?:level_basis|note|basis)"\s*:\s*"([^"]{0,200})"/);
+    // local_leaders 段（benchmarks 之前）里的企业名
+    var localSeg=((blk.split(/"local_leaders?"\s*:/)[1]||'').split(/"benchmarks?"/)[0]);
+    var localNames=[], lm, reL=/"name"\s*:\s*"([^"]{2,40})"/g;
+    while((lm=reL.exec(localSeg))!==null) localNames.push(lm[1]);
+    if(!localNames.length){ var sm, reS=/"([^"]{3,40}(?:公司|集团|厂|研究院|中心|基地))"/g; while((sm=reS.exec(localSeg))!==null) localNames.push(sm[1]); }
+    // benchmarks 段里的企业名
+    var benchSeg=(blk.split(/"benchmarks?"\s*:/)[1]||'');
+    var benchNames=[], bm, reB=/"name"\s*:\s*"([^"]{2,40})"/g;
+    while((bm=reB.exec(benchSeg))!==null) benchNames.push(bm[1]);
+    if(!benchNames.length){ var sm2, reS2=/"([^"]{3,40}(?:公司|集团|厂|研究院|中心))"/g; while((sm2=reS2.exec(benchSeg))!==null) benchNames.push(sm2[1]); }
+    var node={name:name, level:(lvlM?lvlM[1]:'mid'), note:(basisM?basisM[1]:''), local_leaders:localNames.slice(0,3), benchmark:benchNames.slice(0,3)};
+    node.level=_correctChainLevel(node);
+    segMap[seg].push(node);
+  }
+  var out=[];
+  ['上游','中游','下游'].forEach(function(sg){ if(segMap[sg].length) out.push({seg:sg, nodes:segMap[sg]}); });
+  return (out.length && out.some(function(s){return s.nodes.length;}))?out:null;
+}
 function generateChainFromReport(topic, reportText, city){
   if(!topic) return;
   var rs=REPORTSTATE[cur]; if(!rs) return;
@@ -5745,46 +5778,36 @@ function generateChainFromReport(topic, reportText, city){
     function pump(){
       return reader.read().then(function(res){
         if(res.done){
-          // 流结束，解析累积的JSON（兼容 [{seg,nodes}] 与 {segments:[...]} 两种结构）
+          // 流结束，解析累积的JSON。AI常输出破损JSON，故双路径：
+          // ① JSON.parse 快速路径（成功且节点充足则用）② 鲁棒环节标记提取器（不依赖JSON合法）
+          var _chain=null;
           try{
             var jsonStr=acc.replace(/```json?\n?/g,'').replace(/```/g,'').trim();
-            // 优先取对象 {..}，否则取数组 [..]
             var _oa=jsonStr.indexOf('{'), _ob=jsonStr.lastIndexOf('}');
             var _ja=jsonStr.indexOf('['), _jb=jsonStr.lastIndexOf(']');
             var _cand=jsonStr;
             if(_oa>=0&&_ob>_oa&&(_ja<0||_oa<_ja)) _cand=jsonStr.slice(_oa,_ob+1);
             else if(_ja>=0&&_jb>_ja) _cand=jsonStr.slice(_ja,_jb+1);
-            _cand=_cand.replace(/"([^"\\]{4,80})\s{2,}"?(level|note|seg|name|level_basis)/g,'"$1","$2');
+            // 修复AI常见破损：把 "count":value" 这类删掉（前端不用count字段）
+            _cand=_cand.replace(/,?\s*"(?:local|national)_count"\s*:\s*\{[^}]*\}/g,'')
+                       .replace(/,?\s*"(?:local|national)_count"\s*:[^\n,}]*/g,'')
+                       .replace(/"([^"\\]{4,80})\s{2,}"?(level|note|seg|name|level_basis)/g,'"$1","$2');
             var parsed=JSON.parse(_cand);
-            var chain=_normalizeChain(parsed);
-            if(Array.isArray(chain)&&chain.length>=2 && chain.some(function(s){return s.nodes&&s.nodes.length;})){
-              rs.chainByTopic[topic]=chain; persist();
-              if(view==='report') render();
-            } else { rs.chainByTopic[topic]=null; persist(); if(view==='report') render(); }
-          }catch(e){console.warn('[chain] parse error:',e.message);
-            // 终极兜底：逐行正则提取节点（level缺失时按note文本推断，不再无脑mid）
-            var _fixedChain=null;
-            try{
-              var _raw=acc.replace(/```json?\n?/g,'').replace(/```/g,'');
-              // 按 "name" 出现处切块，每块内提取 level/note/seg
-              var _parts=_raw.split(/"name"\s*:\s*"/); var _nodes=[];
-              for(var _pi=1;_pi<_parts.length;_pi++){
-                var _blk=_parts[_pi];
-                var _nmM=_blk.match(/^([^"]{2,60})"/); if(!_nmM) continue;
-                var lvlM=_blk.match(/"level"\s*:\s*"(strong|mid|weak)"/);
-                var noteM=_blk.match(/"(?:note|level_basis|basis)"\s*:\s*"([^"]{0,120})"/);
-                var segM=_blk.match(/"seg"\s*:\s*"([^"]+)"/);
-                _nodes.push({name:_nmM[1], level:lvlM?lvlM[1]:'', note:noteM?noteM[1]:'', seg:segM?segM[1]:''});
-              }
-              if(_nodes.length>=2) _fixedChain=_normalizeChain(_nodes);
-            }catch(_e2){}
-            if(Array.isArray(_fixedChain)&&_fixedChain.length>=2 && _fixedChain.some(function(s){return s.nodes&&s.nodes.length;})){
-              rs.chainByTopic[topic]=_fixedChain; persist();
-              if(view==='report') render();
-            } else {
-              rs.chainByTopic[topic]=null; persist();
-              if(view==='report') render();
-            }
+            var c1=_normalizeChain(parsed);
+            // 快速路径若节点过少（<4）或全同级，可能解析残缺，交给鲁棒提取器补充
+            var _total=c1.reduce(function(a,s){return a+(s.nodes?s.nodes.length:0);},0);
+            if(_total>=4) _chain=c1;
+          }catch(e){ console.warn('[chain] JSON.parse failed, using robust extractor:',e.message); }
+          // 鲁棒提取器（主力，尤其JSON破损时）
+          if(!_chain){
+            try{ _chain=_extractChainRobust(acc.replace(/```json?\n?/g,'').replace(/```/g,'')); }catch(_e2){ console.warn('[chain] robust extract failed:',_e2.message); }
+          }
+          if(Array.isArray(_chain)&&_chain.length>=2 && _chain.some(function(s){return s.nodes&&s.nodes.length;})){
+            rs.chainByTopic[topic]=_chain; persist();
+            if(view==='report') render();
+          } else {
+            rs.chainByTopic[topic]=null; persist();
+            if(view==='report') render();
           }
           return;
         }
