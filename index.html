@@ -7501,6 +7501,12 @@ function restore(){
 
 // 从服务器拉取数据并覆盖本地（登录后调用）
 function restoreFromServer(callback){
+  // 生成/访谈进行中不做全量覆盖同步——否则刚生成的REPORTSTATE/访谈状态被服务端旧数据冲掉，
+  // 表现为"报告跑一半自己跳走/进行不下去"。完成后调用方会再触发同步。
+  if(window._reportGenerating || (window._interviewState && _interviewState.active)){
+    console.log('[sync] skip restoreFromServer: generation/interview in progress');
+    if(callback)callback(false); return;
+  }
   window._serverSyncLock=true;
   // 保存用户当前操作状态，避免服务器数据覆盖用户刚做的方向切换
   var _userCur = cur;
@@ -7523,7 +7529,15 @@ function restoreFromServer(callback){
     KB_CONFIRMS      = srv.KB_CONFIRMS      || {};
     KB_FILE_CHUNKS   = srv.KB_FILE_CHUNKS   || {};
     KB_UNLOCKED      = srv.KB_UNLOCKED      || {};
-    REPORTSTATE      = srv.REPORTSTATE      || {};
+    // REPORTSTATE：保护本地更新的报告(服务端可能尚未收到刚才的persist)，按text长度择优
+    (function(){
+      var _localRs=(cur&&REPORTSTATE&&REPORTSTATE[cur])?REPORTSTATE[cur]:null;
+      REPORTSTATE = srv.REPORTSTATE || {};
+      if(cur&&_localRs){
+        var _inRs=REPORTSTATE[cur];
+        if(!_inRs || (String(_localRs.text||'').length > String((_inRs||{}).text||'').length)) REPORTSTATE[cur]=_localRs;
+      }
+    })();
     PENDING_CONFIRMS = srv.PENDING_CONFIRMS || {};
     DOCK_LOGS        = srv.DOCK_LOGS        || {};
     if(srv.DEMANDS) window.DEMANDS=srv.DEMANDS;
@@ -7584,9 +7598,19 @@ function clearPersist(){
 window.addEventListener('storage', function(e){
   if(e.key !== LS_KEY || !e.newValue) return;
   try{
+    // 关键修复(乱跳根因)：报告生成中/访谈中收到其他标签页(管理端)的storage事件，
+    // 旧逻辑整体覆盖PROJECTS(topic被打回旧方向)并强制render()，导致
+    // "正在跑的方向自己跳回别的方向、访谈/生成界面被重刷中断进行不下去"。
+    // 生成/访谈进行中：跳过本次同步(数据稍后restoreFromServer会拉齐)，绝不打断用户流程。
+    if(window._reportGenerating || (window._interviewState && _interviewState.active) || window._verifyInProgress){
+      console.log('[sync] skip storage sync: generation/interview in progress');
+      return;
+    }
     var data=JSON.parse(e.newValue);
     if(!data.PROJECTS) return;
-    // 同步关键数据（保留当前 view/cur）
+    // 同步关键数据（保留当前 view/cur/topic/stage 等用户操作状态）
+    var _keepTopic=(cur&&PROJECTS[cur])?PROJECTS[cur].topic:null;
+    var _keepStage=(cur&&PROJECTS[cur])?PROJECTS[cur].stage:null;
     // 关键修复：整体覆盖 PROJECTS 会把本地刚定义、尚未同步出去的 customTopics 冲掉，
     // 表现为"自定义方向自己消失，重新定义才回来"。这里合并保护本地的 customTopics（并集）。
     (function(){
@@ -7601,8 +7625,24 @@ window.addEventListener('storage', function(e){
       });
       PROJECTS=incoming;
     })();
+    // 删除墓碑过滤：其他标签页快照可能仍含已删项目
+    (window.DELETED_PROJECTS||[]).forEach(function(dk){ delete PROJECTS[dk]; });
+    // 恢复用户当前操作状态：管理端快照不覆盖用户正在操作的方向/阶段
+    if(cur&&PROJECTS[cur]){
+      if(_keepTopic!=null) PROJECTS[cur].topic=_keepTopic;
+      if(_keepStage!=null) PROJECTS[cur].stage=_keepStage;
+    }
     DEMANDS=data.DEMANDS||[];
-    REPORTSTATE=data.REPORTSTATE||{};
+    // REPORTSTATE 保护当前项目：管理端旧快照不得冲掉本地刚生成的报告状态
+    (function(){
+      var _localRs=REPORTSTATE[cur];
+      REPORTSTATE=data.REPORTSTATE||{};
+      if(cur&&_localRs){
+        var _inRs=REPORTSTATE[cur];
+        if(!_inRs || (String(_localRs.text||'').length > String((_inRs||{}).text||'').length)) REPORTSTATE[cur]=_localRs;
+      }
+      (window.DELETED_PROJECTS||[]).forEach(function(dk){ delete REPORTSTATE[dk]; });
+    })();
     KB_FILE_CHUNKS=data.KB_FILE_CHUNKS||{};
     KB_CONFIRMS=data.KB_CONFIRMS||{};
     PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
