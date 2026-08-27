@@ -1329,6 +1329,17 @@ function doRegister(){
     AUTH={user:u, city:city, projKey:null, resident:false, who:name, org:org};
     saveAuth();
     cur=null; view='setup'; render._restored=false; render._routed=false; render._serverSynced=false;
+    // 立即强制同步注册用户到服务端(绕过5秒防抖):必须在restoreFromServer之前完成POST,
+    // 否则5秒内页面已多次restore/render,本地USER_PROFILES可能被服务端旧数据覆盖前尚未推送,
+    // 表现为"注册用户没同步到管理端"。用同步XHR保证POST在跳转前落地。
+    try{
+      var _snapshot=localStorage.getItem(LS_KEY)||'{}';
+      var _xhr=new XMLHttpRequest();
+      _xhr.open('POST','/api/sync',false);  // 同步XHR:确保注册数据先到服务端
+      _xhr.setRequestHeader('Content-Type','application/json');
+      _xhr.send(_snapshot);
+      console.log('[register] sync POST status:', _xhr.status);
+    }catch(e){ console.warn('[register] sync POST failed:',e&&e.message); }
     var done=false; var fb=setTimeout(function(){ if(!done){done=true;render();} },2000);
     restoreFromServer(function(){ if(!done){done=true;clearTimeout(fb);render();} });
     toast('✓ 注册成功，欢迎 '+name);
