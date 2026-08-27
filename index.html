@@ -7386,6 +7386,7 @@ function loadReportState(){try{var d=localStorage.getItem('hxz_reportstate');if(
 
 /* ── localStorage 持久化 ── */
 var LS_KEY='huixiaozhao_kb_v1';
+var RESET_GEN=null;  // reset 代际标记：从服务端读到后原样带回，服务端据此拒绝旧会话写入
 // 版本标记：数据结构有变时递增，自动清除旧缓存防止旧数据污染服务器
 var _DATA_VER='20260826b';
 if(localStorage.getItem('hxz_data_ver')!==_DATA_VER){
@@ -7440,6 +7441,7 @@ function persist(){
       REPORT_HISTORY:REPORT_HISTORY,
       USER_PROFILES:(Object.keys(USER_PROFILES||{}).length?USER_PROFILES:undefined),
       OPS_ENT:typeof OPS_ENT!=='undefined'?OPS_ENT:[],
+      RESET_GEN:RESET_GEN,
       syncTs:Date.now()
     };
     // 同时写入 localStorage（保证同账号任何设备刷新都读到最新快照）
@@ -7476,6 +7478,7 @@ function restore(){
       if(data.REPORT_HISTORY) REPORT_HISTORY=data.REPORT_HISTORY;
       if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
       if(data.OPS_ENT) OPS_ENT=data.OPS_ENT;
+      if(data.RESET_GEN) RESET_GEN=data.RESET_GEN;
       console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
       return true;
     }
@@ -7519,6 +7522,7 @@ function restoreFromServer(callback){
     // 注册用户资料：合并服务器与本地(不丢本地新注册未同步的)
     if(srv.USER_PROFILES){ Object.keys(srv.USER_PROFILES).forEach(function(uk){ USER_PROFILES[uk]=srv.USER_PROFILES[uk]; }); }
     if(srv.CITY_ACCOUNTS){ CITY_ACCOUNTS = srv.CITY_ACCOUNTS; }
+    if(srv.RESET_GEN){ RESET_GEN = srv.RESET_GEN; }  // 记住服务端代际,persist时带回
     // 不盲目用srv.cur（可能指向空项目）：选数据最多的项目
     var _allK=Object.keys(PROJECTS); var _bestK=null,_bestKC=0;
     _allK.forEach(function(k){var c=0;(PROJECTS[k].kb||[]).forEach(function(t){c+=(t.known||[]).length;});if(c>_bestKC){_bestKC=c;_bestK=k;}});
@@ -7529,7 +7533,7 @@ function restoreFromServer(callback){
       KB_CONFIRMS:KB_CONFIRMS,KB_FILE_CHUNKS:KB_FILE_CHUNKS,
       KB_UNLOCKED:KB_UNLOCKED,REPORTSTATE:REPORTSTATE,
       PENDING_CONFIRMS:PENDING_CONFIRMS,DOCK_LOGS:DOCK_LOGS,
-      KB_CHAT:KB_CHAT,OPS_ENT:OPS_ENT,syncTs:Date.now()};
+      KB_CHAT:KB_CHAT,OPS_ENT:OPS_ENT,RESET_GEN:RESET_GEN,syncTs:Date.now()};
     try{localStorage.setItem(LS_KEY,JSON.stringify(flat));}catch(_){}
     try{localStorage.setItem('hxz_uploads',JSON.stringify(UPLOADS));}catch(_){}
     // 若 Postgres 是旧包装格式，顺手更新成扁平格式

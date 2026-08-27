@@ -906,6 +906,22 @@ class Handler(BaseHTTPRequestHandler):
                             existing = json.loads(f2.read())
                     except Exception:
                         existing = {}
+                # -- RESET generation barrier --
+                # admin-reset writes a new RESET_GEN. After that only clients carrying the
+                # same RESET_GEN (sessions reloaded after the reset) may write; stale sessions
+                # carrying an old/absent gen are rejected wholesale, so they cannot merge the
+                # cleared Suizhou runtime data (aiTopics/customTopics/UPLOADS/KB_CHAT) back.
+                _srv_gen = existing.get('RESET_GEN')
+                if _srv_gen:
+                    _cli_gen = incoming.get('RESET_GEN')
+                    if _cli_gen != _srv_gen:
+                        print('[sync] rejected stale write (client gen=%r != server gen=%r)' % (_cli_gen, _srv_gen))
+                        resp = json.dumps({'ok': False, 'rejected': 'stale-generation', 'gen': _srv_gen}).encode()
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json')
+                        self.send_header('Content-Length', str(len(resp)))
+                        self.cors(); self.end_headers(); self.wfile.write(resp)
+                        return
                 # 合并：空列表/空字典不覆盖已有非空数据
                 _protected = ['OPS_ENT','DEMANDS','KB_CHAT','PENDING_CONFIRMS','KB_CONFIRMS','REPORT_REQUESTS','CITY_ACCOUNTS']
                 # REPORT_REQUESTS 按 id 合并且状态只进不退（pending<running<done/failed）
@@ -965,6 +981,11 @@ class Handler(BaseHTTPRequestHandler):
                     if not isinstance(new_data, dict):
                         resp = json.dumps({'ok': False, 'error': 'data must be dict'}).encode()
                     else:
+                        # 每次 reset 生成新的代际标记：此后旧会话(不带此 gen)的 /api/sync 写入被拒绝，
+                        # 从根上杜绝已清空的随州数据被旧浏览器快照合并回来。
+                        import time as _t
+                        _gen = body.get('gen') or ('r' + str(int(_t.time() * 1000)))
+                        new_data['RESET_GEN'] = _gen
                         data_str = json.dumps(new_data, ensure_ascii=False)
                         if _PG_AVAIL and DATABASE_URL:
                             ok = _db_set(data_str)
@@ -972,7 +993,7 @@ class Handler(BaseHTTPRequestHandler):
                             with open(SYNC_PATH, 'w', encoding='utf-8') as fw:
                                 fw.write(data_str)
                             ok = True
-                        resp = json.dumps({'ok': ok}).encode()
+                        resp = json.dumps({'ok': ok, 'gen': _gen}).encode()
             except Exception as e:
                 resp = json.dumps({'ok': False, 'error': str(e)}).encode()
             self.send_response(200)
