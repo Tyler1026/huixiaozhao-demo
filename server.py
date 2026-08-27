@@ -906,6 +906,22 @@ class Handler(BaseHTTPRequestHandler):
                             existing = json.loads(f2.read())
                     except Exception:
                         existing = {}
+                # -- 空 body 保护：整体为空或只有极少字段的写入直接拒绝 --
+                # 防止未登录/初始化态的浏览器把空 localStorage 推上来清空全库。
+                if isinstance(incoming, dict):
+                    _incoming_keys = set(k for k,v in incoming.items() if v not in (None, {}, [], ''))
+                    # 保底核心字段：只要 existing 有 PROJECTS/USER_PROFILES/OPS_ENT 之一，
+                    # 而 incoming 三个都为空，就判定为空写入并拒绝。
+                    _core_had = any(existing.get(k) for k in ('PROJECTS','USER_PROFILES','OPS_ENT'))
+                    _core_incoming = any(incoming.get(k) for k in ('PROJECTS','USER_PROFILES','OPS_ENT'))
+                    if _core_had and not _core_incoming:
+                        print('[sync] rejected empty write (keys=%r)' % (sorted(_incoming_keys),))
+                        resp = json.dumps({'ok': False, 'rejected': 'empty-payload'}).encode()
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json')
+                        self.send_header('Content-Length', str(len(resp)))
+                        self.cors(); self.end_headers(); self.wfile.write(resp)
+                        return
                 # -- RESET generation barrier --
                 # admin-reset writes a new RESET_GEN. After that only clients carrying the
                 # same RESET_GEN (sessions reloaded after the reset) may write; stale sessions
