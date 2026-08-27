@@ -923,6 +923,9 @@ class Handler(BaseHTTPRequestHandler):
                         self.cors(); self.end_headers(); self.wfile.write(resp)
                         return
                 # 合并：空列表/空字典不覆盖已有非空数据
+                # ── 删除墓碑：政府端删除的项目 key 永久移除。_merge_map 只增不减，
+                #    没有墓碑时"删除"永远会被合并复活（删了又回来）。──
+                _tomb = set(existing.get('DELETED_PROJECTS') or []) | set(incoming.get('DELETED_PROJECTS') or [])
                 _protected = ['OPS_ENT','DEMANDS','KB_CHAT','PENDING_CONFIRMS','KB_CONFIRMS','REPORT_REQUESTS','CITY_ACCOUNTS']
                 # REPORT_REQUESTS 按 id 合并且状态只进不退（pending<running<done/failed）
                 # 防止管理端旧快照 persist 把流水线已推进的状态倒改回 pending
@@ -951,6 +954,13 @@ class Handler(BaseHTTPRequestHandler):
                         existing[k] = _merge_map(existing.get(k), v)
                         continue
                     existing[k] = v
+                # 应用删除墓碑：从 PROJECTS/REPORTSTATE 移除已删项目，并持久化墓碑列表
+                if _tomb:
+                    existing['DELETED_PROJECTS'] = sorted(_tomb)
+                    for _dk in _tomb:
+                        for _sect in ('PROJECTS', 'REPORTSTATE', 'PENDING_CONFIRMS', 'UPLOADS', 'KB_FILE_CHUNKS'):
+                            if isinstance(existing.get(_sect), dict):
+                                existing[_sect].pop(_dk, None)
                 data_str = json.dumps(existing, ensure_ascii=False)
             except Exception as e:
                 print(f"[sync] merge error: {e}")
@@ -1419,6 +1429,9 @@ class Handler(BaseHTTPRequestHandler):
                     self.cors(); self.end_headers()
                     if mode == "chat":
                         # Responses SSE → chat-completions SSE 翻译层
+                        # 修复"先卡住再涌出"：web_search/思考阶段上游长时间不吐 output_text，
+                        # 前端旧逻辑只能干等。现把中间状态事件翻译成 reasoning_content 发给前端，
+                        # 前端已有 reasoning 分支会显示"深度推理中"进度，同时也起到保活作用。
                         for raw_line in resp:
                             line = raw_line.decode("utf-8", errors="replace").strip()
                             if not line.startswith("data:"): continue
@@ -1429,6 +1442,12 @@ class Handler(BaseHTTPRequestHandler):
                             et = ev.get("type", "")
                             if et == "response.output_text.delta":
                                 out = json.dumps({"choices": [{"delta": {"content": ev.get("delta", "")}}]}, ensure_ascii=False)
+                                self.wfile.write(f"data: {out}\n\n".encode()); self.wfile.flush()
+                            elif et in ("response.web_search_call.in_progress", "response.web_search_call.searching"):
+                                out = json.dumps({"choices": [{"delta": {"reasoning_content": "[searching]"}}]}, ensure_ascii=False)
+                                self.wfile.write(f"data: {out}\n\n".encode()); self.wfile.flush()
+                            elif et == "response.reasoning_text.delta":
+                                out = json.dumps({"choices": [{"delta": {"reasoning_content": ev.get("delta", "")}}]}, ensure_ascii=False)
                                 self.wfile.write(f"data: {out}\n\n".encode()); self.wfile.flush()
                             elif et in ("response.completed", "response.failed", "response.incomplete"):
                                 self.wfile.write(b"data: [DONE]\n\n"); self.wfile.flush()
