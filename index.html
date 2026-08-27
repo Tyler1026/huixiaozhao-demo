@@ -5155,7 +5155,8 @@ function interviewPrev(){
 function interviewDone(){
   // Save last answer
   var textarea=document.getElementById('interviewAnswer');
-  if(textarea){
+  // 边界保护：全部跳过后 currentQ 可能已越界(=questions.length)，直接读 .id 会崩溃导致报告永远无法触发
+  if(textarea && _interviewState.questions[_interviewState.currentQ]){
     var text=textarea.value.trim();
     _interviewState.answers[_interviewState.currentQ]={text:text, id:_interviewState.questions[_interviewState.currentQ].id};
   }
