@@ -764,13 +764,17 @@ function _getDisplayKnown(kbIdx){
   var p=P(); if(!p||!p.kb||!p.kb[kbIdx]) return [];
   var raw=p.kb[kbIdx].known||[];
   // 1. 提取用户确认(✅)或补充(origin=user)的条目 — 这些必须优先显示
-  var userItems=[];
-  raw.forEach(function(x){
+  var userAdded=[], userConfirmed=[];
+  raw.forEach(function(x,idx){
     var t=_kbText(x);
-    var isUser=(typeof x==='object' && (x.origin==='user'||x.nature==='confirm'||x.nature==='fix'));
+    if(_isJunkKbItem(t)) return;
+    var isUserAdded=(typeof x==='object' && x.origin==='user' && (x.nature==='fix'||x.nature==='confirm'));
     var isConfirmed=t.indexOf('\u2705')===0;
-    if((isUser||isConfirmed) && !_isJunkKbItem(t)) userItems.push(t);
+    if(isUserAdded){ userAdded.push({t:t, ts:(x&&x.ts)||idx}); }
+    else if(isConfirmed){ userConfirmed.push(t); }
   });
+  userAdded.sort(function(a,b){return b.ts-a.ts;}); // 用户最新补充在前
+  var userItems=userAdded.map(function(o){return o.t;}).concat(userConfirmed);
   // 2. AI概括数据作为补充
   var aiItems=[];
   if(_kbSummaryData && _kbSummaryData.kb && _kbSummaryData.kb[kbIdx]){
@@ -791,6 +795,20 @@ function _getDisplayKnown(kbIdx){
     });
   }
   return result.slice(0,6);
+}
+// 获取用户手动补充/修改的条目（origin==='user'），最新在前 —— 卡片专门展示这些
+function _getUserAddedKnown(kbIdx){
+  var p=P(); if(!p||!p.kb||!p.kb[kbIdx]) return [];
+  var raw=p.kb[kbIdx].known||[];
+  var arr=[];
+  raw.forEach(function(x,idx){
+    if(typeof x!=='object' || x.origin!=='user' || !(x.nature==='fix'||x.nature==='confirm')) return;
+    var t=_kbText(x);
+    if(_isJunkKbItem(t)) return;
+    arr.push({t:t, ts:(x&&x.ts)||idx});
+  });
+  arr.sort(function(a,b){return b.ts-a.ts;});
+  return arr.map(function(o){return o.t;});
 }
 function _getDisplaySub(kbIdx){
   if(_kbSummaryData && _kbSummaryData.kb && _kbSummaryData.kb[kbIdx]){
@@ -7009,6 +7027,18 @@ function kbPage(p){
         var dot=k.known&&k.known.length?'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:5px;vertical-align:middle"></span>':'';
         var firstKnown=_getDisplayKnown(i)[0]||'';
         if(firstKnown&&firstKnown.length>80) firstKnown=firstKnown.substring(0,80)+'…';
+        // 用户手动补充/修改的结论：全部在卡片上单独高亮展示（最新在前）
+        var _userAdded=_getUserAddedKnown(i);
+        var _userHtml='';
+        if(_userAdded.length){
+          _userHtml='<div style="border-top:1px dashed #c7d2fe;padding-top:8px;margin-top:8px;display:flex;flex-direction:column;gap:5px">'+
+            _userAdded.map(function(u){
+              var _txt=u.replace(/^✅\s*/,''); if(_txt.length>72) _txt=_txt.substring(0,72)+'…';
+              return '<div style="font-size:11.5px;color:#166534;line-height:1.55;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:7px;padding:5px 8px">'+
+                '<span style="font-weight:700;color:#15803d">补充</span> '+highlightKeyData(_txt)+'</div>';
+            }).join('')+
+          '</div>';
+        }
         return '<button class="topic-row" onclick="kbDetail('+i+')">'+
           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
             '<span style="font-size:20px">'+k.icon+'</span>'+
@@ -7016,7 +7046,8 @@ function kbPage(p){
             '<em style="'+tagColor+';margin-left:auto;flex-shrink:0">'+dot+(_getDisplayTag(i)||k.tag)+'</em>'+
           '</div>'+
           '<small style="display:block;font-size:11.5px;color:#8492a6;margin-bottom:6px;line-height:1.4">'+(_getDisplaySub(i)||k.sub)+'</small>'+
-          (firstKnown?'<div style="font-size:12px;color:#33415a;line-height:1.65;border-top:1px solid #f0f4ff;padding-top:8px;margin-top:auto">'+highlightKeyData(firstKnown)+'</div>':'')+
+          (firstKnown&&!_userAdded.length?'<div style="font-size:12px;color:#33415a;line-height:1.65;border-top:1px solid #f0f4ff;padding-top:8px;margin-top:auto">'+highlightKeyData(firstKnown)+'</div>':'')+
+          _userHtml+
         '</button>';
       }).join('')+
     '</div>'+
@@ -8405,7 +8436,7 @@ function saveKbEdit(kbIdx,itemIdx){
   var p=P();if(!p)return;
   var k=p.kb[kbIdx];if(!k)return;
   // 写回 known，添加 ✅ 已确认标记（保留对象格式）
-  var _oldItem=k.known[itemIdx]; if(_oldItem&&typeof _oldItem==='object'){_oldItem.text='\u2705 '+newText;k.known[itemIdx]=_oldItem;}else{k.known[itemIdx]='\u2705 '+newText;}
+  var _oldItem=k.known[itemIdx]; if(_oldItem&&typeof _oldItem==='object'){_oldItem.text='\u2705 '+newText;_oldItem.origin='user';_oldItem.nature=_oldItem.nature||'fix';_oldItem.ts=Date.now();k.known[itemIdx]=_oldItem;}else{k.known[itemIdx]={text:'\u2705 '+newText,origin:'user',nature:'fix',ts:Date.now()};}
   if(!KB_CONFIRMS[cur])KB_CONFIRMS[cur]={};
   if(!KB_CONFIRMS[cur][kbIdx])KB_CONFIRMS[cur][kbIdx]={};
   KB_CONFIRMS[cur][kbIdx][itemIdx]={status:'edited',text:newText,ts:Date.now()};
