@@ -4578,12 +4578,19 @@ function persist(){
       KB_CHAT:typeof KB_CHAT!=='undefined'?KB_CHAT:{},
       USER_PROFILES:USER_PROFILES,
       CITY_ACCOUNTS:CITY_ACCOUNTS,
+      RESET_GEN:(typeof RESET_GEN!=='undefined'?RESET_GEN:null),
       syncTs:Date.now()
     };
     try{ localStorage.setItem(LS_KEY, JSON.stringify(data)); }catch(_){}
     // 同步到服务器（持久化存储）
     // Guard: don't overwrite server if OPS_ENT is empty (likely not yet loaded)
-    if(OPS_ENT.length>0 || !window._opsServerHadData){ try{ fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(function(){}); }catch(_){} }
+    if(OPS_ENT.length>0 || !window._opsServerHadData){ try{ fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+      .then(function(r){return r.json();}).then(function(resp){
+        if(resp&&resp.rejected==='stale-generation'){
+          console.warn('[sync] write rejected by reset barrier, resyncing from server');
+          if(typeof restoreFromServer==='function') restoreFromServer(function(){ if(typeof render==='function')try{render();}catch(_){} });
+        }
+      }).catch(function(){}); }catch(_){} }
   }catch(e){ console.warn('[persist] failed:',e.message); }
 }
 
@@ -4607,6 +4614,7 @@ function restore(){
       if(data.REPORT_REQUESTS) REPORT_REQUESTS=data.REPORT_REQUESTS;
       if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
       if(data.CITY_ACCOUNTS) CITY_ACCOUNTS=data.CITY_ACCOUNTS;
+      if(data.RESET_GEN) RESET_GEN=data.RESET_GEN;
       console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
       return true;
     }
@@ -4643,6 +4651,7 @@ function restoreFromServer(callback){
     }
     if(srv.USER_PROFILES){ Object.keys(srv.USER_PROFILES).forEach(function(uk){ USER_PROFILES[uk]=srv.USER_PROFILES[uk]; }); }
     if(srv.CITY_ACCOUNTS){ CITY_ACCOUNTS = srv.CITY_ACCOUNTS; }
+    if(srv.RESET_GEN){ RESET_GEN = srv.RESET_GEN; }  // reset代际:persist时带回,否则被服务端拒绝
     cur  = srv.cur  || Object.keys(PROJECTS)[0] || null;
     try{ localStorage.setItem(LS_KEY, JSON.stringify(srv)); }catch(e){}
     window._opsServerHadData=true;
@@ -4661,6 +4670,7 @@ function clearPersist(){
 }
 
 var UPLOADS={};
+var RESET_GEN=null;  // reset代际标记,从服务端读取后persist带回
 var KB_FILE_CHUNKS={};
 var KB_CONFIRMS={};  // {projKey:{kbIdx:{itemIdx:{status,text,ts}}}}
 // 招引方向派生的项目（方案A三层：产业方向→报告→招引方向项目）{产业key:[{name,stage,from}]}
