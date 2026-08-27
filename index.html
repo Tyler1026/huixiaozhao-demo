@@ -5652,6 +5652,56 @@ function pickChainKey(topic){
 /* ══════ 产业链图谱 — 研判后自动生成 ══════ */
 
 /* ── AI 动态生成产业链图谱数据 ── */
+/* 根据 note/level_basis 文本关键词校正 AI 的 level 误判（AI 常保守全判 mid）。
+   命中缺口词→weak，命中优势词→strong，否则保留原判。 */
+function _correctChainLevel(node){
+  var txt=((node.note||'')+' '+(node.level_basis||'')+' '+(node.basis||'')).toLowerCase?
+    ((node.note||'')+' '+(node.level_basis||'')+' '+(node.basis||'')):'';
+  var t=(node.note||'')+' '+(node.level_basis||'')+' '+(node.basis||'');
+  var weakRe=/(缺失|空白|无本地|无整机|依赖外[采购]|外购|受制于人|尚无|暂无|没有本地|100%依赖|全部外[采购]|不足5%|严重依赖)/;
+  var strongRe=/(龙头|已量产|量产|全国占比|全国前列|全国第[一二三]|领先|示范基地|集群效应|30年|市场占比\d|占全国|居首|冠军|标杆|上市公司|全球)/;
+  var lv=node.level;
+  if(lv!=='weak' && weakRe.test(t)) lv='weak';
+  else if(lv!=='strong' && strongRe.test(t) && !weakRe.test(t)) lv='strong';
+  if(lv!=='strong'&&lv!=='mid'&&lv!=='weak') lv='mid';
+  return lv;
+}
+/* 将 AI 返回的 chain 规范化为泳道格式 [{seg,nodes:[{name,level,note,local_leaders,benchmark}]}]。
+   兼容两种结构：① 泳道数组 [{seg,nodes}] ② 扁平对象 {segments:[{name,level,...}]}。 */
+function _normalizeChain(parsed){
+  var segMap={'上游':[], '中游':[], '下游':[]};
+  function pushNode(seg, nd){
+    if(!nd||!nd.name) return;
+    var node={
+      name: nd.name,
+      level: (nd.level==='strong'||nd.level==='mid'||nd.level==='weak')?nd.level:'mid',
+      note: nd.note||nd.level_basis||nd.basis||'',
+      local_leaders: (nd.local_leaders||nd.locals||[]).map(function(e){return typeof e==='string'?e:(e&&(e.name||e.company))||'';}).filter(Boolean),
+      benchmark: (nd.benchmark||nd.benchmarks||[]).map(function(e){return typeof e==='string'?e:(e&&(e.name||e.company))||'';}).filter(Boolean)
+    };
+    node.level=_correctChainLevel(node);
+    var s=(seg||'').indexOf('上')>=0?'上游':(seg||'').indexOf('下')>=0?'下游':(seg||'').indexOf('中')>=0?'中游':null;
+    if(!s){ // 扁平结构无分组：按顺序均分到上/中/下游
+      s='中游';
+    }
+    segMap[s].push(node);
+  }
+  if(Array.isArray(parsed) && parsed.length && parsed[0] && parsed[0].nodes){
+    // 泳道结构
+    parsed.forEach(function(sg){ (sg.nodes||[]).forEach(function(nd){ pushNode(sg.seg, nd); }); });
+  } else {
+    // 扁平结构：{segments:[...]} 或 [{name,level,...}]
+    var flat = (parsed&&parsed.segments)?parsed.segments:(Array.isArray(parsed)?parsed:[]);
+    var n=flat.length;
+    flat.forEach(function(nd,i){
+      var seg = nd.seg || (i< Math.ceil(n/3)?'上游':i< Math.ceil(n*2/3)?'中游':'下游');
+      pushNode(seg, nd);
+    });
+  }
+  var out=[];
+  ['上游','中游','下游'].forEach(function(s){ if(segMap[s].length) out.push({seg:s, nodes:segMap[s]}); });
+  return out;
+}
 function generateChainFromReport(topic, reportText, city){
   if(!topic) return;
   var rs=REPORTSTATE[cur]; if(!rs) return;
@@ -5669,15 +5719,19 @@ function generateChainFromReport(topic, reportText, city){
   }
   if(!reportText || reportText.length<100) return;
   rs.chainByTopic[topic]='loading';
-  var prompt='根据以下产业分析报告，提取该产业链的关键环节，按上游/中游/下游分类。\n\n'
-    +'报告内容：\n'+reportText.substring(0,1500)+'\n\n'
-    +'请严格输出JSON数组格式（不要markdown代码块），结构如下：\n'
-    +'[{"seg":"上游","nodes":[{"name":"环节名","level":"strong或mid或weak","note":"30字内现状描述"}]},{"seg":"中游","nodes":[...]},{"seg":"下游","nodes":[...]}]\n'
-    +'规则：\n'
-    +'- level判断：本地有成熟企业=strong，有但不足=mid，空白或依赖外购=weak\n'
-    +'- 每个seg下2-4个节点，总共6-10个节点\n'
-    +'- note要基于报告中的具体数据（产值、企业数、配套率等）\n'
-    +'- 只输出JSON，不要其他文字';
+  var prompt='你是产业链研判专家。请基于以下'+(city||'本市')+'的产业分析报告，梳理「'+topic+'」的完整产业链，按上游/中游/下游分类逐环节研判。\n\n'
+    +'报告内容：\n'+reportText.substring(0,2600)+'\n\n'
+    +'严格输出JSON数组（不要markdown代码块、不要任何JSON之外的文字），结构：\n'
+    +'[{"seg":"上游","nodes":[{"name":"环节名","level":"strong|mid|weak","note":"35字内现状(含具体数据/企业/配套率)","local_leaders":["本地代表企业全称"],"benchmark":["外地对标企业全称"]}]},{"seg":"中游","nodes":[...]},{"seg":"下游","nodes":[...]}]\n\n'
+    +'level判定标准（务必区分，禁止全部判mid）：\n'
+    +'- strong=优势：本地已有龙头/量产/全国占比领先/成熟集群（报告出现"已有/量产/龙头/全国占比/领先/示范基地"等）\n'
+    +'- weak=缺口：本地缺失/空白/依赖外购/受制于人/无本地供应（报告出现"缺失/空白/无本地/依赖外采/外购/受制于人/尚无"等）\n'
+    +'- mid=培育：本地有一定基础但规模不足、需增强（仅在既非明显优势也非明显缺口时使用）\n\n'
+    +'铁律：\n'
+    +'1. 必须综合运用strong/mid/weak三种判定，一条产业链通常同时存在优势环节、培育环节和缺口环节，绝不允许所有环节都判同一级别。\n'
+    +'2. note必须引用报告中的具体事实（企业名/产值/产能/占比），不得空泛。\n'
+    +'3. local_leaders只填报告或你确知的真实本地企业全称；确实没有则填[]。benchmark填外地真实对标企业全称；没有填[]。禁止编造企业名，禁止拿外地企业冒充本地。\n'
+    +'4. 每个seg下2-4个节点，总共6-10个节点。只输出JSON。';
   var _abortCtrl=new AbortController();
   var _chainTimeout=setTimeout(function(){ _abortCtrl.abort(); rs.chainByTopic[topic]=null; persist(); var _b=document.getElementById('chainMapBlock'); if(_b) _b.innerHTML='<div style="padding:20px;text-align:center;color:#94a3b8;font-size:12.5px">图谱生成超时，请重新进入产业分析触发</div>'; },90000);
   fetch(KB_API,{
@@ -5691,37 +5745,40 @@ function generateChainFromReport(topic, reportText, city){
     function pump(){
       return reader.read().then(function(res){
         if(res.done){
-          // 流结束，解析累积的JSON（增强容错）
+          // 流结束，解析累积的JSON（兼容 [{seg,nodes}] 与 {segments:[...]} 两种结构）
           try{
             var jsonStr=acc.replace(/```json?\n?/g,'').replace(/```/g,'').trim();
+            // 优先取对象 {..}，否则取数组 [..]
+            var _oa=jsonStr.indexOf('{'), _ob=jsonStr.lastIndexOf('}');
             var _ja=jsonStr.indexOf('['), _jb=jsonStr.lastIndexOf(']');
-            if(_ja>=0&&_jb>_ja) jsonStr=jsonStr.slice(_ja,_jb+1);
-            // 修复AI常见错误：name/note值缺结尾引号后紧跟下一个key
-            jsonStr=jsonStr.replace(/"([^"\\]{4,80})\s{2,}"?(level|note|seg|name)/g,'"$1","$2');
-            var chain=JSON.parse(jsonStr);
-            if(Array.isArray(chain)&&chain.length>=2){
+            var _cand=jsonStr;
+            if(_oa>=0&&_ob>_oa&&(_ja<0||_oa<_ja)) _cand=jsonStr.slice(_oa,_ob+1);
+            else if(_ja>=0&&_jb>_ja) _cand=jsonStr.slice(_ja,_jb+1);
+            _cand=_cand.replace(/"([^"\\]{4,80})\s{2,}"?(level|note|seg|name|level_basis)/g,'"$1","$2');
+            var parsed=JSON.parse(_cand);
+            var chain=_normalizeChain(parsed);
+            if(Array.isArray(chain)&&chain.length>=2 && chain.some(function(s){return s.nodes&&s.nodes.length;})){
               rs.chainByTopic[topic]=chain; persist();
               if(view==='report') render();
-            } else { rs.chainByTopic[topic]=null; persist(); }
+            } else { rs.chainByTopic[topic]=null; persist(); if(view==='report') render(); }
           }catch(e){console.warn('[chain] parse error:',e.message);
-            // 终极兜底：逐行正则提取seg和node
+            // 终极兜底：逐行正则提取节点（level缺失时按note文本推断，不再无脑mid）
             var _fixedChain=null;
             try{
               var _raw=acc.replace(/```json?\n?/g,'').replace(/```/g,'');
-              var segs=[]; var curSeg=null;
-              _raw.split('\n').forEach(function(line){
-                var segM=line.match(/"seg"\s*:\s*"([^"]+)"/);
-                if(segM){ curSeg={seg:segM[1],nodes:[]}; segs.push(curSeg); }
-                var nodeM=line.match(/"name"\s*:\s*"([^"]{2,60})"/);
-                if(nodeM&&curSeg){
-                  var lvlM=line.match(/"level"\s*:\s*"(strong|mid|weak)"/)||['','mid'];
-                  var noteM=line.match(/"note"\s*:\s*"([^"]{0,80})"/)||['',''];
-                  curSeg.nodes.push({name:nodeM[1],level:lvlM[1],note:noteM[1]});
-                }
-              });
-              if(segs.length>=2) _fixedChain=segs;
+              // 按 "name" 出现处切块，每块内提取 level/note/seg
+              var _parts=_raw.split(/"name"\s*:\s*"/); var _nodes=[];
+              for(var _pi=1;_pi<_parts.length;_pi++){
+                var _blk=_parts[_pi];
+                var _nmM=_blk.match(/^([^"]{2,60})"/); if(!_nmM) continue;
+                var lvlM=_blk.match(/"level"\s*:\s*"(strong|mid|weak)"/);
+                var noteM=_blk.match(/"(?:note|level_basis|basis)"\s*:\s*"([^"]{0,120})"/);
+                var segM=_blk.match(/"seg"\s*:\s*"([^"]+)"/);
+                _nodes.push({name:_nmM[1], level:lvlM?lvlM[1]:'', note:noteM?noteM[1]:'', seg:segM?segM[1]:''});
+              }
+              if(_nodes.length>=2) _fixedChain=_normalizeChain(_nodes);
             }catch(_e2){}
-            if(Array.isArray(_fixedChain)&&_fixedChain.length>=2){
+            if(Array.isArray(_fixedChain)&&_fixedChain.length>=2 && _fixedChain.some(function(s){return s.nodes&&s.nodes.length;})){
               rs.chainByTopic[topic]=_fixedChain; persist();
               if(view==='report') render();
             } else {
