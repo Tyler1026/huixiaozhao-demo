@@ -561,6 +561,22 @@ SYSTEM_SUGGEST = """你是慧小招城市智库的AI助手。根据提供的某�
 - 若智库数据不足，也要基于城市名和常识提出该城市可能关心的招商问题，禁止出现其他城市的名字。
 - 使用中文，每个问题不超过25字。"""
 
+SYSTEM_ONBOARD = """你是慧小招招商顾问。为某城市的招商偏好问卷生成\u201c结合本地实情\u201d的推荐选项，帮政府招商干部快速作答。
+
+给你城市名与该市城市智库知识片段。请结合两者（智库片段优先，不足时用你对该城市的了解补充）为下面 5 个问题各生成推荐选项：
+- park: 该市重点招商的产业园区（尽量给真实园区名称，如\u201cXX高新区\u201d\u201cXX经开区\u201d）
+- capacity: 该市产业园区的承载能力（厂房/用地供给现状）
+- scale: 适合该市的理想招商企业规模
+- industry: 该市优先招引的产业方向（结合本地主导/培育产业，给真实方向名）
+- invest: 该市期望的企业投资强度
+
+严格要求：
+- 只输出一个 JSON 对象，不要任何解释、不要 markdown 代码块围栏。
+- 结构：{"park":["选项1","选项2",...],"capacity":[...],"scale":[...],"industry":[...],"invest":[...]}
+- 每题 3-5 个选项，每个选项不超过 18 字，具体、贴合该城市，禁止出现其他城市名。
+- park 与 industry 必须尽量给该市真实的园区名/产业名；其余题结合该市体量给合理档位。
+- 若完全没有该城市信息，也要基于城市名和常识给出合理推荐，绝不留空。"""
+
 SYSTEM_FULL = """你是慧小招产业链研判师，结合城市智库数据完成完整的招商研判报告。
 
 ## 报告结构（严格按此输出）
@@ -1430,8 +1446,11 @@ class Handler(BaseHTTPRequestHandler):
         stream = body.get("stream", True)
         mode   = body.get("mode", "full")
         history = body.get("history", [])  # 多轮上下文：[{role:'user'|'assistant', content:'...'}]
+        # 用户初始化(onboarding)招商偏好：后续所有分析的最高优先级约束
+        # prefs = {"options": "选项类偏好文本", "custom": "用户自定义输入文本"}
+        prefs  = body.get("prefs", {}) or {}
 
-        if mode not in ("chat", "draft", "full", "suggest", "research", "chain", "topics", "funnel"):
+        if mode not in ("chat", "draft", "full", "suggest", "research", "chain", "topics", "funnel", "onboard_options"):
             mode = "full"
 
         if not q:
@@ -1494,6 +1513,9 @@ class Handler(BaseHTTPRequestHandler):
         elif mode == "funnel":
             system_prompt = SYSTEM_FUNNEL
             max_tokens    = 9500    # 约40家企业结构化 JSON（含三分项评分卡+扩张/派系标注，字段增多）
+        elif mode == "onboard_options":
+            system_prompt = SYSTEM_ONBOARD
+            max_tokens    = 900
         else:
             system_prompt = SYSTEM_FULL
             max_tokens    = MAX_TOKENS_FULL
@@ -1506,6 +1528,23 @@ class Handler(BaseHTTPRequestHandler):
             if role in ("user", "assistant") and content:
                 hist_msgs.append({"role": role, "content": content[:1500]})
 
+        # 用户初始化招商偏好块：最高优先级注入到 user message 顶部（onboard_options 自身在生成偏好，不注入）
+        prefs_block = ""
+        if mode != "onboard_options":
+            _opt = (prefs.get("options") or "").strip()
+            _cus = (prefs.get("custom") or "").strip()
+            if _opt or _cus:
+                parts = ["【用户招商偏好——最高优先级，以下分析必须优先满足并贯穿始终】"]
+                if _opt:
+                    parts.append("招商偏好选择：\n" + _opt[:1200])
+                if _cus:
+                    # 用户自定义输入优先级最高，单独强调
+                    parts.append("⭐用户自定义强调（优先级最高，须重点体现、不得忽略或弱化）：\n" + _cus[:1500])
+                parts.append("要求：产业方向、目标企业、园区匹配、招引策略等所有结论都要与上述偏好一致；如知识片段与用户偏好冲突，以用户偏好为准并说明。")
+                prefs_block = "\n\n".join(parts) + "\n\n"
+
+        user_msg = f"{prefs_block}城市：{city}\n\n知识片段：\n{ctx}\n\n问题：{q}"
+
         payload_dict = {
             "model": MODEL,
             "max_tokens": max_tokens,
@@ -1514,7 +1553,7 @@ class Handler(BaseHTTPRequestHandler):
             "messages": [
                 {"role": "system", "content": system_prompt},
                 *hist_msgs,
-                {"role": "user",   "content": f"城市：{city}\n\n知识片段：\n{ctx}\n\n问题：{q}"}
+                {"role": "user",   "content": user_msg}
             ]
         }
         # v4-pro 默认开启 thinking，CoT 会先吐 reasoning_content 并吃光 max_tokens，
@@ -1524,14 +1563,14 @@ class Handler(BaseHTTPRequestHandler):
 
         # chat 模式改走 Responses API + v4-flash 原生联网搜索（web_search 仅 flash 支持）。
         # 后端把 Responses 流式事件翻译回 chat-completions SSE 格式，前端零改动。
-        if mode == "chat":
+        if mode in ("chat", "onboard_options"):
             resp_payload = {
                 "model": MODEL_CHAT,
                 "max_output_tokens": max_tokens + 600,  # 预留搜索/工具调用的输出开销
                 "stream": stream,
                 "instructions": system_prompt,
                 "input": [*hist_msgs,
-                          {"role": "user", "content": f"城市：{city}\n\n知识片段：\n{ctx}\n\n问题：{q}"}],
+                          {"role": "user", "content": user_msg}],
                 "tools": [{"type": "web_search"}],
                 "thinking": {"type": "disabled"},
             }
@@ -1555,7 +1594,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_header("Content-Type", "text/event-stream")
                     self.send_header("Cache-Control", "no-cache")
                     self.cors(); self.end_headers()
-                    if mode == "chat":
+                    if mode in ("chat", "onboard_options"):
                         # Responses SSE → chat-completions SSE 翻译层
                         # 修复"先卡住再涌出"：web_search/思考阶段上游长时间不吐 output_text，
                         # 前端旧逻辑只能干等。现把中间状态事件翻译成 reasoning_content 发给前端，
@@ -1588,7 +1627,7 @@ class Handler(BaseHTTPRequestHandler):
                         self.wfile.write(b"data: [DONE]\n\n"); self.wfile.flush()
                 else:
                     data = resp.read()
-                    if mode == "chat":
+                    if mode in ("chat", "onboard_options"):
                         # Responses JSON → chat-completions JSON 翻译
                         d = json.loads(data)
                         txt = "".join(

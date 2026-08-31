@@ -1646,12 +1646,212 @@ function runAnalysisAnim(city, fileName, stepsCount, onDone){
   setTimeout(runStep, 200);
 }
 
-/* 创建项目 + 进入动画 */
+/* ===== ONBOARDING 招商偏好问卷（首次进入收集，日后可在设置页修改）===== */
+// 每题给出合理选项；multi=可多选。答案存 PROJECTS[key].onboarding
+// opts 仅作 AI 推荐失败时的通用兜底，故精简；AI 命中时以 AI 选项为主，兜底项去重后不再冗余堆叠
+var ONBOARD_Q=[
+  {k:'park', icon:'🏢', q:'您重点招商的产业园区是', hint:'可填园区名称，或选择类型', multi:true, allowText:true,
+   opts:['国家级经开区/高新区','暂无固定园区，全域招商']},
+  {k:'capacity', icon:'🏗️', q:'产业园区的承载能力为', hint:'厂房与用地供给情况', multi:true,
+   opts:['有标准厂房可直接入驻','有净地可新建厂房','承载能力有限/待扩容']},
+  {k:'scale', icon:'📊', q:'理想的招商企业规模为', hint:'目标企业体量', multi:true,
+   opts:['行业龙头/链主企业','规上企业（年营收2000万+）','不限规模，看产业匹配度']},
+  {k:'industry', icon:'🏭', q:'优先招引的产业方向为', hint:'', multi:true, allowText:true,
+   opts:['先进制造/装备','现代农业/食品加工']},
+  {k:'invest', icon:'💰', q:'期望的企业投资强度为', hint:'单个项目固定资产投资', multi:true,
+   opts:['1亿元以上重大项目','1000万以下均可','以就业/税收为主，不设门槛']},
+];
+var _onbSel={};      // 当前作答缓存 {k:[选项...]}
+var _onbAfter=null;  // 完成后的回调（首次=进入分析动画；设置页=仅保存）
+var _onbOpts={};     // 本次问卷各题实际选项：AI 结合城市生成，回退到 ONBOARD_Q 静态
+var _onbCity='';     // 本次问卷针对的城市（动态，不硬编码）
+
+// 取当前城市：优先账号绑定，其次当前项目，最后传入参数
+function _resolveOnbCity(explicit){
+  if(explicit) return explicit;
+  if(typeof AUTH!=='undefined' && AUTH && AUTH.city) return AUTH.city;
+  if(typeof cur!=='undefined' && cur && typeof PROJECTS!=='undefined' && PROJECTS[cur] && PROJECTS[cur].city) return PROJECTS[cur].city;
+  return '';
+}
+// 重置各题选项为静态兜底
+function _resetOnbOpts(){ _onbOpts={}; ONBOARD_Q.forEach(function(it){ _onbOpts[it.k]=it.opts.slice(); }); }
+
+function openOnboarding(existing, afterFn, city){
+  _onbSel={}; _onbAfter=afterFn||null;
+  _onbCity=_resolveOnbCity(city);
+  _resetOnbOpts();
+  // 预填已有答案（设置页修改场景）
+  ONBOARD_Q.forEach(function(item){
+    var v=existing&&existing[item.k];
+    _onbSel[item.k]=v?(Array.isArray(v)?v.slice():[v]):[];
+  });
+  var host=document.getElementById('onbModalHost')||(function(){var d=document.createElement('div');d.id='onbModalHost';document.body.appendChild(d);return d;})();
+  host.innerHTML=onboardingModalHtml(!!existing);
+  // 先拉 AI 结合城市生成的推荐选项，生成后再显示整个问卷；失败/超时回退静态
+  fetchOnbRecommend(_onbCity);
+}
+// 向后端请求"结合城市实情"的推荐选项（mode=onboard_options，走 flash+联网）
+function fetchOnbRecommend(city){
+  var body=document.getElementById('onbBody');
+  var submitBtn=document.getElementById('onbSubmitBtn');
+  if(!city){ renderOnbBody(); return; }   // 无城市：直接用静态选项
+  if(body) body.innerHTML=onbLoadingHtml(city);
+  if(submitBtn){ submitBtn.disabled=true; submitBtn.style.opacity='.5'; }
+  var corpus=[];
+  try{ if(typeof buildKBCorpus==='function'){ corpus=kbSearch(city+' 产业 园区 企业规模 投资', buildKBCorpus(city), 8)||[]; } }catch(e){}
+  var done=false;
+  function finish(txt){ if(done)return; done=true; clearTimeout(to); if(txt)applyOnbRecommend(txt); renderOnbBody(); enableOnbSubmit(); }
+  var to=setTimeout(function(){ finish(''); }, 90000); // 90s 兜底
+  // 流式：首字节尽早到达，避免网关/浏览器长请求超时；累积完整 SSE 文本后再解析 JSON
+  fetch('/api/kb-chat',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question:'为'+city+'生成招商偏好问卷推荐选项', chunks:corpus, city:city, mode:'onboard_options', stream:true})})
+    .then(function(resp){
+      if(!resp.ok||!resp.body){ throw new Error('HTTP '+resp.status); }
+      var reader=resp.body.getReader(), dec=new TextDecoder(), buf='', acc='';
+      function pump(){
+        return reader.read().then(function(r){
+          if(r.done){ finish(acc); return; }
+          buf+=dec.decode(r.value,{stream:true});
+          var lines=buf.split('\n'); buf=lines.pop();
+          lines.forEach(function(line){
+            line=line.trim(); if(line.indexOf('data:')!==0)return;
+            var d=line.slice(5).trim(); if(!d||d==='[DONE]')return;
+            try{ var j=JSON.parse(d); var delta=((j.choices||[{}])[0].delta||{}).content||''; if(delta)acc+=delta; }catch(e){}
+          });
+          return pump();
+        });
+      }
+      return pump();
+    })
+    .catch(function(e){ finish(''); });
+}
+function enableOnbSubmit(){ var b=document.getElementById('onbSubmitBtn'); if(b){ b.disabled=false; b.style.opacity='1'; } }
+// 解析 AI 返回的 JSON，把推荐选项并入 _onbOpts（推荐项置顶；静态兜底项去重保留在后）
+function applyOnbRecommend(txt){
+  if(!txt) return;
+  var jsonStr=txt.replace(/```json/gi,'').replace(/```/g,'').trim();
+  var m=jsonStr.match(/\{[\s\S]*\}/); if(m)jsonStr=m[0];
+  var obj=null; try{ obj=JSON.parse(jsonStr); }catch(e){ return; }
+  ONBOARD_Q.forEach(function(it){
+    var rec=obj[it.k];
+    if(Array.isArray(rec) && rec.length){
+      var clean=rec.map(function(x){return String(x).trim();}).filter(Boolean).slice(0,6);
+      // AI 命中时以推荐项为主，仅补 1 个"兜底/无门槛"通用项（取静态列表最后一项），不再堆叠全部静态项
+      var merged=clean.slice();
+      var optOut=it.opts[it.opts.length-1];
+      if(optOut && merged.indexOf(optOut)<0) merged.push(optOut);
+      _onbOpts[it.k]=merged;
+      _onbRecSet[it.k]=clean;   // 记录哪些是 AI 推荐，渲染时打⭐
+    }
+  });
+}
+var _onbRecSet={};  // {k:[被AI推荐的选项...]}
+function onbLoadingHtml(city){
+  return '<div style="text-align:center;padding:46px 20px">'+
+    '<div class="gov-spin" style="width:26px;height:26px;border-width:3px;margin:0 auto 16px"></div>'+
+    '<div style="font-size:14px;font-weight:650;color:#0b183b;margin-bottom:6px">正在结合「'+city+'」实情生成推荐选项…</div>'+
+    '<div style="font-size:12px;color:#8492a6;line-height:1.6">AI 正在读取该市城市智库与公开信息，<br>为您预填贴合本地的园区与产业方向</div></div>';
+}
+function onboardingModalHtml(isEdit){
+  return '<div class="modal-layer" id="onbLayer" style="z-index:200">'+
+    '<div class="modal" style="width:min(600px,100%)">'+
+      '<header><div><span class="eyebrow">ONBOARDING</span><h2 style="margin:2px 0 0">'+(isEdit?'修改招商偏好':'先了解您的招商偏好')+'</h2></div>'+
+        (isEdit?'<button onclick="closeOnboarding()" aria-label="关闭">✕</button>':'')+'</header>'+
+      '<div class="modal-body" id="onbBody"></div>'+
+      '<footer><small style="margin-right:auto;color:#8492a6;font-size:11px;padding-left:2px">这些偏好会指导 AI 的招商研判，稍后可在「设置」中随时修改</small>'+
+        '<button class="primary-button" id="onbSubmitBtn" onclick="submitOnboarding()" style="min-width:130px">'+(isEdit?'保存修改':'开始分析 →')+'</button></footer>'+
+    '</div></div>';
+}
+function renderOnbBody(){
+  var el=document.getElementById('onbBody'); if(!el)return;
+  el.innerHTML=ONBOARD_Q.map(function(item,qi){
+    var sel=_onbSel[item.k]||[];
+    var opts=(_onbOpts[item.k]&&_onbOpts[item.k].length)?_onbOpts[item.k]:item.opts;
+    var recSet=_onbRecSet[item.k]||[];
+    var chips=opts.map(function(o){
+      var on=sel.indexOf(o)>=0;
+      var rec=recSet.indexOf(o)>=0;
+      return '<button type="button" onclick="toggleOnb('+qi+',\''+o.replace(/'/g,"\\'")+'\')" '+
+        'style="text-align:left;padding:9px 13px;border:1.5px solid '+(on?'#1a56db':(rec?'#f0d99a':'#e3ebf6'))+';border-radius:9px;'+
+        'background:'+(on?'#eef3ff':(rec?'#fffdf5':'#fff'))+';color:'+(on?'#1a3fae':'#40506a')+';font-size:13px;font-weight:'+(on?'650':'500')+';cursor:pointer;transition:all .12s">'+
+        (on?'✓ ':(rec?'<span title="AI 结合本地推荐" style="color:#e0a516">★ </span>':''))+o+'</button>';
+    }).join('');
+    var custom=item.allowText?('<input id="onbTxt'+qi+'" placeholder="或补充说明…" value="'+(_onbCustom(item.k)||'')+'" '+
+      'oninput="setOnbCustom(\''+item.k+'\',this.value)" '+
+      'style="margin-top:8px;width:100%;padding:8px 11px;border:1px solid #e3ebf6;border-radius:8px;font-size:12.5px;box-sizing:border-box;outline:none">'):'';
+    return '<div style="margin-bottom:'+(qi===ONBOARD_Q.length-1?'4':'22')+'px">'+
+      '<div style="font-size:14px;font-weight:680;color:#0b183b;margin-bottom:3px">'+item.icon+' '+(qi+1)+'. '+item.q+
+        (item.multi?'<span style="font-size:11px;font-weight:500;color:#8492a6"> · 可多选</span>':'')+'</div>'+
+      '<div style="font-size:11.5px;color:#9aa5b5;margin-bottom:9px">'+item.hint+'</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+chips+'</div>'+custom+'</div>';
+  }).join('');
+}
+// 自定义文本单独存 _onbSel[k+'__txt']
+function _onbCustom(k){ return _onbSel[k+'__txt']||''; }
+function setOnbCustom(k,v){ _onbSel[k+'__txt']=v; }
+function toggleOnb(qi,opt){
+  var item=ONBOARD_Q[qi]; var arr=_onbSel[item.k]||[];
+  var i=arr.indexOf(opt);
+  if(item.multi){ if(i>=0)arr.splice(i,1); else arr.push(opt); }
+  else { arr=(i>=0)?[]:[opt]; }  // 单选：再点取消
+  _onbSel[item.k]=arr; renderOnbBody();
+}
+function collectOnboarding(){
+  var out={ts:Date.now()}; var custom={};
+  ONBOARD_Q.forEach(function(item){
+    var arr=(_onbSel[item.k]||[]).slice();
+    var txt=(_onbSel[item.k+'__txt']||'').trim();
+    if(txt){ arr.push(txt); custom[item.k]=txt; }   // 记录自定义文本（用于后续分析最高优先级强调）
+    out[item.k]=item.multi?arr:(arr.join('，'));
+  });
+  out.__custom=custom;   // 用户自定义输入单独留存
+  return out;
+}
+function closeOnboarding(){ var h=document.getElementById('onbModalHost'); if(h)h.innerHTML=''; }
+function submitOnboarding(){
+  var ans=collectOnboarding();
+  var after=_onbAfter; closeOnboarding();
+  if(typeof after==='function') after(ans);
+}
+// 招商偏好答案 → 可读文本（设置页展示 + 注入研判上下文）
+function onboardingToText(ob){
+  if(!ob)return '';
+  return ONBOARD_Q.map(function(item){
+    var v=ob[item.k]; if(!v||(Array.isArray(v)&&!v.length))return null;
+    return '· '+item.q+'：'+(Array.isArray(v)?v.join('、'):v);
+  }).filter(Boolean).join('\n');
+}
+// 招商偏好 → 传给后端的 prefs：options=全部偏好文本；custom=用户自定义输入(最高优先级)
+function onboardingPrefs(ob){
+  if(!ob)return null;
+  var options=onboardingToText(ob);
+  var cus=[];
+  var cmap=ob.__custom||{};
+  ONBOARD_Q.forEach(function(item){
+    var t=cmap[item.k];
+    if(t) cus.push('· '+item.q+'：'+t);
+  });
+  if(!options && !cus.length) return null;
+  return {options:options, custom:cus.join('\n')};
+}
+// 取当前项目的 prefs（供各分析调用统一使用）
+function curOnbPrefs(){
+  try{ var p=(typeof P==='function')?P():PROJECTS[cur]; return p?onboardingPrefs(p.onboarding):null; }catch(e){ return null; }
+}
+
+/* 创建项目：先做招商偏好问卷 → 再进入分析动画 */
 function createProject(){
   var _locked=(location.search.indexOf('demo')<0 && AUTH && AUTH.city);
   var city=_locked?AUTH.city:((document.getElementById('setupCity')||{}).value);
   if(!city||!city.trim())return;
   city=city.trim();
+  // 首次进入：先弹招商偏好问卷（AI 结合该城市生成推荐选项），作答后再建项目+跑动画
+  openOnboarding(null, function(ans){
+    _startProjectAnalysis(city, ans);
+  }, city);
+}
+/* 问卷完成后：构建项目骨架（含 onboarding 偏好）→ 进入分析动画 */
+function _startProjectAnalysis(city, onboardingAns){
   var fileName=_setupFiles&&_setupFiles.length?_setupFiles.map(function(f){return f.name;}).join('、'):null;
 
   // 渲染分析动画页
@@ -1668,6 +1868,7 @@ function createProject(){
       {icon:'🏗️',t:'链主与存量企业',sub:'分析中',tag:'AI初判',known:[],calls:['企业名录','工商信息']},
       {icon:'📜',t:'政策、规划与领导关注',sub:'分析中',tag:'AI初判',known:[],calls:['政府工作报告','领导发言']}
     ],
+    onboarding: onboardingAns||null,   // 招商偏好画像（首次问卷收集，设置页可改）
     report:null, clues:[]
   };
   cur=key;
@@ -1812,7 +2013,7 @@ function ensureAiReport(topic, city){
   // 走 SSE 立即吐首字节喂活网关计时器，永不超时；累积 accText 后按原逻辑落地。
   fetch('/api/kb-chat',{
     method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:fullQuery, chunks:chunks, city:city, mode:'full', stream:true})
+    body:JSON.stringify({question:fullQuery, chunks:chunks, city:city, mode:'full', stream:true, prefs:curOnbPrefs()})
   }).then(function(resp){
     if(!resp.ok || !resp.body) throw new Error('HTTP '+resp.status);
     var reader=resp.body.getReader(), decoder=new TextDecoder(), buf='', accText='';
@@ -5420,7 +5621,7 @@ function triggerReport(phase){
   }, phase===2?180000:90000); // phase2需要>62s动画+AI响应时间
   fetch('/api/kb-chat',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:query,chunks:chunks,city:p.city,stream:true,mode:phase===1?'draft':'full'}),
+    body:JSON.stringify({question:query,chunks:chunks,city:p.city,stream:true,mode:phase===1?'draft':'full',prefs:curOnbPrefs()}),
     signal:_abortCtrl.signal
   }).then(function(resp){
     if(!resp.ok){
@@ -5803,7 +6004,7 @@ function generateChainFromReport(topic, reportText, city){
   fetch(KB_API,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:prompt, chunks:[], city:city||'', stream:true, mode:'chain'}),
+    body:JSON.stringify({question:prompt, chunks:[], city:city||'', stream:true, mode:'chain', prefs:curOnbPrefs()}),
     signal:_abortCtrl.signal
   }).then(function(r){
     clearTimeout(_chainTimeout);
@@ -6318,7 +6519,7 @@ function researchChain(chainKey, topic, city, nodeNames, chunks){
   // SSE 累积成完整 content 后，后续 JSON 解析逻辑保持不变。
   fetch('/api/kb-chat',{
     method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:q, city:city, mode:'chain', stream:true, chunks:chunks})
+    body:JSON.stringify({question:q, city:city, mode:'chain', stream:true, chunks:chunks, prefs:curOnbPrefs()})
   }).then(function(resp){
     if(!resp.ok || !resp.body) throw new Error('HTTP '+resp.status);
     var reader=resp.body.getReader(), decoder=new TextDecoder(), buf='', content='';
@@ -6611,7 +6812,7 @@ function ensureAiTopics(){
   // SSE 累积成完整 txt 后，后续 JSON 解析逻辑保持不变。
   fetch('/api/kb-chat',{
     method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:q, chunks:chunks, city:city, mode:'topics', stream:true})
+    body:JSON.stringify({question:q, chunks:chunks, city:city, mode:'topics', stream:true, prefs:curOnbPrefs()})
   }).then(function(resp){
     if(!resp.ok || !resp.body) throw new Error('HTTP '+resp.status);
     var reader=resp.body.getReader(), decoder=new TextDecoder(), buf='', txt='';
@@ -7204,6 +7405,7 @@ function settingsPage(p){
       '<label>所属地区<input value="'+p.city+'" disabled></label>'+
       '<label>数据权限<input value="仅限 '+p.city+' 城市智库" disabled></label></div>'+
       '<div class="boundary-note" style="margin-top:14px"><i class="i">🔒</i>账号的地区与身份在开通时绑定，用户不可自行更改；如需变更请联系系统管理员。</div></div>'+
+    onboardingSettingsSection(p)+
     '<div class="settings-section"><h2>提醒偏好（可自行调整）</h2>'+
       '<div class="toggle-row"><span><strong>状态变化通知</strong><small>需求进度更新时提醒我</small></span><input type="checkbox" checked></div>'+
       '<div class="toggle-row"><span><strong>超时提醒</strong><small>3 个工作日无更新时提醒</small></span><input type="checkbox" checked></div>'+
@@ -7213,6 +7415,31 @@ function settingsPage(p){
       ['首页任务提示','报告中的产业关注顺序','进度提醒频率'].map(function(x){return '<li>'+x+'</li>'}).join('')+'</ul>'+
       '<div class="boundary-note"><i class="i">🔒</i>干部与确认关口、资源核验责任和企业触达边界，不会因个人设置而跳过。</div></div>'+
     '</div></div>';
+}
+/* 招商偏好画像：设置页可查看+修改（收起展示，点「修改」重开问卷）*/
+function onboardingSettingsSection(p){
+  var ob=p&&p.onboarding;
+  var rows= ob ? ONBOARD_Q.map(function(item){
+      var v=ob[item.k];
+      var txt=(!v||(Array.isArray(v)&&!v.length))?'<span style="color:#b0bac8">未填写</span>':(Array.isArray(v)?v.join('、'):v);
+      return '<div style="display:flex;gap:12px;padding:11px 0;border-bottom:1px solid #f0f4ff">'+
+        '<span style="font-size:16px;width:24px;text-align:center;flex:0 0 24px">'+item.icon+'</span>'+
+        '<div style="flex:1;min-width:0"><div style="font-size:12px;color:#8492a6;margin-bottom:2px">'+item.q+'</div>'+
+        '<div style="font-size:13px;color:#0b183b;font-weight:600;line-height:1.5">'+txt+'</div></div></div>';
+    }).join('')
+    : '<div style="padding:14px 0;color:#8492a6;font-size:13px">尚未填写招商偏好。填写后，AI 研判会据此聚焦您关注的园区、企业规模与产业方向。</div>';
+  return '<div class="settings-section"><h2 style="display:flex;align-items:center;justify-content:space-between">招商偏好画像'+
+      '<button class="ghost-button" style="min-height:34px;font-size:12px" onclick="editOnboarding()">'+(ob?'修改':'去填写')+'</button></h2>'+
+      rows+
+      '<div class="boundary-note" style="margin-top:14px"><i class="i">🎯</i>该画像指导 AI 的招商方向与企业匹配研判，可随时修改，修改后下次研判即生效。</div></div>';
+}
+function editOnboarding(){
+  var p=PROJECTS[cur]; if(!p)return;
+  openOnboarding(p.onboarding||null, function(ans){
+    p.onboarding=ans; persist();
+    if(typeof render==='function')render();
+    if(typeof toast==='function')toast('招商偏好已更新');
+  }, p.city);
 }
 /* ===== 右侧详情栏（复刻雷总"本次分析" + 证据联动）===== */
 function detailPane(p){
@@ -8330,7 +8557,7 @@ function kbAnswerRender(container, query, chunks, city){
   fetch(KB_API, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({question:query, chunks:chunks, city:city, stream:true, mode:'chat'})
+    body: JSON.stringify({question:query, chunks:chunks, city:city, stream:true, mode:'chat', prefs:curOnbPrefs()})
   }).then(function(resp){
     thinking.remove();
     ansNode.style.display = '';
@@ -9226,7 +9453,7 @@ function kbVerifyMaterial(){
   fetch(KB_API,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:prompt, chunks:_vChunks, city:p.city, stream:true, mode:'verify'})
+    body:JSON.stringify({question:prompt, chunks:_vChunks, city:p.city, stream:true, mode:'verify', prefs:curOnbPrefs()})
   }).then(function(resp){
     thinking.remove();
     bodyDiv.innerHTML='<span style="color:#9aa5b5;font-size:12px"><span class="gov-spin" style="margin-right:6px"></span>AI 正在逐条核验数据点…</span>';
@@ -9423,7 +9650,7 @@ function kbIncrementalAnalysis(){
   fetch(KB_API,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:prompt, chunks:newChunks.slice(0,6), city:p.city, stream:true, mode:'chat'})
+    body:JSON.stringify({question:prompt, chunks:newChunks.slice(0,6), city:p.city, stream:true, mode:'chat', prefs:curOnbPrefs()})
   }).then(function(resp){
     thinking.remove();
     c.appendChild(ansNode); c.scrollTop=c.scrollHeight;
