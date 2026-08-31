@@ -8377,11 +8377,16 @@ function kbSearch(query, chunks, topK){
     var doc=c.text+' '+c.topic+' '+(c.tags||[]).join(' ');
     var docTokens=tokenize(doc);
     var len=Math.max(docTokens.length,1);
+    // 上传/标注材料判定（origin=admin/user 或带 src 文件名）：这类是政府干部主动提供的权威材料，
+    // 不应因"一次集中上传产生多条 chunk 使关键词高频"而被 IDF 惩罚压到检索底部（负面清单漏召回根因）。
+    var isUpload=(c.origin==='admin'||c.origin==='user'||!!c.src||(c.id&&String(c.id).indexOf('file:')===0));
     var score=0;
     qTokens.forEach(function(qt){
       var tf=0;
       docTokens.forEach(function(dt){ if(dt===qt||dt.indexOf(qt)>=0||qt.indexOf(dt)>=0) tf++; });
       var idf=Math.log((N+1)/((df[qt]||0)+1));
+      // 上传材料豁免 IDF 惩罚：命中查询词时 IDF 取下限 1.0，避免集中上传导致高频词权重塌陷。
+      if(isUpload) idf=Math.max(idf,1.0);
       // BM25 k1=1.5 b=0.75 avgdl=50
       var bm25=(tf*(1.5+1))/(tf+1.5*(1-0.75+0.75*len/50));
       score+=bm25*idf;
@@ -8390,6 +8395,8 @@ function kbSearch(query, chunks, topK){
     (c.tags||[]).forEach(function(tag){
       if(query.indexOf(tag)>=0) score+=2.5;
     });
+    // 上传材料且有实际词命中时给稳定加成，确保权威政策材料稳居候选池（与后端 _is_upload_chunk +2 一致）。
+    if(isUpload && score>0) score+=2;
     return {chunk:c, score:score};
   });
 
@@ -8659,8 +8666,8 @@ function kbSendQuestion(btn, q){
 function kbRAGQueryWithHint(query, container, kbTopic){
   var p=P(); if(!p) return;
   var corpus=buildKBCorpus(p.city);
-  // 检索更多候选（6），保证上传附件等真实命中不被置顶挤掉
-  var chunks=kbSearch(query,corpus,6);
+  // 检索更多候选（20），保证上传附件/政策材料真实命中不被置顶挤掉或因高频被IDF压出候选池
+  var chunks=kbSearch(query,corpus,20);
   if(kbTopic&&kbTopic.known){
     var seen=chunks.map(function(c){return c.text;});
     // 该主题下用户上传的附件片段：也一并检索并优先保留（不占用置顶名额，属真实数据）
@@ -8674,7 +8681,7 @@ function kbRAGQueryWithHint(query, container, kbTopic){
       return {id:'pin:'+i,topic:kbTopic.t,tags:topicTags(kbTopic.t),text:t,cite:kbTopic.t+'(置顶)'};
     });
     pinned.reverse().forEach(function(pc){if(seen.indexOf(pc.text)<0){chunks.unshift(pc);seen.push(pc.text);}});
-    chunks=chunks.slice(0,8);
+    chunks=chunks.slice(0,20);
   }
   kbAnswerRender(container,query,chunks,p.city);
 }
@@ -8682,7 +8689,8 @@ function kbRAGQueryWithHint(query, container, kbTopic){
 function kbRAGQuery(query, container){
   var p=P(); if(!p) return;
   var corpus=buildKBCorpus(p.city);
-  var chunks=kbSearch(query, corpus, 5);
+  // topK 从 5 提到 20：候选池过小会把上传政策材料(如负面清单,一次上传即多条chunk)挤出，导致漏召回。
+  var chunks=kbSearch(query, corpus, 20);
   kbAnswerRender(container, query, chunks, p.city);
 }
 
