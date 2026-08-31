@@ -2427,8 +2427,11 @@ function kbReadiness(){
   p.kb.forEach(function(k,ki){
     (k.known||[]).forEach(function(x,xi){
       x=_kbText(x);
-      var isWarn=x.indexOf('\u26a0\ufe0f')>=0;
-      var isDone=x.indexOf('\u2705')===0;
+      // 归一化 emoji 变体选择符(U+FE0F)：报告RAG回填的条目常用裸码 ⚠(U+26A0)/✅(U+2705)，
+      // 若判断串带 ️ 会匹配不到 → warnTotal=0 → 确认率误判为满分白送30分(松江虚高80%根因)。
+      var _x=x.replace(/\ufe0f/g,'');
+      var isWarn=_x.indexOf('\u26a0')>=0;
+      var isDone=_x.trim().indexOf('\u2705')===0;
       if(!isWarn&&!isDone) return;  // 非⚠️且非✅，跳过
       warnTotal++;
       var conf=KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][ki]&&KB_CONFIRMS[cur][ki][xi];
