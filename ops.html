@@ -6809,6 +6809,8 @@ function opsTabBar(){
 
 /* ══ Tab: 城市智库 RAG（材料·检索·推送日志）══ */
 var ragCity=null, ragTopic=0, ragQuery='', ragHits=null, ragLog=null, ragFilter='';
+// 对话更新 RAG：多轮消息 [{role,content}]；ragChatPending=可入库的最近一条 AI 结论草稿
+var ragChatMsgs=[], ragChatBusy=false, ragChatPending=null;
 function ragProjKey(){
   var keys=Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&p.kb&&p.kb.length&&p.kb.some(function(t){return (t.known||[]).length;});});
   if(!keys.length) return null;
@@ -6855,6 +6857,7 @@ function opsRag(){
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">'+ragUploadPanel(p,key)+ragVersionPanel(p,key)+'</div>'+
     ragSearchBox()+
+    ragChatBox(p,key)+
     '<div style="display:grid;grid-template-columns:230px 1fr;gap:14px;margin-top:14px">'+ragTopicNav(p)+ragChunkList(p)+'</div>'+
     ragPushLog()+
   '</div>';
@@ -6874,31 +6877,60 @@ function ragUploadPanel(p,key){
       '<select id="ragUpNature" style="flex:0 0 118px;min-height:38px;padding:4px 9px;border:1px solid #d8e0ed;border-radius:7px;font-size:12px"><option value="support">🟢 佐证补充</option><option value="fix">🟡 修正覆盖</option></select>'+
     '</div>'+
     '<label id="ragDrop" style="display:flex;align-items:center;justify-content:center;gap:8px;min-height:60px;border:1.5px dashed #b9cbe4;border-radius:9px;background:#f8fbff;color:#5a7398;font-size:12.5px;cursor:pointer">'+
-      '<span style="font-size:18px">📁</span><span id="ragUpFileName">点击选择文件（.txt / .md / .csv）</span>'+
-      '<input type="file" id="ragUpFile" accept=".txt,.md,.csv" onchange="ragReadFile(this,\''+key+'\')" style="display:none"></label>'+
+      '<span style="font-size:18px">📁</span><span id="ragUpFileName">点击选择文件（.pdf / .docx / .txt / .md / .csv）</span>'+
+      '<input type="file" id="ragUpFile" accept=".pdf,.docx,.txt,.md,.csv" onchange="ragReadFile(this,\''+key+'\')" style="display:none"></label>'+
     log+'</div>';
 }
 function ragReadFile(inp,key){
   var f=inp.files&&inp.files[0]; if(!f)return;
   var nm=document.getElementById('ragUpFileName'); if(nm)nm.textContent='正在读取：'+f.name;
-  var rd=new FileReader();
-  rd.onload=function(){ ragDoUpload(key, rd.result, f.name); };
-  rd.readAsText(f);
+  var isBin=/\.(pdf|docx)$/i.test(f.name);
+  if(isBin){
+    // PDF/Word：读为 base64 交后端解析（pdfplumber / python-docx）
+    var rb=new FileReader();
+    rb.onload=function(){
+      var b64=String(rb.result||'').split(',')[1]||'';  // 去掉 data:...;base64, 前缀
+      ragDoUpload(key, null, f.name, b64);
+    };
+    rb.onerror=function(){toast&&toast('文件读取失败');if(nm)nm.textContent='点击选择文件（.pdf / .docx / .txt / .md / .csv）';};
+    rb.readAsDataURL(f);
+  } else {
+    var rd=new FileReader();
+    rd.onload=function(){ ragDoUpload(key, rd.result, f.name, null); };
+    rd.readAsText(f);
+  }
 }
-function ragDoUpload(key, text, name){
+function ragDoUpload(key, text, name, fileB64){
   var topic=(document.getElementById('ragUpTopic')||{}).value||'';
   var nature=(document.getElementById('ragUpNature')||{}).value||'support';
-  var mode=nature==='fix'?'replace':'append';
-  if(topic==='__new__'){ topic=prompt('新建主题名称：','管理员补充资料')||'管理员补充资料'; }
-  if(!text||!text.trim()){toast&&toast('文件内容为空');return;}
+  if(!fileB64 && (!text||!text.trim())){toast&&toast('文件内容为空');return;}
   var p=PROJECTS[key];
-  fetch('/api/kb-upload',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({projectKey:key,city:p.city,topic:topic,text:text,filename:name||'上传文件',
-      mode:mode,origin:'admin',nature:nature,by:'管理端·周总'})})
-    .then(function(r){return r.json();}).then(function(res){
-      if(res.ok){toast&&toast('已入库 '+res.chunks+' 条（'+(nature==='fix'?'修正':'佐证')+'）');restoreFromServer(function(){renderOpsV2();});}
-      else{toast&&toast('上传失败：'+(res.error||''));}
-    }).catch(function(e){toast&&toast('上传出错');});
+  var restLabel='点击选择文件（.pdf / .docx / .txt / .md / .csv）';
+  function send(finalTopic){
+    var mode=nature==='fix'?'replace':'append';
+    var nm=document.getElementById('ragUpFileName'); if(nm)nm.textContent='正在解析入库…';
+    var payload={projectKey:key,city:p.city,topic:finalTopic,filename:name||'上传文件',
+        mode:mode,origin:'admin',nature:nature,by:'管理端·周总',source:'file'};
+    if(fileB64){ payload.fileB64=fileB64; } else { payload.text=text; }
+    fetch('/api/kb-upload',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)})
+      .then(function(r){return r.json();}).then(function(res){
+        if(res.ok){
+          var extra=res.matched?('，命中已有 '+res.matched+' 条'):'';
+          toast&&toast('已入库 '+res.chunks+' 条（'+(nature==='fix'?'修正':'佐证')+'）'+extra);
+          restoreFromServer(function(){renderOpsV2();});
+        }
+        else{toast&&toast('上传失败：'+(res.error||''));if(nm)nm.textContent=restLabel;}
+      }).catch(function(e){toast&&toast('上传出错');if(nm)nm.textContent=restLabel;});
+  }
+  // 新建主题：用页面内 modal 取名（不使用原生 prompt）
+  if(topic==='__new__'){
+    ragCommitModal({key:key,city:p.city,topics:(p.kb||[]).map(function(t){return t.t;}),
+      defaultTopic:'__new__',preview:(text||name||''),
+      onConfirm:function(finalTopic,finalNature){ nature=finalNature||nature; send(finalTopic||'管理员补充资料'); }});
+  } else {
+    send(topic);
+  }
 }
 /* ── 接口2 UI：版本管理（时间线快照+回滚）── */
 function ragVersionPanel(p,key){
@@ -6985,6 +7017,145 @@ function ragHitsView(){
         '<span style="font-size:11px;color:#0757ad">'+h.topic+'</span></div>';
       return '<div style="'+(i<3?'border-left:3px solid #0757ad;padding-left:8px;margin-bottom:2px':'padding-left:11px')+'">'+head+card+'</div>';
     }).join('')+'</div>';
+}
+/* ── 对话更新 RAG：与 AI 就该城市智库对话，认可某条结论后「加入智库」显式落库 ── */
+function ragChatBox(p,key){
+  var msgs=ragChatMsgs.map(function(m,i){
+    if(m.role==='user'){
+      return '<div style="display:flex;justify-content:flex-end;margin:6px 0"><div style="max-width:78%;background:#0757ad;color:#fff;border-radius:12px 12px 2px 12px;padding:8px 12px;font-size:12.5px;line-height:1.6;white-space:pre-wrap">'+ragEsc(m.content)+'</div></div>';
+    }
+    var canAdd=(m.role==='assistant'&&m.content&&!m.streaming);
+    var addBtn=canAdd?('<div style="margin-top:6px"><button onclick="ragChatCommit('+i+',\''+key+'\')" style="border:1px solid #bfe5e0;background:#e4f5f3;color:#006d70;border-radius:6px;font-size:11px;cursor:pointer;padding:4px 11px">＋ 把这条结论加入智库</button></div>'):'';
+    return '<div style="display:flex;justify-content:flex-start;margin:6px 0"><div style="max-width:82%;background:#f4f7fc;color:#1e2a44;border-radius:12px 12px 12px 2px;padding:8px 12px;font-size:12.5px;line-height:1.7;white-space:pre-wrap">'+ragEsc(m.content||(m.streaming?'…':''))+addBtn+'</div></div>';
+  }).join('');
+  var body=ragChatMsgs.length?msgs:'<div style="color:#9aa5b5;font-size:12px;text-align:center;padding:22px 8px;line-height:1.7">与 AI 讨论该城市智库，补充或修正事实。<br>认可某条结论后，点「加入智库」即可显式落库（可控、留痕）。</div>';
+  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:14px 16px;margin-top:14px">'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
+      '<div style="font-size:13px;font-weight:700;color:#0b183b">💬 对话更新智库</div>'+
+      '<span style="font-size:11px;color:#8492a6">基于当前智库对话，确认结论后入库</span>'+
+      (ragChatMsgs.length?'<button onclick="ragChatMsgs=[];ragChatPending=null;renderOpsV2()" style="margin-left:auto;border:1px solid #d8e0ed;background:#fff;color:#5a7398;border-radius:6px;font-size:11px;cursor:pointer;padding:3px 10px">清空对话</button>':'')+
+    '</div>'+
+    '<div id="ragChatScroll" style="max-height:280px;overflow:auto;padding:2px 2px 6px">'+body+'</div>'+
+    '<div style="display:flex;gap:8px;margin-top:8px">'+
+      '<input id="ragChatIn" placeholder="例：产业链缺口有哪些？该市规上工业企业最新数是多少？" '+
+        'onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();ragChatSend(\''+key+'\');}" '+
+        (ragChatBusy?'disabled ':'')+'style="flex:1;min-height:40px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:8px;font-size:13px'+(ragChatBusy?';background:#f4f6f9':'')+'">'+
+      '<button class="primary-button" style="min-height:40px" '+(ragChatBusy?'disabled':'')+' onclick="ragChatSend(\''+key+'\')">'+(ragChatBusy?'生成中…':'发送')+'</button>'+
+    '</div></div>';
+}
+function ragChatScrollBottom(){ var el=document.getElementById('ragChatScroll'); if(el)el.scrollTop=el.scrollHeight; }
+function ragChatSend(key){
+  if(ragChatBusy)return;
+  var inp=document.getElementById('ragChatIn'); var q=inp?(inp.value||'').trim():'';
+  if(!q)return;
+  var p=PROJECTS[key];
+  // 组装当前智库语料作为 RAG 上下文
+  var corpus=[];
+  (p.kb||[]).forEach(function(t){(t.known||[]).forEach(function(txt,i){
+    var s=(txt&&typeof txt==='object')?(txt.text||''):txt;
+    corpus.push({id:t.t+':'+i,topic:t.t,text:s,cite:t.t});
+  });});
+  ragChatMsgs.push({role:'user',content:q});
+  var aiMsg={role:'assistant',content:'',streaming:true};
+  ragChatMsgs.push(aiMsg);
+  ragChatBusy=true; renderOpsV2(); ragChatScrollBottom();
+  var hist=ragChatMsgs.filter(function(m){return m.content&&!m.streaming;}).slice(-8).map(function(m){return {role:m.role,content:m.content};});
+  fetch('/api/kb-chat',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question:q,chunks:corpus,city:p.city,mode:'chat',stream:true,history:hist})})
+    .then(function(resp){
+      if(!resp.ok||!resp.body){ throw new Error('HTTP '+resp.status); }
+      var reader=resp.body.getReader(), dec=new TextDecoder(), buf='';
+      function pump(){
+        return reader.read().then(function(r){
+          if(r.done){ aiMsg.streaming=false; ragChatBusy=false; renderOpsV2(); ragChatScrollBottom(); return; }
+          buf+=dec.decode(r.value,{stream:true});
+          var lines=buf.split('\n'); buf=lines.pop();
+          lines.forEach(function(line){
+            line=line.trim(); if(line.indexOf('data:')!==0)return;
+            var d=line.slice(5).trim(); if(!d||d==='[DONE]')return;
+            try{ var j=JSON.parse(d); var delta=((j.choices||[{}])[0].delta||{}).content||''; if(delta){aiMsg.content+=delta; renderOpsV2(); ragChatScrollBottom();} }catch(e){}
+          });
+          return pump();
+        });
+      }
+      return pump();
+    })
+    .catch(function(e){ aiMsg.streaming=false; aiMsg.content=(aiMsg.content||'')+'\n[生成失败：'+e.message+']'; ragChatBusy=false; renderOpsV2(); });
+}
+function ragChatCommit(msgIdx, key){
+  var m=ragChatMsgs[msgIdx]; if(!m||m.role!=='assistant'||!m.content)return;
+  var p=PROJECTS[key];
+  // 用页面内 modal 替代 prompt/confirm（嵌入式浏览器不支持原生弹窗）
+  ragCommitModal({
+    key:key, city:p.city, topics:(p.kb||[]).map(function(t){return t.t;}),
+    defaultTopic:((p.kb||[])[ragTopic]||{}).t||'对话补充',
+    preview:m.content,
+    onConfirm:function(topic,nature){
+      var mode=nature==='fix'?'replace':'append';
+      fetch('/api/kb-upload',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({projectKey:key,city:p.city,topic:topic,text:m.content,
+          filename:'对话确认',mode:mode,origin:'admin',nature:nature,by:'管理端·对话',source:'chat'})})
+        .then(function(r){return r.json();}).then(function(res){
+          if(res.ok){
+            var extra=res.matched?('，命中已有 '+res.matched+' 条'):'';
+            toast&&toast('已加入智库 '+res.chunks+' 条（'+(nature==='fix'?'修正':'佐证')+'）'+extra);
+            m.committed=true;
+            restoreFromServer(function(){renderOpsV2();});
+          } else { toast&&toast('入库失败：'+(res.error||'')); }
+        }).catch(function(e){toast&&toast('入库出错');});
+    }
+  });
+}
+/* ── 通用入库确认弹窗（自建 modal，不依赖 window.prompt/confirm）── */
+function ragCommitModal(opt){
+  var old=document.getElementById('ragCommitModal'); if(old)old.parentNode.removeChild(old);
+  var topics=opt.topics||[]; var def=opt.defaultTopic||topics[0]||'对话补充';
+  var newVal='__new__';
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  var opts=topics.map(function(t){return '<option value="'+esc(t)+'"'+(t===def?' selected':'')+'>'+esc(t)+'</option>';}).join('')+
+    '<option value="'+newVal+'">＋ 新建主题…</option>';
+  var prev=(opt.preview||'').slice(0,140)+((opt.preview||'').length>140?'…':'');
+  var wrap=document.createElement('div');
+  wrap.id='ragCommitModal';
+  wrap.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(10,20,40,.42);display:flex;align-items:center;justify-content:center';
+  wrap.innerHTML=
+    '<div style="width:440px;max-width:92vw;background:#fff;border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.28);padding:20px 22px">'+
+      '<div style="font-size:15px;font-weight:750;color:#0b183b;margin-bottom:4px">加入「'+esc(opt.city)+'」城市智库</div>'+
+      '<div style="font-size:12px;color:#8492a6;margin-bottom:12px">确认目标主题与入库性质，确认后写入 RAG 库（问答时可被检索命中）</div>'+
+      (prev?'<div style="font-size:12px;color:#40506a;background:#f4f7fc;border:1px solid #e3ebf6;border-radius:8px;padding:8px 10px;margin-bottom:12px;max-height:78px;overflow:auto;line-height:1.6">'+esc(prev)+'</div>':'')+
+      '<div style="font-size:12px;font-weight:600;color:#40506a;margin-bottom:5px">目标主题</div>'+
+      '<select id="ragCmTopic" onchange="ragCmToggleNew()" style="width:100%;min-height:38px;padding:6px 10px;border:1px solid #d8e0ed;border-radius:8px;font-size:13px;margin-bottom:8px">'+opts+'</select>'+
+      '<input id="ragCmNewTopic" placeholder="输入新主题名称" style="display:none;width:100%;min-height:38px;padding:6px 10px;border:1px solid #d8e0ed;border-radius:8px;font-size:13px;margin-bottom:10px;box-sizing:border-box">'+
+      '<div style="font-size:12px;font-weight:600;color:#40506a;margin:6px 0 5px">入库性质</div>'+
+      '<div style="display:flex;gap:10px;margin-bottom:16px">'+
+        '<label style="flex:1;display:flex;align-items:center;gap:6px;border:1px solid #bfe5e0;background:#f2fbf9;border-radius:8px;padding:8px 10px;font-size:12.5px;cursor:pointer"><input type="radio" name="ragCmNature" value="support" checked>🟢 佐证补充（追加）</label>'+
+        '<label style="flex:1;display:flex;align-items:center;gap:6px;border:1px solid #f0d99a;background:#fffaf0;border-radius:8px;padding:8px 10px;font-size:12.5px;cursor:pointer"><input type="radio" name="ragCmNature" value="fix">🟡 修正覆盖</label>'+
+      '</div>'+
+      '<div style="display:flex;justify-content:flex-end;gap:10px">'+
+        '<button onclick="ragCmClose()" style="border:1px solid #d8e0ed;background:#fff;color:#5a7398;border-radius:8px;font-size:13px;cursor:pointer;padding:8px 16px">取消</button>'+
+        '<button onclick="ragCmSubmit()" class="primary-button" style="min-height:38px">确认加入</button>'+
+      '</div>'+
+    '</div>';
+  wrap.addEventListener('click',function(e){if(e.target===wrap)ragCmClose();});
+  document.body.appendChild(wrap);
+  window.__ragCmOnConfirm=opt.onConfirm;
+}
+function ragCmToggleNew(){
+  var sel=document.getElementById('ragCmTopic'), inp=document.getElementById('ragCmNewTopic');
+  if(!sel||!inp)return;
+  if(sel.value==='__new__'){inp.style.display='block';inp.focus();}else{inp.style.display='none';}
+}
+function ragCmClose(){var w=document.getElementById('ragCommitModal');if(w)w.parentNode.removeChild(w);window.__ragCmOnConfirm=null;}
+function ragCmSubmit(){
+  var sel=document.getElementById('ragCmTopic');
+  var topic=sel?sel.value:'';
+  if(topic==='__new__'){topic=((document.getElementById('ragCmNewTopic')||{}).value||'').trim();
+    if(!topic){toast&&toast('请填写新主题名称');return;}}
+  var nature='support';
+  var r=document.querySelectorAll('input[name="ragCmNature"]');
+  for(var i=0;i<r.length;i++){if(r[i].checked)nature=r[i].value;}
+  var cb=window.__ragCmOnConfirm; ragCmClose();
+  if(typeof cb==='function')cb(topic,nature);
 }
 function ragTopicNav(p){
   return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:10px;align-self:start">'+

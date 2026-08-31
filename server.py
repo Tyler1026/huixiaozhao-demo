@@ -6,13 +6,104 @@
 - GET  /health      → 健康检查
 - POST /api/kb-chat → RAG 问答，流式调用 DeepSeek API
 """
-import json, os, urllib.request, urllib.error, urllib.parse, time, datetime, hashlib
+import json, os, urllib.request, urllib.error, urllib.parse, time, datetime, hashlib, base64, io
 from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 try:
     import psycopg2
     _PG_AVAIL = True
 except ImportError:
     _PG_AVAIL = False
+
+# 文档文本提取：PDF 用 pdfplumber，Word(.docx) 用 python-docx；缺库时优雅降级
+try:
+    import pdfplumber
+    _PDF_AVAIL = True
+except ImportError:
+    _PDF_AVAIL = False
+try:
+    import docx as _docx
+    _DOCX_AVAIL = True
+except ImportError:
+    _DOCX_AVAIL = False
+
+
+def _extract_doc_text(filename, file_bytes):
+    """从上传文件字节中提取纯文本，返回 (text, err)。支持 .pdf / .docx / 纯文本。"""
+    name = (filename or "").lower()
+    try:
+        if name.endswith(".pdf"):
+            if not _PDF_AVAIL:
+                return "", "服务端未安装 pdfplumber，无法解析 PDF"
+            out = []
+            with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                for page in pdf.pages:
+                    t = page.extract_text() or ""
+                    if t.strip():
+                        out.append(t)
+            text = "\n\n".join(out).strip()
+            if not text:
+                return "", "PDF 未提取到文字（可能是扫描件/图片型 PDF，暂不支持 OCR）"
+            return text, None
+        if name.endswith(".docx"):
+            if not _DOCX_AVAIL:
+                return "", "服务端未安装 python-docx，无法解析 Word"
+            dd = _docx.Document(io.BytesIO(file_bytes))
+            paras = [p.text for p in dd.paragraphs if p.text and p.text.strip()]
+            for tbl in dd.tables:
+                for row in tbl.rows:
+                    cells = [c.text.strip() for c in row.cells if c.text and c.text.strip()]
+                    if cells:
+                        paras.append(" | ".join(cells))
+            text = "\n\n".join(paras).strip()
+            if not text:
+                return "", "Word 文档未提取到文字"
+            return text, None
+        if name.endswith(".doc"):
+            return "", "旧版 .doc 二进制格式不支持，请另存为 .docx 或 PDF 后再上传"
+        for enc in ("utf-8", "gbk", "latin-1"):
+            try:
+                return file_bytes.decode(enc).strip(), None
+            except Exception:
+                continue
+        return "", "无法解码文本文件"
+    except Exception as e:
+        return "", "解析失败：" + str(e)
+
+
+# 入库噪声过滤：附注/免责声明/页码/落款等模板话不入 RAG
+import re as _re_noise
+_NOISE_PATTERNS = [
+    r"^附注[:：]",
+    r"^备注[:：]",
+    r"以(正式)?(发文|公告|文件|官方)为准",
+    r"^本文档",
+    r"^本文件",
+    r"^本报告仅",
+    r"^仅供(内部)?(参考|学习)",
+    r"^免责声明",
+    r"^版权所有",
+    r"^未经(授权|许可)",
+    r"^转载请",
+    r"^发文机关[:：]",
+    r"^执行时间[:：]",
+    r"^印发(日期|时间)[:：]",
+]
+_NOISE_RE = [_re_noise.compile(p, _re_noise.I) for p in _NOISE_PATTERNS]
+
+
+def _is_noise_chunk(text):
+    """判断一个段落是否为无信息价值的模板/元信息话术。"""
+    s = (text or "").strip()
+    if not s:
+        return True
+    for r in _NOISE_RE:
+        if r.search(s):
+            return True
+    # 极短且不含任何数字与汉字的行（孤立标点、页码残片）视为噪声
+    if len(s) < 12 and not _re_noise.search(r"[\u4e00-\u9fa5\d]", s):
+        return True
+    return False
+
 
 LOG_PATH    = os.path.expanduser("~/.violoop/services/kb-server/rag-audit.log")
 
@@ -1067,9 +1158,26 @@ class Handler(BaseHTTPRequestHandler):
                 city = body.get('city', '')
                 pkey = body.get('projectKey', '')
                 topic = body.get('topic', '')          # 目标主题名
-                text = body.get('text', '')            # 文档全文
+                text = body.get('text', '')            # 文档全文（前端已提取或纯文本）
                 filename = body.get('filename', '上传文档')
                 mode = body.get('mode', 'append')       # append=补充 / replace=修正覆盖该主题
+                # 后端文档解析：传 fileB64 时服务端提取文本（PDF/Word），优先于 text
+                file_b64 = body.get('fileB64', '')
+                if file_b64:
+                    try:
+                        _fb = base64.b64decode(file_b64)
+                    except Exception as _e:
+                        resp = json.dumps({'ok': False, 'error': '文件解码失败：' + str(_e)}).encode()
+                        self.send_response(200); self.send_header('Content-Type', 'application/json')
+                        self.send_header('Content-Length', str(len(resp)))
+                        self.cors(); self.end_headers(); self.wfile.write(resp); return
+                    _ext_text, _ext_err = _extract_doc_text(filename, _fb)
+                    if _ext_err:
+                        resp = json.dumps({'ok': False, 'error': _ext_err}).encode()
+                        self.send_response(200); self.send_header('Content-Type', 'application/json')
+                        self.send_header('Content-Length', str(len(resp)))
+                        self.cors(); self.end_headers(); self.wfile.write(resp); return
+                    text = _ext_text
                 if _PG_AVAIL and DATABASE_URL:
                     store = json.loads(_db_get() or '{}')
                 else:
@@ -1099,6 +1207,8 @@ class Handler(BaseHTTPRequestHandler):
                     chunks = []
                     for para in parts:
                         para = _re.sub(r'\s+', ' ', para)[:420]
+                        if _is_noise_chunk(para):   # 过滤附注/免责/页码等无价值模板话
+                            continue
                         chunks.append({'text': para, 'origin': origin, 'nature': nature,
                                        'src': filename, 'ts': _ts})
                     # 找/建目标主题
@@ -1197,7 +1307,8 @@ class Handler(BaseHTTPRequestHandler):
                     p.setdefault('kbUploads', []).append({
                         'filename': filename, 'topic': topic, 'mode': mode,
                         'chunks': len(chunks), 'ts': int(__import__('time').time() * 1000),
-                        'by': body.get('by', '管理员')})
+                        'by': body.get('by', '管理员'),
+                        'source': body.get('source', 'file')})
                     store['PROJECTS'] = projects
                     out_str = json.dumps(store, ensure_ascii=False)
                     if _PG_AVAIL and DATABASE_URL:
@@ -1206,6 +1317,7 @@ class Handler(BaseHTTPRequestHandler):
                         with open(SYNC_PATH, 'w', encoding='utf-8') as f:
                             f.write(out_str)
                     resp = json.dumps({'ok': True, 'chunks': len(chunks),
+                                       'matched': matched_ct, 'chars': len(text),
                                        'topic': tp['t'], 'total': len(tp['known'])}).encode()
             except Exception as e:
                 resp = json.dumps({'ok': False, 'error': str(e)}).encode()
