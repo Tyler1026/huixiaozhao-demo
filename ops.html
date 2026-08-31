@@ -6829,10 +6829,26 @@ function ragProjKey(){
   return keys.indexOf(ragCity)>=0?ragCity:keys[0];
 }
 function ragCityOptions(){
-  var seen={};
-  return Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&p.kb&&p.kb.some(function(t){return (t.known||[]).length;});})
-    .map(function(k){var c=PROJECTS[k].city||k;var label=c+(seen[c]?' ('+k+')':'');seen[c]=1;
-      return '<option value="'+k+'"'+(k===ragProjKey()?' selected':'')+'>'+label+'</option>';}).join('');
+  // 按城市去重：同一城市可能有多个项目(主账号+各招商方向子项目)，下拉只展示一个城市一项，
+  // 代表项 = 该城市材料量最大的项目(优先 kbInitTs)，避免出现多个"随州"。
+  var keys=Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&p.kb&&p.kb.some(function(t){return (t.known||[]).length;});});
+  var byCity={};
+  keys.forEach(function(k){
+    var c=PROJECTS[k].city||k;
+    if(!byCity[c]){ byCity[c]=k; return; }
+    // 取代表项：kbInitTs 优先，其次 known 材料量更大者
+    var cur=byCity[c], pc=PROJECTS[cur], pk=PROJECTS[k];
+    var ic=pc.kbInitTs?1:0, ik=pk.kbInitTs?1:0;
+    if(ik!==ic){ if(ik>ic) byCity[c]=k; return; }
+    var nc=pc.kb.reduce(function(s,t){return s+(t.known||[]).length;},0);
+    var nk=pk.kb.reduce(function(s,t){return s+(t.known||[]).length;},0);
+    if(nk>nc) byCity[c]=k;
+  });
+  var activeCity = (PROJECTS[ragProjKey()]||{}).city;
+  return Object.keys(byCity).map(function(c){
+    var k=byCity[c];
+    return '<option value="'+k+'"'+(c===activeCity?' selected':'')+'>'+c+'</option>';
+  }).join('');
 }
 function opsRag(){
   var key=ragProjKey();
