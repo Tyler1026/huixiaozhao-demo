@@ -7850,6 +7850,15 @@ window.addEventListener('storage', function(e){
     }
     var data=JSON.parse(e.newValue);
     if(!data.PROJECTS) return;
+    // 关键修复(周期性闪烁根因)：多开政府端+管理端时，另一标签每次 persist(哪怕只是 5 秒防抖空转、
+    // 仅 syncTs 变化、业务数据未变)都会派发 storage 事件，旧逻辑无条件整体覆盖内存 + render() 全量重绘
+    // (#root.innerHTML 重建整页)，表现为"页面没操作也周期性自己闪一下/跳动"。
+    // 业务数据指纹比对：只取业务字段(不含 syncTs 等易变时间戳)，指纹与上次相同则本次纯属空转，直接跳过重绘。
+    var _fp=JSON.stringify([data.PROJECTS,data.REPORTSTATE,data.DEMANDS,
+      data.KB_FILE_CHUNKS,data.KB_CONFIRMS,data.PENDING_CONFIRMS,
+      data.DOCK_LOGS,data.KB_UNLOCKED,data.CITY_ACCOUNTS,data.USER_PROFILES]);
+    if(window.__lastSyncFp===_fp){ return; }  // 业务数据无变化：跳过整体覆盖与 render()，消除空转闪烁
+    window.__lastSyncFp=_fp;
     // 同步关键数据（保留当前 view/cur/topic/stage 等用户操作状态）
     var _keepTopic=(cur&&PROJECTS[cur])?PROJECTS[cur].topic:null;
     var _keepStage=(cur&&PROJECTS[cur])?PROJECTS[cur].stage:null;
