@@ -1053,12 +1053,20 @@ function render(){
             if(!cur){ view='setup'; }
             else { view=view||'knowledge'; /* 不再默认解锁随州：产业分析/招商对接保持上锁，待智库达标或手动解锁 */ }
           } else {
-            // 非常驻账号：只认本账号城市，忽略残留的其他城市 cur；本城市无项目则自动建并直接进入分析
+            // 非常驻账号：优先落到账号绑定的 projKey（推送RAG时写入，权威口径，避免账号city与项目city措辞不一致导致串城/建空项目）
             var _ac=AUTH.city||'';
-            var _mine=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k]&&PROJECTS[k].city===_ac;});
-            if(_mine.length){ if(!cur || _mine.indexOf(cur)<0){ cur=_mine[0]; } view='knowledge'; }
-            else if(_ac){ cur=autoProvisionCity(_ac); view='knowledge'; /* 新城市不预解锁：产业分析/招商对接保持上锁，待智库完成度达80%或手动强制解锁 */ persist(); }
-            else { cur=null; view='setup'; }
+            if(AUTH.projKey && PROJECTS[AUTH.projKey]){
+              cur=AUTH.projKey; view='knowledge';
+            } else {
+              // 无绑定项目时才按城市匹配；城市匹配同时兼容"账号city含项目city或项目city含账号city"（如账号=上海市、项目=松江区）
+              var _mine=Object.keys(PROJECTS).filter(function(k){
+                var pc=PROJECTS[k]&&PROJECTS[k].city||'';
+                return pc && _ac && (pc===_ac || pc.indexOf(_ac)>=0 || _ac.indexOf(pc)>=0);
+              });
+              if(_mine.length){ if(!cur || _mine.indexOf(cur)<0){ cur=_mine[0]; } view='knowledge'; }
+              else if(_ac){ cur=autoProvisionCity(_ac); view='knowledge'; /* 新城市不预解锁：产业分析/招商对接保持上锁，待智库完成度达80%或手动强制解锁 */ persist(); }
+              else { cur=null; view='setup'; }
+            }
           }
         } else {
           // 服务器无数据，本地初始化
@@ -1145,14 +1153,22 @@ function render(){
   // ── 城市隔离护栏（每次渲染都生效）──────────────────────────────
   // 全局 /api/sync 是单块存储，服务端返回的顶层 cur/view 恒为主账号(随州)的值。
   // 非随州账号绝不信任该 cur：强制把 cur 钉回本账号城市的项目，杜绝串到随州。
-  if(AUTH && !AUTH.resident && AUTH.city && role!=='ops'){
-    var _gc=AUTH.city;
-    var _mineKeys=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k]&&PROJECTS[k].city===_gc;});
-    var _curOk=cur&&PROJECTS[cur]&&PROJECTS[cur].city===_gc;
+  if(AUTH && !AUTH.resident && (AUTH.city||AUTH.projKey) && role!=='ops'){
+    var _gc=AUTH.city||'';
+    // 城市匹配兼容"账号city与项目city措辞不一致"（如账号=上海市、项目=松江区）
+    var _cityMatch=function(k){
+      var pc=PROJECTS[k]&&PROJECTS[k].city||'';
+      return pc && _gc && (pc===_gc || pc.indexOf(_gc)>=0 || _gc.indexOf(pc)>=0);
+    };
+    var _mineKeys=Object.keys(PROJECTS).filter(_cityMatch);
+    // 账号绑定的 projKey 优先视为合法；否则按（兼容）城市匹配判断 cur 是否属于本账号
+    var _boundOk=AUTH.projKey && cur===AUTH.projKey && PROJECTS[cur];
+    var _curOk=_boundOk || (cur&&PROJECTS[cur]&&_cityMatch(cur));
     if(!_curOk){
-      if(_mineKeys.length){ cur=_mineKeys[0]; }
-      else { cur=autoProvisionCity(_gc); }
-      // 串城时 view 也可能停在随州的 report；本城市无报告则回落到智库，避免展示随州报告空壳
+      if(AUTH.projKey && PROJECTS[AUTH.projKey]){ cur=AUTH.projKey; }
+      else if(_mineKeys.length){ cur=_mineKeys[0]; }
+      else if(_gc){ cur=autoProvisionCity(_gc); }
+      // 串城时 view 也可能停在随州的 report；本项目无报告则回落到智库，避免展示随州报告空壳
       if(view==='report' && !(cur&&REPORTSTATE[cur]&&REPORTSTATE[cur].text)) view='knowledge';
       persist();
     }
@@ -7070,8 +7086,8 @@ function memBankStats(){
   var cf=KB_CONFIRMS[cur]||{};
   Object.keys(cf).forEach(function(ki){ Object.keys(cf[ki]||{}).forEach(function(){ textN++; }); });
   fileN=(UPLOADS[cur]||[]).length;
-  chatN=(KB_CHAT[cur]||[]).filter(function(m){return m.role==='user';}).length;
-  if(chatN===0) chatN=(KB_CHAT[cur]||[]).length;
+  // 统计当前城市全部会话的用户提问数
+  (function(){ var st=kbSessionStore(cur); if(st){ st.sessions.forEach(function(s){ (s.messages||[]).forEach(function(m){ if(m.role==='user') chatN++; }); }); } })();
   return {textN:textN, fileN:fileN, chatN:chatN, total:textN+fileN+chatN};
 }
 function memBankBadge(){
@@ -7201,39 +7217,50 @@ function memFileView(){
   }).join('');
 }
 function memChatView(){
-  var msgs=KB_CHAT[cur]||[];
-  if(!msgs.length) return memEmpty('还没有问答记录。<br>在下方对话框提问后，历史会保留在这里（支持多轮上下文）。');
-  var list=msgs.slice(); // 正序：时间从旧到新
+  var st=kbSessionStore(cur);
+  var sessions = st ? st.sessions.slice() : [];
+  // 只显示有内容的会话，倒序（新会话在上）
+  sessions = sessions.filter(function(s){return s.messages&&s.messages.length;}).reverse();
+  if(!sessions.length) return memEmpty('还没有问答记录。<br>在下方对话框提问后，历史会按会话分组保留在这里。');
   return '<div style="margin-bottom:10px;text-align:right">'+
-      '<button onclick="clearMemChat()" style="font-size:11px;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:4px 10px;cursor:pointer">清空问答记忆</button>'+
+      '<button onclick="clearMemChat()" style="font-size:11px;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:4px 10px;cursor:pointer">清空全部问答记忆</button>'+
     '</div>'+
-    list.map(function(m,mi){
-      var isU=m.role==='user';
-      return '<div style="margin-bottom:9px;display:flex;align-items:flex-start;gap:5px;'+(isU?'justify-content:flex-end':'justify-content:flex-start')+'">'+
-        (isU?'<button onclick="delMemChat('+mi+')" title="删除该条问答" style="background:none;border:none;color:#cbd5e1;font-size:13px;cursor:pointer;padding:2px;line-height:1;align-self:center" onmouseover="this.style.color=\'#dc2626\'" onmouseout="this.style.color=\'#cbd5e1\'">\u2715</button>':'')+
-        '<div style="max-width:82%;border-radius:12px;padding:8px 12px;font-size:12.5px;line-height:1.65;'+
-          (isU?'background:#eef2ff;color:#3730a3;border:1px solid #e0e7ff':'background:#f8fafc;color:#1e293b;border:1px solid #eef2f7')+'">'+
-          '<div style="font-size:10px;color:#94a3b8;margin-bottom:3px;font-weight:600">'+(isU?'招商干部':'慧小招 AI')+(m.ts?' \u00b7 '+fmtTs(m.ts):'')+'</div>'+
-          (m.text!=null?m.text:(m.content!=null?m.content.replace(/</g,'&lt;').replace(/\n/g,'<br>'):(m.html||'')))+
-        '</div>'+
-        (!isU?'<button onclick="delMemChat('+mi+')" title="删除该条问答" style="background:none;border:none;color:#cbd5e1;font-size:13px;cursor:pointer;padding:2px;line-height:1;align-self:center" onmouseover="this.style.color=\'#dc2626\'" onmouseout="this.style.color=\'#cbd5e1\'">\u2715</button>':'')+
+    sessions.map(function(s){
+      var isActive = st && st.activeId===s.id;
+      var head = '<div style="display:flex;align-items:center;gap:8px;margin:14px 0 8px;padding-bottom:6px;border-bottom:1px solid #eef2f7">'+
+        '<span style="font-size:13px;line-height:1">💬</span>'+
+        '<strong style="font-size:12.5px;color:#1e293b">'+(s.title||'新对话')+'</strong>'+
+        (isActive?'<span style="font-size:10px;color:#0757ad;background:#ebf3fd;border-radius:8px;padding:1px 7px">当前</span>':'')+
+        '<span style="font-size:10.5px;color:#94a3b8">'+fmtTs(s.ts)+' · '+(s.messages||[]).filter(function(m){return m.role==='user';}).length+' 问</span>'+
+        '<button onclick="memSwitchSession(\''+s.id+'\')" style="margin-left:auto;font-size:10.5px;color:#0757ad;background:#fff;border:1px solid #cfe0f1;border-radius:7px;padding:2px 9px;cursor:pointer">进入续聊</button>'+
+        '<button onclick="memDeleteSession(\''+s.id+'\')" title="删除整个会话" style="font-size:10.5px;color:#dc2626;background:#fff;border:1px solid #fecaca;border-radius:7px;padding:2px 9px;cursor:pointer">删除</button>'+
       '</div>';
+      var body = (s.messages||[]).map(function(m){
+        var isU=m.role==='user';
+        if(m.role==='ingest-actions'||m.role==='new-facts') return '';
+        return '<div style="margin-bottom:9px;display:flex;'+(isU?'justify-content:flex-end':'justify-content:flex-start')+'">'+
+          '<div style="max-width:82%;border-radius:12px;padding:8px 12px;font-size:12.5px;line-height:1.65;'+
+            (isU?'background:#eef2ff;color:#3730a3;border:1px solid #e0e7ff':'background:#f8fafc;color:#1e293b;border:1px solid #eef2f7')+'">'+
+            '<div style="font-size:10px;color:#94a3b8;margin-bottom:3px;font-weight:600">'+(isU?'招商干部':'慧小招 AI')+(m.ts?' \u00b7 '+fmtTs(m.ts):'')+'</div>'+
+            (m.text!=null?m.text:(m.content!=null?m.content.replace(/</g,'&lt;').replace(/\n/g,'<br>'):(m.html||'')))+
+          '</div>'+
+        '</div>';
+      }).join('');
+      return head+body;
     }).join('');
+}
+// 记忆库里点"进入续聊"→切到该会话并跳到对话页
+function memSwitchSession(id){ kbSwitchSession(id); go('knowledge'); }
+function memDeleteSession(id){
+  if(!confirm('确定删除整个会话吗？该会话下的问答记录将不可恢复。')) return;
+  kbDeleteSession(id); renderMemTabs(); renderMemBody(); toast('会话已删除');
 }
 function clearMemChat(){
   if(!cur)return;
-  if(!confirm('确定清空全部问答记忆吗？此操作不可恢复。')) return;
-  KB_CHAT[cur]=[]; persist();
+  if(!confirm('确定清空全部问答记忆吗？所有会话都会被删除，此操作不可恢复。')) return;
+  KB_CHAT[cur]={sessions:[],activeId:null}; persist();
   renderMemTabs(); renderMemBody();
   toast('问答记忆已清空');
-}
-/* 记忆库·问答记忆：删除单条 */
-function delMemChat(idx){
-  if(!cur||!KB_CHAT[cur])return;
-  if(idx<0||idx>=KB_CHAT[cur].length)return;
-  KB_CHAT[cur].splice(idx,1); persist();
-  renderMemTabs(); renderMemBody();
-  toast('已删除该条问答记忆');
 }
 /* 记忆库·文字记忆：删除单条（对应 KB_CONFIRMS[cur][kbIdx][itemIdx]，同时把 known 里的 ✅ 标记还原为 ⚠️ 待确认） */
 function delMemText(kbIdx, itemIdx){
@@ -7379,6 +7406,7 @@ function kbPage(p){
       '<span id="kbConvCount" style="font-size:11.5px;color:#8492a6"></span>'+
       '<span id="kbConvArrow" style="font-size:12px;color:#8492a6;transition:transform .2s">▲</span>'+
     '</div>'+
+    '<div id="kbSessionBar"></div>'+
     '<div id="kbConv" style="padding:0 0 8px">'+
       '<div class="message" style="margin-top:0"><img src="'+aiAvatar()+'">'+
       '<div class="message-bubble"><p>'+p.city+'城市智库已就位，你可以直接提问——AI 正在结合本市数据生成建议问题：</p>'+
@@ -7912,10 +7940,137 @@ var KB_FILE_CHUNKS={};
 var KB_CONFIRMS={};  // {projKey:{kbIdx:{itemIdx:{status,text,ts}}}}
 // 城市智库对话记录 {projKey:[{role:'user'|'ai', html:'...'}]}——切主题/切模块/刷新都不丢
 var KB_CHAT={};
-// 记录一条消息：把 DOM 节点的 outerHTML 存进当前项目的对话数组并持久化
+/* ══ 多会话（session）层 ══
+ * 旧结构：KB_CHAT[cur] = [msg,...]（单一扁平消息流，所有历史混在一起）
+ * 新结构：KB_CHAT[cur] = { sessions:[{id,title,ts,messages:[msg,...]}], activeId }
+ * kbSessionStore() 负责把旧数组就地迁移为新结构（旧记录包成一个"历史对话"会话，不丢数据）。 */
+var KB_SESSION_IDLE_MS = 6*60*60*1000; // 闲置超过6小时自动开新会话
+function kbSessionStore(key){
+  key = key || cur; if(!key) return null;
+  var v = KB_CHAT[key];
+  // 迁移：旧数组格式 → 新结构
+  if(Array.isArray(v)){
+    var msgs = v;
+    var sess = { id:'s'+Date.now()+Math.floor(Math.random()*1000), title:kbDeriveTitle(msgs), ts:(msgs[0]&&msgs[0].ts)||Date.now(), messages:msgs };
+    KB_CHAT[key] = { sessions:[sess], activeId:sess.id };
+    return KB_CHAT[key];
+  }
+  if(!v || typeof v!=='object'){ KB_CHAT[key] = { sessions:[], activeId:null }; return KB_CHAT[key]; }
+  if(!v.sessions) v.sessions=[];
+  return v;
+}
+// 从消息数组推导会话标题：取首条用户提问前20字
+function kbDeriveTitle(msgs){
+  if(!msgs||!msgs.length) return '新对话';
+  for(var i=0;i<msgs.length;i++){
+    if(msgs[i].role==='user'){
+      var t=(msgs[i].text||'').replace(/<[^>]+>/g,'').trim();
+      if(t) return t.length>20?t.slice(0,20)+'…':t;
+    }
+  }
+  return '新对话';
+}
+// 取当前活动会话对象（无则新建一个）
+function kbActiveSession(key){
+  key = key || cur; var st=kbSessionStore(key); if(!st) return null;
+  var s = st.sessions.filter(function(x){return x.id===st.activeId;})[0];
+  if(!s){
+    // 闲置自动分段：最近会话超过阈值未活动则开新会话
+    var latest = st.sessions[st.sessions.length-1];
+    if(latest && (Date.now()-(latest.ts||0) < KB_SESSION_IDLE_MS)){ s=latest; st.activeId=s.id; }
+    else { s=kbNewSession(key,true); }
+  }
+  return s;
+}
+// 取当前活动会话的消息数组（下游 push/replay/view 统一走它）
+function kbActiveMsgs(key){ var s=kbActiveSession(key); return s?s.messages:[]; }
+// 新建会话；silent=true 时不重绘（供内部调用）
+function kbNewSession(key, silent){
+  key = key || cur; var st=kbSessionStore(key); if(!st) return null;
+  var s = { id:'s'+Date.now()+Math.floor(Math.random()*1000), title:'新对话', ts:Date.now(), messages:[] };
+  st.sessions.push(s); st.activeId=s.id;
+  if(!silent){ persist(); var c=document.getElementById('kbConv'); if(c) c.innerHTML=''; try{kbChatReplay();}catch(_){}; try{renderKbSessionBar();}catch(_){} }
+  return s;
+}
+// 切换到指定会话
+function kbSwitchSession(id){
+  var st=kbSessionStore(); if(!st) return;
+  st.activeId=id; persist();
+  var c=document.getElementById('kbConv'); if(c) c.innerHTML='';
+  try{kbChatReplay();}catch(_){}; try{renderKbSessionBar();}catch(_){}
+  try{closeKbHistory();}catch(_){}
+}
+// 删除指定会话
+function kbDeleteSession(id){
+  var st=kbSessionStore(); if(!st) return;
+  st.sessions=st.sessions.filter(function(x){return x.id!==id;});
+  if(st.activeId===id) st.activeId = st.sessions.length?st.sessions[st.sessions.length-1].id:null;
+  persist();
+  var c=document.getElementById('kbConv'); if(c) c.innerHTML='';
+  try{kbChatReplay();}catch(_){}; try{renderKbSessionBar();}catch(_){}
+}
+// 渲染对话区顶部的会话条：新对话按钮 + 当前会话名 + 历史会话入口
+function renderKbSessionBar(){
+  var bar=document.getElementById('kbSessionBar'); if(!bar) return;
+  var st=kbSessionStore(cur);
+  var active = st ? st.sessions.filter(function(x){return x.id===st.activeId;})[0] : null;
+  var cnt = st ? st.sessions.filter(function(s){return s.messages&&s.messages.length;}).length : 0;
+  var curName = (active&&active.messages&&active.messages.length)?(active.title||'新对话'):'新对话';
+  bar.innerHTML =
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:8px 10px;background:linear-gradient(180deg,#fbfdff,#f5f8fd);border:1px solid #e6eef8;border-radius:11px">'+
+      // 新对话：主按钮，蓝底
+      '<button onclick="kbNewSession()" title="开启一个新的问答会话" style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:#fff;background:linear-gradient(180deg,#0a63c2,#013582);border:0;border-radius:9px;padding:7px 13px;cursor:pointer;box-shadow:0 2px 6px rgba(1,53,130,.18)">'+
+        '<span style="font-size:14px;line-height:1">✚</span>新对话</button>'+
+      // 当前会话名：带小圆点 + 省略
+      '<div style="flex:1;min-width:0;display:flex;align-items:center;gap:7px">'+
+        '<span style="flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:#12b886;box-shadow:0 0 0 3px #d7f5ea"></span>'+
+        '<span style="font-size:12.5px;color:#334155;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+curName+'</span>'+
+      '</div>'+
+      // 历史会话：胶囊按钮 + 计数徽标
+      '<button onclick="openKbHistory()" title="查看全部历史会话" style="flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:550;color:#0757ad;background:#fff;border:1px solid #cfe0f1;border-radius:9px;padding:7px 12px;cursor:pointer;transition:all .15s" onmouseover="this.style.background=\'#f0f6fe\';this.style.borderColor=\'#a9c8ec\'" onmouseout="this.style.background=\'#fff\';this.style.borderColor=\'#cfe0f1\'">'+
+        '<span style="font-size:13px;line-height:1">🕘</span>历史会话'+
+        (cnt?('<span style="min-width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px;font-size:11px;font-weight:700;color:#fff;background:#0757ad;border-radius:9px">'+cnt+'</span>'):'')+
+      '</button>'+
+    '</div>';
+}
+// 打开历史会话抽屉
+function openKbHistory(){
+  closeKbHistory();
+  var st=kbSessionStore(cur); if(!st) return;
+  var sessions=st.sessions.filter(function(s){return s.messages&&s.messages.length;}).slice().reverse();
+  var rows = sessions.length ? sessions.map(function(s){
+    var isActive=st.activeId===s.id;
+    var qn=(s.messages||[]).filter(function(m){return m.role==='user';}).length;
+    return '<div style="display:flex;align-items:center;gap:9px;padding:11px 13px;border:1px solid '+(isActive?'#cfe0f1':'#eef2f7')+';border-radius:10px;margin-bottom:8px;background:'+(isActive?'#f5f9fe':'#fff')+'">'+
+      '<div onclick="kbSwitchSession(\''+s.id+'\')" style="flex:1;min-width:0;cursor:pointer">'+
+        '<div style="font-size:13px;font-weight:600;color:#1e293b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(s.title||'新对话')+(isActive?' <span style="font-size:10px;color:#0757ad;font-weight:500">· 当前</span>':'')+'</div>'+
+        '<div style="font-size:11px;color:#94a3b8;margin-top:2px">'+fmtTs(s.ts)+' · '+qn+' 个提问</div>'+
+      '</div>'+
+      '<button onclick="event.stopPropagation();kbDeleteSession(\''+s.id+'\');openKbHistory()" title="删除会话" style="flex:0 0 auto;background:none;border:none;color:#cbd5e1;font-size:15px;cursor:pointer;padding:3px" onmouseover="this.style.color=\'#dc2626\'" onmouseout="this.style.color=\'#cbd5e1\'">\u2715</button>'+
+    '</div>';
+  }).join('') : '<div style="padding:30px;text-align:center;color:#94a3b8;font-size:13px">还没有历史会话</div>';
+  var wrap=document.createElement('div');
+  wrap.id='kbHistoryDrawer';
+  wrap.style.cssText='position:fixed;inset:0;z-index:120;background:rgba(10,25,51,.28);display:flex;justify-content:flex-end';
+  wrap.onclick=function(e){ if(e.target===wrap) closeKbHistory(); };
+  wrap.innerHTML='<div style="width:min(400px,92vw);height:100%;background:#fff;box-shadow:-14px 0 40px rgba(11,31,65,.18);display:flex;flex-direction:column">'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid #eef2f7">'+
+      '<strong style="font-size:16px;color:#0b183b">历史会话</strong>'+
+      '<button onclick="closeKbHistory()" style="width:32px;height:32px;border:0;border-radius:8px;background:#f4f6f9;cursor:pointer;font-size:15px">\u2715</button>'+
+    '</div>'+
+    '<div style="padding:14px 16px;border-bottom:1px solid #eef2f7">'+
+      '<button onclick="kbNewSession();closeKbHistory()" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:13px;font-weight:600;color:#fff;background:#013582;border:0;border-radius:9px;padding:10px;cursor:pointer">'+
+        '<span style="font-size:14px;line-height:1">✚</span> 开启新对话</button>'+
+    '</div>'+
+    '<div style="flex:1;overflow:auto;padding:14px 16px">'+rows+'</div>'+
+  '</div>';
+  document.body.appendChild(wrap);
+}
+function closeKbHistory(){ var d=document.getElementById('kbHistoryDrawer'); if(d) d.remove(); }
+// 记录一条消息：把 DOM 节点的 outerHTML 存进当前会话的对话数组并持久化
 function kbChatPush(role, html){
   if(!cur) return;
-  if(!KB_CHAT[cur]) KB_CHAT[cur]=[];
+  var _s=kbActiveSession(cur); if(!_s) return;
   // 只存 bubble 内容文本，避免 data-URI 头像导致 localStorage 超限
   var text = html;
   try {
@@ -7924,25 +8079,30 @@ function kbChatPush(role, html){
     text = _bub ? _bub.innerHTML : (_tmp.textContent||html);
   } catch(e){}
   // 去重：同 role + 相同文本在 3 秒内不重复存
-  var last=KB_CHAT[cur][KB_CHAT[cur].length-1];
+  var last=_s.messages[_s.messages.length-1];
   if(last && last.role===role && last.text===text && Date.now()-last.ts<3000) return;
-  KB_CHAT[cur].push({role:role, text:text, ts:Date.now()});
+  _s.messages.push({role:role, text:text, ts:Date.now()});
+  // 首条用户提问确定会话标题（原为"新对话"时）
+  if(role==='user' && (_s.title==='新对话'||!_s.title)) _s.title=kbDeriveTitle(_s.messages);
+  _s.ts=Date.now();
   // 最多保留最近 100 条，防止无限增长
-  if(KB_CHAT[cur].length>100) KB_CHAT[cur]=KB_CHAT[cur].slice(-100);
+  if(_s.messages.length>100) _s.messages=_s.messages.slice(-100);
   persist();
   try{updateKbConvCount();}catch(_){}
+  try{renderKbSessionBar();}catch(_){}
 }
 // 更新最后一条 AI 消息内容（流式回复结束后调用）
 function kbChatUpdateLast(html){
-  if(!cur||!KB_CHAT[cur]||!KB_CHAT[cur].length) return;
+  if(!cur) return;
+  var _s=kbActiveSession(cur); if(!_s||!_s.messages.length) return;
   var text = html;
   try {
     var _tmp=document.createElement('div'); _tmp.innerHTML=html;
     var _bub=_tmp.querySelector('.message-bubble');
     text = _bub ? _bub.innerHTML : (_tmp.textContent||html);
   } catch(e){}
-  KB_CHAT[cur][KB_CHAT[cur].length-1].text=text;
-  KB_CHAT[cur][KB_CHAT[cur].length-1].ts=Date.now();
+  _s.messages[_s.messages.length-1].text=text;
+  _s.messages[_s.messages.length-1].ts=Date.now();
   persist();
 }
 // AI 动态生成本市建议问题（进入城市智库时调用，替换所有硬编码问题）
@@ -7990,11 +8150,14 @@ function restoreIngestCtx(m){
 // 把已存的历史对话回放进 #kbConv（在 render 重建容器后调用）
 function kbChatReplay(){
   if(document.getElementById('kbSuggestList')) kbGenSuggestions();
+  try{renderKbSessionBar();}catch(_){}
   var c=document.getElementById('kbConv');
-  if(!c||!cur||!KB_CHAT[cur]||!KB_CHAT[cur].length) return;
+  if(!c||!cur) return;
+  var _msgs=kbActiveMsgs(cur);
+  if(!_msgs||!_msgs.length) return;
   var frag='';
   var _lastActions=null;
-  KB_CHAT[cur].forEach(function(m){
+  _msgs.forEach(function(m){
     // 上传后的三个分析按钮：重建并恢复本批上下文（否则 render/刷新/跨标签后按钮会丢）
     if(m.role==='ingest-actions'){ frag+=ingestActionsHtml(); _lastActions=m; return; }
     // 新要点追加面板：用结构化数据重建按钮（否则下方正则会把「+加入/全部追加」按钮删掉）
@@ -9359,10 +9522,10 @@ function finalizeIngest(chunks, files, kbTopicIdx, p){
     window._lastIngestKbIdx=kbTopicIdx;
     // 持久化一条“待分析”标记，使三个按钮在 render/刷新/跨标签后可由 kbChatReplay 重建
     try{
-      if(!KB_CHAT[cur]) KB_CHAT[cur]=[];
-      KB_CHAT[cur].push({role:'ingest-actions', n:chunks.length, label:topicLabel, kbIdx:(kbTopicIdx===undefined?null:kbTopicIdx), ts:Date.now()});
-      if(KB_CHAT[cur].length>100) KB_CHAT[cur]=KB_CHAT[cur].slice(-100);
-      persist();
+      var _si=kbActiveSession(cur); if(_si){
+      _si.messages.push({role:'ingest-actions', n:chunks.length, label:topicLabel, kbIdx:(kbTopicIdx===undefined?null:kbTopicIdx), ts:Date.now()});
+      if(_si.messages.length>100) _si.messages=_si.messages.slice(-100);
+      persist(); }
     }catch(_){}
     setTimeout(function(){
       var wrap=document.createElement('div');
@@ -9690,10 +9853,10 @@ function kbIncrementalAnalysis(){
             window._lastNewFacts=newFacts;
             bubble.insertAdjacentHTML('beforeend', newFactsPanelHtml(kbIdx, newFacts, topicLabel));
             // 结构化存储，回放时可重建按钮（否则 kbChatReplay 会把按钮正则删掉）
-            if(!KB_CHAT[cur]) KB_CHAT[cur]=[];
-            KB_CHAT[cur].push({role:'new-facts', kbIdx:(kbIdx===undefined?null:kbIdx), facts:newFacts, label:topicLabel, ts:Date.now()});
-            if(KB_CHAT[cur].length>100) KB_CHAT[cur]=KB_CHAT[cur].slice(-100);
-            persist();
+            var _sn=kbActiveSession(cur); if(_sn){
+            _sn.messages.push({role:'new-facts', kbIdx:(kbIdx===undefined?null:kbIdx), facts:newFacts, label:topicLabel, ts:Date.now()});
+            if(_sn.messages.length>100) _sn.messages=_sn.messages.slice(-100);
+            persist(); }
           } else {
             // 无新增：明确提示，不展示追加面板
             bubble.insertAdjacentHTML('beforeend',
