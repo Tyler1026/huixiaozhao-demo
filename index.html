@@ -4467,7 +4467,15 @@ function getReportHistoryForProject(key){
   if(rs.aiReportByTopic){
     Object.keys(rs.aiReportByTopic).forEach(function(t){
       var txt=rs.aiReportByTopic[t];
-      if(txt && txt.length>100) fromAi.push({topic:t, text:txt, rep:txt, ts:rs.ts||Date.now(), score:0, phase:2});
+      if(!txt || txt.length<=100) return;
+      // score/phase/ts 必须按方向读，否则历史卡片会显示 0% 与错误时间/阶段（fix 2026-08-28）
+      var _phase = (rs.phaseByTopic && rs.phaseByTopic[t]) || (rs.topic===t ? rs.phase : 2) || 2;
+      var _score;
+      if(rs.scoreByTopic && rs.scoreByTopic[t]!=null) _score=rs.scoreByTopic[t];
+      else if(rs.topic===t && rs.score!=null) _score=rs.score;
+      else { try{ _score=topicScore(t); }catch(e){ _score=0; } }
+      var _ts = (rs.tsByTopic && rs.tsByTopic[t]) || (rs.topic===t ? rs.ts : 0) || Date.now();
+      fromAi.push({topic:t, text:txt, rep:txt, ts:_ts, score:_score, phase:_phase});
     });
   }
   // 合并 REPORT_HISTORY（去重）
@@ -5761,18 +5769,25 @@ function triggerReport(phase){
           renderHistoryReports(cur);
           // 保留累积字段(aiReportByTopic/userGeneratedTopics/pendingByTopic 等)，避免整体覆盖丢失
           var _prevRs=REPORTSTATE[cur]||{};
-          REPORTSTATE[cur]={text:accText,topic:p.topic,ts:Date.now(),score:topicScore(p.topic),phase:phase,
+          var _nowTs=Date.now();
+          var _nowScore=topicScore(p.topic);
+          REPORTSTATE[cur]={text:accText,topic:p.topic,ts:_nowTs,score:_nowScore,phase:phase,
             aiReportByTopic:_prevRs.aiReportByTopic||{},
             userGeneratedTopics:_prevRs.userGeneratedTopics||{},
             pendingByTopic:_prevRs.pendingByTopic||{},
             phaseByTopic:_prevRs.phaseByTopic||{},
-            actionItemsByTopic:_prevRs.actionItemsByTopic||{}};
+            actionItemsByTopic:_prevRs.actionItemsByTopic||{},
+            scoreByTopic:_prevRs.scoreByTopic||{},
+            tsByTopic:_prevRs.tsByTopic||{}};
           // 标记该方向为「用户已显式生成」，允许日后后台 AI 刷新（新方向在此之前不会凭空生成报告）
           REPORTSTATE[cur].userGeneratedTopics[p.topic]=true;
           // 用户生成的报告也作为该方向的 AI 报告缓存，刷新后可正确恢复
           REPORTSTATE[cur].aiReportByTopic[p.topic]=accText;
           // 按方向记录阶段（1=草稿/2=完整）：项目级 phase 是单例、切方向会污染，方向级才是权威判据
           REPORTSTATE[cur].phaseByTopic[p.topic]=phase;
+          // 按方向记录 score/ts：历史卡片必须读方向级字段，否则会出现 0% 与错误时间戳（fix 2026-08-28）
+          REPORTSTATE[cur].scoreByTopic[p.topic]=_nowScore;
+          REPORTSTATE[cur].tsByTopic[p.topic]=_nowTs;
           persist();
           var sp=document.getElementById('reportSpinner');if(sp)sp.style.display='none';
           var footer=document.getElementById('reportFooter');
@@ -5863,12 +5878,18 @@ function triggerReport(phase){
       var _sp2=document.getElementById('reportSpinner'); if(_sp2) _sp2.style.display='none';
       // 保存已有结果
       var _prevRs2=REPORTSTATE[cur]||{};
-      REPORTSTATE[cur]={text:accText,topic:p.topic,ts:Date.now(),score:topicScore(p.topic),phase:phase,
+      var _nowTs2=Date.now();
+      var _nowScore2=topicScore(p.topic);
+      REPORTSTATE[cur]={text:accText,topic:p.topic,ts:_nowTs2,score:_nowScore2,phase:phase,
         aiReportByTopic:_prevRs2.aiReportByTopic||{},userGeneratedTopics:_prevRs2.userGeneratedTopics||{},
         pendingByTopic:_prevRs2.pendingByTopic||{},phaseByTopic:_prevRs2.phaseByTopic||{},
-        actionItemsByTopic:_prevRs2.actionItemsByTopic||{}};
+        actionItemsByTopic:_prevRs2.actionItemsByTopic||{},
+        scoreByTopic:_prevRs2.scoreByTopic||{},tsByTopic:_prevRs2.tsByTopic||{}};
       REPORTSTATE[cur].aiReportByTopic[p.topic]=accText;
       REPORTSTATE[cur].phaseByTopic[p.topic]=phase;
+      // 按方向记录 score/ts（fix 2026-08-28）
+      REPORTSTATE[cur].scoreByTopic[p.topic]=_nowScore2;
+      REPORTSTATE[cur].tsByTopic[p.topic]=_nowTs2;
       // phase1时解析待确认并显示底部按钮
       var _bb2=document.querySelector('.report-bottom-bar');
       if(_bb2 && phase===1){
