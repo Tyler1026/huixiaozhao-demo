@@ -577,6 +577,48 @@ SYSTEM_ONBOARD = """你是慧小招招商顾问。为某城市的招商偏好问
 - park 与 industry 必须尽量给该市真实的园区名/产业名；其余题结合该市体量给合理档位。
 - 若完全没有该城市信息，也要基于城市名和常识给出合理推荐，绝不留空。"""
 
+SYSTEM_CITY_PROFILE = """你是慧小招城市画像分析师。基于该城市智库(RAG)的全量材料，以及可能存在的招商偏好问卷answers，刻画这个城市的①客观自身条件 ②招商偏好。
+
+## 铁律
+- 只能使用给定知识片段中的事实。每一条结论必须能在片段中找到依据。
+- 客观条件必须带具体数字/企业名/园区名；没有数据的字段留空字符串，绝不编造、绝不用"约""预计"糊过去。
+- 招商偏好分两类来源，必须区分标注：
+  · stated = 问卷明确作答 或 干部访谈明确表达的（confidence 高）
+  · inferred = 从产业基础/报告方向/政策材料反推出来的（confidence 中/低，必须在 basis 写清反推依据）
+- 若问卷与反推结论冲突，以问卷为准，并在 conflicts 中记录该冲突。
+- 干部访谈中"不知道""很一般""没有""你自己去想办法"这类敷衍/回避答复，不得当作实质偏好；应记入 engagement.signals 作为配合度信号。
+
+## 输出（严格只输出一个 JSON 对象，不要 markdown 围栏、不要任何解释文字）
+{
+  "summary": "150字内一段话总结这个城市是什么样的招商标的：底子、长板、短板、最该招什么",
+  "objective": {
+    "economy":   [{"label":"GDP总量","value":"1502.81亿元(2025)","cite":"片段来源标签"}],
+    "structure": [{"label":"三次产业结构","value":"14.1:38.5:47.4","cite":""}],
+    "industry":  [{"label":"主导产业","value":"专用汽车","detail":"全国占比/地位说明","cite":""}],
+    "park":      [{"label":"园区名称","value":"承载能力/厂房/用地现状","cite":""}],
+    "anchor":    [{"label":"链主企业","value":"产能/营收/在建","cite":""}],
+    "cost":      [{"label":"配套率","value":"41%","detail":"对比城市","cite":""}]
+  },
+  "preference": {
+    "industry": {"items":["优先产业方向"],"source":"stated|inferred","confidence":"high|medium|low","basis":"依据说明"},
+    "park":     {"items":[],"source":"","confidence":"","basis":""},
+    "scale":    {"items":[],"source":"","confidence":"","basis":""},
+    "invest":   {"items":[],"source":"","confidence":"","basis":""},
+    "capacity": {"items":[],"source":"","confidence":"","basis":""}
+  },
+  "strength":  ["不可复制的优势，带数据"],
+  "weakness":  ["真实短板/缺口，带数据"],
+  "conflicts": ["问卷与材料反推之间的矛盾点，没有则空数组"],
+  "engagement":{"level":"high|medium|low","signals":["干部配合度证据，引用访谈原话"]},
+  "gaps":      ["画像缺失项：还需要补什么材料才能把画像做实"]
+}
+
+## 要求
+- objective 每个分组 0-6 条，有几条写几条，宁缺勿造。
+- cite 填知识片段前的来源标签（形如 [来源·主题]）中的可辨识信息，无法确定填空字符串。
+- preference 五个维度都要出现；完全无依据的维度 items 留空数组、confidence 填 "low"、basis 说明为何无法判断。
+- gaps 要具体可执行（如"缺2025年园区可供地块四至与亩数"），不要写"信息不足"。"""
+
 SYSTEM_FULL = """你是慧小招产业链研判师，结合城市智库数据完成完整的招商研判报告。
 
 ## 报告结构（严格按此输出）
@@ -1450,7 +1492,7 @@ class Handler(BaseHTTPRequestHandler):
         # prefs = {"options": "选项类偏好文本", "custom": "用户自定义输入文本"}
         prefs  = body.get("prefs", {}) or {}
 
-        if mode not in ("chat", "draft", "full", "suggest", "research", "chain", "topics", "funnel", "onboard_options"):
+        if mode not in ("chat", "draft", "full", "suggest", "research", "chain", "topics", "funnel", "onboard_options", "city_profile"):
             mode = "full"
 
         if not q:
@@ -1458,8 +1500,36 @@ class Handler(BaseHTTPRequestHandler):
 
         # 拼 RAG context —— 真实检索：按问题与语料词重合度打分取 TopK，而非盲切前 N
         # 报告类 mode（full/research/chain/funnel）吃进更多语料，对话类少吃
-        _top_k = 12 if mode in ("full", "research", "chain", "funnel") else 6
-        used, _scored = _retrieve_chunks(q, chunks, top_k=_top_k, min_score=1)
+        # city_profile 要横跨全量语料刻画城市，吃进的片段数最多
+        _top_k = 40 if mode == "city_profile" else (12 if mode in ("full", "research", "chain", "funnel") else 6)
+        if mode == "city_profile":
+            # 画像要同时覆盖 经济/结构/产业/园区/链主/成本/偏好 七个面，
+            # 单条问题("城市画像…")与 GDP、三次产业结构等语料几乎无词重合 →
+            # 单查询检索会整组漏掉经济数据。故按面分别检索再合并去重，保证每个面都有料。
+            _facets = [
+                "GDP 地区生产总值 总量 增速 人均 财政收入 经济体量",
+                "三次产业结构 占比 规上工业增加值 工业占比 第二产业 第三产业",
+                "主导产业 产业链 产值 规模 全国占有率 集群 龙头产业",
+                "产业园区 经开区 高新区 承载 标准厂房 用地 亩数 入驻率 土地",
+                "链主企业 龙头企业 产能 营收 在建项目 配套企业 名录",
+                "配套率 成本 人力 物流 交通 competitor 竞争城市 对比",
+                "招商方向 优先招引 目标企业 投资强度 政策 补贴 专项资金 领导关注",
+                "缺口 薄弱 缺失 短板 数据边界 待补",
+            ]
+            _per = max(6, _top_k // len(_facets) + 3)
+            _seen, used, _scored = set(), [], []
+            for _fq in _facets:
+                _sel, _sc = _retrieve_chunks(_fq, chunks, top_k=_per, min_score=1)
+                for _s, _c in _sc:
+                    _cid = id(_c) if not isinstance(_c, dict) else (_c.get("id") or id(_c))
+                    if _cid in _seen:
+                        continue
+                    _seen.add(_cid); used.append(_c); _scored.append((_s, _c))
+            # 兜底：分面全未命中时退回原单查询逻辑，避免画像无料可吃
+            if not used:
+                used, _scored = _retrieve_chunks(q, chunks, top_k=_top_k, min_score=1)
+        else:
+            used, _scored = _retrieve_chunks(q, chunks, top_k=_top_k, min_score=1)
         # 注意：本方法体内(第729行附近)另有一个局部 def _chunk_text，会遮蔽模块级同名函数，
         # 导致此处 genexpr 引用报 NameError。故内联提取文本，不调用 _chunk_text。
         def _ctext(c):
@@ -1516,6 +1586,9 @@ class Handler(BaseHTTPRequestHandler):
         elif mode == "onboard_options":
             system_prompt = SYSTEM_ONBOARD
             max_tokens    = 900
+        elif mode == "city_profile":
+            system_prompt = SYSTEM_CITY_PROFILE
+            max_tokens    = 8000    # 结构化画像 JSON：objective 六组 + preference 五维 + 优劣势/缺口
         else:
             system_prompt = SYSTEM_FULL
             max_tokens    = MAX_TOKENS_FULL
@@ -1530,7 +1603,24 @@ class Handler(BaseHTTPRequestHandler):
 
         # 用户初始化招商偏好块：最高优先级注入到 user message 顶部（onboard_options 自身在生成偏好，不注入）
         prefs_block = ""
-        if mode != "onboard_options":
+        if mode == "city_profile":
+            # 画像模式：问卷是"待刻画的证据/校准项"，不是要服从的约束。
+            # 故单独组织成 stated 证据块；缺失时明确告知模型走纯反推 + 标 gaps。
+            _opt = (prefs.get("options") or "").strip()
+            _cus = (prefs.get("custom") or "").strip()
+            if _opt or _cus:
+                parts = ["【招商偏好问卷 answers（stated 证据，用于校准反推结论）】"]
+                if _opt:
+                    parts.append("问卷选择：\n" + _opt[:1500])
+                if _cus:
+                    parts.append("干部自定义补充：\n" + _cus[:1500])
+                parts.append("说明：以上为该城市干部明确作答的偏好，对应维度 source 标 stated；与材料反推冲突时以问卷为准并记入 conflicts。")
+                prefs_block = "\n\n".join(parts) + "\n\n"
+            else:
+                prefs_block = ("【招商偏好问卷：该城市尚未填写】\n"
+                               "所有 preference 维度只能从材料反推，source 一律标 inferred，"
+                               "并在 gaps 中提示需补填招商偏好问卷。\n\n")
+        elif mode != "onboard_options":
             _opt = (prefs.get("options") or "").strip()
             _cus = (prefs.get("custom") or "").strip()
             if _opt or _cus:
