@@ -7881,13 +7881,16 @@ function restoreFromServer(callback){
     KB_CONFIRMS      = srv.KB_CONFIRMS      || {};
     KB_FILE_CHUNKS   = srv.KB_FILE_CHUNKS   || {};
     KB_UNLOCKED      = srv.KB_UNLOCKED      || {};
-    // REPORTSTATE：保护本地更新的报告(服务端可能尚未收到刚才的persist)，按text长度择优
+    // REPORTSTATE：保护本地更新的报告。择优规则优先按 ts 择新（phase1 draft 短但新→不能被旧完整报告冲掉），
+    // ts 相同或缺失时才回退到长的赢避免残缺覆盖完整。
     (function(){
       var _localRs=(cur&&REPORTSTATE&&REPORTSTATE[cur])?REPORTSTATE[cur]:null;
       REPORTSTATE = srv.REPORTSTATE || {};
       if(cur&&_localRs){
         var _inRs=REPORTSTATE[cur];
-        if(!_inRs || (String(_localRs.text||'').length > String((_inRs||{}).text||'').length)) REPORTSTATE[cur]=_localRs;
+        var _lt=Number(_localRs&&_localRs.ts)||0, _it=Number(_inRs&&_inRs.ts)||0;
+        var _localWins = !_inRs || _lt>_it || (_lt===_it && String(_localRs.text||'').length > String((_inRs||{}).text||'').length);
+        if(_localWins) REPORTSTATE[cur]=_localRs;
       }
     })();
     PENDING_CONFIRMS = srv.PENDING_CONFIRMS || {};
@@ -7994,13 +7997,16 @@ window.addEventListener('storage', function(e){
       if(_keepStage!=null) PROJECTS[cur].stage=_keepStage;
     }
     DEMANDS=data.DEMANDS||[];
-    // REPORTSTATE 保护当前项目：管理端旧快照不得冲掉本地刚生成的报告状态
+    // REPORTSTATE 保护当前项目：管理端旧快照不得冲掉本地刚生成的报告状态。
+    // 择优：先按 ts 择新，不然 phase1 draft(短但新) 会被同项目旧完整报告拖回去。
     (function(){
       var _localRs=REPORTSTATE[cur];
       REPORTSTATE=data.REPORTSTATE||{};
       if(cur&&_localRs){
         var _inRs=REPORTSTATE[cur];
-        if(!_inRs || (String(_localRs.text||'').length > String((_inRs||{}).text||'').length)) REPORTSTATE[cur]=_localRs;
+        var _lt=Number(_localRs&&_localRs.ts)||0, _it=Number(_inRs&&_inRs.ts)||0;
+        var _localWins = !_inRs || _lt>_it || (_lt===_it && String(_localRs.text||'').length > String((_inRs||{}).text||'').length);
+        if(_localWins) REPORTSTATE[cur]=_localRs;
       }
       (window.DELETED_PROJECTS||[]).forEach(function(dk){ delete REPORTSTATE[dk]; });
     })();
