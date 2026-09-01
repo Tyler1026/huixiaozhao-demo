@@ -219,6 +219,19 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 @keyframes kbPulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1.2)}}
 .topic-grid .topic-row{cursor:pointer;transition:box-shadow .15s,border-color .15s;}
 .topic-grid .topic-row:hover{box-shadow:0 2px 16px rgba(26,86,219,.1);border-color:#c7d2fe;}
+/* 滚动性能优化：
+   1) 主滚动容器禁止 scroll chaining（overscroll-behavior:contain）——避免滚轮到边界时传导给外层导致的"被拖住"顿感。
+   2) 产业报告/企业线索/时间轴等长内容用 content-visibility:auto 让浏览器 skip 屏外 render，千节点报告下滑不再每帧全量 layout。
+   3) 滚动容器提升至独立合成层，滚动纯 GPU 合成不触发主线程 paint。 */
+.conversation-scroll,.knowledge-scroll,.report-scroll,.clues-scroll,.docking-scroll,.settings-scroll,.detail-scroll{
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+  will-change:scroll-position;
+}
+#reportArea>*,.knowledge-scroll .topic-row,.clues-scroll .clue-row,.docking-scroll .timeline-item,.docking-scroll .task-row{
+  content-visibility:auto;
+  contain-intrinsic-size:auto 220px;
+}
 </style><script>
 window.onerror = function(msg, src, line, col, err) {
   if(document.getElementById('root') && !document.getElementById('root').innerHTML.trim()){
@@ -7392,11 +7405,18 @@ function kbScrollTop(){
   var sc=document.getElementById('kbScroll');
   if(sc) sc.scrollTo({top:0,behavior:'smooth'});
 }
-/* 滚动超过一屏时显示回到顶部按钮 */
+/* 滚动超过一屏时显示回到顶部按钮（rAF 节流 + 变化判断，避免每帧 style 写入） */
+var _kbTopBtnPending=false, _kbTopBtnLastShown=null;
 function kbToggleTopBtn(){
-  var sc=document.getElementById('kbScroll'), btn=document.getElementById('kbTopBtn');
-  if(!sc||!btn) return;
-  btn.style.display = sc.scrollTop>300 ? 'flex' : 'none';
+  if(_kbTopBtnPending) return;
+  _kbTopBtnPending=true;
+  requestAnimationFrame(function(){
+    _kbTopBtnPending=false;
+    var sc=document.getElementById('kbScroll'), btn=document.getElementById('kbTopBtn');
+    if(!sc||!btn) return;
+    var _shown = sc.scrollTop>300;
+    if(_shown!==_kbTopBtnLastShown){ btn.style.display = _shown ? 'flex' : 'none'; _kbTopBtnLastShown=_shown; }
+  });
 }
 function kbPage(p){
   return '<div class="page" style="position:relative">'+
