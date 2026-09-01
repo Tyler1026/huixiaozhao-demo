@@ -744,6 +744,8 @@ function _isJunkKbItem(text){
   if(/请在此输入|保存后写入|请输入补充/.test(text)) return true;
   // 纯报告标题（无实质数据，如"XX市招商方向研判报告"）
   if(/^[✅⚠️\s]*.{2,6}(市|区|县).{0,20}(报告|纲要|规划|方案|清单|简介)\s*$/.test(text)) return true;
+  // 报告标题+紧跟编制/数据元信息（如"【上海市松江区招商方向研判报告】 编制对象：… 数据时效：…"），属于文档序言不展示。管理端 RAG 不动。
+  if(/^[✅⚠️\s]*[【\[][^】\]]{2,120}?(报告|纲要|规划|方案|清单|简介|研判|分析)[^】\]]{0,80}[】\]][\s\S]{0,30}(编制对象|编制说明|数据时效|方向框架|竞争分析范围)/.test(text)) return true;
   // 纯表格行：数字占比>50%且含多个连续数字段
   var digits=text.replace(/[^0-9.]/g,'').length;
   if(digits/text.length>0.45&&(text.match(/\d+\.?\d*/g)||[]).length>=5) return true;
@@ -755,6 +757,9 @@ function _isJunkKbItem(text){
   if(text.length<15&&!/[\u4e00-\u9fff]{4,}/.test(text)) return true;
   // 纯数据标注（如"数据2025年结构比"）
   if(/^数据\d{4}年/.test(text)) return true;
+  // 报告序言/编制元信息（如【总览与方法论】、【编制说明】、【编制对象】、【数据时效】、【方向框架】）
+  // 属于文档序言而非决策信息，前端不展示；管理端 RAG 不动，检索仍可召回。
+  if(/^[\s✅⚠️]*[【\[]\s*(总览与方法论?|方法论说明|编制说明|编制对象|数据时效|竞争分析范围|方向框架|说明|前言|导言|摘要|目录)\s*[】\]]/.test(text)) return true;
   return false;
 }
 
