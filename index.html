@@ -5027,11 +5027,25 @@ function renderActionItems(text, p, r){
           '<strong>'+p.city+'</strong> · '+p.topic+'<br>'+
           '置信度 '+r.score+'% · 来源：慧小招实测报告'+
         '</div>'+
-        '<button data-gap="'+safeGap+'" data-city="'+safeCity+'" data-topic="'+safeTopic+'"'+
-          ' onclick="importToProject(this.getAttribute(\'data-gap\'),this.getAttribute(\'data-city\'),this.getAttribute(\'data-topic\'),this)"'+
-          ' style="padding:8px 16px;background:'+color+';color:#fff;border:none;border-radius:10px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap;flex-shrink:0">'+
-          '提交招商需求 →'+
-        '</button>'+
+        (function(){
+          // 幂等按钮：若同城同 gap 已存在 isDemand 项目，就直接渲染为“↩ 撤回提交”，
+          // 避免用户看到“提交招商需求 →”又点一次派生重复项目（commit 83600a4 之前的双招根因）。
+          var _existKey=Object.keys(PROJECTS).find(function(k){
+            var x=PROJECTS[k]; return x&&x.isDemand&&x.city===p.city&&x.topic===it.gap;
+          });
+          if(_existKey){
+            return '<button data-gap="'+safeGap+'" data-city="'+safeCity+'" data-topic="'+safeTopic+'" data-projkey="'+_existKey+'"'+
+              ' onclick="withdrawDemand(this.getAttribute(\'data-projkey\'),this,this.getAttribute(\'data-gap\'),this.getAttribute(\'data-city\'),this.getAttribute(\'data-topic\'),\''+color+'\')"'+
+              ' style="padding:8px 16px;background:#fff;color:#dc2626;border:1.5px solid #fca5a5;border-radius:10px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap;flex-shrink:0">'+
+              '↩ 撤回提交'+
+              '</button>';
+          }
+          return '<button data-gap="'+safeGap+'" data-city="'+safeCity+'" data-topic="'+safeTopic+'"'+
+            ' onclick="importToProject(this.getAttribute(\'data-gap\'),this.getAttribute(\'data-city\'),this.getAttribute(\'data-topic\'),this)"'+
+            ' style="padding:8px 16px;background:'+color+';color:#fff;border:none;border-radius:10px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap;flex-shrink:0">'+
+            '提交招商需求 →'+
+            '</button>';
+        })()+
       '</div>'+
     '</div>';
   }).join('');
@@ -5050,10 +5064,30 @@ function renderActionItems(text, p, r){
 
 /* 提交招商需求 */
 function importToProject(gap, city, topic, btnEl){
-  var key='proj_'+Date.now().toString(36);
   var p=P();
+  var _city=city||(p&&p.city)||'';
+  // 幂等：同城同 gap(即 topic) 已存在 isDemand 项目则直接切到“已提交/可撤回”，不再新建。
+  // 之前每次点都用 Date.now() 生成新 key 造成重复项目，删了会被再次点击又建出来。
+  var _dupKey=Object.keys(PROJECTS).find(function(k){
+    var x=PROJECTS[k]; return x&&x.isDemand&&x.city===_city&&x.topic===gap;
+  });
+  if(_dupKey){
+    toast('该方向已提交招商需求，可在招商对接页撤回');
+    if(btnEl){
+      var _origColor2=btnEl.style.background||'#1a56db';
+      btnEl.textContent='↩ 撤回提交';
+      btnEl.style.background='#fff';
+      btnEl.style.color='#dc2626';
+      btnEl.style.border='1.5px solid #fca5a5';
+      btnEl.style.cursor='pointer';
+      btnEl.setAttribute('data-projkey', _dupKey);
+      btnEl.onclick=function(){ withdrawDemand(_dupKey, btnEl, gap, _city, topic, _origColor2); };
+    }
+    return;
+  }
+  var key='proj_'+Date.now().toString(36);
   PROJECTS[key]={
-    id:key, city:city||p.city, org:(city||p.city)+'市招商局', who:p?p.who:'负责人',
+    id:key, city:_city, org:_city+'市招商局', who:p?p.who:'负责人',
     topic:gap, stage:3,  // 立项即跳过研判，直接到「确认需求」
     isDemand:true,       // 标记为「已正式提交的招商需求项目」——只有它们才进招商对接列表
     kb: p ? JSON.parse(JSON.stringify(p.kb)) : [],
