@@ -610,8 +610,26 @@ SYSTEM_CITY_PROFILE = """你是慧小招城市画像分析师。基于该城市�
   "weakness":  ["真实短板/缺口，带数据"],
   "conflicts": ["问卷与材料反推之间的矛盾点，没有则空数组"],
   "engagement":{"level":"high|medium|low","signals":["干部配合度证据，引用访谈原话"]},
-  "gaps":      ["画像缺失项：还需要补什么材料才能把画像做实"]
+  "gaps":      ["画像缺失项：还需要补什么材料才能把画像做实"],
+  "charts": {
+    "structure":  {"primary":14.1,"secondary":38.5,"tertiary":47.4,"year":"2024","cite":""},
+    "gdp_trend":  [{"year":"2020","value":1096.72},{"year":"2024","value":1442.35}],
+    "growth":     [{"label":"GDP增速","value":6.1,"unit":"%"},{"label":"规上工业增加值","value":9.9,"unit":"%"}],
+    "chain":      [{"node":"整车改装","status":"strong"},{"node":"动力电池电芯","status":"missing"}],
+    "compare":    {"metric":"配套率","self":{"label":"随州","value":41},
+                   "peers":[{"label":"十堰","value":75},{"label":"梁山","value":65}],"unit":"%"}
+  }
 }
+
+## charts 专项规则（这是纯图表区的数据源，必须尽力填满）
+- 只填能从材料里拿到**纯数字**的项；拿不到的整个键省略（不要填 0、不要填 null、不要猜）。
+- structure：三次产业占比，三个数加起来应≈100。取最新年份。
+- gdp_trend：GDP 总量时间序列，2-6 个点，按年份升序，value 单位统一为「亿元」。只有一个年份的数据就省略此键。
+- growth：增速类指标 2-6 条，value 为纯数字（% 值写 6.1 不写 "6.1%"）。
+- chain：产业链环节强弱，4-10 个节点。status 只能取 strong(本地强)/weak(薄弱)/missing(缺失)。
+  这是招商最关心的图——务必从"缺口/短板/配套"类材料里提取。
+- compare：本市 vs 竞争城市的同一可量化指标（如配套率、企业数、产值）。peers 1-4 个。
+  self 和 peers 必须是同一口径同一单位，否则省略此键。
 
 ## 要求
 - objective 每个分组 0-6 条，有几条写几条，宁缺勿造。
