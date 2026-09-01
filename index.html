@@ -9222,7 +9222,21 @@ function kbDetail(i){
           var isFile=x.indexOf('📎')===0;
           var clean=x.replace('⚠️ ','');
           var badges=[];
-          clean.replace(/(\d+[\d,.]*)(亿元|亿|万辆|万吨|万m³|万㎡|GWh|%)/g,function(m){badges.push(m);return m;});
+          // 统一抽取卡片正文里的量化数字（金额/产能/面积/重量/长度/百分比/企业台数等），
+          // 避免旧正则只认 8 个单位导致卡片底部有时空白。2026-09-01 扩展包括：
+          //   金额：亿元/亿美元/亿/万元/万美元/万
+          //   产能：万辆/万吨/万台/万件/万套/万只/万头/万人
+          //   能量：GWh/MWh/kWh/MW/kW/Wh
+          //   重量/体积：吨/kg/公斤/克/m³/m²/㎡/万m³/万㎡
+          //   面积/长度：公顷/亩/公里/km
+          //   百分比：%/百分点
+          //   计数：家/户/款/台/座/项/条/人/个/张/批/次
+          var _seenBadge={};
+          clean.replace(/(\d+(?:[,\.]\d+)*)\s*(亿元|亿美元|亿|万元|万美元|万辆|万吨|万台|万件|万套|万只|万头|万人|万m³|万㎡|万|kwh|kWh|GWh|MWh|MW|kW|Wh|吨|kg|公斤|克|公顷|公里|km|m³|m²|㎡|亩|百分点|%|家|户|款|台|座|项|条|人|个|张|批|次)/g,function(m){
+            var _key=m.replace(/\s+/g,'');
+            if(!_seenBadge[_key] && badges.length<10){ _seenBadge[_key]=1; badges.push(_key); }
+            return m;
+          });
           var badgeHtml=badges.length
             ?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:7px">'+
                badges.map(function(b){
