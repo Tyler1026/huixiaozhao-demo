@@ -2450,12 +2450,14 @@ function kbReadiness(){
   if(knownTotal===0 && uploads===0 && !hasRealKbData(p)){
     return {score:0,total:0,confirmed:0,files:0,label:'未开始',color:'#9aa5b5'};
   }
-  // 评分：数据覆盖度×50 + 上传材料×20 + ⚠️确认率×30
-  // 确保有数据+上传材料就能达到80%解锁线，⚠️确认只是额外加分
+  // 评分：数据覆盖度×80 + 上传材料×10（上陉20）+ ⚠️确认率×20
+  // 关键调整：AI 流水线预置的智能包账号（如松江）无 ⚠️/上传但 known 覆盖充分，
+  // 应能凭“数据覆盖度”独立冲到 80% 自动解锁，⚠️确认与上传材料作为加分而非门槛。
+  // 四板块预置共计≥ 20 条即可拿满 80，⚠️/上传再拉高置信度。
   var coverRate=Math.min(1, knownTotal/20); // 有20条以上数据视为数据覆盖满分
   var uploadBonus=Math.min(20, uploads*10); // 每份材料10分，最多20
-  var warnRate=warnTotal>0?warnConfirmed/warnTotal:1;
-  var score=Math.round(coverRate*50 + uploadBonus + warnRate*30);
+  var warnRate=warnTotal>0?warnConfirmed/warnTotal:1; // 无⚠️条目时视为满率（不惩罚）
+  var score=Math.min(100, Math.round(coverRate*80 + uploadBonus + warnRate*20));
   var label=score>=80?'已就绪':score>=50?'基本完整':score>=20?'待补充':'未开始';
   var color=score>=80?'#22c55e':score>=50?'#f59e0b':score>=20?'#3b82f6':'#9aa5b5';
   return {score:score,total:warnTotal,confirmed:warnConfirmed,files:uploads,label:label,color:color};
@@ -2544,7 +2546,7 @@ function kbPageProgressInner(r){
     '</div>'+
     '<span style="font-size:12px;font-weight:700;color:'+r.color+'">'+r.score+'%</span>'+
     '<span style="font-size:11px;color:'+r.color+'">'+r.label+'</span>'+
-    '<span title="计算方式：确认'+warn+'事项×60% + 上传材料×10%（上限 40%）"'+
+    '<span title="计算方式：智库覆盖度×80% + 上传材料×10%（上限 20%）+ 确认'+warn+'事项×20%"'+
       ' style="font-size:11px;color:#9aa5b5;cursor:help;margin-left:2px">'+info+'</span>'+
   '</div>'+
   (r.score<80?'<p style="font-size:11.5px;color:#f59e0b;margin:5px 0 0">⚡ 上传越多材料、确认越多结论，研判数据可靠性越高（差 '+(80-r.score)+'% 自动解锁后续步骤）</p>':'');
@@ -6787,13 +6789,27 @@ function balancedIndustryChunks(city, corpus){
    此时不生成任何研究方向，避免"零上传却凭空出方向"。 */
 function hasRealKbData(p){
   p=p||P(); if(!p) return false;
-  // 已移除"随州直接视为有数据"的特权：随州与其他城市一视同仁，
-  // 只有真实上传材料/解析片段/确认结论才算有数据，否则无方向、无数据。
+  // 已移除"随州直接视为有数据"的特权：随州与其他城市一视同仁。
+  // 真实数据四类：上传材料 / 解析片段 / 确认结论 / AI流水线预置的实质板块条目。
+  // 前三类缺失但第四类存在时，亦应视为有数据，避免“智能包导入的城市”被以“零活动”为由锁死。
   if(cur && (UPLOADS[cur]||[]).length>0) return true;                 // 已上传材料
   if(cur && (KB_FILE_CHUNKS[cur]||[]).length>0) return true;          // 已解析文件片段
   if(cur && KB_CONFIRMS[cur]){                                        // 已确认过任一结论
     var kc=KB_CONFIRMS[cur];
     for(var ki in kc){ if(kc[ki]){ for(var xi in kc[ki]){ if(kc[ki][xi]) return true; } } }
+  }
+  // 新增：AI 流水线/智能包预置的板块条目（p.kb[i].known）也是真实数据。
+  // 迷你内测账号（如松江 city62883）无 UPLOADS/CHUNKS/CONFIRMS，但 kb 中已存在几百条实质文本，
+  // 之前会被判为无数据→产业分析永远出不了方向。门槛：累计 ≥ 5 条实质文本(≥ 20 字)。
+  if(p.kb && p.kb.length){
+    var _real=0;
+    for(var _i=0;_i<p.kb.length;_i++){
+      var _k=p.kb[_i]; if(!_k||!_k.known) continue;
+      for(var _j=0;_j<_k.known.length;_j++){
+        var _t=(typeof _kbText==='function'?_kbText(_k.known[_j]):(typeof _k.known[_j]==='string'?_k.known[_j]:(_k.known[_j]&&_k.known[_j].text||'')))||'';
+        if(_t && _t.length>=20){ _real++; if(_real>=5) return true; }
+      }
+    }
   }
   return false;
 }
