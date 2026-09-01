@@ -4924,7 +4924,16 @@ function restoreActionItems(){
             (it.basis?'<div style="margin-top:4px;font-size:11px;color:#94a3b8;line-height:1.5">'+String(it.basis).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</div>':'')+
             (it.benchEnts&&it.benchEnts.length?'<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">'+it.benchEnts.slice(0,3).map(function(b){return '<span style="font-size:10.5px;color:#1a56db;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:1px 6px;white-space:nowrap">🎯 '+String(b).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>';}).join('')+'</div>':'')+
           '</div>'+
-          '<button onclick="importToProject(\''+safeGap+'\',\''+safeCity+'\',\''+safeTopic+'\',this)" style="padding:8px 18px;background:'+color+';color:#fff;border:none;border-radius:10px;font-size:12.5px;font-weight:650;cursor:pointer;flex-shrink:0">提交招商需求 →</button>'+
+          (function(){
+            // 幂等：同城同 gap 已存在 isDemand 项目 → 直接渲染“↩ 撤回提交”（与 restoreActionItems 同销另一处重复根因）
+            var _existKey=Object.keys(PROJECTS).find(function(k){
+              var x=PROJECTS[k]; return x&&x.isDemand&&x.city===p.city&&x.topic===it.gap;
+            });
+            if(_existKey){
+              return '<button data-projkey="'+_existKey+'" onclick="withdrawDemand(\''+_existKey+'\',this,\''+safeGap+'\',\''+safeCity+'\',\''+safeTopic+'\',\''+color+'\')" style="padding:8px 18px;background:#fff;color:#dc2626;border:1.5px solid #fca5a5;border-radius:10px;font-size:12.5px;font-weight:650;cursor:pointer;flex-shrink:0">↩ 撤回提交</button>';
+            }
+            return '<button onclick="importToProject(\''+safeGap+'\',\''+safeCity+'\',\''+safeTopic+'\',this)" style="padding:8px 18px;background:'+color+';color:#fff;border:none;border-radius:10px;font-size:12.5px;font-weight:650;cursor:pointer;flex-shrink:0">提交招商需求 →</button>';
+          })()+
         '</div>'+
       '</div>';
     }).join('')+
