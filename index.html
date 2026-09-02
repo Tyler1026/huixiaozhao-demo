@@ -9788,16 +9788,65 @@ function kbVerifyMaterial(){
           // 确保正文内容一定渲染到bodyDiv（不管后续判定结果如何）
           if(accText.trim()){ bodyDiv.innerHTML='<p style="margin:0;line-height:1.75">'+renderMarkdown(accText)+'</p>'; }
           var _firstLine=(accText.split('\n').find(function(l){return l.trim();})||'').trim();
-          var _saysConflict=/结论[：:]\s*发现矛盾|发现矛盾\s*\d*\s*处/.test(_firstLine)||/发现矛盾/.test(accText);
+          // 注意原正则 /发现矛盾\s*\d*\s*处/ 会把"未发现矛盾"也命中（"发现矛盾"是子串），
+          // 且 AI 首行常与明细脱节，因此下方必须用前端统计做二次校验。
+          var _saysConflictRaw=/结论[：:]\s*发现矛盾/.test(_firstLine);
           var _saysClear=/结论[：:]\s*(未发现矛盾|无矛盾|完全一致)/.test(_firstLine);
-          // 正文里出现"不一致 / 【严重程度:高】 / 数据不符 / 矛盾 / 错误"等矛盾信号
-          var _conflictSignal=/不一致|不符|对不上|矛盾|【?严重程度[:：]\s*高|数据错误|明显偏差|差异较大/.test(accText);
-          var hasHighRisk=_saysConflict||(!_saysClear&&_conflictSignal);
-          // 仅当明确判定一致、且正文无任何矛盾信号时，才算"未发现错误"
-          var allClear=!hasHighRisk&&(_saysClear||accText.indexOf('未发现矛盾')>=0||accText.indexOf('完全一致')>=0);
-          var badgeBg=hasHighRisk?'#fff1f2':'(allClear?\'#f0fdf4\':\'#fffbeb\')';
-          var badgeColor=hasHighRisk?'#dc2626':'(allClear?\'#059669\':\'#d97706\')';
-          var badgeText=hasHighRisk?'⚠ 发现疑点，建议人工核实':(allClear?'✓ 未发现明显错误':'ℹ 存在部分模糊信息');
+          var _claimedM=/结论[：:]\s*发现矛盾\s*(\d+)\s*处/.exec(_firstLine);
+          var _claimedN=_claimedM?parseInt(_claimedM[1],10):null;
+
+          // ── 前端二次校验：按明细行分类统计（防止 AI 首行结论与明细脱节）──
+          var _cntConflict=0, _cntNewAdd=0, _cntConsistent=0;
+          accText.split('\n').forEach(function(ln){
+            var t=ln.trim(); if(!t) return;
+            if(/^结论[：:]/.test(t)) return; // 跳过首行结论
+            var iconConflict=/^\s*(❌|\u274c)/.test(t);
+            var iconNewAdd=/^\s*(⚠️|⚠|\u26a0)/.test(t);
+            var iconOk=/^\s*(✅|\u2705)/.test(t);
+            if(!iconConflict && !iconNewAdd && !iconOk) return; // 非明细行
+            var saysNewAdd=/新增数据|智库无此数据|智库无此|智库未记录|文件未直接写|文件无此数据|无对应记录/.test(t);
+            var saysConflict=/→\s*不一致|→\s*数据不符|数值不同|明显偏差|与.*?矛盾/.test(t);
+            var saysConsistent=/记录一致|数值一致|完全一致|→\s*一致/.test(t);
+            // 语义优先（模型常把 ✅ 图标错用到"新增数据"行），图标兜底
+            if(iconConflict || saysConflict){ _cntConflict++; }
+            else if(saysNewAdd || iconNewAdd){ _cntNewAdd++; }
+            else if(saysConsistent || iconOk){ _cntConsistent++; }
+          });
+
+          // 正文里出现真实矛盾信号（收紧：不再把"矛盾"二字本身当信号，避免首行"未发现矛盾"误伤）
+          var _conflictSignal=/不一致|不符|对不上|【?严重程度[:：]\s*高|数据错误|明显偏差|差异较大/.test(accText);
+
+          // 统计与首行不一致 → 前端重写首行结论
+          var _needRewriteFirstLine=false, _newFirstLine='';
+          if(_cntConflict===0 && (_claimedN>0 || _saysConflictRaw)){
+            _saysConflictRaw=false;
+            _needRewriteFirstLine=true;
+            _newFirstLine='结论：未发现矛盾（新增 '+_cntNewAdd+' 条，一致 '+_cntConsistent+' 条）';
+          } else if(_claimedN!=null && _claimedN!==_cntConflict){
+            _needRewriteFirstLine=true;
+            _newFirstLine=(_cntConflict>0?'结论：发现矛盾 '+_cntConflict+' 处':'结论：未发现矛盾')
+                          +'（新增 '+_cntNewAdd+' 条，一致 '+_cntConsistent+' 条）';
+          }
+          if(_needRewriteFirstLine){
+            var _rewrittenText;
+            if(/^结论[：:]/.test(_firstLine)){
+              _rewrittenText=accText.replace(/^[^\n]*结论[：:][^\n]*/, _newFirstLine);
+            } else {
+              _rewrittenText=_newFirstLine+'\n\n'+accText;
+            }
+            try{ bodyDiv.innerHTML='<p style="margin:0;line-height:1.75">'+renderMarkdown(_rewrittenText)+'</p>'; }
+            catch(e_r){ bodyDiv.innerHTML='<p style="margin:0;line-height:1.75;white-space:pre-wrap">'+_rewrittenText.replace(/</g,'&lt;')+'</p>'; }
+          }
+
+          // 用统计值最终决定 badge：真实矛盾数 > 0 才算高危
+          // 零矛盾且零新增 = 完全一致；零矛盾但有新增 = 中间态（可选入库）
+          var hasHighRisk=(_cntConflict>0);
+          var allClear=!hasHighRisk && _cntNewAdd===0;
+          var badgeText=hasHighRisk
+            ?'⚠ 发现 '+_cntConflict+' 处矛盾，建议人工核实'
+            :(_cntNewAdd>0
+                ?'✓ 未发现矛盾，'+_cntNewAdd+' 条新增可入库'
+                :'✓ 未发现明显错误');
           bubble.insertAdjacentHTML('beforeend',
             '<div style="margin-top:12px;padding:8px 12px;background:'+
             (hasHighRisk?'#fff1f2':(allClear?'#f0fdf4':'#fffbeb'))+
