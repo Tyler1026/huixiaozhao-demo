@@ -2501,6 +2501,15 @@ function topicScore(topic){
   var cityBase = kbReadiness().score;   // 城市智库整体就绪度（所有方向共享的背书，占小头）
   if(!topic) return Math.min(96, Math.max(42, cityBase));
 
+  // ── 冻结值优先：报告生成完成时写入 scoreByTopic[topic]，之后所有渲染直接读这个值，
+  //    避免"同一份分析在不同渲染时刻（草稿 loading / 流式增长 / 完整报告）"取到不同快照
+  //    导致徽章多值（曾观察到 60% / 62% / 68% / 89% 同报告并存）。
+  if(cur && REPORTSTATE[cur] && REPORTSTATE[cur].scoreByTopic
+     && typeof REPORTSTATE[cur].scoreByTopic[topic]==='number'){
+    var _frozen = REPORTSTATE[cur].scoreByTopic[topic];
+    if(_frozen>0) return _frozen;
+  }
+
   // ── 取该方向报告文本，度量其数据充实度 ──
   var txt = (typeof reportTextForTopic==='function' ? reportTextForTopic(topic) : '') || '';
   var dataScore;
@@ -4879,11 +4888,9 @@ function restoreConfirmPanel(){
 function deriveActionItemsFromChain(){
   if(!cur || !PROJECTS[cur]) return null;
   var p=P();
-  var sl = PROJECTS[cur].segmentLevels;
+  // 从方向级容器 sl[topic] 读，避免多个方向共用同一 chainKey 时互相污染
+  var sl = _slFor(p ? p.topic : '');
   if(!sl) return null;
-  // 只取【当前方向对应链】的研判结果，杜绝跨链污染（如香菇方向混入氢气环节）：
-  //   ① segmentLevels 必须是当前链的（__chainKey===pickChainKey(topic)）
-  //   ② 环节名必须属于当前链的节点清单（CHAINS[key] 的 nodes）
   var _chainKey = pickChainKey(p ? p.topic : '');
   if(!_chainKey || sl.__chainKey!==_chainKey) return null;
   var _chainNodes = _chainNodeNames(_chainKey);
@@ -5698,11 +5705,16 @@ function triggerReport(phase){
       // 写入REPORTSTATE（含phaseByTopic确保render后bottomBar正确识别草稿状态）
       REPORTSTATE[cur]=REPORTSTATE[cur]||{};
       REPORTSTATE[cur].text=accText; REPORTSTATE[cur].topic=p.topic; REPORTSTATE[cur].ts=Date.now();
-      REPORTSTATE[cur].phase=1; REPORTSTATE[cur].score=topicScore(p.topic);
+      REPORTSTATE[cur].phase=1;
       if(!REPORTSTATE[cur].phaseByTopic) REPORTSTATE[cur].phaseByTopic={};
       REPORTSTATE[cur].phaseByTopic[p.topic]=1;
       if(!REPORTSTATE[cur].aiReportByTopic) REPORTSTATE[cur].aiReportByTopic={};
       REPORTSTATE[cur].aiReportByTopic[p.topic]=accText;
+      // 冻结当前部分报告的置信度，避免超时后 UI 继续漂移
+      if(!REPORTSTATE[cur].scoreByTopic) REPORTSTATE[cur].scoreByTopic={};
+      delete REPORTSTATE[cur].scoreByTopic[p.topic];
+      REPORTSTATE[cur].score=topicScore(p.topic);
+      REPORTSTATE[cur].scoreByTopic[p.topic]=REPORTSTATE[cur].score;
       if(!REPORTSTATE[cur].userGeneratedTopics) REPORTSTATE[cur].userGeneratedTopics={};
       REPORTSTATE[cur].userGeneratedTopics[p.topic]=true;
       var _bb=document.querySelector('.report-bottom-bar');
@@ -5770,6 +5782,10 @@ function triggerReport(phase){
           // 保留累积字段(aiReportByTopic/userGeneratedTopics/pendingByTopic 等)，避免整体覆盖丢失
           var _prevRs=REPORTSTATE[cur]||{};
           var _nowTs=Date.now();
+          // 计算最终置信度前先把 accText 挂到方向缓存 + 清掉旧冻结值，
+          // 保证 topicScore 基于本次完整报告重算一次，然后再写回冻结。
+          if(_prevRs.aiReportByTopic){ _prevRs.aiReportByTopic[p.topic]=accText; }
+          if(_prevRs.scoreByTopic){ delete _prevRs.scoreByTopic[p.topic]; }
           var _nowScore=topicScore(p.topic);
           REPORTSTATE[cur]={text:accText,topic:p.topic,ts:_nowTs,score:_nowScore,phase:phase,
             aiReportByTopic:_prevRs.aiReportByTopic||{},
@@ -5971,6 +5987,41 @@ var CHAIN_NODE_NAMES = {
   '产业转移': ['沿海存量产能','本地承载能力','配套供应链','品牌/研发']
 };
 function _chainNodeNames(chainKey){ return CHAIN_NODE_NAMES[chainKey] || []; }
+
+/* 按方向名（topic）隔离产业链图谱数据。
+   旧结构：PROJECTS[cur].segmentLevels = { __chainKey, 环节A:{...}, 环节B:{...} }
+     问题：所有方向共用一份，同一 chainKey 下的多个 topic 会互相覆盖（例如
+           "生物医药制造产能承接"和"创新医疗器械注册承接制造"都归为"产业转移"链，
+           后者切过来会命中缓存直接复用前者的研判，AI 根本没跑第二次）。
+   新结构：PROJECTS[cur].segmentLevels[topic] = { __chainKey, 环节A:{...}, ... }
+     每个方向各存各的图谱结果，切方向 = 换缓存槽。
+   兼容：旧顶层结构如果 __chainKey===pickChainKey(topic) 会被识别为该 topic 的数据。 */
+function _slFor(topic){
+  if(!cur || !PROJECTS[cur] || !PROJECTS[cur].segmentLevels) return null;
+  var root = PROJECTS[cur].segmentLevels;
+  if(!topic) return null;
+  // 新结构：sl[topic] 是对象且带 __chainKey，直接返回
+  var per = root[topic];
+  if(per && typeof per==='object' && per.__chainKey){
+    return per;
+  }
+  // 兼容旧顶层结构：只有当顶层 __chainKey 与当前 topic 匹配时才把它当作该 topic 的数据
+  if(root.__chainKey && root.__chainKey===pickChainKey(topic)){
+    return root;
+  }
+  return null;
+}
+/* 拿到或创建 sl[topic] 的写入容器；旧顶层 __chainKey 数据保留不动，新数据走方向级。 */
+function _slEnsure(topic){
+  if(!cur || !PROJECTS[cur]) return null;
+  if(!PROJECTS[cur].segmentLevels) PROJECTS[cur].segmentLevels={};
+  var root = PROJECTS[cur].segmentLevels;
+  if(!topic) return null;
+  if(!root[topic] || typeof root[topic]!=='object'){
+    root[topic] = {};
+  }
+  return root[topic];
+}
 
 /* 统一选链：topic 关键词 → 产业链 key。匹配不到返回 null（不兜底香菇）。
    覆盖 topic 全称的各种变体（AI 生成的方向名可能是「氢燃料电池电堆及系统招引」）。 */
@@ -6512,10 +6563,11 @@ function chainMapHtml(p){
     /* 节点链 */
     h+='<div style="flex:1;display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:2px">';
     seg.nodes.forEach(function(nd,i){
-      /* 调研结果优先，但必须是【当前链】的研判：只有 __chainKey===key 时才采用 segmentLevels，
-         否则读到的是别的链残留（污染），一律用硬编码兜底，杜绝跨链错位。 */
-      var _slAll = (PROJECTS[cur] && PROJECTS[cur].segmentLevels) || null;
-      var _sl = (_slAll && _slAll.__chainKey===key) ? _slAll[nd.name] : null;
+      /* 从方向级容器读研判结果：sl[topic] 与当前链匹配才生效，否则硬编码兜底。
+         杜绝"多个方向共用同一 chainKey（如都归为产业转移）而互相污染"。 */
+      var _pForSl = P();
+      var _slPer = _slFor(_pForSl ? _pForSl.topic : '');
+      var _sl = (_slPer && _slPer.__chainKey===key) ? _slPer[nd.name] : null;
       var effLevel = _sl ? _sl.level : nd.level;
       var lv=LEVEL[effLevel]||LEVEL.mid;
       /* 企业匹配（区分 type=local 本地存量 / 其余=对标招引） */
@@ -6605,26 +6657,27 @@ function chainMapHtml(p){
    只跑一次：segmentLevels 已有该链研判结果则跳过，避免每次渲染重复调用。 */
 var _chainResearching = {};
 function researchChain(chainKey, topic, city, nodeNames, chunks){
-  if(_chainResearching[chainKey]) return;
+  // 用 topic 做去重键：多个方向可能落到同一 chainKey（如两个"承接"方向都归为"产业转移"），
+  // 用 chainKey 做键会让后来的方向被误判"正在进行"直接跳过、复用前一份研判结果。
+  var _reKey = (topic || chainKey);
+  if(_chainResearching[_reKey]) return;
   nodeNames = nodeNames || [];
   chunks = chunks || [];
-  // 已研判过则跳过；但历史脏数据可能只落地了部分环节（如旧的字段错位只落了1个），
-  // 此时 __chainKey 虽已标记但环节不齐，需清标记重跑，否则图谱会一直停在"只研判1个环节"。
-  var sl = PROJECTS[cur] && PROJECTS[cur].segmentLevels;
+  // 已研判过则跳过：读方向级容器 sl[topic]，环节齐了就复用；不齐清标记重跑。
+  var sl = _slFor(topic);
   if(sl && sl.__chainKey===chainKey){
-    // 只需当前链的环节齐了就跳过（不要求 sl 里没有别链残留）
     if(nodeNames.length && nodeNames.every(function(n){ return !!sl[n]; })) return;
     delete sl.__chainKey;
   }
-  // 切换到新链：清掉 segmentLevels 里不属于本链 nodeNames 的残留环节（历史跨链污染），
-  // 保证图谱只反映当前链的研判，杜绝"选了氢能却混进香菇环节"。
+  // 切换到新链：清掉当前 topic 容器里不属于本链 nodeNames 的残留环节（历史跨链污染），
+  // 保证图谱只反映当前方向 × 当前链的研判。
   if(sl){
     Object.keys(sl).forEach(function(kk){
       if(kk==='__chainKey') return;
       if(nodeNames.indexOf(kk)<0) delete sl[kk];
     });
   }
-  _chainResearching[chainKey]=true;
+  _chainResearching[_reKey]=true;
   // 用 chainKey（干净的链名，如「香菇」）而非 topic（方向全称，如「香菇产业精深加工升级」）构造问题，
   // 避免方向全称里的限定词（精深加工升级）误导模型缩小范围、返回空 local_leaders。
   var q='请对'+city+'产业链「'+chainKey+'」的以下环节逐一研判（强弱判定/本地代表企业/外地对标企业）：'+nodeNames.join('、');
@@ -6661,12 +6714,13 @@ function researchChain(chainKey, topic, city, nodeNames, chunks){
     var data = JSON.parse(m[0]);
     var segResults = (data && data.segments) || [];
 
-    // 1) 落地强弱判定（只有全部环节落地成功才标记链已完成，否则下次渲染继续补）
-    if(!PROJECTS[cur].segmentLevels) PROJECTS[cur].segmentLevels={};
+    // 1) 落地强弱判定：写入方向级容器 sl[topic]，避免两个方向共用同一 chainKey 时互相覆盖
+    var _slBucket = _slEnsure(topic);
+    if(!_slBucket){ throw new Error('failed to init segmentLevels bucket for topic '+topic); }
     segResults.forEach(function(sr){
       var segName = sr && (sr.segment || sr.name);
       if(!segName) return;
-      PROJECTS[cur].segmentLevels[segName]={
+      _slBucket[segName]={
         level: sr.level || 'mid',
         basis: sr.level_basis || '',
         confidence: (data && data.confidence) || 'medium',
@@ -6674,9 +6728,9 @@ function researchChain(chainKey, topic, city, nodeNames, chunks){
       };
     });
     // 校验：所有 nodeNames 都落地了才标记完成
-    var allDone = nodeNames.every(function(n){ return !!PROJECTS[cur].segmentLevels[n]; });
+    var allDone = nodeNames.every(function(n){ return !!_slBucket[n]; });
     if(allDone && segResults.length >= nodeNames.length){
-      PROJECTS[cur].segmentLevels.__chainKey=chainKey;
+      _slBucket.__chainKey=chainKey;
     }
 
     // 2) 落地本地代表企业（type=local）与对标企业（type=target）
@@ -6728,7 +6782,7 @@ function researchChain(chainKey, topic, city, nodeNames, chunks){
   }).catch(function(e){
     console.warn('chain research failed:', e && e.message);
   }).finally(function(){
-    _chainResearching[chainKey]=false;
+    _chainResearching[_reKey]=false;
   });
 }
 
@@ -6737,9 +6791,9 @@ function researchChain(chainKey, topic, city, nodeNames, chunks){
 function chainPriorityMarkdown(){
   if(!cur || !PROJECTS[cur]) return '';
   var p=P();
-  var sl = PROJECTS[cur].segmentLevels;
+  // 方向级隔离：sl[topic]，避免两个方向共用同一 chainKey 时补链清单串显
+  var sl = _slFor(p ? p.topic : '');
   if(!sl) return '';
-  // 当前链隔离：只取当前方向对应链的环节，杜绝跨链污染混入补链清单
   var _chainKey = pickChainKey(p ? p.topic : '');
   if(!_chainKey || sl.__chainKey!==_chainKey) return '';
   var _chainNodes = _chainNodeNames(_chainKey);
