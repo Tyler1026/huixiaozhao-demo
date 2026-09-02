@@ -5000,10 +5000,8 @@ function restoreActionItems(){
             (it.benchEnts&&it.benchEnts.length?'<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">'+it.benchEnts.slice(0,3).map(function(b){return '<span style="font-size:10.5px;color:#1a56db;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:1px 6px;white-space:nowrap">🎯 '+String(b).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>';}).join('')+'</div>':'')+
           '</div>'+
           (function(){
-            // 幂等：同城同 gap 已存在 isDemand 项目 → 直接渲染“↩ 撤回提交”（与 restoreActionItems 同销另一处重复根因）
-            var _existKey=Object.keys(PROJECTS).find(function(k){
-              var x=PROJECTS[k]; return x&&x.isDemand&&x.city===p.city&&x.topic===it.gap;
-            });
+            // 幂等：同城同 gap 已存在 isDemand 项目 → 直接渲染“↩ 撤回提交”（用 _findExistingDemand 规范化匹配）
+            var _existKey=_findExistingDemand(p.city, it.gap);
             if(_existKey){
               return '<button data-projkey="'+_existKey+'" onclick="withdrawDemand(\''+_existKey+'\',this,\''+safeGap+'\',\''+safeCity+'\',\''+safeTopic+'\',\''+color+'\')" style="padding:8px 18px;background:#fff;color:#dc2626;border:1.5px solid #fca5a5;border-radius:10px;font-size:12.5px;font-weight:650;cursor:pointer;flex-shrink:0">↩ 撤回提交</button>';
             }
@@ -5113,10 +5111,8 @@ function renderActionItems(text, p, r){
         '</div>'+
         (function(){
           // 幂等按钮：若同城同 gap 已存在 isDemand 项目，就直接渲染为“↩ 撤回提交”，
-          // 避免用户看到“提交招商需求 →”又点一次派生重复项目（commit 83600a4 之前的双招根因）。
-          var _existKey=Object.keys(PROJECTS).find(function(k){
-            var x=PROJECTS[k]; return x&&x.isDemand&&x.city===p.city&&x.topic===it.gap;
-          });
+          // 用 _findExistingDemand 规范化匹配，避免同一诉求措辞不同重复入表。
+          var _existKey=_findExistingDemand(p.city, it.gap);
           if(_existKey){
             return '<button data-gap="'+safeGap+'" data-city="'+safeCity+'" data-topic="'+safeTopic+'" data-projkey="'+_existKey+'"'+
               ' onclick="withdrawDemand(this.getAttribute(\'data-projkey\'),this,this.getAttribute(\'data-gap\'),this.getAttribute(\'data-city\'),this.getAttribute(\'data-topic\'),\''+color+'\')"'+
@@ -5146,15 +5142,65 @@ function renderActionItems(text, p, r){
   area.appendChild(wrapper);
 }
 
+/* ── 需求幂等公共 helper ──
+   规范化 topic：去空白 + 去常见后缀（补链/升级/招引/引入/引育/培育/招商/Tier1/新能源），
+   避免"新能源冷藏车制冷机组补链"和"新能源冷藏车电动制冷机组总成"这类同一诉求
+   因措辞不同被判为两条需求，重复进招商对接。 */
+function _normalizeTopic(t){
+  if(!t) return '';
+  return String(t).replace(/\s+/g,'')
+    .replace(/(补链|升级|招引|引入|引育|培育|招商|Tier1|新能源|方向|产业)/g,'')
+    .toLowerCase();
+}
+/* 返回同城 + 同(规范化)topic 的已存在 isDemand 项目 key，找不到返回 null */
+function _findExistingDemand(city, topic){
+  if(!city || !topic) return null;
+  var _nt=_normalizeTopic(topic);
+  // 精确匹配优先
+  var exactKey=Object.keys(PROJECTS).find(function(k){
+    var x=PROJECTS[k]; return x&&x.isDemand&&x.city===city&&x.topic===topic;
+  });
+  if(exactKey) return exactKey;
+  // 规范化匹配（宽松）
+  return Object.keys(PROJECTS).find(function(k){
+    var x=PROJECTS[k]; return x&&x.isDemand&&x.city===city&&_normalizeTopic(x.topic)===_nt;
+  }) || null;
+}
+/* 清理已存在的同 city+topic 重复 isDemand 项目：保留最早创建的，删除后来者。
+   在 loadReportState / persist 之后调用，一次性把历史遗留的双招收敛。 */
+function _dedupeDemands(){
+  try{
+    var seen={}; // {city||normTopic: earliestKey}
+    var toDel=[];
+    Object.keys(PROJECTS).forEach(function(k){
+      var x=PROJECTS[k]; if(!x||!x.isDemand) return;
+      var _sig=(x.city||'')+'||'+_normalizeTopic(x.topic||'');
+      if(!seen[_sig]){ seen[_sig]=k; return; }
+      // 有重复：比较创建时间戳（key 里的 base36 部分即 Date.now）
+      var _a=parseInt(seen[_sig].replace('proj_',''),36);
+      var _b=parseInt(k.replace('proj_',''),36);
+      if(isNaN(_a)||isNaN(_b)){ toDel.push(k); return; }
+      if(_b<_a){ toDel.push(seen[_sig]); seen[_sig]=k; }
+      else{ toDel.push(k); }
+    });
+    toDel.forEach(function(k){
+      if(PROJECTS[k]) delete PROJECTS[k];
+      if(typeof REPORTSTATE!=='undefined' && REPORTSTATE[k]) delete REPORTSTATE[k];
+      if(typeof DEMANDS!=='undefined'){
+        for(var i=DEMANDS.length-1;i>=0;i--){ if(DEMANDS[i].id===k||DEMANDS[i].projKey===k) DEMANDS.splice(i,1); }
+      }
+    });
+    if(toDel.length) console.info('[dedupe] removed duplicate isDemand projects:', toDel);
+  }catch(e){ console.warn('[dedupe] failed:', e.message); }
+}
+
 /* 提交招商需求 */
 function importToProject(gap, city, topic, btnEl){
   var p=P();
   var _city=city||(p&&p.city)||'';
   // 幂等：同城同 gap(即 topic) 已存在 isDemand 项目则直接切到“已提交/可撤回”，不再新建。
-  // 之前每次点都用 Date.now() 生成新 key 造成重复项目，删了会被再次点击又建出来。
-  var _dupKey=Object.keys(PROJECTS).find(function(k){
-    var x=PROJECTS[k]; return x&&x.isDemand&&x.city===_city&&x.topic===gap;
-  });
+  // 用 _findExistingDemand 做规范化匹配，避免 "XX补链" 与 "XX制造总成" 措辞不同被判为两条需求。
+  var _dupKey=_findExistingDemand(_city, gap);
   if(_dupKey){
     toast('该方向已提交招商需求，可在招商对接页撤回');
     if(btnEl){
@@ -5974,10 +6020,8 @@ function submitDemand(){
   // 而不是把父项目工作区(cur, 如 sz)本身推进 stage/派生线索——那会让父项目连同它
   // 随方向变化的 topic 一起混入招商对接，且各方向线索全堆到父项目上。
   // 幂等：同一城市同一方向已提交过则不重复建。
-  var dupKey=Object.keys(PROJECTS).find(function(k){
-    var x=PROJECTS[k]; return x&&x.isDemand&&x.city===p.city&&x.topic===topic;
-  });
-  if(dupKey){toast('该方向已提交需求池'); return;}
+  var dupKey=_findExistingDemand(p.city, topic);
+  if(dupKey){toast('该方向已提交需求池，可在招商对接页撤回'); return;}
 
   var key='proj_'+Date.now().toString(36);
   PROJECTS[key]={
@@ -8489,7 +8533,7 @@ function subprojOf(k){return SUBPROJ[k]||[]}
 function saveUploads(){try{localStorage.setItem('hxz_uploads',JSON.stringify(UPLOADS))}catch(e){}}
 function loadUploads(){try{var d=localStorage.getItem('hxz_uploads');if(d)UPLOADS=JSON.parse(d)}catch(e){}}
 function addUpload(name){var k=cur;if(!UPLOADS[k])UPLOADS[k]=[];UPLOADS[k].push({name:name,at:new Date().toLocaleString('zh-CN')});saveUploads();}
-loadReportState();loadUploads();loadSubproj();
+loadReportState();loadUploads();loadSubproj();try{_dedupeDemands();}catch(_){}
 // 迁移：清理 seedDemo 遗留的假上传条目（格式为 {name,at}，无 size/ts）
 (function cleanFakeUploads(){
   if(localStorage.getItem('hxz_uploads_cleaned_v1')) return;
