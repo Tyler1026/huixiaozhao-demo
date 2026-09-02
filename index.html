@@ -6170,8 +6170,12 @@ function generateChainFromReport(topic, reportText, city){
   if(!topic) return;
   var rs=REPORTSTATE[cur]; if(!rs) return;
   if(!rs.chainByTopic) rs.chainByTopic={};
-  // 已有缓存且非空则跳过
-  if(rs.chainByTopic[topic] && rs.chainByTopic[topic].length) return;
+  // 已有缓存且是有效数组则跳过（字符串 'loading' 走下面的陈旧检查）
+  if(Array.isArray(rs.chainByTopic[topic]) && rs.chainByTopic[topic].length) return;
+  // 陈旧 'loading' 兜底：若无真正在跑的任务，视作上次卡死残留，直接清掉允许重试
+  var _inflightKey=(cur||'')+'|'+topic;
+  if(rs.chainByTopic[topic]==='loading' && _chainGenInFlight[_inflightKey]) return;
+  if(rs.chainByTopic[topic]==='loading') rs.chainByTopic[topic]=null;
   // 报告太短时模糊匹配aiReportByTopic找更完整的版本
   if((!reportText || reportText.length<800) && rs.aiReportByTopic){
     var _core=topic.replace(/[补链引入引育升级招商培育系统软硬件本地配套软性Tier1新能源]/g,'');
@@ -6183,6 +6187,7 @@ function generateChainFromReport(topic, reportText, city){
   }
   if(!reportText || reportText.length<100) return;
   rs.chainByTopic[topic]='loading';
+  _chainGenInFlight[_inflightKey]=true;
   var prompt='你是产业链研判专家。请基于以下'+(city||'本市')+'的产业分析报告，梳理「'+topic+'」的完整产业链，按上游/中游/下游分类逐环节研判。\n\n'
     +'报告内容：\n'+reportText.substring(0,2600)+'\n\n'
     +'严格输出JSON数组（不要markdown代码块、不要任何JSON之外的文字），结构：\n'
@@ -6197,7 +6202,7 @@ function generateChainFromReport(topic, reportText, city){
     +'3. local_leaders只填报告或你确知的真实本地企业全称；确实没有则填[]。benchmark填外地真实对标企业全称；没有填[]。禁止编造企业名，禁止拿外地企业冒充本地。\n'
     +'4. 每个seg下2-4个节点，总共6-10个节点。只输出JSON。';
   var _abortCtrl=new AbortController();
-  var _chainTimeout=setTimeout(function(){ _abortCtrl.abort(); rs.chainByTopic[topic]=null; persist(); var _b=document.getElementById('chainMapBlock'); if(_b) _b.innerHTML='<div style="padding:20px;text-align:center;color:#94a3b8;font-size:12.5px">图谱生成超时，请重新进入产业分析触发</div>'; },90000);
+  var _chainTimeout=setTimeout(function(){ _abortCtrl.abort(); rs.chainByTopic[topic]=null; _chainGenInFlight[_inflightKey]=false; persist(); var _b=document.getElementById('chainMapBlock'); if(_b) _b.innerHTML='<div style="padding:20px;text-align:center;color:#94a3b8;font-size:12.5px">图谱生成超时，请重新进入产业分析触发</div>'; },90000);
   fetch(KB_API,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -6234,10 +6239,10 @@ function generateChainFromReport(topic, reportText, city){
             try{ _chain=_extractChainRobust(acc.replace(/```json?\n?/g,'').replace(/```/g,'')); }catch(_e2){ console.warn('[chain] robust extract failed:',_e2.message); }
           }
           if(Array.isArray(_chain)&&_chain.length>=2 && _chain.some(function(s){return s.nodes&&s.nodes.length;})){
-            rs.chainByTopic[topic]=_chain; persist();
+            rs.chainByTopic[topic]=_chain; _chainGenInFlight[_inflightKey]=false; persist();
             if(view==='report') render();
           } else {
-            rs.chainByTopic[topic]=null; persist();
+            rs.chainByTopic[topic]=null; _chainGenInFlight[_inflightKey]=false; persist();
             if(view==='report') render();
           }
           return;
@@ -6255,7 +6260,7 @@ function generateChainFromReport(topic, reportText, city){
       });
     }
     return pump();
-  }).catch(function(e){ rs.chainByTopic[topic]=null; persist();
+  }).catch(function(e){ rs.chainByTopic[topic]=null; _chainGenInFlight[_inflightKey]=false; clearTimeout(_chainTimeout); persist();
     var block3=document.getElementById('chainMapBlock');
     if(block3&&e.name!=='AbortError') block3.innerHTML='<div style="padding:20px;text-align:center;color:#94a3b8;font-size:12.5px">图谱生成失败：'+e.message+'</div>';
   });
@@ -6502,7 +6507,16 @@ function chainMapHtml(p){
   if(!key){
     // 无硬编码链：用动态数据走丰富渲染，或触发生成
     if(_dynChain==='loading'){
-      return '<div style="margin-top:16px;padding:20px;border-radius:14px;border:1.5px dashed #cbd5e1;background:#f8fafc;text-align:center;color:#64748b;font-size:12.5px">'+'<div style="font-size:26px;margin-bottom:8px">⏳</div>正在生成产业链图谱…</div>';
+      // 陈旧标记兜底：无真正在跑的生成任务 → 清空并重触发
+      var _ifk=(cur||'')+'|'+topic;
+      if(!_chainGenInFlight[_ifk]){
+        REPORTSTATE[cur].chainByTopic[topic]=null; _dynChain=null;
+        try{saveReportState();}catch(_){}
+        var _rpt3=typeof reportTextForTopic==='function'?reportTextForTopic(topic):null;
+        if(_rpt3) setTimeout(function(){ generateChainFromReport(topic, _rpt3, p.city); },0);
+      } else {
+        return '<div style="margin-top:16px;padding:20px;border-radius:14px;border:1.5px dashed #cbd5e1;background:#f8fafc;text-align:center;color:#64748b;font-size:12.5px">'+'<div style="font-size:26px;margin-bottom:8px">⏳</div>正在生成产业链图谱…</div>';
+      }
     }
     if(Array.isArray(_dynChain) && _dynChain.length>=2){
       // 动态数据也用丰富泳道格式渲染（与硬编码完全一致的视觉风格）
@@ -7896,7 +7910,15 @@ function backToAnalysis(){detailData=null;var dp=$('.detail-pane');
 /* ===== 对话流交互 ===== */
 // localStorage 持久化：报告版本状态 + 上传材料历史（关掉页面第二天还在）
 function saveReportState(){try{localStorage.setItem('hxz_reportstate',JSON.stringify(REPORTSTATE))}catch(e){}}
-function loadReportState(){try{var d=localStorage.getItem('hxz_reportstate');if(d)REPORTSTATE=JSON.parse(d)}catch(e){}}
+function loadReportState(){try{var d=localStorage.getItem('hxz_reportstate');if(d){REPORTSTATE=JSON.parse(d);
+  /* 清理陈旧的 'loading' 标记：上次会话未完成的图谱生成任务不会跨会话续跑，直接置空触发重试 */
+  try{Object.keys(REPORTSTATE||{}).forEach(function(_k){
+    var _r=REPORTSTATE[_k]; if(!_r||!_r.chainByTopic) return;
+    Object.keys(_r.chainByTopic).forEach(function(_t){ if(_r.chainByTopic[_t]==='loading') _r.chainByTopic[_t]=null; });
+  });}catch(_e){}
+}}catch(e){}}
+/* 内存态：正在生成的图谱任务标记（防重入 + chainMapHtml 判定 loading 是否真在跑） */
+var _chainGenInFlight={};
 
 /* ── localStorage 持久化 ── */
 var LS_KEY='huixiaozhao_kb_v1';
