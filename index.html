@@ -4888,17 +4888,40 @@ function restoreConfirmPanel(){
 function deriveActionItemsFromChain(){
   if(!cur || !PROJECTS[cur]) return null;
   var p=P();
-  // 从方向级容器 sl[topic] 读，避免多个方向共用同一 chainKey 时互相污染
-  var sl = _slFor(p ? p.topic : '');
-  if(!sl) return null;
-  var _chainKey = pickChainKey(p ? p.topic : '');
-  if(!_chainKey || sl.__chainKey!==_chainKey) return null;
-  var _chainNodes = _chainNodeNames(_chainKey);
+  var topic = p ? p.topic : '';
+  if(!topic) return null;
   var entries=[];
-  for(var k in sl){
-    if(k==='__chainKey') continue;
-    if(_chainNodes.length && _chainNodes.indexOf(k)<0) continue;  // 过滤掉不属于本链的残留环节
-    entries.push({name:k, level:sl[k].level||'mid', basis:sl[k].basis||'', confidence:sl[k].confidence||'medium'});
+  var _chainKey = pickChainKey(topic);
+  var _isDynamic = false;
+  if(_chainKey){
+    // 路径 A：硬编码链 → 走 _slFor(topic)
+    var sl = _slFor(topic);
+    if(!sl || sl.__chainKey!==_chainKey) return null;
+    var _chainNodes = _chainNodeNames(_chainKey);
+    for(var k in sl){
+      if(k==='__chainKey') continue;
+      if(_chainNodes.length && _chainNodes.indexOf(k)<0) continue;
+      entries.push({name:k, level:sl[k].level||'mid', basis:sl[k].basis||'',
+                    confidence:sl[k].confidence||'medium', benchmarks:null});
+    }
+  } else {
+    // 路径 B：动态图谱（chainByTopic[topic]）
+    var rs = REPORTSTATE[cur];
+    var dyn = rs && rs.chainByTopic && rs.chainByTopic[topic];
+    if(!Array.isArray(dyn) || !dyn.length) return null;
+    _isDynamic = true;
+    dyn.forEach(function(seg){
+      (seg.nodes||[]).forEach(function(nd){
+        if(!nd || !nd.name) return;
+        entries.push({
+          name: nd.name,
+          level: (nd.level==='strong'||nd.level==='mid'||nd.level==='weak') ? nd.level : 'mid',
+          basis: nd.note || '',
+          confidence: 'medium',
+          benchmarks: Array.isArray(nd.benchmark) ? nd.benchmark.slice() : []
+        });
+      });
+    });
   }
   var order={weak:0, mid:1};
   var candidates=entries.filter(function(e){ return e.level==='weak'||e.level==='mid'; });
@@ -4911,15 +4934,22 @@ function deriveActionItemsFromChain(){
   var attrMap={weak:'补链缺口', mid:'培育增强'};
   var confPct={high:'85%', medium:'70%', low:'55%'};
   return candidates.slice(0,3).map(function(e, i){
-    var bench=(OPS_ENT||[]).filter(function(ent){
-      if(ent.type==='local') return false;
-      if(ent.segment===e.name) return true;
-      if((ent.gap||'').indexOf(e.name)>=0) return true;
-      return (ent.matches||[]).some(function(m){ return (m.gap||'').indexOf(e.name)>=0; });
-    });
+    var benchEnts;
+    if(_isDynamic){
+      // 动态图谱：对标企业直接取 node.benchmark（该方向 AI 派生，天然不跨方向）
+      benchEnts = e.benchmarks || [];
+    } else {
+      var bench=(OPS_ENT||[]).filter(function(ent){
+        if(ent.type==='local') return false;
+        if(ent.segment===e.name) return true;
+        if((ent.gap||'').indexOf(e.name)>=0) return true;
+        return (ent.matches||[]).some(function(m){ return (m.gap||'').indexOf(e.name)>=0; });
+      });
+      benchEnts = bench.map(function(b){ return b.name; });
+    }
     return {rank:i+1, gap:e.name, attr:attrMap[e.level]||'', score:'', level:e.level, basis:e.basis,
             confidencePct: confPct[e.confidence]||'70%', fromChain:true,
-            benchEnts: bench.map(function(b){ return b.name; })};
+            benchEnts: benchEnts};
   });
 }
 
@@ -6030,7 +6060,10 @@ function pickChainKey(topic){
   if(/氢能|氢燃料|燃料电池|电堆|储氢|供氢/.test(topic)) return '氢能';
   if(/应急|安全|无人机|机器人|消防|篷布|救援|指挥车/.test(topic)) return '应急';
   if(/香菇|蘑菇|菌|多糖|多肽|食用菌|精深加工|生物提取/.test(topic)) return '香菇';
-  if(/产业转移|承接|沿海|转移/.test(topic)) return '产业转移';
+  // 已废弃「产业转移」通用兜底：具体产业方向（生物医药承接/器械承接等）曾被这个正则
+  // 全部吸走塞进同一份通用四节点（沿海存量产能/本地承载/配套供应链/品牌研发）图谱，
+  // 导致跨方向串显。现在返回 null，让 chainMapHtml 走 generateChainFromReport 动态生成
+  // 各方向真实的产业链拓扑（CDMO / 病毒载体 / 中试放大等）。
   return null;
 }
 
@@ -6481,7 +6514,7 @@ function chainMapHtml(p){
     return '<div style="margin-top:16px;padding:20px;border-radius:14px;border:1.5px dashed #cbd5e1;background:#f8fafc;text-align:center;color:#64748b;font-size:12.5px;line-height:1.7">'+
       '<div style="font-size:26px;margin-bottom:8px">🧭</div>'+
       '「'+topic+'」暂未匹配到对应的产业链图谱<br>'+
-      '<span style="font-size:11.5px;color:#94a3b8">当前支持：氢能专用车 / 安全应急 / 香菇 / 产业转移。可在城市智库补充该产业数据后重试。</span>'+
+      '<span style="font-size:11.5px;color:#94a3b8">正在为该方向生成专属产业链图谱，通常需 30–60 秒。如长时间未出现，可在城市智库补充该产业数据后重试。</span>'+
     '</div>';
   }
 
@@ -6791,17 +6824,42 @@ function researchChain(chainKey, topic, city, nodeNames, chunks){
 function chainPriorityMarkdown(){
   if(!cur || !PROJECTS[cur]) return '';
   var p=P();
-  // 方向级隔离：sl[topic]，避免两个方向共用同一 chainKey 时补链清单串显
-  var sl = _slFor(p ? p.topic : '');
-  if(!sl) return '';
-  var _chainKey = pickChainKey(p ? p.topic : '');
-  if(!_chainKey || sl.__chainKey!==_chainKey) return '';
-  var _chainNodes = _chainNodeNames(_chainKey);
+  var topic = p ? p.topic : '';
+  if(!topic) return '';
+  // 数据源二选一：
+  //   A) 硬编码链（氢能/应急/香菇）：走 _slFor(topic) + OPS_ENT 对标企业
+  //   B) 动态图谱（生物医药承接/医疗器械承接等）：走 chainByTopic[topic]，对标企业从图谱节点
+  //      自身的 benchmark 字段取，避免用全局 OPS_ENT 造成跨方向串显（这是修复前第三章始终
+  //      看到"临港/宁波舟山港/张江/苏州/联影/药明康德"的根因——那些企业挂在通用环节 gap 下）。
   var entries=[];
-  for(var k in sl){
-    if(k==='__chainKey') continue;
-    if(_chainNodes.length && _chainNodes.indexOf(k)<0) continue;  // 过滤不属于本链的残留环节
-    entries.push({name:k, level:sl[k].level||'mid'});
+  var _chainKey = pickChainKey(topic);
+  var _isDynamic = false;
+  if(_chainKey){
+    // 路径 A：硬编码链
+    var sl = _slFor(topic);
+    if(!sl || sl.__chainKey!==_chainKey) return '';
+    var _chainNodes = _chainNodeNames(_chainKey);
+    for(var k in sl){
+      if(k==='__chainKey') continue;
+      if(_chainNodes.length && _chainNodes.indexOf(k)<0) continue;
+      entries.push({name:k, level:sl[k].level||'mid', benchmarks:null});
+    }
+  } else {
+    // 路径 B：动态图谱（chainByTopic[topic] 是 [{seg,nodes:[{name,level,benchmark,...}]}]）
+    var rs = REPORTSTATE[cur];
+    var dyn = rs && rs.chainByTopic && rs.chainByTopic[topic];
+    if(!Array.isArray(dyn) || !dyn.length) return '';
+    _isDynamic = true;
+    dyn.forEach(function(seg){
+      (seg.nodes||[]).forEach(function(nd){
+        if(!nd || !nd.name) return;
+        entries.push({
+          name: nd.name,
+          level: (nd.level==='strong'||nd.level==='mid'||nd.level==='weak') ? nd.level : 'mid',
+          benchmarks: Array.isArray(nd.benchmark) ? nd.benchmark.slice() : []
+        });
+      });
+    });
   }
   var order={weak:0, mid:1, strong:2};
   entries.sort(function(a,b){
@@ -6812,13 +6870,22 @@ function chainPriorityMarkdown(){
   if(!entries.length) return '';
   var lvlTxt={weak:'缺口', mid:'培育', strong:'优势'};
   var rows=entries.map(function(e,i){
-    var bench=(OPS_ENT||[]).filter(function(ent){
-      if(ent.type==='local') return false;
-      if(ent.segment===e.name) return true;
-      if((ent.gap||'').indexOf(e.name)>=0) return true;
-      return (ent.matches||[]).some(function(m){ return (m.gap||'').indexOf(e.name)>=0; });
-    });
-    var benchStr = bench.length ? bench.slice(0,2).map(function(b){return b.name;}).join('、') : '—';
+    var benchStr;
+    if(_isDynamic){
+      // 动态图谱：对标企业直接取 node.benchmark（该方向 AI 自己派生，天然不跨方向）
+      benchStr = (e.benchmarks && e.benchmarks.length)
+                   ? e.benchmarks.slice(0,2).join('、')
+                   : '—';
+    } else {
+      // 硬编码链：沿用 OPS_ENT 匹配
+      var bench=(OPS_ENT||[]).filter(function(ent){
+        if(ent.type==='local') return false;
+        if(ent.segment===e.name) return true;
+        if((ent.gap||'').indexOf(e.name)>=0) return true;
+        return (ent.matches||[]).some(function(m){ return (m.gap||'').indexOf(e.name)>=0; });
+      });
+      benchStr = bench.length ? bench.slice(0,2).map(function(b){return b.name;}).join('、') : '—';
+    }
     return '| '+(i+1)+' | '+e.name+' | '+lvlTxt[e.level]+' | '+benchStr+' |';
   }).join('\n');
   return '## 三、补链优先级清单（AI 产业链研判）\n\n'
