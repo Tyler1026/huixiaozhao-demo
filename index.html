@@ -2723,7 +2723,7 @@ function openNotif(id){
 }
 function gotoProjFromNotif(pk){cur=pk;view='home';detailData=null;render();toast('已定位到「'+PROJECTS[pk].topic+'」研判')}
 function toggleSw(e){e.stopPropagation();var m=$('#swMenu');m.style.display=m.style.display==='none'?'block':'none'}
-function switchProj(k){cur=k;view='report';detailData=null;render();toast('已进入「'+PROJECTS[k].topic+'」研判工作区')}
+function switchProj(k){cur=k;view='report';detailData=null;try{_sanitizeReportState();}catch(_){}render();toast('已进入「'+PROJECTS[k].topic+'」研判工作区')}
 function newProj(){var m=$('#swMenu');if(m)m.style.display='none';newProjModal()}
 function go(v){
   if(isLocked(v)){
@@ -4514,6 +4514,8 @@ function archiveCurrentReport(key){
 
 function deleteHistoryReport(key, idx){
   if(!REPORT_HISTORY[key]) return;
+  var _h=REPORT_HISTORY[key][idx]; var _label=_h&&_h.topic?('「'+_h.topic+'」'):'该条';
+  if(!confirm('确定删除'+_label+'历史报告？删除后无法恢复。')) return;
   REPORT_HISTORY[key].splice(idx,1);
   saveReportHistory();
   renderHistoryReports(key);
@@ -7910,13 +7912,42 @@ function backToAnalysis(){detailData=null;var dp=$('.detail-pane');
 /* ===== 对话流交互 ===== */
 // localStorage 持久化：报告版本状态 + 上传材料历史（关掉页面第二天还在）
 function saveReportState(){try{localStorage.setItem('hxz_reportstate',JSON.stringify(REPORTSTATE))}catch(e){}}
-function loadReportState(){try{var d=localStorage.getItem('hxz_reportstate');if(d){REPORTSTATE=JSON.parse(d);
-  /* 清理陈旧的 'loading' 标记：上次会话未完成的图谱生成任务不会跨会话续跑，直接置空触发重试 */
-  try{Object.keys(REPORTSTATE||{}).forEach(function(_k){
-    var _r=REPORTSTATE[_k]; if(!_r||!_r.chainByTopic) return;
-    Object.keys(_r.chainByTopic).forEach(function(_t){ if(_r.chainByTopic[_t]==='loading') _r.chainByTopic[_t]=null; });
-  });}catch(_e){}
-}}catch(e){}}
+/* 清扫 REPORTSTATE 陈旧数据：
+   1) chainByTopic 里的 'loading' 字符串（上次会话未完成的图谱生成任务，不会跨会话续跑）
+   2) 孤儿 topic：chainByTopic / aiReportByTopic / phaseByTopic 等里存在，但 userGeneratedTopics 里已删除的方向。
+   3) phaseByTopic 有值但 scoreByTopic 缺失的补默认分（保守估计，避免历史卡片显示 0%）。
+   在 loadReportState 与 switchProj 入口都会跑，覆盖所有项目而不仅当前项目。 */
+function _sanitizeReportState(){
+  try{
+    Object.keys(REPORTSTATE||{}).forEach(function(_k){
+      var _r=REPORTSTATE[_k]; if(!_r) return;
+      // 1) 清 loading 字符串
+      if(_r.chainByTopic){
+        Object.keys(_r.chainByTopic).forEach(function(_t){
+          if(_r.chainByTopic[_t]==='loading') _r.chainByTopic[_t]=null;
+        });
+      }
+      // 2) 清孤儿方向数据（仅在有 userGeneratedTopics 时启用，否则可能是老数据不敢乱删）
+      var _valid=_r.userGeneratedTopics;
+      if(_valid && Object.keys(_valid).length){
+        ['chainByTopic','aiReportByTopic','phaseByTopic','pendingByTopic','actionItemsByTopic','scoreByTopic','tsByTopic','reportByTopic'].forEach(function(_field){
+          if(!_r[_field]) return;
+          Object.keys(_r[_field]).forEach(function(_t){
+            if(!_valid[_t]) delete _r[_field][_t];
+          });
+        });
+      }
+      // 3) phase 有分数缺失的补一个默认值（避免历史卡片 0%）
+      if(_r.phaseByTopic && !_r.scoreByTopic) _r.scoreByTopic={};
+      if(_r.phaseByTopic && _r.scoreByTopic){
+        Object.keys(_r.phaseByTopic).forEach(function(_t){
+          if(_r.phaseByTopic[_t]>=2 && _r.scoreByTopic[_t]==null) _r.scoreByTopic[_t]=60;
+        });
+      }
+    });
+  }catch(_e){}
+}
+function loadReportState(){try{var d=localStorage.getItem('hxz_reportstate');if(d){REPORTSTATE=JSON.parse(d);_sanitizeReportState();}}catch(e){}}
 /* 内存态：正在生成的图谱任务标记（防重入 + chainMapHtml 判定 loading 是否真在跑） */
 var _chainGenInFlight={};
 
