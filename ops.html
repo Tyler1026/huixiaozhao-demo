@@ -7416,7 +7416,7 @@ function cpPrefs(ob){
   if(!opts.length&&!cus.length) return null;
   return {options:opts.join('\n'), custom:cus.join('\n')};
 }
-/* 访谈类材料条数：干部配合度的客观指标 */
+/* 访谈类材料条数：访谈信息完备度的客观指标 */
 function cpInterviewCount(city){
   return cpCorpus(city).filter(function(c){return c.nature==='interview';}).length;
 }
@@ -7751,9 +7751,45 @@ function cpChartsSection(prof){
     cpChartBalance(prof)
   ].filter(Boolean);
   if(!cards.length) return '';
-  return '<div style="font-size:14px;font-weight:750;color:#0b183b;margin:22px 0 4px;padding-left:9px;border-left:3px solid #0ea5a4">四、数据图表</div>'+
-    '<div style="font-size:11.5px;color:#8492a6;margin:0 0 10px 12px">仅呈现材料中可提取到纯数值的指标，'+cards.length+' 张图；缺数据的图自动隐藏，不以 0 充数</div>'+
+  // 图表放在最前，必须先交代读图前提：年份口径不统一、未覆盖项、以及本轮缺哪些图。
+  // 否则读者会把不同年份的数字横向比较，或误以为"没画的图=该市没有这项"。
+  var prem=cpChartsPremise(prof, ch, cards.length);
+  return '<div style="font-size:14px;font-weight:750;color:#0b183b;margin:18px 0 4px;padding-left:9px;border-left:3px solid #0ea5a4">一、数据图表</div>'+
+    prem+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">'+cards.join('')+'</div>';
+}
+
+/* 读图前提说明：口径 / 数据源 / 本轮未出图的项 */
+function cpChartsPremise(prof, ch, nCards){
+  // 年份：从 structure.year 与 gdp_trend 年份汇总，提示口径可能跨年
+  var yrs={};
+  if(ch.structure&&ch.structure.year) yrs[String(ch.structure.year)]=1;
+  (ch.gdp_trend||[]).forEach(function(d){ if(d&&d.year) yrs[String(d.year)]=1; });
+  var yl=Object.keys(yrs).sort();
+  // 本轮缺哪些图（明确告知，避免"没画=没有"的误读）
+  var miss=[];
+  if(!ch.structure)  miss.push('三次产业结构');
+  if(!(ch.gdp_trend&&ch.gdp_trend.length>1)) miss.push('GDP走势');
+  if(!(ch.growth&&ch.growth.length))  miss.push('增速指标');
+  if(!ch.compare)    miss.push('竞争城市对比');
+  if(!(ch.chain&&ch.chain.length))    miss.push('产业链强弱');
+  var items=[];
+  items.push('<b>数据源</b>：本市智库材料（含政府公报、统计公报与上传佐证），'+
+             '仅呈现可提取到纯数值的指标，缺数据的图自动隐藏、不以 0 充数');
+  if(yl.length) items.push('<b>年份口径</b>：图中数据年份为 '+yl.map(cpEsc).join('、')+
+             '，各指标统计年度可能不一致，横向比较前请先核对年份');
+  items.push('<b>统计口径</b>：绝对量按现价、增速按不变价；公报数为快报口径，'+
+             '后续经普查修订可能与本图存在差异');
+  if(miss.length) items.push('<b>本轮未出图</b>：'+miss.join('、')+
+             '——材料中暂无可用纯数值，非该市不存在该项');
+  items.push('<b>偏好类图表</b>：置信度雷达反映的是判断依据强弱，'+
+             '非该市招商意愿强弱');
+  return '<div style="border:1px solid #d6e6f2;background:#f6fbfe;border-radius:9px;padding:11px 13px;margin:0 0 12px 0">'+
+    '<div style="font-size:11px;font-weight:750;color:#0e7490;letter-spacing:.06em;margin-bottom:6px">读图前提 · 共 '+nCards+' 张图</div>'+
+    items.map(function(x){
+      return '<div style="font-size:11.5px;color:#4a6480;line-height:1.75;padding:1.5px 0">· '+x+'</div>';
+    }).join('')+
+  '</div>';
 }
 
 /* ── 主视图 ── */
@@ -7784,7 +7820,7 @@ function opsCityProfile(){
   var srcBar='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">'+
     cpStat('📦','智库材料', nChunks+' 条', '画像事实底座')+
     cpStat('📋','招商偏好问卷', ob?'已填写':'未填写', ob?'作为 stated 证据校准':'偏好只能反推')+
-    cpStat('🎤','干部访谈', nItv+' 条', nItv?'配合度与偏好信号':'暂无访谈记录')+
+    cpStat('📇','干部访谈', nItv+' 条', nItv?'偏好与信息完备度参考':'暂无访谈记录')+
     cpStat('🕐','画像状态', prof?(stale?'待更新':'已生成'):'未生成', stale?'材料已新增，建议重算':'')+
   '</div>';
 
@@ -7811,19 +7847,22 @@ function opsCityProfile(){
     '<div style="font-size:11px;font-weight:750;color:#1d4ed8;letter-spacing:.08em;margin-bottom:6px">画像总览</div>'+
     '<div style="font-size:13.5px;color:#22364f;line-height:1.85">'+cpEsc(prof.summary)+'</div></div>';
 
-  // 一、客观自身条件
+  // 一、数据图表（图最直观，放最前；细节文字在后）
+  body+=cpChartsSection(prof);
+
+  // 二、客观自身条件
   var objBlocks=[
     cpObjBlock('经济体量','💰',o.economy), cpObjBlock('产业结构','📊',o.structure),
     cpObjBlock('主导产业','🏭',o.industry), cpObjBlock('园区与承载','🏢',o.park),
     cpObjBlock('链主企业','⚓',o.anchor),   cpObjBlock('配套与成本','🔗',o.cost)
   ].filter(Boolean);
-  body+='<div style="font-size:14px;font-weight:750;color:#0b183b;margin:18px 0 10px;padding-left:9px;border-left:3px solid #1d4ed8">一、客观自身条件</div>';
+  body+='<div style="font-size:14px;font-weight:750;color:#0b183b;margin:18px 0 10px;padding-left:9px;border-left:3px solid #1d4ed8">二、客观自身条件</div>';
   body+= objBlocks.length
     ? '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">'+objBlocks.join('')+'</div>'
     : '<div style="font-size:12.5px;color:#a8b3c4;padding:12px 0">材料中未提取到可量化的客观条件</div>';
 
-  // 二、招商偏好
-  body+='<div style="font-size:14px;font-weight:750;color:#0b183b;margin:20px 0 4px;padding-left:9px;border-left:3px solid #7c3aed">二、招商偏好</div>';
+  // 三、招商偏好
+  body+='<div style="font-size:14px;font-weight:750;color:#0b183b;margin:20px 0 4px;padding-left:9px;border-left:3px solid #7c3aed">三、招商偏好</div>';
   body+='<div style="font-size:11.5px;color:#8492a6;margin:0 0 10px 12px">'+
     (prof.__hasOnboarding?'蓝框=问卷明示（stated），其余=材料反推（inferred）':'该市未填问卷，全部为材料反推，建议补填问卷提升置信度')+'</div>';
   body+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">'+
@@ -7834,7 +7873,7 @@ function opsCityProfile(){
     cpPrefCard('承载能力','🏗️',pref.capacity)+
   '</div>';
 
-  // 三、优劣势与缺口
+  // 四、优劣势与缺口
   var lists=[
     cpList('不可复制优势','✅',prof.strength,'#0f766e','#e9f7f6'),
     cpList('真实短板','⚠️',prof.weakness,'#b45309','#fff7ed'),
@@ -7842,19 +7881,18 @@ function opsCityProfile(){
     cpList('画像缺口·待补材料','📌',prof.gaps,'#4f46e5','#f5f3ff')
   ].filter(Boolean);
   if(lists.length){
-    body+='<div style="font-size:14px;font-weight:750;color:#0b183b;margin:20px 0 10px;padding-left:9px;border-left:3px solid #0f766e">三、优劣势与画像缺口</div>';
+    body+='<div style="font-size:14px;font-weight:750;color:#0b183b;margin:20px 0 10px;padding-left:9px;border-left:3px solid #0f766e">四、优劣势与画像缺口</div>';
     body+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">'+lists.join('')+'</div>';
   }
 
-  body+=cpChartsSection(prof);
-
-  // 干部配合度
+  // 信息完备度（原「干部配合度」——措辞会指向对方担责，客户看到易生嫌隙；
+  // 改为只描述材料本身状态：待补充 / 部分完备 / 较完备）
   var eng=prof.engagement||{};
   if(eng.level||(eng.signals||[]).length){
-    var el={high:['#0f766e','#e9f7f6','配合度高'],medium:['#b45309','#fff7ed','配合度一般'],low:['#b91c1c','#fef2f2','配合度低']}[eng.level]||['#64748b','#f1f5f9','未评估'];
+    var el={high:['#0f766e','#e9f7f6','较完备'],medium:['#b45309','#fff7ed','部分完备'],low:['#5a7398','#f1f5f9','待补充']}[eng.level]||['#64748b','#f1f5f9','待评估'];
     body+='<div style="margin-top:14px;border:1px solid #e8edf5;border-radius:10px;background:#fff;padding:12px 14px">'+
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
-        '<span style="font-size:13px;font-weight:700;color:#0b183b">🎤 干部配合度</span>'+
+        '<span style="font-size:13px;font-weight:700;color:#0b183b">📇 访谈信息完备度</span>'+
         '<span style="font-size:10px;padding:2px 8px;border-radius:5px;color:'+el[0]+';background:'+el[1]+';font-weight:650">'+el[2]+'</span></div>'+
       (eng.signals||[]).map(function(s){
         return '<div style="font-size:12px;color:#5a7398;line-height:1.7;padding:3px 0">· '+cpEsc(s)+'</div>';
