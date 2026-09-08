@@ -969,6 +969,9 @@ var cur=null,view='setup',detailOpen=false,detailData=null,curKb=null,curDemand=
    避免用户正在往下阅读时莫名弹回顶部；若 view/cur 发生变化（用户主动切模块/切项目）则不还原、正常回到顶部。 ═══ */
 var _SCROLL_SELECTORS='.report-scroll,.clues-scroll,.knowledge-scroll,.conversation-scroll,.docking-scroll,.settings-scroll,.detail-scroll';
 var _scrollMemory={key:null,tops:null};
+// 用户真实滚动时间戳：_restoreScroll 延时 apply 前检测，600ms 内有滚动则跳过，避免拖住感
+var _lastUserScrollMs=0;
+document.addEventListener('scroll',function(){_lastUserScrollMs=Date.now();},true);
 function _captureScroll(){
   var tops={};
   try{
@@ -987,6 +990,8 @@ function _restoreScroll(prevKey, tops){
   var _has=false; for(var _k in tops){ if(tops[_k]>0){ _has=true; break; } }
   if(!_has) return;
   var apply=function(){
+    // 用户600ms内有真实滚动：让用户掌控位置，不强行覆盖（避免"拖住"感）
+    if(Date.now()-_lastUserScrollMs < 600) return;
     try{
       document.querySelectorAll(_SCROLL_SELECTORS).forEach(function(el,i){
         var cls=(el.className||'').split(/\s+/)[0]||'sc';
@@ -997,9 +1002,8 @@ function _restoreScroll(prevKey, tops){
   };
   apply();
   if(window.requestAnimationFrame) requestAnimationFrame(apply);
-  // 报告正文/对话等内容是异步渲染的，scrollHeight 需要时间才能撑起来；
-  // 多次延时还原，直到内容高度足够能容纳目标位置或超时，防止"刚还原又被异步重排归零"。
-  [30,80,160,300,500,800].forEach(function(ms){ setTimeout(apply, ms); });
+  // 300ms内用户尚未开始滚动，足以应对异步重排归零；500/800ms已无必要。
+  [30,80,160,300].forEach(function(ms){ setTimeout(apply, ms); });
 }
 
 /* AUTH: 当前登录态 {user,city,projKey,resident,who,org}；null=未登录 */
@@ -1249,9 +1253,12 @@ function render(){
   if(view==='knowledge'){ setTimeout(kbChatReplay, 50); }
   // 重建 DOM 后：若仍停留在同一 view+cur（原地重渲染），还原滚动位置，避免阅读时弹回顶部
   _restoreScroll(_prevScrollKey, _prevScrollTops);
-  // 兜底：异步渲染(kbChatReplay/报告回放)可能在50-800ms后reset scrollTop，加长延时再恢复
-  var _fk=_prevScrollKey,_ft=_prevScrollTops;
-  [1200,2000].forEach(function(ms){setTimeout(function(){_restoreScroll(_fk,_ft);},ms);});
+  // 兜底：kbChatReplay 可能在 800ms+ 后 reset scrollTop；仅知识库视图需要长延时再恢复。
+  // 报告视图不注册长延时，防止用户刚开始下拉就被强制拉回顶部（"拖住"感根因）。
+  if(view==='knowledge'){
+    var _fk=_prevScrollKey,_ft=_prevScrollTops;
+    [1200,2000].forEach(function(ms){setTimeout(function(){_restoreScroll(_fk,_ft);},ms);});
+  }
 }
 /* 顶栏角色切换按钮（政府端 ⇄ 运营端）*/
 
