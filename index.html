@@ -5965,7 +5965,11 @@ function triggerReport(phase){
           if(_reportTimeout) clearTimeout(_reportTimeout);
           window._liveAccText=null; // 生成完毕，清除临时文本
   // 报告完成后自动生成产业链图谱（仅无硬编码链的方向才需要动态生成）
-  var _rp=P(); if(_rp&&_rp.topic&&!pickChainKey(_rp.topic)){ generateChainFromReport(_rp.topic, accText, _rp.city); }
+  // 先清除当前方向的旧链缓存，确保基于新报告重新生成（不影响其他方向）
+  var _rp=P(); if(_rp&&_rp.topic&&!pickChainKey(_rp.topic)){
+    if(REPORTSTATE[cur]&&REPORTSTATE[cur].chainByTopic) REPORTSTATE[cur].chainByTopic[_rp.topic]=null;
+    generateChainFromReport(_rp.topic, accText, _rp.city);
+  }
           var elapsed=Date.now()-t0;
           var _liveContent=document.getElementById('reportContent'); if(_liveContent) _liveContent.innerHTML='<p style="margin:0">'+renderMd(accText)+'</p>';
           // 归档旧报告
@@ -5986,7 +5990,8 @@ function triggerReport(phase){
             phaseByTopic:_prevRs.phaseByTopic||{},
             actionItemsByTopic:_prevRs.actionItemsByTopic||{},
             scoreByTopic:_prevRs.scoreByTopic||{},
-            tsByTopic:_prevRs.tsByTopic||{}};
+            tsByTopic:_prevRs.tsByTopic||{},
+            chainByTopic:_prevRs.chainByTopic||{}};
           // 标记该方向为「用户已显式生成」，允许日后后台 AI 刷新（新方向在此之前不会凭空生成报告）
           REPORTSTATE[cur].userGeneratedTopics[p.topic]=true;
           // 用户生成的报告也作为该方向的 AI 报告缓存，刷新后可正确恢复
@@ -6092,7 +6097,8 @@ function triggerReport(phase){
         aiReportByTopic:_prevRs2.aiReportByTopic||{},userGeneratedTopics:_prevRs2.userGeneratedTopics||{},
         pendingByTopic:_prevRs2.pendingByTopic||{},phaseByTopic:_prevRs2.phaseByTopic||{},
         actionItemsByTopic:_prevRs2.actionItemsByTopic||{},
-        scoreByTopic:_prevRs2.scoreByTopic||{},tsByTopic:_prevRs2.tsByTopic||{}};
+        scoreByTopic:_prevRs2.scoreByTopic||{},tsByTopic:_prevRs2.tsByTopic||{},
+        chainByTopic:_prevRs2.chainByTopic||{}};
       REPORTSTATE[cur].aiReportByTopic[p.topic]=accText;
       REPORTSTATE[cur].phaseByTopic[p.topic]=phase;
       // 按方向记录 score/ts（fix 2026-08-28）
