@@ -1681,13 +1681,14 @@ class Handler(BaseHTTPRequestHandler):
         if mode in ("chat", "onboard_options"):
             resp_payload = {
                 "model": MODEL_CHAT,
-                "max_output_tokens": max_tokens + 600,  # 预留搜索/工具调用的输出开销
+                "max_output_tokens": max_tokens + 1200,  # 预留搜索/工具调用+可能的 reasoning 开销
                 "stream": stream,
                 "instructions": system_prompt,
                 "input": [*hist_msgs,
                           {"role": "user", "content": user_msg}],
                 "tools": [{"type": "web_search"}],
-                "thinking": {"type": "disabled"},
+                # Responses API 用 reasoning.effort 控制思考，不支持 Chat Completions 的 thinking 参数
+                "reasoning": {"effort": "none"},
             }
             payload = json.dumps(resp_payload).encode()
             ds_url = DS_RESP_URL

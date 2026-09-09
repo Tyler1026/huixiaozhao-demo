@@ -9215,6 +9215,12 @@ function kbAnswerRender(container, query, chunks, city){
     function pump(){
       reader.read().then(function(d){
         if(d.done){
+          // 兜底：流结束但正文为空（reasoning 吃光 token 或后端翻译层未捕获 content 事件）
+          if(!accText){
+            bodyDiv.innerHTML = '<span style="color:#ef4444">AI 未返回有效回答，请重试<br><small style="color:#9aa5b5">可能原因：推理消耗过多 token，正文内容被截断</small></span>';
+            kbChatPush('ai', ansNode.outerHTML);
+            return;
+          }
           // 完成：追加来源 + 追问
           var elapsed = Date.now()-t0;
           var cites = [...new Set(chunks.map(function(c){return c.cite;}).filter(Boolean))];
