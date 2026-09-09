@@ -5347,6 +5347,8 @@ function importToProject(gap, city, topic, btnEl){
   });
   // 不切换 cur — 保留当前研判页所有状态
   persist();
+  // 招商需求立即同步到服务器（绕过5秒防抖），防止刷新丢失、管理端看不到
+  try{ fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:localStorage.getItem(LS_KEY)||'{}'}).catch(function(){}); }catch(_){}
   // 更新按钮为「已提交·可撤回」状态
   if(btnEl){
     // 先捕获原按钮底色（color 在本函数作用域并不存在，此前撤回回调引用它会抛 ReferenceError 导致按钮点不动）
@@ -6168,6 +6170,8 @@ function submitDemand(){
   // 待接触企业只由管理端 AI 漏斗精选推送，政府端不再自动派生「脱敏企业」假线索
   // deriveCluesFromReport(key);
   persist();
+  // 招商需求立即同步到服务器（绕过5秒防抖），防止刷新丢失、管理端看不到
+  try{ fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:localStorage.getItem(LS_KEY)||'{}'}).catch(function(){}); }catch(_){}
   toast('✓ 招引需求已提交，待管理端 AI 漏斗推送精准企业');
 }
 
@@ -8218,6 +8222,8 @@ function restore(){
       if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
       if(data.OPS_ENT) OPS_ENT=data.OPS_ENT;
       if(data.RESET_GEN) RESET_GEN=data.RESET_GEN;
+      if(data.DEMANDS) DEMANDS=data.DEMANDS;
+      if(data.DELETED_PROJECTS) window.DELETED_PROJECTS=data.DELETED_PROJECTS;
       console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
       return true;
     }
@@ -8250,6 +8256,10 @@ function restoreFromServer(callback){
       if(callback)callback(false); return;
     }
     // 服务器直接覆盖本地，不做合并——保证所有人看到同一份数据
+    // 但保护本地刚提交的 isDemand 项目：5秒防抖内刷新时服务器尚无这些数据，直接覆盖会丢
+    var _localDemandProj={}, _localDemandRS={}, _localDemands=(typeof DEMANDS!=='undefined')?DEMANDS.slice():[];
+    Object.keys(PROJECTS).forEach(function(k){ if(PROJECTS[k]&&PROJECTS[k].isDemand) _localDemandProj[k]=PROJECTS[k]; });
+    Object.keys(REPORTSTATE||{}).forEach(function(k){ if(_localDemandProj[k]&&REPORTSTATE[k]) _localDemandRS[k]=REPORTSTATE[k]; });
     PROJECTS         = srv.PROJECTS         || {};
     UPLOADS          = srv.UPLOADS          || {};
     KB_CONFIRMS      = srv.KB_CONFIRMS      || {};
@@ -8289,6 +8299,18 @@ function restoreFromServer(callback){
         delete UPLOADS[dk]; delete KB_FILE_CHUNKS[dk];
       });
     })();
+    // 合并保护本地刚提交但服务端尚未收到的 isDemand 项目（防5秒防抖内刷新丢失）
+    Object.keys(_localDemandProj).forEach(function(k){
+      if(!PROJECTS[k] && (window.DELETED_PROJECTS||[]).indexOf(k)<0){
+        PROJECTS[k]=_localDemandProj[k];
+        if(_localDemandRS[k]&&!REPORTSTATE[k]) REPORTSTATE[k]=_localDemandRS[k];
+      }
+    });
+    // 合并本地 DEMANDS 条目（服务端可能缺少刚提交的）
+    if(_localDemands.length){
+      var _srvDIds={}; (DEMANDS||[]).forEach(function(d){ _srvDIds[d.id||d.projKey]=true; });
+      _localDemands.forEach(function(d){ if(!_srvDIds[d.id||d.projKey]) DEMANDS.push(d); });
+    }
     // 不盲目用srv.cur（可能指向空项目）：选数据最多的项目
     var _allK=Object.keys(PROJECTS); var _bestK=null,_bestKC=0;
     _allK.forEach(function(k){var c=0;(PROJECTS[k].kb||[]).forEach(function(t){c+=(t.known||[]).length;});if(c>_bestKC){_bestKC=c;_bestK=k;}});
@@ -8299,7 +8321,11 @@ function restoreFromServer(callback){
       KB_CONFIRMS:KB_CONFIRMS,KB_FILE_CHUNKS:KB_FILE_CHUNKS,
       KB_UNLOCKED:KB_UNLOCKED,REPORTSTATE:REPORTSTATE,
       PENDING_CONFIRMS:PENDING_CONFIRMS,DOCK_LOGS:DOCK_LOGS,
-      KB_CHAT:KB_CHAT,OPS_ENT:OPS_ENT,RESET_GEN:RESET_GEN,syncTs:Date.now()};
+      DEMANDS:typeof DEMANDS!=='undefined'?DEMANDS:[],
+      DELETED_PROJECTS:window.DELETED_PROJECTS||[],
+      KB_CHAT:KB_CHAT,OPS_ENT:OPS_ENT,RESET_GEN:RESET_GEN,
+      USER_PROFILES:USER_PROFILES,REPORT_HISTORY:typeof REPORT_HISTORY!=='undefined'?REPORT_HISTORY:{},
+      syncTs:Date.now()};
     try{localStorage.setItem(LS_KEY,JSON.stringify(flat));}catch(_){}
     try{localStorage.setItem('hxz_uploads',JSON.stringify(UPLOADS));}catch(_){}
     // 若 Postgres 是旧包装格式，顺手更新成扁平格式
