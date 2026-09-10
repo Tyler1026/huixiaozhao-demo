@@ -521,14 +521,15 @@ def _load_ds_key():
         if m: v = m.group(0)
     return v
 DS_KEY      = _load_ds_key()
-MODEL       = "deepseek-v4-pro"
-# chat 模式走 Responses API + 原生联网搜索（仅 v4-flash 支持 web_search，pro 暂不支持）
+MODEL       = "deepseek-v4-flash"
+# 全站统一 deepseek-v4-flash：MODEL 与 MODEL_CHAT 同值。
+# chat 模式另走 Responses API + 原生联网搜索（web_search 仅 flash 支持）。
 DS_RESP_URL = "https://api.deepseek.com/responses"
 MODEL_CHAT  = "deepseek-v4-flash"
 MAX_TOKENS_DRAFT = 800
 MAX_TOKENS_FULL  = 5000
 MAX_TOKENS_CHAT  = 400
-# research 模式需返回结构化 JSON（对标企业3~5家+数量+来源），且 v4-pro 默认 thinking
+# research 模式需返回结构化 JSON（对标企业3~5家+数量+来源），且模型默认 thinking
 # 会消耗 token，故单独放大并预留思考空间
 MAX_TOKENS_RESEARCH = 6000
 # 整链研判：一次返回整条链所有环节（6~8个），需更大 token 预算
@@ -1671,7 +1672,7 @@ class Handler(BaseHTTPRequestHandler):
                 {"role": "user",   "content": user_msg}
             ]
         }
-        # v4-pro 默认开启 thinking，CoT 会先吐 reasoning_content 并吃光 max_tokens，
+        # 模型默认开启 thinking，CoT 会先吐 reasoning_content 并吃光 max_tokens，
         # 导致 content 迟迟不出/为空。前端只渲染 delta.content、不显示思考链，
         # 所以对所有 mode（含 chat/suggest）一律关闭 thinking，避免问答“出不来答案”。
         payload_dict["thinking"] = {"type": "disabled"}
