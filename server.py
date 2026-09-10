@@ -162,6 +162,28 @@ def _retrieve_chunks(question, chunks, top_k=8, min_score=1):
     selected = [c for _s, c in scored[:top_k]]
     return selected, scored[:top_k]
 
+_CHAT_ANALYTIC_HINTS = (
+    "信号", "缺口", "方向", "机会", "对比", "影响", "建议", "动作", "抓手",
+    "怎么", "如何", "哪些", "什么", "为什么", "评估", "研判", "分析", "路径",
+    "策略", "承接", "补链", "强链", "延链", "竞争", "差异化", "布局",
+)
+_CHAT_SIMPLE_HINTS = ("已收到", "收到", "补充一下", "更新一下", "确认一下", "记一下")
+
+
+def _chat_token_budget(q):
+    """按问题复杂度决定 chat 模式的输出预算。
+    分析类问题需要逐条拆解（信号/缺口/方向/对比…），150 字会把它削成一句概括；
+    简单事实问答与数据补充保持短答，避免浪费与跑题。"""
+    s = (q or "").strip()
+    if not s:
+        return MAX_TOKENS_CHAT
+    if any(h in s for h in _CHAT_SIMPLE_HINTS) and len(s) <= 40:
+        return MAX_TOKENS_CHAT_SIMPLE
+    if any(h in s for h in _CHAT_ANALYTIC_HINTS) or len(s) >= 30 or s.count("？") + s.count("?") >= 2:
+        return MAX_TOKENS_CHAT_ANALYTIC
+    return MAX_TOKENS_CHAT
+
+
 def _is_upload_chunk(c):
     """判断一个知识片段是否来自用户上传/标注（非 AI 采集）。"""
     if not isinstance(c, dict):
@@ -529,6 +551,10 @@ MODEL_CHAT  = "deepseek-v4-flash"
 MAX_TOKENS_DRAFT = 800
 MAX_TOKENS_FULL  = 5000
 MAX_TOKENS_CHAT  = 400
+# chat 模式按问题复杂度分档：分析类问题（要拆信号/缺口/方向/对比）150字压不下，
+# 会被削成一句概括。简单问答维持短，分析类放宽，极简交互（补充数据、确认）保持最短。
+MAX_TOKENS_CHAT_ANALYTIC = 1400
+MAX_TOKENS_CHAT_SIMPLE   = 200
 # research 模式需返回结构化 JSON（对标企业3~5家+数量+来源），且模型默认 thinking
 # 会消耗 token，故单独放大并预留思考空间
 MAX_TOKENS_RESEARCH = 6000
@@ -545,12 +571,17 @@ SYSTEM_DRAFT = """你是慧小招AI招商助手。快速输出300字以内的初
 SYSTEM_CHAT = """你是慧小招城市智库的AI问答助手，在招商问答对话框中与政府干部自然对话。
 
 要求：
-- 像聊天一样简短直接地回答，控制在150字以内。
-- 只回答用户当前问的这一个问题，不要输出报告结构、不要分章节、不要生成表格。
-- 优先引用提供的城市智库数据与用户上传材料中的具体数字。
-- 当问题涉及最新动态、时效信息（如近期政策、行业新闻、企业动向）或智库数据无法覆盖时，使用联网搜索获取最新信息，并注明「（联网）」。
+- 先判断用户问的是哪一类，再决定回答长度：
+  · 分析类问题（要求拆解信号、缺口、方向、机会、对比、影响、建议动作等）→ 分点作答，把材料里的具体信号/环节/数字逐条列全，控制在 500 字以内。宁可分点写清楚，也不要压成一句概括。
+  · 简单事实问答（某个数字、某家企业、某个园区在哪）→ 直接回答，控制在 150 字以内。
+  · 用户只是补充/更新一条数据 → 简短确认已收到并说明其对研判的意义，一两句话即可。
+- 分析类问题必须把智库材料和上传文件里已经存在的条目用尽，不要只挑一两条就下结论；材料里有的信号、抓手、建议动作要逐条呈现。
+- 优先引用提供的城市智库数据与用户上传材料中的具体数字，并标注来源文件名。
+- 智库数据无法覆盖时，**直接使用联网搜索**获取最新公开信息后作答，并在对应句末注明「（联网）」。
+- 检索结果为 0 条时绝不能让用户「自己去搜」或「建议查询官网」：必须自己先搜，搜完再回答。
+- 确实既无材料、又无法联网核实时，明确说清楚「未检索到相关信息，需要补充哪些材料」，不要用泛泛的行业常识硬凑成答案。
 - 无数据支撑且未联网核实的判断用⚠️标注。
-- 如果用户只是补充/更新了一条数据，简短确认已收到并说明它对研判的意义即可，不要展开长篇分析。
+- 不要输出完整报告结构、不要分章节、不要生成表格；分点最多两层。
 - 使用中文，口语化、精炼。"""
 
 SYSTEM_SUGGEST = """你是慧小招城市智库的AI助手。根据提供的某个城市的智库数据，站在当地招商干部视角，生成他们此刻最该问、最有价值的建议问题。
@@ -1567,6 +1598,19 @@ class Handler(BaseHTTPRequestHandler):
             for c in used
         ) or "暂无检索到相关内容，请基于通用招商知识回答。"
 
+        # —— 智库未命中：不要让用户自己去搜，后端直接把联网搜索补上 ——
+        # chat/onboard_options 走 Responses API + web_search，平台自己会搜；
+        # 其余走 chat-completions，这里显式告诉模型「本次没有本地材料，必须联网」。
+        no_hit = (len(used) == 0) and (mode in ("chat", "draft", "full"))
+        if no_hit:
+            ctx = (
+                "【本地智库检索结果：0 条命中】\n"
+                "本次在「%s」的智库与上传材料中未检索到与该问题相关的内容。\n"
+                "请直接使用联网搜索获取最新公开信息后作答，不要要求用户自己去搜索，"
+                "也不要用泛泛的行业常识硬凑。能搜到就给出结论并注明「（联网）」；"
+                "确实搜不到再说明还需要补充哪些材料。" % (city or "该城市")
+            )
+
         # —— RAG 审计日志：证明本次分析实际吃进了哪些数据、其中多少来自用户上传 ——
         # total_available = 前端送来的候选总数；total_chunks = 真实命中并吃进的数量（可能 0~top_k）
         upload_used = [c for c in used if _is_upload_chunk(c)]
@@ -1593,7 +1637,8 @@ class Handler(BaseHTTPRequestHandler):
             max_tokens    = 200
         elif mode == "chat":
             system_prompt = SYSTEM_CHAT
-            max_tokens    = MAX_TOKENS_CHAT
+            # 按问题复杂度动态给预算（见 _chat_token_budget）
+            max_tokens    = _chat_token_budget(q)
         elif mode == "draft":
             system_prompt = SYSTEM_DRAFT
             max_tokens    = MAX_TOKENS_DRAFT

@@ -9337,8 +9337,9 @@ function kbSendQuestion(btn, q){
 function kbRAGQueryWithHint(query, container, kbTopic){
   var p=P(); if(!p) return;
   var corpus=buildKBCorpus(p.city);
-  // 检索更多候选（20），保证上传附件/政策材料真实命中不被置顶挤掉或因高频被IDF压出候选池
-  var chunks=kbSearch(query,corpus,20);
+  // 检索更多候选（50），保证上传附件/政策材料真实命中不被置顶挤掉或因高频被IDF压出候选池。
+  // 20→50：前端BM25截断是两层筛选的第一层，截太狠会把上传材料整批挤出，后端再准也无料可选。
+  var chunks=kbSearch(query,corpus,50);
   if(kbTopic&&kbTopic.known){
     var seen=chunks.map(function(c){return c.text;});
     // 该主题下用户上传的附件片段：也一并检索并优先保留（不占用置顶名额，属真实数据）
@@ -9360,8 +9361,8 @@ function kbRAGQueryWithHint(query, container, kbTopic){
 function kbRAGQuery(query, container){
   var p=P(); if(!p) return;
   var corpus=buildKBCorpus(p.city);
-  // topK 从 5 提到 20：候选池过小会把上传政策材料(如负面清单,一次上传即多条chunk)挤出，导致漏召回。
-  var chunks=kbSearch(query, corpus, 20);
+  // topK 从 5→20→60：候选池过小会把上传政策材料(如负面清单,一次上传即多条chunk)挤出，导致漏召回。
+  var chunks=kbSearch(query, corpus, 60);
   kbAnswerRender(container, query, chunks, p.city);
 }
 
