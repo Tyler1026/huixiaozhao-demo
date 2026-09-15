@@ -7499,9 +7499,9 @@ function aiAvatar(){return 'data:image/svg+xml;utf8,'+encodeURIComponent('<svg x
 function memBankStats(){
   var p=P();
   var textN=0, fileN=0, chatN=0;
-  var cf=KB_CONFIRMS[cur]||{};
+  var _mk=(typeof cityKeys==='function')?cityKeys():[cur]; _mk.forEach(function(k){ var cf=KB_CONFIRMS[k]||{};
   Object.keys(cf).forEach(function(ki){ Object.keys(cf[ki]||{}).forEach(function(){ textN++; }); });
-  fileN=(UPLOADS[cur]||[]).length;
+  fileN+=(UPLOADS[k]||[]).length; });
   // 统计当前城市全部会话的用户提问数
   (function(){ var st=kbSessionStore(cur); if(st){ st.sessions.forEach(function(s){ (s.messages||[]).forEach(function(m){ if(m.role==='user') chatN++; }); }); } })();
   return {textN:textN, fileN:fileN, chatN:chatN, total:textN+fileN+chatN};
@@ -7562,17 +7562,17 @@ function renderMemBody(){
   else box.innerHTML=memChatView();
 }
 function memTextView(){
-  var p=P(); var cf=KB_CONFIRMS[cur]||{};
-  var rows=[];
+  var p=P(); var rows=[]; var _tk=(typeof cityKeys==='function')?cityKeys():[cur]; _tk.forEach(function(pk){ var cf=KB_CONFIRMS[pk]||{}; var pp=PROJECTS[pk]||{};
+  /* rows 已在函数首行声明，勿在此重置 */
   Object.keys(cf).forEach(function(ki){
-    var topic=(p.kb&&p.kb[ki])?p.kb[ki].t:'未知主题';
-    var icon=(p.kb&&p.kb[ki])?p.kb[ki].icon:'\📌';
+  var topic=(pp.kb&&pp.kb[ki])?pp.kb[ki].t:'未知主题';
+  var icon=(pp.kb&&pp.kb[ki])?pp.kb[ki].icon:'\📌';
     Object.keys(cf[ki]||{}).forEach(function(ii){
       var rec=cf[ki][ii]; if(!rec)return;
-      rows.push({topic:topic, icon:icon, text:rec.text||'', status:rec.status||'confirmed', ts:rec.ts||0, kbIdx:parseInt(ki,10), itemIdx:parseInt(ii,10)});
+      rows.push({topic:topic, icon:icon, text:rec.text||'', status:rec.status||'confirmed', ts:rec.ts||0, projKey:pk, kbIdx:parseInt(ki,10), itemIdx:parseInt(ii,10)});
     });
   });
-  if(!rows.length) return memEmpty('还没有确认或修改过的结论。<br>在主题卡里点「确认」或「编辑」后，会沉淀到这里。');
+  }); if(!rows.length) return memEmpty('还没有确认或修改过的结论。<br>在主题卡里点「确认」或「编辑」后，会沉淀到这里。');
   rows.sort(function(a,b){return b.ts-a.ts;});
   return '<div style="margin-bottom:10px;text-align:right">'+
       '<button onclick="clearMemText()" style="font-size:11px;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:4px 10px;cursor:pointer">清空文字记忆</button>'+
@@ -7588,21 +7588,21 @@ function memTextView(){
         '<span style="font-size:11.5px;color:#6366f1;font-weight:650">'+r.topic+'</span>'+
         badge+
         '<span style="margin-left:auto;font-size:10.5px;color:#b0bac8">'+fmtTs(r.ts)+'</span>'+
-        '<button onclick="delMemText('+r.kbIdx+','+r.itemIdx+')" title="删除该条记忆" style="background:none;border:none;color:#cbd5e1;font-size:14px;cursor:pointer;padding:0 2px;line-height:1" onmouseover="this.style.color=\'#dc2626\'" onmouseout="this.style.color=\'#cbd5e1\'">\u2715</button>'+
+        '<button onclick="delMemText(\''+r.projKey+'\','+r.kbIdx+','+r.itemIdx+')" title="删除该条记忆" style="background:none;border:none;color:#cbd5e1;font-size:14px;cursor:pointer;padding:0 2px;line-height:1" onmouseover="this.style.color=\'#dc2626\'" onmouseout="this.style.color=\'#cbd5e1\'">\u2715</button>'+
       '</div>'+
       '<div style="font-size:13px;color:#1e293b;line-height:1.7">'+highlightKeyData(r.text)+'</div>'+
     '</div>';
   }).join('');
 }
 function memFileView(){
-  var ups=(UPLOADS[cur]||[]).filter(function(u){return !!u.size||!!u.ts;}); var p=P();
+  var _fk=(typeof cityKeys==='function')?cityKeys():[cur]; var ups=[]; _fk.forEach(function(pk){ (UPLOADS[pk]||[]).forEach(function(u){ if(!!u.size||!!u.ts){ var _u=Object.assign({},u); _u._pk=pk; ups.push(_u); } }); }); var p=P();
   if(!ups.length) return memEmpty('还没有上传过材料。<br>在问答框点「\📎 补充材料」上传政府文件（PDF/Word/TXT），会真正解析入库。');
   var list=ups.slice().reverse();
   return '<div style="margin-bottom:10px;text-align:right">'+
       '<button onclick="clearMemFile()" style="font-size:11px;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:4px 10px;cursor:pointer">清空文件记忆</button>'+
     '</div>'+
     list.map(function(u){
-    var kb=(u.kbIdx!=null&&p.kb&&p.kb[u.kbIdx])?p.kb[u.kbIdx].t:'城市智库';
+    var _up=PROJECTS[u._pk]||p; var kb=(u.kbIdx!=null&&_up.kb&&_up.kb[u.kbIdx])?_up.kb[u.kbIdx].t:(_up.city?_up.city+'·城市智库':'城市智库');
     var sizeStr=u.size?(Math.round(u.size/1024)+' KB'):'';
     var ts=u.ts||0; var when=ts?fmtTs(ts):(u.at||'');
     var ext=(u.name||'').split('.').pop().toLowerCase();
@@ -7620,7 +7620,7 @@ function memFileView(){
       '<div style="flex:1;min-width:0">'+
         '<div style="display:flex;align-items:flex-start;gap:6px">'+
           '<div style="flex:1;font-size:13px;font-weight:600;color:#1e293b;word-break:break-all;line-height:1.4">'+u.name+'</div>'+
-          '<button onclick="delMemFile(\''+encodeURIComponent(u.name)+'\','+(u.ts||0)+')" title="删除该文件记忆" style="background:none;border:none;color:#cbd5e1;font-size:14px;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0" onmouseover="this.style.color=\'#dc2626\'" onmouseout="this.style.color=\'#cbd5e1\'">\u2715</button>'+
+          '<button onclick="delMemFile(\''+(u._pk||cur)+'\',\''+encodeURIComponent(u.name)+'\','+(u.ts||0)+')" title="删除该文件记忆" style="background:none;border:none;color:#cbd5e1;font-size:14px;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0" onmouseover="this.style.color=\'#dc2626\'" onmouseout="this.style.color=\'#cbd5e1\'">\u2715</button>'+
         '</div>'+
         '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:6px">'+
           pill+
@@ -7679,13 +7679,15 @@ function clearMemChat(){
   toast('问答记忆已清空');
 }
 /* 记忆库·文字记忆：删除单条（对应 KB_CONFIRMS[cur][kbIdx][itemIdx]，同时把 known 里的 ✅ 标记还原为 ⚠️ 待确认） */
-function delMemText(kbIdx, itemIdx){
-  if(!cur||!KB_CONFIRMS[cur]||!KB_CONFIRMS[cur][kbIdx])return;
+function delMemText(pk, kbIdx, itemIdx){
+  pk=pk||cur;
+  if(!pk||!KB_CONFIRMS[pk]||!KB_CONFIRMS[pk][kbIdx])return;
   if(!confirm('删除这条文字记忆？该结论将回到「待确认」状态。')) return;
-  delete KB_CONFIRMS[cur][kbIdx][itemIdx];
-  if(!Object.keys(KB_CONFIRMS[cur][kbIdx]).length) delete KB_CONFIRMS[cur][kbIdx];
+  delete KB_CONFIRMS[pk][kbIdx][itemIdx];
+  if(!Object.keys(KB_CONFIRMS[pk][kbIdx]).length) delete KB_CONFIRMS[pk][kbIdx];
   // 把知识片段里对应条目的 ✅ 前缀还原为 ⚠️（回到待确认），保持数据一致
   var p=P();
+  var p=PROJECTS[pk]||{};
   if(p&&p.kb&&p.kb[kbIdx]&&p.kb[kbIdx].known&&p.kb[kbIdx].known[itemIdx]){
     var t=p.kb[kbIdx].known[itemIdx];
     var _tx=(t&&typeof t==='object')?t.text:String(t||'');
@@ -7698,33 +7700,35 @@ function delMemText(kbIdx, itemIdx){
 }
 /* 记忆库·文字记忆：清空全部 */
 function clearMemText(){
-  if(!cur||!KB_CONFIRMS[cur])return;
+  if(!cur)return;
   if(!confirm('确定清空全部文字记忆吗？所有已确认结论将回到「待确认」状态，不可恢复。')) return;
   var p=P();
-  // 还原所有 ✅ 为 ⚠️
-  Object.keys(KB_CONFIRMS[cur]).forEach(function(ki){
-    Object.keys(KB_CONFIRMS[cur][ki]||{}).forEach(function(ii){
+  // 还原所有 ✅ 为 ⚠️（遍历本城市所有招商方向）
+  var _ck=(typeof cityKeys==='function')?cityKeys():[cur];
+  _ck.forEach(function(pk){ var p=PROJECTS[pk]||{}; if(!KB_CONFIRMS[pk])return;
+  Object.keys(KB_CONFIRMS[pk]).forEach(function(ki){
+    Object.keys(KB_CONFIRMS[pk][ki]||{}).forEach(function(ii){
       if(p&&p.kb&&p.kb[ki]&&p.kb[ki].known&&p.kb[ki].known[ii]){
         var t=p.kb[ki].known[ii];
         var _tx2=(t&&typeof t==='object')?t.text:String(t||''); if(_tx2.indexOf('\u2705')===0){ if(t&&typeof t==='object') t.text=_tx2.replace(/^\u2705\s*/,'\u26a0\ufe0f '); else p.kb[ki].known[ii]=_tx2.replace(/^\u2705\s*/,'\u26a0\ufe0f '); }
       }
     });
   });
-  KB_CONFIRMS[cur]={}; persist();
+  KB_CONFIRMS[pk]={}; }); persist();
   if(typeof refreshKbProgress==='function') refreshKbProgress();
   renderMemTabs(); renderMemBody();
   toast('文字记忆已清空');
 }
 /* 记忆库·文件记忆：删除单条（按 name+ts 定位；同时清理该文件产生的 corpus chunks） */
-function delMemFile(encName, ts){
-  if(!cur||!UPLOADS[cur])return;
-  var name=decodeURIComponent(encName||'');
+function delMemFile(pk, encName, ts){
+  pk=pk||cur;
+  /* guard moved below */
+  var name=decodeURIComponent(encName||''); if(!UPLOADS[pk])return;
   if(!confirm('删除文件记忆「'+name+'」？其解析产生的知识片段也会一并移除。')) return;
-  UPLOADS[cur]=UPLOADS[cur].filter(function(u){ return !(u.name===name && (u.ts||0)===(ts||0)); });
+  UPLOADS[pk]=UPLOADS[pk].filter(function(u){ return !(u.name===name && (u.ts||0)===(ts||0)); });
   // 清理该文件解析出的 corpus 片段
-  if(KB_FILE_CHUNKS[cur]){
-    KB_FILE_CHUNKS[cur]=KB_FILE_CHUNKS[cur].filter(function(c){ return c.file!==name && c.source!==name; });
-  }
+  if(KB_FILE_CHUNKS[pk]) KB_FILE_CHUNKS[pk]=(KB_FILE_CHUNKS[pk]||[]).filter(function(c){ return c.file!==name && c.source!==name; });
+  // (旧的按当前方向清理逻辑已由上一行按 pk 清理取代)
   persist();
   if(typeof refreshKbProgress==='function') refreshKbProgress();
   renderMemTabs(); renderMemBody();
@@ -7732,10 +7736,10 @@ function delMemFile(encName, ts){
 }
 /* 记忆库·文件记忆：清空全部 */
 function clearMemFile(){
-  if(!cur||!UPLOADS[cur])return;
+  if(!cur)return;
   if(!confirm('确定清空全部文件记忆吗？所有已上传材料及其解析片段将被移除，不可恢复。')) return;
-  UPLOADS[cur]=[];
-  if(KB_FILE_CHUNKS[cur]) KB_FILE_CHUNKS[cur]=[];
+  var _ck=(typeof cityKeys==='function')?cityKeys():[cur];
+  _ck.forEach(function(pk){ UPLOADS[pk]=[]; if(KB_FILE_CHUNKS[pk]) KB_FILE_CHUNKS[pk]=[]; });
   persist();
   if(typeof refreshKbProgress==='function') refreshKbProgress();
   renderMemTabs(); renderMemBody();
