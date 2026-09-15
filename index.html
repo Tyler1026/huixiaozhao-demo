@@ -8285,7 +8285,43 @@ function restoreFromServer(callback){
     PENDING_CONFIRMS = srv.PENDING_CONFIRMS || {};
     DOCK_LOGS        = srv.DOCK_LOGS        || {};
     if(srv.DEMANDS) window.DEMANDS=srv.DEMANDS;
-    KB_CHAT          = srv.KB_CHAT          || {};
+    // KB_CHAT：按会话择优合并，绝不让服务端旧快照裸覆盖本地刚写入的问答
+    // （persist 到服务器有 5 秒防抖，问答后立即刷新时服务端往往还没有这条，
+    //  裸覆盖会导致问答记忆变回 0）。规则：本地独有会话保留；同 id 取消息更多/更新的一方。
+    (function(){
+      var _localChat = (typeof KB_CHAT==='object' && KB_CHAT) ? KB_CHAT : {};
+      var _srvChat = srv.KB_CHAT || {};
+      var _merged = {};
+      var _allKeys = {};
+      Object.keys(_srvChat).forEach(function(k){ _allKeys[k]=1; });
+      Object.keys(_localChat).forEach(function(k){ _allKeys[k]=1; });
+      Object.keys(_allKeys).forEach(function(k){
+        var srvStore = _srvChat[k], locStore = _localChat[k];
+        var norm = function(st){
+          if(Array.isArray(st)) return { sessions:[{ id:'s_legacy_'+k, title:'', ts:0, messages:st }], activeId:null };
+          if(st && st.sessions) return st;
+          return { sessions:[], activeId:null };
+        };
+        var A = norm(srvStore), B = norm(locStore);
+        var bySession = {};
+        var order = [];
+        var take = function(sess){
+          if(!sess || !sess.id) return;
+          var ex = bySession[sess.id];
+          if(!ex){ bySession[sess.id] = sess; order.push(sess.id); return; }
+          var exN = (ex.messages||[]).length, newN = (sess.messages||[]).length;
+          var exT = Number(ex.ts)||0, newT = Number(sess.ts)||0;
+          // 消息更多的赢；相同则时间更新的赢
+          if(newN > exN || (newN===exN && newT>exT)) bySession[sess.id] = sess;
+        };
+        A.sessions.forEach(take);
+        B.sessions.forEach(take);
+        var sessions = order.map(function(id){ return bySession[id]; });
+        var activeId = B.activeId || A.activeId || (sessions.length?sessions[sessions.length-1].id:null);
+        _merged[k] = { sessions:sessions, activeId:activeId };
+      });
+      KB_CHAT = _merged;
+    })();
     // 企业库：管理端录入的目标企业，供政府端产业链图谱关联展示
     if(srv.OPS_ENT) OPS_ENT = srv.OPS_ENT;
     // 历史报告：服务器有则用服务器，否则保留本地已加载的（避免旧记录被空值冲掉）
@@ -8354,6 +8390,24 @@ function clearPersist(){
   localStorage.removeItem(LS_KEY);
   toast('已清除本地存储');
 }
+
+/* 页面隐藏/关闭前兜底同步：绕过 persist 的 5 秒防抖，立即把最新快照推到服务器，
+ * 避免问答后立即刷新/关页时服务端还没收到导致重载时被旧快照覆盖。 */
+(function(){
+  var flush=function(){
+    try{
+      var body=localStorage.getItem(LS_KEY)||'{}';
+      if(navigator.sendBeacon){
+        var blob=new Blob([body],{type:'application/json'});
+        navigator.sendBeacon('/api/sync', blob);
+      } else {
+        fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:body,keepalive:true}).catch(function(){});
+      }
+    }catch(_){}
+  };
+  window.addEventListener('pagehide', flush);
+  window.addEventListener('visibilitychange', function(){ if(document.visibilityState==='hidden') flush(); });
+})();
 
 /* 管理端写入时，政府端自动同步内存状态 */
 window.addEventListener('storage', function(e){
