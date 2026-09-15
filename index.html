@@ -7674,7 +7674,7 @@ function memDeleteSession(id){
 function clearMemChat(){
   if(!cur)return;
   if(!confirm('确定清空全部问答记忆吗？所有会话都会被删除，此操作不可恢复。')) return;
-  KB_CHAT[cur]={sessions:[],activeId:null}; persist();
+  KB_CHAT[kbChatKey(cur)]={sessions:[],activeId:null}; persist();
   renderMemTabs(); renderMemBody();
   toast('问答记忆已清空');
 }
@@ -8225,6 +8225,7 @@ function restore(){
       if(data.DEMANDS) DEMANDS=data.DEMANDS;
       if(data.DELETED_PROJECTS) window.DELETED_PROJECTS=data.DELETED_PROJECTS;
       console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
+      try{ migrateKbChatToCity(); }catch(_){}
       return true;
     }
   }catch(e){ console.warn('[restore] failed:',e.message); }
@@ -8341,6 +8342,7 @@ function restoreFromServer(callback){
     if(_userView) view = _userView;
     window._serverSyncLock=false;
     console.log('[sync] restored from server, projects:',Object.keys(PROJECTS).length,', preserved topic:', _userTopic);
+    try{ migrateKbChatToCity(); }catch(_){}
     if(callback)callback(true);
   }).catch(function(){ window._serverSyncLock=false; if(callback)callback(false); });
 }
@@ -8438,8 +8440,40 @@ var KB_CHAT={};
  * 新结构：KB_CHAT[cur] = { sessions:[{id,title,ts,messages:[msg,...]}], activeId }
  * kbSessionStore() 负责把旧数组就地迁移为新结构（旧记录包成一个"历史对话"会话，不丢数据）。 */
 var KB_SESSION_IDLE_MS = 6*60*60*1000; // 闲置超过6小时自动开新会话
+/* 问答记忆按【城市】聚合，而非按方向(project key)。
+ * 同一城市下的多个招商方向(sz / pmsslgvs0 / proj_msr6nug8 ...)共享同一份问答记忆，
+ * 否则切换方向后记忆库问答数会显示为 0（历史问答被隔离在别的方向 key 下）。 */
+function kbChatKey(key){
+  key = key || cur;
+  if(key && PROJECTS[key] && PROJECTS[key].city) return 'city:'+PROJECTS[key].city;
+  return key;
+}
+/* 一次性迁移：把历史上按方向(project key)存的问答会话归并到对应城市 key 下。
+ * 在 restore / restoreFromServer 之后调用（此时 PROJECTS 已就位，才能查到城市）。 */
+function migrateKbChatToCity(){
+  if(!KB_CHAT || typeof KB_CHAT!=='object') return;
+  var moved=false;
+  Object.keys(KB_CHAT).forEach(function(k){
+    if(k.indexOf('city:')===0) return;
+    var proj=PROJECTS[k]; var city=proj&&proj.city;
+    if(!city) return;
+    var ck='city:'+city;
+    var src=KB_CHAT[k];
+    var srcSt = Array.isArray(src)
+      ? {sessions:[{id:'s'+Date.now()+Math.floor(Math.random()*1000),title:kbDeriveTitle(src),ts:(src[0]&&src[0].ts)||Date.now(),messages:src}],activeId:null}
+      : (src&&src.sessions?src:{sessions:[],activeId:null});
+    if(!KB_CHAT[ck]||!KB_CHAT[ck].sessions) KB_CHAT[ck]={sessions:[],activeId:null};
+    var existIds={}; KB_CHAT[ck].sessions.forEach(function(s){existIds[s.id]=true;});
+    srcSt.sessions.forEach(function(s){ if(s&&!existIds[s.id]){ KB_CHAT[ck].sessions.push(s); existIds[s.id]=true; } });
+    if(!KB_CHAT[ck].activeId && srcSt.activeId) KB_CHAT[ck].activeId=srcSt.activeId;
+    delete KB_CHAT[k];
+    moved=true;
+  });
+  Object.keys(KB_CHAT).forEach(function(ck){ if(KB_CHAT[ck]&&KB_CHAT[ck].sessions) KB_CHAT[ck].sessions.sort(function(a,b){return (a.ts||0)-(b.ts||0);}); });
+  if(moved){ try{persist();}catch(_){} }
+}
 function kbSessionStore(key){
-  key = key || cur; if(!key) return null;
+  key = kbChatKey(key || cur); if(!key) return null;
   var v = KB_CHAT[key];
   // 迁移：旧数组格式 → 新结构
   if(Array.isArray(v)){
