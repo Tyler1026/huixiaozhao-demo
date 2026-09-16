@@ -519,7 +519,17 @@ def _is_junk_item(text):
     return False
 
 def _clean_sync_data(data):
-    """直接返回原始数据（紧急恢复，不做任何修改）"""
+    """剥掉 UPLOADS 里的 dataUrl(文件 base64)：上传时解析 chunks 后就无用，但每份文件占 MB 级空间。
+    服务端返回时剥掉能避免客户端 restoreFromServer 拉回后重新把 localStorage 撑满(4MB+)导致 setItem 静默失败、新问答写不进去。"""
+    try:
+        if isinstance(data, dict) and isinstance(data.get('UPLOADS'), dict):
+            for pk, arr in list(data['UPLOADS'].items()):
+                if isinstance(arr, list):
+                    for u in arr:
+                        if isinstance(u, dict) and 'dataUrl' in u:
+                            del u['dataUrl']
+    except Exception:
+        pass
     return data
 
 HTML_OPS    = os.path.join(_BASE, "ops.html")
@@ -890,6 +900,12 @@ class Handler(BaseHTTPRequestHandler):
                             raw_str = f2.read()
                     except FileNotFoundError:
                         raw_str = '{}'
+                # 剥掉 UPLOADS.dataUrl 后回送，避免客户端 restore 后重新舷满 localStorage 导致新问答写不进去
+                try:
+                    _cleaned = _clean_sync_data(json.loads(raw_str) if raw_str else {})
+                    raw_str = json.dumps(_cleaned, ensure_ascii=False)
+                except Exception:
+                    pass
                 data = raw_str.encode()
             except Exception as e:
                 data = json.dumps({"error": str(e)}).encode()
@@ -1206,6 +1222,8 @@ class Handler(BaseHTTPRequestHandler):
                         activeId = B.get('activeId') or A.get('activeId') or (sessions[-1]['id'] if sessions else None)
                         result[ck] = {'sessions': sessions, 'activeId': activeId}
                     return result
+                # 先剥掉 incoming.UPLOADS.dataUrl，避免服务端长期穏积 base64
+                _clean_sync_data(incoming)
                 for k, v in incoming.items():
                     # KB_CHAT 单独按会话合并,永不裸覆盖
                     if k == 'KB_CHAT':
