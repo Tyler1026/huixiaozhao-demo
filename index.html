@@ -8165,10 +8165,22 @@ function persist(){
   // 兜底：把当前项目的 stage 同步到方向级 stageByTopic，保证方向进度独立且不丢失
   try{ var _cp=cur&&PROJECTS[cur]; if(_cp&&_cp.topic!=null&&_cp.stage!=null){ if(!_cp.stageByTopic)_cp.stageByTopic={}; _cp.stageByTopic[_cp.topic]=_cp.stage; } }catch(e){}
   try{
+    // 写盘前剥掉 UPLOADS.dataUrl(文件 base64) —— dataUrl 只在上传时解析 chunks 用，之后无其它消费点；
+    // 保留在 localStorage/服务端会把单个文件花上 MB级空间，几份材料就直接把 localStorage 推到 5MB 上限旭使new setItem 静默失败 -> 新问答存不进去 -> 刷新归零。
+    var _UPLOADS_slim={};
+    try{
+      Object.keys(UPLOADS||{}).forEach(function(pk){
+        _UPLOADS_slim[pk]=(UPLOADS[pk]||[]).map(function(u){
+          if(!u||typeof u!=='object')return u;
+          var c={}; for(var k in u){ if(k==='dataUrl')continue; c[k]=u[k]; }
+          return c;
+        });
+      });
+    }catch(_){ _UPLOADS_slim=UPLOADS; }
     var data={
       cur:cur, view:view,
       PROJECTS:PROJECTS,
-      UPLOADS:UPLOADS,
+      UPLOADS:_UPLOADS_slim,
       KB_CONFIRMS:KB_CONFIRMS,
       KB_FILE_CHUNKS:KB_FILE_CHUNKS,
       KB_UNLOCKED:KB_UNLOCKED,
@@ -8186,7 +8198,7 @@ function persist(){
     };
     // 同时写入 localStorage（保证同账号任何设备刷新都读到最新快照）
     try{ localStorage.setItem(LS_KEY, JSON.stringify(data)); }catch(_){}
-    try{ localStorage.setItem('hxz_uploads', JSON.stringify(UPLOADS)); }catch(_){}
+    try{ localStorage.setItem('hxz_uploads', JSON.stringify(_slimUploads())); }catch(_){}
     // 同步到服务器（静默，不影响主流程）
     // 防抖sync：最多5秒同步一次，避免堆积请求占满连接池影响AI问答
     if(window._serverSyncLock) return;
@@ -8368,7 +8380,7 @@ function restoreFromServer(callback){
       USER_PROFILES:USER_PROFILES,REPORT_HISTORY:typeof REPORT_HISTORY!=='undefined'?REPORT_HISTORY:{},
       syncTs:Date.now()};
     try{localStorage.setItem(LS_KEY,JSON.stringify(flat));}catch(_){}
-    try{localStorage.setItem('hxz_uploads',JSON.stringify(UPLOADS));}catch(_){}
+    try{localStorage.setItem('hxz_uploads',JSON.stringify(_slimUploads()));}catch(_){}
     // 若 Postgres 是旧包装格式，顺手更新成扁平格式
     if(raw.huixiaozhao_kb_v1){
       try{fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -8811,7 +8823,8 @@ var SUBPROJ={};
 function saveSubproj(){try{localStorage.setItem('hxz_subproj',JSON.stringify(SUBPROJ))}catch(e){}}
 function loadSubproj(){try{var d=localStorage.getItem('hxz_subproj');if(d)SUBPROJ=JSON.parse(d)}catch(e){}}
 function subprojOf(k){return SUBPROJ[k]||[]}
-function saveUploads(){try{localStorage.setItem('hxz_uploads',JSON.stringify(UPLOADS))}catch(e){}}
+function _slimUploads(){var o={};try{Object.keys(UPLOADS||{}).forEach(function(pk){o[pk]=(UPLOADS[pk]||[]).map(function(u){if(!u||typeof u!=='object')return u;var c={};for(var k in u){if(k==='dataUrl')continue;c[k]=u[k];}return c;});});}catch(_){o=UPLOADS;}return o;}
+function saveUploads(){try{localStorage.setItem('hxz_uploads',JSON.stringify(_slimUploads()))}catch(e){}}
 function loadUploads(){try{var d=localStorage.getItem('hxz_uploads');if(d)UPLOADS=JSON.parse(d)}catch(e){}}
 function addUpload(name){var k=cur;if(!UPLOADS[k])UPLOADS[k]=[];UPLOADS[k].push({name:name,at:new Date().toLocaleString('zh-CN')});saveUploads();}
 loadReportState();loadUploads();loadSubproj();try{_dedupeDemands();}catch(_){}
