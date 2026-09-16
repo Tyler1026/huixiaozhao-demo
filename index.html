@@ -8476,6 +8476,35 @@ window.addEventListener('storage', function(e){
     DOCK_LOGS=data.DOCK_LOGS||{};
     KB_UNLOCKED=data.KB_UNLOCKED||{};
     if(data.CITY_ACCOUNTS) CITY_ACCOUNTS=data.CITY_ACCOUNTS;
+    // KB_CHAT：跨标签同步也必须按会话择优合并，绝不让另一个 tab 的旧内存 persist 回来冲掉本 tab 刚写入的问答
+    (function(){
+      var _inc=data.KB_CHAT||{};
+      var _loc=(typeof KB_CHAT==='object'&&KB_CHAT)?KB_CHAT:{};
+      var _m={},_ak={};
+      Object.keys(_inc).forEach(function(k){_ak[k]=1;});
+      Object.keys(_loc).forEach(function(k){_ak[k]=1;});
+      Object.keys(_ak).forEach(function(k){
+        var norm=function(st){
+          if(Array.isArray(st))return{sessions:[{id:'s_leg_'+k,title:'',ts:0,messages:st}],activeId:null};
+          if(st&&st.sessions)return st;
+          return{sessions:[],activeId:null};
+        };
+        var A=norm(_inc[k]),B=norm(_loc[k]);
+        var byS={},ord=[];
+        var take=function(se){
+          if(!se||!se.id)return;
+          var ex=byS[se.id];
+          if(!ex){byS[se.id]=se;ord.push(se.id);return;}
+          var eN=(ex.messages||[]).length,nN=(se.messages||[]).length;
+          var eT=Number(ex.ts)||0,nT=Number(se.ts)||0;
+          if(nN>eN||(nN===eN&&nT>eT))byS[se.id]=se;
+        };
+        A.sessions.forEach(take);B.sessions.forEach(take);
+        var ss=ord.map(function(id){return byS[id];});
+        _m[k]={sessions:ss,activeId:B.activeId||A.activeId||(ss.length?ss[ss.length-1].id:null)};
+      });
+      KB_CHAT=_m;
+    })();
     if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
     // 重渲染（仅影响当前视图）
     // report 视图下若用户 1.5s 内有过滚动，延迟执行避免打断阅读
