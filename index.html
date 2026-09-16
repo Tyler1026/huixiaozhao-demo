@@ -8702,6 +8702,15 @@ function kbChatPush(role, html){
   // 最多保留最近 100 条，防止无限增长
   if(_s.messages.length>100) _s.messages=_s.messages.slice(-100);
   persist();
+  // 问答记忆:绕过5秒防抖立即同步一次,防止刷新时服务端还没这条被restoreFromServer冲掉。
+  try{
+    var _kbBody=localStorage.getItem(LS_KEY)||'{}';
+    if(navigator.sendBeacon){
+      navigator.sendBeacon('/api/sync', new Blob([_kbBody],{type:'application/json'}));
+    } else {
+      fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:_kbBody,keepalive:true}).catch(function(){});
+    }
+  }catch(_){}
   try{updateKbConvCount();}catch(_){}
   try{renderKbSessionBar();}catch(_){}
 }
