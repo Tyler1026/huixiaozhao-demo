@@ -1169,7 +1169,48 @@ class Handler(BaseHTTPRequestHandler):
                             ex.update(r)
                         # 否则丢弃倒退的状态更新，保留服务端已推进的记录
                     return sorted(by_id.values(), key=lambda x: x.get('ts', 0))
+                # KB_CHAT 会话级合并:同 city key 下的 sessions 按 id 择优(消息多的赢),不做整体覆盖
+                # 防止某 tab 的空会话未同步内存 persist 上来把其它 tab 已同步的问答冲掉
+                def _merge_kbchat(old_kbc, new_kbc):
+                    if not isinstance(old_kbc, dict): old_kbc = {}
+                    if not isinstance(new_kbc, dict): new_kbc = {}
+                    result = {}
+                    all_ck = set(old_kbc.keys()) | set(new_kbc.keys())
+                    for ck in all_ck:
+                        def _norm(st):
+                            if isinstance(st, list):
+                                return {'sessions': [{'id':'s_leg_'+ck,'title':'','ts':0,'messages': st}], 'activeId': None}
+                            if isinstance(st, dict) and st.get('sessions') is not None:
+                                return st
+                            return {'sessions': [], 'activeId': None}
+                        A = _norm(old_kbc.get(ck))
+                        B = _norm(new_kbc.get(ck))
+                        by_sid = {}
+                        order = []
+                        def _take(se, by_sid=by_sid, order=order):
+                            if not isinstance(se, dict) or not se.get('id'):
+                                return
+                            sid = se['id']
+                            ex = by_sid.get(sid)
+                            if not ex:
+                                by_sid[sid] = se; order.append(sid); return
+                            e_n = len(ex.get('messages') or [])
+                            n_n = len(se.get('messages') or [])
+                            e_t = ex.get('ts') or 0
+                            n_t = se.get('ts') or 0
+                            if n_n > e_n or (n_n == e_n and n_t > e_t):
+                                by_sid[sid] = se
+                        for se in A['sessions']: _take(se)
+                        for se in B['sessions']: _take(se)
+                        sessions = [by_sid[i] for i in order]
+                        activeId = B.get('activeId') or A.get('activeId') or (sessions[-1]['id'] if sessions else None)
+                        result[ck] = {'sessions': sessions, 'activeId': activeId}
+                    return result
                 for k, v in incoming.items():
+                    # KB_CHAT 单独按会话合并,永不裸覆盖
+                    if k == 'KB_CHAT':
+                        existing[k] = _merge_kbchat(existing.get(k), v)
+                        continue
                     if k in _protected and not v and existing.get(k):
                         continue
                     if k == 'REPORT_REQUESTS':
