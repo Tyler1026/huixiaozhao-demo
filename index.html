@@ -8477,6 +8477,18 @@ function restoreFromServer(callback){
         delete PROJECTS[dk]; delete REPORTSTATE[dk]; delete PENDING_CONFIRMS[dk];
         delete UPLOADS[dk]; delete KB_FILE_CHUNKS[dk];
       });
+      // 【2026-09-17】墓碑同样过滤 DEMANDS：否则已删项目的需求记录会从服务端被拉回，
+      // 在管理端显示成"项目已不存在却仍挂着"的幽灵需求。
+      try{
+        if(typeof DEMANDS!=='undefined'&&Array.isArray(DEMANDS)&&_tomb.length){
+          window.DEMANDS=DEMANDS.filter(function(_d){
+            if(!_d) return false;
+            var _id=_d.projKey||_d.id||'';
+            var _bare=(String(_id).charAt(0)==='d')?String(_id).slice(1):_id;
+            return _tomb.indexOf(_id)<0 && _tomb.indexOf(_bare)<0;
+          });
+        }
+      }catch(_td){}
     })();
     // 合并保护本地刚提交但服务端尚未收到的 isDemand 项目（防5秒防抖内刷新丢失）
     Object.keys(_localDemandProj).forEach(function(k){
@@ -8526,6 +8538,17 @@ function restoreFromServer(callback){
         if((_loc.stageLog||[]).length>(_srvP.stageLog||[]).length) _srvP.stageLog=_loc.stageLog;
       }catch(_se){}
     });
+    // 【2026-09-17】历史数据兜底：修复前推进过阶段的需求，DEMANDS 里没有 res/resLabel/clues，
+    // 管理端据此渲染就显示不出进度（表现为政府端已到「资源匹配」、管理端仍「待研判」）。
+    // 这里按项目实际 stage/线索补齐一次，只补不降，避免用户必须回去重点一遍。
+    try{
+      if(typeof DEMANDS!=='undefined'&&Array.isArray(DEMANDS)&&typeof syncDemandStage==='function'){
+        Object.keys(PROJECTS).forEach(function(_pk){
+          var _pp=PROJECTS[_pk]; if(!_pp||!_pp.isDemand) return;
+          syncDemandStage(_pk);
+        });
+      }
+    }catch(_bf){}
     // 合并本地 DEMANDS 条目（服务端可能缺少刚提交的）
     if(_localDemands.length){
       var _srvDIds={}; (DEMANDS||[]).forEach(function(d){ _srvDIds[d.id||d.projKey]=true; });
