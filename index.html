@@ -3291,15 +3291,51 @@ function toggleClue(id){
   if(window.requestAnimationFrame) requestAnimationFrame(restore);
 }
 
+/* 【2026-09-17 新增】把政府端的阶段/线索进度同步到管理端需求池（DEMANDS）。
+   管理端 ops.html 渲染完全依赖 DEMANDS 里的 res / resLabel / clues 字段，
+   而旧实现推进阶段时只改 PROJECTS[k].stage，从不更新 DEMANDS，
+   导致政府端已到「资源匹配」，管理端仍显示「待研判」甚至没有进度 —— 即"管理端没同步"。
+   res 取值须与 ops.html 的 RES_COLOR 一致：none / checking / matched。 */
+function syncDemandStage(projKey){
+  try{
+    var p=PROJECTS[projKey]; if(!p) return;
+    if(typeof DEMANDS==='undefined'||!Array.isArray(DEMANDS)) return;
+    var d=null;
+    for(var i=0;i<DEMANDS.length;i++){
+      var it=DEMANDS[i]; if(!it) continue;
+      if(it.projKey===projKey || it.id===projKey || it.id==='d'+projKey){ d=it; break; }
+    }
+    if(!d) return;
+    var clues=p.clues||[];
+    var teal=0,amber=0;
+    clues.forEach(function(c){ if(!c) return; if(c.tone==='teal')teal++; else if(c.tone==='amber')amber++; });
+    var st=Number(p.stage)||0;
+    // 阶段/线索 → 管理端资源状态（只进不退，避免旧快照把已推进的状态拉回）
+    var res='none', label='待研判';
+    if(st>=5 || teal>0){ res='matched'; label='已匹配'; }
+    else if(st>=4 || amber>0){ res='checking'; label='核验中'; }
+    else if(st>=3){ res='none'; label='待资源匹配'; }
+    var rank={none:1,checking:2,matched:3};
+    if((rank[res]||0)>=(rank[d.res]||0)){ d.res=res; d.resLabel=label; }
+    d.clues=clues.length;
+    if(p.topic!=null) d.topic=p.topic;
+    d.stage=st;
+    d.projKey=projKey;
+  }catch(_e){}
+}
 function requestVerify(projKey, clueId){
   var p = PROJECTS[projKey]; if(!p) return;
   var c = (p.clues||[]).find(function(x){return x.id===clueId;});
   if(!c) return;
   c.tone = 'amber';
   c.status = '资源核验中';
-  persist();
   // 推进 stage 到 4（资源匹配）
   p.stage = Math.max(p.stage, 4);
+  // 【2026-09-17】方向级进度同写，否则刷新后被 stageByTopic 旧值回灌，退回「确认需求」
+  if(!p.stageByTopic) p.stageByTopic={};
+  if(p.topic!=null) p.stageByTopic[p.topic]=Math.max(Number(p.stageByTopic[p.topic])||0, p.stage);
+  // 【2026-09-17】同步管理端需求池，修复"管理端没同步"
+  syncDemandStage(projKey);
   persist();
   render();
   toast('✓ 已发起资源核验，等待团队回传');
@@ -3312,6 +3348,9 @@ function arrangeDocking(projKey, clueId){
   c.tone = 'teal';
   c.status = '可安排首次沟通';
   p.stage = Math.max(p.stage, 5);
+  if(!p.stageByTopic) p.stageByTopic={};
+  if(p.topic!=null) p.stageByTopic[p.topic]=Math.max(Number(p.stageByTopic[p.topic])||0, p.stage);
+  syncDemandStage(projKey);
   persist();
   render();
   toast('✓ 已标记为可安排沟通，进入招商对接阶段');
@@ -3731,6 +3770,7 @@ function advanceStage(projKey){
     p.stage++;
     if(!p.stageByTopic)p.stageByTopic={};
     if(p.topic!=null)p.stageByTopic[p.topic]=p.stage;
+    syncDemandStage(projKey);
     persist();
     render();
     var stageName = stageNameOf(p, p.stage);
@@ -8440,10 +8480,51 @@ function restoreFromServer(callback){
     })();
     // 合并保护本地刚提交但服务端尚未收到的 isDemand 项目（防5秒防抖内刷新丢失）
     Object.keys(_localDemandProj).forEach(function(k){
-      if(!PROJECTS[k] && (window.DELETED_PROJECTS||[]).indexOf(k)<0){
+      if((window.DELETED_PROJECTS||[]).indexOf(k)>=0) return;
+      if(!PROJECTS[k]){
         PROJECTS[k]=_localDemandProj[k];
         if(_localDemandRS[k]&&!REPORTSTATE[k]) REPORTSTATE[k]=_localDemandRS[k];
+        return;
       }
+      // 【2026-09-17 修复】项目已存在时，旧实现直接被服务端整体覆盖，
+      // 导致 persist() 5秒防抖内刷新时刚推进的阶段被服务端旧 stage 冲掉，
+      // 表现为"点到资源匹配，刷新后退回确认需求"。
+      // 阶段只进不退：取本地与服务端的较大值，并同步方向级 stageByTopic。
+      var _loc=_localDemandProj[k], _srvP=PROJECTS[k];
+      try{
+        var _ls=Number(_loc.stage)||0, _ss=Number(_srvP.stage)||0;
+        if(_ls>_ss) _srvP.stage=_ls;
+        // 方向级进度同样只进不退
+        if(_loc.stageByTopic){
+          if(!_srvP.stageByTopic) _srvP.stageByTopic={};
+          Object.keys(_loc.stageByTopic).forEach(function(_t){
+            var _lv=Number(_loc.stageByTopic[_t])||0, _sv=Number(_srvP.stageByTopic[_t])||0;
+            if(_lv>_sv) _srvP.stageByTopic[_t]=_lv;
+          });
+        }
+        // 当前方向的 stage 与 stageByTopic 保持一致，避免刷新后被方向桶回灌旧值
+        if(_srvP.topic!=null){
+          if(!_srvP.stageByTopic) _srvP.stageByTopic={};
+          var _cv=Number(_srvP.stageByTopic[_srvP.topic])||0;
+          if((Number(_srvP.stage)||0)>_cv) _srvP.stageByTopic[_srvP.topic]=_srvP.stage;
+          else if(_cv>(Number(_srvP.stage)||0)) _srvP.stage=_cv;
+        }
+        // 线索状态：本地更靠前的核验状态不被旧快照冲掉（tone: slate<amber<teal）
+        if((_loc.clues||[]).length && (_srvP.clues||[]).length){
+          var _rank={slate:1,amber:2,teal:3};
+          var _locById={}; _loc.clues.forEach(function(c){ if(c&&c.id!=null) _locById[c.id]=c; });
+          _srvP.clues.forEach(function(sc){
+            var lc=_locById[sc&&sc.id]; if(!lc) return;
+            if((_rank[lc.tone]||0)>(_rank[sc.tone]||0)){ sc.tone=lc.tone; sc.status=lc.status; }
+          });
+          // 本地独有线索补回
+          var _srvIds={}; _srvP.clues.forEach(function(c){ if(c&&c.id!=null) _srvIds[c.id]=1; });
+          _loc.clues.forEach(function(lc){ if(lc&&lc.id!=null&&!_srvIds[lc.id]) _srvP.clues.push(lc); });
+        }else if((_loc.clues||[]).length && !(_srvP.clues||[]).length){
+          _srvP.clues=_loc.clues;
+        }
+        if((_loc.stageLog||[]).length>(_srvP.stageLog||[]).length) _srvP.stageLog=_loc.stageLog;
+      }catch(_se){}
     });
     // 合并本地 DEMANDS 条目（服务端可能缺少刚提交的）
     if(_localDemands.length){
@@ -8954,7 +9035,7 @@ function addA(html){var c=$('#conv');if(!c)return;var d=document.createElement('
   d.innerHTML='<img src="'+aiAvatar()+'"><div class="message-bubble">'+html+'</div>';c.appendChild(d);sd();return d}
 function addRaw(html){var c=$('#conv');if(!c)return;var d=document.createElement('div');d.style.margin='0 0 20px 60px';d.innerHTML=html;c.appendChild(d);sd();return d}
 function sd(){var c=$('#conv');if(c)c.scrollTop=c.scrollHeight}
-function setStage(n){var p=P();p.stage=n;if(!p.stageByTopic)p.stageByTopic={};if(p.topic!=null)p.stageByTopic[p.topic]=n;var f=$('.progress-footer');if(f)f.outerHTML=progressFooter(p);}
+function setStage(n){var p=P();p.stage=n;if(!p.stageByTopic)p.stageByTopic={};if(p.topic!=null)p.stageByTopic[p.topic]=n;if(cur)syncDemandStage(cur);var f=$('.progress-footer');if(f)f.outerHTML=progressFooter(p);}
 
 function startFlow(mode){
   if(view!=='report'){view='report';render();}
@@ -9041,11 +9122,11 @@ function leaderOK(row){var ck=row.querySelector('input');if(ck.disabled){toast('
 function syncDemandFromProject(){
   var p=P();if(!p)return;
   var cl=p.clues||[];
-  var domain=(cl[0]&&(cl[0].dir||'').split(' · ')[0])||p.topic.replace('补链','').replace('升级','').replace('智能化','');
+  var domain=(cl[0]&&String(cl[0].dir||'').split(' · ')[0])||String(p.topic||'').replace('补链','').replace('升级','').replace('智能化','');
   var exist=DEMANDS.find(function(d){return d.city===p.city&&d.topic===p.topic});
   var payload={
     city:p.city, gov:p.org+'·'+p.who, topic:p.topic, domain:domain,
-    need:cl.map(function(c){return c.dir.split(' · ')[0]}).join(' / ')||p.topic,
+    need:cl.map(function(c){return String((c&&c.dir)||'').split(' · ')[0];}).filter(function(s){return s;}).join(' / ')||p.topic,
     submit:'刚刚', res:'checking', resLabel:'核验中', clues:cl.length,
     note:'政府端双确认递交，等待资源端核验匹配。', fromGov:true
   };
