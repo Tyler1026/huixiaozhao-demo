@@ -8550,10 +8550,31 @@ function restoreFromServer(callback){
       }
     }catch(_bf){}
     // 合并本地 DEMANDS 条目（服务端可能缺少刚提交的）
+    // 【2026-09-17】必须同时排除墓碑项：否则上一步刚按墓碑过滤掉的幽灵需求，
+    // 会从本地缓存 _localDemands 里被重新 push 回来（实测松江两条幽灵即如此复活）。
     if(_localDemands.length){
       var _srvDIds={}; (DEMANDS||[]).forEach(function(d){ _srvDIds[d.id||d.projKey]=true; });
-      _localDemands.forEach(function(d){ if(!_srvDIds[d.id||d.projKey]) DEMANDS.push(d); });
+      var _tomb2=window.DELETED_PROJECTS||[];
+      _localDemands.forEach(function(d){
+        if(!d) return;
+        var _did=d.projKey||d.id||'';
+        var _dbare=(String(_did).charAt(0)==='d')?String(_did).slice(1):_did;
+        if(_tomb2.indexOf(_did)>=0||_tomb2.indexOf(_dbare)>=0) return;
+        if(!_srvDIds[d.id||d.projKey]) DEMANDS.push(d);
+      });
     }
+    // 【2026-09-17】最终兜底：合并完再按墓碑清一遍，确保任何路径都不会残留幽灵需求
+    try{
+      var _tomb3=window.DELETED_PROJECTS||[];
+      if(typeof DEMANDS!=='undefined'&&Array.isArray(DEMANDS)&&_tomb3.length){
+        window.DEMANDS=DEMANDS.filter(function(_d){
+          if(!_d) return false;
+          var _i=_d.projKey||_d.id||'';
+          var _b=(String(_i).charAt(0)==='d')?String(_i).slice(1):_i;
+          return _tomb3.indexOf(_i)<0&&_tomb3.indexOf(_b)<0;
+        });
+      }
+    }catch(_fd){}
     // 不盲目用srv.cur（可能指向空项目）：选数据最多的项目
     var _allK=Object.keys(PROJECTS); var _bestK=null,_bestKC=0;
     _allK.forEach(function(k){var c=0;(PROJECTS[k].kb||[]).forEach(function(t){c+=(t.known||[]).length;});if(c>_bestKC){_bestKC=c;_bestK=k;}});
