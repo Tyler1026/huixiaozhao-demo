@@ -1092,6 +1092,9 @@ function render(){
             var _ac=AUTH.city||'';
             if(AUTH.projKey && PROJECTS[AUTH.projKey]){
               cur=AUTH.projKey; view='knowledge';
+            } else if(AUTH.projKey && reviveProjectShell(AUTH.projKey,_ac)){
+              // 【2026-09-17】绑定的项目壳丢了但报告数据还在 -> 自愈重建，绝不建空壳覆盖
+              cur=AUTH.projKey; view='knowledge'; persist();
             } else {
               // 无绑定项目时才按城市匹配；城市匹配同时兼容"账号city含项目city或项目city含账号city"（如账号=上海市、项目=松江区）
               var _mine=Object.keys(PROJECTS).filter(function(k){
@@ -1106,7 +1109,7 @@ function render(){
         } else {
           // 服务器无数据，本地初始化
           if(AUTH.resident){ cur=null; view='setup'; /* 随州清空后不再自动重建预置，走空白 onboarding 从零重跑 */ }
-          else { if(AUTH.projKey&&PROJECTS[AUTH.projKey]){cur=AUTH.projKey;view='knowledge';}else{cur=null;view='setup';} }
+          else { if(AUTH.projKey&&PROJECTS[AUTH.projKey]){cur=AUTH.projKey;view='knowledge';}else if(AUTH.projKey&&reviveProjectShell(AUTH.projKey,AUTH.city)){cur=AUTH.projKey;view='knowledge';persist();}else{cur=null;view='setup';} }
         }
         render();
       });
@@ -1201,6 +1204,7 @@ function render(){
     var _curOk=_boundOk || (cur&&PROJECTS[cur]&&_cityMatch(cur));
     if(!_curOk){
       if(AUTH.projKey && PROJECTS[AUTH.projKey]){ cur=AUTH.projKey; }
+      else if(AUTH.projKey && reviveProjectShell(AUTH.projKey,_gc)){ cur=AUTH.projKey; }
       else if(_mineKeys.length){ cur=_mineKeys[0]; }
       else if(_gc){ cur=autoProvisionCity(_gc); }
       // 串城时 view 也可能停在随州的 report；本项目无报告则回落到智库，避免展示随州报告空壳
@@ -1444,6 +1448,58 @@ function doLogin(){
 
 /* 随州常驻：首次即预置完整数据，key 固定 sz，永不 onboarding */
 /* 任意城市自动建项：非随州账号登录后名下无项目时调用 */
+/* 【2026-09-17 新增】项目壳自愈：
+   账号绑定了 projKey，但 PROJECTS[projKey] 被清掉（版本号清缓存 / 空快照覆盖 / 推RAG覆盖）时，
+   报告数据仍存活在 REPORTSTATE[projKey] 与 REPORT_HISTORY[projKey]（独立 key，不随 LS_KEY 删除）。
+   旧逻辑此时直接 autoProvisionCity 建空壳，导致界面显示完成度0%、智库0条，用户以为数据全丢。
+   现改为：先尝试依据存活的报告数据重建项目壳，把历史方向与报告挂回去。
+   返回重建出的 key，或 null（确无可恢复数据）。 */
+function reviveProjectShell(projKey, city){
+  if(!projKey) return null;
+  if(PROJECTS[projKey]) return projKey;        // 壳还在，无需自愈
+  var rs=(typeof REPORTSTATE!=='undefined'&&REPORTSTATE[projKey])||null;
+  var rh=(typeof REPORT_HISTORY!=='undefined'&&REPORT_HISTORY[projKey])||null;
+  var hasRs=rs && ((rs.text&&rs.text.length>0) || Object.keys(rs.aiReportByTopic||{}).length>0);
+  var hasRh=rh && rh.length>0;
+  if(!hasRs && !hasRh) return null;            // 没有任何可恢复数据，交回原流程
+  var _city=city||(rs&&rs.city)||(AUTH&&AUTH.city)||'';
+  var _c=(typeof generateKbConclusions==='function')?generateKbConclusions(_city):null;
+  // 历史做过的方向：优先取报告状态里的记录，保留用户原有方向不丢
+  var _topics=[];
+  try{
+    Object.keys((rs&&rs.aiReportByTopic)||{}).forEach(function(t){ if(_topics.indexOf(t)<0) _topics.push(t); });
+    Object.keys((rs&&rs.userGeneratedTopics)||{}).forEach(function(t){ if(_topics.indexOf(t)<0) _topics.push(t); });
+    (rh||[]).forEach(function(h){ if(h&&h.topic&&_topics.indexOf(h.topic)<0) _topics.push(h.topic); });
+  }catch(_te){}
+  var _stageByTopic={};
+  _topics.forEach(function(t){ _stageByTopic[t]=4; });
+  PROJECTS[projKey]={
+    id:projKey, city:_city,
+    org:(rs&&rs.org)||_city, who:(AUTH&&AUTH.who)||'负责人',
+    topic:(rs&&rs.topic)||_topics[0]||(_city+'产业链招引'),
+    stage:_topics.length?4:1,
+    kb:_c?[
+      {icon:'\ud83c\udfed',t:'主导产业与产业链',sub:_c.industry.sub,tag:_c.industry.tag,known:_c.industry.known,calls:['城市公开信息','产业链图谱']},
+      {icon:'\ud83c\udfe2',t:'园区与承载条件',sub:_c.park.sub,tag:_c.park.tag,known:_c.park.known,calls:['园区基础资料','政府官网']},
+      {icon:'\ud83c\udfd7\ufe0f',t:'链主与存量企业',sub:_c.firm.sub,tag:_c.firm.tag,known:_c.firm.known,calls:['企业名录','工商信息']},
+      {icon:'\ud83d\udcdc',t:'政策、规划与领导关注',sub:_c.policy.sub,tag:_c.policy.tag,known:_c.policy.known,calls:['政府工作报告','领导发言']}
+    ]:[],
+    report:null, clues:[],
+    customTopics:_topics.slice(),   // 显式保留历史方向，不受 hasRealKbData 门槛影响
+    stageByTopic:_stageByTopic
+  };
+  // 已有报告的项目解锁后续步骤，避免自愈后又被上锁挡住
+  try{ if(typeof KB_UNLOCKED!=='undefined' && _topics.length) KB_UNLOCKED[projKey]={report:true,home:true}; }catch(_ue){}
+  // 待确认事项挂回
+  try{
+    if(typeof PENDING_CONFIRMS!=='undefined' && rs && rs.pendingByTopic){
+      var _pt=(rs&&rs.topic)||_topics[0];
+      if(_pt && rs.pendingByTopic[_pt]) PENDING_CONFIRMS[projKey]=rs.pendingByTopic[_pt];
+    }
+  }catch(_pe){}
+  console.warn('[revive] rebuilt project shell '+projKey+' from surviving report data, topics='+_topics.length);
+  return projKey;
+}
 function autoProvisionCity(city){
   city=(city||'').trim(); if(!city) return null;
   var exist=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k]&&PROJECTS[k].city===city;});
@@ -8126,13 +8182,43 @@ var _chainGenInFlight={};
 /* ── localStorage 持久化 ── */
 var LS_KEY='huixiaozhao_kb_v1';
 var RESET_GEN=null;  // reset 代际标记：从服务端读到后原样带回，服务端据此拒绝旧会话写入
-// 版本标记：数据结构有变时递增，自动清除旧缓存防止旧数据污染服务器
-var _DATA_VER='20260826b';
+// 版本标记：数据结构有变时递增。
+// 【2026-09-17 修复】旧实现在版本号不一致时无条件 removeItem(LS_KEY)，
+// 会连同 PROJECTS / KB_CONFIRMS / UPLOADS / KB_FILE_CHUNKS 一起删掉（都存在 LS_KEY 内），
+// 而 hxz_reportstate / hxz_rpt_history 是独立 key 不受影响，
+// 于是表现为"报告还在、城市智库卡片全空、项目壳丢失"，随后被 autoProvisionCity 建成空壳。
+// 换浏览器 / 换设备 / 清过站点数据 / 部署了新版本号，都会触发。
+// 现改为：只有本地确实没有任何有价值数据时才清理；否则原地升级版本号，保留数据。
+var _DATA_VER='20260917a';
 if(localStorage.getItem('hxz_data_ver')!==_DATA_VER){
-  localStorage.removeItem(LS_KEY);
-  localStorage.removeItem('hxz_uploads');
-  localStorage.setItem('hxz_data_ver',_DATA_VER);
-  console.log('[ver] cleared stale localStorage, ver='+_DATA_VER);
+  var _verKeep=false;
+  try{
+    var _vsnap=JSON.parse(localStorage.getItem(LS_KEY)||'{}');
+    var _vp=(_vsnap&&_vsnap.PROJECTS)||{};
+    // 有价值 = 任一项目带智库结论 / 报告 / 线索
+    _verKeep=Object.keys(_vp).some(function(k){
+      var v=_vp[k]||{}; var kn=0;
+      (v.kb||[]).forEach(function(c){ kn+=((c&&c.known)||[]).length; });
+      return kn>0 || (v.report&&(v.report.text||v.report.md)) || ((v.clues||[]).length>0);
+    });
+    // 报告状态里有正文，同样说明这份数据不能丢
+    if(!_verKeep){
+      var _vrs=JSON.parse(localStorage.getItem('hxz_reportstate')||'{}');
+      _verKeep=Object.keys(_vrs).some(function(k){
+        var r=_vrs[k]||{};
+        return (r.text&&r.text.length>200) || Object.keys(r.aiReportByTopic||{}).length>0;
+      });
+    }
+  }catch(_ve){ _verKeep=true; /* 解析异常时宁可保留，不做破坏性清理 */ }
+  if(_verKeep){
+    localStorage.setItem('hxz_data_ver',_DATA_VER);
+    console.log('[ver] bumped to '+_DATA_VER+', existing data PRESERVED');
+  }else{
+    localStorage.removeItem(LS_KEY);
+    localStorage.removeItem('hxz_uploads');
+    localStorage.setItem('hxz_data_ver',_DATA_VER);
+    console.log('[ver] cleared empty localStorage, ver='+_DATA_VER);
+  }
 }
 
 
