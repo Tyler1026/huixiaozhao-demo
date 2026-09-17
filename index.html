@@ -1775,6 +1775,7 @@ var _onbSel={};      // 当前作答缓存 {k:[选项...]}
 var _onbAfter=null;  // 完成后的回调（首次=进入分析动画；设置页=仅保存）
 var _onbOpts={};     // 本次问卷各题实际选项：AI 结合城市生成，回退到 ONBOARD_Q 静态
 var _onbCity='';     // 本次问卷针对的城市（动态，不硬编码）
+var _onbCanClose=false; // 本次问卷是否允许关闭：设置页修改=true(不论是否已填写过)；首次建项目=false(必须作答才能建项目)
 
 // 取当前城市：优先账号绑定，其次当前项目，最后传入参数
 function _resolveOnbCity(explicit){
@@ -1786,8 +1787,11 @@ function _resolveOnbCity(explicit){
 // 重置各题选项为静态兜底
 function _resetOnbOpts(){ _onbOpts={}; ONBOARD_Q.forEach(function(it){ _onbOpts[it.k]=it.opts.slice(); }); }
 
-function openOnboarding(existing, afterFn, city){
+function openOnboarding(existing, afterFn, city, canClose){
   _onbSel={}; _onbAfter=afterFn||null;
+  // 【2026-09-17】关闭权限与"是否已填写过"解耦：旧代码用 !!existing 兼作关闭条件，
+  // 导致设置页首次「去填写」进来没有 ✕、无法退出。显式传入 canClose 决定。
+  _onbCanClose=!!canClose;
   _onbCity=_resolveOnbCity(city);
   _resetOnbOpts();
   // 预填已有答案（设置页修改场景）
@@ -1798,6 +1802,15 @@ function openOnboarding(existing, afterFn, city){
   var host=document.getElementById('onbModalHost')||(function(){var d=document.createElement('div');d.id='onbModalHost';document.body.appendChild(d);return d;})();
   host.innerHTML=onboardingModalHtml(!!existing);
   // 先拉 AI 结合城市生成的推荐选项，生成后再显示整个问卷；失败/超时回退静态
+  // 允许关闭时：绑定 ESC，并支持点击遮罩空白处关闭（与站内其它弹窗一致）
+  if(_onbCanClose){
+    try{ document.removeEventListener('keydown', _onbEscHandler); }catch(_){}
+    document.addEventListener('keydown', _onbEscHandler);
+    try{
+      var _lay=document.getElementById('onbLayer');
+      if(_lay) _lay.addEventListener('mousedown', function(ev){ if(ev.target===_lay) closeOnboarding(); });
+    }catch(_){}
+  }
   fetchOnbRecommend(_onbCity);
 }
 // 向后端请求"结合城市实情"的推荐选项（mode=onboard_options，走 flash+联网）
@@ -1866,7 +1879,7 @@ function onboardingModalHtml(isEdit){
   return '<div class="modal-layer" id="onbLayer" style="z-index:200">'+
     '<div class="modal" style="width:min(600px,100%)">'+
       '<header><div><span class="eyebrow">ONBOARDING</span><h2 style="margin:2px 0 0">'+(isEdit?'修改招商偏好':'先了解您的招商偏好')+'</h2></div>'+
-        (isEdit?'<button onclick="closeOnboarding()" aria-label="关闭">✕</button>':'')+'</header>'+
+        (_onbCanClose?'<button onclick="closeOnboarding()" aria-label="关闭" title="关闭（不保存）">✕</button>':'')+'</header>'+
       '<div class="modal-body" id="onbBody"></div>'+
       '<footer><small style="margin-right:auto;color:#8492a6;font-size:11px;padding-left:2px">这些偏好会指导 AI 的招商研判，稍后可在「设置」中随时修改</small>'+
         '<button class="primary-button" id="onbSubmitBtn" onclick="submitOnboarding()" style="min-width:130px">'+(isEdit?'保存修改':'开始分析 →')+'</button></footer>'+
@@ -1917,10 +1930,20 @@ function collectOnboarding(){
   out.__custom=custom;   // 用户自定义输入单独留存
   return out;
 }
-function closeOnboarding(){ var h=document.getElementById('onbModalHost'); if(h)h.innerHTML=''; }
+function closeOnboarding(){
+  // 不允许关闭的场景（首次建项目必须作答）直接忽略，防止 ESC/遮罩绕过
+  if(!_onbCanClose) return;
+  var h=document.getElementById('onbModalHost'); if(h)h.innerHTML='';
+  try{ document.removeEventListener('keydown', _onbEscHandler); }catch(_){}
+}
+// ESC 关闭（仅在允许关闭时生效）
+function _onbEscHandler(e){
+  if(e && (e.key==='Escape'||e.keyCode===27)){ closeOnboarding(); }
+}
 function submitOnboarding(){
   var ans=collectOnboarding();
-  var after=_onbAfter; closeOnboarding();
+  var after=_onbAfter;
+  _onbCanClose=true; closeOnboarding();   // 提交是正常出口，不受关闭守卫限制
   if(typeof after==='function') after(ans);
 }
 // 招商偏好答案 → 可读文本（设置页展示 + 注入研判上下文）
@@ -7992,7 +8015,7 @@ function editOnboarding(){
     p.onboarding=ans; persist();
     if(typeof render==='function')render();
     if(typeof toast==='function')toast('招商偏好已更新');
-  }, p.city);
+  }, p.city, true);   // 设置页进入：始终允许关闭（含首次「去填写」）
 }
 /* ===== 右侧详情栏（复刻雷总"本次分析" + 证据联动）===== */
 function detailPane(p){
