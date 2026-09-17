@@ -297,12 +297,76 @@ def _kb_material_count(kb):
             n += len(t.get("known") or [])
     return n
 
+_CLUE_TONE_RANK = {"slate": 1, "amber": 2, "teal": 3}
+
+
+def _merge_stage_by_topic(old_sbt, new_sbt):
+    """方向级进度只进不退：逐 topic 取较大值。"""
+    if not isinstance(old_sbt, dict):
+        return new_sbt
+    if not isinstance(new_sbt, dict):
+        return old_sbt
+    out = dict(old_sbt)
+    for t, nv in new_sbt.items():
+        try:
+            nvi = int(nv)
+        except (TypeError, ValueError):
+            continue
+        try:
+            ovi = int(out.get(t) or 0)
+        except (TypeError, ValueError):
+            ovi = 0
+        out[t] = nvi if nvi > ovi else ovi
+    return out
+
+
+def _merge_clues(old_clues, new_clues):
+    """线索核验状态只进不退（tone: slate < amber < teal），按 id 对齐。
+    incoming 独有的线索并入，服务端独有的保留。
+    旧实现是整表覆盖：任何持旧快照的标签页 POST 都会把已核验的 amber/teal 打回 slate，
+    连带 nextStepGuide 判断的\"核验中\"提示一起消失。"""
+    if not isinstance(old_clues, list) or not old_clues:
+        return new_clues
+    if not isinstance(new_clues, list) or not new_clues:
+        return old_clues
+    by_id, order = {}, []
+    for c in old_clues:
+        if isinstance(c, dict) and c.get("id") is not None:
+            by_id[c["id"]] = dict(c)
+            order.append(c["id"])
+    if not by_id:
+        return new_clues
+    for c in new_clues:
+        if not isinstance(c, dict) or c.get("id") is None:
+            continue
+        cid = c["id"]
+        ex = by_id.get(cid)
+        if ex is None:
+            by_id[cid] = dict(c)
+            order.append(cid)
+            continue
+        merged_c = dict(ex)
+        merged_c.update(c)
+        # tone/status 只进不退：incoming 更弱时保留服务端已推进的核验状态
+        if _CLUE_TONE_RANK.get(c.get("tone"), 0) < _CLUE_TONE_RANK.get(ex.get("tone"), 0):
+            merged_c["tone"] = ex.get("tone")
+            merged_c["status"] = ex.get("status")
+        by_id[cid] = merged_c
+    return [by_id[i] for i in order]
+
+
 def _merge_map(old, new):
     """按 key 合并 dict-of-dict（PROJECTS / REPORTSTATE / CITY_ACCOUNTS）：
     - 逐字段保留非空值；新增 key 直接并入。
     - kb 字段特判：非空列表也可能是「4 空主题」的占位骨架，按累计材料条数比较，
       材料更多的一方胜出——防止旧快照(0 材料)冲掉刚推送的 RAG。
-    - REPORTSTATE 的 text 同理：更长的正文胜出。"""
+    - REPORTSTATE 的 text 同理：更长的正文胜出。
+    - 【2026-09-17 修复】stage / stageByTopic / clues 只进不退：
+      旧实现走 _keep_nonempty，即「后写者胜」。任一持旧快照的标签页（多开政府端+管理端，
+      或 5 秒 persist 防抖窗口内的同一页面）POST 上来，就把服务端已推进的 stage=4
+      直接压回 3，表现为「点到资源匹配后又退回确认需求」。
+      浏览器侧的只进不退拦不住这一层——覆盖发生在服务端存储里，
+      任何客户端下次 GET 拉到的就已经是退化后的值。"""
     merged = {k: (dict(v) if isinstance(v, dict) else v) for k, v in (old or {}).items()}
     for k, v in (new or {}).items():
         if not isinstance(v, dict):
@@ -319,6 +383,24 @@ def _merge_map(old, new):
             if fk == "text":
                 if len(fv or "") >= len(base.get("text") or ""):
                     base[fk] = fv
+                continue
+            if fk == "stage":
+                try:
+                    _nv = int(fv)
+                except (TypeError, ValueError):
+                    continue
+                try:
+                    _ov = int(base.get("stage") or 0)
+                except (TypeError, ValueError):
+                    _ov = 0
+                if _nv > _ov:
+                    base[fk] = _nv
+                continue
+            if fk == "stageByTopic":
+                base[fk] = _merge_stage_by_topic(base.get("stageByTopic"), fv)
+                continue
+            if fk == "clues":
+                base[fk] = _merge_clues(base.get("clues"), fv)
                 continue
             base[fk] = _keep_nonempty(base.get(fk), fv)
     return merged

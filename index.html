@@ -4920,7 +4920,9 @@ function updateConfirmProgress(projKey){
   if(!bottomBar) return persist();
   // 全部确认后推进到「资源匹配」阶段
   var _p=P(); if(_p && allDone && _p.stage<4){ _p.stage=4; }
-  if(_p && !allDone && _p.stage===4){ _p.stage=3; }
+  // 【2026-09-17】删除"未全部确认就把 stage 4 降回 3"的降级：待确认事项是研判阶段的产物，
+  // 需求已递交进入资源匹配后，任何一次报告区重渲染都会把阶段拉回「确认需求」。
+  // if(_p && !allDone && _p.stage===4){ _p.stage=3; }  // 已废弃：阶段只进不退
   if(allDone){
     bottomBar.innerHTML=
       '<div style="flex:1;font-size:12.5px;color:#166534;background:#f0fdf4;padding:10px 14px;border-radius:10px;border:1px solid #86efac">✓ 所有待确认事项已完成</div>'+
@@ -8669,6 +8671,44 @@ window.addEventListener('storage', function(e){
           localP.customTopics.forEach(function(ct){ if(merged.indexOf(ct)<0) merged.push(ct); });
           inP.customTopics=merged;
         }
+      });
+      // 【2026-09-17 修复】阶段/线索只进不退（全部项目，不只 cur）。
+      // 旧代码只在下面保护 cur 项目的 stage，而招商对接推进的是 isDemand 子项目
+      // （cur 仍是城市主项目 city62883），于是管理端每次 persist 派发的 storage 事件
+      // 都把子项目整体覆盖成管理端内存里的旧 stage=3，表现为"点到资源匹配后自己退回确认需求"。
+      var _rank={slate:1,amber:2,teal:3};
+      Object.keys(PROJECTS).forEach(function(k){
+        var lp=PROJECTS[k], ip=incoming[k];
+        if(!lp||!ip) return;
+        try{
+          if((Number(lp.stage)||0)>(Number(ip.stage)||0)) ip.stage=lp.stage;
+          if(lp.stageByTopic){
+            if(!ip.stageByTopic) ip.stageByTopic={};
+            Object.keys(lp.stageByTopic).forEach(function(t){
+              if((Number(lp.stageByTopic[t])||0)>(Number(ip.stageByTopic[t])||0)) ip.stageByTopic[t]=lp.stageByTopic[t];
+            });
+          }
+          // 当前方向的 stage 与方向桶保持一致，避免被方向桶旧值回灌
+          if(ip.topic!=null){
+            if(!ip.stageByTopic) ip.stageByTopic={};
+            var _cv=Number(ip.stageByTopic[ip.topic])||0;
+            if((Number(ip.stage)||0)>_cv) ip.stageByTopic[ip.topic]=ip.stage;
+            else if(_cv>(Number(ip.stage)||0)) ip.stage=_cv;
+          }
+          // 线索核验状态只进不退 + 本地独有线索补回
+          if((lp.clues||[]).length){
+            if(!(ip.clues||[]).length){ ip.clues=lp.clues; }
+            else{
+              var _lb={}; lp.clues.forEach(function(c){ if(c&&c.id!=null) _lb[c.id]=c; });
+              ip.clues.forEach(function(sc){
+                var lc=_lb[sc&&sc.id]; if(!lc) return;
+                if((_rank[lc.tone]||0)>(_rank[sc.tone]||0)){ sc.tone=lc.tone; sc.status=lc.status; }
+              });
+              var _ids={}; ip.clues.forEach(function(c){ if(c&&c.id!=null) _ids[c.id]=1; });
+              lp.clues.forEach(function(lc){ if(lc&&lc.id!=null&&!_ids[lc.id]) ip.clues.push(lc); });
+            }
+          }
+        }catch(_e){}
       });
       PROJECTS=incoming;
     })();
