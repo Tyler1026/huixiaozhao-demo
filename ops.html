@@ -7455,6 +7455,31 @@ function cpGenerate(force){
     })
     .catch(function(e){ cpBusy=false; cpErr='生成失败：'+e.message; renderOpsV2(); });
 }
+/* 【2026-09-17】JSON 保守修复：把字符串值内部的裸双引号替换成中文引号。
+   逐字符扫描并跟踪是否处于字符串内；只有当一个双引号后面紧跟的不是
+   结构字符（, } ] : 或换行结尾）时，才判定它是文中引用而非字符串结束符。
+   同时顺手去掉对象/数组尾部多余逗号。不改变任何合法 JSON 的语义。 */
+function cpRepairJson(t){
+  var out='', inStr=false, esc=false, _qOpen=false;
+  for(var i=0;i<t.length;i++){
+    var ch=t[i];
+    if(esc){ out+=ch; esc=false; continue; }
+    if(ch==='\\'){ out+=ch; esc=true; continue; }
+    if(ch==='"'){
+      if(!inStr){ inStr=true; out+=ch; continue; }
+      // 处于字符串内遇到双引号：向后看第一个非空白字符判断它是不是真正的结束引号
+      var j=i+1;
+      while(j<t.length && (t[j]===' '||t[j]==='\t'||t[j]==='\r'||t[j]==='\n')) j++;
+      var nx=j<t.length?t[j]:'';
+      if(nx===','||nx==='}'||nx===']'||nx===':'||nx===''){ inStr=false; out+=ch; }
+      else { out+=(_qOpen?'\u201d':'\u201c'); _qOpen=!_qOpen; }   // 文中引用 -> 中文引号(左右交替)，避免截断字符串
+      continue;
+    }
+    out+=ch;
+  }
+  // 去掉 , 后紧跟 } 或 ] 的尾随逗号
+  return out.replace(/,\s*([}\]])/g,'$1');
+}
 /* 解析并落库：容错剥离可能的 markdown 围栏 */
 function cpFinish(key, txt, nChunks, hadOb){
   cpBusy=false;
@@ -7462,9 +7487,16 @@ function cpFinish(key, txt, nChunks, hadOb){
   cpRaw=s;
   var a=s.indexOf('{'), b=s.lastIndexOf('}');
   if(a<0||b<=a){ cpErr='返回内容不是有效 JSON，请重试'; renderOpsV2(); return; }
-  var obj=null;
-  try{ obj=JSON.parse(s.slice(a,b+1)); }
-  catch(e){ cpErr='画像 JSON 解析失败：'+e.message+'（可重新生成）'; renderOpsV2(); return; }
+  var obj=null, _jsonTxt=s.slice(a,b+1);
+  try{ obj=JSON.parse(_jsonTxt); }
+  catch(e){
+    // 【2026-09-17】DeepSeek 常在中文字符串里直接用英文双引号做引用，
+    // 例如 "summary": "随州是"中国专用汽车之都"，..." —— 双引号提前闭合字符串，
+    // 整个画像就卡在 position 20 解析失败。这里做一次保守修复再重试，
+    // 而不是直接让用户重新生成（重生成大概率仍会踩同一个坑）。
+    try{ obj=JSON.parse(cpRepairJson(_jsonTxt)); }
+    catch(e2){ cpErr='画像 JSON 解析失败：'+e.message+'（可重新生成）'; renderOpsV2(); return; }
+  }
   if(!obj||typeof obj!=='object'){ cpErr='画像数据为空'; renderOpsV2(); return; }
   obj.__ts=Date.now(); obj.__chunks=nChunks; obj.__hasOnboarding=!!hadOb;
   PROJECTS[key].profile=obj;
