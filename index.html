@@ -8493,6 +8493,7 @@ function persist(){
       UPLOADS:_UPLOADS_slim,
       KB_CONFIRMS:KB_CONFIRMS,
       KB_CONFIRM_TOMBS:KB_CONFIRM_TOMBS,
+      KB_ITEM_TOMBS:KB_ITEM_TOMBS,
       KB_FILE_CHUNKS:KB_FILE_CHUNKS,
       KB_UNLOCKED:KB_UNLOCKED,
       REPORTSTATE:REPORTSTATE,
@@ -8563,6 +8564,56 @@ function restore(){
 }
 
 // 从服务器拉取数据并覆盖本地（登录后调用）
+/* 【2026-09-18】知识条目删除墓碑 {projKey:{kbIdx:{指纹:ts}}}。
+   根因：storage 监听里 `PROJECTS=incoming` 会把对端旧快照的 kb.known 整体灌回，
+   而那份快照里被删的条目还在 —— 表现为「删了又自己回来」。
+   既有合并已保护 customTopics/stage/clues，独缺 kb.known。
+   用内容指纹而不用 itemIdx 作键：splice 后后续索引整体前移，索引做键必然错位。 */
+var KB_ITEM_TOMBS={};
+function _kbItemFp(t){
+  return String(t==null?'':t).replace(/[\s\u3000]/g,'').replace(/^[\u2705\u26a0\ufe0f]+/,'').slice(0,80);
+}
+function _tombKbItem(pk,kbIdx,text){
+  if(!pk) return;
+  var fp=_kbItemFp(text); if(!fp) return;
+  if(!KB_ITEM_TOMBS[pk]) KB_ITEM_TOMBS[pk]={};
+  if(!KB_ITEM_TOMBS[pk][kbIdx]) KB_ITEM_TOMBS[pk][kbIdx]={};
+  KB_ITEM_TOMBS[pk][kbIdx][fp]=Date.now();
+}
+function _isKbItemTombed(pk,kbIdx,text){
+  var fp=_kbItemFp(text); if(!fp) return false;
+  return !!(KB_ITEM_TOMBS[pk]&&KB_ITEM_TOMBS[pk][kbIdx]&&KB_ITEM_TOMBS[pk][kbIdx][fp]);
+}
+function _mergeKbItemTombs(src){
+  try{ src=src||{};
+    Object.keys(src).forEach(function(pk){
+      if(!KB_ITEM_TOMBS[pk]) KB_ITEM_TOMBS[pk]={};
+      Object.keys(src[pk]||{}).forEach(function(ki){
+        if(!KB_ITEM_TOMBS[pk][ki]) KB_ITEM_TOMBS[pk][ki]={};
+        Object.keys(src[pk][ki]||{}).forEach(function(fp){
+          var a=Number(src[pk][ki][fp])||0, b=Number(KB_ITEM_TOMBS[pk][ki][fp])||0;
+          if(a>b) KB_ITEM_TOMBS[pk][ki][fp]=a;
+        });
+      });
+    });
+  }catch(_e){}
+}
+/* 将墓碑应用到即将生效的快照：已删条目不得随同步回流。 */
+function _applyKbItemTombs(projMap){
+  try{
+    Object.keys(KB_ITEM_TOMBS||{}).forEach(function(pk){
+      var pr=projMap&&projMap[pk]; if(!pr||!pr.kb) return;
+      Object.keys(KB_ITEM_TOMBS[pk]||{}).forEach(function(ki){
+        var sec=pr.kb[Number(ki)]; if(!sec||!sec.known) return;
+        sec.known=sec.known.filter(function(x){
+          return !_isKbItemTombed(pk,ki,(typeof _kbText==='function')?_kbText(x):x);
+        });
+      });
+    });
+  }catch(_e){}
+}
+var KB_CONFIRMS={};  // {projKey:{kbIdx:{itemIdx:{status,text,ts}}}}
+
 function restoreFromServer(callback){
   // 生成/访谈进行中不做全量覆盖同步——否则刚生成的REPORTSTATE/访谈状态被服务端旧数据冲掉，
   // 表现为"报告跑一半自己跳走/进行不下去"。完成后调用方会再触发同步。
@@ -8593,6 +8644,8 @@ function restoreFromServer(callback){
     Object.keys(REPORTSTATE||{}).forEach(function(k){ if(_localDemandProj[k]&&REPORTSTATE[k]) _localDemandRS[k]=REPORTSTATE[k]; });
     PROJECTS         = srv.PROJECTS         || {};
     UPLOADS          = srv.UPLOADS          || {};
+    _mergeKbItemTombs(srv.KB_ITEM_TOMBS);
+    _applyKbItemTombs(PROJECTS);
     _mergeTombs(srv.KB_CONFIRM_TOMBS);
     KB_CONFIRMS      = _mergeConfirms(srv.KB_CONFIRMS || {});  // 只进不退，见 _mergeConfirms
     KB_FILE_CHUNKS   = srv.KB_FILE_CHUNKS   || {};
@@ -8911,6 +8964,9 @@ window.addEventListener('storage', function(e){
           }
         }catch(_e){}
       });
+      // 【2026-09-18】已删条目不得随快照回流。上方合并保护了
+      // customTopics/stage/clues，但 kb.known 一直是裸赋值，造成删除后复活。
+      _applyKbItemTombs(incoming);
       PROJECTS=incoming;
     })();
     // 删除墓碑过滤：其他标签页快照可能仍含已删项目
@@ -8936,6 +8992,8 @@ window.addEventListener('storage', function(e){
     })();
     KB_FILE_CHUNKS=data.KB_FILE_CHUNKS||{};
     // 【2026-09-18 修复】确认只进不退：整体覆盖会把本地刚点、尚未同步出去的确认冲掉
+    _mergeKbItemTombs(data.KB_ITEM_TOMBS);
+    _applyKbItemTombs(PROJECTS);
     _mergeTombs(data.KB_CONFIRM_TOMBS);
     KB_CONFIRMS=_mergeConfirms(data.KB_CONFIRMS||{});
     PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
@@ -8985,7 +9043,7 @@ window.addEventListener('storage', function(e){
 
 var UPLOADS={};
 var KB_FILE_CHUNKS={};
-var KB_CONFIRMS={};  // {projKey:{kbIdx:{itemIdx:{status,text,ts}}}}
+
 /* 【2026-09-18】确认墓碑 {projKey:{kbIdx:{itemIdx:ts}}}。
    没有它，_mergeConfirms 的「只进不退」会把刚删掉的确认又从本地补回去（删除后复活）。 */
 var KB_CONFIRM_TOMBS={};
@@ -10243,6 +10301,10 @@ function deleteKbItem(kbIdx,itemIdx){
   var p=P();if(!p||!p.kb)return;
   var k=p.kb[kbIdx];if(!k||!k.known||itemIdx>=k.known.length)return;
   if(!confirm('确定删除这条内容吗？删除后不可恢复。')) return;
+  // 【2026-09-18】先打墓碑再删：不打的话管理端 persist 派发的 storage 事件
+  // 会把旧快照的 kb.known 整体灌回，表现为「删了又自己回来」。
+  // 必须在 splice 之前取文本，否则拿不到被删内容。
+  _tombKbItem(cur, kbIdx, _kbText(k.known[itemIdx]));
   // 删除 known 条目
   k.known.splice(itemIdx,1);
   // 重排该 kbIdx 下的确认记录：删除 itemIdx，itemIdx 之后的键 -1

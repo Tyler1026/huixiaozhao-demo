@@ -4570,6 +4570,7 @@ function persist(){
       UPLOADS:UPLOADS,
       KB_CONFIRMS:KB_CONFIRMS,
       KB_CONFIRM_TOMBS:KB_CONFIRM_TOMBS,
+      KB_ITEM_TOMBS:KB_ITEM_TOMBS,
       KB_FILE_CHUNKS:KB_FILE_CHUNKS,
       KB_UNLOCKED:KB_UNLOCKED,
       REPORTSTATE:REPORTSTATE,
@@ -4598,6 +4599,56 @@ function persist(){
   }catch(e){ console.warn('[persist] failed:',e.message); }
 }
 
+/* 【2026-09-18】知识条目删除墓碑 {projKey:{kbIdx:{指纹:ts}}}。
+   根因：storage 监听里 `PROJECTS=incoming` 会把对端旧快照的 kb.known 整体灌回，
+   而那份快照里被删的条目还在 —— 表现为「删了又自己回来」。
+   既有合并已保护 customTopics/stage/clues，独缺 kb.known。
+   用内容指纹而不用 itemIdx 作键：splice 后后续索引整体前移，索引做键必然错位。 */
+var KB_ITEM_TOMBS={};
+function _kbItemFp(t){
+  return String(t==null?'':t).replace(/[\s\u3000]/g,'').replace(/^[\u2705\u26a0\ufe0f]+/,'').slice(0,80);
+}
+function _tombKbItem(pk,kbIdx,text){
+  if(!pk) return;
+  var fp=_kbItemFp(text); if(!fp) return;
+  if(!KB_ITEM_TOMBS[pk]) KB_ITEM_TOMBS[pk]={};
+  if(!KB_ITEM_TOMBS[pk][kbIdx]) KB_ITEM_TOMBS[pk][kbIdx]={};
+  KB_ITEM_TOMBS[pk][kbIdx][fp]=Date.now();
+}
+function _isKbItemTombed(pk,kbIdx,text){
+  var fp=_kbItemFp(text); if(!fp) return false;
+  return !!(KB_ITEM_TOMBS[pk]&&KB_ITEM_TOMBS[pk][kbIdx]&&KB_ITEM_TOMBS[pk][kbIdx][fp]);
+}
+function _mergeKbItemTombs(src){
+  try{ src=src||{};
+    Object.keys(src).forEach(function(pk){
+      if(!KB_ITEM_TOMBS[pk]) KB_ITEM_TOMBS[pk]={};
+      Object.keys(src[pk]||{}).forEach(function(ki){
+        if(!KB_ITEM_TOMBS[pk][ki]) KB_ITEM_TOMBS[pk][ki]={};
+        Object.keys(src[pk][ki]||{}).forEach(function(fp){
+          var a=Number(src[pk][ki][fp])||0, b=Number(KB_ITEM_TOMBS[pk][ki][fp])||0;
+          if(a>b) KB_ITEM_TOMBS[pk][ki][fp]=a;
+        });
+      });
+    });
+  }catch(_e){}
+}
+/* 将墓碑应用到即将生效的快照：已删条目不得随同步回流。 */
+function _applyKbItemTombs(projMap){
+  try{
+    Object.keys(KB_ITEM_TOMBS||{}).forEach(function(pk){
+      var pr=projMap&&projMap[pk]; if(!pr||!pr.kb) return;
+      Object.keys(KB_ITEM_TOMBS[pk]||{}).forEach(function(ki){
+        var sec=pr.kb[Number(ki)]; if(!sec||!sec.known) return;
+        sec.known=sec.known.filter(function(x){
+          return !_isKbItemTombed(pk,ki,(typeof _kbText==='function')?_kbText(x):x);
+        });
+      });
+    });
+  }catch(_e){}
+}
+var KB_CONFIRMS={};  // {projKey:{kbIdx:{itemIdx:{status,text,ts}}}}
+
 function restore(){
   try{
     var raw=localStorage.getItem(LS_KEY);
@@ -4608,6 +4659,8 @@ function restore(){
       cur=data.cur||null;
       view=data.view||'setup';
       UPLOADS=data.UPLOADS||{};
+      _mergeKbItemTombs(data.KB_ITEM_TOMBS);
+      _applyKbItemTombs(PROJECTS);
       _mergeTombs(data.KB_CONFIRM_TOMBS);
       KB_CONFIRMS=_mergeConfirms(data.KB_CONFIRMS||{});
       KB_FILE_CHUNKS=data.KB_FILE_CHUNKS||{};
@@ -4640,6 +4693,8 @@ function restoreFromServer(callback){
     }
     PROJECTS         = srv.PROJECTS         || {};
     UPLOADS          = srv.UPLOADS          || {};
+    _mergeKbItemTombs(srv.KB_ITEM_TOMBS);
+    _applyKbItemTombs(PROJECTS);
     _mergeTombs(srv.KB_CONFIRM_TOMBS);
     KB_CONFIRMS      = _mergeConfirms(srv.KB_CONFIRMS || {});  // 只进不退
     KB_FILE_CHUNKS   = srv.KB_FILE_CHUNKS   || {};
@@ -4689,7 +4744,7 @@ function clearPersist(){
 var UPLOADS={};
 var RESET_GEN=null;  // reset代际标记,从服务端读取后persist带回
 var KB_FILE_CHUNKS={};
-var KB_CONFIRMS={};  // {projKey:{kbIdx:{itemIdx:{status,text,ts}}}}
+
 /* 【2026-09-18】确认墓碑 + 只进不退合并，与政府端 index.html 对称。
    两端共用同一 LS_KEY，任一端整体覆盖 KB_CONFIRMS 都会把对端刚点的确认回滚。 */
 var KB_CONFIRM_TOMBS={};
