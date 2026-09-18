@@ -6827,7 +6827,10 @@ var ragCity=null, ragTopic=0, ragQuery='', ragHits=null, ragLog=null, ragFilter=
 // 对话更新 RAG：多轮消息 [{role,content}]；ragChatPending=可入库的最近一条 AI 结论草稿
 var ragChatMsgs=[], ragChatBusy=false, ragChatPending=null;
 function ragProjKey(){
-  var keys=Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&p.kb&&p.kb.length&&p.kb.some(function(t){return (t.known||[]).length;});});
+  // 【2026-09-18】放宽：原来要求 kb 里已有材料，导致「＋新增城市」建的空城市
+  // 会在下面 keys.indexOf(ragCity) 处被踢回旧城市，新城市切不进去也传不了材料。
+  // 只要有 kb 数组结构就算有效城市；默认选中仍优先已初始化/材料多的项目（见下 sort）。
+  var keys=Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&Array.isArray(p.kb);});
   if(!keys.length) return null;
   if(!ragCity){
     // 默认优先：流水线初始化过的项目(kbInitTs) > 材料量最大的项目
@@ -6846,7 +6849,9 @@ function ragProjKey(){
 function ragCityOptions(){
   // 按城市去重：同一城市可能有多个项目(主账号+各招商方向子项目)，下拉只展示一个城市一项，
   // 代表项 = 该城市材料量最大的项目(优先 kbInitTs)，避免出现多个"随州"。
-  var keys=Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&p.kb&&p.kb.some(function(t){return (t.known||[]).length;});});
+  // 【2026-09-18】原过滤要求 kb 里已有材料，导致管理端「＋新增城市」建的空城市进不了下拉、
+  // 也就没法给它上传材料。改为「有 kb 数组结构」即可，零材料的城市在选项里标注待上传。
+  var keys=Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&Array.isArray(p.kb);});
   var byCity={};
   keys.forEach(function(k){
     var c=PROJECTS[k].city||k;
@@ -6862,14 +6867,16 @@ function ragCityOptions(){
   var activeCity = (PROJECTS[ragProjKey()]||{}).city;
   return Object.keys(byCity).map(function(c){
     var k=byCity[c];
-    return '<option value="'+k+'"'+(c===activeCity?' selected':'')+'>'+c+'</option>';
+    var _n=(PROJECTS[k].kb||[]).reduce(function(s,t){return s+((t.known||[]).length);},0);
+    return '<option value="'+k+'"'+(c===activeCity?' selected':'')+'>'+c+(_n?'':' · 待上传材料')+'</option>';
   }).join('');
 }
 function opsRag(){
   var key=ragProjKey();
   if(!key) return '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:#9aa5b5;padding:60px">'+
     '<div style="font-size:36px">📚</div><div style="font-size:14px;font-weight:700;color:#0b183b">暂无已初始化的城市智库</div>'+
-    '<div style="font-size:13px;text-align:center;line-height:1.7">在「城市需求概览」发起报告生成，<br>流水线完成后材料会自动入库并出现在这里</div></div>';
+    '<div style="font-size:13px;text-align:center;line-height:1.7">可直接新增城市并上传材料建库，<br>或在「城市需求概览」发起报告生成由流水线自动入库</div>'+
+    '<button class="ghost-button" onclick="ragAddCityModal()" style="margin-top:4px;border-color:#c7d2fe;color:#4f46e5">＋ 新增城市</button></div>';
   var p=PROJECTS[key];
   var total=p.kb.reduce(function(s,t){return s+(t.known||[]).length;},0);
   var rs=REPORTSTATE[key]||{};
@@ -6879,7 +6886,9 @@ function opsRag(){
     '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'+
       '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">城市智库 RAG</h1>'+
       '<select onchange="ragCity=this.value;ragTopic=0;ragHits=null;renderOpsV2()" style="min-height:34px;padding:4px 10px;border:1px solid #d8e0ed;border-radius:8px;font-size:13px">'+ragCityOptions()+'</select>'+
-      '<span style="font-size:12px;color:#9aa5b5">'+p.org+' · 初始化于 '+initStr+'</span></div>'+
+      '<button onclick="ragAddCityModal()" title="新增一个城市智库，建好后可直接上传材料" '+
+        'style="min-height:34px;padding:4px 12px;border:1px solid #c7d2fe;border-radius:8px;background:#f5f3ff;color:#4f46e5;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap">＋ 新增城市</button>'+
+      '<span style="font-size:12px;color:#9aa5b5">'+(p.org||'—')+' · 初始化于 '+initStr+'</span></div>'+
     '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">'+
       ragStatCard('📦','智库材料总量',total+' 条','来自 AI 招商智能体研判')+
       ragStatCard('🗂️','主题分区',p.kb.length+' 个','产业链/园区/企业/政策')+
@@ -6893,6 +6902,78 @@ function opsRag(){
     ragPushLog()+
   '</div>';
 }
+/* ══ 新增城市智库（管理端 RAG 页）══
+   建一个带标准四大主题骨架的空项目，建好后直接切到该城市，
+   用户即可用下方现成的上传面板传材料（/api/kb-upload 支持空 kb，见 server.py:1490）。 */
+function ragAddCityModal(){
+  var body='<div style="display:flex;flex-direction:column;gap:12px">'+
+    '<div style="font-size:12.5px;color:#5a7398;line-height:1.7;background:#f8fbff;border:1px solid #e3ebf6;border-radius:8px;padding:10px 12px">'+
+      '新增后会建立该城市的空智库（产业/园区/企业/政策四个主题分区），'+
+      '随后在本页「📎 上传文件」直接传材料，AI 自动切分入库。'+
+    '</div>'+
+    '<label style="font-size:12px;color:#5a7398;font-weight:600">城市名称 <span style="color:#dc2626">*</span>'+
+      '<input id="ragNewCity" placeholder="如 荆门市 / 松江区" '+
+      'style="width:100%;min-height:38px;margin-top:5px;padding:4px 10px;border:1px solid #d8e0ed;border-radius:7px;font-size:13px;box-sizing:border-box"></label>'+
+    '<label style="font-size:12px;color:#5a7398;font-weight:600">招商单位'+
+      '<input id="ragNewOrg" placeholder="留空则自动填「<城市>招商局」" '+
+      'style="width:100%;min-height:38px;margin-top:5px;padding:4px 10px;border:1px solid #d8e0ed;border-radius:7px;font-size:13px;box-sizing:border-box"></label>'+
+    '<div id="ragNewErr" style="display:none;font-size:12px;color:#dc2626"></div>'+
+  '</div>';
+  var foot='<button class="secondary-button" onclick="closeModal()">取消</button>'+
+    '<button class="primary-button" onclick="ragDoAddCity()">创建并开始上传</button>';
+  openModal('新增城市智库', body, foot);
+  setTimeout(function(){ var el=document.getElementById('ragNewCity'); if(el) el.focus(); },80);
+}
+function ragDoAddCity(){
+  function val(id){ var e=document.getElementById(id); return e?e.value.trim():''; }
+  function err(m){ var e=document.getElementById('ragNewErr'); if(e){ e.textContent=m; e.style.display='block'; } }
+  var city=val('ragNewCity');
+  if(!city){ err('请填写城市名称'); return; }
+  if(city.length>20){ err('城市名称过长'); return; }
+  // 同名城市已存在则直接切过去，不重复建壳（避免出现两个同名城市）
+  var exist=Object.keys(PROJECTS).filter(function(k){ return PROJECTS[k] && PROJECTS[k].city===city; });
+  if(exist.length){
+    closeModal();
+    ragCity=exist[0]; ragTopic=0; ragHits=null;
+    try{ renderOpsV2(); }catch(_){}
+    toast&&toast('「'+city+'」已存在，已切换到该城市智库');
+    return;
+  }
+  var org=val('ragNewOrg')||(city+'招商局');
+  var key='city'+Date.now().toString(36);
+  PROJECTS[key]={
+    id:key, city:city, org:org, who:'待绑定', topic:city+'产业链招引', stage:1,
+    kb:[
+      {icon:'🏭',t:'主导产业与产业链',sub:'待上传材料',tag:'待补充',known:[],calls:['城市公开信息','产业链图谱']},
+      {icon:'🏢',t:'园区与承载条件',sub:'待上传材料',tag:'待补充',known:[],calls:['园区基础资料','政府官网']},
+      {icon:'🏗️',t:'链主与存量企业',sub:'待上传材料',tag:'待补充',known:[],calls:['企业名录','工商信息']},
+      {icon:'📜',t:'政策、规划与领导关注',sub:'待上传材料',tag:'待补充',known:[],calls:['政府工作报告','领导发言']}
+    ],
+    kbInitTs:Date.now(),
+    report:null, clues:[], customStages:[]
+  };
+  closeModal();
+  ragCity=key; ragTopic=0; ragHits=null;
+  // 【关键】同步 XHR 先把新项目推到服务端再渲染。
+  // 只用 persist() 不够：它的 POST 还在路上时，其它逻辑触发的 restoreFromServer
+  // 会拿回不含新城市的旧快照覆盖内存，新城市就"建了又消失"（实测复现）。
+  // 与 index.html doRegister 同一套做法，只推 PROJECTS 增量避免空快照灾难。
+  var _saved=false;
+  try{
+    var _body={PROJECTS:PROJECTS, syncTs:Date.now()};
+    if(typeof RESET_GEN!=='undefined'&&RESET_GEN) _body.RESET_GEN=RESET_GEN;
+    var _x=new XMLHttpRequest();
+    _x.open('POST','/api/sync',false);
+    _x.setRequestHeader('Content-Type','application/json');
+    _x.send(JSON.stringify(_body));
+    _saved=(_x.status>=200&&_x.status<300);
+  }catch(e){ _saved=false; }
+  try{ persist(); }catch(_){}
+  try{ renderOpsV2(); }catch(_){}
+  if(_saved) toast&&toast('已创建「'+city+'」智库，请在下方上传材料');
+  else toast&&toast('已创建「'+city+'」，但同步到服务端失败，请检查网络后重试');
+}
+
 /* ── 接口1 UI：管理员上传文件补充/修正（极简：选文件+主题+性质）── */
 function ragUploadPanel(p,key){
   var topicOpts=(p.kb||[]).map(function(t){return '<option value="'+t.t.replace(/"/g,'')+'">'+t.t+'</option>';}).join('')+
