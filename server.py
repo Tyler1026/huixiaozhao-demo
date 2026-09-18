@@ -402,6 +402,18 @@ def _merge_map(old, new):
             if fk == "clues":
                 base[fk] = _merge_clues(base.get("clues"), fv)
                 continue
+            if fk == "customStages":
+                # 【2026-09-18】自定义阶段只增不减：并集（保序）。
+                # 走 _keep_nonempty 即「后写者胜」，任一持旧快照的标签页 POST 上来，
+                # 就会把管理端刚新增的阶段（如「第一次会议」）从项目里抹掉，
+                # 政府端进度条随之少一格。
+                if isinstance(fv, list):
+                    _cs = [x for x in (base.get("customStages") or []) if isinstance(x, str)]
+                    for _x in fv:
+                        if isinstance(_x, str) and _x not in _cs:
+                            _cs.append(_x)
+                    base[fk] = _cs
+                continue
             base[fk] = _keep_nonempty(base.get(fk), fv)
     return merged
 

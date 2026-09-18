@@ -2801,7 +2801,7 @@ function _buildNotifs(){
         });
       }
       // 超时提醒：进入某阶段后 >3 天无进一步推进
-      if(lastTs && (Date.now()-lastTs) > 3*86400*1000 && stage<5){
+      if(lastTs && (Date.now()-lastTs) > 3*86400*1000 && stage<projStages(p).length){
         var idB='stale:'+k+':'+stage;
         arr.push({
           id:idB,
@@ -3637,22 +3637,26 @@ function projMgmtPage(p){
     // 展开内容
     var expandedContent = '';
     if(expanded){
-      // 进度条
+      // 进度条：标准5阶段 + 管理端为该项目新增的自定义阶段。
+      // 【2026-09-18 修复】原来这里写死 STAGES，管理端新增的「第一次会议」等阶段
+      // 只出现在右上角徽章（走 stageNameOf→projStages），蓝色进度条里看不到。
+      var _stagesX = projStages(x);
+      var _fsX = _stagesX.length > 6 ? '10px' : '11px';
       var stageBar = '<div style="margin-bottom:16px">'+
         '<div style="display:flex;gap:0;border-radius:8px;overflow:hidden;border:1px solid #e8edf5">'+
-        STAGES.map(function(s,si){
+        _stagesX.map(function(s,si){
           var n=si+1;
           var isDone = n < x.stage;
           var isCur  = n === x.stage;
           var bg = isDone?'#1a56db':isCur?'#eff6ff':'#f9fafb';
           var color = isDone?'#fff':isCur?'#1a56db':'#9aa5b5';
           var fw = isCur?'700':'400';
-          return '<div style="flex:1;padding:8px 6px;text-align:center;background:'+bg+';border-right:1px solid #e8edf5;cursor:'+(n<=x.stage?'default':'pointer')+';" '+
+          return '<div style="flex:1;min-width:0;padding:8px 6px;text-align:center;background:'+bg+';border-right:1px solid #e8edf5;cursor:'+(n<=x.stage?'default':'pointer')+';" '+
             (n===x.stage+1?'onclick="advanceStage(\''+k+'\')" title=\"点击推进到下一阶段\"':'')+'>' +
-            '<div style="font-size:11px;font-weight:'+fw+';color:'+color+'">'+
+            '<div style="font-size:'+_fsX+';font-weight:'+fw+';color:'+color+';line-height:1.35;word-break:break-all">'+
               (isDone?'✓ ':'')+(isCur?'⬤ ':'')+s[0]+
             '</div>'+
-            (isCur?'<div style="font-size:9px;color:#6b7f9c;margin-top:2px;line-height:1.3">'+s[1]+'</div>':'')+
+            (isCur&&s[1]?'<div style="font-size:9px;color:#6b7f9c;margin-top:2px;line-height:1.3">'+s[1]+'</div>':'')+
           '</div>';
         }).join('')+
         '</div></div>';
@@ -3781,6 +3785,16 @@ function nextStepGuide(k,x,teal,amber,slate){
     if(amber>0) return box('linear-gradient(135deg,#fffbeb,#fff7ed)','#fdba74','#9a3412','\u23F3','\u5f53\u524d\uff1a'+amber+' \u6761\u7ebf\u7d22\u6838\u9a8c\u4e2d','\u8d44\u6e90\u56e2\u961f\u6b63\u5728\u6838\u9a8c\u4f01\u4e1a\u771f\u5b9e\u610f\u5411\u4e0e\u51b3\u7b56\u5c42\u89e6\u8fbe\uff0c\u6838\u9a8c\u901a\u8fc7\u540e\u5373\u53ef\u5b89\u6392\u6c9f\u901a\u3002');
     return box('linear-gradient(135deg,#eff6ff,#f0f9ff)','#bfdbfe','#1d4ed8','\uD83D\uDD0D','\u5f53\u524d\uff1a\u7b49\u5f85\u5019\u9009\u7ebf\u7d22','\u5728\u4e0b\u65b9 AI \u626b\u63cf\u6216\u56e2\u961f\u63a8\u8350\u4e2d\u9009\u5b9a\u5019\u9009\u4f01\u4e1a\uff0c\u53d1\u8d77\u8d44\u6e90\u6838\u9a8c\u3002');
   }
+  // 已推进到管理端新增的自定义阶段（序号超过标准5阶段）：按阶段名展示，
+  // 否则引导条会一直停在「可安排首次沟通」，与右上角徽章/蓝色进度条不一致。
+  if(x.stage>5){
+    var _cn=stageNameOf(x,x.stage);
+    var _slog=(x.stageLog||[]);
+    var _snote='';
+    for(var _si=0;_si<_slog.length;_si++){ if(_slog[_si].to===x.stage&&_slog[_si].note){ _snote=_slog[_si].note; break; } }
+    return box('linear-gradient(135deg,#f5f3ff,#eff6ff)','#c4b5fd','#5b21b6','\uD83D\uDCC5','\u5f53\u524d\uff1a'+_cn,
+      _snote||('\u8be5\u65b9\u5411\u5df2\u63a8\u8fdb\u5230\u300c'+_cn+'\u300d\uff0c\u53ef\u5728\u4e0b\u65b9\u5bf9\u63a5\u8bb0\u5f55\u4e2d\u767b\u8bb0\u8fdb\u5c55\u3002'));
+  }
   if(x.stage>=5){
     return box('linear-gradient(135deg,#f0fdf4,#f0f9ff)','#86efac','#166534','\u2705','\u5f53\u524d\uff1a'+(teal||0)+' \u6761\u7ebf\u7d22\u53ef\u5b89\u6392\u6c9f\u901a','\u5c55\u5f00\u53ef\u6c9f\u901a\u7ebf\u7d22\u67e5\u770b\u300c\u5982\u4f55\u8054\u7cfb\u8fd9\u5bb6\u4f01\u4e1a\u300d\uff0c\u5e76\u5728\u4e0b\u65b9\u5bf9\u63a5\u8bb0\u5f55\u4e2d\u767b\u8bb0\u8fdb\u5c55\u3002');
   }
@@ -3789,7 +3803,8 @@ function nextStepGuide(k,x,teal,amber,slate){
 /* 推进阶段 */
 function advanceStage(projKey){
   var p = PROJECTS[projKey]; if(!p) return;
-  if(p.stage < 5){
+  // 上限取项目实际阶段链长度（含管理端自定义阶段），不再写死 5
+  if(p.stage < projStages(p).length){
     p.stage++;
     if(!p.stageByTopic)p.stageByTopic={};
     if(p.topic!=null)p.stageByTopic[p.topic]=p.stage;
@@ -4150,6 +4165,12 @@ function dockingPage(p){
       '<div style="font-size:12px;font-weight:700;color:#c2410c;margin-bottom:6px">🔍 资源核验进行中（预计2个工作日）</div>'+
       '<div style="font-size:12px;color:#4a5568;line-height:1.7">政府侧待办：准备<strong>园区承接条件说明</strong>（可用厂房/能耗指标）和<strong>可用时段</strong>，核验通过后即可安排首次沟通。</div>'+
     '</div>';
+  } else if(px.stage>5){
+    // 管理端新增的自定义阶段：按阶段名展示，避免一直停在「可安排首次沟通」
+    nextStep='<div style="padding:12px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:12px;margin-bottom:16px">'+
+      '<div style="font-size:12px;font-weight:700;color:#5b21b6;margin-bottom:6px">📅 当前阶段：'+stageNameOf(px,px.stage)+'</div>'+
+      '<div style="font-size:12px;color:#4a5568;line-height:1.7">资源端已把该方向推进到「'+stageNameOf(px,px.stage)+'」，可在下方对接记录中登记进展。</div>'+
+    '</div>';
   } else if(px.stage>=5){
     nextStep='<div style="padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;margin-bottom:16px">'+
       '<div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:6px">✓ 可安排首次沟通</div>'+
@@ -4275,6 +4296,12 @@ function dockProgressInline(pk){
     nextStep='<div style="padding:12px 14px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;margin-bottom:16px">'+
       '<div style="font-size:12px;font-weight:700;color:#c2410c;margin-bottom:6px">🔍 资源核验进行中（预计2个工作日）</div>'+
       '<div style="font-size:12px;color:#4a5568;line-height:1.7">政府侧待办：准备<strong>园区承接条件说明</strong>（可用厂房/能耗指标）和<strong>可用时段</strong>，核验通过后即可安排首次沟通。</div>'+
+    '</div>';
+  } else if(px.stage>5){
+    // 管理端新增的自定义阶段：按阶段名展示，避免一直停在「可安排首次沟通」
+    nextStep='<div style="padding:12px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:12px;margin-bottom:16px">'+
+      '<div style="font-size:12px;font-weight:700;color:#5b21b6;margin-bottom:6px">📅 当前阶段：'+stageNameOf(px,px.stage)+'</div>'+
+      '<div style="font-size:12px;color:#4a5568;line-height:1.7">资源端已把该方向推进到「'+stageNameOf(px,px.stage)+'」，可在下方对接记录中登记进展。</div>'+
     '</div>';
   } else if(px.stage>=5){
     nextStep='<div style="padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;margin-bottom:16px">'+
@@ -8069,7 +8096,19 @@ function detailNeeds(p){
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>产业分析总数</h3><p class="detail-copy" style="font-size:22px;font-weight:700;color:#013582">'+ks.length+' 个产业方向</p></div>'+
       '<div class="detail-block"><h3>阶段分布</h3><ul class="check-list">'+
-        STAGES.map(function(s,i){var n=byStage[i+1]||0;return n?'<li><i class="i">•</i>'+s[0]+'：'+n+' 个</li>':''}).join('')+'</ul></div>'+
+        (function(){
+          // 阶段名按项目取（可能有自定义阶段，序号会超过 STAGES 长度）
+          var maxN=STAGES.length; ks.forEach(function(k){var s=PROJECTS[k].stage||1; if(s>maxN)maxN=s;});
+          var rows='';
+          for(var i=1;i<=maxN;i++){
+            var n=byStage[i]||0; if(!n) continue;
+            var nm='';
+            for(var j=0;j<ks.length;j++){ if((PROJECTS[ks[j]].stage||1)===i){ nm=stageNameOf(PROJECTS[ks[j]],i); break; } }
+            if(!nm) nm=(STAGES[i-1]&&STAGES[i-1][0])||('第'+i+'阶段');
+            rows+='<li><i class="i">•</i>'+nm+'：'+n+' 个</li>';
+          }
+          return rows;
+        })()+'</ul></div>'+
       '<div class="detail-block"><h3>提示</h3><div class="info-callout" style="margin-top:0">展开任一产业方向后，这里会显示该方向的阶段与线索进度；每条为独立研判线，进度互不干扰。</div></div>'+
     '</div>';
 }
