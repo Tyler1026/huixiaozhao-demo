@@ -2689,7 +2689,11 @@ function kbReadiness(){
   // 仍保留「未清零不得显示已就绪(≥99)」的初衷，只有全部确认才能到 100。
   if(pendingWarn>0){
     var _wr=(warnTotal>0)?(warnConfirmed/warnTotal):0;   // 已确认占比
-    var _cap=60+Math.round(_wr*39);                      // 60 → 99 线性
+    // 封顶值随确认进度从 79 递增到 99。
+    // 注意：起点必须是 79（旧门槛值）而不是 60 —— 否则一条未确认时
+    // 松江会从 79% 掲到 60%，干部会以为数据倒退了（实测模拟踩过）。
+    // 取 max 保证“只涨不降”：未确认任何一条时与旧逻辑一致，每确认一条再往上走。
+    var _cap=Math.max(79, 79+Math.round(_wr*20));        // 79 → 99 线性
     score=Math.min(score, _cap);
   }
   // 【2026-09-18】标签带上板块名：pendingWarn 是跸板块累加，
