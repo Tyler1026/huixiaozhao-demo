@@ -2683,7 +2683,15 @@ function kbReadiness(){
   // 解锁门槛(isLocked)必须用它，否则待确认未清零会把产业分析/招商对接整个锁住——
   // 待确认是"要核实"，不是"数据不够"，不该连带剥夺已有功能。
   var rawScore=score;
-  if(pendingWarn>0) score=Math.min(score, 79);
+  // 【2026-09-18 优化】原来是 `if(pendingWarn>0) score=Math.min(score,79)` ——一刀切到 79，
+  // 导致确认了 1 条还是 79、确认了 13 条也还是 79，干部完全看不到自己的进展。
+  // 改为线性封顶：封顶值随确认进度从 60 递增到 99，每确认一条都会动；
+  // 仍保留「未清零不得显示已就绪(≥99)」的初衷，只有全部确认才能到 100。
+  if(pendingWarn>0){
+    var _wr=(warnTotal>0)?(warnConfirmed/warnTotal):0;   // 已确认占比
+    var _cap=60+Math.round(_wr*39);                      // 60 → 99 线性
+    score=Math.min(score, _cap);
+  }
   // 【2026-09-18】标签带上板块名：pendingWarn 是跸板块累加，
   // 干部在园区板块确认完看到数字不动会以为没生效。
   var _pendSecs=[];
@@ -2699,8 +2707,10 @@ function kbReadiness(){
     });
   }catch(_e){}
   var _secHint=_pendSecs.length?('\uff08'+_pendSecs.join('\u3001')+'\uff09'):'';
+  // 标签带上「已确认/总数」，干部能看到自己推进了多少
+  var _progHint=(warnTotal>0)?(' · 已确认 '+warnConfirmed+'/'+warnTotal):'';
   var label=pendingWarn>0
-    ? (pendingWarn+' 条待确认'+_secHint)
+    ? (pendingWarn+' 条待确认'+_secHint+_progHint)
     : (score>=80?'已就绪':score>=50?'基本完整':score>=20?'待补充':'未开始');
   var color=pendingWarn>0
     ? '#f59e0b'
@@ -10332,11 +10342,17 @@ function kbDetail(i){
           // ⚠️ 条目的操作按钮
           var actionBtns='';
           if(warn&&!isConfirmed){
-            actionBtns='<div style="display:flex;gap:6px;margin-top:8px">'+
+            // 【2026-09-18】去重提示：该条代表了几条同义表述，确认一次全清。
+            // 不标明的话，干部以为还剩很多条没点，或以为点完了却没点完。
+            var _dupN2=((window.__kbDupMap&&window.__kbDupMap[i]&&window.__kbDupMap[i][_oi])||[]).length;
+            var _dupTag=_dupN2>0
+              ?'<div style="margin-top:6px;font-size:11px;color:#92400e;background:#fef3c7;border:1px dashed #fcd34d;border-radius:6px;padding:3px 7px;display:inline-block">已合并 '+(_dupN2+1)+' 条同义表述，确认一次即全部清除</div>'
+              :'';
+            actionBtns=_dupTag+'<div style="display:flex;gap:6px;margin-top:8px">'+
               '<button onclick="confirmKbItem('+i+','+(_displayPairs[xi]?_displayPairs[xi].origIdx:xi)+')" '+
                 'style="flex:1;padding:6px 0;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12px;color:#166534;cursor:pointer;font-weight:600" '+
                 'onmouseover="this.style.background=\'#dcfce7\'" onmouseout="this.style.background=\'#f0fdf4\'">'+
-                '\u2713 确认'+
+                '\u2713 确认'+(_dupN2>0?('（'+(_dupN2+1)+' 条）'):'')+
               '</button>'+
               '<button onclick="editKbItem('+i+','+(_displayPairs[xi]?_displayPairs[xi].origIdx:xi)+')" '+
                 'style="flex:1;padding:6px 0;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600" '+
