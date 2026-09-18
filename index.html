@@ -2714,7 +2714,7 @@ function sidebar(){
     report: '生成缺口分析与招引方向',
     home: '项目列表·对接进度',
     docking: (function(){
-      var _vc=visibleClues(p);
+      var _vc=visibleClues(p, cur);
       if(!_vc.length) return '候选企业·可达性核验';
       var amber=_vc.filter(function(c){return c.tag==='amber';}).length;
       return _vc.length+'条线索 · '+amber+'条待核验';
@@ -2970,19 +2970,40 @@ function mainPane(p){
 /* 政府端「待接触企业」统一口径：只显示管理端 AI 漏斗推送(gov_push)或人工录入的真实线索；
    过滤掉历史遗留的自动派生假数据（脱敏企业占位）与演示用扫描企业(ai_scan）。
    所有计数与列表渲染都必须走这个函数，避免头部数字与实际列表不一致。 */
-function visibleClues(p){
+function visibleClues(p, projKey){
   if(!p||!p.clues) return [];
+  var _pk = projKey || _projKeyOf(p);
   return p.clues.filter(function(c){
     if(!c) return false;
     if(c.status==='ai_scan') return false;
     if(typeof c.name==='string' && c.name.indexOf('脱敏企业')===0) return false;
+    if(_pk && isClueDeleted(_pk, c.id)) return false;
     return true;
   });
 }
 
+/* ===== 企业线索删除墓碑 =====
+   服务端 _merge_clues 会保留「服务端独有」的线索（防旧快照冲掉已核验状态），
+   所以单纯从 p.clues 里 splice 掉，下一次 GET 就会被合并复活（删了又回来），
+   与项目删除同一个坑。这里用 'projKey::clueId' 墓碑，persist 带给服务端做永久移除。 */
+function _projKeyOf(p){
+  if(!p) return null;
+  try{
+    var ks=Object.keys(PROJECTS);
+    for(var i=0;i<ks.length;i++){ if(PROJECTS[ks[i]]===p) return ks[i]; }
+  }catch(_){}
+  return null;
+}
+function _clueTombKey(projKey, clueId){ return String(projKey)+'::'+String(clueId); }
+function isClueDeleted(projKey, clueId){
+  if(clueId==null) return false;
+  var t=window.DELETED_CLUES||[];
+  return t.indexOf(_clueTombKey(projKey, clueId))>=0;
+}
+
 function renderCluesTwoPanel(projKey){
   var p = PROJECTS[projKey]; if(!p) return '';
-  var all = visibleClues(p);
+  var all = visibleClues(p, projKey);
   if(!window.__clueGroupOpen) window.__clueGroupOpen={};
   var gkey = function(seg){ return projKey+'::'+seg; };
   // 默认展开策略：teal 与 amber 默认展开，slate 默认折叠
@@ -3273,6 +3294,9 @@ function clueCard(clue, projKey, idx){
           '<button onclick="editClue(\''+projKey+'\',\''+clue.id+'\')" '+
             'style="padding:8px 12px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:8px;font-size:12px;color:#4a5568;cursor:pointer">'+
             '✎ 编辑</button>'+
+          '<button onclick="confirmDeleteClue(\''+projKey+'\',\''+clue.id+'\')" '+
+            'style="padding:8px 12px;background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;font-size:12px;color:#b91c1c;cursor:pointer">'+
+            '\u2715 移除企业</button>'+
         '</div>'+
       '</div>'
     : '';
@@ -3286,6 +3310,11 @@ function clueCard(clue, projKey, idx){
         '<div style="font-size:12px;color:#8492a6">'+clue.kind+' · '+clue.region+'</div>'+
       '</div>'+
       '<span style="padding:3px 10px;background:'+t.bg+';color:'+t.dot+';border:1px solid '+t.border+';border-radius:20px;font-size:11.5px;font-weight:600;flex-shrink:0;white-space:nowrap">'+t.label+'</span>'+
+      // 删除该企业：外层是 <button>，不能再嵌 button（HTML 非法），沿用项目卡片的 span+onclick 写法
+      '<span onclick="event.stopPropagation();confirmDeleteClue(\''+projKey+'\',\''+clue.id+'\')" title="移除这家企业" '+
+        'style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;color:#c0c8d4;background:transparent;border:1px solid transparent;cursor:pointer;font-size:14px;line-height:1;flex-shrink:0;margin-left:2px;transition:background .15s,color .15s" '+
+        'onmouseover="this.style.background=\'#fef2f2\';this.style.color=\'#dc2626\';this.style.borderColor=\'#fecaca\'" '+
+        'onmouseout="this.style.background=\'transparent\';this.style.color=\'#c0c8d4\';this.style.borderColor=\'transparent\'">\u2715</span>'+
       '<span style="font-size:12px;color:#9aa5b5;margin-left:2px">'+(isExpanded?'▲':'▼')+'</span>'+
     '</button>'+
     expandedDetail+
@@ -3622,7 +3651,7 @@ function projMgmtPage(p){
       // 待接触企业不再注入任何硬编码假数据——只显示管理端 AI 漏斗精选推送来的企业(status:'gov_push')
     }
 
-    var clues = visibleClues(x);
+    var clues = visibleClues(x, k);
     var teal  = clues.filter(function(c){return c.tone==='teal';}).length;
     var amber = clues.filter(function(c){return c.tone==='amber';}).length;
     var slate = clues.filter(function(c){return (c.tone||'slate')==='slate';}).length;
@@ -3748,7 +3777,7 @@ function projMgmtPage(p){
         // sz 是城市智库主项目(承载 kb/城市报告)，不可删除；仅派生的招商方向项目可删
         (isMainProject(k) ? '' :
           '<span onclick="event.stopPropagation();confirmDeleteProject(\''+k+'\')" title="取消该方向的招商申请" '+
-          'style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;cursor:pointer;font-size:14px;flex-shrink:0;margin-left:2px">🗑</span>')+
+          'style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;cursor:pointer;font-size:14px;line-height:1;flex-shrink:0;margin-left:2px">\u2715</span>')+
         '<span style="font-size:13px;color:#9aa5b5;margin-left:4px">'+(expanded?'▲':'▼')+'</span>'+
       '</button>'+
       expandedContent+
@@ -3821,6 +3850,41 @@ function toggleProjGroup(k){
   render();
 }
 /* 取消该方向的招商申请（删除项目）— 弹窗确认后执行 */
+/* ── 移除候选企业线索（带墓碑，防服务端合并复活）── */
+function confirmDeleteClue(projKey, clueId){
+  var p=PROJECTS[projKey]; if(!p) return;
+  var c=(p.clues||[]).filter(function(x){return x&&x.id===clueId;})[0];
+  if(!c){ toast('该企业已不在列表中'); return; }
+  var nm=cleanCoName(c.name)||'该企业';
+  var body='<div class="confirm-summary" style="border-color:#fecaca;background:#fef2f2">'+
+      '<i class="i" style="color:#dc2626">⚠️</i>'+
+      '<div><strong>确认从待接触企业中移除「'+nm+'」？</strong>'+
+      '<p>移除后该企业不再出现在本方向的候选企业线索里，其核验状态与核验问题一并删除，此操作不可撤销。'+
+      '如后续仍需跟进，可让管理端 AI 漏斗重新推送。</p></div>'+
+    '</div>';
+  var foot='<button class="secondary-button" onclick="closeModal()">再想想</button>'+
+    '<button class="primary-button" style="background:#dc2626;border-color:#dc2626" '+
+      'onclick="doDeleteClue(\''+projKey+'\',\''+clueId+'\')">确认移除</button>';
+  openModal('移除候选企业', body, foot);
+}
+function doDeleteClue(projKey, clueId){
+  var p=PROJECTS[projKey]; if(!p){ closeModal(); return; }
+  var c=(p.clues||[]).filter(function(x){return x&&x.id===clueId;})[0];
+  var nm=c?(cleanCoName(c.name)||'该企业'):'该企业';
+  // 墓碑：服务端 _merge_clues 保留服务端独有线索，没有墓碑删除会被合并复活
+  if(!window.DELETED_CLUES) window.DELETED_CLUES=[];
+  var tk=_clueTombKey(projKey, clueId);
+  if(window.DELETED_CLUES.indexOf(tk)<0) window.DELETED_CLUES.push(tk);
+  p.clues=(p.clues||[]).filter(function(x){ return !(x && x.id===clueId); });
+  if(window.__clueOpen===clueId) window.__clueOpen=null;
+  // 线索数变化要同步回管理端需求池，否则管理端仍显示旧的「N 家线索」
+  try{ syncDemandStage(projKey); }catch(_){}
+  persist();
+  closeModal();
+  render();
+  toast('已移除「'+nm+'」');
+}
+
 function confirmDeleteProject(k){
   var x=PROJECTS[k]; if(!x) return;
   var safeTopic=(x.topic||'该方向').replace(/'/g,'’');
@@ -8383,6 +8447,7 @@ function persist(){
       USER_PROFILES:(Object.keys(USER_PROFILES||{}).length?USER_PROFILES:undefined),
       OPS_ENT:typeof OPS_ENT!=='undefined'?OPS_ENT:[],
       DELETED_PROJECTS:window.DELETED_PROJECTS||[],
+      DELETED_CLUES:window.DELETED_CLUES||[],
       RESET_GEN:RESET_GEN,
       syncTs:Date.now()
     };
@@ -8430,6 +8495,7 @@ function restore(){
       if(data.RESET_GEN) RESET_GEN=data.RESET_GEN;
       if(data.DEMANDS) DEMANDS=data.DEMANDS;
       if(data.DELETED_PROJECTS) window.DELETED_PROJECTS=data.DELETED_PROJECTS;
+      if(data.DELETED_CLUES) window.DELETED_CLUES=data.DELETED_CLUES;
       console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
       try{ migrateKbChatToCity(); }catch(_){}
       return true;
@@ -8537,6 +8603,19 @@ function restoreFromServer(callback){
       var _tomb=(srv.DELETED_PROJECTS||[]).slice();
       (window.DELETED_PROJECTS||[]).forEach(function(t){ if(_tomb.indexOf(t)<0) _tomb.push(t); });
       window.DELETED_PROJECTS=_tomb;
+      // 企业线索墓碑：合并服务端与本地，并从刚拉回的 PROJECTS.clues 里剔除已删企业，
+      // 否则 _merge_clues 保留的服务端副本会让删掉的企业刷新后复活。
+      var _ctomb=(srv.DELETED_CLUES||[]).slice();
+      (window.DELETED_CLUES||[]).forEach(function(t){ if(_ctomb.indexOf(t)<0) _ctomb.push(t); });
+      window.DELETED_CLUES=_ctomb;
+      if(_ctomb.length){
+        Object.keys(PROJECTS).forEach(function(_pk){
+          var _pp=PROJECTS[_pk]; if(!_pp||!_pp.clues||!_pp.clues.length) return;
+          _pp.clues=_pp.clues.filter(function(_c){
+            return !(_c && _ctomb.indexOf(_pk+'::'+_c.id)>=0);
+          });
+        });
+      }
       _tomb.forEach(function(dk){
         delete PROJECTS[dk]; delete REPORTSTATE[dk]; delete PENDING_CONFIRMS[dk];
         delete UPLOADS[dk]; delete KB_FILE_CHUNKS[dk];
@@ -8651,6 +8730,7 @@ function restoreFromServer(callback){
       PENDING_CONFIRMS:PENDING_CONFIRMS,DOCK_LOGS:DOCK_LOGS,
       DEMANDS:typeof DEMANDS!=='undefined'?DEMANDS:[],
       DELETED_PROJECTS:window.DELETED_PROJECTS||[],
+      DELETED_CLUES:window.DELETED_CLUES||[],
       KB_CHAT:KB_CHAT,OPS_ENT:OPS_ENT,RESET_GEN:RESET_GEN,
       USER_PROFILES:USER_PROFILES,REPORT_HISTORY:typeof REPORT_HISTORY!=='undefined'?REPORT_HISTORY:{},
       syncTs:Date.now()};

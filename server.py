@@ -1265,6 +1265,9 @@ class Handler(BaseHTTPRequestHandler):
                 # ── 删除墓碑：政府端删除的项目 key 永久移除。_merge_map 只增不减，
                 #    没有墓碑时"删除"永远会被合并复活（删了又回来）。──
                 _tomb = set(existing.get('DELETED_PROJECTS') or []) | set(incoming.get('DELETED_PROJECTS') or [])
+                # 企业线索墓碑 'projKey::clueId'：_merge_clues 会保留服务端独有线索，
+                # 没有墓碑时政府端删掉的企业会被管理端旧快照合并复活。
+                _ctomb = set(existing.get('DELETED_CLUES') or []) | set(incoming.get('DELETED_CLUES') or [])
                 _protected = ['OPS_ENT','DEMANDS','KB_CHAT','PENDING_CONFIRMS','KB_CONFIRMS','REPORT_REQUESTS','CITY_ACCOUNTS']
                 # REPORT_REQUESTS 按 id 合并且状态只进不退（pending<running<done/failed）
                 # 防止管理端旧快照 persist 把流水线已推进的状态倒改回 pending
@@ -1343,6 +1346,21 @@ class Handler(BaseHTTPRequestHandler):
                         for _sect in ('PROJECTS', 'REPORTSTATE', 'PENDING_CONFIRMS', 'UPLOADS', 'KB_FILE_CHUNKS'):
                             if isinstance(existing.get(_sect), dict):
                                 existing[_sect].pop(_dk, None)
+                # 应用企业线索墓碑：从 PROJECTS[pk].clues 里永久移除已删企业
+                if _ctomb:
+                    existing['DELETED_CLUES'] = sorted(_ctomb)
+                    _projs = existing.get('PROJECTS')
+                    if isinstance(_projs, dict):
+                        for _pk, _pv in _projs.items():
+                            if not isinstance(_pv, dict):
+                                continue
+                            _cl = _pv.get('clues')
+                            if not isinstance(_cl, list) or not _cl:
+                                continue
+                            _pv['clues'] = [
+                                _c for _c in _cl
+                                if not (isinstance(_c, dict) and ('%s::%s' % (_pk, _c.get('id'))) in _ctomb)
+                            ]
                 data_str = json.dumps(existing, ensure_ascii=False)
             except Exception as e:
                 print(f"[sync] merge error: {e}")

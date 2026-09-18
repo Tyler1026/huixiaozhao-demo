@@ -2016,15 +2016,18 @@ function pushFunnelTopToGov(projKey, n){
   n=n||8; var top=p.funnel.companies.slice(0, n);
   if(!p.clues) p.clues=[];
   var existNames={}; (p.clues||[]).forEach(function(c){ if(c.name) existNames[c.name]=1; });
-  var added=0;
+  // 政府端已手动移除的企业（墓碑 'projKey::clueId'）不再推回，否则「删了又回来」
+  var _ctomb=window.DELETED_CLUES||[];
+  var added=0, skipped=0;
   top.forEach(function(c){
     if(existNames[c.name]) return;
+    if(_ctomb.indexOf(projKey+'::'+c.id)>=0){ skipped++; return; }
     p.clues.push({id:c.id, name:c.name, kind:c.kind, region:c.region, gap:p.funnel.topic||p.topic||'', tone:'slate', status:'gov_push', fit:c.fit, fit_score:c.fit_score, score_match:c.score_match, score_relocate:c.score_relocate, score_strength:c.score_strength, score_reason:c.score_reason, expansion:c.expansion, faction:c.faction, reason:c.fit||('AI 漏斗按「'+(p.funnel.topic||p.topic||'该方向')+'」精筛，适配度 '+(c.fit_score||0)+' 分，建议资源团队核验投资意向。'), signal:c.signal, listed:c.listed, source:c.source, scale:(c.listed?c.listed+' · ':'')+(c.region||''), techRoute:c.fit||'', signalSrc:c.source||'AI推断，待核验', matchPoints:[c.fit].filter(Boolean), questions:['是否有在'+(p.city||'本地')+'布局/投资意向','与本地链主的配套匹配度','落地所需政策与承载条件'], priority:Math.max(1,Math.min(5,Math.round((c.fit_score||0)/20))), localAttr:'B'});
     added++;
   });
   p.funnel.pushed=true; p.funnel.pushedAt=Date.now(); p.funnel.pushedNames=top.map(function(c){return c.name;});
   persist(); render();
-  toast('已把 '+added+' 家精准适配企业推送到政府端「待接触企业」');
+  toast('已把 '+added+' 家精准适配企业推送到政府端「待接触企业」'+(skipped?'（'+skipped+' 家已被政府端移除，未重复推送）':''));
 }
 
 function toggleFunnelExpand(k){
@@ -4578,6 +4581,7 @@ function persist(){
       USER_PROFILES:USER_PROFILES,
       CITY_ACCOUNTS:CITY_ACCOUNTS,
       RESET_GEN:(typeof RESET_GEN!=='undefined'?RESET_GEN:null),
+      DELETED_CLUES:window.DELETED_CLUES||[],
       syncTs:Date.now()
     };
     try{ localStorage.setItem(LS_KEY, JSON.stringify(data)); }catch(_){}
@@ -4651,6 +4655,17 @@ function restoreFromServer(callback){
     if(srv.USER_PROFILES){ Object.keys(srv.USER_PROFILES).forEach(function(uk){ USER_PROFILES[uk]=srv.USER_PROFILES[uk]; }); }
     if(srv.CITY_ACCOUNTS){ CITY_ACCOUNTS = srv.CITY_ACCOUNTS; }
     if(srv.RESET_GEN){ RESET_GEN = srv.RESET_GEN; }  // reset代际:persist时带回,否则被服务端拒绝
+    // 政府端移除的企业线索墓碑：读回后既不重复推送，也从拉到的 clues 里剔除
+    if(srv.DELETED_CLUES){
+      window.DELETED_CLUES = srv.DELETED_CLUES;
+      var _ct = srv.DELETED_CLUES;
+      if(_ct.length){
+        Object.keys(PROJECTS).forEach(function(_pk){
+          var _pp=PROJECTS[_pk]; if(!_pp||!_pp.clues||!_pp.clues.length) return;
+          _pp.clues=_pp.clues.filter(function(_c){ return !(_c && _ct.indexOf(_pk+'::'+_c.id)>=0); });
+        });
+      }
+    }
     cur  = srv.cur  || Object.keys(PROJECTS)[0] || null;
     try{ localStorage.setItem(LS_KEY, JSON.stringify(srv)); }catch(e){}
     window._opsServerHadData=true;
