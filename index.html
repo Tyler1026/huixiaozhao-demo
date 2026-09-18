@@ -2605,17 +2605,39 @@ function kbReadiness(){
   if(knownTotal===0 && uploads===0 && !hasRealKbData(p)){
     return {score:0,total:0,confirmed:0,files:0,label:'未开始',color:'#9aa5b5'};
   }
-  // 评分：数据覆盖度×80 + 上传材料×10（上陉20）+ ⚠️确认率×20
-  // 关键调整：AI 流水线预置的智能包账号（如松江）无 ⚠️/上传但 known 覆盖充分，
-  // 应能凭“数据覆盖度”独立冲到 80% 自动解锁，⚠️确认与上传材料作为加分而非门槛。
-  // 四板块预置共计≥ 20 条即可拿满 80，⚠️/上传再拉高置信度。
+  // 评分：数据覆盖度×80 + 上传材料×10（上限20）+ ⚠️确认率×20
+  // 这套权重决定「数据够不够」，是 isLocked 的解锁依据，不要动 ——
+  // 调低它会把原本能自动解锁的城市（如松江 83%）打到门槛下，
+  // 导致产业分析/招商对接突然打不开（实测踩过）。
   var coverRate=Math.min(1, knownTotal/20); // 有20条以上数据视为数据覆盖满分
   var uploadBonus=Math.min(20, uploads*10); // 每份材料10分，最多20
   var warnRate=warnTotal>0?warnConfirmed/warnTotal:1; // 无⚠️条目时视为满率（不惩罚）
   var score=Math.min(100, Math.round(coverRate*80 + uploadBonus + warnRate*20));
-  var label=score>=80?'已就绪':score>=50?'基本完整':score>=20?'待补充':'未开始';
-  var color=score>=80?'#22c55e':score>=50?'#f59e0b':score>=20?'#3b82f6':'#9aa5b5';
-  return {score:score,total:warnTotal,confirmed:warnConfirmed,files:uploads,label:label,color:color};
+  // 未确认的 ⚠️ 待确认条数（只数真正待确认的，不含已核验 ✅）
+  var pendingWarn=0;
+  p.kb.forEach(function(k,ki){
+    (k.known||[]).forEach(function(x,xi){
+      var _t=_kbText(x).replace(/\ufe0f/g,'');
+      if(_t.indexOf('\u26a0')<0) return;
+      var _c=KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][ki]&&KB_CONFIRMS[cur][ki][xi];
+      if(!_c) pendingWarn++;
+    });
+  });
+  // 硬门槛：还有待确认事项没核实，就不能算「已就绪」——
+  // 干部看到 93%/96% 已就绪却还有 10 条待确认，会误以为数据可以直接用。
+  // rawScore = 不含待确认门槛的原始分，代表「数据本身够不够」。
+  // 解锁门槛(isLocked)必须用它，否则待确认未清零会把产业分析/招商对接整个锁住——
+  // 待确认是"要核实"，不是"数据不够"，不该连带剥夺已有功能。
+  var rawScore=score;
+  if(pendingWarn>0) score=Math.min(score, 79);
+  var label=pendingWarn>0
+    ? (pendingWarn+' 条待确认')
+    : (score>=80?'已就绪':score>=50?'基本完整':score>=20?'待补充':'未开始');
+  var color=pendingWarn>0
+    ? '#f59e0b'
+    : (score>=80?'#22c55e':score>=50?'#f59e0b':score>=20?'#3b82f6':'#9aa5b5');
+  return {score:score,rawScore:rawScore,total:warnTotal,confirmed:warnConfirmed,files:uploads,
+          label:label,color:color,pendingWarn:pendingWarn};
 }
 
 
@@ -2687,8 +2709,11 @@ function isLocked(v){
   if(KB_UNLOCKED[cur]&&KB_UNLOCKED[cur][v]) return false;
   // 无真实数据(仅AI初判占位)且未手动解锁时锁定。
   if(!hasRealKbData(p)) return true;
-  // 有真实数据后：完成度达 80% 自动解锁
-  return kbReadiness().score<80;
+  // 有真实数据后：数据覆盖达 80% 自动解锁。
+  // 用 rawScore（不含待确认门槛）：待确认未核实只影响进度条标签，
+  // 不能把干部本来能用的产业分析/招商对接锁掉。
+  var _r=kbReadiness();
+  return (_r.rawScore!==undefined?_r.rawScore:_r.score)<80;
 }
 
 function unlockView(v){
@@ -2746,7 +2771,8 @@ function sidebar(){
       if(!p) return '完善材料·产业/园区/企业/政策';
       var conf=KB_CONFIRMS[cur]?Object.keys(KB_CONFIRMS[cur]).reduce(function(n,ki){return n+Object.keys(KB_CONFIRMS[cur][ki]).length;},0):0;
       var uploads=(UPLOADS[cur]||[]).length;
-      if(r.score>=80) return '✓ 已就绪 '+r.score+'% · '+conf+'条已确认';
+      if(r.pendingWarn>0) return '⚠ '+r.pendingWarn+' 条待确认 · 数据覆盖 '+(r.rawScore!==undefined?r.rawScore:r.score)+'%';
+  if(r.score>=80) return '✓ 已就绪 '+r.score+'% · '+conf+'条已确认';
       return conf>0?(conf+'条已确认 · '+uploads+'份材料 · '+r.score+'%'):'待完善 · 产业/园区/企业/政策';
     })(),
     report: '生成缺口分析与招引方向',
