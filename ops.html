@@ -4569,6 +4569,7 @@ function persist(){
       PROJECTS:PROJECTS,
       UPLOADS:UPLOADS,
       KB_CONFIRMS:KB_CONFIRMS,
+      KB_CONFIRM_TOMBS:KB_CONFIRM_TOMBS,
       KB_FILE_CHUNKS:KB_FILE_CHUNKS,
       KB_UNLOCKED:KB_UNLOCKED,
       REPORTSTATE:REPORTSTATE,
@@ -4607,7 +4608,8 @@ function restore(){
       cur=data.cur||null;
       view=data.view||'setup';
       UPLOADS=data.UPLOADS||{};
-      KB_CONFIRMS=data.KB_CONFIRMS||{};
+      _mergeTombs(data.KB_CONFIRM_TOMBS);
+      KB_CONFIRMS=_mergeConfirms(data.KB_CONFIRMS||{});
       KB_FILE_CHUNKS=data.KB_FILE_CHUNKS||{};
       KB_UNLOCKED=data.KB_UNLOCKED||{};
       REPORTSTATE=data.REPORTSTATE||{};
@@ -4638,7 +4640,8 @@ function restoreFromServer(callback){
     }
     PROJECTS         = srv.PROJECTS         || {};
     UPLOADS          = srv.UPLOADS          || {};
-    KB_CONFIRMS      = srv.KB_CONFIRMS      || {};
+    _mergeTombs(srv.KB_CONFIRM_TOMBS);
+    KB_CONFIRMS      = _mergeConfirms(srv.KB_CONFIRMS || {});  // 只进不退
     KB_FILE_CHUNKS   = srv.KB_FILE_CHUNKS   || {};
     KB_UNLOCKED      = srv.KB_UNLOCKED      || {};
     REPORTSTATE      = srv.REPORTSTATE      || {};
@@ -4687,6 +4690,58 @@ var UPLOADS={};
 var RESET_GEN=null;  // reset代际标记,从服务端读取后persist带回
 var KB_FILE_CHUNKS={};
 var KB_CONFIRMS={};  // {projKey:{kbIdx:{itemIdx:{status,text,ts}}}}
+/* 【2026-09-18】确认墓碑 + 只进不退合并，与政府端 index.html 对称。
+   两端共用同一 LS_KEY，任一端整体覆盖 KB_CONFIRMS 都会把对端刚点的确认回滚。 */
+var KB_CONFIRM_TOMBS={};
+function _tombConfirm(pk,kbIdx,itemIdx){
+  if(!pk)return;
+  if(!KB_CONFIRM_TOMBS[pk])KB_CONFIRM_TOMBS[pk]={};
+  if(!KB_CONFIRM_TOMBS[pk][kbIdx])KB_CONFIRM_TOMBS[pk][kbIdx]={};
+  KB_CONFIRM_TOMBS[pk][kbIdx][itemIdx]=Date.now();
+}
+function _mergeTombs(src){
+  try{ src=src||{};
+    Object.keys(src).forEach(function(pk){ if(!KB_CONFIRM_TOMBS[pk])KB_CONFIRM_TOMBS[pk]={};
+      Object.keys(src[pk]||{}).forEach(function(ki){ if(!KB_CONFIRM_TOMBS[pk][ki])KB_CONFIRM_TOMBS[pk][ki]={};
+        Object.keys(src[pk][ki]||{}).forEach(function(ii){
+          var a=Number(src[pk][ki][ii])||0, b=Number(KB_CONFIRM_TOMBS[pk][ki][ii])||0;
+          if(a>b) KB_CONFIRM_TOMBS[pk][ki][ii]=a;
+        });
+      });
+    });
+  }catch(_e){}
+}
+function _mergeConfirms(incoming){
+  incoming=incoming||{};
+  try{
+    var localC=KB_CONFIRMS||{};
+    Object.keys(localC).forEach(function(pk){
+      var lSec=localC[pk]||{};
+      Object.keys(lSec).forEach(function(ki){
+        var lItems=lSec[ki]||{};
+        Object.keys(lItems).forEach(function(ii){
+          var lv=lItems[ii]; if(!lv) return;
+          var tomb=KB_CONFIRM_TOMBS[pk]&&KB_CONFIRM_TOMBS[pk][ki]&&KB_CONFIRM_TOMBS[pk][ki][ii];
+          if(tomb&&Number(tomb)>=(Number(lv.ts)||0)) return;
+          if(!incoming[pk]) incoming[pk]={};
+          if(!incoming[pk][ki]) incoming[pk][ki]={};
+          var iv=incoming[pk][ki][ii];
+          if(!iv||(Number(lv.ts)||0)>(Number(iv.ts)||0)) incoming[pk][ki][ii]=lv;
+        });
+      });
+    });
+    Object.keys(KB_CONFIRM_TOMBS||{}).forEach(function(pk){
+      Object.keys(KB_CONFIRM_TOMBS[pk]||{}).forEach(function(ki){
+        Object.keys(KB_CONFIRM_TOMBS[pk][ki]||{}).forEach(function(ii){
+          var tb=Number(KB_CONFIRM_TOMBS[pk][ki][ii])||0;
+          var iv=incoming[pk]&&incoming[pk][ki]&&incoming[pk][ki][ii];
+          if(iv&&tb>=(Number(iv.ts)||0)) delete incoming[pk][ki][ii];
+        });
+      });
+    });
+  }catch(_e){}
+  return incoming;
+}
 // 招引方向派生的项目（方案A三层：产业方向→报告→招引方向项目）{产业key:[{name,stage,from}]}
 var SUBPROJ={};
 function saveSubproj(){try{localStorage.setItem('hxz_subproj',JSON.stringify(SUBPROJ))}catch(e){}}
