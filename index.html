@@ -787,42 +787,49 @@ function loadKbSummary(){
 // 页面加载后延迟获取概括数据
 setTimeout(loadKbSummary, 2000);
 
-// 获取某个板块的展示用known（用户确认/补充的优先显示，其余用AI概括或原始数据）
+// 获取某个板块的展示用 known。
+// 显示规则（用户 2026-09-18 定）：用户补充(全部) + 待确认⚠️(全部) + 精选6条(其余里挑)。
+// 待确认与用户补充是「额外附加」，不占精选 6 条名额，所以返回条数可以超过 6。
+// 数据层 p.kb[].known 始终全量，这里只做渲染筛选。
+var _KB_PICK_N=6;
 function _getDisplayKnown(kbIdx){
   var p=P(); if(!p||!p.kb||!p.kb[kbIdx]) return [];
   var raw=p.kb[kbIdx].known||[];
-  // 1. 提取用户确认(✅)或补充(origin=user)的条目 — 这些必须优先显示
-  var userAdded=[], userConfirmed=[];
+  // 1. 用户补充/修改（origin=user）——全部显示，最新在前
+  var userAdded=[];
+  // 2. 待确认（⚠️）——全部显示，干部需要知道哪些事实还没核实
+  var warnItems=[];
+  // 3. 其余：已核验(✅) 与普通条目，用于凑精选 6 条
+  var confirmed=[], normal=[];
   raw.forEach(function(x,idx){
     var t=_kbText(x);
     if(_isJunkKbItem(t)) return;
-    var isUserAdded=(typeof x==='object' && x.origin==='user' && (x.nature==='fix'||x.nature==='confirm'));
-    var isConfirmed=t.indexOf('\u2705')===0;
-    if(isUserAdded){ userAdded.push({t:t, ts:(x&&x.ts)||idx}); }
-    else if(isConfirmed){ userConfirmed.push(t); }
+    if(typeof x==='object' && x.origin==='user'){ userAdded.push({t:t, ts:(x&&x.ts)||idx}); return; }
+    if(t.indexOf('\u26a0\ufe0f')>=0){ warnItems.push(t); return; }
+    if(t.indexOf('\u2705')===0){ confirmed.push(t); return; }
+    normal.push(t);
   });
-  userAdded.sort(function(a,b){return b.ts-a.ts;}); // 用户最新补充在前
-  var userItems=userAdded.map(function(o){return o.t;}).concat(userConfirmed);
-  // 2. AI概括数据作为补充
+  userAdded.sort(function(a,b){return b.ts-a.ts;});
+  var userItems=userAdded.map(function(o){return o.t;});
+
+  // 精选 6 条：优先 AI 概括（更凝练），不足则用已核验 + 普通条目补齐
+  var picked=[];
   var aiItems=[];
   if(_kbSummaryData && _kbSummaryData.kb && _kbSummaryData.kb[kbIdx]){
     aiItems=(_kbSummaryData.kb[kbIdx].known||[]).filter(function(x){return !_isJunkKbItem(x);});
   }
-  // 3. 合并：用户条目在前 + AI概括补充，总共最多6条
-  var result=userItems.slice(0,4);
-  var need=6-result.length;
-  if(need>0 && aiItems.length){
-    aiItems.forEach(function(x){if(result.length<6 && result.indexOf(x)<0) result.push(x);});
+  function _push(t){
+    if(picked.length>=_KB_PICK_N) return;
+    if(!t || picked.indexOf(t)>=0) return;
+    if(userItems.indexOf(t)>=0 || warnItems.indexOf(t)>=0) return;  // 已在附加段，不重复
+    picked.push(t);
   }
-  // 4. 仍不够则用原始数据fallback
-  if(result.length<3){
-    raw.forEach(function(x){
-      if(result.length>=6) return;
-      var t=_kbText(x);
-      if(!_isJunkKbItem(t) && result.indexOf(t)<0) result.push(t);
-    });
-  }
-  return result.slice(0,6);
+  aiItems.forEach(_push);
+  confirmed.forEach(_push);
+  normal.forEach(_push);
+
+  // 附加段在前（用户补充 → 待确认），精选段在后
+  return userItems.concat(warnItems).concat(picked);
 }
 // 获取用户手动补充/修改的条目（origin==='user'），最新在前 —— 卡片专门展示这些
 function _getUserAddedKnown(kbIdx){
@@ -837,6 +844,37 @@ function _getUserAddedKnown(kbIdx){
   });
   arr.sort(function(a,b){return b.ts-a.ts;});
   return arr.map(function(o){return o.t;});
+}
+// 只取「精选段」（不含用户补充与待确认）——供卡片摘要行使用，
+// 避免摘要显示成「⚠️ …待核实」或与卡片下方的「补充」区重复。
+function _getPickedKnown(kbIdx){
+  var p=P(); if(!p||!p.kb||!p.kb[kbIdx]) return [];
+  var raw=p.kb[kbIdx].known||[];
+  var confirmed=[], normal=[];
+  raw.forEach(function(x){
+    var t=_kbText(x);
+    if(_isJunkKbItem(t)) return;
+    if(typeof x==='object' && x.origin==='user') return;
+    if(t.indexOf('\u26a0\ufe0f')>=0) return;
+    if(t.indexOf('\u2705')===0) confirmed.push(t); else normal.push(t);
+  });
+  var picked=[], aiItems=[];
+  if(_kbSummaryData && _kbSummaryData.kb && _kbSummaryData.kb[kbIdx]){
+    aiItems=(_kbSummaryData.kb[kbIdx].known||[]).filter(function(x){return !_isJunkKbItem(x);});
+  }
+  [aiItems, confirmed, normal].forEach(function(arr){
+    arr.forEach(function(t){
+      if(picked.length<_KB_PICK_N && t && picked.indexOf(t)<0) picked.push(t);
+    });
+  });
+  return picked;
+}
+// 待确认（⚠️）条目，卡片用它显示计数
+function _getWarnKnown(kbIdx){
+  var p=P(); if(!p||!p.kb||!p.kb[kbIdx]) return [];
+  return (p.kb[kbIdx].known||[]).map(_kbText).filter(function(t){
+    return t && !_isJunkKbItem(t) && t.indexOf('\u26a0\ufe0f')>=0;
+  });
 }
 function _getDisplaySub(kbIdx){
   if(_kbSummaryData && _kbSummaryData.kb && _kbSummaryData.kb[kbIdx]){
@@ -7897,7 +7935,7 @@ function kbPage(p){
           (k.tag.indexOf('待')>=0?'color:#c08a2a;background:#fff8e6':'color:#006d70;background:#e4f5f3'):
           'color:#9aa5b5;background:#f5f7fb';
         var dot=k.known&&k.known.length?'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:5px;vertical-align:middle"></span>':'';
-        var firstKnown=_getDisplayKnown(i)[0]||'';
+        var firstKnown=_getPickedKnown(i)[0]||'';
         if(firstKnown&&firstKnown.length>80) firstKnown=firstKnown.substring(0,80)+'…';
         // 用户手动补充/修改的结论：全部在卡片上单独高亮展示（最新在前）
         var _userAdded=_getUserAddedKnown(i);
@@ -7911,10 +7949,14 @@ function kbPage(p){
             }).join('')+
           '</div>';
         }
+        // 待确认条目数：额外附加显示，让干部一眼看到还有多少事实没核实
+        var _warnN=_getWarnKnown(i).length;
+        var _warnBadge=_warnN?'<span style="padding:1px 7px;background:#fffbeb;color:#b45309;border:1px solid #fde68a;border-radius:20px;font-size:10.5px;font-weight:700;flex-shrink:0">⚠ '+_warnN+' 条待确认</span>':'';
         return '<button class="topic-row" onclick="kbDetail('+i+')">'+
-          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
+          '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">'+
             '<span style="font-size:20px">'+k.icon+'</span>'+
             '<strong style="font-size:13px;color:#0b183b">'+k.t+'</strong>'+
+            _warnBadge+
             '<em style="'+tagColor+';margin-left:auto;flex-shrink:0">'+dot+(_getDisplayTag(i)||k.tag)+'</em>'+
           '</div>'+
           '<small style="display:block;font-size:11.5px;color:#8492a6;margin-bottom:6px;line-height:1.4">'+(_getDisplaySub(i)||k.sub)+'</small>'+
@@ -10036,20 +10078,35 @@ function kbDetail(i){
   var k=P().kb[i]; if(!k) return;
   curKb=i;
 
-  // 已知条目列表（优先显示⚠️待确认条目，确保用户能操作确认）
+  // 已知条目列表。显示规则（用户 2026-09-18 定）：
+  //   用户补充(全部) + 待确认⚠️(全部) + 精选6条(其余里挑)
+  // 待确认与用户补充是「额外附加」，不占精选 6 条的名额；数据层 known 始终全量。
   var _rawKnown=k.known||[];
-  var _warnPairs=[], _donePairs=[], _normalPairs=[]; // [{text, origIdx}]
+  var _userPairs=[], _warnPairs=[], _donePairs=[], _normalPairs=[]; // [{text, origIdx}]
   for(var _di=0;_di<_rawKnown.length;_di++){
-    var _dt=_kbText(_rawKnown[_di]);
+    var _draw=_rawKnown[_di];
+    var _dt=_kbText(_draw);
     if(_isJunkKbItem(_dt)) continue;
     var _pair={text:_dt, origIdx:_di};
-    if(_dt.indexOf('\u26a0\ufe0f')>=0) _warnPairs.push(_pair);
+    var _isUser=(_draw && typeof _draw==='object' && _draw.origin==='user');
+    if(_isUser) _userPairs.push(_pair);                       // 干部自己增改的，永远全显示
+    else if(_dt.indexOf('\u26a0\ufe0f')>=0) _warnPairs.push(_pair);  // 待确认，永远全显示
     else if(_dt.indexOf('\u2705')===0) _donePairs.push(_pair);
     else _normalPairs.push(_pair);
   }
-  // 组合：⚠️全显示 + ✅全显示 + 普通条目最多8条
-  var _displayPairs=_warnPairs.concat(_donePairs).concat(_normalPairs.slice(0,8));
-  var _moreCount=_normalPairs.length>8?(_normalPairs.length-8):0;
+  // 用户补充最新在前
+  _userPairs.sort(function(a,b){
+    var ta=(_rawKnown[a.origIdx]&&_rawKnown[a.origIdx].ts)||a.origIdx;
+    var tb=(_rawKnown[b.origIdx]&&_rawKnown[b.origIdx].ts)||b.origIdx;
+    return tb-ta;
+  });
+  // 精选 6 条 = 已核验(✅) 优先，再补普通条目
+  var _KB_PICK=6;
+  var _picked=_donePairs.slice(0,_KB_PICK);
+  if(_picked.length<_KB_PICK) _picked=_picked.concat(_normalPairs.slice(0,_KB_PICK-_picked.length));
+  var _displayPairs=_userPairs.concat(_warnPairs).concat(_picked);
+  var _pickedRest=(_donePairs.length+_normalPairs.length)-_picked.length;
+  var _moreCount=_pickedRest>0?_pickedRest:0;
   var displayKnown=_displayPairs.map(function(p2){return p2.text;});
   var knownHtml=(displayKnown&&displayKnown.length)
     ? '<div style="display:flex;flex-direction:column;gap:8px">'+
