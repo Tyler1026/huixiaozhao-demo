@@ -857,8 +857,15 @@ function _getDisplayKnown(kbIdx){
   var confirmed=[], normal=[];
   raw.forEach(function(x,idx){
     var t=_kbText(x);
+    var _isU=(typeof x==='object' && x.origin==='user');
+    // 【2026-09-18 修复】用户人工录入的条目不走垃圾过滤。
+    // _isJunkKbItem 首行 `length<6 → junk`，干部补「测试」(含✅仅 4 字) 会被丢掉，
+    // 造成「政府端看不到、管理端却有」(ops.html 不做过滤)。过滤只该拦 AI/RAG 碎片。
+    if(_isU){
+      if(String(t||'').replace(/[\s\u2705\u26a0\ufe0f]/g,'')) userAdded.push({t:t, ts:(x&&x.ts)||idx});
+      return;
+    }
     if(_isJunkKbItem(t)) return;
-    if(typeof x==='object' && x.origin==='user'){ userAdded.push({t:t, ts:(x&&x.ts)||idx}); return; }
     if(t.indexOf('\u26a0\ufe0f')>=0){ warnItems.push(t); return; }
     if(t.indexOf('\u2705')===0){ confirmed.push(t); return; }
     normal.push(t);
@@ -893,7 +900,9 @@ function _getUserAddedKnown(kbIdx){
   raw.forEach(function(x,idx){
     if(typeof x!=='object' || x.origin!=='user' || !(x.nature==='fix'||x.nature==='confirm')) return;
     var t=_kbText(x);
-    if(_isJunkKbItem(t)) return;
+    // 【2026-09-18 修复】本函数就是专取用户条目的，再跑垃圾过滤等于白取；
+    // 短文本（如「测试」）会被 length<6 规则丢掉。仅排除真空内容。
+    if(!String(t||'').replace(/[\s\u2705\u26a0\ufe0f]/g,'')) return;
     arr.push({t:t, ts:(x&&x.ts)||idx});
   });
   arr.sort(function(a,b){return b.ts-a.ts;});
@@ -10274,9 +10283,14 @@ function kbDetail(i){
   for(var _di=0;_di<_rawKnown.length;_di++){
     var _draw=_rawKnown[_di];
     var _dt=_kbText(_draw);
-    if(_isJunkKbItem(_dt)) continue;
-    var _pair={text:_dt, origIdx:_di};
     var _isUser=(_draw && typeof _draw==='object' && _draw.origin==='user');
+    // 【2026-09-18 修复】用户主动补充/修改的条目不走垃圾过滤。
+    // 根因：_isJunkKbItem 首行 `text.length<6 → junk`，干部补一条「测试」(含✅只 4 字)
+    // 会被当垃圾丢掉，导致政府端卡片看不到、管理端却有（管理端不过滤）。
+    // 垃圾过滤是为了拦 AI/RAG 抽取的碎片，不应用于人工录入的内容。
+    if(!_isUser && _isJunkKbItem(_dt)) continue;
+    if(_isUser && !String(_dt||'').replace(/[\s\u2705\u26a0\ufe0f]/g,'')) continue;  // 仅跳真空内容
+    var _pair={text:_dt, origIdx:_di};
     if(_isUser) _userPairs.push(_pair);                       // 干部自己增改的，永远全显示
     else if(_dt.indexOf('\u26a0\ufe0f')>=0) _warnPairs.push(_pair);  // 待确认，永远全显示
     else if(_dt.indexOf('\u2705')===0) _donePairs.push(_pair);
@@ -10305,7 +10319,10 @@ function kbDetail(i){
   var knownHtml=(displayKnown&&displayKnown.length)
     ? '<div style="display:flex;flex-direction:column;gap:8px">'+
         displayKnown.map(function(x,xi){
-          if(_isJunkKbItem(x)) return '';
+          // 【2026-09-18 修复】用户条目已在分桶时放行，此处不能再把它渲染成空串。
+          var _rawAtIdx=_displayPairs[xi]?_rawKnown[_displayPairs[xi].origIdx]:null;
+          var _isUserRow=(_rawAtIdx && typeof _rawAtIdx==='object' && _rawAtIdx.origin==='user');
+          if(!_isUserRow && _isJunkKbItem(x)) return '';
           var warn=x.indexOf('⚠️')>=0;
           var isFile=x.indexOf('📎')===0;
           var clean=x.replace('⚠️ ','');
