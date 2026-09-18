@@ -254,8 +254,17 @@ def _init_db():
                 CHECK (id = 1)
             )
         """)
+        # 【2026-09-18】写入前快照表：sync_data 是 id=1 单行原地覆盖，
+        # 一次误写就永久丢数据（松江智库 238 条即因此丢失）。这里留一条后路。
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS sync_history (
+                ts BIGINT PRIMARY KEY,
+                data TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
         conn.commit(); cur.close(); conn.close()
-        print("[db] PostgreSQL sync_data 表就绪")
+        print("[db] PostgreSQL sync_data + sync_history 表就绪")
     except Exception as e:
         print(f"[db] 初始化失败: {e}")
 
@@ -268,9 +277,28 @@ def _db_get():
     except Exception as e:
         print(f"[db] 读取失败: {e}"); return None
 
+SNAPSHOT_KEEP = 30   # 保留最近 N 份写入前快照
+
+def _db_snapshot(cur):
+    """把当前 sync_data 存进 sync_history，并裁剪到最近 SNAPSHOT_KEEP 份。
+    只在数据非空时存，避免空快照占满历史。"""
+    try:
+        cur.execute("SELECT data FROM sync_data WHERE id=1")
+        row = cur.fetchone()
+        old = row[0] if row else None
+        if not old or len(old) < 50:
+            return
+        cur.execute("INSERT INTO sync_history(ts,data) VALUES(%s,%s) ON CONFLICT(ts) DO NOTHING",
+                    (int(time.time() * 1000), old))
+        cur.execute("DELETE FROM sync_history WHERE ts NOT IN "
+                    "(SELECT ts FROM sync_history ORDER BY ts DESC LIMIT %s)", (SNAPSHOT_KEEP,))
+    except Exception as e:
+        print(f"[db] 快照失败(不阻断写入): {e}")
+
 def _db_set(data_str):
     try:
         conn = _db_conn(); cur = conn.cursor()
+        _db_snapshot(cur)          # 覆盖前先留一份旧值
         cur.execute(
             "INSERT INTO sync_data(id,data,updated_at) VALUES(1,%s,NOW()) "
             "ON CONFLICT(id) DO UPDATE SET data=EXCLUDED.data,updated_at=NOW()",
@@ -278,6 +306,25 @@ def _db_set(data_str):
         conn.commit(); cur.close(); conn.close(); return True
     except Exception as e:
         print(f"[db] 写入失败: {e}"); return False
+
+def _file_snapshot():
+    """文件存储模式：写入前把旧 SYNC_PATH 复制为 .bak.<ts>，保留最近 SNAPSHOT_KEEP 份。"""
+    try:
+        if not os.path.exists(SYNC_PATH):
+            return
+        if os.path.getsize(SYNC_PATH) < 50:
+            return
+        import shutil, glob
+        bak = '%s.bak.%d' % (SYNC_PATH, int(time.time() * 1000))
+        shutil.copy2(SYNC_PATH, bak)
+        olds = sorted(glob.glob(SYNC_PATH + '.bak.*'))
+        for f in olds[:-SNAPSHOT_KEEP]:
+            try:
+                os.remove(f)
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[snap] 文件快照失败(不阻断写入): {e}")
 
 def _keep_nonempty(existing_val, incoming_val):
     """入参为空（None/空串/空 list/dict）时不覆盖已有非空值——防止旧快照把刚同步的数据冲掉。"""
@@ -985,6 +1032,62 @@ class Handler(BaseHTTPRequestHandler):
         # /ops 和 /ops.html 路径在两个端口都服务管理端
         # 5051 访问 / 也直接服务管理端（和 5050/ops 共享 origin→不行，但5050/ops 共享 origin 可以）
         path = self.path.split('?')[0]
+        # ── 写入前快照查询（防覆盖事故的后路）──
+        # GET /api/sync-history            → 列出快照 ts 与大小
+        # GET /api/sync-history?ts=<ts>    → 取该份快照完整内容
+        # 回滚方式：取出 data 后用正常 POST /api/sync 写回（不提供一键回滚，避免再次误覆盖）
+        if path == '/api/sync-history':
+            try:
+                from urllib.parse import urlparse, parse_qs
+                qs = parse_qs(urlparse(self.path).query)
+                want_ts = qs.get('ts', [None])[0]
+                items = []
+                if _PG_AVAIL and DATABASE_URL:
+                    conn = _db_conn(); cur = conn.cursor()
+                    if want_ts:
+                        cur.execute("SELECT ts,data FROM sync_history WHERE ts=%s", (int(want_ts),))
+                        row = cur.fetchone()
+                        cur.close(); conn.close()
+                        if row:
+                            resp = json.dumps({'ok': True, 'ts': row[0], 'data': row[1]}).encode()
+                        else:
+                            resp = json.dumps({'ok': False, 'error': 'snapshot not found'}).encode()
+                        self.send_response(200); self.send_header('Content-Type', 'application/json')
+                        self.send_header('Content-Length', str(len(resp)))
+                        self.cors(); self.end_headers(); self.wfile.write(resp); return
+                    cur.execute("SELECT ts,length(data),created_at FROM sync_history ORDER BY ts DESC")
+                    for r in cur.fetchall():
+                        items.append({'ts': r[0], 'bytes': r[1], 'at': str(r[2])})
+                    cur.close(); conn.close()
+                else:
+                    import glob
+                    for f in sorted(glob.glob(SYNC_PATH + '.bak.*'), reverse=True):
+                        try:
+                            ts = int(f.rsplit('.', 1)[-1])
+                        except Exception:
+                            continue
+                        if want_ts and str(ts) != str(want_ts):
+                            continue
+                        if want_ts:
+                            with open(f, 'r', encoding='utf-8') as fh:
+                                resp = json.dumps({'ok': True, 'ts': ts, 'data': fh.read()}).encode()
+                            self.send_response(200); self.send_header('Content-Type', 'application/json')
+                            self.send_header('Content-Length', str(len(resp)))
+                            self.cors(); self.end_headers(); self.wfile.write(resp); return
+                        items.append({'ts': ts, 'bytes': os.path.getsize(f), 'at': f})
+                    if want_ts:
+                        resp = json.dumps({'ok': False, 'error': 'snapshot not found'}).encode()
+                        self.send_response(200); self.send_header('Content-Type', 'application/json')
+                        self.send_header('Content-Length', str(len(resp)))
+                        self.cors(); self.end_headers(); self.wfile.write(resp); return
+                resp = json.dumps({'ok': True, 'count': len(items), 'snapshots': items},
+                                  ensure_ascii=False).encode()
+            except Exception as e:
+                resp = json.dumps({'ok': False, 'error': str(e)}).encode()
+            self.send_response(200); self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(resp)))
+            self.cors(); self.end_headers(); self.wfile.write(resp); return
+
         # 云端数据同步：GET /api/sync 直接返回原始数据
         if path == '/api/sync':
             try:
@@ -1369,6 +1472,7 @@ class Handler(BaseHTTPRequestHandler):
                 resp = json.dumps({'ok': ok}).encode()
             else:
                 try:
+                    _file_snapshot()
                     with open(SYNC_PATH, 'w', encoding='utf-8') as f:
                         f.write(data_str)
                     resp = json.dumps({'ok': True}).encode()
@@ -1400,6 +1504,7 @@ class Handler(BaseHTTPRequestHandler):
                         if _PG_AVAIL and DATABASE_URL:
                             ok = _db_set(data_str)
                         else:
+                            _file_snapshot()
                             with open(SYNC_PATH, 'w', encoding='utf-8') as fw:
                                 fw.write(data_str)
                             ok = True
@@ -1433,6 +1538,7 @@ class Handler(BaseHTTPRequestHandler):
                     if _PG_AVAIL and DATABASE_URL:
                         _db_set(data_str)
                     else:
+                        _file_snapshot()
                         with open(SYNC_PATH, 'w', encoding='utf-8') as fw:
                             fw.write(data_str)
                     total = sum(len(t.get('known', [])) for t in new_kb)
@@ -1607,6 +1713,7 @@ class Handler(BaseHTTPRequestHandler):
                     if _PG_AVAIL and DATABASE_URL:
                         _db_set(out_str)
                     else:
+                        _file_snapshot()
                         with open(SYNC_PATH, 'w', encoding='utf-8') as f:
                             f.write(out_str)
                     resp = json.dumps({'ok': True, 'chunks': len(chunks),
@@ -1669,6 +1776,7 @@ class Handler(BaseHTTPRequestHandler):
                         if _PG_AVAIL and DATABASE_URL:
                             _db_set(out_str)
                         else:
+                            _file_snapshot()
                             with open(SYNC_PATH, 'w', encoding='utf-8') as f:
                                 f.write(out_str)
             except Exception as e:
@@ -1704,6 +1812,7 @@ class Handler(BaseHTTPRequestHandler):
                     if _PG_AVAIL and DATABASE_URL:
                         _db_set(out_str)
                     else:
+                        _file_snapshot()
                         with open(SYNC_PATH, 'w', encoding='utf-8') as f:
                             f.write(out_str)
                 resp = json.dumps({'ok': bool(rid), 'id': rid, 'city': city}).encode()
