@@ -1782,6 +1782,41 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(resp)
             return
+        # ── 纯文本提取：政府端上传材料时调用，只解析不写库 ──
+        # 【2026-09-21】原先政府端在浏览器里解析：只引了 mammoth(docx)，PDF 完全没有解析器，
+        # 一律落到降级分支只登记文件名，却照样提示「已摄取 N 个知识片段」（静默失败）。
+        # 改用后端 pdfplumber —— 本机实测浏览器侧 pdf.js 无论 worker 还是主线程模式都
+        # 无法返回（跨域 Worker 被拦 + 主线程同样挂住），会把上传流程卡死，比不解析更糟。
+        # 服务端本来就有 _extract_doc_text（PDF/docx/纯文本，含扫描件判断），直接复用。
+        if self.path == '/api/extract-text':
+            try:
+                body = json.loads(raw)
+                filename = body.get('filename', '') or 'upload'
+                file_b64 = body.get('fileB64', '') or ''
+                if not file_b64:
+                    resp = json.dumps({'ok': False, 'error': '缺少文件内容'}, ensure_ascii=False).encode('utf-8')
+                else:
+                    try:
+                        _fb = base64.b64decode(file_b64)
+                    except Exception as _e:
+                        _fb = None
+                        resp = json.dumps({'ok': False, 'error': '文件解码失败：' + str(_e)},
+                                          ensure_ascii=False).encode('utf-8')
+                    if _fb is not None:
+                        _txt, _err = _extract_doc_text(filename, _fb)
+                        if _err:
+                            resp = json.dumps({'ok': False, 'error': _err}, ensure_ascii=False).encode('utf-8')
+                        else:
+                            resp = json.dumps({'ok': True, 'text': _txt, 'chars': len(_txt)},
+                                              ensure_ascii=False).encode('utf-8')
+            except Exception as e:
+                resp = json.dumps({'ok': False, 'error': '解析异常：' + str(e)},
+                                  ensure_ascii=False).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Length', str(len(resp)))
+            self.cors(); self.end_headers(); self.wfile.write(resp)
+            return
         # ── 接口1：管理员上传文档，补充/修正城市智库 ──
         if self.path == '/api/kb-upload':
             try:

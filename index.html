@@ -2123,8 +2123,28 @@ function ingestSetupFiles(files, projKey){
   if(!UPLOADS[projKey]) UPLOADS[projKey]=[];
   files.forEach(function(file){
     var isDocx=/\.docx?$/i.test(file.name);
+    var isPdf=/\.pdf$/i.test(file.name);
     var canRead=/\.(txt|md|csv|json)$/i.test(file.name);
-    if(isDocx && typeof mammoth!=='undefined'){
+    if(isPdf){
+      // 建库阶段同样真解析 PDF（走服务端），此前与智库入口一样只登记文件名
+      var _ep={name:file.name,size:file.size,ts:Date.now(),chunks:0,kbIdx:null,pending:true};
+      UPLOADS[projKey].push(_ep);persist();
+      extractDocTextViaServer(file).then(function(txt){
+        txt=(txt||'').trim();
+        if(txt.length<30){
+          _ep.pending=false; _ep.parseFailed='未提取到有效文字（可能是扫描件）';
+        } else {
+          var cks=textToChunks(txt,file.name,p,null);
+          KB_FILE_CHUNKS[projKey]=KB_FILE_CHUNKS[projKey].concat(cks);
+          _ep.chunks=cks.length; _ep.pending=false;
+        }
+        persist();
+        if(typeof render==='function')try{render();}catch(_){}
+      }).catch(function(err){
+        _ep.pending=false; _ep.parseFailed=(err&&err.message)||'PDF 解析失败'; persist();
+        if(typeof render==='function')try{render();}catch(_){}
+      });
+    } else if(isDocx && typeof mammoth!=='undefined'){
       var _e2={name:file.name,size:file.size,ts:Date.now(),chunks:0,kbIdx:null,pending:true};
       UPLOADS[projKey].push(_e2);persist();
       var _r2=new FileReader();
@@ -2154,12 +2174,10 @@ function ingestSetupFiles(files, projKey){
       };
       reader.readAsText(file,'utf-8');
     } else {
-      KB_FILE_CHUNKS[projKey].push({
-        id:'file:'+file.name+':0',
-        topic:'上传材料', tags:['上传','材料'],
-        text:'用户已上传文件「'+file.name+'」('+Math.round(file.size/1024)+'KB)，含与'+p.city+'招商研判相关材料。',
-        cite:file.name});
-      UPLOADS[projKey].push({name:file.name, size:file.size, ts:Date.now(), chunks:1, kbIdx:null});
+      // 【2026-09-21】不再写入「用户已上传文件…」伪片段：chunks 记 0 并标注原因，
+      //   界面显示「未解析」而不是假装有 1 个片段。
+      UPLOADS[projKey].push({name:file.name, size:file.size, ts:Date.now(), chunks:0, kbIdx:null,
+        parseFailed:'暂不支持该格式的正文解析（当前支持 pdf / docx / txt / md / csv / json）'});
       persist();
     }
   });
@@ -2738,18 +2756,52 @@ function kbReadiness(){
    否则所有方向都等于同一个 kbReadiness 基础分，显示成一样（如全部 96%）。
    构成：方向报告数据充实度（量化数据点数、待核实/待确认缺口数、报告完整度）
         + 城市智库基础背书（占小头）+ 上传/确认加分。分数按 topic 稳定可复现。 */
-function topicScore(topic){
+/* 方向名归一化：同一方向在父/子项目里可能有措辞差异
+   （实测「IVD上游原料与生物试剂延链」vs「IVD上游原料与试剂延链」被当成两个方向，
+   各自算出 60 与 49，对接页又现场重算出 56 —— 同一报告三个置信度）。
+   去掉空白、标点与常见修饰词后比较，让冻结值能被命中。 */
+function _normTopic(t){
+  return String(t==null?'':t)
+    .replace(/[\s\u3000\u3001\uff0c,\.\u3002\/\-—（）()【】\[\]]/g,'')
+    .replace(/(与|和|及|的)/g,'')
+    .replace(/(生物|高端|新型|核心|上游|下游)/g,'')
+    .toLowerCase();
+}
+/* 在指定项目的 scoreByTopic 里查冻结分：先精确命中，再按归一化名回退 */
+function _frozenScoreIn(pk, topic){
+  var rs = pk && REPORTSTATE[pk];
+  var map = rs && rs.scoreByTopic;
+  if(!map || typeof map!=='object') return 0;
+  var v = map[topic];
+  if(typeof v==='number' && v>0) return v;
+  var want=_normTopic(topic);
+  var keys=Object.keys(map);
+  for(var i=0;i<keys.length;i++){
+    if(_normTopic(keys[i])===want){
+      var v2=map[keys[i]];
+      if(typeof v2==='number' && v2>0) return v2;
+    }
+  }
+  return 0;
+}
+/* topicScore(topic, projKey)
+   【2026-09-21 修复】原先冻结值只查 REPORTSTATE[cur]，而招商对接页是在子项目循环里
+   调用的（rs=REPORTSTATE[k]，k 为子项目 key）。于是子项目的冻结分（存在
+   REPORTSTATE[子项目].scoreByTopic）永远查不到，一律落到现场重算，同一份报告
+   在报告页显示存储值、在对接页显示重算值（实测 60 vs 56、83 vs 60、80 vs 55）。
+   现在允许传入 projKey：按该项目取自己的冻结值与自己的上传/确认数据。 */
+function topicScore(topic, projKey){
+  var _pk = projKey || cur;
   var cityBase = kbReadiness().score;   // 城市智库整体就绪度（所有方向共享的背书，占小头）
   if(!topic) return Math.min(96, Math.max(42, cityBase));
 
   // ── 冻结值优先：报告生成完成时写入 scoreByTopic[topic]，之后所有渲染直接读这个值，
   //    避免"同一份分析在不同渲染时刻（草稿 loading / 流式增长 / 完整报告）"取到不同快照
   //    导致徽章多值（曾观察到 60% / 62% / 68% / 89% 同报告并存）。
-  if(cur && REPORTSTATE[cur] && REPORTSTATE[cur].scoreByTopic
-     && typeof REPORTSTATE[cur].scoreByTopic[topic]==='number'){
-    var _frozen = REPORTSTATE[cur].scoreByTopic[topic];
-    if(_frozen>0) return _frozen;
-  }
+  //    查找顺序：该项目自己的冻结表 → 当前项目的冻结表（父项目继承场景）。
+  var _frozen = _frozenScoreIn(_pk, topic);
+  if(!_frozen && _pk!==cur) _frozen = _frozenScoreIn(cur, topic);
+  if(_frozen>0) return _frozen;
 
   // ── 取该方向报告文本，度量其数据充实度 ──
   var txt = (typeof reportTextForTopic==='function' ? reportTextForTopic(topic) : '') || '';
@@ -2773,9 +2825,11 @@ function topicScore(topic){
   var cityAdj = Math.round((cityBase - 60) * 0.15);  // cityBase 高于60加分、低于60减分，幅度小
 
   // ── 上传/确认加分（作用于当前操作方向）──
-  var uploads = (UPLOADS[cur]||[]).filter(function(u){return !!u.size||!!u.ts;}).length;
+  // 【2026-09-21】原先恒用 cur：为子项目算分时掺进了当前项目的上传/确认数据，
+  //   这是同一方向分差能拉到 83 vs 60 的另一半原因。改为按目标项目取。
+  var uploads = (UPLOADS[_pk]||[]).filter(function(u){return !!u.size||!!u.ts;}).length;
   var uploadAdj = Math.min(12, uploads * 3);
-  var pend = PENDING_CONFIRMS[cur]||[];
+  var pend = PENDING_CONFIRMS[_pk]||[];
   var pendDone = pend.filter(function(it){return it&&(it.status==='confirmed'||it.status==='edited');}).length;
   var pendAdj = Math.min(12, pendDone * 2);
 
@@ -3747,7 +3801,7 @@ function projMgmtPage(p){
             '<span style="font-size:14px">📋</span>'+
             '<div style="flex:1">'+
               '<div style="font-size:13px;font-weight:650;color:#0b183b">产业分析报告</div>'+
-              '<div style="font-size:11.5px;color:#8492a6">置信度 '+topicScore(rs.topic)+'% · '+new Date(rs.ts).toLocaleDateString('zh-CN')+'</div>'+
+              '<div style="font-size:11.5px;color:#8492a6">置信度 '+topicScore(rs.topic, k)+'% · '+new Date(rs.ts).toLocaleDateString('zh-CN')+'</div>'+
             '</div>'+
             '<button onclick="cur=\''+k+'\';viewCurrentReport()" style="padding:5px 12px;background:#fff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer">查看报告</button>'+
           '</div>'+
@@ -4836,10 +4890,14 @@ function getReportHistoryForProject(key){
       // score/phase/ts 必须按方向读，否则历史卡片会显示 0% 与错误时间/阶段（fix 2026-08-28）
       var _phase = (rs.phaseByTopic && rs.phaseByTopic[t]) || (rs.topic===t ? rs.phase : 2) || 2;
       var _score;
+      // 【2026-09-21】回退重算必须带 key：否则历史卡片会用当前项目的数据
+      //   为别的项目算分，同一报告又多出第三个置信度。
       if(rs.scoreByTopic && rs.scoreByTopic[t]!=null) _score=rs.scoreByTopic[t];
       else if(rs.topic===t && rs.score!=null) _score=rs.score;
-      else { try{ _score=topicScore(t); }catch(e){ _score=0; } }
-      var _ts = (rs.tsByTopic && rs.tsByTopic[t]) || (rs.topic===t ? rs.ts : 0) || Date.now();
+      else { try{ _score=topicScore(t, key); }catch(e){ _score=0; } }
+      // 【2026-09-21】ts 缺失时原来兜底 Date.now()，导致该历史卡每次渲染都显示「刚刚」
+      //   （实测 1.5 秒内两次取值不同）。改为回退到项目级 ts，仍缺失才用当前时间并标记。
+      var _ts = (rs.tsByTopic && rs.tsByTopic[t]) || (rs.topic===t ? rs.ts : 0) || rs.ts || 0;
       fromAi.push({topic:t, text:txt, rep:txt, ts:_ts, score:_score, phase:_phase});
     });
   }
@@ -10798,39 +10856,55 @@ function ingestFiles(files, kbTopicIdx){
     try{ kbChatPush('user', nd.outerHTML); }catch(_){}
   }
 
+  // 记录哪些文件真的解析出了正文：finalizeIngest 据此给出真实提示而非一律报成功
+  var _parseFailed=[];
   files.forEach(function(file){
     var isDocx=/\.docx?$/i.test(file.name);
+    var isPdf=/\.pdf$/i.test(file.name);
     var canRead=/\.(txt|md|csv|json)$/i.test(file.name);
-    if(isDocx && typeof mammoth!=='undefined'){
+    if(isPdf){
+      // PDF：交服务端 pdfplumber 解析。扫描件/无文字层由服务端返回明确原因，
+      // 记入 _parseFailed 后如实告知，绝不伪造片段。
+      var _finP=function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p,_parseFailed); };
+      extractDocTextViaServer(file).then(function(txt){
+        txt=(txt||'').trim();
+        if(txt.length<30){
+          _parseFailed.push({name:file.name, reason:'未提取到有效文字（可能是扫描件/图片型 PDF）'});
+        } else {
+          allChunks=allChunks.concat(textToChunks(txt, file.name, p, kbTopicIdx));
+        }
+        _finP();
+      }).catch(function(err){
+        _parseFailed.push({name:file.name, reason:(err&&err.message)||'PDF 解析失败'});
+        _finP();
+      });
+    } else if(isDocx && typeof mammoth!=='undefined'){
       // docx：用 mammoth 提取纯文本
       var reader=new FileReader();
       reader.onload=function(e){
         mammoth.extractRawText({arrayBuffer:e.target.result}).then(function(result){
           var chunks=textToChunks(result.value||'', file.name, p, kbTopicIdx);
           allChunks=allChunks.concat(chunks);
-          done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
-        }).catch(function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p); });
+          done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p,_parseFailed);
+        }).catch(function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p,_parseFailed); });
       };
-      reader.onerror=function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p); };
+      reader.onerror=function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p,_parseFailed); };
       reader.readAsArrayBuffer(file);
     } else if(canRead){
       var reader=new FileReader();
       reader.onload=function(e){
         var chunks=textToChunks(e.target.result||'', file.name, p, kbTopicIdx);
         allChunks=allChunks.concat(chunks);
-        done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
+        done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p,_parseFailed);
       };
-      reader.onerror=function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p); };
+      reader.onerror=function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p,_parseFailed); };
       reader.readAsText(file,'utf-8');
     } else {
-      allChunks.push({
-        id:'file:'+file.name+':0',
-        topic: kbTopicIdx!=null&&p.kb[kbTopicIdx] ? p.kb[kbTopicIdx].t : '上传材料',
-        tags:['上传','材料'],
-        text:'用户已上传文件「'+file.name+'」('+Math.round(file.size/1024)+'KB)，该文件包含与'+p.city+'招商研判相关的材料。',
-        cite:file.name
-      });
-      done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
+      // 【2026-09-21】原来这里塞一条「用户已上传文件「X」(N KB)」伪片段，于是无解析器的
+      //   格式看起来"摄取成功"、正文实际从未入库，伪片段还会污染 RAG 检索。改为如实告知。
+      _parseFailed.push({name:file.name,
+        reason:'暂不支持该格式的正文解析（当前支持 pdf / docx / txt / md / csv / json）'});
+      done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p,_parseFailed);
     }
   });
 }
@@ -10856,7 +10930,10 @@ function textToChunks(text, fname, p, kbTopicIdx){
 }
 
 /* 摄取完成 — 存 KB_FILE_CHUNKS，更新 kb.known，触发 RAG 摘要 */
-function finalizeIngest(chunks, files, kbTopicIdx, p){
+function finalizeIngest(chunks, files, kbTopicIdx, p, parseFailed){
+  parseFailed = parseFailed || [];
+  var _failNames = parseFailed.map(function(x){return x.name;});
+  var _okFiles = files.filter(function(f){ return _failNames.indexOf(f.name)<0; });
   if(!cur) return;
   if(!KB_FILE_CHUNKS[cur]) KB_FILE_CHUNKS[cur]=[];
   KB_FILE_CHUNKS[cur]=KB_FILE_CHUNKS[cur].concat(chunks);
@@ -10888,7 +10965,9 @@ function finalizeIngest(chunks, files, kbTopicIdx, p){
 
   if(kbTopicIdx!=null && p.kb && p.kb[kbTopicIdx]){
     var k=p.kb[kbTopicIdx];
-    files.forEach(function(f){
+    // 【2026-09-21】只为真正解析出正文的文件写入「已解析」条目：
+    //   解析失败的文件此前也会被写成「已解析（0 片段）」，等于在智库里留下假记录。
+    _okFiles.forEach(function(f){
       var entry='📎 '+f.name+' 已解析（'+chunks.filter(function(c){return c.cite===f.name;}).length+' 片段）';
       if(k.known.indexOf(entry)<0) k.known.push(entry);
     });
@@ -10907,14 +10986,34 @@ function finalizeIngest(chunks, files, kbTopicIdx, p){
   var totalChunks=KB_FILE_CHUNKS[cur].length;
   var topicLabel=kbTopicIdx!=null&&p.kb&&p.kb[kbTopicIdx] ? p.kb[kbTopicIdx].t : '城市智库';
   var nd=document.createElement('div'); nd.className='message';
-  nd.innerHTML='<img src="'+aiAvatar()+'"><div class="message-bubble">'+
-    '<p>✅ 已摄取 <strong>'+files.length+' 个文件</strong>，提取 <strong>'+chunks.length+' 个知识片段</strong>，追加至「'+topicLabel+'」。</p>'+
-    '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">'+
-    files.map(function(f){
+  // 【2026-09-21】此前无论是否真的解析出内容，一律提示「✅ 已摄取 N 个文件」。
+  //   PDF 走降级分支时正文从未入库，干部却以为材料已进知识库 —— 静默失败。
+  //   现在按真实结果分三种情况，失败必须显式告知并给出原因。
+  var _okCount=_okFiles.length, _failCount=parseFailed.length;
+  var _chipOk=_okFiles.map(function(f){
       var n=chunks.filter(function(c){return c.cite===f.name;}).length;
       return '<span style="padding:3px 10px;background:#f0fdf4;color:#166534;border-radius:12px;font-size:11.5px;border:1px solid #bbf7d0">'+f.name+' · '+n+' 片段</span>';
-    }).join('')+
-    '</div><p style="margin-top:8px;font-size:12px;color:#8492a6">知识库现有 '+totalChunks+' 个片段，提问时自动检索最相关内容。</p>'+
+    }).join('');
+  var _chipFail=parseFailed.map(function(x){
+      return '<span style="padding:3px 10px;background:#fef2f2;color:#b91c1c;border-radius:12px;font-size:11.5px;border:1px solid #fecaca">'+x.name+' · 未解析</span>';
+    }).join('');
+  var _head;
+  if(_okCount>0 && _failCount===0){
+    _head='<p>✅ 已摄取 <strong>'+_okCount+' 个文件</strong>，提取 <strong>'+chunks.length+' 个知识片段</strong>，追加至「'+topicLabel+'」。</p>';
+  } else if(_okCount>0 && _failCount>0){
+    _head='<p>⚠️ 部分成功：<strong>'+_okCount+' 个文件</strong>已解析（'+chunks.length+' 个片段），'
+        + '<strong>'+_failCount+' 个未能解析</strong>，其内容<strong>未进入知识库</strong>。</p>';
+  } else {
+    _head='<p>❌ <strong>'+_failCount+' 个文件均未能解析</strong>，内容<strong>没有进入知识库</strong>，提问时不会被检索到。</p>';
+  }
+  var _reasons = _failCount? ('<div style="margin-top:8px;padding:8px 10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:11.5px;color:#92400e;line-height:1.7">'
+      + parseFailed.map(function(x){ return '· <strong>'+x.name+'</strong>：'+x.reason; }).join('<br>')
+      + '<br>建议：扫描件可先用 OCR 转成可复制文字的 PDF，或直接粘贴关键段落到对话框。</div>') : '';
+  nd.innerHTML='<img src="'+aiAvatar()+'"><div class="message-bubble">'+
+    _head+
+    '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">'+_chipOk+_chipFail+'</div>'+
+    _reasons+
+    '<p style="margin-top:8px;font-size:12px;color:#8492a6">知识库现有 '+totalChunks+' 个片段，提问时自动检索最相关内容。</p>'+
     '</div>';
   c.appendChild(nd); c.scrollTop=c.scrollHeight;
   // 持久化摄取结果气泡：否则任一 render()（含跨标签 storage 事件）会经 kbChatReplay 把它冲掉
@@ -12389,5 +12488,41 @@ function roleSwitch(){
 
 render();
 </script><script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js" async></script>
+<script>
+/* ══ 文档正文提取：走服务端（2026-09-21）══
+ * 背景：上传框 accept 第一个就是 .pdf，但页面此前只引了 mammoth(docx)，PDF 全部落到
+ *   降级分支——只登记一句文件名，正文从未进入知识库，界面却照样提示「已摄取 N 个片段」。
+ * 为什么不用浏览器端 pdf.js：本机实测 pdf.js 3.11 在该环境下无法完成解析——
+ *   跨域 Worker 被浏览器拒绝创建（报错发生在 pdf.js 内部，getDocument 既不 resolve
+ *   也不 reject），换同源 blob worker 与 disableWorker 主线程模式同样挂住不返回。
+ *   卡死上传流程比不解析更糟，因此改用服务端 pdfplumber（server.py 本来就已引入）。
+ * 返回 Promise<string>；解析失败/扫描件由服务端给出明确原因，前端如实展示。 */
+function extractDocTextViaServer(file){
+  return new Promise(function(resolve, reject){
+    try{
+      var fr=new FileReader();
+      fr.onerror=function(){ reject(new Error('文件读取失败')); };
+      fr.onload=function(ev){
+        var dataUrl=String(ev.target.result||'');
+        var b64=dataUrl.indexOf(',')>=0 ? dataUrl.slice(dataUrl.indexOf(',')+1) : '';
+        if(!b64){ reject(new Error('文件内容为空')); return; }
+        var to=setTimeout(function(){ reject(new Error('解析超时（服务端未在 60 秒内返回）')); }, 60000);
+        fetch('/api/extract-text',{
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({filename:file.name, fileB64:b64})
+        }).then(function(r){ return r.json(); }).then(function(j){
+          clearTimeout(to);
+          if(j && j.ok && String(j.text||'').trim()) resolve(String(j.text));
+          else reject(new Error((j && j.error) || '未提取到文字内容'));
+        }).catch(function(e){
+          clearTimeout(to);
+          reject(new Error('解析请求失败：'+((e&&e.message)||'网络错误')));
+        });
+      };
+      fr.readAsDataURL(file);
+    }catch(e){ reject(new Error('解析异常：'+((e&&e.message)||''))); }
+  });
+}
+</script>
 </body></html>
 
