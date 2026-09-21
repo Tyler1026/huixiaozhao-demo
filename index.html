@@ -7934,7 +7934,10 @@ function memDeleteSession(id){
 function clearMemChat(){
   if(!cur)return;
   if(!confirm('确定清空全部问答记忆吗？所有会话都会被删除，此操作不可恢复。')) return;
-  KB_CHAT[kbChatKey(cur)]={sessions:[],activeId:null}; persist();
+  var _ck=kbChatKey(cur);
+  // 清空同样要逐会话打墓碑，否则刷新后全部从服务端复活
+  try{ ((KB_CHAT[_ck]||{}).sessions||[]).forEach(function(s){ _tombKbChatSession(_ck, s.id); }); }catch(_){}
+  KB_CHAT[_ck]={sessions:[],activeId:null}; persist();
   renderMemTabs(); renderMemBody();
   toast('问答记忆已清空');
 }
@@ -8501,6 +8504,7 @@ function persist(){
       DOCK_LOGS:DOCK_LOGS,
       DEMANDS:typeof DEMANDS!=='undefined'?DEMANDS:[],
       KB_CHAT:KB_CHAT,
+      KB_CHAT_TOMBS:KB_CHAT_TOMBS,
       REPORT_HISTORY:REPORT_HISTORY,
       USER_PROFILES:(Object.keys(USER_PROFILES||{}).length?USER_PROFILES:undefined),
       OPS_ENT:typeof OPS_ENT!=='undefined'?OPS_ENT:[],
@@ -8552,6 +8556,7 @@ function restore(){
       // 固定写 KB_CHAT:{}（ops.html:4582）。于是「管理端做任意操作 → 政府端刷新走 restore()」
       // 就把问答记忆整份冲成空。restoreFromServer(8674) 与 storage 事件(9007) 两条路径
       // 早已按会话择优合并，唯独本地恢复这条漏了 —— 补齐，统一走 _mergeKbChat。
+      _mergeKbChatTombs(data.KB_CHAT_TOMBS);
       KB_CHAT=_mergeKbChat(data.KB_CHAT, KB_CHAT);
       if(data.REPORT_HISTORY) REPORT_HISTORY=data.REPORT_HISTORY;
       if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
@@ -8676,6 +8681,7 @@ function restoreFromServer(callback){
     // KB_CHAT：按会话择优合并，绝不让服务端旧快照裸覆盖本地刚写入的问答
     // （persist 到服务器有 5 秒防抖，问答后立即刷新时服务端往往还没有这条，
     //  裸覆盖会导致问答记忆变回 0）。合并规则见 _mergeKbChat。
+    _mergeKbChatTombs(srv.KB_CHAT_TOMBS);
     KB_CHAT = _mergeKbChat(srv.KB_CHAT, KB_CHAT);
     // 企业库：管理端录入的目标企业，供政府端产业链图谱关联展示
     if(srv.OPS_ENT) OPS_ENT = srv.OPS_ENT;
@@ -8818,7 +8824,8 @@ function restoreFromServer(callback){
       DEMANDS:typeof DEMANDS!=='undefined'?DEMANDS:[],
       DELETED_PROJECTS:window.DELETED_PROJECTS||[],
       DELETED_CLUES:window.DELETED_CLUES||[],
-      KB_CHAT:KB_CHAT,OPS_ENT:OPS_ENT,RESET_GEN:RESET_GEN,
+      KB_CHAT:KB_CHAT,
+      KB_CHAT_TOMBS:KB_CHAT_TOMBS,OPS_ENT:OPS_ENT,RESET_GEN:RESET_GEN,
       USER_PROFILES:USER_PROFILES,REPORT_HISTORY:typeof REPORT_HISTORY!=='undefined'?REPORT_HISTORY:{},
       syncTs:Date.now()};
     try{localStorage.setItem(LS_KEY,JSON.stringify(flat));}catch(_){}
@@ -8977,6 +8984,7 @@ window.addEventListener('storage', function(e){
     if(data.CITY_ACCOUNTS) CITY_ACCOUNTS=data.CITY_ACCOUNTS;
     // KB_CHAT：跨标签同步也必须按会话择优合并，绝不让另一个 tab 的旧内存 persist 回来
     // 冲掉本 tab 刚写入的问答。合并规则见 _mergeKbChat。
+    _mergeKbChatTombs(data.KB_CHAT_TOMBS);
     KB_CHAT=_mergeKbChat(data.KB_CHAT, KB_CHAT);
     if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
     // 重渲染（仅影响当前视图）
@@ -9061,6 +9069,27 @@ var KB_CHAT={};
  *   规则 = key 取并集；同 id 会话取「消息更多」的一方，条数相同取 ts 更新的一方。
  * 绝不因为某一侧为空就丢弃另一侧 —— 空值永远不赢。
  * incoming=外部来的数据，local=当前内存值（内存是刚写入问答的一侧，必须参与比较）。 */
+/* ══ 问答会话删除墓碑（2026-09-21）══
+ * 与「知识条目删除后复活」同构：kbDeleteSession 只改本地，而 KB_CHAT 的合并
+ * （客户端 _mergeKbChat 与服务端 _merge_kbchat）都是「key 并集 + 同 id 择优」，只增不减。
+ * 没有墓碑时，删掉的会话会在下一次 restoreFromServer 从服务端原样合并回来（删了又回来）。
+ * 结构：KB_CHAT_TOMBS = { 'city:xx::sessionId': deletedAtTs }，随 persist 同步到服务端。 */
+var KB_CHAT_TOMBS={};
+try{ KB_CHAT_TOMBS=JSON.parse(localStorage.getItem('HXZ_KBCHAT_TOMBS')||'{}')||{}; }catch(_){ KB_CHAT_TOMBS={}; }
+function _kbChatTombKey(ck, sid){ return ck+'::'+sid; }
+function _tombKbChatSession(ck, sid){
+  if(!ck||!sid) return;
+  KB_CHAT_TOMBS[_kbChatTombKey(ck,sid)]=Date.now();
+  try{ localStorage.setItem('HXZ_KBCHAT_TOMBS', JSON.stringify(KB_CHAT_TOMBS)); }catch(_){}
+}
+function _mergeKbChatTombs(incoming){
+  if(!incoming || typeof incoming!=='object') return;
+  Object.keys(incoming).forEach(function(k){
+    var t=Number(incoming[k])||0;
+    if(!KB_CHAT_TOMBS[k] || t>KB_CHAT_TOMBS[k]) KB_CHAT_TOMBS[k]=t;
+  });
+  try{ localStorage.setItem('HXZ_KBCHAT_TOMBS', JSON.stringify(KB_CHAT_TOMBS)); }catch(_){}
+}
 function _mergeKbChat(incoming, local){
   var _inc=(incoming && typeof incoming==='object')?incoming:{};
   var _loc=(local && typeof local==='object')?local:{};
@@ -9077,6 +9106,8 @@ function _mergeKbChat(incoming, local){
     var byId={}, order=[];
     var take=function(se){
       if(!se||!se.id) return;
+      // 已删除的会话不再从任何来源合并回来（防「删了又回来」）
+      if(KB_CHAT_TOMBS[_kbChatTombKey(k,se.id)]) return;
       var ex=byId[se.id];
       if(!ex){ byId[se.id]=se; order.push(se.id); return; }
       var exN=(ex.messages||[]).length, newN=(se.messages||[]).length;
@@ -9188,6 +9219,8 @@ function kbSwitchSession(id){
 // 删除指定会话
 function kbDeleteSession(id){
   var st=kbSessionStore(); if(!st) return;
+  // 先打墓碑：否则下次 restoreFromServer 会把它从服务端合并回来
+  try{ _tombKbChatSession(kbChatKey(cur), id); }catch(_){}
   st.sessions=st.sessions.filter(function(x){return x.id!==id;});
   if(st.activeId===id) st.activeId = st.sessions.length?st.sessions[st.sessions.length-1].id:null;
   persist();

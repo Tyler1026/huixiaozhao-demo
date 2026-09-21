@@ -1483,9 +1483,10 @@ class Handler(BaseHTTPRequestHandler):
                     return sorted(by_id.values(), key=lambda x: x.get('ts', 0))
                 # KB_CHAT 会话级合并:同 city key 下的 sessions 按 id 择优(消息多的赢),不做整体覆盖
                 # 防止某 tab 的空会话未同步内存 persist 上来把其它 tab 已同步的问答冲掉
-                def _merge_kbchat(old_kbc, new_kbc):
+                def _merge_kbchat(old_kbc, new_kbc, tombs=None):
                     if not isinstance(old_kbc, dict): old_kbc = {}
                     if not isinstance(new_kbc, dict): new_kbc = {}
+                    if not isinstance(tombs, dict): tombs = {}
                     result = {}
                     all_ck = set(old_kbc.keys()) | set(new_kbc.keys())
                     for ck in all_ck:
@@ -1499,10 +1500,15 @@ class Handler(BaseHTTPRequestHandler):
                         B = _norm(new_kbc.get(ck))
                         by_sid = {}
                         order = []
-                        def _take(se, by_sid=by_sid, order=order):
+                        def _take(se, by_sid=by_sid, order=order, ck=ck):
                             if not isinstance(se, dict) or not se.get('id'):
                                 return
                             sid = se['id']
+                            # 【2026-09-21】会话删除墓碑：政府端删掉的会话不得在服务端复活。
+                            # 客户端墓碑拦不住这一层——合并发生在服务端存储里，任何客户端
+                            # 下次 GET 拉到的都还是含已删会话的旧数据（删了又回来）。
+                            if tombs.get('%s::%s' % (ck, sid)):
+                                return
                             ex = by_sid.get(sid)
                             if not ex:
                                 by_sid[sid] = se; order.append(sid); return
@@ -1518,12 +1524,33 @@ class Handler(BaseHTTPRequestHandler):
                         activeId = B.get('activeId') or A.get('activeId') or (sessions[-1]['id'] if sessions else None)
                         result[ck] = {'sessions': sessions, 'activeId': activeId}
                     return result
+                # 【2026-09-21】问答会话删除墓碑：两端合并，逐 key 取较新 ts。
+                # 与 KB_ITEM_TOMBS 同一套思路（见上方 _apply_kb_item_tombs 的说明）。
+                def _merge_kbchat_tombs(a, b):
+                    out = {}
+                    for src in (a, b):
+                        if not isinstance(src, dict):
+                            continue
+                        for tk, tv in src.items():
+                            try:
+                                tv = int(tv)
+                            except (TypeError, ValueError):
+                                continue
+                            if tk not in out or tv > out[tk]:
+                                out[tk] = tv
+                    return out
+                _kbc_tomb = _merge_kbchat_tombs(existing.get('KB_CHAT_TOMBS'),
+                                                incoming.get('KB_CHAT_TOMBS'))
                 # 先剥掉 incoming.UPLOADS.dataUrl，避免服务端长期穏积 base64
                 _clean_sync_data(incoming)
                 for k, v in incoming.items():
                     # KB_CHAT 单独按会话合并,永不裸覆盖
                     if k == 'KB_CHAT':
-                        existing[k] = _merge_kbchat(existing.get(k), v)
+                        existing[k] = _merge_kbchat(existing.get(k), v, _kbc_tomb)
+                        continue
+                    if k == 'KB_CHAT_TOMBS':
+                        # 墓碑本身只增不减，逐 key 取较新 ts
+                        existing[k] = _kbc_tomb
                         continue
                     if k in _protected and not v and existing.get(k):
                         continue
@@ -1535,6 +1562,22 @@ class Handler(BaseHTTPRequestHandler):
                         existing[k] = _merge_map(existing.get(k), v)
                         continue
                     existing[k] = v
+                # 【2026-09-21】把会话墓碑应用到最终的 KB_CHAT：
+                # incoming 可能根本不含 KB_CHAT（例如管理端 persist），此时上面的
+                # _merge_kbchat 不会被调用，已删会话仍留在 existing 里。
+                if _kbc_tomb and isinstance(existing.get('KB_CHAT'), dict):
+                    for _ck, _st in existing['KB_CHAT'].items():
+                        if not isinstance(_st, dict) or not isinstance(_st.get('sessions'), list):
+                            continue
+                        _st['sessions'] = [
+                            _se for _se in _st['sessions']
+                            if not (isinstance(_se, dict) and _kbc_tomb.get('%s::%s' % (_ck, _se.get('id'))))
+                        ]
+                        if _st.get('activeId') and not any(
+                                isinstance(_se, dict) and _se.get('id') == _st['activeId']
+                                for _se in _st['sessions']):
+                            _st['activeId'] = _st['sessions'][-1]['id'] if _st['sessions'] else None
+                    existing['KB_CHAT_TOMBS'] = _kbc_tomb
                 # 应用删除墓碑：从 PROJECTS/REPORTSTATE 移除已删项目，并持久化墓碑列表
                 if _tomb:
                     existing['DELETED_PROJECTS'] = sorted(_tomb)
