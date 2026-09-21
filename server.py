@@ -1543,6 +1543,79 @@ class Handler(BaseHTTPRequestHandler):
                                                 incoming.get('KB_CHAT_TOMBS'))
                 # 先剥掉 incoming.UPLOADS.dataUrl，避免服务端长期穏积 base64
                 _clean_sync_data(incoming)
+                # ══ 文件记忆（UPLOADS / KB_FILE_CHUNKS）只增不减 + 墓碑 ══
+                # 【2026-09-21】审计发现：这两个字段此前是裸覆盖，任一端送空值即整份清掉，
+                # 与 KB_CHAT 归零同一条路径（管理端 persist 或旧标签页回灌都可能带空值）。
+                # 文件记忆支持删除，所以不能单纯只增不减，需与 KB_CHAT 一样用墓碑区分
+                # 「用户真的删了」和「某端恰好没有数据」。墓碑键：'projKey::fileName'。
+                def _merge_file_tombs(a, b):
+                    out = {}
+                    for src in (a, b):
+                        if not isinstance(src, dict):
+                            continue
+                        for tk, tv in src.items():
+                            try:
+                                tv = int(tv)
+                            except (TypeError, ValueError):
+                                continue
+                            if tk not in out or tv > out[tk]:
+                                out[tk] = tv
+                    return out
+                _file_tomb = _merge_file_tombs(existing.get('UPLOAD_TOMBS'),
+                                               incoming.get('UPLOAD_TOMBS'))
+
+                def _merge_uploads(old_up, new_up, tombs):
+                    """按 projKey 并集；同 key 下按 name+ts 去重合并；墓碑命中的文件剔除。"""
+                    if not isinstance(old_up, dict): old_up = {}
+                    if not isinstance(new_up, dict): new_up = {}
+                    result = {}
+                    for pk in set(old_up.keys()) | set(new_up.keys()):
+                        seen, merged = {}, []
+                        for lst in (old_up.get(pk), new_up.get(pk)):
+                            if not isinstance(lst, list):
+                                continue
+                            for it in lst:
+                                if not isinstance(it, dict):
+                                    continue
+                                name = it.get('name') or ''
+                                if tombs.get('%s::%s' % (pk, name)):
+                                    continue
+                                sig = '%s::%s' % (name, it.get('ts') or 0)
+                                if sig in seen:
+                                    # 取信息更全的那份（解析出的 text 更长者胜）
+                                    ex = merged[seen[sig]]
+                                    if len(str(it.get('text') or '')) > len(str(ex.get('text') or '')):
+                                        merged[seen[sig]] = it
+                                    continue
+                                seen[sig] = len(merged)
+                                merged.append(it)
+                        result[pk] = merged
+                    return result
+
+                def _merge_chunks(old_c, new_c, tombs):
+                    """知识片段按 projKey 并集；同 key 下按 chunk id 去重；墓碑按来源文件名剔除。"""
+                    if not isinstance(old_c, dict): old_c = {}
+                    if not isinstance(new_c, dict): new_c = {}
+                    result = {}
+                    for pk in set(old_c.keys()) | set(new_c.keys()):
+                        seen, merged = set(), []
+                        for lst in (old_c.get(pk), new_c.get(pk)):
+                            if not isinstance(lst, list):
+                                continue
+                            for it in lst:
+                                if not isinstance(it, dict):
+                                    continue
+                                src_name = it.get('file') or it.get('source') or it.get('cite') or ''
+                                if tombs.get('%s::%s' % (pk, src_name)):
+                                    continue
+                                cid = it.get('id') or ('%s|%s' % (src_name, str(it.get('text'))[:40]))
+                                if cid in seen:
+                                    continue
+                                seen.add(cid)
+                                merged.append(it)
+                        result[pk] = merged
+                    return result
+
                 for k, v in incoming.items():
                     # KB_CHAT 单独按会话合并,永不裸覆盖
                     if k == 'KB_CHAT':
@@ -1551,6 +1624,15 @@ class Handler(BaseHTTPRequestHandler):
                     if k == 'KB_CHAT_TOMBS':
                         # 墓碑本身只增不减，逐 key 取较新 ts
                         existing[k] = _kbc_tomb
+                        continue
+                    if k == 'UPLOADS':
+                        existing[k] = _merge_uploads(existing.get(k), v, _file_tomb)
+                        continue
+                    if k == 'KB_FILE_CHUNKS':
+                        existing[k] = _merge_chunks(existing.get(k), v, _file_tomb)
+                        continue
+                    if k == 'UPLOAD_TOMBS':
+                        existing[k] = _file_tomb
                         continue
                     if k in _protected and not v and existing.get(k):
                         continue
@@ -1562,6 +1644,13 @@ class Handler(BaseHTTPRequestHandler):
                         existing[k] = _merge_map(existing.get(k), v)
                         continue
                     existing[k] = v
+                # 同理把文件墓碑应用到已存 UPLOADS / KB_FILE_CHUNKS
+                if _file_tomb:
+                    if isinstance(existing.get('UPLOADS'), dict):
+                        existing['UPLOADS'] = _merge_uploads(existing['UPLOADS'], {}, _file_tomb)
+                    if isinstance(existing.get('KB_FILE_CHUNKS'), dict):
+                        existing['KB_FILE_CHUNKS'] = _merge_chunks(existing['KB_FILE_CHUNKS'], {}, _file_tomb)
+                    existing['UPLOAD_TOMBS'] = _file_tomb
                 # 【2026-09-21】把会话墓碑应用到最终的 KB_CHAT：
                 # incoming 可能根本不含 KB_CHAT（例如管理端 persist），此时上面的
                 # _merge_kbchat 不会被调用，已删会话仍留在 existing 里。

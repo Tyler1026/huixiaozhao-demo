@@ -7992,6 +7992,7 @@ function delMemFile(pk, encName, ts){
   /* guard moved below */
   var name=decodeURIComponent(encName||''); if(!UPLOADS[pk])return;
   if(!confirm('删除文件记忆「'+name+'」？其解析产生的知识片段也会一并移除。')) return;
+  _tombUploadFile(pk, name);   // 先打墓碑：服务端已改为只增不减，不打墓碑会被合并回来
   UPLOADS[pk]=UPLOADS[pk].filter(function(u){ return !(u.name===name && (u.ts||0)===(ts||0)); });
   // 清理该文件解析出的 corpus 片段
   if(KB_FILE_CHUNKS[pk]) KB_FILE_CHUNKS[pk]=(KB_FILE_CHUNKS[pk]||[]).filter(function(c){ return c.file!==name && c.source!==name; });
@@ -8006,6 +8007,8 @@ function clearMemFile(){
   if(!cur)return;
   if(!confirm('确定清空全部文件记忆吗？所有已上传材料及其解析片段将被移除，不可恢复。')) return;
   var _ck=(typeof cityKeys==='function')?cityKeys():[cur];
+  // 清空同样要逐文件打墓碑，否则下次同步全部复活
+  _ck.forEach(function(pk){ (UPLOADS[pk]||[]).forEach(function(u){ if(u&&u.name) _tombUploadFile(pk,u.name); }); });
   _ck.forEach(function(pk){ UPLOADS[pk]=[]; if(KB_FILE_CHUNKS[pk]) KB_FILE_CHUNKS[pk]=[]; });
   persist();
   if(typeof refreshKbProgress==='function') refreshKbProgress();
@@ -8505,6 +8508,7 @@ function persist(){
       DEMANDS:typeof DEMANDS!=='undefined'?DEMANDS:[],
       KB_CHAT:KB_CHAT,
       KB_CHAT_TOMBS:KB_CHAT_TOMBS,
+      UPLOAD_TOMBS:UPLOAD_TOMBS,
       REPORT_HISTORY:REPORT_HISTORY,
       USER_PROFILES:(Object.keys(USER_PROFILES||{}).length?USER_PROFILES:undefined),
       OPS_ENT:typeof OPS_ENT!=='undefined'?OPS_ENT:[],
@@ -8543,10 +8547,10 @@ function restore(){
       PROJECTS=data.PROJECTS;
       cur=data.cur||null;
       view=data.view||'setup';
-      UPLOADS=data.UPLOADS||{};
+      UPLOADS=_mergeUploads(data.UPLOADS, UPLOADS);
       KB_CONFIRMS=data.KB_CONFIRMS||{};
       KB_CONFIRM_TOMBS=data.KB_CONFIRM_TOMBS||{};
-      KB_FILE_CHUNKS=data.KB_FILE_CHUNKS||{};
+      KB_FILE_CHUNKS=_mergeChunks(data.KB_FILE_CHUNKS, KB_FILE_CHUNKS);
       KB_UNLOCKED=data.KB_UNLOCKED||{};
       REPORTSTATE=data.REPORTSTATE||{};
       PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
@@ -8557,7 +8561,9 @@ function restore(){
       // 就把问答记忆整份冲成空。restoreFromServer(8674) 与 storage 事件(9007) 两条路径
       // 早已按会话择优合并，唯独本地恢复这条漏了 —— 补齐，统一走 _mergeKbChat。
       _mergeKbChatTombs(data.KB_CHAT_TOMBS);
+      _mergeUploadTombs(data.UPLOAD_TOMBS);
       KB_CHAT=_mergeKbChat(data.KB_CHAT, KB_CHAT);
+      _applyUploadTombs();
       if(data.REPORT_HISTORY) REPORT_HISTORY=data.REPORT_HISTORY;
       if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
       if(data.OPS_ENT) OPS_ENT=data.OPS_ENT;
@@ -8653,7 +8659,7 @@ function restoreFromServer(callback){
     Object.keys(PROJECTS).forEach(function(k){ if(PROJECTS[k]&&PROJECTS[k].isDemand) _localDemandProj[k]=PROJECTS[k]; });
     Object.keys(REPORTSTATE||{}).forEach(function(k){ if(_localDemandProj[k]&&REPORTSTATE[k]) _localDemandRS[k]=REPORTSTATE[k]; });
     PROJECTS         = srv.PROJECTS         || {};
-    UPLOADS          = srv.UPLOADS          || {};
+    UPLOADS          = _mergeUploads(srv.UPLOADS, UPLOADS);
     _mergeKbItemTombs(srv.KB_ITEM_TOMBS);
     // 【2026-09-18】过滤 srv 本体：部分路径会把 srv 原文回写 localStorage，
     // 只过滤内存会让已删条目随脏数据落盘复活。
@@ -8661,7 +8667,7 @@ function restoreFromServer(callback){
     _applyKbItemTombs(PROJECTS);
     _mergeTombs(srv.KB_CONFIRM_TOMBS);
     KB_CONFIRMS      = _mergeConfirms(srv.KB_CONFIRMS || {});  // 只进不退，见 _mergeConfirms
-    KB_FILE_CHUNKS   = srv.KB_FILE_CHUNKS   || {};
+    KB_FILE_CHUNKS   = _mergeChunks(srv.KB_FILE_CHUNKS, KB_FILE_CHUNKS);
     KB_UNLOCKED      = srv.KB_UNLOCKED      || {};
     // REPORTSTATE：保护本地更新的报告。择优规则优先按 ts 择新（phase1 draft 短但新→不能被旧完整报告冲掉），
     // ts 相同或缺失时才回退到长的赢避免残缺覆盖完整。
@@ -8682,7 +8688,9 @@ function restoreFromServer(callback){
     // （persist 到服务器有 5 秒防抖，问答后立即刷新时服务端往往还没有这条，
     //  裸覆盖会导致问答记忆变回 0）。合并规则见 _mergeKbChat。
     _mergeKbChatTombs(srv.KB_CHAT_TOMBS);
+    _mergeUploadTombs(srv.UPLOAD_TOMBS);
     KB_CHAT = _mergeKbChat(srv.KB_CHAT, KB_CHAT);
+    _applyUploadTombs();
     // 企业库：管理端录入的目标企业，供政府端产业链图谱关联展示
     if(srv.OPS_ENT) OPS_ENT = srv.OPS_ENT;
     // 历史报告：服务器有则用服务器，否则保留本地已加载的（避免旧记录被空值冲掉）
@@ -8825,7 +8833,8 @@ function restoreFromServer(callback){
       DELETED_PROJECTS:window.DELETED_PROJECTS||[],
       DELETED_CLUES:window.DELETED_CLUES||[],
       KB_CHAT:KB_CHAT,
-      KB_CHAT_TOMBS:KB_CHAT_TOMBS,OPS_ENT:OPS_ENT,RESET_GEN:RESET_GEN,
+      KB_CHAT_TOMBS:KB_CHAT_TOMBS,
+      UPLOAD_TOMBS:UPLOAD_TOMBS,OPS_ENT:OPS_ENT,RESET_GEN:RESET_GEN,
       USER_PROFILES:USER_PROFILES,REPORT_HISTORY:typeof REPORT_HISTORY!=='undefined'?REPORT_HISTORY:{},
       syncTs:Date.now()};
     try{localStorage.setItem(LS_KEY,JSON.stringify(flat));}catch(_){}
@@ -8972,7 +8981,7 @@ window.addEventListener('storage', function(e){
       }
       (window.DELETED_PROJECTS||[]).forEach(function(dk){ delete REPORTSTATE[dk]; });
     })();
-    KB_FILE_CHUNKS=data.KB_FILE_CHUNKS||{};
+    KB_FILE_CHUNKS=_mergeChunks(data.KB_FILE_CHUNKS, KB_FILE_CHUNKS);
     // 【2026-09-18 修复】确认只进不退：整体覆盖会把本地刚点、尚未同步出去的确认冲掉
     _mergeKbItemTombs(data.KB_ITEM_TOMBS);
     _applyKbItemTombs(PROJECTS);
@@ -8985,7 +8994,9 @@ window.addEventListener('storage', function(e){
     // KB_CHAT：跨标签同步也必须按会话择优合并，绝不让另一个 tab 的旧内存 persist 回来
     // 冲掉本 tab 刚写入的问答。合并规则见 _mergeKbChat。
     _mergeKbChatTombs(data.KB_CHAT_TOMBS);
+    _mergeUploadTombs(data.UPLOAD_TOMBS);
     KB_CHAT=_mergeKbChat(data.KB_CHAT, KB_CHAT);
+    _applyUploadTombs();
     if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
     // 重渲染（仅影响当前视图）
     // report 视图下若用户 1.5s 内有过滚动，延迟执行避免打断阅读
@@ -9069,6 +9080,95 @@ var KB_CHAT={};
  *   规则 = key 取并集；同 id 会话取「消息更多」的一方，条数相同取 ts 更新的一方。
  * 绝不因为某一侧为空就丢弃另一侧 —— 空值永远不赢。
  * incoming=外部来的数据，local=当前内存值（内存是刚写入问答的一侧，必须参与比较）。 */
+/* ══ 文件记忆客户端合并（2026-09-21）══
+ * 服务端已做只增不减，但客户端三条恢复路径原来是裸覆盖
+ *   UPLOADS = srv.UPLOADS || {}   /  KB_FILE_CHUNKS = srv.KB_FILE_CHUNKS || {}
+ * persist 到服务器有 5 秒防抖，刚上传/刚删除还没同步上去时，裸覆盖会把本地
+ * 这一份整份冲掉（与 KB_CHAT 归零同一病根）。规则与服务端保持一致：
+ *   projKey 取并集；同 key 下按 name+ts 去重，文本更全者胜；墓碑命中的剔除。 */
+function _mergeUploads(incoming, local){
+  var A=(incoming&&typeof incoming==='object')?incoming:{};
+  var B=(local&&typeof local==='object')?local:{};
+  var out={}, keys={};
+  Object.keys(A).forEach(function(k){keys[k]=1;});
+  Object.keys(B).forEach(function(k){keys[k]=1;});
+  Object.keys(keys).forEach(function(pk){
+    var seen={}, merged=[];
+    [A[pk], B[pk]].forEach(function(lst){
+      if(!Array.isArray(lst)) return;
+      lst.forEach(function(it){
+        if(!it||typeof it!=='object') return;
+        var nm=it.name||'';
+        if(UPLOAD_TOMBS[pk+'::'+nm]) return;
+        var sig=nm+'::'+(it.ts||0);
+        if(sig in seen){
+          var ex=merged[seen[sig]];
+          if(String(it.text||'').length > String(ex.text||'').length) merged[seen[sig]]=it;
+          return;
+        }
+        seen[sig]=merged.length; merged.push(it);
+      });
+    });
+    out[pk]=merged;
+  });
+  return out;
+}
+function _mergeChunks(incoming, local){
+  var A=(incoming&&typeof incoming==='object')?incoming:{};
+  var B=(local&&typeof local==='object')?local:{};
+  var out={}, keys={};
+  Object.keys(A).forEach(function(k){keys[k]=1;});
+  Object.keys(B).forEach(function(k){keys[k]=1;});
+  Object.keys(keys).forEach(function(pk){
+    var seen={}, merged=[];
+    [A[pk], B[pk]].forEach(function(lst){
+      if(!Array.isArray(lst)) return;
+      lst.forEach(function(it){
+        if(!it||typeof it!=='object') return;
+        var src=it.file||it.source||it.cite||'';
+        if(src && UPLOAD_TOMBS[pk+'::'+src]) return;
+        var cid=it.id||(src+'|'+String(it.text||'').slice(0,40));
+        if(seen[cid]) return;
+        seen[cid]=1; merged.push(it);
+      });
+    });
+    out[pk]=merged;
+  });
+  return out;
+}
+/* ══ 文件记忆删除墓碑（2026-09-21）══
+ * 服务端已对 UPLOADS / KB_FILE_CHUNKS 改为只增不减（防止任一端空值把文件记忆清掉），
+ * 因此删除必须显式打墓碑，否则删完下次同步又被合并回来。键：'projKey::fileName'。 */
+var UPLOAD_TOMBS={};
+try{ UPLOAD_TOMBS=JSON.parse(localStorage.getItem('HXZ_UPLOAD_TOMBS')||'{}')||{}; }catch(_){ UPLOAD_TOMBS={}; }
+function _tombUploadFile(pk, name){
+  if(!pk||!name) return;
+  UPLOAD_TOMBS[pk+'::'+name]=Date.now();
+  try{ localStorage.setItem('HXZ_UPLOAD_TOMBS', JSON.stringify(UPLOAD_TOMBS)); }catch(_){}
+}
+function _mergeUploadTombs(incoming){
+  if(!incoming || typeof incoming!=='object') return;
+  Object.keys(incoming).forEach(function(k){
+    var t=Number(incoming[k])||0;
+    if(!UPLOAD_TOMBS[k] || t>UPLOAD_TOMBS[k]) UPLOAD_TOMBS[k]=t;
+  });
+  try{ localStorage.setItem('HXZ_UPLOAD_TOMBS', JSON.stringify(UPLOAD_TOMBS)); }catch(_){}
+}
+/* 按墓碑过滤文件记忆，restore/同步后统一调用 */
+function _applyUploadTombs(){
+  try{
+    Object.keys(UPLOADS||{}).forEach(function(pk){
+      if(!Array.isArray(UPLOADS[pk])) return;
+      UPLOADS[pk]=UPLOADS[pk].filter(function(u){ return !(u && UPLOAD_TOMBS[pk+'::'+(u.name||'')]); });
+    });
+    Object.keys(KB_FILE_CHUNKS||{}).forEach(function(pk){
+      if(!Array.isArray(KB_FILE_CHUNKS[pk])) return;
+      KB_FILE_CHUNKS[pk]=KB_FILE_CHUNKS[pk].filter(function(c){
+        var n=c&&(c.file||c.source||c.cite||''); return !(n && UPLOAD_TOMBS[pk+'::'+n]);
+      });
+    });
+  }catch(_){}
+}
 /* ══ 问答会话删除墓碑（2026-09-21）══
  * 与「知识条目删除后复活」同构：kbDeleteSession 只改本地，而 KB_CHAT 的合并
  * （客户端 _mergeKbChat 与服务端 _merge_kbchat）都是「key 并集 + 同 id 择优」，只增不减。
@@ -10674,6 +10774,13 @@ function ingestFiles(files, kbTopicIdx){
   var total=files.length, done=0, allChunks=[];
 
   // 先登记上传条目（pending），避免解析异步进行时侧栏/进度读到「0 份」
+  // 【2026-09-21】重新上传同名文件时必须清掉它的删除墓碑，否则服务端合并会把
+  // 新上传的这份当成「已删除」直接剔除（墓碑键是 projKey::fileName，不含 ts）。
+  files.forEach(function(f){
+    if(!f||!f.name) return;
+    try{ delete UPLOAD_TOMBS[cur+'::'+f.name]; }catch(_){}
+  });
+  try{ localStorage.setItem('HXZ_UPLOAD_TOMBS', JSON.stringify(UPLOAD_TOMBS)); }catch(_){}
   if(!UPLOADS[cur]) UPLOADS[cur]=[];
   files.forEach(function(f){
     UPLOADS[cur].push({name:f.name, size:f.size, ts:Date.now(), chunks:0, kbIdx:kbTopicIdx, pending:true});
