@@ -12484,11 +12484,6 @@ function opsBoard(){
 function roleSwitch(){
   return '';
 }
-/* ================= /整合联动层 ================= */
-
-render();
-</script><script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js" async></script>
-<script>
 /* ══ 文档正文提取：走服务端（2026-09-21）══
  * 背景：上传框 accept 第一个就是 .pdf，但页面此前只引了 mammoth(docx)，PDF 全部落到
  *   降级分支——只登记一句文件名，正文从未进入知识库，界面却照样提示「已摄取 N 个片段」。
@@ -12523,6 +12518,10 @@ function extractDocTextViaServer(file){
     }catch(e){ reject(new Error('解析异常：'+((e&&e.message)||''))); }
   });
 }
-</script>
+
+/* ================= /整合联动层 ================= */
+
+render();
+</script><script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js" async></script>
 </body></html>
 
