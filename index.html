@@ -8547,7 +8547,12 @@ function restore(){
       REPORTSTATE=data.REPORTSTATE||{};
       PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
       DOCK_LOGS=data.DOCK_LOGS||{};
-      KB_CHAT=data.KB_CHAT||{};
+      // 【2026-09-21 修复】问答记忆消失根因：这里原本是裸覆盖 KB_CHAT=data.KB_CHAT||{}。
+      // 政府端与管理端共用同一个 LS_KEY，而 ops.html 里 KB_CHAT 从未定义，它 persist 时
+      // 固定写 KB_CHAT:{}（ops.html:4582）。于是「管理端做任意操作 → 政府端刷新走 restore()」
+      // 就把问答记忆整份冲成空。restoreFromServer(8674) 与 storage 事件(9007) 两条路径
+      // 早已按会话择优合并，唯独本地恢复这条漏了 —— 补齐，统一走 _mergeKbChat。
+      KB_CHAT=_mergeKbChat(data.KB_CHAT, KB_CHAT);
       if(data.REPORT_HISTORY) REPORT_HISTORY=data.REPORT_HISTORY;
       if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
       if(data.OPS_ENT) OPS_ENT=data.OPS_ENT;
@@ -8670,41 +8675,8 @@ function restoreFromServer(callback){
     if(srv.DEMANDS) window.DEMANDS=srv.DEMANDS;
     // KB_CHAT：按会话择优合并，绝不让服务端旧快照裸覆盖本地刚写入的问答
     // （persist 到服务器有 5 秒防抖，问答后立即刷新时服务端往往还没有这条，
-    //  裸覆盖会导致问答记忆变回 0）。规则：本地独有会话保留；同 id 取消息更多/更新的一方。
-    (function(){
-      var _localChat = (typeof KB_CHAT==='object' && KB_CHAT) ? KB_CHAT : {};
-      var _srvChat = srv.KB_CHAT || {};
-      var _merged = {};
-      var _allKeys = {};
-      Object.keys(_srvChat).forEach(function(k){ _allKeys[k]=1; });
-      Object.keys(_localChat).forEach(function(k){ _allKeys[k]=1; });
-      Object.keys(_allKeys).forEach(function(k){
-        var srvStore = _srvChat[k], locStore = _localChat[k];
-        var norm = function(st){
-          if(Array.isArray(st)) return { sessions:[{ id:'s_legacy_'+k, title:'', ts:0, messages:st }], activeId:null };
-          if(st && st.sessions) return st;
-          return { sessions:[], activeId:null };
-        };
-        var A = norm(srvStore), B = norm(locStore);
-        var bySession = {};
-        var order = [];
-        var take = function(sess){
-          if(!sess || !sess.id) return;
-          var ex = bySession[sess.id];
-          if(!ex){ bySession[sess.id] = sess; order.push(sess.id); return; }
-          var exN = (ex.messages||[]).length, newN = (sess.messages||[]).length;
-          var exT = Number(ex.ts)||0, newT = Number(sess.ts)||0;
-          // 消息更多的赢；相同则时间更新的赢
-          if(newN > exN || (newN===exN && newT>exT)) bySession[sess.id] = sess;
-        };
-        A.sessions.forEach(take);
-        B.sessions.forEach(take);
-        var sessions = order.map(function(id){ return bySession[id]; });
-        var activeId = B.activeId || A.activeId || (sessions.length?sessions[sessions.length-1].id:null);
-        _merged[k] = { sessions:sessions, activeId:activeId };
-      });
-      KB_CHAT = _merged;
-    })();
+    //  裸覆盖会导致问答记忆变回 0）。合并规则见 _mergeKbChat。
+    KB_CHAT = _mergeKbChat(srv.KB_CHAT, KB_CHAT);
     // 企业库：管理端录入的目标企业，供政府端产业链图谱关联展示
     if(srv.OPS_ENT) OPS_ENT = srv.OPS_ENT;
     // 历史报告：服务器有则用服务器，否则保留本地已加载的（避免旧记录被空值冲掉）
@@ -9003,35 +8975,9 @@ window.addEventListener('storage', function(e){
     DOCK_LOGS=data.DOCK_LOGS||{};
     KB_UNLOCKED=data.KB_UNLOCKED||{};
     if(data.CITY_ACCOUNTS) CITY_ACCOUNTS=data.CITY_ACCOUNTS;
-    // KB_CHAT：跨标签同步也必须按会话择优合并，绝不让另一个 tab 的旧内存 persist 回来冲掉本 tab 刚写入的问答
-    (function(){
-      var _inc=data.KB_CHAT||{};
-      var _loc=(typeof KB_CHAT==='object'&&KB_CHAT)?KB_CHAT:{};
-      var _m={},_ak={};
-      Object.keys(_inc).forEach(function(k){_ak[k]=1;});
-      Object.keys(_loc).forEach(function(k){_ak[k]=1;});
-      Object.keys(_ak).forEach(function(k){
-        var norm=function(st){
-          if(Array.isArray(st))return{sessions:[{id:'s_leg_'+k,title:'',ts:0,messages:st}],activeId:null};
-          if(st&&st.sessions)return st;
-          return{sessions:[],activeId:null};
-        };
-        var A=norm(_inc[k]),B=norm(_loc[k]);
-        var byS={},ord=[];
-        var take=function(se){
-          if(!se||!se.id)return;
-          var ex=byS[se.id];
-          if(!ex){byS[se.id]=se;ord.push(se.id);return;}
-          var eN=(ex.messages||[]).length,nN=(se.messages||[]).length;
-          var eT=Number(ex.ts)||0,nT=Number(se.ts)||0;
-          if(nN>eN||(nN===eN&&nT>eT))byS[se.id]=se;
-        };
-        A.sessions.forEach(take);B.sessions.forEach(take);
-        var ss=ord.map(function(id){return byS[id];});
-        _m[k]={sessions:ss,activeId:B.activeId||A.activeId||(ss.length?ss[ss.length-1].id:null)};
-      });
-      KB_CHAT=_m;
-    })();
+    // KB_CHAT：跨标签同步也必须按会话择优合并，绝不让另一个 tab 的旧内存 persist 回来
+    // 冲掉本 tab 刚写入的问答。合并规则见 _mergeKbChat。
+    KB_CHAT=_mergeKbChat(data.KB_CHAT, KB_CHAT);
     if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
     // 重渲染（仅影响当前视图）
     // report 视图下若用户 1.5s 内有过滚动，延迟执行避免打断阅读
@@ -9106,6 +9052,47 @@ function _mergeConfirms(incoming){
 }
 // 城市智库对话记录 {projKey:[{role:'user'|'ai', html:'...'}]}——切主题/切模块/刷新都不丢
 var KB_CHAT={};
+/* ══ KB_CHAT 会话级合并（唯一实现，三条恢复路径共用）══
+ * 背景：问答记忆反复「消失」的根因始终是某条路径裸覆盖了 KB_CHAT。
+ *   - restore()            读 localStorage（与管理端共用 LS_KEY，管理端固定写 {}）
+ *   - restoreFromServer()  读 /api/sync（5 秒防抖窗口内服务端可能还没有最新问答）
+ *   - storage 事件         另一个 tab 的旧内存 persist 过来
+ * 任何一条走裸覆盖都会清零，所以统一收敛到这里：
+ *   规则 = key 取并集；同 id 会话取「消息更多」的一方，条数相同取 ts 更新的一方。
+ * 绝不因为某一侧为空就丢弃另一侧 —— 空值永远不赢。
+ * incoming=外部来的数据，local=当前内存值（内存是刚写入问答的一侧，必须参与比较）。 */
+function _mergeKbChat(incoming, local){
+  var _inc=(incoming && typeof incoming==='object')?incoming:{};
+  var _loc=(local && typeof local==='object')?local:{};
+  var norm=function(st,k){
+    if(Array.isArray(st)) return {sessions:[{id:'s_leg_'+k,title:'',ts:0,messages:st}],activeId:null};
+    if(st && st.sessions) return st;
+    return {sessions:[],activeId:null};
+  };
+  var merged={}, allKeys={};
+  Object.keys(_inc).forEach(function(k){allKeys[k]=1;});
+  Object.keys(_loc).forEach(function(k){allKeys[k]=1;});
+  Object.keys(allKeys).forEach(function(k){
+    var A=norm(_inc[k],k), B=norm(_loc[k],k);
+    var byId={}, order=[];
+    var take=function(se){
+      if(!se||!se.id) return;
+      var ex=byId[se.id];
+      if(!ex){ byId[se.id]=se; order.push(se.id); return; }
+      var exN=(ex.messages||[]).length, newN=(se.messages||[]).length;
+      var exT=Number(ex.ts)||0, newT=Number(se.ts)||0;
+      if(newN>exN || (newN===exN && newT>exT)) byId[se.id]=se;
+    };
+    A.sessions.forEach(take); B.sessions.forEach(take);
+    var sessions=order.map(function(id){return byId[id];});
+    merged[k]={sessions:sessions, activeId:B.activeId||A.activeId||(sessions.length?sessions[sessions.length-1].id:null)};
+  });
+  // 一次性清理：2026-09-21 排查本 bug 时用 city:__probe__ 做过服务端合并探针。
+  // 服务端 KB_CHAT 合并是「key 并集 + 永不删除」，该孤立键无法通过同步清掉，
+  // 故在客户端读入时丢弃（不属于任何真实城市，不影响业务数据）。
+  delete merged['city:__probe__'];
+  return merged;
+}
 /* ══ 多会话（session）层 ══
  * 旧结构：KB_CHAT[cur] = [msg,...]（单一扁平消息流，所有历史混在一起）
  * 新结构：KB_CHAT[cur] = { sessions:[{id,title,ts,messages:[msg,...]}], activeId }

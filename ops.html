@@ -4579,7 +4579,16 @@ function persist(){
       OPS_ENT:OPS_ENT,
       DEMANDS:DEMANDS,
       REPORT_REQUESTS:REPORT_REQUESTS,
-      KB_CHAT:typeof KB_CHAT!=='undefined'?KB_CHAT:{},
+      // 【2026-09-21 修复】管理端从不读写问答记忆，但原来写的是
+      //   KB_CHAT: typeof KB_CHAT!=='undefined' ? KB_CHAT : {}
+      // 而 ops.html 里 KB_CHAT 根本没有定义，于是每次 persist 都往共用的
+      // LS_KEY 里写一个空对象；政府端刷新走 restore() 时就被冲成空（问答记忆归零）。
+      // 管理端不该成为该字段的写入方：原样读回已存值带上，自己绝不产生空值。
+      KB_CHAT:(function(){
+        if(typeof KB_CHAT!=='undefined' && KB_CHAT && Object.keys(KB_CHAT).length) return KB_CHAT;
+        try{ var _p=JSON.parse(localStorage.getItem(LS_KEY)||'{}'); if(_p && _p.KB_CHAT) return _p.KB_CHAT; }catch(_){}
+        return {};
+      })(),
       USER_PROFILES:USER_PROFILES,
       CITY_ACCOUNTS:CITY_ACCOUNTS,
       RESET_GEN:(typeof RESET_GEN!=='undefined'?RESET_GEN:null),
