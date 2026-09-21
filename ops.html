@@ -4694,6 +4694,10 @@ function restoreFromServer(callback){
     PROJECTS         = srv.PROJECTS         || {};
     UPLOADS          = srv.UPLOADS          || {};
     _mergeKbItemTombs(srv.KB_ITEM_TOMBS);
+    // 【2026-09-18】必须过滤 srv.PROJECTS 本体，而不是只过滤内存里的 PROJECTS。
+    // 本函数末尾会 `localStorage.setItem(LS_KEY, JSON.stringify(srv))` 回写原始 srv，
+    // 只过滤内存的话脏数据仍会落盘，下次 restore 又把已删条目读回来。
+    _applyKbItemTombs(srv.PROJECTS);
     _applyKbItemTombs(PROJECTS);
     _mergeTombs(srv.KB_CONFIRM_TOMBS);
     KB_CONFIRMS      = _mergeConfirms(srv.KB_CONFIRMS || {});  // 只进不退

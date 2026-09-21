@@ -334,6 +334,91 @@ def _keep_nonempty(existing_val, incoming_val):
         return existing_val
     return incoming_val
 
+def _kb_item_fp(text):
+    """与前端 _kbItemFp 完全一致：剥空白与 ✅/⚠ 前缀，取前 80 字符。
+    前端 index.html / ops.html 用的是同一套规则，两边必须一致否则墓碑对不上。"""
+    if isinstance(text, dict):
+        t = text.get("text") or ""
+    elif isinstance(text, str):
+        t = text
+    else:
+        t = ""
+    t = "".join(t.split())
+    while t[:1] in ("✅", "⚠", "️"):
+        t = t[1:]
+    return t[:80]
+
+
+def _apply_kb_item_tombs(projects, itombs):
+    """把「知识条目删除墓碑」应用到 PROJECTS：按内容指纹移除 kb[i].known 的条目。
+
+    为什么服务端必须做这件事（2026-09-18）：
+    _merge_map 对 kb 的规则是「材料条数 >= 旧值才接受」，本意是防止旧快照(0 材料)
+    冲掉刚推送的 RAG。但删除会让条数变少，于是删除后的快照被服务端直接判负丢弃
+    —— 客户端墓碑再完善也没用，因为覆盖发生在服务端存储里，任何客户端下次 GET
+    拉到的都还是含已删条目的旧数据（表现为「删了又自己回来」）。
+    解法：合并前先把墓碑应用到 existing，旧值条数已扣除，原门槛逻辑无需改动。
+    itombs 结构：{projKey: {kbIdx(str): {fp: ts}}}
+    返回实际移除条数。"""
+    if not isinstance(projects, dict) or not isinstance(itombs, dict):
+        return 0
+    removed = 0
+    for pk, sec_map in itombs.items():
+        proj = projects.get(pk)
+        if not isinstance(proj, dict) or not isinstance(sec_map, dict):
+            continue
+        kb = proj.get("kb")
+        if not isinstance(kb, list):
+            continue
+        for ki, fp_map in sec_map.items():
+            try:
+                idx = int(ki)
+            except (TypeError, ValueError):
+                continue
+            if idx < 0 or idx >= len(kb):
+                continue
+            sect = kb[idx]
+            if not isinstance(sect, dict):
+                continue
+            known = sect.get("known")
+            if not isinstance(known, list) or not known:
+                continue
+            if not isinstance(fp_map, dict) or not fp_map:
+                continue
+            kept = [x for x in known if _kb_item_fp(x) not in fp_map]
+            removed += len(known) - len(kept)
+            sect["known"] = kept
+    return removed
+
+
+def _merge_kb_item_tombs(old, new):
+    """合并两端墓碑，逐指纹取较新 ts。"""
+    out = {}
+    for src in (old, new):
+        if not isinstance(src, dict):
+            continue
+        for pk, sec_map in src.items():
+            if not isinstance(sec_map, dict):
+                continue
+            out.setdefault(pk, {})
+            for ki, fp_map in sec_map.items():
+                if not isinstance(fp_map, dict):
+                    continue
+                bucket = out[pk].setdefault(str(ki), {})
+                for fp_key, ts in fp_map.items():
+                    try:
+                        tsi = int(ts)
+                    except (TypeError, ValueError):
+                        tsi = 0
+                    try:
+                        prev = int(bucket.get(fp_key) or 0)
+                    except (TypeError, ValueError):
+                        prev = 0
+                    if tsi >= prev:
+                        bucket[fp_key] = tsi
+    return out
+
+
 def _kb_material_count(kb):
     """统计一个 project.kb 的累计材料条数（4 主题 known[] 之和）。"""
     if not isinstance(kb, list):
@@ -1371,6 +1456,14 @@ class Handler(BaseHTTPRequestHandler):
                 # 企业线索墓碑 'projKey::clueId'：_merge_clues 会保留服务端独有线索，
                 # 没有墓碑时政府端删掉的企业会被管理端旧快照合并复活。
                 _ctomb = set(existing.get('DELETED_CLUES') or []) | set(incoming.get('DELETED_CLUES') or [])
+                # 【2026-09-18】知识条目删除墓碑：两端合并，逐指纹取较新 ts。
+                _itomb = _merge_kb_item_tombs(existing.get('KB_ITEM_TOMBS'),
+                                              incoming.get('KB_ITEM_TOMBS'))
+                # 关键：必须在 _merge_map 之前先把墓碑应用到 existing。
+                # 否则 kb 的「条数 >= 旧值才接受」门槛会把删除后的新快照当成
+                # 「材料更少」而直接丢弃，删除永远同步不上去。
+                if _itomb:
+                    _apply_kb_item_tombs(existing.get('PROJECTS'), _itomb)
                 _protected = ['OPS_ENT','DEMANDS','KB_CHAT','PENDING_CONFIRMS','KB_CONFIRMS','REPORT_REQUESTS','CITY_ACCOUNTS']
                 # REPORT_REQUESTS 按 id 合并且状态只进不退（pending<running<done/failed）
                 # 防止管理端旧快照 persist 把流水线已推进的状态倒改回 pending
@@ -1464,6 +1557,13 @@ class Handler(BaseHTTPRequestHandler):
                                 _c for _c in _cl
                                 if not (isinstance(_c, dict) and ('%s::%s' % (_pk, _c.get('id'))) in _ctomb)
                             ]
+                # 【2026-09-18】再应用一次条目墓碑：incoming 可能带回已删条目；
+                # 并持久化墓碑本体，使任何客户端下次 GET 都拉不到已删条目。
+                if _itomb:
+                    existing['KB_ITEM_TOMBS'] = _itomb
+                    _n_rm = _apply_kb_item_tombs(existing.get('PROJECTS'), _itomb)
+                    if _n_rm:
+                        print('[sync] kb item tombs removed %d entrie(s)' % _n_rm)
                 data_str = json.dumps(existing, ensure_ascii=False)
             except Exception as e:
                 print(f"[sync] merge error: {e}")
