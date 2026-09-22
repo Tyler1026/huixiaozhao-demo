@@ -1970,7 +1970,7 @@ function runAIFunnel(projKey, done, onProgress){
       var companies=obj.companies.map(function(c,i){
         var sm=_num(c.score_match,40), sr=_num(c.score_relocate,30), ss=_num(c.score_strength,30);
         var total=sm+sr+ss; if(total>100)total=100;
-        return {id:'f_'+projKey+'_'+i, name:c.name||'', region:c.region||'', kind:c.kind||'', fit:c.fit||'',
+        return {id:_funnelClueId(projKey, c.name, i), name:c.name||'', region:c.region||'', kind:c.kind||'', fit:c.fit||'',
           score_match:sm, score_relocate:sr, score_strength:ss, score_reason:c.score_reason||'',
           fit_score:total,
           signal:c.signal||'', expansion:c.expansion||'', faction:c.faction||'',
@@ -2011,23 +2011,59 @@ function _parseFunnelJson(s){
   if(a>=0&&b>a){ try{ return JSON.parse(t.slice(a,b+1)); }catch(e){} }
   return null;
 }
+/* 【2026-09-22 修复 P0】clue 身份与墓碑口径必须与政府端 index.html 完全一致。
+   旧 id 'f_'+projKey+'_'+下标 跨漏斗复用：上一批删掉的企业留下的墓碑，会在下一批
+   把恰好排到同一下标的新企业静默吃掉（实测诺唯赞生物 88 分被吞）。
+   现在 id 由企业名派生（跨次重跑稳定），墓碑按企业名匹配，位置型旧 id 墓碑失效。 */
+function _clueNameKey(name){
+  if(name==null) return '';
+  return String(name).replace(/[\uff08(][^\uff09)]*[\uff09)]\s*$/,'').replace(/\s+/g,'').trim();
+}
+function _isReusableClueId(clueId){
+  return /^f_.+_\d+$/.test(String(clueId==null?'':clueId));
+}
+function _clueTombKey(projKey, clue){
+  var nm=(clue&&typeof clue==='object')?clue.name:clue;
+  var nk=_clueNameKey(nm);
+  if(nk) return String(projKey)+'::@'+nk;
+  var id=(clue&&typeof clue==='object')?clue.id:clue;
+  return String(projKey)+'::'+String(id);
+}
+function isClueDeleted(projKey, clue){
+  var t=window.DELETED_CLUES||[];
+  if(!t.length) return false;
+  var isObj=(clue&&typeof clue==='object');
+  var nm=isObj?clue.name:null;
+  var id=isObj?clue.id:clue;
+  if(_clueNameKey(nm) && t.indexOf(_clueTombKey(projKey, clue))>=0) return true;
+  if(id!=null && !_isReusableClueId(id) && t.indexOf(String(projKey)+'::'+String(id))>=0) return true;
+  return false;
+}
+function _funnelClueId(projKey, name, idx){
+  var nk=_clueNameKey(name);
+  if(!nk) return 'f_'+projKey+'_n0_'+idx;
+  var h=0;
+  for(var i=0;i<nk.length;i++){ h=((h<<5)-h+nk.charCodeAt(i))|0; }
+  return 'f_'+projKey+'_n'+(h>>>0).toString(36);
+}
+
 function pushFunnelTopToGov(projKey, n){
   var p=PROJECTS[projKey]; if(!p||!p.funnel||!p.funnel.companies.length){ toast('请先运行 AI 漏斗分析'); return; }
   n=n||8; var top=p.funnel.companies.slice(0, n);
   if(!p.clues) p.clues=[];
   var existNames={}; (p.clues||[]).forEach(function(c){ if(c.name) existNames[c.name]=1; });
-  // 政府端已手动移除的企业（墓碑 'projKey::clueId'）不再推回，否则「删了又回来」
-  var _ctomb=window.DELETED_CLUES||[];
-  var added=0, skipped=0;
+  // 政府端已手动移除的企业不再推回（否则「删了又回来」）。判定按企业名，
+  // 不能按 c.id：位置型 id 跨漏斗复用，会误杀本批的新企业。
+  var added=0, skipped=0, skippedNames=[];
   top.forEach(function(c){
     if(existNames[c.name]) return;
-    if(_ctomb.indexOf(projKey+'::'+c.id)>=0){ skipped++; return; }
+    if(isClueDeleted(projKey, c)){ skipped++; skippedNames.push(c.name||'未命名企业'); return; }
     p.clues.push({id:c.id, name:c.name, kind:c.kind, region:c.region, gap:p.funnel.topic||p.topic||'', tone:'slate', status:'gov_push', fit:c.fit, fit_score:c.fit_score, score_match:c.score_match, score_relocate:c.score_relocate, score_strength:c.score_strength, score_reason:c.score_reason, expansion:c.expansion, faction:c.faction, reason:c.fit||('AI 漏斗按「'+(p.funnel.topic||p.topic||'该方向')+'」精筛，适配度 '+(c.fit_score||0)+' 分，建议资源团队核验投资意向。'), signal:c.signal, listed:c.listed, source:c.source, scale:(c.listed?c.listed+' · ':'')+(c.region||''), techRoute:c.fit||'', signalSrc:c.source||'AI推断，待核验', matchPoints:[c.fit].filter(Boolean), questions:['是否有在'+(p.city||'本地')+'布局/投资意向','与本地链主的配套匹配度','落地所需政策与承载条件'], priority:Math.max(1,Math.min(5,Math.round((c.fit_score||0)/20))), localAttr:'B'});
     added++;
   });
   p.funnel.pushed=true; p.funnel.pushedAt=Date.now(); p.funnel.pushedNames=top.map(function(c){return c.name;});
   persist(); render();
-  toast('已把 '+added+' 家精准适配企业推送到政府端「待接触企业」'+(skipped?'（'+skipped+' 家已被政府端移除，未重复推送）':''));
+  toast('已把 '+added+' 家精准适配企业推送到政府端「待接触企业」'+(skipped?'（跳过 '+skipped+' 家已被政府端移除：'+skippedNames.join('、')+'）':''));
 }
 
 function toggleFunnelExpand(k){
@@ -4733,7 +4769,7 @@ function restoreFromServer(callback){
       if(_ct.length){
         Object.keys(PROJECTS).forEach(function(_pk){
           var _pp=PROJECTS[_pk]; if(!_pp||!_pp.clues||!_pp.clues.length) return;
-          _pp.clues=_pp.clues.filter(function(_c){ return !(_c && _ct.indexOf(_pk+'::'+_c.id)>=0); });
+          _pp.clues=_pp.clues.filter(function(_c){ return !(_c && isClueDeleted(_pk, _c)); });
         });
       }
     }

@@ -3187,7 +3187,7 @@ function visibleClues(p, projKey){
     if(!c) return false;
     if(c.status==='ai_scan') return false;
     if(typeof c.name==='string' && c.name.indexOf('脱敏企业')===0) return false;
-    if(_pk && isClueDeleted(_pk, c.id)) return false;
+    if(_pk && isClueDeleted(_pk, c)) return false;
     return true;
   });
 }
@@ -3204,11 +3204,38 @@ function _projKeyOf(p){
   }catch(_){}
   return null;
 }
-function _clueTombKey(projKey, clueId){ return String(projKey)+'::'+String(clueId); }
-function isClueDeleted(projKey, clueId){
-  if(clueId==null) return false;
+/* 【2026-09-22 修复 P0】墓碑必须按「企业身份（名称）」匹配，不能按 clue.id。
+   根因：AI 漏斗 id 曾是 'f_'+projKey+'_'+下标（ops.html runAIFunnel），下标随每次
+   重跑的模型返回顺序重新分配，同一个 id 跨两次漏斗指向完全不同的企业。
+   实测事故：上一批删 CT 企业留下墓碑 f_<pk>_0，下一批漏斗的 f_<pk>_0 是诺唯赞生物
+   （88 分 Top8 第 2），推送时被当成「已删除」静默跳过，界面看不出少了一家。
+   所以：新墓碑写 'projKey::@<规范化企业名>'；位置型 id 的旧墓碑一律失效，
+   否则同一个 bug 原样复发（既挡推送，也会在政府端把新企业渲染掉）。
+   手工录入 id 是 clue_manual_<时间戳>，唯一且不复用，legacy 键继续兼容。 */
+function _clueNameKey(name){
+  if(name==null) return '';
+  return String(name).replace(/[\uff08(][^\uff09)]*[\uff09)]\s*$/,'').replace(/\s+/g,'').trim();
+}
+function _isReusableClueId(clueId){
+  return /^f_.+_\d+$/.test(String(clueId==null?'':clueId));
+}
+function _clueTombKey(projKey, clue){
+  var nm=(clue&&typeof clue==='object')?clue.name:clue;
+  var nk=_clueNameKey(nm);
+  if(nk) return String(projKey)+'::@'+nk;
+  var id=(clue&&typeof clue==='object')?clue.id:clue;
+  return String(projKey)+'::'+String(id);
+}
+function _clueLegacyTombKey(projKey, clueId){ return String(projKey)+'::'+String(clueId); }
+function isClueDeleted(projKey, clue){
   var t=window.DELETED_CLUES||[];
-  return t.indexOf(_clueTombKey(projKey, clueId))>=0;
+  if(!t.length) return false;
+  var isObj=(clue&&typeof clue==='object');
+  var nm=isObj?clue.name:null;
+  var id=isObj?clue.id:clue;
+  if(_clueNameKey(nm) && t.indexOf(_clueTombKey(projKey, clue))>=0) return true;
+  if(id!=null && !_isReusableClueId(id) && t.indexOf(_clueLegacyTombKey(projKey, id))>=0) return true;
+  return false;
 }
 
 function renderCluesTwoPanel(projKey){
@@ -3975,7 +4002,8 @@ function doDeleteClue(projKey, clueId){
   var nm=c?(cleanCoName(c.name)||'该企业'):'该企业';
   // 墓碑：服务端 _merge_clues 保留服务端独有线索，没有墓碑删除会被合并复活
   if(!window.DELETED_CLUES) window.DELETED_CLUES=[];
-  var tk=_clueTombKey(projKey, clueId);
+  // 按企业名写墓碑（取不到整条时才退回 id）：位置型 id 跨漏斗会指向别的企业
+  var tk=_clueTombKey(projKey, c||clueId);
   if(window.DELETED_CLUES.indexOf(tk)<0) window.DELETED_CLUES.push(tk);
   p.clues=(p.clues||[]).filter(function(x){ return !(x && x.id===clueId); });
   if(window.__clueOpen===clueId) window.__clueOpen=null;
@@ -8771,7 +8799,7 @@ function restoreFromServer(callback){
         Object.keys(PROJECTS).forEach(function(_pk){
           var _pp=PROJECTS[_pk]; if(!_pp||!_pp.clues||!_pp.clues.length) return;
           _pp.clues=_pp.clues.filter(function(_c){
-            return !(_c && _ctomb.indexOf(_pk+'::'+_c.id)>=0);
+            return !(_c && isClueDeleted(_pk, _c));
           });
         });
       }

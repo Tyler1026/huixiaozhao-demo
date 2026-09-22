@@ -468,6 +468,38 @@ def _kb_material_count(kb):
 
 _CLUE_TONE_RANK = {"slate": 1, "amber": 2, "teal": 3}
 
+import re as _re_clue
+
+# 【2026-09-22 修复 P0】clue 墓碑按企业名匹配，不按 clue.id。
+# AI 漏斗 id 曾是 'f_<projKey>_<下标>'，下标随每次重跑重新分配，同一 id 跨两次
+# 漏斗指向不同企业。旧实现按 id 匹配，导致上一批删除的企业留下的墓碑在下一批把
+# 排到同一下标的新企业静默删掉（实测诺唯赞生物 88 分被吞）。
+# 因此位置型 id 的旧墓碑一律不再生效，只认企业名；手工录入的
+# clue_manual_<时间戳> 唯一不复用，legacy 键继续兼容。
+_REUSABLE_CLUE_ID = _re_clue.compile(r"^f_.+_\d+$")
+_CLUE_NAME_SUFFIX = _re_clue.compile(r"[\uff08(][^\uff09)]*[\uff09)]\s*$")
+
+
+def _clue_name_key(name):
+    # 与 index.html / ops.html 的 _clueNameKey 同口径
+    if name is None:
+        return ""
+    s = _CLUE_NAME_SUFFIX.sub("", str(name))
+    return _re_clue.sub(r"\s+", "", s).strip()
+
+
+def _clue_tombstoned(proj_key, clue, tombs):
+    if not tombs or not isinstance(clue, dict):
+        return False
+    nk = _clue_name_key(clue.get("name"))
+    if nk and ("%s::@%s" % (proj_key, nk)) in tombs:
+        return True
+    cid = clue.get("id")
+    if cid is not None and not _REUSABLE_CLUE_ID.match(str(cid)):
+        if ("%s::%s" % (proj_key, cid)) in tombs:
+            return True
+    return False
+
 
 def _merge_stage_by_topic(old_sbt, new_sbt):
     """方向级进度只进不退：逐 topic 取较大值。"""
@@ -1724,7 +1756,7 @@ class Handler(BaseHTTPRequestHandler):
                                 continue
                             _pv['clues'] = [
                                 _c for _c in _cl
-                                if not (isinstance(_c, dict) and ('%s::%s' % (_pk, _c.get('id'))) in _ctomb)
+                                if not (isinstance(_c, dict) and _clue_tombstoned(_pk, _c, _ctomb))
                             ]
                 # 【2026-09-18】再应用一次条目墓碑：incoming 可能带回已删条目；
                 # 并持久化墓碑本体，使任何客户端下次 GET 都拉不到已删条目。
