@@ -11193,22 +11193,95 @@ function kbVerifyMaterial(){
       });
     });
   }
-  // 从新文件提取关键词，筛选包含相关关键词的智库条目
-  var _fileKeywords=newText.replace(/[\d\.%+\-()\uff08\uff09\uff1a:\uff0c\u3002\u3001/]+/g,' ').split(/\s+/).filter(function(w){return w.length>=2;});
-  _fileKeywords=_fileKeywords.filter(function(w,i,a){return a.indexOf(w)===i;}).slice(0,20);
-  var topicKnown=_allKnown.filter(function(item){
-    return _fileKeywords.some(function(kw){ return item.indexOf(kw)>=0; });
+  /* 【2026-09-23 修复 T2-3】校验基准覆盖面：原来死板地 slice(0,12)，
+     松江真实智库 68 条 → 只带 18% 进 prompt。后果是智库里明明有的数据
+     （实测「昊海生科…2021年细分市场份额分别达51%/45%/29%」）没被带上，
+     AI 只能回答"智库无此数据"，把已有数据误报成 ⚠️ 新增——
+     于是「一致 / 新增」两类本身就不可信，比单纯漏报更误导干部。
+     另一个坑：原 `if(topicKnown.length<3) topicKnown=_allKnown.slice(0,10)`
+     会塞 10 条与新文件毫不相干的条目，等于拿错基准去核验。
+
+     现在改为三段式：
+     1) 定向检索：把新文件里的数字/百分比逐个抽出来，凡智库条目含同一数字的
+        一律优先入选——数值核验靠的就是这些条目，绝不能被名额挤掉；
+     2) 关键词召回：按命中关键词个数排序，多的优先；
+     3) 字符预算：按总长度上限（约 12000 字）动态放宽条数，不再固定 12 条；
+        无相关条目时宁可留空（prompt 里明确告知"智库暂无可比对结论"），
+        也不塞无关条目冒充基准。 */
+  // 1) 新文件中的数字/百分比/金额（核验的真正对象）
+  var _fileNums=(newText.match(/\d+(?:\.\d+)?\s*(?:%|万|亿|千|百分点)?/g)||[])
+    .map(function(s){ return s.replace(/\s+/g,''); })
+    .filter(function(s){ return /\d/.test(s) && s.replace(/[^\d]/g,'').length>=2; });  // 单个数字噪声太大
+  _fileNums=_fileNums.filter(function(w,i,a){ return a.indexOf(w)===i; }).slice(0,40);
+  // 2) 关键词（中文按 2-6 字切片，兼容无空格分隔的中文正文）
+  var _kwRaw=newText.replace(/[\d\.%+\-()\uff08\uff09\uff1a:\uff0c\u3002\u3001/\n\r\t]+/g,' ').split(/\s+/);
+  var _fileKeywords=[];
+  _kwRaw.forEach(function(seg){
+    if(!seg) return;
+    if(seg.length<=6){ if(seg.length>=2) _fileKeywords.push(seg); return; }
+    for(var i=0;i+2<=seg.length && i<40;i+=2){ _fileKeywords.push(seg.substr(i,4)); }
   });
-  // 如果匹配太少则补充前几条通用数据
-  if(topicKnown.length<3) topicKnown=_allKnown.slice(0,10);
-  topicKnown=topicKnown.slice(0,12); // 限制最多12条，保证prompt精准且不过大
+  _fileKeywords=_fileKeywords.filter(function(w,i,a){ return w.length>=2 && a.indexOf(w)===i; }).slice(0,60);
+  /* 打分：含相同数字权重最高，其次关键词命中数。
+     数字匹配必须避免子串误命中——裸「120」会命中「1200亿」「120万」，
+     食堂采购清单那种无关文件就会被误判成"与智库相关"。
+     因此只认两类：带单位的数字（51%、1850亿）原样匹配；
+     裸数字必须与智库里一个完整的「数字+单位」token 相等（见 _numHitsIn）。 */
+  function _numHitsIn(item, n){
+    if(/[%万亿千]|百分点/.test(n)) return item.indexOf(n)>=0?1:0;  // 带单位足够独特，原样匹配
+    /* 裸数字（2024、1850）必须对应智库里一个「完整的数」才算命中，否则：
+       食堂清单的 80 会命中「球管寿命突破 80 万秒次」、120 会命中 1200。
+       不能只看紧邻字符——真实文本有「80 万秒次」这种中间带空格的写法，
+       所以把条目里的「数字+单位」整体切成 token，要求 token 完全相等。 */
+    var toks=item.match(/\d+(?:\.\d+)?\s*(?:%|万|亿|千|百分点|[A-Za-z]+)?/g)||[];
+    for(var i=0;i<toks.length;i++){
+      // 带字母单位的（80kW、300mm）不是同一个量，裸数字不得与之相等
+      if(/[A-Za-z]/.test(toks[i])) continue;
+      if(toks[i].replace(/\s+/g,'')===n) return 1;
+    }
+    return 0;
+  }
+  var _scored=_allKnown.map(function(item, _i){
+    /* 强命中：带单位的数字相同（51%、1850亿）——这种巧合概率极低，足以证明同一指标。
+       弱命中：裸数字相同（80、2024）——「80斤白菜」和「80kW以上」会撞，
+       所以裸数字必须另有关键词支撑才算相关，单靠它不足以把条目拉进基准。 */
+    var strongHit=0, weakHit=0;
+    _fileNums.forEach(function(n){
+      if(_numHitsIn(item,n)<=0) return;
+      if(/[%万亿千]|百分点/.test(n)) strongHit++; else weakHit++;
+    });
+    var kwHit=0;
+    _fileKeywords.forEach(function(kw){ if(item.indexOf(kw)>=0) kwHit++; });
+    var numHit=strongHit+weakHit;
+    // 相关性门槛：有强命中 → 直接入选；否则需关键词命中 >=2（裸数字或单个泛词不够）
+    var relevant=(strongHit>0) || (kwHit>=2);
+    return {item:item, ord:_i,
+            score:(relevant?(strongHit*1000+weakHit*50+kwHit):0),
+            numHit:numHit, strongHit:strongHit, kwHit:kwHit};
+  }).filter(function(s){ return s.score>0; });
+  _scored.sort(function(a,b){ return (b.score-a.score)||(a.ord-b.ord); });
+  /* 3) 字符预算：按总长度动态放宽条数，不再固定 12 条。
+     注意这里不设"至少保 N 条"下限——无相关条目时必须真留空，
+     塞无关条目当基准会让 AI 拿错参照物做判定（原 slice(0,10) 兜底就是这个错）。 */
+  var _KB_BUDGET=12000, _used=0;
+  var topicKnown=[];
+  _scored.forEach(function(s){
+    if(_used+s.item.length>_KB_BUDGET) return;
+    topicKnown.push(s.item); _used+=s.item.length;
+  });
+  var _numHitCount=_scored.filter(function(s){ return s.strongHit>0; }).length;
   var knownHint=topicKnown.length ? '（智库已有结论：'+topicKnown.join('；')+'）' : '';
 
 
 
   var prompt=
     '【新上传文件原文】\n'+newText+'\n\n'
-    +'【智库已有结论（正确基准）】\n'+topicKnown.join('\n')+'\n\n'
+    +'【智库已有结论（正确基准）】\n'
+    +(topicKnown.length
+        ? (topicKnown.join('\n')
+           +'\n（以上为智库 '+_allKnown.length+' 条结论中与本文件相关的 '+topicKnown.length+' 条）')
+        : '（智库暂无与本文件相关的结论，本次无法做数值比对：请把文件中的数据点全部标记为 ⚠️ 新增数据，不要凭空判定"一致"）')
+    +'\n\n'
     +'任务：逐条核验新上传文件中每一个数据点。\n\n'
     +'核验方法：文件中的每个数字/百分比/数量，都去智库已有结论里找同一指标。\n'
     +'- 数值一致 → 标记 ✅\n'
@@ -11293,7 +11366,7 @@ function kbVerifyMaterial(){
             ';font-size:12px;font-weight:650;color:'+
             (hasHighRisk?'#dc2626':(allClear?'#059669':'#d97706'))+
             '">'+badgeText+
-            '<span style="font-weight:400;color:#94a3b8;margin-left:8px">· 校验耗时 '+elapsed+'ms · 核验 '+_parsed.rows.length+' 个数据点 · 对比 '+topicKnown.length+'/'+_allKnown.length+' 条现有结论</span>'+
+            '<span style="font-weight:400;color:#94a3b8;margin-left:8px">· 校验耗时 '+elapsed+'ms · 核验 '+_parsed.rows.length+' 个数据点 · 对比 '+topicKnown.length+'/'+_allKnown.length+' 条现有结论'+(_numHitCount?('（含 '+_numHitCount+' 条数值直接命中）'):'')+'</span>'+
             (hasHighRisk?'<button onclick="kbConfirmOverwrite()" style="margin-left:12px;padding:4px 12px;background:#dc2626;color:#fff;border:none;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer">人工核实</button>':(allClear?'':'<button onclick="kbConfirmOverwrite()" style="margin-left:12px;padding:4px 12px;background:#d97706;color:#fff;border:none;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer">逐条确认</button>'))+
             '</div>');
                     // 发现矛盾或模糊信息：弹出逐条确认面板让用户核实
