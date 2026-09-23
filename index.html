@@ -11073,6 +11073,91 @@ function finalizeIngest(chunks, files, kbTopicIdx, p, parseFailed){
 
 
 
+/* 【2026-09-23 修复 T2】材料校验结论自相矛盾——收口为「一次解析、单一裁决」。
+
+   原实现对同一段 AI 输出做了三次独立解析，三层各说一套：
+   1) 正文直接渲染 AI 原文，图标是模型给的（模型常把 ✅ 错用到"智库无此数据"行）；
+   2) 抬头计数在前端重新分类，且语义优先于图标；
+   3) 逐条确认面板只扫 '❌' 开头的行。
+   于是「✅ 眼科粘弹剂市占率：文件写 60%，智库记录 51% → 不一致」这一行：
+   正文显示"一致 ✅"、抬头计入"矛盾"、面板一条都捞不到（点了只弹"未能定位"）。
+   同一条事实三种结论，干部无法判断哪个数字可信。
+
+   现在统一走 parseVerifyDetail()：每行只裁决一次，产出唯一 bucket；
+   正文按裁决结果重写行首图标，抬头计数与确认面板都复用同一份 rows。
+   另修：明细行识别不再只认图标行——模型改用 "- xxx：文件写…" 纯文字列表时，
+   旧逻辑整段统计为 0，抬头会显示"新增 0 条，一致 0 条"而正文明明列了一堆。
+   无法判定的明细行一律归入「待确认」，绝不默认算作"一致"（假一致比漏报更危险）。 */
+var _VERIFY_ICON={conflict:'\u274c', newadd:'\u26a0\ufe0f', consistent:'\u2705'};
+function _stripVerifyLead(t){
+  // 去掉行首的图标、列表符、序号，留下正文，便于提取指标名
+  return String(t||'')
+    .replace(/^[\s>*_]+/,'')
+    .replace(/^(?:[\u274c\u2705\u26a0\ufe0f]+|[-\u2022\u30fb]|\d+[.\uff0e\u3001)])\s*/,'')
+    .replace(/^[\u274c\u2705\u26a0\ufe0f\s]+/,'')
+    .trim();
+}
+function parseVerifyDetail(accText){
+  var out={rows:[], conflict:0, newadd:0, consistent:0};
+  var lines=String(accText||'').split('\n');
+  lines.forEach(function(ln, li){
+    var t=ln.trim();
+    if(!t) return;
+    if(/^结论[：:]/.test(t)) return;                       // 首行结论不算明细
+    var iconConflict=/^\s*(?:\u274c)/.test(t);
+    var iconNewAdd=/^\s*(?:\u26a0)/.test(t);
+    var iconOk=/^\s*(?:\u2705)/.test(t);
+    var body=_stripVerifyLead(t);
+    // 明细行判定：带图标，或「含冒号 + 提到文件/智库」——后者兼容纯文字列表
+    var looksDetail=(iconConflict||iconNewAdd||iconOk) ||
+                    (/[：:]/.test(body) && /(文件|智库)/.test(body));
+    if(!looksDetail) return;
+    var saysNewAdd=/新增数据|智库无此数据|智库无此|智库未记录|智库未收录|文件未直接写|文件无此数据|无对应记录|无法核验/.test(t);
+    var saysConflict=/→\s*不一致|→\s*数据不符|数值不同|数据不符|明显偏差|差异较大|与[^，,]{0,12}矛盾|不一致/.test(t);
+    var saysConsistent=/记录一致|数值一致|完全一致|→\s*一致|与智库一致/.test(t);
+    var saysPending=/待确认|待核实|需核实|需人工|存疑|口径待|年份待|尚未核实/.test(t);
+    var b;
+    if(saysConflict) b='conflict';
+    else if(saysNewAdd) b='newadd';
+    else if(saysConsistent && !saysPending) b='consistent';
+    else if(saysPending) b='newadd';
+    else if(iconConflict) b='conflict';
+    else if(iconNewAdd) b='newadd';
+    else if(iconOk) b='consistent';
+    else b='newadd';        // 兜底：判不出来就是要核实，绝不算"一致"
+    // 供确认面板用：指标名 / 文件值 / 智库值
+    var nm=(/^([^：:]+)[：:]/.exec(body)||[])[1];
+    var vm=/[：:]\s*文件[写说记载]*\s*([^，,→]+)[，,→].*?智库[记录已有]*\s*([^，,→\n]+)/.exec(t);
+    out.rows.push({
+      lineIdx:li, raw:t, body:body, bucket:b,
+      name:(nm?nm.trim():''),
+      fileVal:(vm?vm[1].replace(/\*\*/g,'').trim():''),
+      kbVal:(vm?vm[2].replace(/\*\*/g,'').trim():'')
+    });
+    out[b]++;
+  });
+  return out;
+}
+/* 按裁决结果重写正文：行首图标归正 + 首行结论从明细实时汇总（不再用 AI 自报的数字） */
+function rewriteVerifyText(accText, parsed){
+  var lines=String(accText||'').split('\n');
+  var byIdx={};
+  parsed.rows.forEach(function(r){ byIdx[r.lineIdx]=r; });
+  var outLines=lines.map(function(ln, li){
+    var r=byIdx[li];
+    if(!r) return ln;
+    var indent=(/^(\s*)/.exec(ln)||['',''])[1];
+    return indent+_VERIFY_ICON[r.bucket]+' '+r.body;
+  });
+  var head='结论：'+(parsed.conflict>0?('发现矛盾 '+parsed.conflict+' 处'):'未发现矛盾')
+          +'（矛盾 '+parsed.conflict+' 条 / 待确认 '+parsed.newadd+' 条 / 一致 '+parsed.consistent
+          +' 条，共核验 '+parsed.rows.length+' 条）';
+  var hi=-1;
+  for(var i=0;i<outLines.length;i++){ if(/^\s*结论[：:]/.test(outLines[i])){ hi=i; break; } }
+  if(hi>=0) outLines[hi]=head; else outLines.unshift(head, '');
+  return outLines.join('\n');
+}
+
 /* ── 材料可信度校验：交叉比对新材料与现有智库结论，标出疑点 ── */
 function kbVerifyMaterial(){
   var newChunks=window._lastIngestChunks||(KB_FILE_CHUNKS[cur]||[]); // fallback到已上传的文件chunks
@@ -11180,66 +11265,25 @@ function kbVerifyMaterial(){
           // 关键修复：旧逻辑把"文件说A，智库记录B，不一致"这类真实矛盾误判为 allClear（因命中"未发现"字样），
           // 导致假数据漏报。现改为：只要出现矛盾结论/不一致标志，一律判为高危，绝不 allClear。
           // 确保正文内容一定渲染到bodyDiv（不管后续判定结果如何）
-          if(accText.trim()){ bodyDiv.innerHTML='<p style="margin:0;line-height:1.75">'+renderMarkdown(accText)+'</p>'; }
-          var _firstLine=(accText.split('\n').find(function(l){return l.trim();})||'').trim();
-          // 注意原正则 /发现矛盾\s*\d*\s*处/ 会把"未发现矛盾"也命中（"发现矛盾"是子串），
-          // 且 AI 首行常与明细脱节，因此下方必须用前端统计做二次校验。
-          var _saysConflictRaw=/结论[：:]\s*发现矛盾/.test(_firstLine);
-          var _saysClear=/结论[：:]\s*(未发现矛盾|无矛盾|完全一致)/.test(_firstLine);
-          var _claimedM=/结论[：:]\s*发现矛盾\s*(\d+)\s*处/.exec(_firstLine);
-          var _claimedN=_claimedM?parseInt(_claimedM[1],10):null;
-
-          // ── 前端二次校验：按明细行分类统计（防止 AI 首行结论与明细脱节）──
-          var _cntConflict=0, _cntNewAdd=0, _cntConsistent=0;
-          accText.split('\n').forEach(function(ln){
-            var t=ln.trim(); if(!t) return;
-            if(/^结论[：:]/.test(t)) return; // 跳过首行结论
-            var iconConflict=/^\s*(❌|\u274c)/.test(t);
-            var iconNewAdd=/^\s*(⚠️|⚠|\u26a0)/.test(t);
-            var iconOk=/^\s*(✅|\u2705)/.test(t);
-            if(!iconConflict && !iconNewAdd && !iconOk) return; // 非明细行
-            var saysNewAdd=/新增数据|智库无此数据|智库无此|智库未记录|文件未直接写|文件无此数据|无对应记录/.test(t);
-            var saysConflict=/→\s*不一致|→\s*数据不符|数值不同|明显偏差|与.*?矛盾/.test(t);
-            var saysConsistent=/记录一致|数值一致|完全一致|→\s*一致/.test(t);
-            // 语义优先（模型常把 ✅ 图标错用到"新增数据"行），图标兜底
-            if(iconConflict || saysConflict){ _cntConflict++; }
-            else if(saysNewAdd || iconNewAdd){ _cntNewAdd++; }
-            else if(saysConsistent || iconOk){ _cntConsistent++; }
-          });
-
-          // 正文里出现真实矛盾信号（收紧：不再把"矛盾"二字本身当信号，避免首行"未发现矛盾"误伤）
-          var _conflictSignal=/不一致|不符|对不上|【?严重程度[:：]\s*高|数据错误|明显偏差|差异较大/.test(accText);
-
-          // 统计与首行不一致 → 前端重写首行结论
-          var _needRewriteFirstLine=false, _newFirstLine='';
-          if(_cntConflict===0 && (_claimedN>0 || _saysConflictRaw)){
-            _saysConflictRaw=false;
-            _needRewriteFirstLine=true;
-            _newFirstLine='结论：未发现矛盾（新增 '+_cntNewAdd+' 条，一致 '+_cntConsistent+' 条）';
-          } else if(_claimedN!=null && _claimedN!==_cntConflict){
-            _needRewriteFirstLine=true;
-            _newFirstLine=(_cntConflict>0?'结论：发现矛盾 '+_cntConflict+' 处':'结论：未发现矛盾')
-                          +'（新增 '+_cntNewAdd+' 条，一致 '+_cntConsistent+' 条）';
+          // ── 一次解析、单一裁决：正文/抬头/确认面板共用这一份结果（T2 修复）──
+          var _parsed=parseVerifyDetail(accText);
+          var _cntConflict=_parsed.conflict, _cntNewAdd=_parsed.newadd, _cntConsistent=_parsed.consistent;
+          // 正文按裁决结果重写：行首图标归正 + 首行结论从明细实时汇总
+          var _shownText=_parsed.rows.length?rewriteVerifyText(accText,_parsed):accText;
+          if(_shownText.trim()){
+            try{ bodyDiv.innerHTML='<p style="margin:0;line-height:1.75">'+renderMarkdown(_shownText)+'</p>'; }
+            catch(e_r){ bodyDiv.innerHTML='<p style="margin:0;line-height:1.75;white-space:pre-wrap">'+_shownText.replace(/</g,'&lt;')+'</p>'; }
           }
-          if(_needRewriteFirstLine){
-            var _rewrittenText;
-            if(/^结论[：:]/.test(_firstLine)){
-              _rewrittenText=accText.replace(/^[^\n]*结论[：:][^\n]*/, _newFirstLine);
-            } else {
-              _rewrittenText=_newFirstLine+'\n\n'+accText;
-            }
-            try{ bodyDiv.innerHTML='<p style="margin:0;line-height:1.75">'+renderMarkdown(_rewrittenText)+'</p>'; }
-            catch(e_r){ bodyDiv.innerHTML='<p style="margin:0;line-height:1.75;white-space:pre-wrap">'+_rewrittenText.replace(/</g,'&lt;')+'</p>'; }
-          }
+          // 确认面板复用同一份 rows，不再自己重新扫 ❌（否则抬头报矛盾、面板捞不到）
+          window._lastVerifyRows=_parsed.rows;
 
-          // 用统计值最终决定 badge：真实矛盾数 > 0 才算高危
-          // 零矛盾且零新增 = 完全一致；零矛盾但有新增 = 中间态（可选入库）
+          // badge 与正文同源：矛盾数 > 0 才算高危
           var hasHighRisk=(_cntConflict>0);
           var allClear=!hasHighRisk && _cntNewAdd===0;
           var badgeText=hasHighRisk
             ?'⚠ 发现 '+_cntConflict+' 处矛盾，建议人工核实'
             :(_cntNewAdd>0
-                ?'✓ 未发现矛盾，'+_cntNewAdd+' 条新增可入库'
+                ?'✓ 未发现矛盾，'+_cntNewAdd+' 条待确认'
                 :'✓ 未发现明显错误');
           bubble.insertAdjacentHTML('beforeend',
             '<div style="margin-top:12px;padding:8px 12px;background:'+
@@ -11249,18 +11293,19 @@ function kbVerifyMaterial(){
             ';font-size:12px;font-weight:650;color:'+
             (hasHighRisk?'#dc2626':(allClear?'#059669':'#d97706'))+
             '">'+badgeText+
-            '<span style="font-weight:400;color:#94a3b8;margin-left:8px">· 校验耗时 '+elapsed+'ms · 对比 '+topicKnown.length+' 条现有结论</span>'+
+            '<span style="font-weight:400;color:#94a3b8;margin-left:8px">· 校验耗时 '+elapsed+'ms · 核验 '+_parsed.rows.length+' 个数据点 · 对比 '+topicKnown.length+'/'+_allKnown.length+' 条现有结论</span>'+
             (hasHighRisk?'<button onclick="kbConfirmOverwrite()" style="margin-left:12px;padding:4px 12px;background:#dc2626;color:#fff;border:none;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer">人工核实</button>':(allClear?'':'<button onclick="kbConfirmOverwrite()" style="margin-left:12px;padding:4px 12px;background:#d97706;color:#fff;border:none;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer">逐条确认</button>'))+
             '</div>');
                     // 发现矛盾或模糊信息：弹出逐条确认面板让用户核实
           if(hasHighRisk || !allClear){
-            window._lastVerifyText=accText;
+            // 存重写后的文本：面板兜底解析时才与正文、抬头同一份内容（行号也对得上）
+            window._lastVerifyText=_shownText;
             window._lastVerifyKbIdx=(kbIdx!=null?kbIdx:0);
             setTimeout(function(){ kbConfirmOverwrite(); }, 300);
           }
-          // 兜底：bodyDiv 为空但 accText 有内容时直接渲染纯文本
-          if(accText && !bodyDiv.innerHTML.trim()){
-            bodyDiv.innerHTML='<p style="margin:0;line-height:1.75;white-space:pre-wrap">'+accText.replace(/</g,'&lt;')+'</p>';
+          // 兜底：bodyDiv 为空但有内容时直接渲染纯文本（同样用重写后的文本）
+          if(_shownText && !bodyDiv.innerHTML.trim()){
+            bodyDiv.innerHTML='<p style="margin:0;line-height:1.75;white-space:pre-wrap">'+_shownText.replace(/</g,'&lt;')+'</p>';
           }
           // 校验完成：把按钮改为「已校验」
           window._verifyInProgress=false;
@@ -11300,22 +11345,28 @@ function kbConfirmOverwrite(){
   var p=P(); if(!p||!p.kb||!p.kb[kbIdx]){ toast('未找到对应智库主题'); return; }
   var k=p.kb[kbIdx];
 
-  // 从 AI 校验文本解析冲突：只取 ❌ 开头的行（不一致项）
+  /* 【2026-09-23 修复 T2】复用 kbVerifyMaterial 的统一裁决结果。
+     旧实现在这里重新扫一遍「'❌' 开头的行」，与抬头计数是两套口径：
+     模型把图标写成 ✅ 但正文写「→ 不一致」时，抬头已计为矛盾，这里却一条都捞不到，
+     干部点「人工核实」只弹一句"未能自动定位到冲突条目"。
+     现在直接吃 window._lastVerifyRows 里 bucket==='conflict' 的行。 */
   var conflicts=[];
-  var lines=txt.split('\n');
-  lines.forEach(function(line){
-    if(line.indexOf('\u274c')<0 && line.indexOf('❌')<0) return; // 只处理❌行
-    // 提取指标名、文件值、智库值
-    var rm=/[：:]\s*文件[写说]*\s*([^，,→]+)[，,→].*?智库[记录]*\s*([^，,→\n]+)/;
-    var m2=rm.exec(line);
-    if(!m2) return;
-    var fileVal=m2[1].replace(/\*\*/g,'').trim();
-    var kbVal=m2[2].replace(/\*\*/g,'').trim();
-    if(!fileVal||!kbVal) return;
-    // 提取指标名（❌后到：之间的文字）
-    var nameM=/[❌\u274c]\s*([^：:]+)/;
-    var nm=nameM.exec(line);
-    var indicatorName=nm?nm[1].trim():'数据项';
+  var _rows=window._lastVerifyRows;
+  if(!_rows || !_rows.length){
+    // 兜底：没有解析结果时（如旧会话回放）就地解析一次，口径仍与校验一致
+    try{ _rows=(parseVerifyDetail(txt)||{}).rows||[]; }catch(_e){ _rows=[]; }
+  }
+  _rows.filter(function(r){ return r && r.bucket==='conflict'; }).forEach(function(r){
+    var line=r.raw;
+    var fileVal=r.fileVal, kbVal=r.kbVal;
+    if(!fileVal||!kbVal){
+      // 该行没写成「文件写X，智库记录Y」的标准句式：仍要让干部看到，值留空由人工填
+      var _vm=/[：:]\s*文件[写说记载]*\s*([^，,→]+)/.exec(line);
+      fileVal=fileVal||(_vm?_vm[1].replace(/\*\*/g,'').trim():'');
+      kbVal=kbVal||'（智库值未解析出，请人工核对）';
+    }
+    if(!fileVal) return;
+    var indicatorName=r.name||'数据项';
     // 在智库known里用指标关键词模糊匹配
     var idx=-1;
     var keywords=indicatorName.replace(/[\s\d%+\-().（）]+/g,'');
@@ -11350,7 +11401,10 @@ function kbConfirmOverwrite(){
   });
 
   if(!conflicts.length){
-    toast('未能自动定位到冲突条目，请在对应主题卡内手动核实');
+    // 抬头有矛盾数却捞不到条目时，把真实原因说清楚，而不是一句笼统提示
+    var _cn=(_rows||[]).filter(function(r){return r&&r.bucket==='conflict';}).length;
+    toast(_cn?('校验判定 '+_cn+' 处矛盾，但未能解析出对应数值，请在主题卡内手动核实')
+             :'本次校验未发现矛盾条目，无需覆盖');
     return;
   }
   window._pendingConflicts={kbIdx:kbIdx, conflicts:conflicts};
