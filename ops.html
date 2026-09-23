@@ -5582,6 +5582,7 @@ function editKbItem(kbIdx,itemIdx){
   var p=P();if(!p)return;
   var k=p.kb[kbIdx];if(!k)return;
   var orig=(k.known[itemIdx]||'').replace('\u26a0\ufe0f ','').replace('\u2705 ','');
+  if(_isKbPlaceholder(orig)) orig='';   // 占位符不回填进输入框，避免被原样保存成条目
   card.innerHTML=
     '<div style="padding:10px 13px">'+
       '<div style="font-size:11px;color:#6366f1;font-weight:650;margin-bottom:6px">修改内容（领导确认后写入知识库）</div>'+
@@ -5602,7 +5603,7 @@ function editKbItem(kbIdx,itemIdx){
         '<button onclick="pickLocalFile('+kbIdx+')" '+
           'style="padding:8px 12px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12.5px;color:#166534;cursor:pointer;font-weight:600">'+
           '📎 更多文件</button>'+
-        '<button onclick="kbDetail('+kbIdx+')" '+
+        '<button onclick="cancelKbEdit('+kbIdx+','+itemIdx+')" '+
           'style="padding:8px 12px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;color:#4a5568;cursor:pointer">取消</button>'+
       '</div>'+
     '</div>';
@@ -5630,12 +5631,30 @@ function saveKbEdit(kbIdx,itemIdx){
   toast('\u2705 已更新并写入知识库');
 }
 
+/* 【2026-09-23 修复】占位条目残留：原来 addKbItem 先把占位符 push 进 kb.known
+   再弹编辑框，用户点「取消」或关掉弹窗后，占位符就永久留在数据里。
+   政府端 13 处显示路径都用 _isJunkKbItem 过滤掉它，干部看不见；
+   但 kbReadiness 计分会把它算进待确认分母且永远无法确认——
+   实测随州 4 个项目各残留 6 条，确认率被从 100% 压到 60%、就绪分 100→92。
+   计分侧已在 index.html 同步过滤；这里堵住产生源：取消编辑时清掉空占位。 */
+var KB_ITEM_PLACEHOLDER='\u26a0\ufe0f 请在此输入补充内容（保存后写入知识库）';
+function _isKbPlaceholder(t){
+  return /请在此输入|保存后写入|请输入补充/.test(String(t||''));
+}
+/* 取消新增：仅当该条目仍是未填写的占位符时才移除，绝不碰已有真实内容 */
+function cancelKbEdit(kbIdx,itemIdx){
+  var p=P(), k=p&&p.kb&&p.kb[kbIdx];
+  if(k && k.known && itemIdx>=0 && itemIdx<k.known.length && _isKbPlaceholder(k.known[itemIdx])){
+    k.known.splice(itemIdx,1);
+    persist();
+  }
+  kbDetail(kbIdx);
+}
 function addKbItem(kbIdx){
   // 领导手动新增一条 known 条目
   var p=P();if(!p)return;
   var k=p.kb[kbIdx];if(!k)return;
-  var newEntry='\u26a0\ufe0f 请在此输入补充内容（保存后写入知识库）';
-  k.known.push(newEntry);
+  k.known.push(KB_ITEM_PLACEHOLDER);
   kbDetail(kbIdx);
   // 自动触发最后一条的编辑
   setTimeout(function(){editKbItem(kbIdx,k.known.length-1);},50);
