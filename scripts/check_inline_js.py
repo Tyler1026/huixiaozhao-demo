@@ -16,16 +16,17 @@ except ImportError:
 
 def check_file(path):
     try:
-        html = open(path, encoding="utf-8").read()
+        with open(path, encoding="utf-8") as source:
+            html = source.read()
     except FileNotFoundError:
-        print(f"[check] {path}: 文件不存在，跳过")
-        return True
+        print(f"[check] FAIL {path}: 必需页面不存在")
+        return False
 
     # 只取没有 src= 的内联 <script>...</script> 块（跳过外部CDN引入）
     blocks = re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", html, re.S)
     if not blocks:
-        print(f"[check] {path}: 未找到内联<script>块，跳过")
-        return True
+        print(f"[check] FAIL {path}: 未找到必需的内联<script>块")
+        return False
 
     if len(blocks) > 2:
         print(

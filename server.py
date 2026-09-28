@@ -1475,17 +1475,24 @@ class Handler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length)
         # 云端数据同步：POST /api/sync 合并保存（保护字段不被空值覆盖）
         if self.path == '/api/sync':
-            data_str = raw.decode('utf-8')
             try:
+                data_str = raw.decode('utf-8')
                 incoming = json.loads(data_str)
+                if not isinstance(incoming, dict):
+                    raise ValueError('sync payload must be an object')
                 if _PG_AVAIL and DATABASE_URL:
-                    existing = json.loads(_db_get() or '{}')
+                    stored = _db_get()
+                    if stored is None:
+                        raise RuntimeError('storage read failed; write refused')
+                    existing = json.loads(stored)
                 else:
                     try:
                         with open(SYNC_PATH, 'r', encoding='utf-8') as f2:
                             existing = json.loads(f2.read())
-                    except Exception:
+                    except FileNotFoundError:
                         existing = {}
+                if not isinstance(existing, dict):
+                    raise ValueError('stored state must be an object')
                 # -- 空 body 保护：整体为空或只有极少字段的写入直接拒绝 --
                 # 防止未登录/初始化态的浏览器把空 localStorage 推上来清空全库。
                 if isinstance(incoming, dict):
@@ -1768,6 +1775,12 @@ class Handler(BaseHTTPRequestHandler):
                 data_str = json.dumps(existing, ensure_ascii=False)
             except Exception as e:
                 print(f"[sync] merge error: {e}")
+                resp = json.dumps({'ok': False, 'error': 'sync validation or storage read failed'}).encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(resp)))
+                self.cors(); self.end_headers(); self.wfile.write(resp)
+                return
             if _PG_AVAIL and DATABASE_URL:
                 ok = _db_set(data_str)
                 resp = json.dumps({'ok': ok}).encode()
@@ -2047,7 +2060,8 @@ class Handler(BaseHTTPRequestHandler):
                     store['PROJECTS'] = projects
                     out_str = json.dumps(store, ensure_ascii=False)
                     if _PG_AVAIL and DATABASE_URL:
-                        _db_set(out_str)
+                        if not _db_set(out_str):
+                            raise RuntimeError('storage write failed')
                     else:
                         _file_snapshot()
                         with open(SYNC_PATH, 'w', encoding='utf-8') as f:
