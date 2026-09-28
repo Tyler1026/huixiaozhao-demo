@@ -27,8 +27,8 @@ jobs:
       - name: Backend reliability regression tests
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
 
-      - name: Demand submission regression tests
-        run: node --test tests/test_demand_submit.cjs
+      - name: Frontend regression tests
+        run: node --test tests/test_demand_submit.cjs tests/test_identity_client.cjs
 
       - name: Check ops.html / index.html inline <script> integrity
         run: python3 scripts/check_inline_js.py ops.html index.html
