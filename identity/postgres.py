@@ -44,5 +44,11 @@ class PostgresStore(Store):
             c.execute("CREATE UNIQUE INDEX IF NOT EXISTS one_admin ON users(role) WHERE role='platform_admin'")
             c.execute('''CREATE TABLE IF NOT EXISTS sessions(
               token TEXT PRIMARY KEY, csrf TEXT NOT NULL, user_id TEXT REFERENCES users(id), expires DOUBLE PRECISION)''')
+            c.execute('''CREATE TABLE IF NOT EXISTS service_credentials(
+              token TEXT PRIMARY KEY, org_id TEXT REFERENCES organizations(id), project_id TEXT NOT NULL, expires DOUBLE PRECISION)''')
+            c.execute('''CREATE TABLE IF NOT EXISTS deliveries(
+              org_id TEXT NOT NULL, project_id TEXT NOT NULL, delivery_id TEXT NOT NULL,
+              payload_hash TEXT NOT NULL, result_version INTEGER NOT NULL,
+              PRIMARY KEY(org_id, project_id, delivery_id))''')
             c.execute('''CREATE TABLE IF NOT EXISTS states(
               org_id TEXT PRIMARY KEY REFERENCES organizations(id), version INTEGER NOT NULL, data TEXT NOT NULL)''')

@@ -38,8 +38,25 @@ def make_server(store, port=0):
             if self.headers.get('Host') != expected_host:
                 return self.reply(403, {'error': 'invalid host'})
             mutating = self.command != 'GET'
-            if mutating and self.headers.get('Origin') != 'http://' + expected_host:
+            service_route = self.path == '/service/report-delivery' and self.command == 'POST'
+            if service_route and (self.headers.get('Cookie') or self.headers.get('Origin')):
+                return self.reply(403, {'error': 'machine credentials only'})
+            if not service_route and (mutating or self.headers.get('Origin')) and self.headers.get('Origin') != 'http://' + expected_host:
                 return self.reply(403, {'error': 'invalid origin'})
+            if self.command == 'GET' and self.path in ('/', '/identity/client.js', '/identity/tenant-page.js'):
+                from .page import page, ROOT
+                if self.path == '/':
+                    data, mime = page(), 'text/html; charset=utf-8'
+                else:
+                    name = 'client.cjs' if self.path.endswith('client.js') else 'tenant-page.js'
+                    data, mime = (ROOT / 'identity' / name).read_bytes(), 'application/javascript'
+                self.send_response(200)
+                self.send_header('Content-Type', mime)
+                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('X-Content-Type-Options', 'nosniff')
+                self.end_headers(); self.wfile.write(data)
+                return
             body = {}
             if mutating:
                 if self.headers.get('Transfer-Encoding'):
@@ -55,6 +72,23 @@ def make_server(store, port=0):
                         raise ValueError()
                 except (ValueError, TimeoutError):
                     return self.reply(400, {'error': 'invalid JSON'})
+            if service_route:
+                auth = self.headers.get('Authorization', '')
+                if not auth.startswith('Bearer '):
+                    return self.reply(401, {'error': 'service credential required'})
+                token = auth[7:]
+                try:
+                    store.authenticate_service(token)
+                except PermissionError:
+                    return self.reply(401, {'error': 'invalid service credential'})
+                if set(body) not in ({'project_id', 'text', 'version'}, {'project_id', 'text', 'version', 'delivery_id'}):
+                    return self.reply(400, {'error': 'invalid delivery fields'})
+                try:
+                    return self.reply(200, store.deliver_report(token, body['project_id'], body['text'], body['version'], body.get('delivery_id')))
+                except PermissionError:
+                    return self.reply(403, {'error': 'service scope denied'})
+                except ValueError as e:
+                    return self.reply(409 if str(e) == 'version conflict' else 400, {'error': str(e)})
             if self.path == '/auth/login' and self.command == 'POST':
                 ip = self.client_address[0]
                 now = time.monotonic()
@@ -85,12 +119,66 @@ def make_server(store, port=0):
                     store.authenticate(token, csrf=csrf)
                 except PermissionError:
                     return self.reply(403, {'error': 'invalid csrf'})
+            if self.command == 'POST' and self.path in ('/auth/members', '/auth/members/revoke'):
+                try:
+                    if self.path == '/auth/members':
+                        if set(body) != {'login', 'password'}:
+                            raise ValueError('invalid member fields')
+                        uid = store.add_member(principal, body['login'], body['password'])
+                        return self.reply(201, {'ok': True, 'id': uid})
+                    if set(body) != {'id'} or not isinstance(body['id'], str):
+                        raise ValueError('invalid member id')
+                    store.remove_member(principal, body['id'])
+                    return self.reply(200, {'ok': True})
+                except PermissionError:
+                    return self.reply(403, {'error': 'member operation forbidden'})
+                except ValueError as e:
+                    return self.reply(400, {'error': str(e)})
+            if self.path == '/auth/session' and self.command == 'GET':
+                return self.reply(200, store.resume(token))
             if self.path == '/auth/me' and self.command == 'GET':
-                return self.reply(200, principal)
+                return self.reply(200, {k: principal[k] for k in ('id', 'role', 'org_id')})
             if self.path == '/auth/logout' and self.command == 'POST':
                 store.logout(token)
                 return self.reply(200, {'ok': True},
                                   'hxz_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')
+            from . import compat
+            path = self.path.split('?', 1)[0]
+            if path in compat.BLOCKED_ROUTES:
+                return self.reply(403, {'error': 'route not enabled in tenant mode'})
+            if path == '/api/sync':
+                if '?' in self.path:
+                    return self.reply(400, {'error': 'tenant selectors are not accepted'})
+                try:
+                    if self.command == 'GET':
+                        return self.reply(200, compat.read(store, principal))
+                    if self.command == 'POST':
+                        return self.reply(200, compat.write(store, principal, body))
+                    return self.reply(405, {'error': 'method not allowed'})
+                except PermissionError:
+                    return self.reply(403, {'error': 'forbidden'})
+                except ValueError as e:
+                    return self.reply(409 if str(e) == 'version conflict' else 400, {'error': str(e)})
+            project_route = re.fullmatch(r'/api/projects/([a-zA-Z0-9_-]+)/(knowledge|report)', path)
+            if project_route:
+                if '?' in self.path:
+                    return self.reply(400, {'error': 'query selectors not accepted'})
+                from . import business
+                project_id, resource = project_route.groups()
+                try:
+                    if resource == 'knowledge' and self.command == 'GET':
+                        return self.reply(200, business.read_knowledge(store, principal, project_id))
+                    if resource == 'knowledge' and self.command == 'PUT':
+                        return self.reply(200, business.update_knowledge(store, principal, project_id, body))
+                    if resource == 'report' and self.command == 'GET':
+                        return self.reply(200, business.read_report(store, principal, project_id))
+                    return self.reply(405, {'error': 'method not allowed'})
+                except PermissionError:
+                    return self.reply(403, {'error': 'forbidden'})
+                except LookupError:
+                    return self.reply(404, {'error': 'resource not found'})
+                except ValueError as e:
+                    return self.reply(409 if str(e) == 'version conflict' else 400, {'error': str(e)})
             match = re.fullmatch(r'/orgs/([a-zA-Z0-9_-]+)/state', self.path)
             if match:
                 try:

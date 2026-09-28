@@ -50,7 +50,7 @@ class HTTPTests(unittest.TestCase):
         cookie, _ = self.login()
         self.assertEqual(self.request('GET', '/orgs/' + self.b + '/state', cookie=cookie)[0], 403)
         self.assertEqual(self.request('GET', '/orgs/' + self.a + '/state', cookie=cookie)[0], 200)
-        self.assertEqual(self.request('GET', '/api/sync', cookie=cookie)[0], 404)
+        self.assertEqual(self.request('GET', '/api/not-enabled', cookie=cookie)[0], 404)
 
     def test_csrf_origin_version_logout(self):
         cookie, csrf = self.login()
@@ -62,6 +62,16 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(self.request('PUT', path, payload, cookie=cookie, csrf=csrf)[0], 409)
         self.assertEqual(self.request('POST', '/auth/logout', {}, cookie=cookie, csrf=csrf)[0], 200)
         self.assertEqual(self.request('GET', path, cookie=cookie)[0], 401)
+
+    def test_session_resume_stable_csrf_and_cross_origin_denied(self):
+        cookie, original_csrf = self.login()
+        status, _, data = self.request('GET', '/auth/session', cookie=cookie)
+        self.assertEqual(data.get('csrf'), original_csrf)
+        self.assertEqual(status, 200)
+        self.assertEqual(data['principal']['org_id'], self.a)
+        self.assertEqual(self.request('GET', '/auth/session', cookie=cookie)[2]['csrf'], data['csrf'])
+        self.assertEqual(self.request('POST', '/api/sync', {'_version': 0}, cookie, data['csrf'])[0], 200)
+        self.assertEqual(self.request('GET', '/auth/session', cookie=cookie, origin='https://evil.test')[0], 403)
 
     def test_login_throttled(self):
         for _ in range(5):

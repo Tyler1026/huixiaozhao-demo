@@ -44,6 +44,46 @@ class PostgresTests(unittest.TestCase):
         self.assertCountEqual(results, ['saved', 'conflict'])
         self.assertEqual(self.store.get_state(self.principal, self.org)['version'], 1)
 
+    def test_member_revoke_and_old_principal_denied(self):
+        uid = self.store.add_member(self.principal, self.name + '-member', 'synthetic member password')
+        token, _ = self.store.login(self.name + '-member', 'synthetic member password')
+        member = self.store.authenticate(token)
+        self.store.put_state(member, self.org, {'projects': {'p': {}}}, 0)
+        self.store.remove_member(self.principal, uid)
+        with self.assertRaises(PermissionError):
+            self.store.get_state(member, self.org)
+
+    def test_service_delivery_replay_and_revocation(self):
+        import secrets
+        import time
+        from identity.services import digest
+        self.store.put_state(self.principal, self.org, {'projects': {'p': {}}}, 0)
+        token = secrets.token_urlsafe(32)
+        # Synthetic fixture only; issuance authority is covered by separate tests.
+        with self.store.db() as c:
+            c.execute('INSERT INTO service_credentials VALUES(?,?,?,?)', (digest(token), self.org, 'p', time.time()+60))
+        first = self.store.deliver_report(token, 'p', 'synthetic report', 1, delivery_id='job-1')
+        self.assertEqual(first, self.store.deliver_report(token, 'p', 'synthetic report', 1, delivery_id='job-1'))
+        with self.store.db() as c:
+            c.execute('DELETE FROM service_credentials WHERE token=?', (digest(token),))
+        with self.assertRaises(PermissionError):
+            self.store.deliver_report(token, 'p', 'synthetic report', 1, delivery_id='job-1')
+
+    def test_concurrent_delivery_same_id_returns_same_result(self):
+        import secrets
+        import time
+        from identity.services import digest
+        self.store.put_state(self.principal, self.org, {'projects': {'p': {}}}, 0)
+        token = secrets.token_urlsafe(32)
+        with self.store.db() as c:
+            c.execute('INSERT INTO service_credentials VALUES(?,?,?,?)', (digest(token), self.org, 'p', time.time()+60))
+        def send(_):
+            return self.store.deliver_report(token, 'p', 'same report', 1, delivery_id='concurrent-job')
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(send, [1, 2]))
+        self.assertEqual(results, [{'ok': True, 'version': 2}] * 2)
+        self.assertEqual(self.store.get_state(self.principal, self.org)['version'], 2)
+
     def test_duplicate_rollback(self):
         with self.store.db() as c:
             before = c.execute('SELECT count(*) FROM organizations').fetchone()[0]
