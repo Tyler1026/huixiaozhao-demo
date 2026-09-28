@@ -6507,9 +6507,11 @@ function submitDemand(){
   // 随方向变化的 topic 一起混入招商对接，且各方向线索全堆到父项目上。
   // 幂等：同一城市同一方向已提交过则不重复建。
   var dupKey=_findExistingDemand(p.city, topic);
-  if(dupKey){toast('该方向已提交需求池，可在招商对接页撤回'); return;}
-
-  var key='proj_'+Date.now().toString(36);
+  // 同一需求重复点击只重试同步，不能重复创建，也不能假定已入库。
+  var key=dupKey||('proj_'+Date.now().toString(36));
+  window._demandSyncPending=window._demandSyncPending||{};
+  if(window._demandSyncPending[key]){toast('正在提交，请稍候'); return;}
+  if(!dupKey){
   PROJECTS[key]={
     id:key, city:p.city, org:p.org, who:p.who,
     topic:topic, stage:3, isDemand:true,
@@ -6533,10 +6535,24 @@ function submitDemand(){
   });
   // 待接触企业只由管理端 AI 漏斗精选推送，政府端不再自动派生「脱敏企业」假线索
   // deriveCluesFromReport(key);
+  }
   persist();
-  // 招商需求立即同步到服务器（绕过5秒防抖），防止刷新丢失、管理端看不到
-  try{ fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:localStorage.getItem(LS_KEY)||'{}'}).catch(function(){}); }catch(_){}
-  toast('✓ 招引需求已提交，待管理端 AI 漏斗推送精准企业');
+  window._demandSyncPending[key]=true;
+  toast('正在提交，请稍候');
+  return Promise.resolve().then(function(){
+    var payload=JSON.parse(localStorage.getItem(LS_KEY)||'{}');
+    if(!payload.PROJECTS || !payload.PROJECTS[key]) throw new Error('本地保存失败');
+    return fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  }).then(function(response){
+    if(!response.ok) throw new Error('HTTP '+response.status);
+    return response.json();
+  }).then(function(result){
+    if(!result || result.ok!==true) throw new Error((result&&(result.error||result.rejected))||'服务端未确认保存');
+    toast('招引需求已提交，待管理端 AI 漏斗推送精准企业');
+  }).catch(function(error){
+    console.warn('[demand] sync failed:',error.message);
+    toast('提交未确认：'+error.message+'；请重试（不会重复创建需求）');
+  }).then(function(){delete window._demandSyncPending[key];});
 }
 
 // REPORTSTATE: 存储已生成的报告
