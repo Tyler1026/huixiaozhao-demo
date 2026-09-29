@@ -25,25 +25,29 @@ class SyncRouteTests(unittest.TestCase):
                 return node
         expected=Dependencies().visit(original)
         extracted_fn=next(n for n in ast.parse(Path(sync_route.__file__).read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='handle_sync')
-        # 【2026-09-29】邀请码功能带来两处偏移，均不存在于旧基线 21baa54:server.py 里：
-        # (1) `_protected` 列表字面量新增了一个 'INVITE_CODES' 元素（防止空值裸覆盖邀请码库）；
-        # (2) `for k,v in incoming.items():` 循环体里新增一段
+        # 【2026-09-29】邀请码功能与城市基础包指针表带来两类偏移，均不存在于旧基线
+        # 21baa54:server.py 里：
+        # (1) `_protected` 列表字面量新增 'INVITE_CODES' / 'CITY_BASE_PACKAGES' 两个元素
+        #     （分别防止空值裸覆盖邀请码库 / 城市基础包指针表）；
+        # (2) `for k,v in incoming.items():` 循环体里新增
         #     `if k == 'INVITE_CODES': ... continue` 分支（改走专用合并函数）。
+        #     CITY_BASE_PACKAGES 走默认的逐key覆盖分支，不需要单独的if分支。
         # 这条门禁的职责是"证明继承自旧版的逐字段合并逻辑一字未改"，不是"禁止任何新字段
-        # 类型"——所以用 NodeTransformer 把这两处新增内容从树里物理还原后再比较，而不是
+        # 类型"——所以用 NodeTransformer 把这些新增内容从树里物理还原后再比较，而不是
         # 放宽比较标准去容纳它们。新增行为由下面 test_invite_codes_branch_* 单独验证。
+        NEW_KEYS = {'INVITE_CODES', 'CITY_BASE_PACKAGES'}
         class StripInviteCodesAdditions(ast.NodeTransformer):
             def visit_If(self,node):
                 self.generic_visit(node)
                 test=node.test
                 if (isinstance(test,ast.Compare) and isinstance(test.left,ast.Name) and test.left.id=='k'
-                        and any(isinstance(c,ast.Constant) and c.value=='INVITE_CODES' for c in test.comparators)):
+                        and any(isinstance(c,ast.Constant) and c.value in NEW_KEYS for c in test.comparators)):
                     return None
                 return node
             def visit_List(self,node):
                 self.generic_visit(node)
-                if any(isinstance(e,ast.Constant) and e.value=='INVITE_CODES' for e in node.elts):
-                    node.elts=[e for e in node.elts if not (isinstance(e,ast.Constant) and e.value=='INVITE_CODES')]
+                if any(isinstance(e,ast.Constant) and e.value in NEW_KEYS for e in node.elts):
+                    node.elts=[e for e in node.elts if not (isinstance(e,ast.Constant) and e.value in NEW_KEYS)]
                 return node
         extracted=StripInviteCodesAdditions().visit(extracted_fn)
         ast.fix_missing_locations(extracted)

@@ -2793,7 +2793,7 @@ function interviewDone(){
   // 将有答案的问答存入kb"产业分析AI问答"板块（供管理端城市智库RAG查看）
   var _qaItems=_interviewState.answers.filter(function(a){return a&&a.text;}).map(function(a){
     var qObj=_interviewState.questions.find(function(q){return q.id===a.id;});
-    return {text:'【'+_interviewState.topic+'】'+qObj.q+'\n答：'+a.text, origin:'user', nature:'interview'};
+    return {text:'【'+_interviewState.topic+'】'+qObj.q+'\n答：'+a.text, origin:'user', nature:'interview', account:(AUTH&&AUTH.user)||''};
   });
   if(_qaItems.length){
     var p=P(); if(p&&p.kb){

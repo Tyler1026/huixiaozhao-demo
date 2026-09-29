@@ -1057,6 +1057,11 @@ class Handler(BaseHTTPRequestHandler):
                     # origin: admin(管理员) / user(前端用户)；nature: support(佐证) / fix(修正/修改) / confirm(确认)
                     origin = body.get('origin', 'admin')
                     nature = body.get('nature', 'support')   # 默认佐证
+                    # 【2026-09-29】by 此前只写进 p.kbUploads[] 审计日志（整批上传的元信息），
+                    # 没有落到每条 chunk/annotation 本身，导致前端逐条渲染时读不到"是谁上传的"，
+                    # 徽标只能显示笼统的"管理员/用户"。现在把它也带进每条记录，字段名对齐前端
+                    # ragOriginStyle() 读取的 account。
+                    by_account = body.get('by', '')
                     import time as _tt
                     _ts = int(_tt.time() * 1000)
                     # 切分文档为结构化 chunks（每条带来源标记，前端据此着色）
@@ -1068,7 +1073,7 @@ class Handler(BaseHTTPRequestHandler):
                         if _is_noise_chunk(para):   # 过滤附注/免责/页码等无价值模板话
                             continue
                         chunks.append({'text': para, 'origin': origin, 'nature': nature,
-                                       'src': filename, 'ts': _ts})
+                                       'src': filename, 'ts': _ts, 'account': by_account})
                     # 找/建目标主题
                     tp = next((t for t in p['kb'] if t.get('t') == topic), None)
                     if not tp:
@@ -1156,7 +1161,7 @@ class Handler(BaseHTTPRequestHandler):
                                 # 就地标注到已有条目
                                 best.setdefault('annotations', []).append({
                                     'origin': origin, 'nature': nature, 'src': filename,
-                                    'text': nc['text'], 'ts': _ts})
+                                    'text': nc['text'], 'ts': _ts, 'account': by_account})
                                 matched_ct += 1
                             else:
                                 leftover.append(nc)

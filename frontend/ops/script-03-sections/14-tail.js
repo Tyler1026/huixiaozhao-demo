@@ -64,6 +64,7 @@ function restore(){
       if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
       if(data.CITY_ACCOUNTS) CITY_ACCOUNTS=data.CITY_ACCOUNTS;
       if(data.INVITE_CODES) INVITE_CODES=data.INVITE_CODES;
+      if(data.CITY_BASE_PACKAGES) CITY_BASE_PACKAGES=data.CITY_BASE_PACKAGES;
       if(data.RESET_GEN) RESET_GEN=data.RESET_GEN;
       console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
       return true;

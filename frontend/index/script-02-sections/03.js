@@ -3,6 +3,25 @@ var DEMANDS=[];
 /* 目标企业库（管理端录入，跨端同步供政府端产业链图谱关联展示） */
 var OPS_ENT=OPS_ENT||[];
 
+/* 【2026-09-29】城市基础包：{城市名: 权威projKey}，轻量指针表，不冗余存数据。
+   权威projKey下 kb[].known[] 里 nature==='base' 的条目才是"基础城市包"内容
+   （14-Agent流水线首轮产出），其余 nature（support/interview/fix）是各工作区
+   自己的补充材料，永远不共享、不进这份指针指向的引用。
+   新工作区不复制这234条到自己的kb里——展示时实时读取本函数，真正共享引用，
+   而不是创建时拷贝一份快照（快照会在源头更新后过期）。 */
+var CITY_BASE_PACKAGES=CITY_BASE_PACKAGES||{};
+function getCityBasePackage(city){
+  var authorityKey=CITY_BASE_PACKAGES[city];
+  var authority=authorityKey&&PROJECTS[authorityKey];
+  if(!authority||!Array.isArray(authority.kb)) return null; // 该城市尚无基础包，调用方应展示真正的空，不是占位假文本
+  return authority.kb.map(function(topic){
+    var baseKnown=(topic.known||[]).filter(function(it){
+      return it&&typeof it==='object'&&it.nature==='base';
+    });
+    return {icon:topic.icon,t:topic.t,sub:topic.sub,tag:topic.tag,known:baseKnown};
+  });
+}
+
 
 
 

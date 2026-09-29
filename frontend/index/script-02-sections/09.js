@@ -357,20 +357,28 @@ function unlockView(v){
   go(v);
 }
 
-/* 城市智库完成度进度条内部 HTML（供 sidebar 首渲染 + 确认/上传后局部刷新复用） */
+/* 城市智库完成度进度条内部 HTML（供 sidebar 首渲染 + 确认/上传后局部刷新复用）
+   【2026-09-29】视觉权重提升：此前百分比12px/提示文字11px，跟旁边24px的<h1>
+   和14px的产业卡片标题比例严重失调，用户反馈"看起来跟丢了一样"。第一版改得
+   偏重（22px+10px粗条+描边），用户反馈"太粗了，含蓄一点"，收敛为更轻的版本：
+   不描边、底色更淡、字号克制，够看清但不抢<h1>的视觉。 */
 function kbPageProgressInner(r){
   r=r||kbReadiness();
   var warn='⚠️'; var info='ⓘ';
-  return '<div style="display:flex;align-items:center;gap:10px;margin-top:8px">'+
-    '<div style="flex:1;background:#f0f4ff;border-radius:4px;height:6px;overflow:hidden">'+
-      '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:4px;transition:width .4s"></div>'+
+  var tint=r.color+'0d'; // 更淡的底色（透明度从14降到0d）
+  return '<div style="display:flex;align-items:center;gap:12px;margin-top:9px;padding:9px 14px;border-radius:8px;background:'+tint+'">'+
+    '<span style="font-size:16px;font-weight:650;color:'+r.color+';line-height:1;white-space:nowrap">'+r.score+'%</span>'+
+    '<div style="flex:1;min-width:0">'+
+      '<div style="background:#fff;border-radius:3px;height:6px;overflow:hidden;box-shadow:inset 0 0 0 1px '+r.color+'1f">'+
+        '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:3px;transition:width .4s"></div>'+
+      '</div>'+
+      '<div style="margin-top:4px;font-size:12px;font-weight:550;color:'+r.color+'">'+r.label+
+        '<span title="计算方式：智库覆盖度×80% + 上传材料×10%（上限 20%）+ 确认'+warn+'事项×20%"'+
+          ' style="font-size:11px;color:#9aa5b5;cursor:help;margin-left:4px;font-weight:400">'+info+'</span>'+
+      '</div>'+
     '</div>'+
-    '<span style="font-size:12px;font-weight:700;color:'+r.color+'">'+r.score+'%</span>'+
-    '<span style="font-size:11px;color:'+r.color+'">'+r.label+'</span>'+
-    '<span title="计算方式：智库覆盖度×80% + 上传材料×10%（上限 20%）+ 确认'+warn+'事项×20%"'+
-      ' style="font-size:11px;color:#9aa5b5;cursor:help;margin-left:2px">'+info+'</span>'+
   '</div>'+
-  (r.score<80?'<p style="font-size:11.5px;color:#f59e0b;margin:5px 0 0">⚡ 上传越多材料、确认越多结论，研判数据可靠性越高（差 '+(80-r.score)+'% 自动解锁后续步骤）</p>':'');
+  (r.score<80?'<p style="font-size:11.5px;color:#a16207;margin:6px 0 0;padding:6px 12px;background:#fdf6e8;border-radius:6px">⚡ 上传越多材料、确认越多结论，研判数据可靠性越高（差 '+(80-r.score)+'% 自动解锁后续步骤）</p>':'');
 }
 function kbProgressInner(r){
   r=r||kbReadiness();

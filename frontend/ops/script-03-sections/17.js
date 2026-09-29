@@ -53,8 +53,23 @@ function opsTopbarV2(){
       '<span style="font-size:12px;color:#94a3b8">' + OPS_ENT.length + ' 家企业</span>' +
     '</div>' +
     '<div style="flex:1"></div>' +
-    '' +
+    '<div style="display:flex;align-items:center;gap:6px" title="\u5f53\u524d\u64cd\u4f5c\u4eba\u540d\u5b57\uff0c\u5c06\u8ddf\u968f\u4f60\u4e0a\u4f20\u7684\u6bcf\u4e00\u6761\u667a\u5e93\u6750\u6599\uff0c\u65b9\u4fbf\u5176\u4ed6\u4eba\u5728\u4e2a\u6027\u5316\u6743\u91cd\u5220\u9664\u7248\u6837\u4e2d\u5e94\u7528\u5230\u9700\u8981\u7684\u5730\u65b9">' +
+      '<span style="font-size:11px;color:#94a3b8">\u64cd\u4f5c\u4eba</span>' +
+      '<input id="opsOperatorInput" value="' + ragEsc(getOpsOperator()) + '" placeholder="\u8bf7\u8f93\u5165\u4f60\u7684\u540d\u5b57" onchange="setOpsOperator(this.value)" style="width:96px;min-height:26px;padding:0 8px;border:1px solid #334155;border-radius:6px;background:#152238;color:#e2e8f0;font-size:12px;outline:0">' +
+    '</div>' +
   '</div>';
+}
+/* 【2026-09-29】管理端无登录态，"当前操作人"是本地轻量设置（localStorage持久化），
+   随每次上传/入库写进 chunk.account，供 ragOriginStyle() 展示具体是谁上传的材料。
+   不是真正的账号鉴权，只是一个自报家门的标签——足够解决"避免误判材料来源"这个
+   展示层需求，不需要为管理端引入完整登录体系。 */
+var OPS_OPERATOR_KEY='huixiaozhao_ops_operator';
+function getOpsOperator(){
+  try{ return localStorage.getItem(OPS_OPERATOR_KEY)||''; }catch(e){ return ''; }
+}
+function setOpsOperator(name){
+  name=(name||'').trim();
+  try{ localStorage.setItem(OPS_OPERATOR_KEY, name); }catch(e){}
 }
 
 function opsTabBar(){
@@ -82,8 +97,49 @@ function opsTabBar(){
 
 /* ══ Tab: 城市智库 RAG（材料·检索·推送日志）══ */
 var ragCity=null, ragTopic=0, ragQuery='', ragHits=null, ragLog=null, ragFilter='';
+var ragOverviewOpen=true; // 工作区总览面板默认展开
 // 对话更新 RAG：多轮消息 [{role,content}]；ragChatPending=可入库的最近一条 AI 结论草稿
 var ragChatMsgs=[], ragChatBusy=false, ragChatPending=null;
+/* 【2026-09-29】工作区总览：ragCityOptions() 的下拉框按城市名去重折叠，同城市名的
+   多个独立projKey(邀请码各自新建)只露出材料量最大的那个，管理员完全看不到、也管不
+   到其他实例——这是"数据没有串，但管理端UI层面把它们藏起来了"的隔离盲点。
+   本面板不折叠，按城市分组列出全部projKey，点击任意一项直接切到该工作区。 */
+function ragWorkspaceOverview(activeKey){
+  var keys=Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&Array.isArray(p.kb);});
+  if(keys.length<=1) return ''; // 只有一个工作区时不需要总览，避免空占位打扰
+  var byCity={};
+  keys.forEach(function(k){ var c=PROJECTS[k].city||k; (byCity[c]=byCity[c]||[]).push(k); });
+  var multiCityCount=Object.keys(byCity).filter(function(c){return byCity[c].length>1;}).length;
+  var rows=Object.keys(byCity).sort().map(function(city){
+    var ks=byCity[city];
+    var itemsHtml=ks.map(function(k){
+      var p=PROJECTS[k];
+      var n=(p.kb||[]).reduce(function(s,t){return s+(t.known||[]).length;},0);
+      var inv=Object.keys(INVITE_CODES||{}).find(function(c){return INVITE_CODES[c].projKey===k;});
+      var isOn=(k===activeKey);
+      return '<div onclick="ragCity=\''+k+'\';ragTopic=0;ragHits=null;renderOpsV2()" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;cursor:pointer;background:'+(isOn?'#eff6ff':'transparent')+';border:1px solid '+(isOn?'#bfdbfe':'transparent')+'">'+
+        '<span style="flex:0 0 auto;width:6px;height:6px;border-radius:50%;background:'+(n>0?'#0aa696':'#c7ced9')+'"></span>'+
+        '<span style="font-family:ui-monospace,monospace;font-size:11px;color:#5a7398;flex:0 0 auto">'+k+'</span>'+
+        (inv?'<span style="font-size:10.5px;color:#7c8aa0">邀请码 '+inv+'</span>':'<span style="font-size:10.5px;color:#c7ced9">非邀请码创建</span>')+
+        '<span style="flex:1"></span>'+
+        '<span style="font-size:11.5px;color:'+(isOn?'#1d4ed8':'#0b183b')+';font-weight:'+(isOn?'700':'500')+'">'+n+' 条材料</span>'+
+      '</div>';
+    }).join('');
+    return '<div style="margin-bottom:6px">'+
+      '<div style="font-size:12px;font-weight:700;color:#0b183b;padding:4px 12px">'+ragEsc(city)+(ks.length>1?' <span style="color:#c07a00;font-weight:600">· '+ks.length+' 个独立工作区，互不共享数据</span>':'')+'</div>'+
+      itemsHtml+
+    '</div>';
+  }).join('');
+  return '<div style="margin-bottom:16px;border:1px solid #e8edf5;border-radius:10px;background:#fff;overflow:hidden">'+
+    '<button onclick="ragOverviewOpen=!ragOverviewOpen;renderOpsV2()" style="width:100%;display:flex;align-items:center;gap:8px;padding:11px 16px;border:none;background:#fafbfd;cursor:pointer;text-align:left">'+
+      '<span style="font-size:13px;font-weight:700;color:#0b183b">🗺️ 工作区总览</span>'+
+      '<span style="font-size:11.5px;color:#9aa5b5">'+keys.length+' 个独立工作区 · '+Object.keys(byCity).length+' 个城市'+(multiCityCount?' · '+multiCityCount+' 个城市有多份工作区':'')+'</span>'+
+      '<span style="flex:1"></span>'+
+      '<span style="font-size:12px;color:#9aa5b5">'+(ragOverviewOpen?'收起 ▲':'展开 ▼')+'</span>'+
+    '</button>'+
+    (ragOverviewOpen?'<div style="padding:10px 12px;max-height:260px;overflow-y:auto">'+rows+'</div>':'')+
+  '</div>';
+}
 function ragProjKey(){
   // 【2026-09-18】放宽：原来要求 kb 里已有材料，导致「＋新增城市」建的空城市
   // 会在下面 keys.indexOf(ragCity) 处被踢回旧城市，新城市切不进去也传不了材料。
@@ -141,6 +197,7 @@ function opsRag(){
   var initT=p.kbInitTs?new Date(p.kbInitTs):null;
   var initStr=initT?(initT.getMonth()+1)+'/'+initT.getDate()+' '+initT.getHours()+':'+('0'+initT.getMinutes()).slice(-2):'—';
   return '<div style="padding:24px">'+
+    ragWorkspaceOverview(key)+
     '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'+
       '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">城市智库 RAG</h1>'+
       '<select onchange="ragCity=this.value;ragTopic=0;ragHits=null;renderOpsV2()" style="min-height:34px;padding:4px 10px;border:1px solid #d8e0ed;border-radius:8px;font-size:13px">'+ragCityOptions()+'</select>'+
@@ -280,7 +337,7 @@ function ragDoUpload(key, text, name, fileB64){
     var mode=nature==='fix'?'replace':'append';
     var nm=document.getElementById('ragUpFileName'); if(nm)nm.textContent='正在解析入库…';
     var payload={projectKey:key,city:p.city,topic:finalTopic,filename:name||'上传文件',
-        mode:mode,origin:'admin',nature:nature,by:'管理端·周总',source:'file'};
+        mode:mode,origin:'admin',nature:nature,by:(getOpsOperator()||'管理端'),source:'file'};
     if(fileB64){ payload.fileB64=fileB64; } else { payload.text=text; }
     fetch('/api/kb-upload',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(payload)})
@@ -464,7 +521,7 @@ function ragChatCommit(msgIdx, key){
       var mode=nature==='fix'?'replace':'append';
       fetch('/api/kb-upload',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({projectKey:key,city:p.city,topic:topic,text:m.content,
-          filename:'对话确认',mode:mode,origin:'admin',nature:nature,by:'管理端·对话',source:'chat'})})
+          filename:'对话确认',mode:mode,origin:'admin',nature:nature,by:(getOpsOperator()||'管理端'),source:'chat'})})
         .then(function(r){return r.json();}).then(function(res){
           if(res.ok){
             var extra=res.matched?('，命中已有 '+res.matched+' 条'):'';
@@ -539,15 +596,21 @@ function ragTopicNav(p){
 }
 /* 结构化渲染一条智库材料：标题章 → 正文（加粗、数字高亮、关键词高亮）→ 来源徽章 */
 // 来源+性质 → 标识条颜色与徽章
-function ragOriginStyle(origin,nature){
+// 【2026-09-29】徽标文字改为具体账号名（如"kbtest3"）而不是笼统的"管理员/用户"，
+// 方便管理员核对材料到底是谁上传的、避免误判"这条是不是别的团队搞混了"。
+// account 缺失时（历史数据/系统级写入）降级为原来的通用角色词。
+function ragOriginStyle(origin,nature,account){
+  var who=account?ragEsc(account):null;
   // AI 采集=中性；管理员佐证=绿 / 修正=黄；用户佐证或确认=绿 / 修改=红
   if(origin==='admin'){
-    return nature==='fix'?{bar:'#e0a516',badge:'🟡 管理员修正',bg:'#fffaf0',bc:'#f0d99a',bt:'#8a6d1b'}
-                         :{bar:'#0aa696',badge:'🟢 管理员佐证',bg:'#f2fbf9',bc:'#bfe5e0',bt:'#087067'};
+    var adminLabel=who||'管理员';
+    return nature==='fix'?{bar:'#e0a516',badge:'🟡 '+adminLabel+' 修正',bg:'#fffaf0',bc:'#f0d99a',bt:'#8a6d1b'}
+                         :{bar:'#0aa696',badge:'🟢 '+adminLabel+' 佐证',bg:'#f2fbf9',bc:'#bfe5e0',bt:'#087067'};
   }
   if(origin==='user'){
-    if(nature==='fix') return {bar:'#e0574a',badge:'🔴 用户修改',bg:'#fdf3f2',bc:'#f2c3bd',bt:'#b0362a'};
-    return {bar:'#0aa696',badge:(nature==='confirm'?'🟢 用户确认':'🟢 用户补充'),bg:'#f2fbf9',bc:'#bfe5e0',bt:'#087067'};
+    var userLabel=who||'用户';
+    if(nature==='fix') return {bar:'#e0574a',badge:'🔴 '+userLabel+' 修改',bg:'#fdf3f2',bc:'#f2c3bd',bt:'#b0362a'};
+    return {bar:'#0aa696',badge:(nature==='confirm'?'🟢 '+userLabel+' 确认':'🟢 '+userLabel+' 补充'),bg:'#f2fbf9',bc:'#bfe5e0',bt:'#087067'};
   }
   return null; // AI 基础材料：无标识条
 }
@@ -578,8 +641,8 @@ function ragMdTables(s){
 }
 function ragRenderChunk(raw, idx, hl){
   // 兼容结构化 chunk（对象）与旧字符串
-  var origin='ai', nature='base', srcName='', annots=[];
-  if(raw && typeof raw==='object'){ origin=raw.origin||'ai'; nature=raw.nature||'base'; srcName=raw.src||''; annots=raw.annotations||[]; raw=raw.text||''; }
+  var origin='ai', nature='base', srcName='', annots=[], account='';
+  if(raw && typeof raw==='object'){ origin=raw.origin||'ai'; nature=raw.nature||'base'; srcName=raw.src||''; annots=raw.annotations||[]; account=raw.account||''; raw=raw.text||''; }
   var text=String(raw);
   // 1) 抽取【标题】前缀
   var title=null; var m=text.match(/^【([^】]{2,40})】\s*/);
@@ -611,8 +674,8 @@ function ragRenderChunk(raw, idx, hl){
       (gov?'🏛':'🔗')+' '+dom+(s.date?' · '+s.date:'')+' ↗</a>';
   }).join(' ');
   if(pending) srcHtml+=(srcHtml?' ':'')+'<span style="display:inline-flex;font-size:10.5px;padding:2px 8px;border-radius:9px;background:#fff0de;color:#a34c09;border:1px solid #f2d9b8">⚠ 待核实</span>';
-  // 来源标识：AI 基础材料无条；管理员/用户标注加彩色左条+徽章
-  var os=ragOriginStyle(origin,nature);
+  // 来源标识：AI 基础材料无条；具体账号标注加彩色左条+徽章
+  var os=ragOriginStyle(origin,nature,account);
   var origBadge=os?('<span style="display:inline-flex;align-items:center;font-size:10px;padding:2px 8px;border-radius:9px;background:'+os.bg+';color:'+os.bt+';border:1px solid '+os.bc+'">'+os.badge+(srcName?' · '+ragEsc(srcName):'')+'</span>'):'';
   var barCss=os?('border-left:3px solid '+os.bar+';'):'';
   var cardBg=os?os.bg:'#fff';
@@ -632,9 +695,9 @@ function ragRenderChunk(raw, idx, hl){
 function ragAnnots(annots){
   return '<div style="margin-top:7px;margin-left:24px;padding-left:10px;border-left:2px solid #e2e8f2;display:flex;flex-direction:column;gap:5px">'+
     annots.map(function(a){
-      var os=ragOriginStyle(a.origin,a.nature);
+      var os=ragOriginStyle(a.origin,a.nature,a.account);
       if(!os) return '';
-      var who=(a.origin==='admin'?'管理员':'用户');
+      var who=a.account?ragEsc(a.account):(a.origin==='admin'?'管理员':'用户');
       var act=a.nature==='fix'?'修正':(a.nature==='confirm'?'确认':'佐证');
       return '<div style="font-size:11px;color:'+os.bt+';background:'+os.bg+';border:1px solid '+os.bc+';border-radius:7px;padding:5px 9px">'+
         '<b>'+(a.nature==='fix'?(a.origin==='user'?'🔴':'🟡'):'🟢')+' '+who+act+'</b>'+(a.src?' · '+ragEsc(a.src):'')+

@@ -81,7 +81,9 @@ def handle_sync(self, raw, deps):
             _apply_kb_item_tombs(existing.get('PROJECTS'), _itomb)
         # 【2026-09-29】INVITE_CODES 邀请码库同理需要空值保护——注册页/ops页在
         # 未加载完该变量前若先同步一次，空对象会把已生成的全部邀请码裸覆盖清空。
-        _protected = ['OPS_ENT','DEMANDS','KB_CHAT','PENDING_CONFIRMS','KB_CONFIRMS','REPORT_REQUESTS','CITY_ACCOUNTS','INVITE_CODES']
+        # CITY_BASE_PACKAGES 同理：{城市名: 权威projKey} 的轻量指针表，未加载完时
+        # 空对象也不能裸覆盖，否则所有城市瞬间失去基础包引用。
+        _protected = ['OPS_ENT','DEMANDS','KB_CHAT','PENDING_CONFIRMS','KB_CONFIRMS','REPORT_REQUESTS','CITY_ACCOUNTS','INVITE_CODES','CITY_BASE_PACKAGES']
         # REPORT_REQUESTS 按 id 合并且状态只进不退（pending<running<done/failed）
         # 防止管理端旧快照 persist 把流水线已推进的状态倒改回 pending
         _rr_rank = {'pending': 0, 'running': 1, 'failed': 2, 'done': 3}

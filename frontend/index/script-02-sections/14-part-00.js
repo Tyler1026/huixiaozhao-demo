@@ -143,6 +143,7 @@ function persist(){
       REPORT_HISTORY:REPORT_HISTORY,
       USER_PROFILES:(Object.keys(USER_PROFILES||{}).length?USER_PROFILES:undefined),
       INVITE_CODES:(Object.keys(INVITE_CODES||{}).length?INVITE_CODES:undefined),
+      CITY_BASE_PACKAGES:(Object.keys(CITY_BASE_PACKAGES||{}).length?CITY_BASE_PACKAGES:undefined),
       OPS_ENT:typeof OPS_ENT!=='undefined'?OPS_ENT:[],
       DELETED_PROJECTS:window.DELETED_PROJECTS||[],
       DELETED_CLUES:window.DELETED_CLUES||[],

@@ -37,6 +37,7 @@ function persist(){
       USER_PROFILES:USER_PROFILES,
       CITY_ACCOUNTS:CITY_ACCOUNTS,
       INVITE_CODES:INVITE_CODES,
+      CITY_BASE_PACKAGES:CITY_BASE_PACKAGES,
       RESET_GEN:(typeof RESET_GEN!=='undefined'?RESET_GEN:null),
       DELETED_CLUES:window.DELETED_CLUES||[],
       syncTs:Date.now()

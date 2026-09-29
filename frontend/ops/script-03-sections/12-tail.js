@@ -1468,6 +1468,20 @@ var REPORT_HISTORY = REPORT_HISTORY || {};
 var USER_PROFILES = (typeof USER_PROFILES!=='undefined'&&USER_PROFILES) || {};  // 政府端注册用户资料，跨端同步查看
 /* 邀请码库：结构同政府端 06.js 里的说明。管理端(/ops)是唯一可写入新码的入口。 */
 var INVITE_CODES = (typeof INVITE_CODES!=='undefined'&&INVITE_CODES) || {};
+/* 城市基础包指针表：结构同政府端 03.js 里的说明。管理端在「城市智库RAG」页
+   用它判断/管理某城市的权威基础包来自哪个projKey。 */
+var CITY_BASE_PACKAGES = (typeof CITY_BASE_PACKAGES!=='undefined'&&CITY_BASE_PACKAGES) || {};
+function getCityBasePackage(city){
+  var authorityKey=CITY_BASE_PACKAGES[city];
+  var authority=authorityKey&&PROJECTS[authorityKey];
+  if(!authority||!Array.isArray(authority.kb)) return null;
+  return authority.kb.map(function(topic){
+    var baseKnown=(topic.known||[]).filter(function(it){
+      return it&&typeof it==='object'&&it.nature==='base';
+    });
+    return {icon:topic.icon,t:topic.t,sub:topic.sub,tag:topic.tag,known:baseKnown};
+  });
+}
 
 function saveReportHistory(){try{localStorage.setItem('hxz_rpt_history',JSON.stringify(REPORT_HISTORY));}catch(e){}}
 function loadReportHistory(){try{var d=localStorage.getItem('hxz_rpt_history');if(d)REPORT_HISTORY=JSON.parse(d);}catch(e){}}

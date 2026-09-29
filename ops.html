@@ -1283,109 +1283,23 @@ function createProject(){
 
 /* 根据城市名生成城市智库四大主题的核心结论（公开信息初判） */
 function generateKbConclusions(city){
-  // 随州专项真实数据（源自慧小招2026-07报告）
-  // 通用城市走通用骨架；随州走完整真实数据
-  var isSuizhou=(city.indexOf('随州')>=0);
-  if(isSuizhou){
-    return {
-      industry:{
-        sub:'专用汽车·安全应急·香菇三大主导产业集群',
-        tag:'慧小招实测 · 2026-07',
-        known:[
-          '专用汽车：2025年产值703亿元(+12.1%)，年产16万辆，全国占比>10%，出口+71%全省第一，资质企业97家/零部件企业220家',
-          '安全应急：2023年总产值502亿，其中移动应急装备(专用车)324亿；篷布产量占全国30%，风机0.9万台/年',
-          '香菇：2024年全产业链产值超500亿，区域品牌价值205.8亿(连续3年全国食药用菌第一)，年产约70万吨(全球白花菇约50%)',
-          '链主企业：程力(整车)、新楚风(氢能整车·49T氢重卡已量产)、齐星(整车/无人机指挥车)、江南专汽(消防车)、品源("菇的辣克"4亿美元出口订单)',
-          '核心缺口：氢燃料电池电堆(占整车成本53%全部外购)、储氢瓶(14%)、应急机器人/无人机本体(依赖外采)、香菇多糖提取(仅2家)、菌种自主权(国外垄断)',
-          '⚠️ 2026年各产业链方向优先招引顺序、重点突破的细分环节，请领导确认'
-        ]
-      },
-      park:{
-        sub:'随州高新区(国家级)·曾都经开区·专汽产业园·随县香菇产业园',
-        tag:'慧小招实测 · 2026-07',
-        known:[
-          '随州高新区：2015年升级国家级，拥有"移动应急装备国家创新型产业集群"等国字号11块',
-          '曾都区：国家安全应急产业示范基地，移动应急装备整机与改装主要承载区',
-          '专汽产业园：30公里专汽长廊核心区，已有程力/齐星等整车及改装企业入驻',
-          '随县香菇产业园：已有初加工入驻，精深加工(生物提取/GMP洁净)厂房条件需进一步核实',
-          '区位优势：汉十高铁随州南站至武汉50分钟/至襄阳30分钟；"汉孝随襄十"万亿汽车走廊节点',
-          '⚠️ 首选承接园区与地块、可用厂房面积及能耗配额，请领导确认'
-        ]
-      },
-      firm:{
-        sub:'97家资质整车/改装企业 + 220家零部件企业；外采依赖显著',
-        tag:'慧小招实测 · 2026-07',
-        known:[
-          '整车/改装链主：程力(×成都壹为新能源底盘/×杭州时代电动3万台)、新楚风(49T氢重卡·百公里氢耗7.1kg·续航1000km)、齐星(含无人机指挥车)',
-          '已有本地配套：车身驾驶室(齐星)、车规级晶振(泰晶AEC-Q200)、电解液/六氟磷酸锂(犇星)、铜箔(昱通)、负极材料(斯诺/犇星多孔硅)',
-          '严重外采依赖：底盘/动力总成(十堰潍柴/法士特/汉德·占整车成本50%)、氢电堆(53%)、储氢瓶(14%)、应急机器人(启灵)、无人机(迅北斗)',
-          '香菇链主：品源(辣酱出口·2024签1亿美元+2025签3亿美元)、裕国药业(多糖提取)、肽源(多肽提取)；精深加工仅2家布局',
-          '本地配套率仅41%(梁山65%/十堰75%+)，补链招引窗口期明确且需求方牵引力强',
-          '⚠️ 拟优先对接的企业名单与采购规模数据，请领导提供或确认'
-        ]
-      },
-      policy:{
-        sub:'氢能走廊+应急示范基地+香菇精深加工升级三条政策主线',
-        tag:'慧小招实测 · 待领导确认口径',
-        known:[
-          '湖北省氢能走廊：武汉-十堰-随州-襄阳沿线布局，随州以氢能专用车为主攻方向，专项支持方向已明确',
-          '国家安全应急产业示范基地(曾都区)：支持智慧应急装备落地，对机器人/无人机/5G通信模块有专项引导',
-          '香菇产业升级：随州将精深加工与品牌化列为农业升级重点，菌种自主研发与生物医药方向已有政策导向',
-          '竞争压力：十堰(高端应急车)+孝感(中能应急产业园42.8亿)双面夹击应急赛道；荆门碾压锂电；差异化空间在氢能专用车/低空经济/香菇',
-          '⚠️ 专项资金额度、首选承接地块与领导最新交办须向主管部门确认'
-        ]
-      }
-    };
+  // 【2026-09-29】彻底删除demo假文本，改为从 CITY_BASE_PACKAGES 全局指针表动态
+  // 读取真实城市包内容（14-Agent流水线首轮产出，nature==='base' 的条目）。
+  // 无基础包时返回真正的空 known:[]，不再用占位假文本填充（同步政府端 08.js）。
+  var base=getCityBasePackage(city);
+  var byTitle={};
+  if(base){ base.forEach(function(topic){ byTitle[topic.t]=topic; }); }
+  function pick(title){
+    var t=byTitle[title];
+    return {sub:t?t.sub:'', tag:t?t.tag:'', known:t?t.known:[]};
   }
-  // 通用骨架（非随州城市）：公开统计信息，不提“AI”（同步政府端 08.js 的措辞）
   return {
-    industry:{
-      sub:city+'主导产业集群与链条结构（公开信息整理）',
-      tag:'公开信息 · 待补充',
-      known:[
-        city+'工业基础以传统制造业为核心，正向高端制造/新能源/数字经济方向升级',
-        '主导产业贡献当地规上工业主要产值，需查阅统计年鉴获取具体数字',
-        '上游核心零部件与关键材料本地配套率偏低，外采依赖是主要补链切入点',
-        '新兴方向(智能装备/绿色化工/现代农业加工)处于增长期，招引窗口较好',
-        '⚠️ 具体产业名称、产值与缺口明细需结合政府工作报告与产业链图谱确认'
-      ]
-    },
-    park:{
-      sub:city+'主要工业园区承载条件（公开信息整理）',
-      tag:'公开信息 · 待核实',
-      known:[
-        city+'已建立国家级或省级经济开发区/高新区，具备基础工业承载能力',
-        '主要园区已配备标准化厂房、市政配套与交通基础设施',
-        '部分园区设有专项政策（租金减免/设备补贴/人才落户），具体口径需确认',
-        '精密制造/生物提取等高要求方向需确认洁净厂房与能耗配额是否满足',
-        '⚠️ 可用地块、厂房面积与园区联系方式需向招商局确认'
-      ]
-    },
-    firm:{
-      sub:city+'链主企业与供应链缺口（公开信息整理）',
-      tag:'公开信息 · 待补充',
-      known:[
-        city+'本地存在若干规上工业龙头（整车/总装/终端品牌），是配套采购主要需求方',
-        '链主在核心零部件、系统集成、检测认证等环节存在明显外采依赖',
-        '外地采购占总成本比例估算30-60%，本地配套率提升空间大',
-        '部分链主已表达本地化配套诉求，是招引上游企业的直接牵引力',
-        '⚠️ 具体企业名单、采购规模与技术路线需通过企业走访或授权材料确认'
-      ]
-    },
-    policy:{
-      sub:city+'政策方向与领导关注重点（公开信息整理）',
-      tag:'公开信息 · 待领导确认',
-      known:[
-        city+'近年政府工作报告将制造业升级与招商引资列为重点，产业政策支持力度较强',
-        '符合主导方向的落地企业通常可获土地优惠/税收减免/人才补贴等配套政策',
-        '重点招引方向与领导最新交办口径是核心决策依据，需干部上传确认',
-        '营商环境改善（审批提速/一事一议）是近年招商重点配套',
-        '⚠️ 专项资金额度、首选承接园区与具体交办须向领导及主管部门确认'
-      ]
-    }
+    industry: pick('主导产业与产业链'),
+    park: pick('园区与承载条件'),
+    firm: pick('链主与存量企业'),
+    policy: pick('政策、规划与领导关注')
   };
 }
-
 /* ── Summary Modal: 分析完成弹窗，10s 倒计时 ── */
 var _summaryTimer=null;
 
@@ -3539,6 +3453,20 @@ var REPORT_HISTORY = REPORT_HISTORY || {};
 var USER_PROFILES = (typeof USER_PROFILES!=='undefined'&&USER_PROFILES) || {};  // 政府端注册用户资料，跨端同步查看
 /* 邀请码库：结构同政府端 06.js 里的说明。管理端(/ops)是唯一可写入新码的入口。 */
 var INVITE_CODES = (typeof INVITE_CODES!=='undefined'&&INVITE_CODES) || {};
+/* 城市基础包指针表：结构同政府端 03.js 里的说明。管理端在「城市智库RAG」页
+   用它判断/管理某城市的权威基础包来自哪个projKey。 */
+var CITY_BASE_PACKAGES = (typeof CITY_BASE_PACKAGES!=='undefined'&&CITY_BASE_PACKAGES) || {};
+function getCityBasePackage(city){
+  var authorityKey=CITY_BASE_PACKAGES[city];
+  var authority=authorityKey&&PROJECTS[authorityKey];
+  if(!authority||!Array.isArray(authority.kb)) return null;
+  return authority.kb.map(function(topic){
+    var baseKnown=(topic.known||[]).filter(function(it){
+      return it&&typeof it==='object'&&it.nature==='base';
+    });
+    return {icon:topic.icon,t:topic.t,sub:topic.sub,tag:topic.tag,known:baseKnown};
+  });
+}
 
 function saveReportHistory(){try{localStorage.setItem('hxz_rpt_history',JSON.stringify(REPORT_HISTORY));}catch(e){}}
 function loadReportHistory(){try{var d=localStorage.getItem('hxz_rpt_history');if(d)REPORT_HISTORY=JSON.parse(d);}catch(e){}}
@@ -4678,6 +4606,7 @@ function persist(){
       USER_PROFILES:USER_PROFILES,
       CITY_ACCOUNTS:CITY_ACCOUNTS,
       INVITE_CODES:INVITE_CODES,
+      CITY_BASE_PACKAGES:CITY_BASE_PACKAGES,
       RESET_GEN:(typeof RESET_GEN!=='undefined'?RESET_GEN:null),
       DELETED_CLUES:window.DELETED_CLUES||[],
       syncTs:Date.now()
@@ -4778,6 +4707,7 @@ function restore(){
       if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
       if(data.CITY_ACCOUNTS) CITY_ACCOUNTS=data.CITY_ACCOUNTS;
       if(data.INVITE_CODES) INVITE_CODES=data.INVITE_CODES;
+      if(data.CITY_BASE_PACKAGES) CITY_BASE_PACKAGES=data.CITY_BASE_PACKAGES;
       if(data.RESET_GEN) RESET_GEN=data.RESET_GEN;
       console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
       return true;
@@ -7035,8 +6965,23 @@ function opsTopbarV2(){
       '<span style="font-size:12px;color:#94a3b8">' + OPS_ENT.length + ' 家企业</span>' +
     '</div>' +
     '<div style="flex:1"></div>' +
-    '' +
+    '<div style="display:flex;align-items:center;gap:6px" title="\u5f53\u524d\u64cd\u4f5c\u4eba\u540d\u5b57\uff0c\u5c06\u8ddf\u968f\u4f60\u4e0a\u4f20\u7684\u6bcf\u4e00\u6761\u667a\u5e93\u6750\u6599\uff0c\u65b9\u4fbf\u5176\u4ed6\u4eba\u5728\u4e2a\u6027\u5316\u6743\u91cd\u5220\u9664\u7248\u6837\u4e2d\u5e94\u7528\u5230\u9700\u8981\u7684\u5730\u65b9">' +
+      '<span style="font-size:11px;color:#94a3b8">\u64cd\u4f5c\u4eba</span>' +
+      '<input id="opsOperatorInput" value="' + ragEsc(getOpsOperator()) + '" placeholder="\u8bf7\u8f93\u5165\u4f60\u7684\u540d\u5b57" onchange="setOpsOperator(this.value)" style="width:96px;min-height:26px;padding:0 8px;border:1px solid #334155;border-radius:6px;background:#152238;color:#e2e8f0;font-size:12px;outline:0">' +
+    '</div>' +
   '</div>';
+}
+/* 【2026-09-29】管理端无登录态，"当前操作人"是本地轻量设置（localStorage持久化），
+   随每次上传/入库写进 chunk.account，供 ragOriginStyle() 展示具体是谁上传的材料。
+   不是真正的账号鉴权，只是一个自报家门的标签——足够解决"避免误判材料来源"这个
+   展示层需求，不需要为管理端引入完整登录体系。 */
+var OPS_OPERATOR_KEY='huixiaozhao_ops_operator';
+function getOpsOperator(){
+  try{ return localStorage.getItem(OPS_OPERATOR_KEY)||''; }catch(e){ return ''; }
+}
+function setOpsOperator(name){
+  name=(name||'').trim();
+  try{ localStorage.setItem(OPS_OPERATOR_KEY, name); }catch(e){}
 }
 
 function opsTabBar(){
@@ -7064,8 +7009,49 @@ function opsTabBar(){
 
 /* ══ Tab: 城市智库 RAG（材料·检索·推送日志）══ */
 var ragCity=null, ragTopic=0, ragQuery='', ragHits=null, ragLog=null, ragFilter='';
+var ragOverviewOpen=true; // 工作区总览面板默认展开
 // 对话更新 RAG：多轮消息 [{role,content}]；ragChatPending=可入库的最近一条 AI 结论草稿
 var ragChatMsgs=[], ragChatBusy=false, ragChatPending=null;
+/* 【2026-09-29】工作区总览：ragCityOptions() 的下拉框按城市名去重折叠，同城市名的
+   多个独立projKey(邀请码各自新建)只露出材料量最大的那个，管理员完全看不到、也管不
+   到其他实例——这是"数据没有串，但管理端UI层面把它们藏起来了"的隔离盲点。
+   本面板不折叠，按城市分组列出全部projKey，点击任意一项直接切到该工作区。 */
+function ragWorkspaceOverview(activeKey){
+  var keys=Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&Array.isArray(p.kb);});
+  if(keys.length<=1) return ''; // 只有一个工作区时不需要总览，避免空占位打扰
+  var byCity={};
+  keys.forEach(function(k){ var c=PROJECTS[k].city||k; (byCity[c]=byCity[c]||[]).push(k); });
+  var multiCityCount=Object.keys(byCity).filter(function(c){return byCity[c].length>1;}).length;
+  var rows=Object.keys(byCity).sort().map(function(city){
+    var ks=byCity[city];
+    var itemsHtml=ks.map(function(k){
+      var p=PROJECTS[k];
+      var n=(p.kb||[]).reduce(function(s,t){return s+(t.known||[]).length;},0);
+      var inv=Object.keys(INVITE_CODES||{}).find(function(c){return INVITE_CODES[c].projKey===k;});
+      var isOn=(k===activeKey);
+      return '<div onclick="ragCity=\''+k+'\';ragTopic=0;ragHits=null;renderOpsV2()" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;cursor:pointer;background:'+(isOn?'#eff6ff':'transparent')+';border:1px solid '+(isOn?'#bfdbfe':'transparent')+'">'+
+        '<span style="flex:0 0 auto;width:6px;height:6px;border-radius:50%;background:'+(n>0?'#0aa696':'#c7ced9')+'"></span>'+
+        '<span style="font-family:ui-monospace,monospace;font-size:11px;color:#5a7398;flex:0 0 auto">'+k+'</span>'+
+        (inv?'<span style="font-size:10.5px;color:#7c8aa0">邀请码 '+inv+'</span>':'<span style="font-size:10.5px;color:#c7ced9">非邀请码创建</span>')+
+        '<span style="flex:1"></span>'+
+        '<span style="font-size:11.5px;color:'+(isOn?'#1d4ed8':'#0b183b')+';font-weight:'+(isOn?'700':'500')+'">'+n+' 条材料</span>'+
+      '</div>';
+    }).join('');
+    return '<div style="margin-bottom:6px">'+
+      '<div style="font-size:12px;font-weight:700;color:#0b183b;padding:4px 12px">'+ragEsc(city)+(ks.length>1?' <span style="color:#c07a00;font-weight:600">· '+ks.length+' 个独立工作区，互不共享数据</span>':'')+'</div>'+
+      itemsHtml+
+    '</div>';
+  }).join('');
+  return '<div style="margin-bottom:16px;border:1px solid #e8edf5;border-radius:10px;background:#fff;overflow:hidden">'+
+    '<button onclick="ragOverviewOpen=!ragOverviewOpen;renderOpsV2()" style="width:100%;display:flex;align-items:center;gap:8px;padding:11px 16px;border:none;background:#fafbfd;cursor:pointer;text-align:left">'+
+      '<span style="font-size:13px;font-weight:700;color:#0b183b">🗺️ 工作区总览</span>'+
+      '<span style="font-size:11.5px;color:#9aa5b5">'+keys.length+' 个独立工作区 · '+Object.keys(byCity).length+' 个城市'+(multiCityCount?' · '+multiCityCount+' 个城市有多份工作区':'')+'</span>'+
+      '<span style="flex:1"></span>'+
+      '<span style="font-size:12px;color:#9aa5b5">'+(ragOverviewOpen?'收起 ▲':'展开 ▼')+'</span>'+
+    '</button>'+
+    (ragOverviewOpen?'<div style="padding:10px 12px;max-height:260px;overflow-y:auto">'+rows+'</div>':'')+
+  '</div>';
+}
 function ragProjKey(){
   // 【2026-09-18】放宽：原来要求 kb 里已有材料，导致「＋新增城市」建的空城市
   // 会在下面 keys.indexOf(ragCity) 处被踢回旧城市，新城市切不进去也传不了材料。
@@ -7123,6 +7109,7 @@ function opsRag(){
   var initT=p.kbInitTs?new Date(p.kbInitTs):null;
   var initStr=initT?(initT.getMonth()+1)+'/'+initT.getDate()+' '+initT.getHours()+':'+('0'+initT.getMinutes()).slice(-2):'—';
   return '<div style="padding:24px">'+
+    ragWorkspaceOverview(key)+
     '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'+
       '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">城市智库 RAG</h1>'+
       '<select onchange="ragCity=this.value;ragTopic=0;ragHits=null;renderOpsV2()" style="min-height:34px;padding:4px 10px;border:1px solid #d8e0ed;border-radius:8px;font-size:13px">'+ragCityOptions()+'</select>'+
@@ -7262,7 +7249,7 @@ function ragDoUpload(key, text, name, fileB64){
     var mode=nature==='fix'?'replace':'append';
     var nm=document.getElementById('ragUpFileName'); if(nm)nm.textContent='正在解析入库…';
     var payload={projectKey:key,city:p.city,topic:finalTopic,filename:name||'上传文件',
-        mode:mode,origin:'admin',nature:nature,by:'管理端·周总',source:'file'};
+        mode:mode,origin:'admin',nature:nature,by:(getOpsOperator()||'管理端'),source:'file'};
     if(fileB64){ payload.fileB64=fileB64; } else { payload.text=text; }
     fetch('/api/kb-upload',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(payload)})
@@ -7446,7 +7433,7 @@ function ragChatCommit(msgIdx, key){
       var mode=nature==='fix'?'replace':'append';
       fetch('/api/kb-upload',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({projectKey:key,city:p.city,topic:topic,text:m.content,
-          filename:'对话确认',mode:mode,origin:'admin',nature:nature,by:'管理端·对话',source:'chat'})})
+          filename:'对话确认',mode:mode,origin:'admin',nature:nature,by:(getOpsOperator()||'管理端'),source:'chat'})})
         .then(function(r){return r.json();}).then(function(res){
           if(res.ok){
             var extra=res.matched?('，命中已有 '+res.matched+' 条'):'';
@@ -7521,15 +7508,21 @@ function ragTopicNav(p){
 }
 /* 结构化渲染一条智库材料：标题章 → 正文（加粗、数字高亮、关键词高亮）→ 来源徽章 */
 // 来源+性质 → 标识条颜色与徽章
-function ragOriginStyle(origin,nature){
+// 【2026-09-29】徽标文字改为具体账号名（如"kbtest3"）而不是笼统的"管理员/用户"，
+// 方便管理员核对材料到底是谁上传的、避免误判"这条是不是别的团队搞混了"。
+// account 缺失时（历史数据/系统级写入）降级为原来的通用角色词。
+function ragOriginStyle(origin,nature,account){
+  var who=account?ragEsc(account):null;
   // AI 采集=中性；管理员佐证=绿 / 修正=黄；用户佐证或确认=绿 / 修改=红
   if(origin==='admin'){
-    return nature==='fix'?{bar:'#e0a516',badge:'🟡 管理员修正',bg:'#fffaf0',bc:'#f0d99a',bt:'#8a6d1b'}
-                         :{bar:'#0aa696',badge:'🟢 管理员佐证',bg:'#f2fbf9',bc:'#bfe5e0',bt:'#087067'};
+    var adminLabel=who||'管理员';
+    return nature==='fix'?{bar:'#e0a516',badge:'🟡 '+adminLabel+' 修正',bg:'#fffaf0',bc:'#f0d99a',bt:'#8a6d1b'}
+                         :{bar:'#0aa696',badge:'🟢 '+adminLabel+' 佐证',bg:'#f2fbf9',bc:'#bfe5e0',bt:'#087067'};
   }
   if(origin==='user'){
-    if(nature==='fix') return {bar:'#e0574a',badge:'🔴 用户修改',bg:'#fdf3f2',bc:'#f2c3bd',bt:'#b0362a'};
-    return {bar:'#0aa696',badge:(nature==='confirm'?'🟢 用户确认':'🟢 用户补充'),bg:'#f2fbf9',bc:'#bfe5e0',bt:'#087067'};
+    var userLabel=who||'用户';
+    if(nature==='fix') return {bar:'#e0574a',badge:'🔴 '+userLabel+' 修改',bg:'#fdf3f2',bc:'#f2c3bd',bt:'#b0362a'};
+    return {bar:'#0aa696',badge:(nature==='confirm'?'🟢 '+userLabel+' 确认':'🟢 '+userLabel+' 补充'),bg:'#f2fbf9',bc:'#bfe5e0',bt:'#087067'};
   }
   return null; // AI 基础材料：无标识条
 }
@@ -7560,8 +7553,8 @@ function ragMdTables(s){
 }
 function ragRenderChunk(raw, idx, hl){
   // 兼容结构化 chunk（对象）与旧字符串
-  var origin='ai', nature='base', srcName='', annots=[];
-  if(raw && typeof raw==='object'){ origin=raw.origin||'ai'; nature=raw.nature||'base'; srcName=raw.src||''; annots=raw.annotations||[]; raw=raw.text||''; }
+  var origin='ai', nature='base', srcName='', annots=[], account='';
+  if(raw && typeof raw==='object'){ origin=raw.origin||'ai'; nature=raw.nature||'base'; srcName=raw.src||''; annots=raw.annotations||[]; account=raw.account||''; raw=raw.text||''; }
   var text=String(raw);
   // 1) 抽取【标题】前缀
   var title=null; var m=text.match(/^【([^】]{2,40})】\s*/);
@@ -7593,8 +7586,8 @@ function ragRenderChunk(raw, idx, hl){
       (gov?'🏛':'🔗')+' '+dom+(s.date?' · '+s.date:'')+' ↗</a>';
   }).join(' ');
   if(pending) srcHtml+=(srcHtml?' ':'')+'<span style="display:inline-flex;font-size:10.5px;padding:2px 8px;border-radius:9px;background:#fff0de;color:#a34c09;border:1px solid #f2d9b8">⚠ 待核实</span>';
-  // 来源标识：AI 基础材料无条；管理员/用户标注加彩色左条+徽章
-  var os=ragOriginStyle(origin,nature);
+  // 来源标识：AI 基础材料无条；具体账号标注加彩色左条+徽章
+  var os=ragOriginStyle(origin,nature,account);
   var origBadge=os?('<span style="display:inline-flex;align-items:center;font-size:10px;padding:2px 8px;border-radius:9px;background:'+os.bg+';color:'+os.bt+';border:1px solid '+os.bc+'">'+os.badge+(srcName?' · '+ragEsc(srcName):'')+'</span>'):'';
   var barCss=os?('border-left:3px solid '+os.bar+';'):'';
   var cardBg=os?os.bg:'#fff';
@@ -7614,9 +7607,9 @@ function ragRenderChunk(raw, idx, hl){
 function ragAnnots(annots){
   return '<div style="margin-top:7px;margin-left:24px;padding-left:10px;border-left:2px solid #e2e8f2;display:flex;flex-direction:column;gap:5px">'+
     annots.map(function(a){
-      var os=ragOriginStyle(a.origin,a.nature);
+      var os=ragOriginStyle(a.origin,a.nature,a.account);
       if(!os) return '';
-      var who=(a.origin==='admin'?'管理员':'用户');
+      var who=a.account?ragEsc(a.account):(a.origin==='admin'?'管理员':'用户');
       var act=a.nature==='fix'?'修正':(a.nature==='confirm'?'确认':'佐证');
       return '<div style="font-size:11px;color:'+os.bt+';background:'+os.bg+';border:1px solid '+os.bc+';border-radius:7px;padding:5px 9px">'+
         '<b>'+(a.nature==='fix'?(a.origin==='user'?'🔴':'🟡'):'🟢')+' '+who+act+'</b>'+(a.src?' · '+ragEsc(a.src):'')+
