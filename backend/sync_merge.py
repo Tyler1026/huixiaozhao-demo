@@ -253,3 +253,39 @@ def _merge_map(old, new):
                 continue
             base[fk] = _keep_nonempty(base.get(fk), fv)
     return merged
+
+
+def _merge_invite_codes(old, new):
+    """按邀请码合并：新码直接并入；同码的 usedBy 按 (user,ts) 去重取并集，
+    revoked 一旦任一端标记为真即视为真（作废只进不退，避免旧快照复活已作废的码）。
+    不要走 _merge_map：那是给 PROJECTS/REPORTSTATE 用的，字段名(如误撞 kb/text/stage)
+    会触发不相关的特判分支。"""
+    if not isinstance(old, dict):
+        old = {}
+    if not isinstance(new, dict):
+        new = {}
+    merged = {k: dict(v) for k, v in old.items() if isinstance(v, dict)}
+    for code, v in new.items():
+        if not isinstance(v, dict):
+            continue
+        base = merged.get(code)
+        if not isinstance(base, dict):
+            merged[code] = dict(v)
+            continue
+        out = dict(base)
+        for fk, fv in v.items():
+            if fk == 'usedBy':
+                seen = {}
+                for rec in (base.get('usedBy') or []) + (fv or []):
+                    if not isinstance(rec, dict):
+                        continue
+                    key = (rec.get('user'), rec.get('ts'))
+                    seen[key] = rec
+                out['usedBy'] = sorted(seen.values(), key=lambda r: r.get('ts') or 0)
+                continue
+            if fk == 'revoked':
+                out['revoked'] = bool(base.get('revoked')) or bool(fv)
+                continue
+            out[fk] = _keep_nonempty(base.get(fk), fv)
+        merged[code] = out
+    return merged

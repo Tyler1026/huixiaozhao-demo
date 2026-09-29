@@ -58,14 +58,36 @@ function _restoreScroll(prevKey, tops){
   [30,80,160,300].forEach(function(ms){ setTimeout(apply, ms); });
 }
 
-/* AUTH: 当前登录态 {user,city,projKey,resident,who,org}；null=未登录 */
+/* AUTH: 当前登录态 {user,city,projKey,resident,who,org,role}；null=未登录
+   role: 'owner'(组织创建者，可查看/移除本组织成员) | 'member'(普通成员)。
+   注意：无论 owner 还是 member，政府端都不能生成邀请码——生成入口只在管理端(/ops)，
+   见 canGenerateInviteCode()，此函数在政府端恒定返回 false。 */
 var AUTH=null;
 var ACCOUNTS={
-  'suizhou': {pwd:'suizhou', city:'随州', projKey:'sz', resident:true,  who:'张主任', org:'随州市招商局'},
-  'admin':   {pwd:'admin',   city:null,  projKey:null, resident:false, who:'招商干部', org:'招商局'}
+  'suizhou': {pwd:'suizhou', city:'随州', projKey:'sz', resident:true,  who:'张主任', org:'随州市招商局', role:'owner'},
+  'admin':   {pwd:'admin',   city:null,  projKey:null, resident:false, who:'招商干部', org:'招商局', role:'owner'}
 };
-var USER_PROFILES={};  // 注册用户资料库，按账号存 {name,phone,wechat,org,dept,title,city,pwd,ts}，跨端同步供管理端查看
+var USER_PROFILES={};  // 注册用户资料库，按账号存 {name,phone,wechat,org,dept,title,city,pwd,ts,role,inviteCode}，跨端同步供管理端查看
 var CITY_ACCOUNTS={};  // 城市账号连接表（推送到RAG时自动建立）{slug:{city,who,org,pwd,resident,projKey}}
+/* 邀请码库：{code:{city,projKey,role,createdBy,createdAt,revoked,usedBy:[{user,ts}]}}
+   —— 仅管理端(/ops)可写入新码，政府端只读校验+记录使用。role 是该码开放注册的角色，
+   目前固定发 'member'（组织首个使用者可由管理端手工升级为 owner，见成员管理）。 */
+var INVITE_CODES={};
+/* 政府端任何角色都不能生成邀请码：生成入口收在管理端(/ops)，这里恒定返回 false。
+   之所以做成函数而不是直接删掉相关UI，是为了让"是否可生成"这条规则有唯一判断点，
+   防止未来有人在别处加个按钮时忘了这条限制。 */
+function canGenerateInviteCode(auth){ return false; }
+/* 组织成员管理权限：owner 可查看/移除同 projKey 下的其他账号，member 不可。 */
+function isOrgOwner(auth){ return !!(auth && auth.role==='owner'); }
+/* 校验邀请码：返回 {ok,city,projKey,role} 或 {ok:false,msg} */
+function validateInviteCode(code){
+  code=(code||'').trim().toUpperCase();
+  if(!code) return {ok:false,msg:'请输入邀请码'};
+  var inv=INVITE_CODES[code];
+  if(!inv) return {ok:false,msg:'邀请码不存在'};
+  if(inv.revoked) return {ok:false,msg:'该邀请码已失效，请联系招商团队重新获取'};
+  return {ok:true,code:code,city:inv.city,projKey:inv.projKey,role:inv.role||'member'};
+}
 function saveAuth(){ try{ AUTH?localStorage.setItem('hxz_auth',JSON.stringify(AUTH)):localStorage.removeItem('hxz_auth'); }catch(e){} }
 function loadAuth(){ try{ var d=localStorage.getItem('hxz_auth'); if(d)AUTH=JSON.parse(d); }catch(e){ AUTH=null; } }
 function logout(){ AUTH=null; saveAuth(); cur=null; view='setup'; render._restored=false; render._routed=false; render(); }

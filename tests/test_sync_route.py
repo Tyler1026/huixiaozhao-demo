@@ -24,8 +24,42 @@ class SyncRouteTests(unittest.TestCase):
                 if node.id in mapping:return ast.Attribute(value=ast.Name(id='deps',ctx=ast.Load()),attr=mapping[node.id],ctx=node.ctx)
                 return node
         expected=Dependencies().visit(original)
-        extracted=next(n for n in ast.parse(Path(sync_route.__file__).read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='handle_sync')
+        extracted_fn=next(n for n in ast.parse(Path(sync_route.__file__).read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='handle_sync')
+        # 【2026-09-29】邀请码功能带来两处偏移，均不存在于旧基线 21baa54:server.py 里：
+        # (1) `_protected` 列表字面量新增了一个 'INVITE_CODES' 元素（防止空值裸覆盖邀请码库）；
+        # (2) `for k,v in incoming.items():` 循环体里新增一段
+        #     `if k == 'INVITE_CODES': ... continue` 分支（改走专用合并函数）。
+        # 这条门禁的职责是"证明继承自旧版的逐字段合并逻辑一字未改"，不是"禁止任何新字段
+        # 类型"——所以用 NodeTransformer 把这两处新增内容从树里物理还原后再比较，而不是
+        # 放宽比较标准去容纳它们。新增行为由下面 test_invite_codes_branch_* 单独验证。
+        class StripInviteCodesAdditions(ast.NodeTransformer):
+            def visit_If(self,node):
+                self.generic_visit(node)
+                test=node.test
+                if (isinstance(test,ast.Compare) and isinstance(test.left,ast.Name) and test.left.id=='k'
+                        and any(isinstance(c,ast.Constant) and c.value=='INVITE_CODES' for c in test.comparators)):
+                    return None
+                return node
+            def visit_List(self,node):
+                self.generic_visit(node)
+                if any(isinstance(e,ast.Constant) and e.value=='INVITE_CODES' for e in node.elts):
+                    node.elts=[e for e in node.elts if not (isinstance(e,ast.Constant) and e.value=='INVITE_CODES')]
+                return node
+        extracted=StripInviteCodesAdditions().visit(extracted_fn)
+        ast.fix_missing_locations(extracted)
         self.assertEqual(ast.dump(expected),ast.dump(ast.Module(body=extracted.body,type_ignores=[])))
+
+    def test_invite_codes_branch_merges_not_overwrites(self):
+        # 邀请码新增分支的行为契约：走 _merge_invite_codes，不是裸覆盖——
+        # 已有邀请码在增量同步(不带该码)时必须原样保留，不能被覆盖删除。
+        from backend.sync_route import handle_sync, SyncDependencies
+        writes=[]
+        existing='{"PROJECTS":{"p":{"city":"随州"}},"INVITE_CODES":{"ABC12345":{"city":"随州","projKey":"p","usedBy":[]}}}'
+        deps=SyncDependencies(True,lambda:existing,lambda value:writes.append(value) or True,'unused',lambda:None,lambda x:x)
+        responder=Mock();responder.wfile=io.BytesIO()
+        # 增量同步：不带 INVITE_CODES 字段，已有码必须原样保留
+        handle_sync(responder,b'{"PROJECTS":{"p":{"city":"\xe9\x9a\x8f\xe5\xb7\x9e"}}}',deps)
+        self.assertIn('ABC12345',json.loads(writes[0])['INVITE_CODES'])
 
     def test_file_store_snapshots_old_bytes_before_write(self):
         import tempfile

@@ -2,7 +2,7 @@
 import json
 from dataclasses import dataclass
 from typing import Callable
-from .sync_merge import _apply_kb_item_tombs, _clue_tombstoned, _merge_kb_item_tombs, _merge_map
+from .sync_merge import _apply_kb_item_tombs, _clue_tombstoned, _merge_invite_codes, _merge_kb_item_tombs, _merge_map
 
 @dataclass(frozen=True)
 class SyncDependencies:
@@ -79,7 +79,9 @@ def handle_sync(self, raw, deps):
         # 「材料更少」而直接丢弃，删除永远同步不上去。
         if _itomb:
             _apply_kb_item_tombs(existing.get('PROJECTS'), _itomb)
-        _protected = ['OPS_ENT','DEMANDS','KB_CHAT','PENDING_CONFIRMS','KB_CONFIRMS','REPORT_REQUESTS','CITY_ACCOUNTS']
+        # 【2026-09-29】INVITE_CODES 邀请码库同理需要空值保护——注册页/ops页在
+        # 未加载完该变量前若先同步一次，空对象会把已生成的全部邀请码裸覆盖清空。
+        _protected = ['OPS_ENT','DEMANDS','KB_CHAT','PENDING_CONFIRMS','KB_CONFIRMS','REPORT_REQUESTS','CITY_ACCOUNTS','INVITE_CODES']
         # REPORT_REQUESTS 按 id 合并且状态只进不退（pending<running<done/failed）
         # 防止管理端旧快照 persist 把流水线已推进的状态倒改回 pending
         _rr_rank = {'pending': 0, 'running': 1, 'failed': 2, 'done': 3}
@@ -253,6 +255,9 @@ def handle_sync(self, raw, deps):
                 continue
             if k == 'REPORT_REQUESTS':
                 existing[k] = _merge_rr(existing.get(k), v)
+                continue
+            if k == 'INVITE_CODES':
+                existing[k] = _merge_invite_codes(existing.get(k), v)
                 continue
             if k in ('PROJECTS', 'REPORTSTATE', 'CITY_ACCOUNTS'):
                 # 逐 key/逐字段合并，空值不覆盖非空——防止旧快照把已同步的 RAG/账号冲掉

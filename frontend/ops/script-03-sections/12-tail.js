@@ -1466,6 +1466,8 @@ function parsePendingItems(text){
 /* ══ 报告历史记录 ══ */
 var REPORT_HISTORY = REPORT_HISTORY || {};
 var USER_PROFILES = (typeof USER_PROFILES!=='undefined'&&USER_PROFILES) || {};  // 政府端注册用户资料，跨端同步查看
+/* 邀请码库：结构同政府端 06.js 里的说明。管理端(/ops)是唯一可写入新码的入口。 */
+var INVITE_CODES = (typeof INVITE_CODES!=='undefined'&&INVITE_CODES) || {};
 
 function saveReportHistory(){try{localStorage.setItem('hxz_rpt_history',JSON.stringify(REPORT_HISTORY));}catch(e){}}
 function loadReportHistory(){try{var d=localStorage.getItem('hxz_rpt_history');if(d)REPORT_HISTORY=JSON.parse(d);}catch(e){}}

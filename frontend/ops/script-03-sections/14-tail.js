@@ -63,6 +63,7 @@ function restore(){
       if(data.REPORT_REQUESTS) REPORT_REQUESTS=data.REPORT_REQUESTS;
       if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
       if(data.CITY_ACCOUNTS) CITY_ACCOUNTS=data.CITY_ACCOUNTS;
+      if(data.INVITE_CODES) INVITE_CODES=data.INVITE_CODES;
       if(data.RESET_GEN) RESET_GEN=data.RESET_GEN;
       console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
       return true;
@@ -107,6 +108,7 @@ function restoreFromServer(callback){
     }
     if(srv.USER_PROFILES){ Object.keys(srv.USER_PROFILES).forEach(function(uk){ USER_PROFILES[uk]=srv.USER_PROFILES[uk]; }); }
     if(srv.CITY_ACCOUNTS){ CITY_ACCOUNTS = srv.CITY_ACCOUNTS; }
+    if(srv.INVITE_CODES){ Object.keys(srv.INVITE_CODES).forEach(function(ck){ INVITE_CODES[ck]=srv.INVITE_CODES[ck]; }); }
     if(srv.RESET_GEN){ RESET_GEN = srv.RESET_GEN; }  // reset代际:persist时带回,否则被服务端拒绝
     // 政府端移除的企业线索墓碑：读回后既不重复推送，也从拉到的 clues 里剔除
     if(srv.DELETED_CLUES){

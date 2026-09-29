@@ -1760,6 +1760,7 @@ function opsUsers(){
       '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">注册用户</h1>' +
       '<span style="font-size:12px;color:#9aa5b5">共 ' + keys.length + ' 位政府端注册用户 · 可电话/微信联系</span>' +
     '</div>';
+  head += inviteCodeSection();
   if(!keys.length){
     return head + '<div style="text-align:center;padding:60px 20px;color:#9aa5b5;font-size:14px">暂无注册用户<div style="font-size:12px;margin-top:8px;color:#b8c0cc">政府端用户注册后，账号资料会自动同步到这里</div></div></div>';
   }
@@ -1799,6 +1800,119 @@ function opsUsers(){
     '</div>';
   }).join('');
   return head + cards + '</div>';
+}
+
+/* ═══════════ 邀请码管理（唯一可生成入口，政府端任何角色均无此能力）═══════════
+   一个邀请码 = 一个独立账户体系 = 一个独立工作区(projKey)。即使两个码填的城市名字
+   完全相同（如都是"随州"），也绝不共享同一份 PROJECTS 数据——城市名只是展示标签，
+   不是隔离边界，隔离边界永远是 projKey。多人共用同一个邀请码时看到同一份数据，
+   是因为他们用的是同一个码、同一个 projKey，不是因为城市名相同。
+   （若未来接入"AI采集的通用城市客观数据包"——产业链公开信息等只读参考资料——
+   那应是独立于 PROJECTS 业务数据之外的只读层，可按城市名共享；但业务数据
+   [智库问答/项目/报告/线索/对接进度] 必须严格按 projKey 隔离，不得因城市名相同而合并。） */
+function _inviteCodeGen(){
+  var chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 去掉容易混淆的 I/O/0/1
+  var s=''; for(var i=0;i<8;i++){ s+=chars[Math.floor(Math.random()*chars.length)]; }
+  return s;
+}
+/* 为一个新邀请码强制分配全新独立工作区，绝不按城市名查找/复用已有 PROJECTS。
+   即使城市名与已有工作区相同，也各自独立，避免不同团队/不同邀请码的数据串到一起。 */
+function _newCityProjKey(city){
+  var key='p'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+  PROJECTS[key]={id:key, city:city, org:city+'市招商局', who:'负责人', topic:city+'产业链招引', stage:1, kb:[], report:null, clues:[]};
+  return key;
+}
+function inviteCodeSection(){
+  var codes=Object.keys(INVITE_CODES||{}).sort(function(a,b){return (INVITE_CODES[b].createdAt||0)-(INVITE_CODES[a].createdAt||0);});
+  // 同城市名可能对应多个互不共享的独立工作区，用 projKey 帮管理员分辨"是不是同一个码/同一份数据"
+  var cityCounts={};
+  codes.forEach(function(c){ var ct=INVITE_CODES[c].city; cityCounts[ct]=(cityCounts[ct]||0)+1; });
+  var rows=codes.map(function(c){
+    var inv=INVITE_CODES[c];
+    var used=(inv.usedBy||[]).length;
+    var stTxt=inv.revoked?'已作废':'生效中';
+    var dupHint=(cityCounts[inv.city]>1)?'<br><small style="color:#c07a00">⚠ 同城市名有多个独立工作区，勿混淆</small>':'';
+    // 是否已分发 + 已分发邮箱：方便管理员追踪"这个码发给谁了"，避免重复分发或对不上人
+    var distCell=inv.distributed
+      ? '<span class="status-tag" style="color:#006d70;background:#e4f5f3">已分发</span><br><small style="color:#52637a">'+(inv.distributedEmail||'—')+'</small>'
+      : '<span class="status-tag" style="color:#8492a6;background:#eef0f3">未分发</span>';
+    return '<tr><td><code style="font-weight:700;letter-spacing:1px">'+c+'</code></td><td>'+(inv.city||'—')+dupHint+
+      '<br><small style="color:#9aa5b5;font-family:monospace">工作区 '+(inv.projKey||'—')+'</small></td>'+
+      '<td>'+used+' 人已用</td><td>'+distCell+'</td>'+
+      '<td>'+new Date(inv.createdAt||0).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})+'</td>'+
+      '<td><span class="status-tag" style="color:'+(inv.revoked?'#5e6d82':'#006d70')+';background:'+(inv.revoked?'#eef0f3':'#e4f5f3')+'">'+stTxt+'</span></td>'+
+      '<td>'+(inv.revoked?'':(
+        '<button class="ghost-button" style="min-height:26px;padding:2px 8px;font-size:11px" onclick="openMarkDistributedModal(\''+c+'\')">'+(inv.distributed?'改邮箱':'标记分发')+'</button> '+
+        '<button class="ghost-button" style="min-height:26px;padding:2px 8px;font-size:11px" onclick="revokeInviteCode(\''+c+'\')">作废</button>'
+      ))+'</td></tr>';
+  }).join('')||'<tr><td colspan="7" style="color:#9aa5b5;text-align:center;padding:16px">暂无邀请码，点击上方「生成邀请码」创建</td></tr>';
+  return '<div style="margin-bottom:20px"><div style="background:#fff;border:1px solid #e8edf5;border-radius:16px;padding:18px 20px;box-shadow:0 1px 4px rgba(11,24,59,.05)">'+
+    '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">'+
+      '<strong style="font-size:14px;color:#0b183b">🔑 邀请码管理</strong>'+
+      '<span style="font-size:11.5px;color:#9aa5b5">凭邀请码提前知道对方要哪个城市，可提前准备城市数据包；同一码可被多人重复注册</span>'+
+      '<div style="flex:1"></div>'+
+      '<button onclick="openInviteCodeModal()" style="padding:6px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer">+ 生成邀请码</button>'+
+    '</div>'+
+    '<table class="ops-table" style="margin-top:10px"><thead><tr><th>邀请码</th><th>绑定城市</th><th>使用情况</th><th>分发状态</th><th>生成时间</th><th>状态</th><th>操作</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+    '</div></div>';
+}
+function openMarkDistributedModal(code){
+  var inv=INVITE_CODES[code]; if(!inv) return;
+  openModal('标记邀请码分发（'+code+'）',
+    '<label style="display:grid;gap:6px;font-size:13px;color:#52637a">已分发邮箱<input id="distEmailInput" type="text" value="'+(inv.distributedEmail||'')+'" placeholder="对方邮箱，方便核对是谁在用" style="min-height:40px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:8px;outline:0;font-size:14px"></label>'+
+    '<p style="margin:10px 0 0;font-size:12px;color:#8492a6">标记为已分发后，本码在列表里会显示分发邮箱，方便核对"发给了谁、有没有重复发"。</p>',
+    '<button class="ghost-button" onclick="closeModal()">取消</button>'+
+    (inv.distributed?'<button class="ghost-button" onclick="clearInviteDistributed(\''+code+'\')">清除分发标记</button>':'')+
+    '<button class="primary-button" onclick="doMarkDistributed(\''+code+'\')">保存</button>');
+}
+function doMarkDistributed(code){
+  var inv=INVITE_CODES[code]; if(!inv) return;
+  var el=document.getElementById('distEmailInput');
+  var email=(el&&el.value||'').trim();
+  if(!email){ toast('请输入分发邮箱'); if(el)el.focus(); return; }
+  inv.distributed=true; inv.distributedEmail=email;
+  persist(); closeModal(); render();
+  toast('✓ 已标记 '+code+' 分发给 '+email);
+}
+function clearInviteDistributed(code){
+  var inv=INVITE_CODES[code]; if(!inv) return;
+  inv.distributed=false; inv.distributedEmail='';
+  persist(); closeModal(); render();
+  toast('已清除 '+code+' 的分发标记');
+}
+function openInviteCodeModal(){
+  openModal('生成邀请码',
+    '<label style="display:grid;gap:6px;font-size:13px;color:#52637a">目标城市<input id="invCityInput" type="text" placeholder="如 随州" style="min-height:40px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:8px;outline:0;font-size:14px"></label>'+
+    '<label style="display:grid;gap:6px;font-size:13px;color:#52637a;margin-top:10px">分发邮箱（选填）<input id="invEmailInput" type="text" placeholder="对方邮箱，方便日后核对是谁在用" style="min-height:40px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:8px;outline:0;font-size:14px"></label>'+
+    '<p style="margin:10px 0 0;font-size:12px;color:#8492a6">生成后该码可被多人重复用于注册，均加入本次新建的独立工作区。同城市名多次生成的码互不共享数据。请提前按此城市准备数据包。</p>',
+    '<button class="ghost-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="doGenerateInviteCode()">生成</button>');
+}
+function doGenerateInviteCode(){
+  var el=document.getElementById('invCityInput');
+  var city=(el&&el.value||'').trim();
+  if(!city){ toast('请输入目标城市'); if(el)el.focus(); return; }
+  var emailEl=document.getElementById('invEmailInput');
+  var email=(emailEl&&emailEl.value||'').trim();
+  var code=_inviteCodeGen();
+  while(INVITE_CODES[code]) code=_inviteCodeGen(); // 极小概率碰撞兜底
+  var projKey=_newCityProjKey(city); // 强制新建独立工作区，绝不因城市名重复而复用别的邀请码的数据
+  INVITE_CODES[code]={city:city, projKey:projKey, role:'member', createdBy:'ops', createdAt:Date.now(), revoked:false, usedBy:[], distributed:!!email, distributedEmail:email};
+  persist();
+  closeModal();
+  render();
+  // 若此前已给同一城市名生成过码，提醒管理员：新码是全新独立工作区，不会与旧码共享数据
+  var sameCityOlder=Object.keys(INVITE_CODES).filter(function(c){return c!==code && INVITE_CODES[c].city===city && !INVITE_CODES[c].revoked;});
+  var suffix=email?'（已标记分发给 '+email+'）':'，可复制发给对方';
+  toast(sameCityOlder.length
+    ? '✓ 已生成邀请码 '+code+'（'+city+'）—— 注意：该城市已有其他生效邀请码，此码是全新独立工作区，数据不互通'
+    : '✓ 已生成邀请码 '+code+'（'+city+'）'+suffix);
+}
+function revokeInviteCode(code){
+  if(!INVITE_CODES[code]) return;
+  INVITE_CODES[code].revoked=true;
+  persist();
+  render();
+  toast('已作废邀请码 '+code);
 }
 
 /* == Tab2: 企业资源库 == */

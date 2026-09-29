@@ -70,10 +70,38 @@ function detailNeeds(p){
 function detailSettings(p){
   return '<div class="detail-header"><div><span class="eyebrow">ACCOUNT</span><h2>账号概览</h2><p>由系统开通 · 不可自行修改</p></div></div>'+
     '<div class="detail-scroll">'+
-      '<div class="detail-block"><h3>身份</h3><ul class="check-list"><li><i class="i">✔</i>'+p.org+'</li><li><i class="i">✔</i>'+p.who+' · 招商干部</li></ul></div>'+
+      '<div class="detail-block"><h3>身份</h3><ul class="check-list"><li><i class="i">✔</i>'+p.org+'</li><li><i class="i">✔</i>'+p.who+' · 招商干部'+(AUTH&&AUTH.role==='owner'?' · 组织管理员':'')+'</li></ul></div>'+
       '<div class="detail-block"><h3>数据权限</h3><div class="info-callout" style="margin-top:0">仅可访问 <b>'+p.city+'</b> 城市智库；跨城市数据由运营端管理。</div></div>'+
+      orgMembersBlock()+
       '<div class="detail-block"><h3>安全边界</h3><div class="boundary-note" style="margin-top:0"><i class="i">🔒</i>确认关口、资源核验责任与企业触达边界，不因个人设置而跳过。</div></div>'+
     '</div>';
+}
+/* 组织成员区块：owner 可查看同工作区(projKey)其他账号并移除；member 完全不可见此区块。
+   邀请码生成权限不在此处开放——政府端任何角色都不能生成邀请码，见 canGenerateInviteCode()。 */
+function orgMembersBlock(){
+  if(!isOrgOwner(AUTH)) return '';
+  var myProjKey=AUTH&&AUTH.projKey;
+  var members=Object.keys(USER_PROFILES).filter(function(u){
+    var up=USER_PROFILES[u];
+    return up && (up.projKey===myProjKey) && u!==(AUTH&&AUTH.user);
+  });
+  var rows=members.map(function(u){
+    var up=USER_PROFILES[u];
+    return '<li><i class="i">👤</i>'+(up.name||u)+' · '+u+' · '+(up.role==='owner'?'管理员':'成员')+
+      '<button class="ghost-button" style="min-height:24px;padding:1px 8px;font-size:11px;margin-left:8px" onclick="removeOrgMember(\''+u+'\')">移除</button></li>';
+  }).join('')||'<li style="color:#9aa5b5">暂无其他成员，邀请码可发给同事共同注册加入本工作区</li>';
+  return '<div class="detail-block"><h3>组织成员<span style="font-size:11px;color:#9aa5b5;margin-left:6px">共 '+(members.length+1)+' 人</span></h3>'+
+    '<ul class="check-list">'+rows+'</ul>'+
+    '<div class="info-callout" style="margin-top:8px">邀请码由招商团队统一生成并管理，本页不提供生成入口。</div></div>';
+}
+function removeOrgMember(u){
+  if(!isOrgOwner(AUTH)) return; // 权限双重校验：即便按钮被绕过点击，非owner也不可执行
+  if(!USER_PROFILES[u]) return;
+  if(!confirm('确认移除成员「'+(USER_PROFILES[u].name||u)+'」？该账号将无法再登录本工作区。')) return;
+  delete USER_PROFILES[u];
+  persist();
+  render();
+  toast('已移除成员 '+u);
 }
 // 城市智库页（未点类目时）→ 右侧：智库范围说明
 function detailKbIntro(p){

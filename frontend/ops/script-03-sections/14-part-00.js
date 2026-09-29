@@ -36,20 +36,30 @@ function persist(){
       })(),
       USER_PROFILES:USER_PROFILES,
       CITY_ACCOUNTS:CITY_ACCOUNTS,
+      INVITE_CODES:INVITE_CODES,
       RESET_GEN:(typeof RESET_GEN!=='undefined'?RESET_GEN:null),
       DELETED_CLUES:window.DELETED_CLUES||[],
       syncTs:Date.now()
     };
     try{ localStorage.setItem(LS_KEY, JSON.stringify(data)); }catch(_){}
     // 同步到服务器（持久化存储）
-    // Guard: don't overwrite server if OPS_ENT is empty (likely not yet loaded)
-    if(OPS_ENT.length>0 || !window._opsServerHadData){ try{ fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+    // 【2026-09-29】修复：旧 guard 用 OPS_ENT 是否为空来决定"整个请求要不要发"，
+    // 导致企业资源库一天没数据（本地演示环境的常态），管理端所有字段（邀请码/注册用户/
+    // 城市数据…）永远持久化不了——不是"防止误清空"，而是"锁死了持久化"。
+    // 改为只在 OPS_ENT 为空且服务端曾经有数据时，本次请求不带 OPS_ENT 字段（保护那一个
+    // 字段不被空值覆盖），其余字段照常发送，不再因为一个字段的状态挡住整份数据。
+    var _sendData=data;
+    if(OPS_ENT.length===0 && window._opsServerHadData){
+      _sendData=Object.assign({}, data);
+      delete _sendData.OPS_ENT;
+    }
+    try{ fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_sendData)})
       .then(function(r){return r.json();}).then(function(resp){
         if(resp&&resp.rejected==='stale-generation'){
           console.warn('[sync] write rejected by reset barrier, resyncing from server');
           if(typeof restoreFromServer==='function') restoreFromServer(function(){ if(typeof render==='function')try{render();}catch(_){} });
         }
-      }).catch(function(){}); }catch(_){} }
+      }).catch(function(){}); }catch(_){}
   }catch(e){ console.warn('[persist] failed:',e.message); }
 }
 

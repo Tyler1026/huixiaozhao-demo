@@ -108,6 +108,8 @@ function restoreFromServer(callback){
     // 注册用户资料：合并服务器与本地(不丢本地新注册未同步的)
     if(srv.USER_PROFILES){ Object.keys(srv.USER_PROFILES).forEach(function(uk){ USER_PROFILES[uk]=srv.USER_PROFILES[uk]; }); }
     if(srv.CITY_ACCOUNTS){ CITY_ACCOUNTS = srv.CITY_ACCOUNTS; }
+    // 邀请码库：合并服务器与本地，不用裸覆盖（管理端可能同时在生成新码）
+    if(srv.INVITE_CODES){ Object.keys(srv.INVITE_CODES).forEach(function(ck){ INVITE_CODES[ck]=srv.INVITE_CODES[ck]; }); }
     if(srv.RESET_GEN){ RESET_GEN = srv.RESET_GEN; }  // 记住服务端代际,persist时带回
     // 删除墓碑：合并服务端与本地墓碑，并从恢复的数据中过滤已删项目（防复活）
     (function(){
@@ -309,7 +311,7 @@ window.addEventListener('storage', function(e){
     // 业务数据指纹比对：只取业务字段(不含 syncTs 等易变时间戳)，指纹与上次相同则本次纯属空转，直接跳过重绘。
     var _fp=JSON.stringify([data.PROJECTS,data.REPORTSTATE,data.DEMANDS,
       data.KB_FILE_CHUNKS,data.KB_CONFIRMS,data.PENDING_CONFIRMS,
-      data.DOCK_LOGS,data.KB_UNLOCKED,data.CITY_ACCOUNTS,data.USER_PROFILES]);
+      data.DOCK_LOGS,data.KB_UNLOCKED,data.CITY_ACCOUNTS,data.USER_PROFILES,data.INVITE_CODES]);
     if(window.__lastSyncFp===_fp){ return; }  // 业务数据无变化：跳过整体覆盖与 render()，消除空转闪烁
     window.__lastSyncFp=_fp;
     // 同步关键数据（保留当前 view/cur/topic/stage 等用户操作状态）
@@ -401,6 +403,7 @@ window.addEventListener('storage', function(e){
     DOCK_LOGS=data.DOCK_LOGS||{};
     KB_UNLOCKED=data.KB_UNLOCKED||{};
     if(data.CITY_ACCOUNTS) CITY_ACCOUNTS=data.CITY_ACCOUNTS;
+    if(data.INVITE_CODES) Object.keys(data.INVITE_CODES).forEach(function(ck){ INVITE_CODES[ck]=data.INVITE_CODES[ck]; });
     // KB_CHAT：跨标签同步也必须按会话择优合并，绝不让另一个 tab 的旧内存 persist 回来
     // 冲掉本 tab 刚写入的问答。合并规则见 _mergeKbChat。
     _mergeKbChatTombs(data.KB_CHAT_TOMBS);

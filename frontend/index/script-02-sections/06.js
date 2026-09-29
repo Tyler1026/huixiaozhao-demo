@@ -32,11 +32,16 @@ function loginPage(){
       '</div>'+
     '</div></div>';
 }
-function gotoRegister(){ view='register'; render._routed=true; render(); }
+function gotoRegister(){
+  view='register'; render._routed=true; render();
+  // 登录门禁下 INVITE_CODES 尚未从服务器拉取，此时直接校验会误报「邀请码不存在」。
+  // 进入注册页立即拉一次最新邀请码库，若用户已输入内容则拉完自动重新校验一遍。
+  restoreFromServer(function(){ if(typeof onInviteCodeInput==='function') onInviteCodeInput(); });
+}
 function regBack(){ view='login'; render._routed=true; render(); }
 function regErr(msg){ var e=document.getElementById('regErr'); if(e){ e.textContent=msg; e.style.display=msg?'block':'none'; } }
 
-/* 注册页：账号+密码+个人资料 */
+/* 注册页：邀请码+账号+密码+个人资料。城市由邀请码决定，不可手填。 */
 function registerPage(){
   function reqLabel(label){
     return '<span>'+label.replace(/\s\*$/,'<span style="color:#dc2626;font-weight:700">\u2009*</span>')+'</span>';
@@ -57,9 +62,17 @@ function registerPage(){
       '<div style="text-align:center;margin-bottom:20px">'+
         '<div style="width:52px;height:52px;margin:0 auto 10px;border-radius:14px;background:linear-gradient(135deg,#1a56db,#6366f1);display:grid;place-items:center;font-size:26px;color:#fff;font-weight:700">慧</div>'+
         '<h1 style="margin:0;font-size:19px;color:#0b183b">注册政府端账号</h1>'+
-        '<p style="margin:6px 0 0;font-size:12px;color:#8492a6">完善资料，便于项目提交后招商团队电话/微信联系</p>'+
+        '<p style="margin:6px 0 0;font-size:12px;color:#8492a6">凭邀请码加入你的城市工作区，完善资料便于招商团队电话/微信联系</p>'+
       '</div>'+
       '<div style="display:grid;gap:11px">'+
+        '<label style="display:grid;gap:5px;font-size:12px;color:#52637a">'+reqLabel('邀请码 *')+
+          '<span style="position:relative;display:block">'+
+          '<input id="regInviteCode" type="text" placeholder="向招商团队获取邀请码" oninput="regClearInvalid(this);onInviteCodeInput()" autocomplete="off" style="width:100%;box-sizing:border-box;min-height:42px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:9px;outline:0;font-size:14px;text-transform:uppercase;letter-spacing:.5px">'+
+          '</span>'+
+        '</label>'+
+        '<div id="regInviteHint" style="font-size:12px;color:#8492a6;margin-top:-4px">输入邀请码后自动识别所在城市</div>'+
+        '<label style="display:grid;gap:5px;font-size:12px;color:#52637a">所在城市（由邀请码自动确定）'+
+          '<input id="regCity" type="text" disabled placeholder="—" style="min-height:42px;padding:8px 12px;border:1px solid #e6ebf3;border-radius:9px;outline:0;font-size:14px;background:#f6f8fc;color:#52637a"></label>'+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
           fld('regUser','登录账号名 *','如 zhangsan')+
           fld('regPwd','登录密码 *','设置密码','password')+
@@ -70,9 +83,8 @@ function registerPage(){
         '</div>'+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
           fld('regWechat','微信号 *','微信号')+
-          fld('regCity','所在城市 *','如 随州')+
+          fld('regOrg','所在单位 *','如 随州市招商局')+
         '</div>'+
-        fld('regOrg','所在单位 *','如 随州市招商局')+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
           fld('regDept','部门 *','如 投资促进科')+
           fld('regTitle','职务 *','如 科长')+
@@ -84,13 +96,29 @@ function registerPage(){
     '</div></div>';
 }
 
+/* 邀请码输入实时校验：合法则锁定展示城市，非法则清空城市并提示 */
+function onInviteCodeInput(){
+  var el=document.getElementById('regInviteCode'); if(!el) return;
+  var cityEl=document.getElementById('regCity'); var hintEl=document.getElementById('regInviteHint');
+  var code=el.value.trim();
+  if(!code){ if(cityEl)cityEl.value=''; if(hintEl){hintEl.textContent='输入邀请码后自动识别所在城市';hintEl.style.color='#8492a6';} return; }
+  var v=validateInviteCode(code);
+  if(v.ok){
+    if(cityEl)cityEl.value=v.city||'';
+    if(hintEl){hintEl.textContent='✓ 邀请码有效，将加入「'+(v.city||'')+'」工作区';hintEl.style.color='#0a8f5c';}
+  }else{
+    if(cityEl)cityEl.value='';
+    if(hintEl){hintEl.textContent=v.msg;hintEl.style.color='#dc2626';}
+  }
+}
+
 function regMarkInvalid(id){ var el=document.getElementById(id); if(el){ el.style.borderColor='#dc2626'; el.style.boxShadow='0 0 0 3px rgba(220,38,38,.12)'; } }
 function regClearInvalid(el){ if(el){ el.style.borderColor='#d8e0ed'; el.style.boxShadow='none'; } var e=document.getElementById('regErr'); if(e){ e.style.display='none'; } }
 function doRegister(){
   function v(id){ var el=document.getElementById(id); return el?el.value.trim():''; }
-  var u=v('regUser').toLowerCase(), pw=v('regPwd'), name=v('regName'), phone=v('regPhone'),
-      wechat=v('regWechat'), city=v('regCity'), org=v('regOrg'), dept=v('regDept'), title=v('regTitle');
-  var fields=[['regUser',u,'登录账号名'],['regPwd',pw,'登录密码'],['regName',name,'姓名'],['regPhone',phone,'手机号码'],['regWechat',wechat,'微信号'],['regCity',city,'所在城市'],['regOrg',org,'所在单位'],['regDept',dept,'部门'],['regTitle',title,'职务']];
+  var inviteCode=v('regInviteCode'), u=v('regUser').toLowerCase(), pw=v('regPwd'), name=v('regName'), phone=v('regPhone'),
+      wechat=v('regWechat'), org=v('regOrg'), dept=v('regDept'), title=v('regTitle');
+  var fields=[['regInviteCode',inviteCode,'邀请码'],['regUser',u,'登录账号名'],['regPwd',pw,'登录密码'],['regName',name,'姓名'],['regPhone',phone,'手机号码'],['regWechat',wechat,'微信号'],['regOrg',org,'所在单位'],['regDept',dept,'部门'],['regTitle',title,'职务']];
   var missing=fields.filter(function(f){return !f[1];});
   if(missing.length){
     missing.forEach(function(f){ regMarkInvalid(f[0]); });
@@ -102,34 +130,37 @@ function doRegister(){
   }
   if(!/^1[3-9]\d{9}$/.test(phone)){ regMarkInvalid('regPhone'); var pe=document.getElementById('regPhone'); if(pe){pe.focus();} regErr('手机号码格式不正确（应为11位手机号）'); if(typeof toast==='function') toast('手机号码格式不正确'); return; }
   if(ACCOUNTS[u]){ regErr('该账号为系统保留账号，请换一个'); return; }
-  // 先从服务器拉最新用户库，避免覆盖别人
+  // 先从服务器拉最新邀请码库+用户库再校验，避免用本地过期数据误判
   var proceed=function(){
     if(USER_PROFILES[u]){ regErr('该账号已被注册'); return; }
-    // 一个城市只能注册一个账号：同城市已有注册账号则拒绝
-    var _dup=Object.keys(USER_PROFILES).filter(function(uk){return USER_PROFILES[uk]&&USER_PROFILES[uk].city===city;});
-    if(_dup.length){ regErr('「'+city+'」已有账号注册（'+USER_PROFILES[_dup[0]].name+'），每个城市仅限一个账号，请直接登录'); return; }
-    // 系统常驻账号占用的城市（如随州=suizhou）也不允许重复注册
-    var _sysDup=Object.keys(ACCOUNTS).filter(function(ak){return ACCOUNTS[ak]&&ACCOUNTS[ak].city===city;});
-    if(_sysDup.length){ regErr('「'+city+'」为系统已开通城市，请使用已有账号直接登录'); return; }
-    USER_PROFILES[u]={name:name,phone:phone,wechat:wechat,org:org,dept:dept,title:title,city:city,pwd:pw,ts:Date.now()};
+    var inv=validateInviteCode(inviteCode);
+    if(!inv.ok){ regMarkInvalid('regInviteCode'); regErr(inv.msg); return; }
+    var city=inv.city, role=inv.role||'member';
+    // 邀请码可重复使用：用同一个码注册的多个账号加入同一工作区（团队协作）；
+    // 不同邀请码即使城市名相同也是完全独立的工作区，隔离边界是 projKey 不是城市名。
+    // 不再限制"一城市一账号"。
+    USER_PROFILES[u]={name:name,phone:phone,wechat:wechat,org:org,dept:dept,title:title,city:city,pwd:pw,ts:Date.now(),role:role,inviteCode:inv.code,projKey:inv.projKey||null};
+    // 记录邀请码使用历史，供管理端追踪谁用了这个码
+    if(!INVITE_CODES[inv.code].usedBy) INVITE_CODES[inv.code].usedBy=[];
+    INVITE_CODES[inv.code].usedBy.push({user:u,ts:Date.now()});
     persist();
-    AUTH={user:u, city:city, projKey:null, resident:false, who:name, org:org};
+    AUTH={user:u, city:city, projKey:inv.projKey||null, resident:false, who:name, org:org, role:role};
     saveAuth();
     cur=null; view='setup'; render._restored=false; render._routed=false; render._serverSynced=false;
     // 立即强制同步注册用户到服务端(绕过5秒防抖):必须在restoreFromServer之前完成POST,
     // 否则5秒内页面已多次restore/render,本地USER_PROFILES可能被服务端旧数据覆盖前尚未推送,
     // 表现为"注册用户没同步到管理端"。
     // 关键安全:未登录状态PROJECTS/OPS_ENT可能是空,若直接推整个localStorage会清空服务端全库。
-    // 改为只推 USER_PROFILES 增量,避免空快照灾难。
+    // 改为只推 USER_PROFILES + INVITE_CODES 增量,避免空快照灾难。
     try{
-      var _incBody={USER_PROFILES:USER_PROFILES};
+      var _incBody={USER_PROFILES:USER_PROFILES, INVITE_CODES:INVITE_CODES};
       if(typeof RESET_GEN!=='undefined'&&RESET_GEN) _incBody.RESET_GEN=RESET_GEN;
       _incBody.syncTs=Date.now();
       var _xhr=new XMLHttpRequest();
       _xhr.open('POST','/api/sync',false);  // 同步XHR:确保注册数据先到服务端
       _xhr.setRequestHeader('Content-Type','application/json');
       _xhr.send(JSON.stringify(_incBody));
-      console.log('[register] sync POST status:', _xhr.status, 'body keys:USER_PROFILES only');
+      console.log('[register] sync POST status:', _xhr.status, 'body keys:USER_PROFILES,INVITE_CODES');
     }catch(e){ console.warn('[register] sync POST failed:',e&&e.message); }
     var done=false; var fb=setTimeout(function(){ if(!done){done=true;render();} },2000);
     restoreFromServer(function(){ if(!done){done=true;clearTimeout(fb);render();} });
@@ -159,12 +190,12 @@ function doLogin(){
   var _verify=function(){
     var acc=ACCOUNTS[u];
     // 城市账号连接表（推送RAG时自动建立，resident账号直接进工作区）
-    if(!acc && CITY_ACCOUNTS[u]){ var ca=CITY_ACCOUNTS[u]; acc={pwd:ca.pwd, city:ca.city||null, projKey:ca.projKey||null, resident:true, who:ca.who||u, org:ca.org||''}; }
+    if(!acc && CITY_ACCOUNTS[u]){ var ca=CITY_ACCOUNTS[u]; acc={pwd:ca.pwd, city:ca.city||null, projKey:ca.projKey||null, resident:true, who:ca.who||u, org:ca.org||'', role:ca.role||'owner'}; }
     // 内置账号不存在时，查注册用户库
-    if(!acc && USER_PROFILES[u]){ var up=USER_PROFILES[u]; acc={pwd:up.pwd, city:up.city||null, projKey:up.projKey||null, resident:!!up.resident, who:up.name||u, org:up.org||''}; }
+    if(!acc && USER_PROFILES[u]){ var up=USER_PROFILES[u]; acc={pwd:up.pwd, city:up.city||null, projKey:up.projKey||null, resident:!!up.resident, who:up.name||u, org:up.org||'', role:up.role||'member'}; }
     if(!acc){ loginErr('账号不存在'); return; }
     if(acc.pwd!==pw){ loginErr('密码错误'); return; }
-    AUTH={user:u, city:acc.city, projKey:acc.projKey, resident:!!acc.resident, who:acc.who, org:acc.org};
+    AUTH={user:u, city:acc.city, projKey:acc.projKey, resident:!!acc.resident, who:acc.who, org:acc.org, role:acc.role||'member'};
     saveAuth();
     cur=null; view='setup'; render._restored=false; render._routed=false; render._serverSynced=false;
     render();
