@@ -1819,7 +1819,25 @@ function _inviteCodeGen(){
    即使城市名与已有工作区相同，也各自独立，避免不同团队/不同邀请码的数据串到一起。 */
 function _newCityProjKey(city){
   var key='p'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
-  PROJECTS[key]={id:key, city:city, org:city+'市招商局', who:'负责人', topic:city+'产业链招引', stage:1, kb:[], report:null, clues:[]};
+  // 【2026-09-29】必须在这里当场用 generateKbConclusions(city) 填充 known/sub/tag，
+  // 不能只给空骨架——政府端邀请码注册流程(doRegister)不会调用 autoProvisionCity 或
+  // enterWorkspace，它直接复用邀请码自带的 projKey 进入已存在的 PROJECTS[key]。
+  // 如果这里的 kb 只是空骨架，账号进去后城市智库永远空白，没有任何环节会后补填充。
+  // （真实复现过：改成带骨架的 kb:[] 数组后，问题从"完全空白"变成"骨架有了但
+  // known 仍是[]"——根因是填充这一步本该发生在创建时，不是进入时。）
+  var _c=(typeof generateKbConclusions==='function')?generateKbConclusions(city):null;
+  PROJECTS[key]={id:key, city:city, org:city+'市招商局', who:'负责人', topic:city+'产业链招引', stage:1,
+    kb:_c?[
+      {icon:'🏭',t:'主导产业与产业链',sub:_c.industry.sub,tag:_c.industry.tag,known:_c.industry.known,calls:['城市公开信息','产业链图谱']},
+      {icon:'🏢',t:'园区与承载条件',sub:_c.park.sub,tag:_c.park.tag,known:_c.park.known,calls:['园区基础资料','政府官网']},
+      {icon:'🏗️',t:'链主与存量企业',sub:_c.firm.sub,tag:_c.firm.tag,known:_c.firm.known,calls:['企业名录','工商信息']},
+      {icon:'📜',t:'政策、规划与领导关注',sub:_c.policy.sub,tag:_c.policy.tag,known:_c.policy.known,calls:['政府工作报告','领导发言']}
+    ]:[
+      {icon:'🏭',t:'主导产业与产业链',sub:'分析中',tag:'公开信息',known:[],calls:['城市公开信息','产业链图谱']},
+      {icon:'🏢',t:'园区与承载条件',sub:'分析中',tag:'公开信息',known:[],calls:['园区基础资料','政府官网']},
+      {icon:'🏗️',t:'链主与存量企业',sub:'分析中',tag:'公开信息',known:[],calls:['企业名录','工商信息']},
+      {icon:'📜',t:'政策、规划与领导关注',sub:'分析中',tag:'公开信息',known:[],calls:['政府工作报告','领导发言']}
+    ], report:null, clues:[]};
   return key;
 }
 function inviteCodeSection(){

@@ -238,10 +238,10 @@ function createProject(){
   PROJECTS[key]={
     id:key, city:city, org:city+'市招商局', who:'负责人', topic:city+'产业链招引', stage:1,
     kb:[
-      {icon:'🏭',t:'主导产业与产业链',sub:'分析中',tag:'AI初判',known:[],calls:['城市公开信息','产业链图谱']},
-      {icon:'🏢',t:'园区与承载条件',sub:'分析中',tag:'AI初判',known:[],calls:['园区基础资料','政府官网']},
-      {icon:'🏗️',t:'链主与存量企业',sub:'分析中',tag:'AI初判',known:[],calls:['企业名录','工商信息']},
-      {icon:'📜',t:'政策、规划与领导关注',sub:'分析中',tag:'AI初判',known:[],calls:['政府工作报告','领导发言']}
+      {icon:'🏭',t:'主导产业与产业链',sub:'分析中',tag:'公开信息',known:[],calls:['城市公开信息','产业链图谱']},
+      {icon:'🏢',t:'园区与承载条件',sub:'分析中',tag:'公开信息',known:[],calls:['园区基础资料','政府官网']},
+      {icon:'🏗️',t:'链主与存量企业',sub:'分析中',tag:'公开信息',known:[],calls:['企业名录','工商信息']},
+      {icon:'📜',t:'政策、规划与领导关注',sub:'分析中',tag:'公开信息',known:[],calls:['政府工作报告','领导发言']}
     ],
     report:null, clues:[]
   };
@@ -311,11 +311,11 @@ function generateKbConclusions(city){
       }
     };
   }
-  // 通用骨架（非随州城市）
+  // 通用骨架（非随州城市）：公开统计信息，不提“AI”（同步政府端 08.js 的措辞）
   return {
     industry:{
-      sub:city+'主导产业集群与链条结构（公开信息初判）',
-      tag:'AI初判 · 待补充',
+      sub:city+'主导产业集群与链条结构（公开信息整理）',
+      tag:'公开信息 · 待补充',
       known:[
         city+'工业基础以传统制造业为核心，正向高端制造/新能源/数字经济方向升级',
         '主导产业贡献当地规上工业主要产值，需查阅统计年鉴获取具体数字',
@@ -325,8 +325,8 @@ function generateKbConclusions(city){
       ]
     },
     park:{
-      sub:city+'主要工业园区承载条件（公开信息初判）',
-      tag:'AI初判 · 待核实',
+      sub:city+'主要工业园区承载条件（公开信息整理）',
+      tag:'公开信息 · 待核实',
       known:[
         city+'已建立国家级或省级经济开发区/高新区，具备基础工业承载能力',
         '主要园区已配备标准化厂房、市政配套与交通基础设施',
@@ -336,8 +336,8 @@ function generateKbConclusions(city){
       ]
     },
     firm:{
-      sub:city+'链主企业与供应链缺口（公开信息初判）',
-      tag:'AI初判 · 待补充',
+      sub:city+'链主企业与供应链缺口（公开信息整理）',
+      tag:'公开信息 · 待补充',
       known:[
         city+'本地存在若干规上工业龙头（整车/总装/终端品牌），是配套采购主要需求方',
         '链主在核心零部件、系统集成、检测认证等环节存在明显外采依赖',
@@ -347,8 +347,8 @@ function generateKbConclusions(city){
       ]
     },
     policy:{
-      sub:city+'政策方向与领导关注重点（公开信息初判）',
-      tag:'AI初判 · 待领导确认',
+      sub:city+'政策方向与领导关注重点（公开信息整理）',
+      tag:'公开信息 · 待领导确认',
       known:[
         city+'近年政府工作报告将制造业升级与招商引资列为重点，产业政策支持力度较强',
         '符合主导方向的落地企业通常可获土地优惠/税收减免/人才补贴等配套政策',
@@ -373,7 +373,7 @@ function showDownloadReport(){
   // 完整版内容（基于 generateKbConclusions 真实数据）
   var fullLines=[
     city+'城市智库 · 招商研判报告（完整版）',
-    '生成时间：'+new Date().toLocaleDateString('zh-CN')+'  |  数据来源：公开信息 AI 初判',
+    '生成时间：'+new Date().toLocaleDateString('zh-CN')+'  |  数据来源：公开信息整理',
     '════════════════════════════════',
     '',
     '一、主导产业与产业链',
@@ -395,7 +395,7 @@ function showDownloadReport(){
     '  3. 招引目标画像：具备落地意向、产品与缺口直接匹配的细分领域龙头',
     '  4. 待确认事项：专项资金额度、首选地块、领导最新交办口径',
     '',
-    '⚠ 本报告为 AI 基于公开信息的初判，正式招商决策需结合政府授权材料与领导确认。',
+    '⚠ 本报告基于公开信息整理，正式招商决策需结合政府授权材料与领导确认。',
   ].join('\n');
 
   // 精简版内容
@@ -411,7 +411,7 @@ function showDownloadReport(){
     '',
     '【核心建议】优先招引链主外采依赖最重的关键环节企业，结合园区政策争取一事一议。',
     '',
-    '⚠ 以上为 AI 初判，需干部结合实际材料确认。',
+    '⚠ 以上为公开信息整理，需干部结合实际材料确认。',
   ].join('\n');
 
   function dlFile(content, filename){
@@ -438,7 +438,7 @@ function showDownloadReport(){
             '<div><div style="font-size:13.5px;font-weight:650;color:#0b183b">完整版报告</div>'+
             '<div style="font-size:11.5px;color:#8492a6;margin-top:1px">四大主题全部内容 · 含核心研判建议</div></div>'+
           '</div>'+
-          '<button onclick="(function(){var c=generateKbConclusions(\''+city+'\');var lines=[\''+city+'城市智库 · 招商研判报告（完整版）\',\'生成时间：\'+new Date().toLocaleDateString(\'zh-CN\')+\'  |  数据来源：公开信息 AI 初判\',\'════════════════════════\',\'\',\'一、主导产业与产业链\'].concat(c.industry.known.map(function(x){return (x.indexOf(\'⚠️\')>=0?\'  ⚠ \':\'  • \')+x.replace(\'⚠️ \',\'\');})).concat([\'\',\'二、园区与承载条件\']).concat(c.park.known.map(function(x){return (x.indexOf(\'⚠️\')>=0?\'  ⚠ \':\'  • \')+x.replace(\'⚠️ \',\'\');})).concat([\'\',\'三、链主与存量企业\']).concat(c.firm.known.map(function(x){return (x.indexOf(\'⚠️\')>=0?\'  ⚠ \':\'  • \')+x.replace(\'⚠️ \',\'\');})).concat([\'\',\'四、政策方向与领导关注\']).concat(c.policy.known.map(function(x){return (x.indexOf(\'⚠️\')>=0?\'  ⚠ \':\'  • \')+x.replace(\'⚠️ \',\'\');})).concat([\'\',\'════════════════════════\',\'研判建议：\',\'  1. 优先补链：链主外采依赖最集中的核心零部件/系统集成环节\',\'  2. 承接园区：\'+\''+city+'\'+\'国家级/省级开发区（具体地块需确认）\',\'  3. 招引画像：产品与缺口直接匹配的细分领域龙头，有落地意向\',\'  4. 待确认：专项资金、首选地块、领导最新交办\',\'\',\'⚠ 本报告为 AI 基于公开信息的初判，正式决策需结合授权材料确认。\']);var blob=new Blob([lines.join(\'\\n\')],{type:\'text/plain;charset=utf-8\'});var u=URL.createObjectURL(blob);var a=document.createElement(\'a\');a.href=u;a.download=\''+city+'_招商研判报告_完整版.txt\';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(u);a.remove();},300);})()" style="width:100%;padding:10px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer">下载完整版 (.txt)</button>'+
+          '<button onclick="(function(){var c=generateKbConclusions(\''+city+'\');var lines=[\''+city+'城市智库 · 招商研判报告（完整版）\',\'生成时间：\'+new Date().toLocaleDateString(\'zh-CN\')+\'  |  数据来源：公开信息整理\',\'════════════════════════\',\'\',\'一、主导产业与产业链\'].concat(c.industry.known.map(function(x){return (x.indexOf(\'⚠️\')>=0?\'  ⚠ \':\'  • \')+x.replace(\'⚠️ \',\'\');})).concat([\'\',\'二、园区与承载条件\']).concat(c.park.known.map(function(x){return (x.indexOf(\'⚠️\')>=0?\'  ⚠ \':\'  • \')+x.replace(\'⚠️ \',\'\');})).concat([\'\',\'三、链主与存量企业\']).concat(c.firm.known.map(function(x){return (x.indexOf(\'⚠️\')>=0?\'  ⚠ \':\'  • \')+x.replace(\'⚠️ \',\'\');})).concat([\'\',\'四、政策方向与领导关注\']).concat(c.policy.known.map(function(x){return (x.indexOf(\'⚠️\')>=0?\'  ⚠ \':\'  • \')+x.replace(\'⚠️ \',\'\');})).concat([\'\',\'════════════════════════\',\'研判建议：\',\'  1. 优先补链：链主外采依赖最集中的核心零部件/系统集成环节\',\'  2. 承接园区：\'+\''+city+'\'+\'国家级/省级开发区（具体地块需确认）\',\'  3. 招引画像：产品与缺口直接匹配的细分领域龙头，有落地意向\',\'  4. 待确认：专项资金、首选地块、领导最新交办\',\'\',\'⚠ 本报告基于公开信息整理，正式决策需结合授权材料确认。\']);var blob=new Blob([lines.join(\'\\n\')],{type:\'text/plain;charset=utf-8\'});var u=URL.createObjectURL(blob);var a=document.createElement(\'a\');a.href=u;a.download=\''+city+'_招商研判报告_完整版.txt\';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(u);a.remove();},300);})()" style="width:100%;padding:10px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer">下载完整版 (.txt)</button>'+
         '</div>'+
         '<div style="border:1.5px solid #e8edf5;border-radius:14px;padding:18px 20px">'+
           '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'+
@@ -446,10 +446,10 @@ function showDownloadReport(){
             '<div><div style="font-size:13.5px;font-weight:650;color:#0b183b">精简版报告</div>'+
             '<div style="font-size:11.5px;color:#8492a6;margin-top:1px">一句话摘要 · 适合快速分享</div></div>'+
           '</div>'+
-          '<button onclick="(function(){var c=generateKbConclusions(\''+city+'\');var lines=[\''+city+' 招商研判 · 精简版\',\'生成时间：\'+new Date().toLocaleDateString(\'zh-CN\'),\'────────────────────\',\'\',\'【产业基础】\'+c.industry.known[0],\'【园区承载】\'+c.park.known[0],\'【链主缺口】\'+c.firm.known[2],\'【政策方向】\'+c.policy.known[0],\'\',\'【核心建议】优先招引链主外采依赖最重的关键环节企业，结合园区政策争取一事一议。\',\'\',\'⚠ 以上为 AI 初判，需干部结合实际材料确认。\'];var blob=new Blob([lines.join(\'\\n\')],{type:\'text/plain;charset=utf-8\'});var u=URL.createObjectURL(blob);var a=document.createElement(\'a\');a.href=u;a.download=\''+city+'_招商研判报告_精简版.txt\';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(u);a.remove();},300);})()" style="width:100%;padding:10px;background:#f5f7fb;color:#0b183b;border:1.5px solid #e8edf5;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer">下载精简版 (.txt)</button>'+
+          '<button onclick="(function(){var c=generateKbConclusions(\''+city+'\');var lines=[\''+city+' 招商研判 · 精简版\',\'生成时间：\'+new Date().toLocaleDateString(\'zh-CN\'),\'────────────────────\',\'\',\'【产业基础】\'+c.industry.known[0],\'【园区承载】\'+c.park.known[0],\'【链主缺口】\'+c.firm.known[2],\'【政策方向】\'+c.policy.known[0],\'\',\'【核心建议】优先招引链主外采依赖最重的关键环节企业，结合园区政策争取一事一议。\',\'\',\'⚠ 以上为公开信息整理，需干部结合实际材料确认。\'];var blob=new Blob([lines.join(\'\\n\')],{type:\'text/plain;charset=utf-8\'});var u=URL.createObjectURL(blob);var a=document.createElement(\'a\');a.href=u;a.download=\''+city+'_招商研判报告_精简版.txt\';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(u);a.remove();},300);})()" style="width:100%;padding:10px;background:#f5f7fb;color:#0b183b;border:1.5px solid #e8edf5;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer">下载精简版 (.txt)</button>'+
         '</div>'+
       '</div>'+
-      '<p style="font-size:11px;color:#b0bac8;margin:16px 0 0;text-align:center;line-height:1.7">报告内容为 AI 基于公开信息的初步研判，正式招商决策需结合政府授权材料与领导确认</p>'+
+      '<p style="font-size:11px;color:#b0bac8;margin:16px 0 0;text-align:center;line-height:1.7">报告内容为公开信息整理的初步研判，正式招商决策需结合政府授权材料与领导确认</p>'+
     '</div>'+
   '</div>';
 
@@ -491,7 +491,7 @@ function showSummaryModal(city2,sectors){
         '<span style="font-size:12px;font-weight:650;color:#22c55e;letter-spacing:.5px">分析完成</span>'+
       '</div>'+
       '<h2 style="font-size:20px;font-weight:750;color:#0b183b;margin:0 0 4px">'+city2+' 城市智库已就位</h2>'+
-      '<p style="font-size:13px;color:#8492a6;margin:0 0 20px">以下为 AI 基于公开信息的初步研判结论，⚠️ 标注项需结合政府材料确认</p>'+
+      '<p style="font-size:13px;color:#8492a6;margin:0 0 20px">以下为公开信息整理的初步研判结论，⚠️ 标注项需结合政府材料确认</p>'+
       rows+
       '<div style="margin-top:22px;display:flex;gap:10px;align-items:center">'+
         '<button onclick="enterWorkspaceFromModal()" style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">进入城市智库 →</button>'+
