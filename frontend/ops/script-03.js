@@ -1,0 +1,9632 @@
+
+
+
+/* ══════════════════════════════════════════════════════════════
+   报告查看 & 下载 & 招商对接页面重建
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── 查看报告：把 REPORTSTATE[cur].text 渲染到 reportArea ── */
+function viewCurrentReport(){
+  var rs = REPORTSTATE[cur];
+  if(!rs || !rs.text){ toast('暂无报告，请先在研判需求页生成'); return; }
+  var area = document.getElementById('reportArea');
+  if(!area){
+    // 不在研判需求页，跳转过去再显示
+    view='report'; render();
+    setTimeout(function(){ viewCurrentReport(); }, 200);
+    return;
+  }
+  // renderMd 是 triggerReport 内的局部函数，这里内联一个简化版
+  function md(t){
+    return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/\*\*([^*\n]+)\*\*/g,'<strong>$1</strong>')
+      .replace(/⚠️/g,'<span style="color:#d97706;font-weight:600">⚠️</span>')
+      .replace(/✅/g,'<span style="color:#16a34a">✅</span>')
+      .replace(/❌/g,'<span style="color:#dc2626">❌</span>')
+      .replace(/★+/g,function(m){return '<span style="color:#f59e0b">'+m+'</span>';})
+      .replace(/^#{0,3}\s*([一二三四五六七八九十]+)[、]\s*(.+)$/gm,
+        '<div style="display:flex;align-items:center;gap:10px;margin:20px 0 8px;padding-bottom:7px;border-bottom:2px solid #1a56db">'+
+        '<span style="display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;background:#1a56db;color:#fff;border-radius:50%;font-size:12px;font-weight:700">$1</span>'+
+        '<span style="font-size:14px;font-weight:750;color:#0b183b">$2</span></div>')
+      .replace(/^\|(.+)\|$/gm,function(m,inner){
+        var cells=inner.split('|').map(function(c){return c.trim();});
+        if(cells.every(function(c){return /^[\s\-:]+$/.test(c);})) return '';
+        return '<tr>'+cells.map(function(c,ci){
+          return ci===0
+            ? '<th style="padding:8px 12px;background:#f0f4ff;border:1px solid #dbeafe;font-weight:700;color:#1e3a8a;text-align:left">'+c+'</th>'
+            : '<td style="padding:8px 12px;border:1px solid #e8edf5;color:#1e293b">'+c+'</td>';
+        }).join('')+'</tr>';
+      })
+      .replace(/(<tr>[\s\S]+?<\/tr>)+/g,'<table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:12.5px">$&</table>')
+      .replace(/^[-•]\s(.+)$/gm,'<li style="margin:4px 0;color:#1e293b">$1</li>')
+      .replace(/\n{2,}/g,'</p><p style="margin:6px 0;line-height:1.85;color:#1e293b">')
+      .replace(/\n/g,'<br>');
+  }
+
+  area.innerHTML=
+    '<div style="border-radius:14px;border:1.5px solid #bfdbfe;overflow:hidden;margin-bottom:8px">'+
+      '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
+        '<span style="font-size:13px;font-weight:700;color:#1d4ed8">📊 研判报告（完整版）</span>'+
+        '<span style="font-size:11.5px;color:#8492a6">'+rs.topic+'</span>'+
+        '<span style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f0fdf4;color:#166534">置信度 '+rs.score+'%</span>'+
+        (origReportFiles()?'<button onclick="downloadOrigReport(\'full\')" style="padding:4px 10px;background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:8px;font-size:12px;color:#4338ca;cursor:pointer;font-weight:600;margin-left:6px">⬇ 原始报告(docx)</button>':'')+
+        '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 研判摘要</button>'+
+      '</div>'+
+      '<div style="padding:18px 20px;font-size:13px;line-height:1.85;color:#1e293b">'+
+        '<p style="margin:0">'+md(rs.text)+'</p>'+
+      '</div>'+
+      '<div style="padding:10px 16px;background:#f9fafb;border-top:1px solid #f0f4ff;font-size:11px;color:#9aa5b5">'+
+        '生成时间：'+new Date(rs.ts).toLocaleDateString('zh-CN')+' · '+
+        '数据来源：慧小招实测报告+DeepSeek分析 · 置信度'+rs.score+'%'+
+      '</div>'+
+    '</div>';
+
+  // 产业链图谱：viewCurrentReport 调用时同步追加
+  if(!document.getElementById('chainMapBlock')){
+    var _cmEl2=document.createElement('div');
+    _cmEl2.id='chainMapBlock';
+    _cmEl2.innerHTML=chainMapHtml(PROJECTS[cur]);
+    area.appendChild(_cmEl2);
+  }
+
+  // 更新底部操作栏
+  var bar = document.querySelector('.report-bottom-bar');
+  if(bar){
+    bar.innerHTML=
+      '<button onclick="triggerReport(1)" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">🔄 重新生成</button>'+
+      (origReportFiles()
+        ? '<button onclick="downloadOrigReport(\'full\')" style="padding:12px 14px;background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:12px;font-size:13px;color:#4338ca;cursor:pointer;font-weight:600">⬇ 原始报告(docx)</button>'+
+          '<button onclick="downloadOrigReport(\'short\')" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">⬇ 精简版(docx)</button>'
+        : '<button onclick="downloadReport(\'full\')" style="padding:12px 14px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;font-size:13px;color:#1a56db;cursor:pointer;font-weight:600">⬇ 下载研判摘要</button>')+
+      '<button onclick="submitDemand()" style="flex:1;padding:12px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer">✓ 确认方向，提交招引需求</button>';
+  }
+}
+
+/* ── 查找当前项目的原始报告文件（流水线产出的 docx，推送RAG时上传到云端）── */
+function origReportFiles(){
+  var p=P(); if(!p) return null;
+  if(p.reportFiles && p.reportFiles.length) return p.reportFiles;
+  // 回退：从申请队列里找该城市 done 且带 files 的最近一条
+  var done=(typeof REPORT_REQUESTS!=='undefined'?REPORT_REQUESTS:[])
+    .filter(function(r){return r.city===p.city && r.files && r.files.length;});
+  return done.length ? done[done.length-1].files : null;
+}
+/* ── 需求池行内下载：按申请 id 定位城市 → 拉云端原始 docx ── */
+function downloadReqFile(reqId, kind){
+  var r=(typeof REPORT_REQUESTS!=='undefined'?REPORT_REQUESTS:[]).filter(function(x){return x.id===reqId;})[0];
+  if(!r || !r.files || !r.files.length){ toast('暂无原始报告文件'); return; }
+  kind=kind||'full';
+  var meta=r.files.filter(function(m){return m.kind===kind;})[0] || r.files[0];
+  var url='/api/report-file?city='+encodeURIComponent(r.city)+'&kind='+encodeURIComponent(kind);
+  var a=document.createElement('a'); a.href=url; a.download=meta.name||(r.city+'_报告.docx');
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){a.remove();},300);
+  toast('✓ 正在下载原始报告：'+(meta.name||(r.city+'_报告.docx')));
+}
+/* ── 下载原始报告：直接从云端拉流水线产出的原始 docx ── */
+function downloadOrigReport(kind){
+  var p=P(); if(!p){ toast('未选择项目'); return; }
+  kind=kind||'full';
+  var files=origReportFiles();
+  var meta=files && (files.filter(function(m){return m.kind===kind;})[0] || files[0]);
+  if(!meta){ toast('暂无原始报告文件，请先在需求池「推送到 RAG」'); return; }
+  var url='/api/report-file?city='+encodeURIComponent(p.city)+'&kind='+encodeURIComponent(kind);
+  var a=document.createElement('a'); a.href=url; a.download=meta.name||(p.city+'_报告.docx');
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){a.remove();},300);
+  toast('✓ 正在下载原始报告：'+(meta.name||(p.city+'_报告.docx')));
+}
+/* ── 下载报告 ── */
+function downloadReport(mode){
+  var rs=REPORTSTATE[cur]; var p=P();
+  if(!rs||!rs.text){ toast('暂无报告'); return; }
+  var city=p?p.city:'';
+  var topic=rs.topic||'';
+  var date=new Date(rs.ts).toLocaleDateString('zh-CN');
+
+  var content, filename;
+  if(mode==='full'){
+    content=[
+      city+' · '+topic+' 招商研判报告（完整版）',
+      '生成时间：'+date+'  |  置信度：'+rs.score+'%',
+      '数据来源：慧小招实测报告 + DeepSeek AI分析',
+      '════════════════════════════════',
+      '',
+      rs.text,
+      '',
+      '════════════════════════════════',
+      '⚠ 本报告为AI辅助研判，正式招商决策需结合政府授权材料与领导确认。',
+    ].join('\n');
+    filename=city+'_'+topic+'_研判报告_完整版.txt';
+  } else {
+    // 精简版：提取每章第一句
+    var sections=[];
+    rs.text.split('\n').forEach(function(l){
+      var m=l.match(/^[一二三四五六七八九十]+[、]/);
+      if(m) sections.push(l.replace(/^#+ */,'').trim());
+    });
+    content=[
+      city+' · '+topic+' 招商研判报告（精简版）',
+      '生成时间：'+date+'  |  置信度：'+rs.score+'%',
+      '────────────────────',
+      '',
+    ].concat(sections.map(function(s,i){return '['+(i+1)+'] '+s;})).concat([
+      '',
+      '详细内容请查看完整版报告。',
+      '⚠ 以上为AI初判，需干部结合实际材料确认。',
+    ]).join('\n');
+    filename=city+'_'+topic+'_研判报告_精简版.txt';
+  }
+
+  var blob=new Blob([content],{type:'text/plain;charset=utf-8'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a'); a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){URL.revokeObjectURL(url);a.remove();},300);
+  toast('✓ 报告已下载：'+filename);
+}
+
+
+
+/* ===== 数据层：多项目（优化点：解决写死随州）===== */
+var PROJECTS={};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+var STAGES=[['资料准备','上传与授权材料'],['AI 研判','生成缺口与方向'],['确认需求','干部与领导双确认'],['资源匹配','资源端核验匹配'],['招商对接','安排正式沟通']];
+
+/* 项目级阶段链：标准5阶段 + 该项目自定义追加阶段（客户反馈第4章第3条：后续阶段不写死） */
+function projStages(p){
+  var base=STAGES.map(function(s){return s.slice();});
+  if(p && p.customStages && p.customStages.length){
+    for(var i=0;i<p.customStages.length;i++) base.push([p.customStages[i],'自定义阶段']);
+  }
+  return base;
+}
+function stageNameOf(p,n){
+  var st=projStages(p);
+  return (n>=1 && st[n-1]) ? st[n-1][0] : '完成';
+}
+function stageDescOf(p,n){
+  var st=projStages(p);
+  return (n>=1 && st[n-1]) ? st[n-1][1] : '';
+}
+
+/* 项目阶段链：标准5阶段 + 该项目自定义追加阶段（后续不写死） */
+function projStages(p){
+  var base=STAGES.map(function(s){return s.slice();});
+  if(p && p.customStages && p.customStages.length){
+    for(var i=0;i<p.customStages.length;i++) base.push([p.customStages[i],'自定义阶段']);
+  }
+  return base;
+}
+function stageNameOf(p,n){
+  var st=projStages(p);
+  return (n>=1 && st[n-1]) ? st[n-1][0] : '完成';
+}
+
+/* ===== 运营端（周总·全局）：跨城市需求池 ===== */
+var DEMANDS=[];
+/* ===== 报告生成申请队列（管理端发起 → Agent流水线消费 → RAG回填）===== */
+var REPORT_REQUESTS=[];
+/* 城市账号连接表：{slug:{city,who,org,pwd,resident,projKey}} —— 推送到RAG时自动建立 */
+var CITY_ACCOUNTS={};
+function submitReportRequest(){
+  var city=($('#rrCity')&&$('#rrCity').value||'').trim();
+  var prov=($('#rrProv')&&$('#rrProv').value||'').trim();
+  if(!city||!prov){toast('请填写省份和城市');return;}
+  if(REPORT_REQUESTS.some(function(r){return r.city===city&&(r.status==='pending'||r.status==='running');})){
+    toast(city+' 已有进行中的申请');return;
+  }
+  REPORT_REQUESTS.push({id:'rr'+Date.now().toString(36),city:city,province:prov,
+    mode:'deep',status:'pending',by:'管理端·周总',ts:Date.now(),doneTs:null,projectKey:null,chunks:0});
+  persist();toast('已发起「'+city+'」报告生成申请，AI 流水线约 40 分钟完成');render();
+}
+/* 管理端「推送到 RAG」按钮：给已完成申请打 pushRequested 标记，本地轮询器消费后完成
+   RAG 推送 + 城市账号连接（登录名/密码自动建立并绑定该项目）。 */
+function pushReportToRag(city,btn){
+  if(btn){btn.disabled=true;btn.textContent='⏳ 推送中…';}
+  fetch('/api/report-push-request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({city:city})})
+    .then(function(r){return r.json();})
+    .then(function(res){
+      if(res&&res.ok){
+        var loc=REPORT_REQUESTS.find(function(r){return r.city===city&&r.status==='done';});
+        if(loc){loc.pushRequested=true;loc.pushed=false;}
+        toast('已提交「'+city+'」推送任务，RAG 与城市账号将自动连接');
+        render();
+      }else{
+        if(btn){btn.disabled=false;btn.textContent='🚀 推送到 RAG';}
+        toast('推送提交失败：'+(res&&res.error||'该城市无已完成报告'));
+      }
+    }).catch(function(e){
+      if(btn){btn.disabled=false;btn.textContent='🚀 推送到 RAG';}
+      toast('网络错误，推送提交失败');
+    });
+}
+/* 轮询服务器刷新申请状态（每30秒，仅状态前进时更新，避免打断输入） */
+setInterval(function(){
+  if(!REPORT_REQUESTS.length) return;
+  var active=REPORT_REQUESTS.some(function(r){return r.status==='pending'||r.status==='running';});
+  if(!active) return;
+  fetch('/api/sync?raw=1').then(function(r){return r.json();}).then(function(raw){
+    var srv=(raw&&raw.huixiaozhao_kb_v1&&raw.huixiaozhao_kb_v1.REPORT_REQUESTS)?raw.huixiaozhao_kb_v1.REPORT_REQUESTS:(raw&&raw.REPORT_REQUESTS);
+    if(!srv||!srv.length) return;
+    var rank={pending:0,running:1,failed:2,done:3};var changed=false;
+    srv.forEach(function(sr){
+      var loc=REPORT_REQUESTS.find(function(r){return r.id===sr.id;});
+      if(!loc){REPORT_REQUESTS.push(sr);changed=true;}
+      else if((rank[sr.status]||0)>(rank[loc.status]||0)){Object.assign(loc,sr);changed=true;}
+    });
+    if(changed){render();}
+  }).catch(function(){});
+},30000);
+function rrStatusBadge(s){
+  return s==='done'?'<span class="ops-badge green">已完成·RAG已初始化</span>':
+         s==='running'?'<span class="ops-badge blue"><span class="rr-spin"></span>AI 研判进行中</span>':
+         s==='failed'?'<span class="ops-badge orange">失败·可重试</span>':
+         '<span class="ops-badge">排队中</span>';
+}
+/* ===== 动态效果样式（注入一次） ===== */
+(function(){
+  var css='@keyframes rrPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(1.35)}}'+
+  '@keyframes rrShimmer{0%{background-position:-200px 0}100%{background-position:200px 0}}'+
+  '@keyframes rrStripe{0%{background-position:0 0}100%{background-position:28px 0}}'+
+  '@keyframes rrSpin{to{transform:rotate(360deg)}}'+
+  '@keyframes rrBlink{0%,100%{opacity:1}50%{opacity:.25}}'+
+  '@keyframes rrChipIn{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}'+
+  '.rr-dot-live{animation:rrPulse 1.6s ease-in-out infinite}'+
+  '.rr-bar-live{background-image:linear-gradient(90deg,#0757ad,#007f82),linear-gradient(45deg,rgba(255,255,255,.22) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.22) 50%,rgba(255,255,255,.22) 75%,transparent 75%,transparent)!important;background-size:100% 100%,28px 28px;background-blend-mode:overlay;animation:rrStripe 1s linear infinite}'+
+  '.rr-spin{display:inline-block;width:10px;height:10px;border:2px solid rgba(1,53,130,.25);border-top-color:#013582;border-radius:50%;margin-right:5px;vertical-align:-1px;animation:rrSpin .9s linear infinite}'+
+  '.rr-wave-run b{position:relative}'+
+  '.rr-wave-run .rr-runner{display:inline-block;width:7px;height:7px;border-radius:50%;background:#0757ad;margin-left:6px;animation:rrBlink 1.1s ease-in-out infinite}'+
+  '.rr-chip-new{animation:rrChipIn .5s ease}'+
+  '.rr-step-glow{animation:rrBlink 2.4s ease-in-out infinite}';
+  var st=document.createElement('style');st.textContent=css;document.head.appendChild(st);
+})();
+/* ===== 每秒轻量刷新：只更新计时文字，不重绘整页 ===== */
+setInterval(function(){
+  var r=(REPORT_REQUESTS||[]).find(function(x){return x.status==='running';});
+  if(!r) return;
+  var el=document.getElementById('rrElapsed');
+  if(el){
+    // 正式运行时间 = 服务端累计 activeMs + 距最近一次上报的实时增量（仅当上报未断流时）
+    var liveDelta=r.progressTs?Math.max(0,Math.min(Date.now()-r.progressTs,6*60000)):0;
+    var ms=(r.activeMs!=null)?(r.activeMs+liveDelta):(Date.now()-(r.claimTs||r.ts));
+    var s=Math.floor(ms/1000)%60,m=Math.floor(ms/60000)%60,h=Math.floor(ms/3600000);
+    el.textContent='有效运行 '+(h?h+':':'')+('0'+m).slice(-2)+':'+('0'+s).slice(-2);
+  }
+  var up=document.getElementById('rrLastUpd');
+  if(up&&r.progressTs){
+    var sec=Math.floor((Date.now()-r.progressTs)/1000);
+    up.textContent=(sec<60?sec+' 秒前更新':Math.floor(sec/60)+' 分钟前更新');
+  }
+},1000);
+function rrElapsed(ms){
+  var m=Math.floor(ms/60000);
+  return m<1?'刚刚':m<60?m+' 分钟':Math.floor(m/60)+' 小时 '+(m%60)+' 分';
+}
+function rrTimeSplit(r){
+  // 三口径：active=有效运行（产出在推进）/ stall=空转（在线但停滞）/ gap=断点（睡眠离线）
+  var liveDelta=r.progressTs?Math.max(0,Math.min(Date.now()-r.progressTs,6*60000)):0;
+  var act=(r.activeMs!=null)?(r.activeMs+(r.pendingIdleMs||0)+liveDelta):(Date.now()-(r.claimTs||r.ts));
+  return {active:rrElapsed(act), activeMs:act,
+          stall:(r.stallMs?rrElapsed(r.stallMs):null),
+          gap:(r.gapMs?rrElapsed(r.gapMs):null), gapCount:r.gapCount||0};
+}
+// 专员归属阶段（按 activity.id 分组到 6 个研判阶段）
+var RR_STAGE_OF={economic_profiler:0,population_profiler:0,transport_land_profiler:0,life_support_profiler:0,industry_analyst:0,competition_scout:0,policy_researcher:0,
+  chain_mapper:1,enterprise_hunter_1:2,enterprise_hunter_2:2,enterprise_hunter_3:2,fact_checker:3,scoring_engine:4,action_planner:4,compact_writer:5};
+function rrSpecialistCard(f){
+  var st=f.state;
+  var dot=st==='delivered'?'#0aa696':st==='working'?'#0757ad':st==='partial'?'#c85b09':'#b0bac7';
+  var badge=st==='delivered'?'<span style="color:#0aa696">已交付</span>':
+            st==='working'?'<span style="color:#0757ad">工作中<span class="rr-runner"></span></span>':
+            st==='partial'?'<span style="color:#c85b09">补充中</span>':
+            '<span style="color:#b0bac7">待命</span>';
+  var pct=f.min?Math.min(100,Math.round((f.lines||0)/f.min*100)):0;
+  var barCol=st==='delivered'?'#0aa696':st==='partial'?'#c85b09':'#0757ad';
+  var mini=(st==='queued')?'':'<div style="height:3px;border-radius:2px;background:#eef1f5;margin-top:4px;overflow:hidden"><div class="'+(st==='working'?'rr-bar-live':'')+'" style="height:100%;width:'+pct+'%;background:'+barCol+'"></div></div>';
+  // 数据来源 下拉框（点击浮出，按可靠度从高到低）
+  var srcTab='';
+  var srcs=f.sources||[];
+  if(srcs.length){
+    var ok='__rrSrc_'+f.id;
+    var isOpen=window[ok];
+    var menu=isOpen?('<div style="position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:50;'+
+        'background:#fff;border:1px solid #cdd9e8;border-radius:9px;box-shadow:0 10px 28px rgba(11,31,65,.16);'+
+        'padding:8px 10px;max-height:240px;overflow:auto">'+
+        '<div style="font-size:10px;color:#8492a6;margin-bottom:6px">按数据可靠度从高到低</div>'+
+        srcs.map(rrSrcRow).join('')+'</div>'):'';
+    srcTab='<div style="margin-top:6px;border-top:1px dashed #edf1f6;padding-top:5px"><div style="position:relative">'+
+      '<button onclick="event.stopPropagation();rrToggleSrc(\''+f.id+'\')" '+
+        'style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;'+
+        'border:1px solid '+(isOpen?'#91b7e2':'#dce4ef')+';background:'+(isOpen?'#f3f8ff':'#fff')+';'+
+        'border-radius:7px;color:#0757ad;font-size:10.5px;cursor:pointer;padding:5px 9px">'+
+        '<span>📚 数据来源 · '+srcs.length+' 项</span><span style="color:#8aa0bd">'+(isOpen?'▲':'▼')+'</span></button>'+
+      menu+'</div></div>';
+  }
+  return '<div style="padding:7px 9px;border:1px solid #eef2f7;border-radius:8px;background:'+(st==='working'?'#f6faff':'#fff')+'">'+
+    '<div style="display:flex;align-items:center;gap:7px">'+
+      '<span style="font-size:15px;position:relative">'+f.avatar+'<span class="'+(st==='working'?'rr-dot-live':'')+'" style="position:absolute;right:-2px;bottom:-1px;width:6px;height:6px;border-radius:50%;background:'+dot+';border:1.5px solid #fff"></span></span>'+
+      '<b style="font-size:12px;color:#0b183b">'+f.name+'</b>'+
+      '<span style="font-size:10.5px;margin-left:auto">'+badge+'</span></div>'+
+    '<div style="font-size:11px;color:#667590;margin-top:3px;line-height:1.5">'+String(f.action||'').replace(/</g,'&lt;')+'</div>'+mini+srcTab+'</div>';
+}
+function rrToggleSrc(id){
+  var key='__rrSrc_'+id;
+  var cur=window[key];
+  Object.keys(window).forEach(function(k){ if(k.indexOf('__rrSrc_')===0) window[k]=false; });
+  window[key]=!cur;
+  render();
+}
+function rrSrcRow(s){
+  var tierMap={1:['#0aa696','权威'],2:['#0757ad','官方'],3:['#c07a12','媒体'],4:['#8492a6','行业'],5:['#9aa5b5','其他']};
+  var tm=tierMap[s.tier]||tierMap[5];
+  var name=s.url?('<a href="'+s.url+'" target="_blank" style="color:#0757ad;text-decoration:none">'+String(s.name)+' ↗</a>'):String(s.name);
+  return '<div style="display:flex;align-items:center;gap:8px;font-size:11px;padding:7px 8px;border-radius:7px;border-bottom:1px solid #f2f5f9" '+
+    'onmouseover="this.style.background=\'#f6faff\'" onmouseout="this.style.background=\'transparent\'">'+
+    '<span style="flex:0 0 auto;min-width:34px;text-align:center;padding:2px 7px;border-radius:9px;color:#fff;background:'+tm[0]+';font-size:9.5px;font-weight:600">'+tm[1]+'</span>'+
+    '<span style="color:#7a8798;flex:0 0 auto;min-width:56px">'+s.type+'</span>'+
+    '<span style="color:#40506a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">'+name+'</span></div>';
+}
+function rrWaveRows(r){
+  if(!r.waves||!r.waves.length) return '';
+  var open=window.__rrWaveOpen&&window.__rrWaveOpen[r.id];
+  var act=r.activity||[];
+  // 按阶段分组专员
+  var byStage={};
+  act.forEach(function(f){var s=RR_STAGE_OF[f.id];if(s==null)return;(byStage[s]=byStage[s]||[]).push(f);});
+  var rows=r.waves.map(function(w,wi){
+    var ic=w.state==='done'?'✅':w.state==='running'?'<span class="rr-spin" style="width:11px;height:11px"></span>':'⚪';
+    var col=w.state==='done'?'#0aa696':w.state==='running'?'#0757ad':'#9aa5b5';
+    // 优先用专员卡片；无 activity 时回退到原章节芯片
+    var body='';
+    var specs=byStage[wi];
+    if(specs&&specs.length){
+      body='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px;margin:6px 0 2px 24px">'+
+        specs.map(rrSpecialistCard).join('')+'</div>';
+    } else if(w.state!=='waiting'){
+      body='<div style="display:flex;flex-wrap:wrap;gap:5px;margin:4px 0 2px 24px">'+
+        w.files.map(function(f){
+          var fs=f.fstate||(f.done?'done':'missing');
+          var sty,mark;
+          if(fs==='done'){sty='background:#e4f5f3;color:#006d70';mark='✓ ';}
+          else if(fs==='partial'){sty='background:#fdeef0;color:#b0364a;cursor:help';mark='⚠ ';}
+          else {sty='background:#eef1f5;color:#8492a6';mark='· ';}
+          var tip=f.detail?' title="'+String(f.detail).replace(/"/g,'&quot;')+'"':'';
+          return '<span'+tip+' style="font-size:10.5px;padding:2px 8px;border-radius:9px;'+sty+'">'+mark+f.n+'</span>';
+        }).join('')+'</div>';
+    }
+    return '<div style="padding:6px 0;border-bottom:1px dashed #e9eef5">'+
+      '<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:'+col+'">'+
+      '<span style="display:inline-flex;align-items:center">'+ic+'</span><b>'+w.label+'</b>'+
+      '<span style="color:#8492a6;font-weight:400">'+w.done+'/'+w.total+'</span>'+
+      (w.state==='running'?'<span style="color:#0757ad;font-size:11px">· 进行中<span class="rr-runner"></span></span>':w.state==='waiting'?'<span style="font-size:11px;color:#b0bac7">· 等待前序完成</span>':'')+'</div>'+body+'</div>';
+  }).join('');
+  var liveN=act.filter(function(f){return f.state==='working';}).length;
+  var doneN=act.filter(function(f){return f.state==='delivered';}).length;
+  var summary=act.length?('　<span style="font-size:11px;color:#8492a6">AI 招商团队 '+act.length+' 名专员 · '+doneN+' 已交付 · '+liveN+' 工作中</span>'):'';
+  // 阶段进度条（第X/共6阶段），与政府端口径统一
+  var stageBar='';
+  var sTot=r.stageTotal||r.waves.length, sCur=r.stageCur||1, sDone=r.stageDone||0;
+  if(sTot){
+    var STLABEL=['基础数据采集','产业链测绘','目标企业挖掘','数据交叉核验','匹配评分与计划','决策报告生成'];
+    stageBar='<div style="margin:8px 0 4px"><div style="display:flex;gap:4px">'+
+      Array.from({length:sTot}).map(function(_,i){
+        var st=i<sDone?'#0aa696':(i===sCur-1?'#0757ad':'#e0e7f0');
+        return '<div style="flex:1;height:5px;border-radius:3px;background:'+st+'"></div>';
+      }).join('')+'</div>'+
+      '<div style="font-size:11px;color:#667590;margin-top:4px">第 '+sCur+' / '+sTot+' 阶段 · '+(r.stageName||STLABEL[Math.min(sCur-1,STLABEL.length-1)]||'')+'</div></div>';
+  }
+  return '<div style="margin-top:8px">'+stageBar+
+    '<button onclick="window.__rrWaveOpen=window.__rrWaveOpen||{};window.__rrWaveOpen[\''+r.id+'\']=!'+(open?'true':'false')+';render()" '+
+      'style="border:0;background:transparent;color:#0757ad;font-size:11.5px;cursor:pointer;padding:0">'+
+      (open?'▾ 收起 AI 团队工作台':'▸ 展开 AI 团队工作台（'+r.waves.length+' 阶段）')+'</button>'+summary+
+    (open?'<div style="margin-top:6px;padding:8px 12px;background:#fafcff;border:1px solid #eaf0f7;border-radius:8px">'+rows+'</div>':'')+
+  '</div>';
+}
+function rrProgress(r){
+  if(r.status!=='running') return '';
+  var ts=rrTimeSplit(r);
+  var fd=r.filesDone||0, ft=r.filesTotal||16;
+  var pct=Math.min(96, Math.round(fd/ft*100));
+  var step=r.step||'AI 研判启动中…';
+  var eta=(r.etaMin!=null)?('预计还需 '+r.etaMin+' 分钟'):'预计约 40 分钟';
+  var staleMin=r.progressTs?Math.floor((Date.now()-r.progressTs)/60000):null;
+  var stale=staleMin!=null&&staleMin>5;
+  var lastUpd=staleMin==null?'':staleMin<1?'刚更新':staleMin+' 分钟前更新';
+  var gapBadge=ts.gap?('<span title="机器睡眠/离线导致的暂停时长（'+ts.gapCount+' 次断点），不计入有效运行时间" '+
+    'style="margin-left:8px;font-size:10.5px;padding:1px 7px;border-radius:9px;background:#fff0de;color:#a34c09;cursor:help">⏸ 断点 '+ts.gap+(ts.gapCount>1?' × '+ts.gapCount:'')+'</span>'):'';
+  var stallBadge=ts.stall?('<span title="机器在线但流水线产出停滞的时长（研判暂时停滞），不计入有效运行时间" '+
+    'style="margin-left:6px;font-size:10.5px;padding:1px 7px;border-radius:9px;background:#fdeef0;color:#b0364a;cursor:help">⚠ 空转 '+ts.stall+'</span>'):'';
+  gapBadge=stallBadge+gapBadge;
+  return '<div style="margin-top:8px;padding:10px 12px;border:1px solid #e3ebf6;border-radius:8px;background:#f8fbff">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#3d5471;margin-bottom:7px">'+
+      '<span><span class="'+(stale?'':'rr-dot-live')+'" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+(stale?'#c85b09':'#0aa696')+';margin-right:6px"></span>'+
+      '<b style="color:#0757ad" class="rr-step-glow">'+step+'</b>'+(stale?' <span style="color:#c85b09">（'+staleMin+' 分钟无进展，系统正在自动补全）</span>':'')+'</span>'+
+      '<span style="display:inline-flex;align-items:center"><span id="rrElapsed" style="font-variant-numeric:tabular-nums">有效运行 '+ts.active+'</span>'+gapBadge+'</span></div>'+
+    '<div style="height:8px;border-radius:4px;background:#e6edf6;overflow:hidden;margin-bottom:7px">'+
+      '<div class="'+(stale?'':'rr-bar-live')+'" style="height:100%;width:'+pct+'%;border-radius:4px;background:linear-gradient(90deg,#0757ad,#007f82);transition:width .6s"></div></div>'+
+    '<div style="display:flex;justify-content:space-between;font-size:11.5px;color:#667590">'+
+      '<span>已产出章节 '+fd+' / '+ft+' · '+pct+'%</span>'+
+      '<span><span id="rrLastUpd">'+(lastUpd||'')+'</span>'+(lastUpd?' · ':'')+eta+'</span></div>'+
+    rrIssuesBanner(r)+
+    rrWaveRows(r)+'</div>';
+}
+function rrIssuesBanner(r){
+  var iss=r.issues||[];
+  if(!iss.length) return '';
+  return '<div style="margin-top:8px;padding:9px 12px;border:1px solid #f2c3cb;border-radius:8px;background:#fdeef0">'+
+    '<div style="font-size:11.5px;font-weight:700;color:#b0364a;margin-bottom:5px;display:flex;align-items:center;gap:6px">'+
+      '<span>⚠ '+iss.length+' 个环节未达标</span>'+
+      '<span style="font-weight:400;color:#c47080">系统正在自动补全</span></div>'+
+    '<div style="display:flex;flex-direction:column;gap:3px">'+
+      iss.map(function(s){
+        var parts=String(s).split('：');
+        return '<div style="font-size:11.5px;color:#7a2836;line-height:1.5">'+
+          '<b style="color:#b0364a">'+(parts[0]||'')+'</b>'+(parts[1]?' — '+parts[1]:'')+'</div>';
+      }).join('')+'</div></div>';
+}
+function rrPanel(){
+  var rows=REPORT_REQUESTS.slice().reverse().map(function(r){
+    var t=new Date(r.ts);var tm=(t.getMonth()+1)+'/'+t.getDate()+' '+t.getHours()+':'+('0'+t.getMinutes()).slice(-2);
+    var doneInfo='';
+    if(r.status==='done'){
+      var dur='';
+      if(r.activeMs){ dur=' · 正式运行 '+rrElapsed(r.activeMs)+(r.gapMs?'（另有断点 '+rrElapsed(r.gapMs)+'）':''); }
+      else if(r.doneTs&&(r.claimTs||r.ts)){ dur=' · 耗时 '+rrElapsed(r.doneTs-(r.claimTs||r.ts)); }
+      doneInfo=' · 智库材料 '+r.chunks+' 条已入库'+dur;
+    }
+    var dlBtn='';
+    if(r.status==='done' && r.files && r.files.length){
+      dlBtn='<button onclick="downloadReqFile(\''+r.id+'\',\'full\')" style="flex-shrink:0;padding:6px 12px;background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:8px;font-size:12px;color:#4338ca;cursor:pointer;font-weight:600;white-space:nowrap">⬇ 原始报告(docx)</button>';
+    }
+    var pushCtrl='';
+    if(r.status==='done'){
+      if(r.pushed){
+        pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#166534;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:5px 11px;white-space:nowrap">✓ 已推送 · 账号 '+(r.account||'—')+'</span>';
+      } else if(r.pushRequested){
+        pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:5px 11px;white-space:nowrap">⏳ 推送中…</span>';
+      } else {
+        pushCtrl='<button onclick="pushReportToRag(\''+r.city+'\',this)" style="flex-shrink:0;padding:6px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap">🚀 推送到 RAG</button>';
+      }
+    }
+    return '<div class="ops-row" style="align-items:flex-start;flex-direction:column"><div style="display:flex;align-items:center;gap:10px;width:100%">'+
+      '<div class="r-ic"></div>'+
+      '<div class="r-main"><div style="display:flex;align-items:center;gap:8px"><strong>'+r.province+' · '+r.city+'</strong>'+rrStatusBadge(r.status)+'</div>'+
+      '<small>'+r.by+' · '+tm+' 发起'+doneInfo+(r.status==='failed'&&r.failReason?' · '+r.failReason:'')+'</small></div>'+
+      '<div style="margin-left:auto;display:flex;align-items:center;gap:8px">'+dlBtn+pushCtrl+'</div></div>'+
+      rrProgress(r)+'</div>';
+  }).join('')||'<div style="color:#8492a6;font-size:13px;padding:8px 2px">暂无申请记录</div>';
+  return '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:18px 20px;margin:0 0 16px">'+
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><strong style="font-size:15px">发起城市报告生成</strong>'+
+    '<span style="color:#8492a6;font-size:12px">AI 招商智能体 · 产出后自动初始化该城市智库</span></div>'+
+    '<div style="display:flex;gap:10px;margin-bottom:14px">'+
+      '<input id="rrProv" placeholder="省份，如 湖北" style="flex:0 0 150px;min-height:40px;padding:8px 11px;border:1px solid var(--line);border-radius:8px">'+
+      '<input id="rrCity" placeholder="城市，如 随州" style="flex:0 0 150px;min-height:40px;padding:8px 11px;border:1px solid var(--line);border-radius:8px">'+
+      '<button class="primary-button" style="min-height:40px" onclick="submitReportRequest()">发起申请</button></div>'+
+    rows+'</div>';
+}
+
+
+
+
+
+var RES_COLOR={matched:{bg:'#e4f5f3',c:'#006d70'},checking:{bg:'#ebf3fd',c:'#013582'},none:{bg:'#fff0de',c:'#a34c09'}};
+
+var role='ops';   // 管理端
+var cur=null,view='home',detailOpen=false,detailData=null,curKb=null,curDemand=null,curSub=null;
+// 报告版本迭代状态（每项目一份）：{ver, finalized, patches:[补充意见], edits:{结论index:新文字}}
+var REPORTSTATE={};
+function rs(){var k=cur;if(!REPORTSTATE[k])REPORTSTATE[k]={ver:1,finalized:false,patches:[],edits:{}};return REPORTSTATE[k];}
+function P(){return cur&&PROJECTS[cur]||{}}
+/* ===== 渲染骨架：用雷总真实DOM结构 ===== */
+var $=function(s){return document.querySelector(s)};
+function toast(t){var e=$('#toast');$('#toastMsg').textContent=t;e.classList.add('show');setTimeout(function(){e.classList.remove('show')},2200)}
+/* ===== 通用弹窗（复用雷总 .modal 类）===== */
+function openModal(title,bodyHtml,footHtml){
+  var l=document.createElement('div');l.className='modal-layer';l.id='modalLayer';
+  l.onclick=function(e){if(e.target===l)closeModal()};
+  l.innerHTML='<div class="modal"><header><h2>'+title+'</h2><button onclick="closeModal()"><i class="i">✕</i></button></header>'+
+    '<div class="modal-body">'+bodyHtml+'</div>'+(footHtml?('<footer>'+footHtml+'</footer>'):'')+'</div>';
+  document.body.appendChild(l);
+}
+function closeModal(){var ls=document.querySelectorAll('.modal-layer');if(ls.length)ls[ls.length-1].remove();}
+var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','研判需求','出报告·可来回优化'],['home','📋','项目管理','报告派生项目·对接需求'],['docking','🤝','招商对接','资源匹配与对接进度'],['settings','⚙️','设置','账号与提醒']];
+
+function render(){
+  // 管理端：先从服务器拉数据，确保持久化同步
+  if(role==='ops'){
+    if(!render._opsRestored){
+      render._opsRestored=true;
+      restore();  // 先用本地缓存快速渲染
+      // 从服务器拉取最新数据
+      restoreFromServer(function(ok){ if(ok) renderOpsV2(); });
+      // 周期性自动刷新：政府端新注册/新建城市后，管理端无需手动刷新即可同步出现
+      if(!render._opsPollTimer){
+        render._opsPollTimer=setInterval(function(){
+          var _before=Object.keys(PROJECTS).length;
+          restoreFromServer(function(ok){
+            if(ok && Object.keys(PROJECTS).length!==_before){ renderOpsV2(); }
+          });
+        }, 15000);
+      }
+    }
+    renderOpsV2();
+    return;
+  }
+  // 尝试从 localStorage 恢复（非 ?demo 模式）
+  if(location.search.indexOf('demo')<0&&!cur&&!render._restored){
+    render._restored=true;
+    if(restore()){return render();}
+  }
+  // ?demo 模式：直接注入随州演示数据，跳过 onboarding（测试用）
+  if(location.search.indexOf('demo')>=0&&!cur){
+    var _dk='demo_'+Date.now().toString(36);
+    var _dc=generateKbConclusions('随州');
+    var _dk_proj=PROJECTS[_dk]={id:_dk,city:'随州',org:'随州市招商局',who:'张主任',topic:'随州主导产业补链招引',stage:1,
+      kb:[
+        {icon:'🏭',t:'主导产业与产业链',sub:_dc.industry.sub,tag:_dc.industry.tag,known:_dc.industry.known,calls:['产业链缺口测绘报告']},
+        {icon:'🏢',t:'园区与承载条件',sub:_dc.park.sub,tag:_dc.park.tag,known:_dc.park.known,calls:['产业链缺口测绘报告']},
+        {icon:'🏗️',t:'链主与存量企业',sub:_dc.firm.sub,tag:_dc.firm.tag,known:_dc.firm.known,calls:['产业链缺口测绘报告']},
+        {icon:'📜',t:'政策、规划与领导关注',sub:_dc.policy.sub,tag:_dc.policy.tag,known:_dc.policy.known,calls:['政策规划研究']}
+      ],report:null,clues:[]};
+    cur=_dk; view='knowledge'; detailOpen=false;
+  // 给 demo 项目注入示例报告状态，以便测试线索派生
+  if(!REPORTSTATE[_dk]){
+    REPORTSTATE[_dk]={
+      text:'## 一、产业基础判断\n\n随州是中国专用汽车之都。2025年专用汽车与应急产业总产值**703亿元**（+12.1%），年产专用车约**16万辆**，全国占比>10%，专汽出口+71%全省第一。安全应急产业2023年总产值502亿，其中移动应急装备324亿。香菇全产业链2024年产值超500亿，区域品牌价值205.8亿，连续3年全国食药用菌第一。\n\n本地配套率仅**41%**，远低于山东梁山65%和十堰75%+。链主企业：程力（整车）、新楚风（氢能整车，49T氢重卡已量产，百公里氢耗7.1kg续航1000km）、齐星（整车/无人机指挥车）、江南专汽（泡沫消防车600-1000万/台）、品源（"菇的辣克"2024签1亿美元+2025续签3亿美元）。\n\n## 二、产业链缺口分析\n\n### 氢能专用车方向\n- ✅ 已有：整车/改装（程力/新楚风/齐星）、车身驾驶室（齐星）、车规级晶振（泰晶AEC-Q200）、电解液（犇星）\n- ❌ 缺失：燃料电池电堆（占整车成本53%，A=必须本地化，全部外购）\n- ❌ 缺失：高压储氢瓶阀与管路（占整车成本14%，A=必须本地化）\n- ⚠️ 薄弱：底盘/动力总成（占整车成本50%，外购十堰潍柴/法士特/汉德，C=优先本地化）\n\n### 智慧应急装备方向\n- ✅ 已有：整机平台（博利特高空系留无人机消防车、齐星6架无人机指挥车）、软体材料（金龙篷布全国30%）\n- ❌ 缺失：应急机器人本体（依赖启灵外采，B=可跨区域）\n- ❌ 缺失：5G/卫星应急通信模块（本地零布局，B=可跨区域）\n\n### 香菇精深加工方向\n- ✅ 已有：初加工出口（品源辣酱，年产70万吨）、多糖提取（裕国药业）、多肽提取（肽源）\n- ❌ 缺失：香菇多糖/多肽规模化提取平台（仅2家布局，A=必须本地化）\n- ❌ 缺失：菌种自主研发（国外7925/7917品种垄断，A=必须本地化）\n\n## 三、补链优先级清单TOP5\n\n| 排名 | 缺口节点 | 本地化属性 | 经济拉动★ | 招引可行性★ | 综合优先级 |\n|---|---|---|---|---|---|\n| 1 | 燃料电池电堆 | A=必须本地化 | ★★★★★ | ★★★★ | 第一优先 |\n| 2 | 高压储氢瓶阀与管路 | A=必须本地化 | ★★★★ | ★★★★ | 第二优先 |\n| 3 | 应急机器人本体 | B=可跨区域 | ★★★★ | ★★★ | 第三优先 |\n| 4 | 香菇多糖/多肽提取 | A=必须本地化 | ★★★★ | ★★★★ | 第四优先 |\n| 5 | 菌种自主研发基地 | A=必须本地化 | ★★★ | ★★★ | 第五优先 |\n\n## 四、目标企业画像\n\n**燃料电池电堆（第一优先）**\n- 目标类型：商用车功率段燃料电池系统集成商或电堆制造企业，年产能≥3000台，掌握金属双极板或膜电极核心工艺\n- 开口话术：「随州新楚风49T氢重卡已量产，年产能16万辆整车基地就是您进入商用车场景最快的验证通道，落地即锁定程力/新楚风的稳定采购订单。」\n\n**高压储氢瓶阀（第二优先）**\n- 目标类型：35MPa/70MPa高压储氢瓶阀、管路及集成模块制造企业\n- 开口话术：「随州16万辆/年专用车产量是稳定的储氢系统需求方，与电堆企业同步落地可降低整体物流成本。」\n\n**香菇多糖/多肽提取（第四优先）**\n- 目标类型：香菇多糖/多肽功能成分提取与功能性食品企业，寻求中部原料产地合作\n- 开口话术：「随州年产香菇约70万吨，全球白花菇约50%，就近落地可将原料采购成本降低40%+，与裕国/肽源形成产能协作。」\n\n## 五、待确认事项\n\n⚠️ 湖北省氢能专项补贴额度与首选承接园区（高新区/曾都经开区/专汽产业园）需向领导确认\n⚠️ 程力/新楚风的首批电堆采购意向与数量，需走访链主企业核实\n⚠️ 菌种自主研发基地的用地指标与洁净厂房条件，需园区管委会确认\n⚠️ 随县香菇产业园精深加工区的GMP洁净厂房现状，需现场核实',
+      topic:'随州主导产业补链招引',
+      ts: Date.now(),
+      score: 75,
+      phase: 2
+    };
+    _dk_proj.stage=3;  // 推进到「确认需求」阶段
+  }
+  }
+  if(view==='setup'||!cur||!PROJECTS[cur]){var _root=$('#root');if(_root){_root.innerHTML='<div style="height:100vh;background:#f5f7fb">'+setupPage()+'</div>';bind();} return;}
+  if(role==='ops')return renderOps();
+  var p=P();
+  $('#root').innerHTML=
+   '<div class="app-shell">'+
+    topbar(p)+
+    '<div class="app-content">'+sidebar()+
+      '<div class="pane-divider"><span class="divider-grip"><i class="i">⋮</i></span></div>'+
+      '<div class="content-column"><div class="workspace">'+
+        '<div class="main-pane">'+mainPane(p)+'</div>'+
+        (detailOpen&&view!=='knowledge'?('<div class="detail-pane">'+detailPane(p)+'</div>')
+                   :(view==='knowledge'?'':('<button class="reopen-detail" onclick="toggleDetail()"><i class="i"></i>展开详情</button>')))+
+      '</div></div>'+
+    '</div>'+
+    progressFooter(p)+
+   '</div>';
+  bind();
+}
+/* 顶栏角色切换按钮（政府端 ⇄ 运营端）*/
+
+/* ===== 空白引导页（用户首次进入 / 无项目时） ===== */
+function opsTopbarEmpty(){
+  return '<div class="top-bar"><div class="top-brand"><div class="brand-icon">慧</div><span style="font-weight:700;font-size:15px;color:#0b183b">慧小招</span></div>'+
+    '<div style="flex:1"></div><span style="font-size:12px;color:#9aa5b5">运营端</span></div>';
+}
+
+/* ===== ONBOARDING v2: 城市 → 可选上传 → 分析动画 → 工作区 ===== */
+var _setupFiles=[];  // 可选上传文件（多文件）
+
+function setupPage(){
+  return '<div id="onboardingWrap" style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#f0f4ff 0%,#fafbff 60%,#f5f0ff 100%)">'+
+    '<div style="width:100%;max-width:480px;padding:0 20px">'+
+      '<div style="text-align:center;margin-bottom:40px">'+
+        '<div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;background:linear-gradient(135deg,#1a56db,#6366f1);border-radius:16px;margin-bottom:16px;box-shadow:0 8px 24px rgba(26,86,219,.25)">'+
+          '<span style="color:#fff;font-size:22px;font-weight:800;letter-spacing:-1px">慧</span>'+
+        '</div>'+
+        '<h1 style="font-size:26px;font-weight:780;color:#0b183b;margin:0 0 8px;letter-spacing:-.5px">慧小招</h1>'+
+        '<p style="font-size:14px;color:#8492a6;margin:0;line-height:1.6">AI 招商研判智能体 · 输入城市即可开始</p>'+
+      '</div>'+
+      '<div style="background:#fff;border-radius:20px;padding:36px 36px 28px;box-shadow:0 2px 40px rgba(11,24,59,.07),0 0 0 1px rgba(11,24,59,.04)">'+
+        '<div style="margin-bottom:20px">'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:8px;letter-spacing:.3px">目标城市</label>'+
+          '<input id="setupCity" type="text" placeholder="输入城市名称，例如：随州" autocomplete="off" '+
+            'style="width:100%;padding:13px 16px;border:1.5px solid #e8edf5;border-radius:12px;font-size:15px;color:#0b183b;outline:none;box-sizing:border-box;transition:border .15s,box-shadow .15s" '+
+            'oninput="setupValidate()" '+
+            'onfocus="this.style.border=\'1.5px solid #1a56db\';this.style.boxShadow=\'0 0 0 3px rgba(26,86,219,.1)\'" '+
+            'onblur="this.style.border=\'1.5px solid #e8edf5\';this.style.boxShadow=\'none\'" '+
+            'onkeydown="if(event.key===\'Enter\'){var b=document.getElementById(\'setupBtn\');if(b&&b.style.pointerEvents!==\'none\')createProject();}" />'+
+        '</div>'+
+        '<div id="uploadZone" style="border:1.5px dashed #d1dce8;border-radius:12px;padding:16px;text-align:center;cursor:pointer;transition:all .15s;margin-bottom:20px" '+
+          'onclick="setupPickFile()" '+
+          'ondragover="event.preventDefault();this.style.background=\'#f0f4ff\';this.style.borderColor=\'#1a56db\'" '+
+          'ondragleave="this.style.background=\'\';this.style.borderColor=\'#d1dce8\'" '+
+          'ondrop="setupDropFile(event)">'+
+          '<div id="uploadLabel" style="font-size:13px;color:#8492a6;line-height:1.6">'+
+            '<span style="font-size:18px;display:block;margin-bottom:4px">📎</span>'+
+            '<span style="font-weight:600;color:#4a5568">补充材料（可选）</span><br>'+
+            '<span style="font-size:11.5px">政府工作报告、产业链图谱、园区资料 · 拖拽或点击上传</span><br>'+
+            '<span style="font-size:11px;color:#b0bac8;margin-top:3px;display:inline-block">若不上传，将基于公开可查询信息完成分析</span>'+
+          '</div>'+
+        '</div>'+
+        '<input id="setupFileInput" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" multiple style="display:none" onchange="setupFileSelected(this)" />'+
+        '<button id="setupBtn" onclick="createProject()" '+
+          'style="width:100%;padding:14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:650;cursor:pointer;opacity:.4;pointer-events:none;transition:opacity .15s,transform .1s;letter-spacing:.2px" '+
+          'onmousedown="this.style.transform=\'scale(.98)\'" onmouseup="this.style.transform=\'\'">'+
+          '开始分析 →'+
+        '</button>'+
+      '</div>'+
+      '<p style="text-align:center;font-size:11.5px;color:#b0bac8;margin:20px 0 0;line-height:1.7">分析结果仅作研判参考，正式招商需结合政府授权材料确认</p>'+
+    '</div>'+
+  '</div>';
+}
+
+function setupValidate(){
+  var city=document.getElementById('setupCity');
+  var btn=document.getElementById('setupBtn');
+  if(!btn)return;
+  var ok=city&&city.value.trim().length>=1;
+  btn.style.opacity=ok?'1':'.4';
+  btn.style.pointerEvents=ok?'auto':'none';
+}
+
+function setupPickFile(){
+  var inp=document.getElementById('setupFileInput');
+  if(inp)inp.click();
+}
+
+function setupFileSelected(inp){
+  var files=inp&&inp.files?Array.from(inp.files):[];
+  if(!files.length)return;
+  _setupFiles=files;
+  var lbl=document.getElementById('uploadLabel');
+  if(lbl)lbl.innerHTML='<span style="font-size:18px;display:block;margin-bottom:4px">✅</span>'+
+    '<span style="color:#1a56db;font-weight:600">已选 '+files.length+' 个文件</span><br>'+
+    '<span style="font-size:11.5px;color:#8492a6">'+files.map(function(f){return f.name;}).join('、')+'</span><br>'+
+    '<span style="font-size:11px;color:#b0bac8;margin-top:3px;display:inline-block">点击重新选择</span>';
+  var zone=document.getElementById('uploadZone');
+  if(zone){zone.style.borderColor='#1a56db';zone.style.background='#f0f4ff';}
+}
+
+function setupDropFile(e){
+  e.preventDefault();
+  var zone=document.getElementById('uploadZone');
+  if(zone){zone.style.background='';zone.style.borderColor='#d1dce8';}
+  var files=e.dataTransfer&&e.dataTransfer.files?Array.from(e.dataTransfer.files):[];
+  if(!files.length)return;
+  _setupFiles=files;
+  var lbl=document.getElementById('uploadLabel');
+  if(lbl)lbl.innerHTML='<span style="font-size:18px;display:block;margin-bottom:4px">✅</span>'+
+    '<span style="color:#1a56db;font-weight:600">已选 '+files.length+' 个文件</span><br>'+
+    '<span style="font-size:11.5px;color:#8492a6">'+files.map(function(f){return f.name;}).join('、')+'</span><br>'+
+    '<span style="font-size:11px;color:#b0bac8;margin-top:3px;display:inline-block">点击重新选择</span>';
+  if(zone){zone.style.borderColor='#1a56db';zone.style.background='#f0f4ff';}
+}
+
+/* 分析动画页面 */
+function analysisPage(city, fileName){
+  var steps=[
+    {icon:'🌐', label:'检索'+city+'城市公开信息与产业背景',  dur:2800},
+    {icon:'🏭', label:'识别主导产业与上下游链条结构',         dur:3200},
+    {icon:'🏢', label:'扫描园区承载条件与链主企业',           dur:2600},
+    {icon:'📜', label:'解析政策方向与领导关注重点',           dur:2400},
+    {icon:'🔍', label:'测绘产业链缺口与可招引环节',           dur:2800},
+    {icon:'✨', label:'生成城市智库与研判框架',               dur:2000},
+  ];
+  if(fileName){
+    steps.splice(1,0,{icon:'📎', label:'解析上传材料：'+fileName, dur:1200});
+  }
+  var rows=steps.map(function(s,i){
+    return '<div id="astep'+i+'" style="display:flex;align-items:flex-start;gap:14px;padding:12px 0;opacity:0;transform:translateY(8px);transition:opacity .4s,transform .4s">'+
+      '<div style="width:36px;height:36px;border-radius:50%;background:#f0f4ff;display:flex;align-items:center;justify-content:center;font-size:16px;flex:0 0 auto;margin-top:2px">'+s.icon+'</div>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:13.5px;color:#0b183b;font-weight:550">'+s.label+'</div>'+
+        '<div id="atick'+i+'" style="font-size:10.5px;color:#b0bac8;margin-top:3px;height:14px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;transition:opacity .2s"> </div>'+
+        '<div id="abar'+i+'" style="height:3px;background:#e8edf5;border-radius:2px;margin-top:5px;overflow:hidden">'+
+          '<div id="aprog'+i+'" style="height:100%;width:0%;background:linear-gradient(90deg,#1a56db,#6366f1);border-radius:2px;transition:width linear"></div>'+
+        '</div>'+
+      '</div>'+
+      '<div id="acheck'+i+'" style="font-size:16px;opacity:0;transition:opacity .3s;margin-top:2px">✓</div>'+
+    '</div>';
+  }).join('');
+
+  return '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#f0f4ff 0%,#fafbff 60%,#f5f0ff 100%)">'+
+    '<div style="width:100%;max-width:480px;padding:0 20px">'+
+      '<div style="text-align:center;margin-bottom:36px">'+
+        '<div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;background:linear-gradient(135deg,#1a56db,#6366f1);border-radius:16px;margin-bottom:16px;box-shadow:0 8px 24px rgba(26,86,219,.25)">'+
+          '<span style="color:#fff;font-size:22px;font-weight:800;letter-spacing:-1px">慧</span>'+
+        '</div>'+
+        '<h2 style="font-size:20px;font-weight:720;color:#0b183b;margin:0 0 6px">正在分析'+city+'</h2>'+
+        '<p style="font-size:13px;color:#8492a6;margin:0">AI 正在构建城市智库与研判框架</p>'+
+      '</div>'+
+      '<div style="background:#fff;border-radius:20px;padding:28px 32px;box-shadow:0 2px 40px rgba(11,24,59,.07),0 0 0 1px rgba(11,24,59,.04)">'+
+        rows+
+      '</div>'+
+      '<div id="analysisSummary" style="margin-top:20px;opacity:0;transition:opacity .5s"></div>'+
+      '<div id="analysisDone" style="text-align:center;margin-top:16px;opacity:0;transition:opacity .5s">'+
+        '<button onclick="enterWorkspace()" style="padding:13px 40px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:650;cursor:pointer;box-shadow:0 4px 20px rgba(26,86,219,.3);letter-spacing:.2px">'+
+          '进入城市智库 →'+
+        '</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+}
+
+/* 运行分析动画 */
+function runAnalysisAnim(city, fileName, stepsCount, onDone){
+  // 数据来源 ticker 内容（每步）
+  var SOURCES=[
+    ['百度百科','政府官网','统计年鉴','国家企查查','巨潮资讯','中国工业信息网'],
+    ['A股上市公司公告','省级产业规划','工商注册信息','行业协会年报','高新区官网','规上企业名录'],
+    ['全国产业园区数据库','土地出让公告','园区官网','招商引资政策','厂房租赁信息','能耗公告'],
+    ['政府工作报告全文','五年规划纲要','专项产业规划','领导讲话公开报道','政策文件数据库'],
+    ['产业链图谱数据库','进出口贸易数据','企业采购公告','供应链分析模型','外资进入记录'],
+    ['城市智库知识图谱','招商案例库','专家评审系统','研判模型输出'],
+  ];
+  var steps=[
+    {icon:'🌐', label:'检索'+city+'城市公开信息与产业背景',  dur:4800, si:0},
+    {icon:'🏭', label:'识别主导产业与上下游链条结构',         dur:5500, si:1},
+    {icon:'🏢', label:'扫描园区承载条件与链主企业',           dur:4800, si:2},
+    {icon:'📜', label:'解析政策方向与领导关注重点',           dur:4500, si:3},
+    {icon:'🔍', label:'测绘产业链缺口与可招引环节',           dur:5200, si:4},
+    {icon:'✨', label:'生成城市智库与研判框架',               dur:4600, si:5},
+  ];
+  if(fileName){
+    steps.splice(1,0,{icon:'📎', label:'解析上传材料：'+fileName, dur:1200});
+  }
+  var idx=0;
+  function runStep(){
+    if(idx>=steps.length){
+      // 填充产业 summary
+      var p=cur&&PROJECTS[cur];
+      var city2=p?p.city:'该城市';
+      var p0=cur&&PROJECTS[cur];
+      var isSZ=p0&&p0.city&&p0.city.indexOf('随州')>=0;
+      var sectors=[
+        {icon:'🏭', name:'主导产业与产业链', desc:isSZ?'专用汽车703亿+安全应急502亿+香菇500亿，三大集群均已识别':'主导产业集群已识别，具体产值待材料确认'},
+        {icon:'🏢', name:'园区与承载条件',   desc:isSZ?'随州高新区(国家级)+曾都经开区+专汽/香菇产业园，四大载体已评估':'主要工业园区载体与承接条件已梳理'},
+        {icon:'🏗️', name:'链主与存量企业',   desc:isSZ?'程力/新楚风/齐星/江南专汽/品源均已梳理，电堆+机器人+提取三大外采缺口明确':'骨干链主与核心外采依赖已梳理'},
+        {icon:'📜', name:'政策与领导关注',   desc:isSZ?'氢能走廊+安全应急示范基地+香菇精深加工三条主线，口径待领导确认':'政策主线已提取，专项资金待确认'},
+      ];
+      var sumHtml='<div style="background:#fff;border-radius:16px;padding:20px 24px;box-shadow:0 2px 20px rgba(11,24,59,.06),0 0 0 1px rgba(11,24,59,.04)">'+
+        '<div style="font-size:12px;font-weight:650;color:#8492a6;letter-spacing:.5px;margin-bottom:14px">分析完成 · '+city2+'城市智库已就位</div>'+
+        sectors.map(function(s){
+          return '<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #f0f4ff">'+
+            '<span style="font-size:18px;width:28px;text-align:center">'+s.icon+'</span>'+
+            '<div><div style="font-size:13px;font-weight:650;color:#0b183b">'+s.name+'</div>'+
+            '<div style="font-size:11.5px;color:#8492a6;margin-top:1px">'+s.desc+'</div></div>'+
+          '</div>';
+        }).join('')+
+      '</div>';
+      if(onDone)setTimeout(onDone,800);
+      // 弹出 summary modal，10s 倒计时自动进入
+      setTimeout(function(){ showSummaryModal(city2,sectors); },400);
+      return;
+    }
+    var s=steps[idx];
+    var el=document.getElementById('astep'+idx);
+    var prog=document.getElementById('aprog'+idx);
+    var check=document.getElementById('acheck'+idx);
+    if(el){el.style.opacity='1';el.style.transform='translateY(0)';}
+    // ticker: 快速闪回数据来源
+    var tickEl=document.getElementById('atick'+idx);
+    var srcs=SOURCES[s.si]||[];
+    var ti=0;
+    var tickTimer=null;
+    if(tickEl&&srcs.length){
+      tickTimer=setInterval(function(){
+        tickEl.style.opacity='0';
+        setTimeout(function(){
+          tickEl.textContent='数据源：'+srcs[ti%srcs.length];
+          tickEl.style.opacity='1';
+          ti++;
+        },150);
+      },600);
+    }
+    if(prog){
+      prog.style.transition='width '+s.dur+'ms linear';
+      setTimeout(function(){prog.style.width='100%';},50);
+    }
+    setTimeout(function(){
+      if(tickTimer)clearInterval(tickTimer);
+      if(tickEl){tickEl.style.opacity='0.4';tickEl.textContent=srcs.length+'个来源已扫描';}
+      if(check){check.style.opacity='1';check.style.color='#1a56db';}
+      idx++;
+      setTimeout(runStep, 180);
+    }, s.dur+100);
+  }
+  setTimeout(runStep, 200);
+}
+
+/* 创建项目 + 进入动画 */
+function createProject(){
+  var city=(document.getElementById('setupCity')||{}).value;
+  if(!city||!city.trim())return;
+  city=city.trim();
+  var fileName=_setupFiles&&_setupFiles.length?_setupFiles.map(function(f){return f.name;}).join('、'):null;
+
+  // 渲染分析动画页
+  var wrap=document.getElementById('onboardingWrap')||document.getElementById('root');
+  if(wrap)wrap.outerHTML='<div id="root"><div style="min-height:100vh;background:linear-gradient(135deg,#f0f4ff 0%,#fafbff 60%,#f5f0ff 100%)">'+analysisPage(city,fileName)+'</div></div>';
+
+  // 构建项目骨架
+  var key='p'+Date.now().toString(36);
+  PROJECTS[key]={
+    id:key, city:city, org:city+'市招商局', who:'负责人', topic:city+'产业链招引', stage:1,
+    kb:[
+      {icon:'🏭',t:'主导产业与产业链',sub:'分析中',tag:'AI初判',known:[],calls:['城市公开信息','产业链图谱']},
+      {icon:'🏢',t:'园区与承载条件',sub:'分析中',tag:'AI初判',known:[],calls:['园区基础资料','政府官网']},
+      {icon:'🏗️',t:'链主与存量企业',sub:'分析中',tag:'AI初判',known:[],calls:['企业名录','工商信息']},
+      {icon:'📜',t:'政策、规划与领导关注',sub:'分析中',tag:'AI初判',known:[],calls:['政府工作报告','领导发言']}
+    ],
+    report:null, clues:[]
+  };
+  cur=key;
+  DEMANDS.push({id:'d'+key,city:city,gov:city+'市招商局·负责人',topic:city+'产业链招引',domain:'待确认',need:'待分析',submit:'刚刚',res:'none',resLabel:'待研判',clues:0,note:'',ai:''});
+  persist();
+
+  // 启动动画，动画结束后自动进入（autoEnter=true 时跳过按钮）
+  runAnalysisAnim(city, fileName, 0, null);
+}
+
+/* 点击「进入工作区」按钮时调用 */
+
+/* 根据城市名生成城市智库四大主题的核心结论（公开信息初判） */
+function generateKbConclusions(city){
+  // 随州专项真实数据（源自慧小招2026-07报告）
+  // 通用城市走通用骨架；随州走完整真实数据
+  var isSuizhou=(city.indexOf('随州')>=0);
+  if(isSuizhou){
+    return {
+      industry:{
+        sub:'专用汽车·安全应急·香菇三大主导产业集群',
+        tag:'慧小招实测 · 2026-07',
+        known:[
+          '专用汽车：2025年产值703亿元(+12.1%)，年产16万辆，全国占比>10%，出口+71%全省第一，资质企业97家/零部件企业220家',
+          '安全应急：2023年总产值502亿，其中移动应急装备(专用车)324亿；篷布产量占全国30%，风机0.9万台/年',
+          '香菇：2024年全产业链产值超500亿，区域品牌价值205.8亿(连续3年全国食药用菌第一)，年产约70万吨(全球白花菇约50%)',
+          '链主企业：程力(整车)、新楚风(氢能整车·49T氢重卡已量产)、齐星(整车/无人机指挥车)、江南专汽(消防车)、品源("菇的辣克"4亿美元出口订单)',
+          '核心缺口：氢燃料电池电堆(占整车成本53%全部外购)、储氢瓶(14%)、应急机器人/无人机本体(依赖外采)、香菇多糖提取(仅2家)、菌种自主权(国外垄断)',
+          '⚠️ 2026年各产业链方向优先招引顺序、重点突破的细分环节，请领导确认'
+        ]
+      },
+      park:{
+        sub:'随州高新区(国家级)·曾都经开区·专汽产业园·随县香菇产业园',
+        tag:'慧小招实测 · 2026-07',
+        known:[
+          '随州高新区：2015年升级国家级，拥有"移动应急装备国家创新型产业集群"等国字号11块',
+          '曾都区：国家安全应急产业示范基地，移动应急装备整机与改装主要承载区',
+          '专汽产业园：30公里专汽长廊核心区，已有程力/齐星等整车及改装企业入驻',
+          '随县香菇产业园：已有初加工入驻，精深加工(生物提取/GMP洁净)厂房条件需进一步核实',
+          '区位优势：汉十高铁随州南站至武汉50分钟/至襄阳30分钟；"汉孝随襄十"万亿汽车走廊节点',
+          '⚠️ 首选承接园区与地块、可用厂房面积及能耗配额，请领导确认'
+        ]
+      },
+      firm:{
+        sub:'97家资质整车/改装企业 + 220家零部件企业；外采依赖显著',
+        tag:'慧小招实测 · 2026-07',
+        known:[
+          '整车/改装链主：程力(×成都壹为新能源底盘/×杭州时代电动3万台)、新楚风(49T氢重卡·百公里氢耗7.1kg·续航1000km)、齐星(含无人机指挥车)',
+          '已有本地配套：车身驾驶室(齐星)、车规级晶振(泰晶AEC-Q200)、电解液/六氟磷酸锂(犇星)、铜箔(昱通)、负极材料(斯诺/犇星多孔硅)',
+          '严重外采依赖：底盘/动力总成(十堰潍柴/法士特/汉德·占整车成本50%)、氢电堆(53%)、储氢瓶(14%)、应急机器人(启灵)、无人机(迅北斗)',
+          '香菇链主：品源(辣酱出口·2024签1亿美元+2025签3亿美元)、裕国药业(多糖提取)、肽源(多肽提取)；精深加工仅2家布局',
+          '本地配套率仅41%(梁山65%/十堰75%+)，补链招引窗口期明确且需求方牵引力强',
+          '⚠️ 拟优先对接的企业名单与采购规模数据，请领导提供或确认'
+        ]
+      },
+      policy:{
+        sub:'氢能走廊+应急示范基地+香菇精深加工升级三条政策主线',
+        tag:'慧小招实测 · 待领导确认口径',
+        known:[
+          '湖北省氢能走廊：武汉-十堰-随州-襄阳沿线布局，随州以氢能专用车为主攻方向，专项支持方向已明确',
+          '国家安全应急产业示范基地(曾都区)：支持智慧应急装备落地，对机器人/无人机/5G通信模块有专项引导',
+          '香菇产业升级：随州将精深加工与品牌化列为农业升级重点，菌种自主研发与生物医药方向已有政策导向',
+          '竞争压力：十堰(高端应急车)+孝感(中能应急产业园42.8亿)双面夹击应急赛道；荆门碾压锂电；差异化空间在氢能专用车/低空经济/香菇',
+          '⚠️ 专项资金额度、首选承接地块与领导最新交办须向主管部门确认'
+        ]
+      }
+    };
+  }
+  // 通用骨架（非随州城市）
+  return {
+    industry:{
+      sub:city+'主导产业集群与链条结构（公开信息初判）',
+      tag:'AI初判 · 待补充',
+      known:[
+        city+'工业基础以传统制造业为核心，正向高端制造/新能源/数字经济方向升级',
+        '主导产业贡献当地规上工业主要产值，需查阅统计年鉴获取具体数字',
+        '上游核心零部件与关键材料本地配套率偏低，外采依赖是主要补链切入点',
+        '新兴方向(智能装备/绿色化工/现代农业加工)处于增长期，招引窗口较好',
+        '⚠️ 具体产业名称、产值与缺口明细需结合政府工作报告与产业链图谱确认'
+      ]
+    },
+    park:{
+      sub:city+'主要工业园区承载条件（公开信息初判）',
+      tag:'AI初判 · 待核实',
+      known:[
+        city+'已建立国家级或省级经济开发区/高新区，具备基础工业承载能力',
+        '主要园区已配备标准化厂房、市政配套与交通基础设施',
+        '部分园区设有专项政策（租金减免/设备补贴/人才落户），具体口径需确认',
+        '精密制造/生物提取等高要求方向需确认洁净厂房与能耗配额是否满足',
+        '⚠️ 可用地块、厂房面积与园区联系方式需向招商局确认'
+      ]
+    },
+    firm:{
+      sub:city+'链主企业与供应链缺口（公开信息初判）',
+      tag:'AI初判 · 待补充',
+      known:[
+        city+'本地存在若干规上工业龙头（整车/总装/终端品牌），是配套采购主要需求方',
+        '链主在核心零部件、系统集成、检测认证等环节存在明显外采依赖',
+        '外地采购占总成本比例估算30-60%，本地配套率提升空间大',
+        '部分链主已表达本地化配套诉求，是招引上游企业的直接牵引力',
+        '⚠️ 具体企业名单、采购规模与技术路线需通过企业走访或授权材料确认'
+      ]
+    },
+    policy:{
+      sub:city+'政策方向与领导关注重点（公开信息初判）',
+      tag:'AI初判 · 待领导确认',
+      known:[
+        city+'近年政府工作报告将制造业升级与招商引资列为重点，产业政策支持力度较强',
+        '符合主导方向的落地企业通常可获土地优惠/税收减免/人才补贴等配套政策',
+        '重点招引方向与领导最新交办口径是核心决策依据，需干部上传确认',
+        '营商环境改善（审批提速/一事一议）是近年招商重点配套',
+        '⚠️ 专项资金额度、首选承接园区与具体交办须向领导及主管部门确认'
+      ]
+    }
+  };
+}
+
+/* ── Summary Modal: 分析完成弹窗，10s 倒计时 ── */
+var _summaryTimer=null;
+
+/* ── 下载分析报告 Modal ── */
+function showDownloadReport(){
+  var p=P();
+  if(!p||!p.city){toast('请先完成城市分析');return;}
+  var city=p.city;
+  var c=generateKbConclusions(city);
+
+  // 完整版内容（基于 generateKbConclusions 真实数据）
+  var fullLines=[
+    city+'城市智库 · 招商研判报告（完整版）',
+    '生成时间：'+new Date().toLocaleDateString('zh-CN')+'  |  数据来源：公开信息 AI 初判',
+    '════════════════════════════════',
+    '',
+    '一、主导产业与产业链',
+    c.industry.known.map(function(x){return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
+    '',
+    '二、园区与承载条件',
+    c.park.known.map(function(x){return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
+    '',
+    '三、链主与存量企业',
+    c.firm.known.map(function(x){return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
+    '',
+    '四、政策方向与领导关注',
+    c.policy.known.map(function(x){return (x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ','');}).join('\n'),
+    '',
+    '════════════════════════════════',
+    '研判建议：',
+    '  1. 优先补链方向：链主外采依赖最集中的核心零部件/系统集成环节',
+    '  2. 推荐承接园区：'+city+'国家级/省级开发区（具体园区需向招商局确认）',
+    '  3. 招引目标画像：具备落地意向、产品与缺口直接匹配的细分领域龙头',
+    '  4. 待确认事项：专项资金额度、首选地块、领导最新交办口径',
+    '',
+    '⚠ 本报告为 AI 基于公开信息的初判，正式招商决策需结合政府授权材料与领导确认。',
+  ].join('\n');
+
+  // 精简版内容
+  var shortLines=[
+    city+'招商研判报告 · 精简版',
+    '生成时间：'+new Date().toLocaleDateString('zh-CN'),
+    '────────────────────',
+    '',
+    '【产业基础】'+c.industry.known[0],
+    '【园区承载】'+c.park.known[0],
+    '【链主缺口】'+c.firm.known[2],
+    '【政策方向】'+c.policy.known[0],
+    '',
+    '【核心建议】优先招引链主外采依赖最重的关键环节企业，结合园区政策争取一事一议。',
+    '',
+    '⚠ 以上为 AI 初判，需干部结合实际材料确认。',
+  ].join('\n');
+
+  function dlFile(content, filename){
+    var blob=new Blob([content],{type:'text/plain;charset=utf-8'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');a.href=url;a.download=filename;
+    document.body.appendChild(a);a.click();
+    setTimeout(function(){URL.revokeObjectURL(url);a.remove();},300);
+  }
+
+  var modal='<div id="dlReportModal" style="position:fixed;inset:0;background:rgba(11,24,59,.45);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)" onclick="if(event.target.id===\'dlReportModal\')this.remove()">'+
+    '<div style="background:#fff;border-radius:22px;padding:36px;max-width:480px;width:92%;box-shadow:0 8px 60px rgba(11,24,59,.18);animation:fadeUp .3s ease">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">'+
+        '<div>'+
+          '<div style="font-size:12px;font-weight:650;color:#8492a6;letter-spacing:.5px;margin-bottom:4px">分析报告下载</div>'+
+          '<h2 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">'+city+' 城市智库报告</h2>'+
+        '</div>'+
+        '<button onclick="document.getElementById(\'dlReportModal\').remove()" style="background:none;border:none;font-size:18px;color:#9aa5b5;cursor:pointer;padding:4px">✕</button>'+
+      '</div>'+
+      '<div style="display:flex;flex-direction:column;gap:12px">'+
+        '<div style="border:1.5px solid #e8edf5;border-radius:14px;padding:18px 20px">'+
+          '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'+
+            '<span style="font-size:20px">📄</span>'+
+            '<div><div style="font-size:13.5px;font-weight:650;color:#0b183b">完整版报告</div>'+
+            '<div style="font-size:11.5px;color:#8492a6;margin-top:1px">四大主题全部内容 · 含核心研判建议</div></div>'+
+          '</div>'+
+          '<button onclick="(function(){var c=generateKbConclusions(\''+city+'\');var lines=[\''+city+'城市智库 · 招商研判报告（完整版）\',\'生成时间：\'+new Date().toLocaleDateString(\'zh-CN\')+\'  |  数据来源：公开信息 AI 初判\',\'════════════════════════\',\'\',\'一、主导产业与产业链\'].concat(c.industry.known.map(function(x){return (x.indexOf(\'⚠️\')>=0?\'  ⚠ \':\'  • \')+x.replace(\'⚠️ \',\'\');})).concat([\'\',\'二、园区与承载条件\']).concat(c.park.known.map(function(x){return (x.indexOf(\'⚠️\')>=0?\'  ⚠ \':\'  • \')+x.replace(\'⚠️ \',\'\');})).concat([\'\',\'三、链主与存量企业\']).concat(c.firm.known.map(function(x){return (x.indexOf(\'⚠️\')>=0?\'  ⚠ \':\'  • \')+x.replace(\'⚠️ \',\'\');})).concat([\'\',\'四、政策方向与领导关注\']).concat(c.policy.known.map(function(x){return (x.indexOf(\'⚠️\')>=0?\'  ⚠ \':\'  • \')+x.replace(\'⚠️ \',\'\');})).concat([\'\',\'════════════════════════\',\'研判建议：\',\'  1. 优先补链：链主外采依赖最集中的核心零部件/系统集成环节\',\'  2. 承接园区：\'+\''+city+'\'+\'国家级/省级开发区（具体地块需确认）\',\'  3. 招引画像：产品与缺口直接匹配的细分领域龙头，有落地意向\',\'  4. 待确认：专项资金、首选地块、领导最新交办\',\'\',\'⚠ 本报告为 AI 基于公开信息的初判，正式决策需结合授权材料确认。\']);var blob=new Blob([lines.join(\'\\n\')],{type:\'text/plain;charset=utf-8\'});var u=URL.createObjectURL(blob);var a=document.createElement(\'a\');a.href=u;a.download=\''+city+'_招商研判报告_完整版.txt\';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(u);a.remove();},300);})()" style="width:100%;padding:10px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer">下载完整版 (.txt)</button>'+
+        '</div>'+
+        '<div style="border:1.5px solid #e8edf5;border-radius:14px;padding:18px 20px">'+
+          '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'+
+            '<span style="font-size:20px">📋</span>'+
+            '<div><div style="font-size:13.5px;font-weight:650;color:#0b183b">精简版报告</div>'+
+            '<div style="font-size:11.5px;color:#8492a6;margin-top:1px">一句话摘要 · 适合快速分享</div></div>'+
+          '</div>'+
+          '<button onclick="(function(){var c=generateKbConclusions(\''+city+'\');var lines=[\''+city+' 招商研判 · 精简版\',\'生成时间：\'+new Date().toLocaleDateString(\'zh-CN\'),\'────────────────────\',\'\',\'【产业基础】\'+c.industry.known[0],\'【园区承载】\'+c.park.known[0],\'【链主缺口】\'+c.firm.known[2],\'【政策方向】\'+c.policy.known[0],\'\',\'【核心建议】优先招引链主外采依赖最重的关键环节企业，结合园区政策争取一事一议。\',\'\',\'⚠ 以上为 AI 初判，需干部结合实际材料确认。\'];var blob=new Blob([lines.join(\'\\n\')],{type:\'text/plain;charset=utf-8\'});var u=URL.createObjectURL(blob);var a=document.createElement(\'a\');a.href=u;a.download=\''+city+'_招商研判报告_精简版.txt\';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(u);a.remove();},300);})()" style="width:100%;padding:10px;background:#f5f7fb;color:#0b183b;border:1.5px solid #e8edf5;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer">下载精简版 (.txt)</button>'+
+        '</div>'+
+      '</div>'+
+      '<p style="font-size:11px;color:#b0bac8;margin:16px 0 0;text-align:center;line-height:1.7">报告内容为 AI 基于公开信息的初步研判，正式招商决策需结合政府授权材料与领导确认</p>'+
+    '</div>'+
+  '</div>';
+
+  var wrap=document.createElement('div');
+  wrap.innerHTML=modal;
+  document.body.appendChild(wrap.firstChild);
+}
+
+function showSummaryModal(city2,sectors){
+  // 生成kb一句话摘要
+  var p=cur&&PROJECTS[cur];
+  var _isSZ2=p&&p.city&&p.city.indexOf('随州')>=0;
+  var insights=_isSZ2?[
+    '专用汽车703亿+安全应急502亿+香菇500亿三大集群，本地配套率仅41%，氢电堆53%/底盘50%全靠外购',
+    '随州高新区(国家级)·曾都经开区·专汽/香菇产业园四大载体，汉十高铁至武汉50分钟',
+    '程力/新楚风/齐星/江南专汽/品源均有明确外采诉求；电堆·机器人·香菇提取三大缺口可直接对接',
+    '氢能走廊+安全应急示范基地+香菇精深加工三条政策主线，专项资金口径待领导确认',
+  ]:[
+    p&&p.city?p.city+'工业基础可承接，上游核心零部件本地配套率偏低，存在明显补链空间':'主导产业集群已识别，链条缺口待明确',
+    '主要工业园区载体已梳理，厂房与能耗条件可满足主流制造业落地需求',
+    '本地链主存在外采依赖，上游供应商招引有直接采购牵引力',
+    '政策方向已提取，专项资金口径与首选承接园区待干部上传领导最新发言确认',
+  ];
+  var rows=(sectors||[]).map(function(s,i){
+    return '<div style="display:flex;gap:14px;padding:14px 0;border-bottom:1px solid #f0f4ff;align-items:flex-start">'+
+      '<span style="font-size:20px;flex:0 0 28px;text-align:center;margin-top:2px">'+s.icon+'</span>'+
+      '<div style="flex:1">'+
+        '<div style="font-size:13px;font-weight:650;color:#0b183b;margin-bottom:3px">'+s.name+'</div>'+
+        '<div style="font-size:12px;color:#4a5568;line-height:1.65">'+insights[i]+'</div>'+
+      '</div>'+
+      '<span style="font-size:11px;color:#22c55e;background:#f0fdf4;padding:2px 8px;border-radius:20px;flex:0 0 auto;margin-top:2px;white-space:nowrap">已就位</span>'+
+    '</div>';
+  }).join('');
+
+  var modal='<div id="summaryModal" style="position:fixed;inset:0;background:rgba(11,24,59,.45);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)">'+
+    '<div style="background:#fff;border-radius:22px;padding:36px 36px 28px;max-width:520px;width:92%;box-shadow:0 8px 60px rgba(11,24,59,.18);animation:fadeUp .35s ease">'+
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">'+
+        '<div style="width:10px;height:10px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.2)"></div>'+
+        '<span style="font-size:12px;font-weight:650;color:#22c55e;letter-spacing:.5px">分析完成</span>'+
+      '</div>'+
+      '<h2 style="font-size:20px;font-weight:750;color:#0b183b;margin:0 0 4px">'+city2+' 城市智库已就位</h2>'+
+      '<p style="font-size:13px;color:#8492a6;margin:0 0 20px">以下为 AI 基于公开信息的初步研判结论，⚠️ 标注项需结合政府材料确认</p>'+
+      rows+
+      '<div style="margin-top:22px;display:flex;gap:10px;align-items:center">'+
+        '<button onclick="enterWorkspaceFromModal()" style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">进入城市智库 →</button>'+
+        '<div id="summaryCountdown" style="font-size:12px;color:#9aa5b5;white-space:nowrap">10s 后自动进入</div>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+
+  // 注入动画 keyframe（只注一次）
+  if(!document.getElementById('fadeUpStyle')){
+    var st=document.createElement('style');st.id='fadeUpStyle';
+    st.textContent='@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}';
+    document.head.appendChild(st);
+  }
+  var wrap=document.createElement('div');
+  wrap.id='summaryModalWrap';
+  wrap.innerHTML=modal;
+  document.body.appendChild(wrap);
+
+  // 10s 倒计时
+  var remaining=10;
+  _summaryTimer=setInterval(function(){
+    remaining--;
+    var cd=document.getElementById('summaryCountdown');
+    if(cd)cd.textContent=remaining+'s 后自动进入';
+    if(remaining<=0){
+      clearInterval(_summaryTimer);
+      enterWorkspaceFromModal();
+    }
+  },1000);
+}
+function enterWorkspaceFromModal(){
+  if(_summaryTimer)clearInterval(_summaryTimer);
+  var wrap=document.getElementById('summaryModalWrap');
+  if(wrap)wrap.remove();
+  enterWorkspace();
+}
+
+function enterWorkspace(){
+  if(!cur||!PROJECTS[cur])return;
+  // 填充城市智库核心结论
+  var p=PROJECTS[cur];
+  var c=generateKbConclusions(p.city);
+  var mapping=[c.industry,c.park,c.firm,c.policy];
+  p.kb.forEach(function(k,i){
+    if(mapping[i]&&(!k.known||!k.known.length)){
+      k.known=mapping[i].known;
+      k.sub=mapping[i].sub;
+      k.tag=mapping[i].tag;
+    }
+  });
+  p.topic=p.city+'主导产业补链招引';
+  persist();
+  view='knowledge';
+  detailOpen=false;
+  render();
+  // 延迟写入 AI 首条消息
+  setTimeout(function(){
+    if(!cur||!PROJECTS[cur])return;
+    var city=PROJECTS[cur].city;
+    var hasFile=!!(_setupFiles&&_setupFiles.length);
+    addA('<p>'+city+'城市智库已就位'+(hasFile?'，已结合你上传的材料':'，基于公开信息')+
+      '完成初步分析。</p>'+
+      '<p style="margin-top:6px">左侧四大主题均可点击展开，你也可以直接提问：</p>'+
+      '<ul style="margin:6px 0 0 18px;line-height:2;font-size:13px;color:#33415a">'+
+        '<li>「<strong>'+city+'最值得补链的核心环节是哪些？</strong>」</li>'+
+        '<li>「<strong>本地链主企业还缺哪些关键配套？</strong>」</li>'+
+        '<li>「<strong>园区如何分工承接不同细分方向？</strong>」</li>'+
+      '</ul>'+
+      '<p style="margin-top:8px;font-size:12px;color:#9aa5b5">上传政府工作报告或产业材料可进一步提升判断精度。</p>');
+  }, 350);
+}
+
+
+function roleSwitch(){
+  // 角色切换暂时隐藏——先专注做好政府端（运营端代码保留，后续再启用）
+  return '';
+}
+function setRole(r){role=r;view='home';render();toast(r==='ops'?'已切换到运营端（周总·全局）':'已切换到政府端（随州·张主任）')}
+/* ===== 运营端：跨城市需求池（沿用政府端三栏结构）===== */
+function renderOps(){
+  if(!DEMANDS.length){$('#root').innerHTML='<div class="app-shell">'+opsTopbarEmpty()+'<div style="display:flex;align-items:center;justify-content:center;height:80vh;flex-direction:column;gap:16px"><div style="font-size:32px">📭</div><div style="font-weight:650;color:#0b183b">暂无需求</div><div style="color:#667590;font-size:13px">切换到政府端，完成第一个研判后需求会出现在这里。</div><button class="primary-button" style="margin-top:8px" onclick="setRole(\'gov\')">去政府端开始研判</button></div></div>';return;}
+  if(curDemand===null&&DEMANDS.length)curDemand=DEMANDS[0].id;
+  $('#root').innerHTML=
+   '<div class="app-shell">'+
+    opsTopbar()+
+    '<div class="app-content">'+opsSidebar()+
+      '<div class="pane-divider"><span class="divider-grip"><i class="i">⋮</i></span></div>'+
+      '<div class="content-column"><div class="workspace">'+
+        '<div class="main-pane">'+opsMain()+'</div>'+
+        (detailOpen?('<div class="detail-pane">'+opsDetail()+'</div>')
+                   :('<button class="reopen-detail" onclick="toggleDetail()"><i class="i">🧾</i>展开详情</button>'))+
+      '</div></div>'+
+    '</div>'+
+    opsFooter()+
+   '</div>';
+  bind();
+}
+function opsTopbar(){
+  return '<div class="topbar">'+
+    '<div class="brand-block"><img src="'+brandLogo()+'"><div><strong>慧小招</strong><span>运营端 · 资源调度</span></div></div>'+
+    '<div class="org-block"><i class="i">🧭</i><strong style="font-weight:650">周总 · 资源调度中心</strong>'+
+      '<span style="margin:0 10px;color:#cbd7e6">/</span><strong style="color:var(--blue-dark)">全国需求池</strong></div>'+
+    /* roleSwitch removed — ops runs on separate port 5051 */
+    '<div class="top-meta"><span><i class="i">🏙️</i>覆盖 3 个试点城市</span><span><i class="i">📥</i>'+DEMANDS.length+' 条在办需求</span></div>'+
+  '</div>';
+}
+function opsSidebar(){
+  var items=[['📥','需求池','各地干部提交',1],['🗺️','城市总览','试点城市进展',0],['🤝','资源库','可对接企业',0]];
+  return '<div class="sidebar"><div class="nav-list">'+
+    items.map(function(n){return '<button class="nav-item'+(n[3]?' active':'')+'"'+(n[3]?'':' onclick="toast(\'该模块示意中\')"')+'><i class="i">'+n[0]+'</i><span class="nav-copy"><strong>'+n[1]+'</strong><small>'+n[2]+'</small></span></button>';}).join('')+
+    '</div><div class="system-status"><span></span>运营端 · 周总视图</div></div>';
+}
+function opsFooter(){
+  var stat={matched:0,checking:0,none:0};DEMANDS.forEach(function(d){stat[d.res]++});
+  return '<div class="progress-footer"><div class="progress-track">'+
+    '<div class="progress-step done"><div class="progress-node"><i class="i">✓</i></div><div class="progress-copy"><strong>已匹配</strong><small>'+stat.matched+' 条可对接</small></div></div><div class="progress-line"></div>'+
+    '<div class="progress-step current"><div class="progress-node">◔</div><div class="progress-copy"><strong>核验中</strong><small>'+stat.checking+' 条待核验</small></div></div><div class="progress-line"></div>'+
+    '<div class="progress-step"><div class="progress-node">•</div><div class="progress-copy"><strong>暂无资源</strong><small>'+stat.none+' 条待跟踪</small></div></div>'+
+    '</div><div class="progress-mobile">需求池：共 '+DEMANDS.length+' 条 · 已匹配 '+stat.matched+' / 核验中 '+stat.checking+' / 暂无 '+stat.none+'</div></div>';
+}
+// 中间：需求列表（政府端 prompt-row 同款）
+function opsMain(){
+  return '<div class="page">'+
+    '<div class="page-header"><div><span class="eyebrow">DEMAND POOL</span><h1>跨城市需求池</h1>'+
+    '<p>各地招商干部经双确认后递交的正式需求，点任意一条在右侧判断资源、组织对接。</p></div></div>'+
+    '<div class="knowledge-scroll"><div class="prompt-list" style="margin-left:0;width:100%">'+
+      DEMANDS.map(function(d){var rc=RES_COLOR[d.res];var on=d.id===curDemand;
+        return '<button onclick="pickDemand(\''+d.id+'\')" style="width:100%;display:flex;align-items:center;gap:14px;padding:14px 18px;border:1px solid '+(on?'var(--blue)':'var(--line)')+';border-radius:10px;background:'+(on?'#f3f7fd':'#fff')+';cursor:pointer;text-align:left">'+
+          '<i class="i" style="font-size:22px;flex:0 0 auto">📥</i>'+
+          '<span style="flex:1;min-width:0;display:grid;gap:3px"><strong style="font-size:14.5px">'+d.city+' · '+d.topic+'</strong>'+
+          '<small style="color:var(--muted);font-size:12px">'+d.gov+' · 递交于 '+d.submit+'</small></span>'+
+          '<span class="status-tag" style="flex:0 0 auto;color:'+rc.c+';background:'+rc.bg+'">'+d.resLabel+'</span></button>';
+      }).join('')+
+    '</div></div></div>';
+}
+// 右侧：需求详情（政府端 detail-pane 同款结构）
+function opsDetail(){
+  var d=DEMANDS.find(function(x){return x.id===curDemand})||DEMANDS[0];var rc=RES_COLOR[d.res];
+  return '<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button>'+
+    '<div class="detail-page">'+
+    '<div class="detail-header"><div><span class="eyebrow">DEMAND DETAIL</span><h2>'+d.city+' · '+d.topic+'</h2><p>'+d.gov+'</p></div></div>'+
+    '<div class="detail-scroll">'+
+      '<div class="detail-block"><h3>递交需求</h3><p class="detail-copy">'+d.need+'</p><span class="source-note">递交于 '+d.submit+'</span></div>'+
+      '<div class="detail-block"><h3>资源端判断</h3><div class="'+(d.res==='none'?'warning-callout':'info-callout')+'" style="margin-top:0"><b style="color:'+rc.c+'">'+d.resLabel+'</b> · '+d.note+'</div></div>'+
+      '<div class="detail-block"><h3>候选线索</h3>'+(d.clues>0?'<ul class="source-list"><li><i class="i">🔗</i>已派生 '+d.clues+' 家脱敏候选线索<small>由政府端报告缺口结论派生</small></li></ul>':'<div class="fact-with-icon warning"><i class="i">⚠</i><div><strong>暂无匹配线索</strong><span>建议纳入长期跟踪或对接外部渠道</span></div></div>')+'</div>'+
+      '<div class="boundary-note"><i class="i">🔒</i>资源可达性、关键人触达由资源团队线下核验；系统只做需求汇总、状态跟踪与提醒，不自动联系企业。</div>'+
+    '</div>'+
+    '<div class="detail-actions-stack" style="gap:8px;padding:12px 22px 16px">'+
+      '<button class="primary-button" onclick="opsAction(\''+d.id+'\')"><i class="i">'+(d.res==='matched'?'🤝':d.res==='checking'?'🔍':'📌')+'</i>'+(d.res==='matched'?'安排招商对接':d.res==='checking'?'查看核验进度':'纳入长期跟踪')+'</button>'+
+      '<small>对接进度会同步回该城市干部的「当前研判」时间线</small>'+
+    '</div></div>';
+}
+function pickDemand(id){curDemand=id;detailOpen=true;render()}
+function opsAction(id){
+  var d=DEMANDS.find(function(x){return x.id===id});if(!d)return;
+  if(d.res==='matched'){
+    // 已匹配 → 弹出对接安排表单（真实内容）
+    var body='<p class="modal-intro">为「'+d.city+' · '+d.topic+'」安排招商对接，确认后将同步回该城市干部的「当前研判」时间线。</p>'+
+      '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">需求方</span><span class="vv">'+d.gov+'</span></div>'+
+      '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">候选线索</span><span class="vv">'+d.clues+' 家脱敏企业（资源端核验通过）</span></div>'+
+      '<div class="form-stack" style="margin-top:12px"><label>拟对接时间<input value="本周内 · 待与双方确认"></label>'+
+      '<label>对接方式<input value="资源端带队实地走访 + 政企座谈"></label></div>';
+    openModal('安排招商对接',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="closeModal();toast(\'对接安排已发起，将通知 '+d.gov+'\')">确认发起对接</button>');
+  }else if(d.res==='checking'){
+    // 核验中 → 弹出核验进度详情
+    var body='<p class="modal-intro">「'+d.city+' · '+d.topic+'」资源可达性核验进度：</p>'+
+      '<div class="timeline"><div class="timeline-item done"><div class="timeline-dot"><i class="i">✓</i></div><div><div class="timeline-title"><strong>需求已接收</strong></div><p>已同步需求与报告证据链。</p></div></div>'+
+      '<div class="timeline-item current"><div class="timeline-dot"><i class="i">◔</i></div><div><div class="timeline-title"><strong>资源匹配中</strong></div><p>正在核验 '+d.clues+' 家候选线索的真实意向与决策层触达。</p></div></div>'+
+      '<div class="timeline-item"><div class="timeline-dot"><i class="i">•</i></div><div><div class="timeline-title"><strong>反馈可对接企业</strong></div><p>核验完成后回传该城市干部。</p></div></div></div>';
+    openModal('资源核验进度',body,'<button class="primary-button" onclick="closeModal()">知道了</button>');
+  }else{
+    // 暂无资源 → 弹出长期跟踪确认
+    var body='<p class="modal-intro">「'+d.city+' · '+d.topic+'」当前资源库暂无直接匹配，可纳入长期跟踪或对接外部渠道。</p>'+
+      '<div class="fact-with-icon warning"><i class="i">⚠</i><div><strong>暂无匹配线索</strong><span>纳入跟踪后，有新资源进入将自动提醒</span></div></div>';
+    openModal('纳入长期跟踪',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="closeModal();toast(\'已纳入长期跟踪，有匹配将提醒\')">确认纳入</button>');
+  }
+}
+function brandLogo(){return 'data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50"><rect width="50" height="50" rx="25" fill="#0757ad"/><text x="25" y="33" font-size="22" fill="white" text-anchor="middle" font-family="sans-serif">慧</text></svg>')}
+function topbar(p){
+  return '<div class="topbar">'+
+    '<div class="brand-block"><img src="data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"50\"><rect width=\"50\" height=\"50\" rx=\"25\" fill=\"%230757ad\"/><text x=\"25\" y=\"33\" font-size=\"22\" fill=\"white\" text-anchor=\"middle\" font-family=\"sans-serif\">慧</text></svg>')+'"><div><strong>慧小招</strong><span>AI 招商智能体</span></div></div>'+
+    // 机构与身份固定（账号绑定，不可切换）；当前方向只读展示，切换在「项目管理」进行
+    '<div class="org-block"><i class="i">🏛️</i>'+
+      '<strong style="font-weight:650">'+p.org+' · '+(p&&p.who||'—')+'</strong>'+
+      '<span style="margin:0 10px;color:#cbd7e6">/</span>'+
+      '<strong style="color:var(--blue-dark)">'+p.topic+'</strong>'+
+    '</div>'+
+    roleSwitch()+
+    '<div class="top-meta"><span><i class="i">🛰️</i>'+p.city+'城市智库已连接</span><span><i class="i">🕒</i>随州产业信息更新至 7月20日 06:00</span>'+
+      '<span style="position:relative;cursor:pointer" onclick="toggleNotif(event)"><i class="i">🔔</i>'+
+        (unreadCount()>0?'<b style="position:absolute;top:-4px;right:-6px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:#c85b09;color:#fff;font-size:9px;line-height:15px;text-align:center;font-weight:700">'+unreadCount()+'</b>':'')+
+        '<div id="notifPanel" style="display:none;position:absolute;top:30px;right:0;width:310px;background:#fff;border:1px solid #d8e0ed;border-radius:12px;box-shadow:0 12px 32px rgba(11,24,59,.16);z-index:70;overflow:hidden;text-align:left;cursor:default" onclick="event.stopPropagation()">'+notifList()+'</div>'+
+      '</span></div>'+
+  '</div>';
+}
+function stColor(s){return s>=4?{bg:'#e4f5f3',c:'#006d70'}:s>=3?{bg:'#ebf3fd',c:'#013582'}:{bg:'#fff0de',c:'#a34c09'}}
+
+/* kb lock/readiness */
+var KB_UNLOCKED={};
+
+function kbReadiness(){
+  var p=P(); if(!p||!p.kb) return {score:0,total:0,confirmed:0,files:0,label:'未开始',color:'#9aa5b5'};
+  // 只统计 ⚠️ 条目作为「待确认」分母
+  // 普通事实性条目（AI 从报告提取）默认已确认，不要求领导操作
+  var warnTotal=0, warnConfirmed=0;
+  p.kb.forEach(function(k,ki){
+    (k.known||[]).forEach(function(x,xi){
+      var isWarn=x.indexOf('\u26a0\ufe0f')>=0;
+      if(!isWarn) return;  // 非⚠️直接跳过，视为已确认
+      warnTotal++;
+      var conf=KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][ki]&&KB_CONFIRMS[cur][ki][xi];
+      if(conf||x.indexOf('\u2705')===0) warnConfirmed++;
+    });
+  });
+  var uploads=(UPLOADS[cur]||[]).length;
+  // 评分：⚠️确认率×60 + 上传加分×40
+  var warnRate=warnTotal>0?warnConfirmed/warnTotal:1; // 无⚠️时视为全部完成
+  var uploadBonus=Math.min(40, uploads*10);
+  var score=Math.round(warnRate*60 + uploadBonus);
+  var label=score>=80?'已就绪':score>=50?'基本完整':score>=20?'待补充':'未开始';
+  var color=score>=80?'#22c55e':score>=50?'#f59e0b':score>=20?'#3b82f6':'#9aa5b5';
+  return {score:score,total:warnTotal,confirmed:warnConfirmed,files:uploads,label:label,color:color};
+}
+
+function isLocked(v){
+  if(['report','home','docking'].indexOf(v)<0) return false;
+  if(!cur) return true;
+  if(KB_UNLOCKED[cur]&&KB_UNLOCKED[cur][v]) return false;
+  return kbReadiness().score<80;
+}
+
+function unlockView(v){
+  if(!cur) return;
+  if(!KB_UNLOCKED[cur]) KB_UNLOCKED[cur]={};
+  KB_UNLOCKED[cur][v]=true;
+  persist();
+  closeModal();
+  go(v);
+}
+
+function sidebar(){
+  var p=P();
+  var r=kbReadiness();
+  // 动态副标题：反映实际进度
+  var navMeta={
+    knowledge: (function(){
+      if(!p) return '完善材料·产业/园区/企业/政策';
+      var conf=KB_CONFIRMS[cur]?Object.keys(KB_CONFIRMS[cur]).reduce(function(n,ki){return n+Object.keys(KB_CONFIRMS[cur][ki]).length;},0):0;
+      var uploads=(UPLOADS[cur]||[]).length;
+      if(r.score>=80) return '✓ 已就绪 '+r.score+'% · '+conf+'条已确认';
+      return conf>0?(conf+'条已确认 · '+uploads+'份材料 · '+r.score+'%'):'待完善 · 产业/园区/企业/政策';
+    })(),
+    report: (function(){
+      if(!p) return '生成缺口分析与招引方向';
+      var rs=REPORTSTATE[cur];
+      if(!rs) return '待研判 · 选方向后点击生成';
+      if(rs.phase===1){
+        var pc=PENDING_CONFIRMS[cur]||[];
+        var done=pc.filter(function(x){return x.status==='confirmed'||x.status==='edited';}).length;
+        return done+'/'+pc.length+' 待确认 · 草稿已生成';
+      }
+      return '✓ 完整报告已生成 · '+rs.score+'%置信度';
+    })(),
+    home: (function(){
+      if(!p) return '报告派生项目·对接需求';
+      var stage=p.stage||1;
+      var stageNames=['资料准备','AI研判','确认需求','资源匹配','招商对接'];
+      var nProjects=Object.keys(PROJECTS).length;
+      return nProjects+'个项目 · 当前「'+(stageNames[stage-1]||'进行中')+'」';
+    })(),
+    docking: (function(){
+      if(!p||!p.clues||!p.clues.length) return '候选企业·可达性核验';
+      var amber=p.clues.filter(function(c){return c.tag==='amber';}).length;
+      return p.clues.length+'条线索 · '+amber+'条待核验';
+    })()
+  };
+  return '<div class="sidebar"><div class="nav-list">'+
+    NAV.map(function(n){
+      var on=view===n[0]?' active':'';
+      var locked=isLocked(n[0]);
+      var lockBadge=locked?'<span style="font-size:10px;margin-left:auto;opacity:.5">&#128274;</span>':'';
+      var dimCss=locked&&view!==n[0]?'opacity:.55;':'';
+      var sub=navMeta[n[0]]||n[3]||'';
+      return '<button class="nav-item'+on+'" onclick="go(\''+n[0]+'\')" style="'+dimCss+'">'+
+        '<i class="i">'+n[1]+'</i>'+
+        '<span class="nav-copy"><strong>'+n[2]+'</strong><small>'+sub+'</small></span>'+
+        lockBadge+
+      '</button>';
+    }).join('')+'</div>'+
+    (function(){
+      if(!cur)return '';
+      return '<div style="padding:10px 14px 8px;border-top:1px solid #f0f4ff">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">'+
+          '<span style="font-size:10.5px;color:#9aa5b5;letter-spacing:.3px">城市智库完成度</span>'+
+          '<span style="font-size:11px;font-weight:700;color:'+r.color+'">'+r.score+'%</span>'+
+        '</div>'+
+        '<div style="height:4px;background:#f0f4ff;border-radius:2px;overflow:hidden">'+
+          '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:2px;transition:width .4s"></div>'+
+        '</div>'+
+        '<div style="font-size:10.5px;color:'+r.color+';margin-top:4px">'+r.label+
+          ((UPLOADS[cur]||[]).length>0?' &middot; '+(UPLOADS[cur]||[]).length+'份材料':'')+'</div>'+
+      '</div>';
+    })()+
+    '<div class="system-status"><span></span>系统运行正常</div></div>';
+}
+function progressFooter(p){
+  p=p||P(); if(!cur||!PROJECTS[cur]||!p||!p.stage)return '';
+  var _st=projStages(p);
+  return '<div class="progress-footer"><div class="progress-track">'+
+    _st.map(function(s,si){var n=si+1;var cls=n<p.stage?' done':n===p.stage?' current':'';
+      var sv=[null,'report','home','docking',null][si];
+      var locked=sv&&isLocked(sv);
+      var nodeContent=n<p.stage?'<i class="i">\u2713</i>':locked?'&#128274;':n;
+      var dimStyle=locked&&n!==p.stage?'opacity:.55':'';;
+      return '<div class="progress-step'+cls+'" style="'+dimStyle+'" '+
+        (sv?'onclick="go(\''+sv+'\')" style="cursor:pointer"':'')+'>'+
+        '<div class="progress-node">'+nodeContent+'</div>'+
+        '<div class="progress-copy"><strong>'+s[0]+(locked?' &#128274;':'')+'</strong><small>'+s[1]+'</small></div></div>'+
+        (n<_st.length?'<div class="progress-line"></div>':'');
+    }).join('')+'</div><div class="progress-mobile">📂 '+p.topic+' · 当前「'+stageNameOf(p,p.stage)+'」· 第 '+p.stage+'/'+_st.length+' 步（进度跟随所选产业方向）</div></div>';
+}
+/* ===== 通知：铃铛 + 面板 + 点击落回对应研判 ===== */
+var NOTIFS=[
+  {id:'n1',type:'状态变化',icon:'🔵',proj:'sq',title:'智慧应急装备 · 资源端已反馈',desc:'资源团队核验：长三角应急无人机集成商（脱敏企业E·天目无人机）已具备可对接窗口，建议准备承接材料。',time:'10分钟前',read:false},
+  {id:'n2',type:'超时提醒',icon:'🟠',proj:'py',title:'香菇深加工 · 已3个工作日无更新',desc:'该研判自双确认后暂无进展，建议跟进资源端对功能成分提取企业的核验进度。',time:'今天 09:12',read:false},
+  {id:'n3',type:'每日摘要',icon:'📋',proj:null,title:'每日摘要 · 3个研判进行中',desc:'氢能专用车补链待你确认报告（电堆缺口53%已有候选）；智慧应急装备资源匹配中；香菇深加工待跟进。',time:'今天 09:00',read:false}
+];
+function unreadCount(){return NOTIFS.filter(function(n){return !n.read}).length}
+function notifList(){
+  return '<div style="padding:11px 15px;border-bottom:1px solid #eef1f5;font-size:13px;font-weight:650;display:flex;justify-content:space-between;align-items:center">通知 <button style="border:0;background:none;color:#0757ad;font-size:11px;cursor:pointer" onclick="markAllRead(event)">全部已读</button></div>'+
+    NOTIFS.map(function(n){
+      return '<div onclick="openNotif(\''+n.id+'\')" style="padding:11px 15px;border-bottom:1px solid #f2f5f9;cursor:pointer;display:flex;gap:9px;'+(n.read?'opacity:.55':'')+'" onmouseover="this.style.background=\'#f7f9fc\'" onmouseout="this.style.background=\'\'">'+
+        '<span style="font-size:13px;flex:0 0 auto">'+n.icon+'</span>'+
+        '<span style="flex:1;min-width:0"><span style="font-size:13px;font-weight:600;color:#0b183b;display:block">'+n.title+(n.read?'':' <b style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#c85b09;vertical-align:middle;margin-left:2px"></b>')+'</span>'+
+        '<span style="font-size:11.5px;color:#667590;line-height:1.5;display:block;margin-top:3px">'+n.desc+'</span>'+
+        '<span style="font-size:10px;color:#a8b2c2;display:block;margin-top:4px">'+n.type+' · '+n.time+'</span></span>'+
+      '</div>';
+    }).join('');
+}
+function toggleNotif(e){e.stopPropagation();var m=$('#notifPanel');if(m)m.style.display=m.style.display==='none'?'block':'none'}
+function markAllRead(e){e.stopPropagation();NOTIFS.forEach(function(n){n.read=true});render()}
+function openNotif(id){
+  var n=NOTIFS.find(function(x){return x.id===id});if(!n)return;n.read=true;
+  var np=$('#notifPanel');if(np)np.style.display='none';
+  render();
+  // 每日摘要 = 全局概览（不属于单个项目），点开列出各研判状态
+  if(!n.proj){
+    var rows=Object.keys(PROJECTS).map(function(k){var x=PROJECTS[k];var sc=stColor(x.stage);
+      return '<div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #f2f5f9;cursor:pointer" onclick="closeModal();gotoProjFromNotif(\''+k+'\')">'+
+        '<span style="font-size:16px">📍</span>'+
+        '<span style="flex:1;min-width:0"><strong style="font-size:13.5px;color:#0b183b;display:block">'+x.topic+'</strong>'+
+        '<small style="font-size:11px;color:#667590">'+x.city+' · '+stageDescOf(x,x.stage)+'</small></span>'+
+        '<span class="status-tag" style="color:'+sc.c+';background:'+sc.bg+'">'+stageNameOf(x,x.stage)+'</span></div>';
+    }).join('');
+    var body='<p class="modal-intro">今天 09:00 · '+P().who+' 名下 '+Object.keys(PROJECTS).length+' 个研判进展如下，点任意一条进入。</p>'+rows+
+      '<div class="boundary-note" style="margin-top:14px"><i class="i">📋</i>每日摘要为全局汇总，不属于单个研判；系统每天 09:00 自动生成。</div>';
+    openModal('每日摘要 · 今日各研判概览',body,'<button class="primary-button" onclick="closeModal()">知道了</button>');
+    return;
+  }
+  // 事件通知（状态变化/超时）= 前往对应研判
+  var pj=PROJECTS[n.proj];
+  var body='<div style="display:flex;align-items:flex-start;gap:11px;margin-bottom:14px">'+
+      '<span style="font-size:20px">'+n.icon+'</span>'+
+      '<div><div style="font-size:15px;font-weight:650;color:#0b183b">'+n.title+'</div>'+
+      '<div style="font-size:11px;color:#8490a5;margin-top:3px">'+n.type+' · '+n.time+'</div></div></div>'+
+    '<div class="info-callout" style="margin-top:0">'+n.desc+'</div>'+
+    '<div class="kv" style="margin-top:14px"><span class="kk" style="width:70px;color:#8490a5">相关研判</span><span class="vv">'+pj.city+' · '+pj.topic+'</span></div>'+
+    '<div class="kv"><span class="kk" style="width:70px;color:#8490a5">当前阶段</span><span class="vv">'+stageNameOf(pj,pj.stage)+'</span></div>';
+  var foot='<button class="secondary-button" onclick="closeModal()">知道了</button>'+
+    '<button class="primary-button" onclick="closeModal();gotoProjFromNotif(\''+n.proj+'\')">前往该研判 ➜</button>';
+  openModal('通知详情',body,foot);
+}
+function gotoProjFromNotif(pk){cur=pk;view='home';detailData=null;render();toast('已定位到「'+PROJECTS[pk].topic+'」研判')}
+function toggleSw(e){e.stopPropagation();var m=$('#swMenu');m.style.display=m.style.display==='none'?'block':'none'}
+function switchProj(k){cur=k;view='report';detailData=null;render();toast('已进入「'+PROJECTS[k].topic+'」研判工作区')}
+function newProj(){var m=$('#swMenu');if(m)m.style.display='none';newProjModal()}
+function go(v){
+  if(isLocked(v)){
+    var r=kbReadiness();
+    var vnames={report:'\u7814\u5224\u9700\u6c42',home:'\u9879\u76ee\u7ba1\u7406',docking:'\u653f\u4f01\u5bf9\u63a5'};
+    var vn=vnames[v]||v;
+    var tips=[];
+    if(r.confirmed<r.total) tips.push('\u786e\u8ba4\u5269\u4f59 '+(r.total-r.confirmed)+' \u6761\u5f85\u786e\u8ba4\u7ed3\u8bba');
+    if(r.files<2) tips.push('\u5728\u57ce\u5e02\u667a\u5e93\u4e0a\u4f20\u81f3\u5c11 2 \u4efd\u653f\u5e9c\u6750\u6599');
+    if(r.files<1) tips.push('\u4e0a\u4f20\u9886\u5bfc\u6700\u65b0\u4ea7\u4e1a\u53d1\u8a00\u7a3f');
+    var tipsHtml=tips.slice(0,3).map(function(t){
+      return '<li style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid #f0f4ff">'+
+        '<span style="color:#f59e0b;flex:0 0 auto">\u2192</span>'+
+        '<span style="font-size:13px;color:#1e293b">'+t+'</span></li>';
+    }).join('');
+    var body=
+      '<div style="margin-bottom:14px">'+
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'+
+          '<div style="flex:1;background:#f0f4ff;border-radius:6px;height:8px;overflow:hidden">'+
+            '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:6px;transition:width .3s"></div>'+
+          '</div>'+
+          '<span style="font-size:13px;font-weight:700;color:'+r.color+'">'+r.score+'%</span>'+
+        '</div>'+
+        '<p style="font-size:13px;color:#4a5568;margin:0 0 12px;line-height:1.7">'+
+          '&#128274; <strong>'+vn+'</strong>\u9700\u8981\u57ce\u5e02\u667a\u5e93\u5b8c\u6210\u5ea6\u8fbe\u5230 <strong>80%</strong>\u540e\u81ea\u52a8\u89e3\u9501\u3002\u5f53\u524d <strong style="color:'+r.color+'">'+r.score+'%</strong>\u3002</p>'+
+        '<p style="font-size:12px;color:#6366f1;margin:0 0 10px">\u{1f4a1} \u4e0a\u4f20\u8d8a\u591a\u6750\u6599\u3001\u9886\u5bfc\u786e\u8ba4\u8d8a\u591a\u7ed3\u8bba\uff0c\u7814\u5224\u6570\u636e\u53ef\u9760\u6027\u8d8a\u9ad8\u3002</p>'+
+        (tipsHtml?'<div style="margin-bottom:10px">'+
+          '<div style="font-size:11.5px;font-weight:650;color:#6366f1;margin-bottom:6px">\u5feb\u901f\u63d0\u5347\u5b8c\u6210\u5ea6\uff1a</div>'+
+          '<ul style="margin:0;padding:0;list-style:none">'+tipsHtml+'</ul></div>':'');
+    var foot=
+      '<button class="secondary-button" onclick="closeModal()">\u7ee7\u7eed\u5b8c\u5584\u57ce\u5e02\u667a\u5e93</button>'+
+      '<button onclick="unlockView(\''+v+'\')" '+
+        'style="padding:10px 18px;background:#f5f7fb;color:#64748b;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;cursor:pointer">'+
+        '\u5f3a\u5236\u89e3\u9501\uff08\u6570\u636e\u53ef\u9760\u6027\u8f83\u4f4e\uff09</button>';
+    openModal('&#128274; '+vn+' \u5c1a\u672a\u89e3\u9501', body, foot);
+    return;
+  }
+  view=v;detailData=null;detailOpen=true;render();
+}
+function bind(){
+  document.addEventListener('click',function(e){
+    var m=$('#swMenu');if(m&&m.style.display==='block'){var o=$('#orgName');if(o&&!o.contains(e.target)&&!m.contains(e.target))m.style.display='none'}
+    var np=$('#notifPanel');if(np&&np.style.display==='block'&&!np.contains(e.target)&&!(e.target.closest&&e.target.closest('[onclick^=toggleNotif]'))){np.style.display='none'}
+  });
+  var ta=$('#composerTa');if(ta){ta.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg()}})}
+}
+/* ===== 主区视图 ===== */
+function mainPane(p){
+  if(view==='knowledge')return kbPage(p);
+  if(view==='settings')return settingsPage(p);
+  if(view==='report')return homePage(p);      // 研判需求：出报告的对话工作区
+  if(view==='docking')return dockingPage(p);   // 招商对接：独立tab
+  if(view==='subwork')return subWorkPage(p);   // 招引项目独立工作页
+  return projMgmtPage(p);                       // home = 项目管理（默认）
+}
+// 项目管理：项目列表切换（AI对话分类式）+ 进入项目工作区
+/* ══════════════════════════════════════════════════════════════
+   企业线索管理 — projMgmtPage 完整重写
+   数据源：PROJECTS[k].clues[]
+   每条 clue: {id, name, kind, region, source, status, tone, reason, signal, questions:[]}
+   tone: 'slate'待接触 / 'amber'核验中 / 'teal'可安排沟通
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── 从研判报告文本派生候选线索 ── */
+
+/* ── 从报告文本提取缺口（供通用城市动态扫描用）── */
+function extractGapsForScan(p){
+  var gaps=[];
+  var rsx=(typeof REPORTSTATE!=='undefined')?(REPORTSTATE[p.id]||REPORTSTATE[cur]):null;
+  var text=rsx&&rsx.text||'';
+  if(text){
+    var lines=text.split('\n'); var inTop5=false;
+    for(var i=0;i<lines.length;i++){
+      var l=lines[i];
+      if(l.indexOf('补链优先级')>=0||l.indexOf('TOP5')>=0||l.indexOf('优先级清单')>=0)inTop5=true;
+      if(inTop5&&l.trim().charAt(0)==='|'){
+        var cells=l.trim().slice(1,-1).split('|').map(function(c){return c.replace(/[*★]/g,'').trim();});
+        if(cells.every(function(c){return /^[\s\-:]+$/.test(c);})||cells[0]==='排名'||cells[0]==='缺口节点')continue;
+        var rank=parseInt(cells[0]); if(!isNaN(rank)&&cells[1])gaps.push(cells[1]);
+      }
+      if(inTop5&&gaps.length>=4)break;
+    }
+    if(!gaps.length){
+      lines.forEach(function(l){
+        if(l.indexOf('❌')>=0&&gaps.length<4){
+          var c=l.replace(/^[*\-•|#\s]+/,'').replace(/❌|\*\*/g,'').replace('缺失','').trim();
+          c=c.split(/[（(，,：:]/)[0].trim();
+          if(c.length>=3&&c.length<30)gaps.push(c);
+        }
+      });
+    }
+  }
+  if(!gaps.length)gaps=['核心零部件配套','关键系统集成','精深加工延链','智能装备升级'];
+  return gaps.slice(0,4);
+}
+
+/* AI 企业漏斗 — 真实调用 DeepSeek(/api/kb-chat mode=funnel) 按项目分析，不用任何硬编码企业库 */
+var _funnelRunning = {};
+var KB_API_OPS = '/api/kb-chat';
+function _funnelInput(p){
+  var rsx=(typeof REPORTSTATE!=='undefined')?(REPORTSTATE[p.id]||REPORTSTATE[cur]):null;
+  var text=(rsx&&rsx.text)||'';
+  var gaps=[]; try{ gaps=extractGapsForScan(p); }catch(e){}
+  return {text:text, gaps:gaps};
+}
+function runAIFunnel(projKey, done, onProgress){
+  var p=PROJECTS[projKey]; if(!p){ done&&done('no project'); return; }
+  if(_funnelRunning[projKey]){ return; }
+  _funnelRunning[projKey]=true;
+  var inp=_funnelInput(p); var topic=p.topic||'';
+  var q='招商方向：'+topic+' 城市：'+(p.city||'')+'\n\n产业研判报告：\n'+(inp.text? inp.text.slice(0,4000) : '（暂无完整报告，请基于招商方向与常识分析）')+'\n\n已识别缺口：'+(inp.gaps&&inp.gaps.length?inp.gaps.join('、'):'（见报告）')+'\n\n请针对该招商方向筛选真实存在的适配企业构成企业漏斗，目标40家（至少30家）。每家企业按评分卡分别给出 score_match(0-40)/score_relocate(0-30)/score_strength(0-30) 三项分数；如企业有明确扩张需求或领导与本城市/本省有可考的派系关联（校友/籍贯/商会等），填 expansion/faction 字段，无则留空、严禁编造。严格按 SYSTEM 要求输出 JSON。';
+  fetch(KB_API_OPS,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q, city:(p.city||''), chunks:[], stream:true, mode:'funnel'})})
+  .then(function(resp){
+    if(!resp.ok){ _funnelRunning[projKey]=false; return resp.json().then(function(e){ done&&done('服务繁忙或超时，请重试（'+((e&&e.error)||resp.status)+'）'); }).catch(function(){ done&&done('服务繁忙或超时，请重试'); }); }
+    var acc='';
+    function _finishFunnel(content){
+      _funnelRunning[projKey]=false;
+      if(!content){ done&&done('模型未返回内容，请重试'); return; }
+      var obj=_parseFunnelJson(content);
+      if(!obj||!obj.companies||!obj.companies.length){ done&&done('parse'); return; }
+      var _num=function(v,max){var n=(typeof v==='number')?v:parseInt(v)||0; if(n<0)n=0; if(n>max)n=max; return n;};
+      var companies=obj.companies.map(function(c,i){
+        var sm=_num(c.score_match,40), sr=_num(c.score_relocate,30), ss=_num(c.score_strength,30);
+        var total=sm+sr+ss; if(total>100)total=100;
+        return {id:_funnelClueId(projKey, c.name, i), name:c.name||'', region:c.region||'', kind:c.kind||'', fit:c.fit||'',
+          score_match:sm, score_relocate:sr, score_strength:ss, score_reason:c.score_reason||'',
+          fit_score:total,
+          signal:c.signal||'', expansion:c.expansion||'', faction:c.faction||'',
+          listed:c.listed||'', source:c.source||'公开信息（AI推断，待核验）'};
+      }).filter(function(c){return c.name;}).sort(function(a,b){
+        if(b.fit_score!==a.fit_score) return b.fit_score-a.fit_score;
+        var fa=(a.expansion?1:0)+(a.faction?1:0), fb=(b.expansion?1:0)+(b.faction?1:0);
+        return fb-fa;
+      });
+      PROJECTS[projKey].funnel={ ts:Date.now(), topic:obj.topic||topic, total:(obj.total_scanned||companies.length), companies:companies, pushed:false };
+      persist(); done&&done(null, PROJECTS[projKey].funnel);
+    }
+    if(!resp.body||!resp.body.getReader){ return resp.text().then(function(txt){ txt.split('\n').forEach(function(line){ if(line.indexOf('data:')!==0) return; var d=line.slice(5).trim(); if(d==='[DONE]'||!d) return; try{ var j=JSON.parse(d); var dt=(j.choices&&j.choices[0]&&((j.choices[0].delta&&j.choices[0].delta.content)||(j.choices[0].message&&j.choices[0].message.content)))||''; acc+=dt; }catch(_){}}); _finishFunnel(acc); }); }
+    var reader=resp.body.getReader(), decoder=new TextDecoder(), buf='';
+    function pump(){
+      return reader.read().then(function(d){
+        if(d.done){ _finishFunnel(acc); return; }
+        buf+=decoder.decode(d.value,{stream:true});
+        var lines=buf.split('\n'); buf=lines.pop();
+        lines.forEach(function(line){
+          if(line.indexOf('data:')!==0) return;
+          var dd=line.slice(5).trim();
+          if(dd==='[DONE]'||!dd) return;
+          try{ var j=JSON.parse(dd); var delta=(j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||''; if(delta) acc+=delta; }catch(_){}
+        });
+        if(onProgress){ var pct=Math.min(90, 5+Math.round(acc.length/15000*85)); try{ onProgress(pct, acc); }catch(_){} }
+        return pump();
+      });
+    }
+    return pump();
+  }).catch(function(e){ _funnelRunning[projKey]=false; done&&done(e&&e.message||'network'); });
+}
+function _parseFunnelJson(s){
+  if(!s) return null; var t=String(s).trim();
+  t=t.replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,'');
+  try{ return JSON.parse(t); }catch(e){}
+  var a=t.indexOf('{'), b=t.lastIndexOf('}');
+  if(a>=0&&b>a){ try{ return JSON.parse(t.slice(a,b+1)); }catch(e){} }
+  return null;
+}
+/* 【2026-09-22 修复 P0】clue 身份与墓碑口径必须与政府端 index.html 完全一致。
+   旧 id 'f_'+projKey+'_'+下标 跨漏斗复用：上一批删掉的企业留下的墓碑，会在下一批
+   把恰好排到同一下标的新企业静默吃掉（实测诺唯赞生物 88 分被吞）。
+   现在 id 由企业名派生（跨次重跑稳定），墓碑按企业名匹配，位置型旧 id 墓碑失效。 */
+function _clueNameKey(name){
+  if(name==null) return '';
+  return String(name).replace(/[\uff08(][^\uff09)]*[\uff09)]\s*$/,'').replace(/\s+/g,'').trim();
+}
+function _isReusableClueId(clueId){
+  return /^f_.+_\d+$/.test(String(clueId==null?'':clueId));
+}
+function _clueTombKey(projKey, clue){
+  var nm=(clue&&typeof clue==='object')?clue.name:clue;
+  var nk=_clueNameKey(nm);
+  if(nk) return String(projKey)+'::@'+nk;
+  var id=(clue&&typeof clue==='object')?clue.id:clue;
+  return String(projKey)+'::'+String(id);
+}
+function isClueDeleted(projKey, clue){
+  var t=window.DELETED_CLUES||[];
+  if(!t.length) return false;
+  var isObj=(clue&&typeof clue==='object');
+  var nm=isObj?clue.name:null;
+  var id=isObj?clue.id:clue;
+  if(_clueNameKey(nm) && t.indexOf(_clueTombKey(projKey, clue))>=0) return true;
+  if(id!=null && !_isReusableClueId(id) && t.indexOf(String(projKey)+'::'+String(id))>=0) return true;
+  return false;
+}
+function _funnelClueId(projKey, name, idx){
+  var nk=_clueNameKey(name);
+  if(!nk) return 'f_'+projKey+'_n0_'+idx;
+  var h=0;
+  for(var i=0;i<nk.length;i++){ h=((h<<5)-h+nk.charCodeAt(i))|0; }
+  return 'f_'+projKey+'_n'+(h>>>0).toString(36);
+}
+
+function pushFunnelTopToGov(projKey, n){
+  var p=PROJECTS[projKey]; if(!p||!p.funnel||!p.funnel.companies.length){ toast('请先运行 AI 漏斗分析'); return; }
+  n=n||8; var top=p.funnel.companies.slice(0, n);
+  if(!p.clues) p.clues=[];
+  var existNames={}; (p.clues||[]).forEach(function(c){ if(c.name) existNames[c.name]=1; });
+  // 政府端已手动移除的企业不再推回（否则「删了又回来」）。判定按企业名，
+  // 不能按 c.id：位置型 id 跨漏斗复用，会误杀本批的新企业。
+  var added=0, skipped=0, skippedNames=[];
+  top.forEach(function(c){
+    if(existNames[c.name]) return;
+    if(isClueDeleted(projKey, c)){ skipped++; skippedNames.push(c.name||'未命名企业'); return; }
+    p.clues.push({id:c.id, name:c.name, kind:c.kind, region:c.region, gap:p.funnel.topic||p.topic||'', tone:'slate', status:'gov_push', fit:c.fit, fit_score:c.fit_score, score_match:c.score_match, score_relocate:c.score_relocate, score_strength:c.score_strength, score_reason:c.score_reason, expansion:c.expansion, faction:c.faction, reason:c.fit||('AI 漏斗按「'+(p.funnel.topic||p.topic||'该方向')+'」精筛，适配度 '+(c.fit_score||0)+' 分，建议资源团队核验投资意向。'), signal:c.signal, listed:c.listed, source:c.source, scale:(c.listed?c.listed+' · ':'')+(c.region||''), techRoute:c.fit||'', signalSrc:c.source||'AI推断，待核验', matchPoints:[c.fit].filter(Boolean), questions:['是否有在'+(p.city||'本地')+'布局/投资意向','与本地链主的配套匹配度','落地所需政策与承载条件'], priority:Math.max(1,Math.min(5,Math.round((c.fit_score||0)/20))), localAttr:'B'});
+    added++;
+  });
+  p.funnel.pushed=true; p.funnel.pushedAt=Date.now(); p.funnel.pushedNames=top.map(function(c){return c.name;});
+  persist(); render();
+  toast('已把 '+added+' 家精准适配企业推送到政府端「待接触企业」'+(skipped?'（跳过 '+skipped+' 家已被政府端移除：'+skippedNames.join('、')+'）':''));
+}
+
+function toggleFunnelExpand(k){
+  if(!window.__funnelExpand) window.__funnelExpand={};
+  window.__funnelExpand[k]=!window.__funnelExpand[k];
+  try{ render(); }catch(e){}
+}
+
+/* 企业线索来源：读真实 AI 漏斗结果（p.funnel.companies），不再有硬编码 */
+function computeScanClues(p){
+  if(!p||!p.funnel||!p.funnel.companies) return [];
+  return p.funnel.companies.map(function(c){
+    return {id:c.id, gap:(p.funnel.topic||p.topic||''), name:c.name, kind:c.kind, region:c.region,
+      scale:(c.listed?c.listed+' · ':'')+(c.region||''), techRoute:c.fit||'',
+      signal:c.signal||'', signalSrc:c.source||'AI推断，待核验', hasMoveSignal:!!c.signal,
+      matchPoints:[c.fit].filter(Boolean),
+      questions:['是否有在'+(p.city||'本地')+'布局/投资意向','与本地链主的配套匹配度','落地所需政策与承载条件'],
+      priority:Math.max(1,Math.min(5,Math.round((c.fit_score||0)/20))), localAttr:'B', status:'ai_scan',
+      fit_score:c.fit_score};
+  });
+}
+
+/* ── 企业线索两栏布局渲染 ── */
+function renderCluesTwoPanel(projKey){
+  var p = PROJECTS[projKey]; if(!p) return '';
+  var manualClues = (p.clues||[]).filter(function(c){return c.status!=='ai_scan';});
+  var aiClues     = (p.clues||[]).filter(function(c){return c.status==='ai_scan';});
+
+  // AI 企业漏斗栏
+  var fn = p.funnel;
+  var running = _funnelRunning[projKey];
+  var funnelHead = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'+
+      '<div style="display:flex;align-items:center;gap:6px">'+
+        '<span style="width:8px;height:8px;border-radius:50%;background:#6366f1"></span>'+
+        '<span style="font-size:12px;font-weight:750;color:#0b183b;letter-spacing:.3px">AI 企业漏斗</span>'+
+      '</div>'+
+      (fn?'<span style="font-size:11px;padding:2px 7px;background:#f5f3ff;color:#6d28d9;border-radius:10px">扫描'+ (fn.total||fn.companies.length) +'家 · 精筛'+fn.companies.length+'家</span>':'')+
+      '<div style="flex:1"></div>'+
+      (fn&&fn.companies&&fn.companies.length?'<button onclick="showFunnelPyramid(\''+projKey+'\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:11.5px;color:#1a56db;cursor:pointer;font-weight:600;margin-right:8px">📊 分级图谱</button>':'')+
+      (running?'<span style="font-size:11.5px;color:#6d28d9">⏳ 分析中…</span>':'<button onclick="loadAIScanClues(\''+projKey+'\')" style="padding:4px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:11.5px;color:#6d28d9;cursor:pointer;font-weight:600">🔄 重新分析</button>')+
+    '</div>';
+  var funnelBody;
+  if(running && !fn){
+    funnelBody='<div style="text-align:center;padding:22px;background:#faf9ff;border-radius:10px;border:1px solid #ede9fe;font-size:12.5px;color:#6d28d9">⏳ AI 正在按该方向缺口分析适配企业，约需 1-2 分钟…</div>';
+  } else if(!fn){
+    funnelBody='<div style="text-align:center;padding:20px;background:#f9fafb;border-radius:10px;border:1px solid #e8edf5">'+
+      '<div style="font-size:12.5px;color:#9aa5b5;margin-bottom:8px">尚未生成企业漏斗</div>'+
+      '<button onclick="loadAIScanClues(\''+projKey+'\')" style="padding:6px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600">🔍 立即 AI 分析</button>'+
+    '</div>';
+  } else {
+    var pushedTip = fn.pushed
+      ? '<span style="font-size:11px;color:#166534;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:3px 9px">✓ 已推送 '+(fn.pushedNames?fn.pushedNames.length:0)+' 家到政府端</span>'
+      : '';
+    var pushBtn = '<button onclick="pushFunnelTopToGov(\''+projKey+'\',8)" style="padding:7px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer">🚀 推送 Top8 精准企业到政府端</button>';
+    funnelBody='<div style="margin-bottom:10px;display:flex;align-items:center;gap:10px">'+pushBtn+pushedTip+'</div>'+
+      aiClues.slice(0,20).map(function(c,ci){ return scanClueCard(c, projKey, ci); }).join('')+
+      (aiClues.length>20?'<div style="text-align:center;font-size:11.5px;color:#9aa5b5;padding:8px">共 '+aiClues.length+' 家，已展示适配度最高的前 20 家</div>':'');
+  }
+  var aiPanel = '<div>'+funnelHead+funnelBody+'</div>';
+
+  // 手动录入栏
+  var manualPanel = '<div style="margin-top:20px">'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'+
+      '<div style="display:flex;align-items:center;gap:6px">'+
+        '<span style="width:8px;height:8px;border-radius:50%;background:#22c55e"></span>'+
+        '<span style="font-size:12px;font-weight:750;color:#0b183b;letter-spacing:.3px">慧小招团队推荐</span>'+
+      '</div>'+
+      '<span style="font-size:11px;padding:2px 7px;background:#f0fdf4;color:#166534;border-radius:10px">'+manualClues.length+'家</span>'+
+      '<span style="font-size:11px;color:#9aa5b5;margin-left:2px">· 人工核验，可直接对接</span>'+
+      '<div style="flex:1"></div>'+
+      '<button onclick="addClueManual(\''+projKey+'\')" style="padding:4px 10px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:11.5px;color:#166534;cursor:pointer;font-weight:600">+ 录入</button>'+
+    '</div>'+
+    (manualClues.length
+      ? manualClues.map(function(c,ci){ return clueCard(c, projKey, ci); }).join('')
+      : '<div style="text-align:center;padding:16px;background:#f9fafb;border-radius:10px;border:1px solid #e8edf5;font-size:12.5px;color:#9aa5b5">暂无团队推荐企业 · 点击「+ 录入」添加</div>'
+    )+
+  '</div>';
+
+  return aiPanel + manualPanel;
+}
+
+/* ── AI 扫描企业卡片（展开/折叠，带优先级标签）── */
+function scanClueCard(clue, projKey, idx){
+  var isExpanded = (window.__clueOpen === clue.id);
+  var priorityColor = clue.priority>=5?'#dc2626':clue.priority>=4?'#d97706':clue.priority>=3?'#2563eb':'#6b7280';
+  var priorityBg    = clue.priority>=5?'#fee2e2':clue.priority>=4?'#fef3c7':clue.priority>=3?'#dbeafe':'#f5f7fb';
+  var localAttrMap  = {A:{label:'A 必须本地',bg:'#fee2e2',color:'#991b1b'},B:{label:'B 可跨区域',bg:'#dbeafe',color:'#1e3a8a'},C:{label:'C 优先本地',bg:'#d1fae5',color:'#064e3b'}};
+  var la = localAttrMap[clue.localAttr]||localAttrMap.B;
+
+  var stars='';
+  for(var i=0;i<5;i++) stars+=(i<clue.priority?'★':'☆');
+
+  var expandedDetail = isExpanded
+    ? '<div style="padding:12px 16px 14px;border-top:1px solid #e8edf5;background:#fafbff">'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'+
+          '<div>'+
+            '<div style="font-size:10.5px;font-weight:650;color:#6b7280;letter-spacing:.3px;margin-bottom:4px">规模/背景</div>'+
+            '<div style="font-size:12.5px;color:#1f2937">'+clue.scale+'</div>'+
+          '</div>'+
+          '<div>'+
+            '<div style="font-size:10.5px;font-weight:650;color:#6b7280;letter-spacing:.3px;margin-bottom:4px">技术路线</div>'+
+            '<div style="font-size:12.5px;color:#1f2937">'+clue.techRoute+'</div>'+
+          '</div>'+
+        '</div>'+
+        '<div style="margin-bottom:10px">'+
+          '<div style="font-size:10.5px;font-weight:650;color:#6b7280;letter-spacing:.3px;margin-bottom:4px">扩产/动向信号</div>'+
+          '<div style="padding:8px 10px;background:#fffbeb;border-radius:8px;border:1px solid #fde68a">'+
+            '<div style="font-size:12.5px;color:#92400e">'+clue.signal+'</div>'+
+            '<div style="font-size:11px;color:#b45309;margin-top:3px">来源：'+clue.signalSrc+'</div>'+
+          '</div>'+
+        '</div>'+
+        '<div style="margin-bottom:10px">'+
+          '<div style="font-size:10.5px;font-weight:650;color:#6b7280;letter-spacing:.3px;margin-bottom:6px">为什么值得核验</div>'+
+          clue.matchPoints.map(function(mp,mi){
+            return '<div style="display:flex;gap:6px;padding:4px 0">'+
+              '<span style="color:#22c55e;flex-shrink:0">✓</span>'+
+              '<span style="font-size:12.5px;color:#374151">'+mp+'</span>'+
+            '</div>';
+          }).join('')+
+        '</div>'+
+        '<div style="margin-bottom:12px">'+
+          '<div style="font-size:10.5px;font-weight:650;color:#6b7280;letter-spacing:.3px;margin-bottom:5px">核验问题</div>'+
+          clue.questions.map(function(q,qi){
+            return '<div style="display:flex;gap:6px;padding:5px 0;border-bottom:1px solid #f3f4f6">'+
+              '<span style="color:#9aa5b5;flex-shrink:0;font-size:12px">'+(qi+1)+'.</span>'+
+              '<span style="font-size:12.5px;color:#374151">'+q+'</span>'+
+            '</div>';
+          }).join('')+
+        '</div>'+
+        '<div style="display:flex;gap:8px">'+
+          '<button onclick="convertToClue(\''+projKey+'\',\''+clue.id+'\')" '+
+            'style="flex:1;padding:8px;background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;font-size:12.5px;font-weight:600;color:#92400e;cursor:pointer">'+
+            '🔍 请资源团队核验</button>'+
+          '<button onclick="dismissScanClue(\''+projKey+'\',\''+clue.id+'\')" '+
+            'style="padding:8px 12px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;color:#6b7280;cursor:pointer">'+
+            '暂不跟进</button>'+
+        '</div>'+
+        '<div style="margin-top:8px;font-size:11px;color:#9aa5b5">'+
+          'ⓘ AI扫描数据截至2026-07，信号来源均可溯源；企业真实投资意向需资源团队人工核验'+
+        '</div>'+
+      '</div>'
+    : '';
+
+  return '<div style="border-radius:12px;border:1.5px solid #e8edf5;overflow:hidden;background:#fff;margin-bottom:8px">'+
+    '<button onclick="toggleClue(\''+clue.id+'\')" '+
+      'style="width:100%;display:flex;align-items:center;gap:10px;padding:11px 14px;background:'+(isExpanded?'#fafbff':'#fff')+';border:none;cursor:pointer;text-align:left">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px">'+
+          '<span style="font-size:13px;font-weight:700;color:#0b183b">'+clue.name+'</span>'+
+          '<span style="padding:1px 6px;background:'+priorityBg+';color:'+priorityColor+';border-radius:4px;font-size:11px;font-weight:700">'+stars+'</span>'+
+          '<span style="padding:1px 6px;background:'+la.bg+';color:'+la.color+';border-radius:4px;font-size:10.5px;font-weight:600">'+la.label+'</span>'+
+        '</div>'+
+        '<div style="font-size:12px;color:#8492a6">'+clue.kind+' · '+clue.region+' · 补「'+clue.gap+'」缺口</div>'+
+      '</div>'+
+      '<span style="font-size:12px;color:#9aa5b5;flex-shrink:0">'+(isExpanded?'▲':'▼')+'</span>'+
+    '</button>'+
+    expandedDetail+
+  '</div>';
+}
+
+/* ── 把 AI 扫描线索转为正式核验线索 ── */
+function convertToClue(projKey, clueId){
+  var p = PROJECTS[projKey]; if(!p) return;
+  if(!p.clues) p.clues=[];
+  // 在 ai_scan 池里找
+  var sc = (p.clues||[]).find(function(c){return c.id===clueId;});
+  if(sc){
+    sc.status='amber'; // 核验中
+    sc.tone='amber';
+    p.stage=Math.max(p.stage,4);
+    persist();
+    render();
+    toast('✓ 已发起资源核验，线索进入核验中状态');
+  }
+}
+
+/* ── 暂不跟进 ── */
+function dismissScanClue(projKey, clueId){
+  var p = PROJECTS[projKey]; if(!p) return;
+  p.clues=(p.clues||[]).filter(function(c){return c.id!==clueId;});
+  persist(); render();
+  toast('已移除该扫描线索');
+}
+
+/* ── 加载 AI 扫描结果到项目 ── */
+function loadAIScanClues(projKey){
+  // 触发真实 AI 企业漏斗分析（不再用硬编码假数据）
+  var p=PROJECTS[projKey]; if(!p) return;
+  if(_funnelRunning[projKey]){ toast('AI 正在分析中，请稍候…'); return; }
+  showFunnelProgressModal(projKey);
+  runAIFunnel(projKey, function(err, funnel){
+    if(err){ closeFunnelProgressModal(); toast('AI 漏斗分析失败：'+err); return; }
+    try{ renderOpsV2&&renderOpsV2(); }catch(e){ try{render();}catch(_){}}
+    updateFunnelProgress(100);
+    setTimeout(function(){ closeFunnelProgressModal(); try{ showFunnelDoneModal(projKey, funnel); }catch(e){ toast('✓ AI 漏斗完成，共精筛 '+funnel.companies.length+' 家适配企业'); } }, 420);
+  }, function(pct){ updateFunnelProgress(pct); });
+}
+
+/* ── AI 漏斗分析完成提醒弹窗 ── */
+function showFunnelDoneModal(projKey, funnel){
+  var p=PROJECTS[projKey]||{};
+  var total=funnel.total||funnel.companies.length;
+  var n=funnel.companies.length;
+  var top=funnel.companies.slice(0,3);
+  var withSignal=funnel.companies.filter(function(c){return c.expansion||c.signal;}).length;
+  var withFaction=funnel.companies.filter(function(c){return c.faction;}).length;
+  var esc=function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
+  var topRows=top.map(function(c,i){
+    return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f1f3f7">'+
+      '<span style="flex:0 0 22px;width:22px;height:22px;background:#eef2ff;color:#4338ca;border-radius:50%;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">'+(i+1)+'</span>'+
+      '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:650;color:#0b183b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.name)+'</div>'+
+        '<div style="font-size:11px;color:#8492a6">'+esc(c.region||'')+(c.kind?' \u00b7 '+esc(c.kind):'')+'</div></div>'+
+      '<span style="flex:0 0 auto;font-size:13px;font-weight:800;color:'+(c.fit_score>=80?'#16a34a':c.fit_score>=60?'#d97706':'#6b7280')+'">'+(c.fit_score||0)+'<span style="font-size:10px;font-weight:600">\u5206</span></span>'+
+    '</div>';
+  }).join('');
+  var modal='<div id="funnelDoneModal" style="position:fixed;inset:0;background:rgba(11,24,59,.45);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)" onclick="if(event.target.id===\'funnelDoneModal\')closeFunnelDoneModal()">'+
+    '<div style="background:#fff;border-radius:22px;padding:32px 32px 24px;max-width:500px;width:92%;box-shadow:0 8px 60px rgba(11,24,59,.18);animation:fadeUp .35s ease">'+
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">'+
+        '<div style="width:10px;height:10px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.2)"></div>'+
+        '<span style="font-size:12px;font-weight:650;color:#22c55e;letter-spacing:.5px">AI \u6f0f\u6597\u5206\u6790\u5b8c\u6210</span>'+
+      '</div>'+
+      '<h2 style="font-size:20px;font-weight:750;color:#0b183b;margin:0 0 4px">\u300c'+esc(funnel.topic||p.topic||'\u8be5\u65b9\u5411')+'\u300d\u9002\u914d\u4f01\u4e1a\u5df2\u66f4\u65b0</h2>'+
+      '<p style="font-size:13px;color:#8492a6;margin:0 0 18px">\u5171\u626b\u63cf '+total+' \u5bb6\uff0c\u7cbe\u7b5b\u51fa '+n+' \u5bb6\u9002\u914d\u4f01\u4e1a\uff0c\u5176\u4e2d '+withSignal+' \u5bb6\u6709\u6269\u5f20/\u8fc1\u79fb\u4fe1\u53f7'+(withFaction?'\u3001'+withFaction+' \u5bb6\u6709\u6d3e\u7cfb\u5173\u8054':'')+'</p>'+
+      '<div style="font-size:12px;font-weight:650;color:#4a5568;margin-bottom:2px">\u9002\u914d\u5ea6 Top3</div>'+
+      topRows+
+      '<div style="margin-top:22px;display:flex;gap:10px;align-items:center">'+
+        '<button onclick="closeFunnelDoneModal()" style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">\u67e5\u770b\u5b8c\u6574\u6f0f\u6597 \u2192</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  if(!document.getElementById('fadeUpStyle')){
+    var st=document.createElement('style');st.id='fadeUpStyle';
+    st.textContent='@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}';
+    document.head.appendChild(st);
+  }
+  var old=document.getElementById('funnelDoneWrap'); if(old)old.remove();
+  var wrap=document.createElement('div'); wrap.id='funnelDoneWrap'; wrap.innerHTML=modal;
+  document.body.appendChild(wrap);
+}
+function closeFunnelDoneModal(){
+  var wrap=document.getElementById('funnelDoneWrap'); if(wrap)wrap.remove();
+}
+/* ── AI 漏斗分析进度弹窗 ── */
+var _funnelProg={pct:0,timer:null,phase:0};
+function showFunnelProgressModal(projKey){
+  var p=PROJECTS[projKey]||{};
+  var esc=function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
+  var modal='<div id="funnelProgModal" style="position:fixed;inset:0;background:rgba(11,24,59,.45);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)">'+
+    '<div style="background:#fff;border-radius:22px;padding:34px 34px 30px;max-width:460px;width:92%;box-shadow:0 8px 60px rgba(11,24,59,.18);animation:fadeUp .35s ease">'+
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">'+
+        '<div class="funnelSpin" style="width:20px;height:20px;border:2.5px solid #dbe3f7;border-top-color:#4f46e5;border-radius:50%"></div>'+
+        '<span style="font-size:13px;font-weight:700;color:#4338ca;letter-spacing:.3px">AI 企业漏斗分析中</span>'+
+      '</div>'+
+      '<h2 style="font-size:18px;font-weight:750;color:#0b183b;margin:0 0 4px">「'+esc(p.topic||'该方向')+'」</h2>'+
+      '<p id="funnelProgPhase" style="font-size:13px;color:#8492a6;margin:0 0 18px">正在检索全国适配企业…</p>'+
+      '<div style="height:8px;background:#eef1f6;border-radius:6px;overflow:hidden">'+
+        '<div id="funnelProgBar" style="height:100%;width:0%;background:linear-gradient(90deg,#1a56db,#6366f1);border-radius:6px;transition:width .5s ease"></div>'+
+      '</div>'+
+      '<div style="display:flex;justify-content:space-between;margin-top:8px"><span id="funnelProgPct" style="font-size:12px;color:#4338ca;font-weight:650">0%</span>'+
+        '<span style="font-size:11px;color:#9aa5b5">约需 1-2 分钟，请稍候</span></div>'+
+    '</div>'+
+  '</div>';
+  if(!document.getElementById('fadeUpStyle')){var st=document.createElement('style');st.id='fadeUpStyle';st.textContent='@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes fspin{to{transform:rotate(360deg)}}.funnelSpin{animation:fspin .8s linear infinite}';document.head.appendChild(st);}
+  var oldw=document.getElementById('funnelProgWrap'); if(oldw)oldw.remove();
+  var oldd=document.getElementById('funnelDoneWrap'); if(oldd)oldd.remove();
+  var wrap=document.createElement('div'); wrap.id='funnelProgWrap'; wrap.innerHTML=modal; document.body.appendChild(wrap);
+  _funnelProg.pct=0; _funnelProg.phase=0;
+  var phases=['正在检索全国适配企业…','正在比对产业链缺口与企业能力…','正在为企业打分与排序…','正在生成适配分析与信号标注…'];
+  clearInterval(_funnelProg.timer);
+  _funnelProg.timer=setInterval(function(){
+    if(_funnelProg.pct<88){ _funnelProg.pct+=Math.max(1,Math.round((90-_funnelProg.pct)/22)); updateFunnelProgress(_funnelProg.pct); }
+    var ph=document.getElementById('funnelProgPhase');
+    if(ph){ var idx=Math.min(phases.length-1, Math.floor(_funnelProg.pct/24)); if(idx!==_funnelProg.phase){ _funnelProg.phase=idx; ph.textContent=phases[idx]; } }
+  },900);
+}
+function updateFunnelProgress(pct){
+  if(pct>_funnelProg.pct) _funnelProg.pct=pct;
+  var bar=document.getElementById('funnelProgBar'), t=document.getElementById('funnelProgPct');
+  if(bar) bar.style.width=_funnelProg.pct+'%';
+  if(t) t.textContent=_funnelProg.pct+'%';
+}
+function closeFunnelProgressModal(){
+  clearInterval(_funnelProg.timer);
+  var wrap=document.getElementById('funnelProgWrap'); if(wrap)wrap.remove();
+}
+
+/* ── AI 漏斗企业分级金字塔可视化 ── */
+function showFunnelPyramid(k){
+  var p=PROJECTS[k]||{}; var fn=p.funnel;
+  if(!fn||!fn.companies||!fn.companies.length){ toast('暂无漏斗数据'); return; }
+  var esc=function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
+  var S=[],A=[],B=[];
+  fn.companies.forEach(function(c){ var sc=c.fit_score||0; if(sc>=85)S.push(c); else if(sc>=70)A.push(c); else B.push(c); });
+  [S,A,B].forEach(function(arr){ arr.sort(function(a,b){return (b.fit_score||0)-(a.fit_score||0);}); });
+  var tiers=[
+    {name:'S 级 · 核心适配',hint:'评分 ≥85，优先重点对接',accent:'#c2740a',bar:'linear-gradient(135deg,#fbbf24,#f59e0b)',soft:'#fffdf6',border:'#f6d79b',w:60,list:S},
+    {name:'A 级 · 高适配',hint:'评分 70-84，积极跟进',accent:'#2f54d6',bar:'linear-gradient(135deg,#60a5fa,#5b6ef0)',soft:'#f6f9ff',border:'#c8d6fb',w:80,list:A},
+    {name:'B 级 · 潜力观察',hint:'评分 <70，储备观察',accent:'#5c6b7a',bar:'linear-gradient(135deg,#a4b0be,#6b7684)',soft:'#f9fafb',border:'#e3e8ef',w:100,list:B}
+  ];
+  var body=tiers.map(function(t){
+    var chips = t.list.length ? t.list.map(function(c){
+      return '<span title="'+esc((c.region||'')+(c.region?' · ':'')+(c.name||''))+'" style="display:inline-flex;align-items:center;gap:7px;padding:6px 11px;background:#fff;border:1px solid '+t.border+';border-radius:999px;font-size:12px;line-height:1.15;box-shadow:0 1px 2px rgba(11,24,59,.04)">'+
+        '<span style="font-weight:600;color:#0b183b">'+esc(c.name)+'</span>'+
+        '<span style="font-weight:800;color:'+t.accent+'">'+(c.fit_score||0)+'</span>'+
+      '</span>';
+    }).join('') : '<span style="font-size:12px;color:#b0bac8;padding:2px 4px">该级暂无企业</span>';
+    return '<div style="width:'+t.w+'%;margin:0 auto 12px;border:1px solid '+t.border+';border-radius:16px;overflow:hidden;background:'+t.soft+';box-shadow:0 3px 14px rgba(11,24,59,.06);transition:width .2s">'+
+      '<div style="background:'+t.bar+';color:#fff;padding:9px 16px;display:flex;align-items:center;gap:9px">'+
+        '<span style="font-size:13.5px;font-weight:750;letter-spacing:.2px">'+t.name+'</span>'+
+        '<span style="font-size:11px;opacity:.92;font-weight:500">'+t.hint+'</span>'+
+        '<span style="margin-left:auto;font-size:12.5px;font-weight:800;background:rgba(255,255,255,.22);padding:1px 10px;border-radius:999px">'+t.list.length+' 家</span>'+
+      '</div>'+
+      '<div style="padding:13px 15px;display:flex;flex-wrap:wrap;gap:8px">'+chips+'</div>'+
+    '</div>';
+  }).join('');
+  var modal='<div id="funnelPyramidModal" style="position:fixed;inset:0;background:rgba(11,24,59,.5);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px);padding:22px" onclick="if(event.target.id===\'funnelPyramidModal\')closeFunnelPyramid()">'+
+    '<div style="background:#fff;border-radius:22px;max-width:660px;width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 12px 64px rgba(11,24,59,.28);animation:fadeUp .32s ease;overflow:hidden">'+
+      '<div style="padding:22px 26px 16px;border-bottom:1px solid #f1f3f7">'+
+        '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">'+
+          '<div><div style="font-size:11.5px;font-weight:700;color:#5b6ef0;letter-spacing:.6px">企业适配分级图谱</div>'+
+          '<h2 style="font-size:18px;font-weight:750;color:#0b183b;margin:3px 0 0;line-height:1.35">「'+esc(fn.topic||p.topic||'该方向')+'」</h2></div>'+
+          '<button onclick="closeFunnelPyramid()" style="flex:0 0 auto;width:32px;height:32px;border:none;background:#f2f4f8;border-radius:9px;font-size:15px;color:#64748b;cursor:pointer;line-height:1">✕</button>'+
+        '</div>'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-top:11px;flex-wrap:wrap">'+
+          '<span style="font-size:12px;color:#8492a6">共 '+fn.companies.length+' 家 · 按综合评分自动分级</span>'+
+          '<span style="font-size:11px;font-weight:700;color:#c2740a;background:#fffbeb;border:1px solid #fbe6c0;border-radius:999px;padding:2px 9px">S '+S.length+'</span>'+
+          '<span style="font-size:11px;font-weight:700;color:#2f54d6;background:#f0f5ff;border:1px solid #d3ddfb;border-radius:999px;padding:2px 9px">A '+A.length+'</span>'+
+          '<span style="font-size:11px;font-weight:700;color:#5c6b7a;background:#f4f6f9;border:1px solid #e3e8ef;border-radius:999px;padding:2px 9px">B '+B.length+'</span>'+
+        '</div>'+
+      '</div>'+
+      '<div style="padding:22px 24px;overflow:auto;background:linear-gradient(180deg,#fcfdff,#f7f9fc)">'+body+'</div>'+
+    '</div>'+
+  '</div>';
+  if(!document.getElementById('fadeUpStyle')){var st=document.createElement('style');st.id='fadeUpStyle';st.textContent='@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes fspin{to{transform:rotate(360deg)}}.funnelSpin{animation:fspin .8s linear infinite}';document.head.appendChild(st);}
+  var old=document.getElementById('funnelPyramidWrap'); if(old)old.remove();
+  var wrap=document.createElement('div'); wrap.id='funnelPyramidWrap'; wrap.innerHTML=modal; document.body.appendChild(wrap);
+}
+function closeFunnelPyramid(){
+  var wrap=document.getElementById('funnelPyramidWrap'); if(wrap)wrap.remove();
+}
+
+
+
+function deriveCluesFromReport(projKey){
+  var rs = REPORTSTATE[projKey];
+  var p  = PROJECTS[projKey];
+  if(!rs || !rs.text || !p) return;
+  if(p.clues && p.clues.length > 0) return; // 已有线索不重复派生
+
+  var text = rs.text;
+  var lines = text.split('\n');
+  var items = [];
+
+  // 从 TOP5 / ❌缺失 行提取缺口
+  var gaps = [];
+  var inTop5 = false;
+  for(var i=0; i<lines.length; i++){
+    var l = lines[i];
+    if(l.indexOf('补链优先级')>=0 || l.indexOf('TOP5')>=0 || l.indexOf('优先级清单')>=0) inTop5=true;
+    if(inTop5 && l.trim().charAt(0)==='|'){
+      var cells = l.trim().slice(1,-1).split('|').map(function(c){return c.replace(/[*★]/g,'').trim();});
+      var isSep = cells.every(function(c){return /^[\s\-:]+$/.test(c);});
+      if(isSep || cells[0]==='排名' || cells[0]==='缺口节点') continue;
+      var rank = parseInt(cells[0]);
+      if(!isNaN(rank) && rank>=1 && rank<=3 && cells[1]) gaps.push(cells[1]);
+    }
+    if(inTop5 && gaps.length>=3) break;
+  }
+  // 降级：找 ❌ 行
+  if(!gaps.length){
+    lines.forEach(function(l){
+      if(l.indexOf('❌')>=0 && gaps.length<3){
+        var c = l.replace(/^[*\-•|#\s]+/,'').replace(/❌|\*\*/g,'').trim();
+        if(c.length>4 && c.length<50) gaps.push(c);
+      }
+    });
+  }
+
+  // 每个缺口生成一条脱敏候选线索
+  var regionMap = ['长三角','华南','华东','华中'];
+  var kindSuffix = ['系统集成商','制造企业','配套企业'];
+  gaps.slice(0,3).forEach(function(gap, idx){
+    items.push({
+      id: 'clue_' + projKey + '_' + idx,
+      name: '脱敏企业 ' + String.fromCharCode(65+idx) + '（' + gap.slice(0,8) + '·代号）',
+      kind: gap + kindSuffix[idx%3],
+      region: regionMap[idx%4],
+      source: '慧小招研判报告（' + new Date().toLocaleDateString('zh-CN') + '）',
+      status: '待资源核验',
+      tone: 'slate',
+      reason: '直接补「' + gap + '」缺口，与' + p.city + '本地链主形成配套需求。',
+      signal: '基于报告缺口判断，具体企业投资意向与决策层触达可能性需资源团队核验。',
+      questions: [
+        '企业是否有异地布局或产能扩张计划',
+        '与' + p.city + '本地链主的配套合作可行性',
+        '落地规模与首批场景要求'
+      ]
+    });
+  });
+
+  if(!p.clues) p.clues = [];
+  p.clues = p.clues.concat(items);
+  persist();
+}
+
+/* ── 线索卡片渲染 ── */
+function clueCard(clue, projKey, idx){
+  var toneMap = {
+    slate: {bg:'#f5f7fb', border:'#e8edf5', dot:'#9aa5b5', label:'待接触'},
+    amber: {bg:'#fffbeb', border:'#fde68a', dot:'#f59e0b', label:'核验中'},
+    teal:  {bg:'#f0fdf4', border:'#86efac', dot:'#22c55e', label:'可安排沟通'}
+  };
+  var t = toneMap[clue.tone] || toneMap.slate;
+  var isExpanded = (window.__clueOpen === clue.id);
+
+  var questionsHtml = clue.questions.length
+    ? '<div style="margin-top:10px"><div style="font-size:11px;font-weight:650;color:#6b7280;letter-spacing:.3px;margin-bottom:5px">核验问题</div>'+
+      clue.questions.map(function(q,qi){
+        return '<div style="display:flex;gap:6px;padding:5px 0;border-bottom:1px solid #f3f4f6">'+
+          '<span style="color:#9aa5b5;flex-shrink:0;font-size:12px">'+(qi+1)+'.</span>'+
+          '<span style="font-size:12.5px;color:#374151">'+q+'</span>'+
+        '</div>';
+      }).join('')+'</div>'
+    : '';
+
+  var expandedDetail = isExpanded
+    ? '<div style="padding:12px 16px 14px;border-top:1px solid '+t.border+';background:'+t.bg+'">'+
+        '<div style="margin-bottom:8px">'+
+          '<div style="font-size:11px;font-weight:650;color:#6b7280;letter-spacing:.3px;margin-bottom:4px">为什么值得核验</div>'+
+          '<div style="font-size:13px;color:#1f2937;line-height:1.65">'+clue.reason+'</div>'+
+        '</div>'+
+        '<div style="margin-bottom:8px">'+
+          '<div style="font-size:11px;font-weight:650;color:#6b7280;letter-spacing:.3px;margin-bottom:4px">公开信号与资源边界</div>'+
+          '<div style="font-size:12.5px;color:#4b5563;line-height:1.6">'+clue.signal+'</div>'+
+        '</div>'+
+        questionsHtml+
+        '<div style="display:flex;gap:8px;margin-top:12px">'+
+          (clue.tone==='slate'
+            ? '<button onclick="requestVerify(\''+projKey+'\',\''+clue.id+'\')" '+
+                'style="flex:1;padding:8px;background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;font-size:12.5px;font-weight:600;color:#92400e;cursor:pointer">'+
+                '🔍 请资源团队核验</button>'
+            : clue.tone==='amber'
+            ? '<button disabled style="flex:1;padding:8px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;color:#9aa5b5;cursor:not-allowed">'+
+                '⏳ 核验进行中</button>'
+            : '<button onclick="arrangeDocking(\''+projKey+'\',\''+clue.id+'\')" '+
+                'style="flex:1;padding:8px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12.5px;font-weight:600;color:#166534;cursor:pointer">'+
+                '✓ 安排首次沟通</button>'
+          )+
+          '<button onclick="editClue(\''+projKey+'\',\''+clue.id+'\')" '+
+            'style="padding:8px 12px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:8px;font-size:12px;color:#4a5568;cursor:pointer">'+
+            '✎ 编辑</button>'+
+        '</div>'+
+      '</div>'
+    : '';
+
+  return '<div style="border-radius:12px;border:1.5px solid '+t.border+';overflow:hidden;background:#fff;margin-bottom:8px">'+
+    '<button onclick="toggleClue(\''+clue.id+'\')" '+
+      'style="width:100%;display:flex;align-items:center;gap:12px;padding:12px 16px;background:'+(isExpanded?t.bg:'#fff')+';border:none;cursor:pointer;text-align:left">'+
+      '<span style="width:8px;height:8px;border-radius:50%;background:'+t.dot+';flex-shrink:0;box-shadow:0 0 0 2px '+t.border+'"></span>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:13.5px;font-weight:700;color:#0b183b;margin-bottom:2px">'+clue.name+'</div>'+
+        '<div style="font-size:12px;color:#8492a6">'+clue.kind+' · '+clue.region+'</div>'+
+      '</div>'+
+      '<span style="padding:3px 10px;background:'+t.bg+';color:'+t.dot+';border:1px solid '+t.border+';border-radius:20px;font-size:11.5px;font-weight:600;flex-shrink:0;white-space:nowrap">'+t.label+'</span>'+
+      '<span style="font-size:12px;color:#9aa5b5;margin-left:2px">'+(isExpanded?'▲':'▼')+'</span>'+
+    '</button>'+
+    expandedDetail+
+  '</div>';
+}
+
+/* ── 操作函数 ── */
+function toggleClue(id){
+  window.__clueOpen = (window.__clueOpen===id) ? null : id;
+  render();
+}
+
+function requestVerify(projKey, clueId){
+  var p = PROJECTS[projKey]; if(!p) return;
+  var c = (p.clues||[]).find(function(x){return x.id===clueId;});
+  if(!c) return;
+  c.tone = 'amber';
+  c.status = '资源核验中';
+  persist();
+  // 推进 stage 到 4（资源匹配）
+  p.stage = Math.max(p.stage, 4);
+  persist();
+  render();
+  toast('✓ 已发起资源核验，等待团队回传');
+}
+
+function arrangeDocking(projKey, clueId){
+  var p = PROJECTS[projKey]; if(!p) return;
+  var c = (p.clues||[]).find(function(x){return x.id===clueId;});
+  if(!c) return;
+  c.tone = 'teal';
+  c.status = '可安排首次沟通';
+  p.stage = Math.max(p.stage, 5);
+  persist();
+  render();
+  toast('✓ 已标记为可安排沟通，进入招商对接阶段');
+}
+
+function editClue(projKey, clueId){
+  var p = PROJECTS[projKey]; if(!p) return;
+  var c = (p.clues||[]).find(function(x){return x.id===clueId;});
+  if(!c) return;
+
+  var layer = document.createElement('div');
+  layer.id = 'clueEditLayer';
+  layer.onclick = function(e){ if(e.target===layer) layer.remove(); };
+  layer.style.cssText = 'position:fixed;inset:0;background:rgba(11,24,59,.4);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;backdrop-filter:blur(4px)';
+
+  layer.innerHTML =
+    '<div style="background:#fff;border-radius:20px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 80px rgba(11,24,59,.18)">'+
+      '<div style="padding:20px 24px;border-bottom:1px solid #f0f4ff;display:flex;align-items:center;justify-content:space-between">'+
+        '<div style="font-size:15px;font-weight:750;color:#0b183b">编辑企业线索</div>'+
+        '<button onclick="document.getElementById(\'clueEditLayer\').remove()" style="background:none;border:none;font-size:18px;color:#9aa5b5;cursor:pointer">✕</button>'+
+      '</div>'+
+      '<div style="padding:20px 24px">'+
+        '<div style="margin-bottom:14px">'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:6px">企业名称（脱敏代号）</label>'+
+          '<input id="cedit-name" value="'+c.name.replace(/"/g,'&quot;')+'" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none" onfocus="this.style.border=\'1.5px solid #6366f1\'" onblur="this.style.border=\'1.5px solid #e8edf5\'"/>'+
+        '</div>'+
+        '<div style="margin-bottom:14px">'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:6px">企业方向</label>'+
+          '<input id="cedit-kind" value="'+c.kind.replace(/"/g,'&quot;')+'" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none" onfocus="this.style.border=\'1.5px solid #6366f1\'" onblur="this.style.border=\'1.5px solid #e8edf5\'"/>'+
+        '</div>'+
+        '<div style="margin-bottom:14px">'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:6px">区域</label>'+
+          '<input id="cedit-region" value="'+c.region+'" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none" onfocus="this.style.border=\'1.5px solid #6366f1\'" onblur="this.style.border=\'1.5px solid #e8edf5\'"/>'+
+        '</div>'+
+        '<div style="margin-bottom:14px">'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:6px">为什么值得核验</label>'+
+          '<textarea id="cedit-reason" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none;resize:vertical;min-height:72px;line-height:1.6" onfocus="this.style.border=\'1.5px solid #6366f1\'" onblur="this.style.border=\'1.5px solid #e8edf5\'">'+c.reason+'</textarea>'+
+        '</div>'+
+        '<div style="margin-bottom:20px">'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:6px">核验状态</label>'+
+          '<div style="display:flex;gap:8px">'+
+            ['slate:待接触','amber:核验中','teal:可安排沟通'].map(function(s){
+              var parts=s.split(':'), val=parts[0], label=parts[1];
+              var isActive=c.tone===val;
+              return '<button onclick="this.parentNode.querySelectorAll(\'.tone-btn\').forEach(function(b){b.style.background=\'#f5f7fb\';b.style.fontWeight=\'400\'});this.style.background=\'#eff6ff\';this.style.fontWeight=\'700\';window.__clueEditTone=\''+val+'\'" '+
+                'class="tone-btn" '+
+                'style="flex:1;padding:7px 0;border:1.5px solid #e8edf5;border-radius:8px;font-size:12px;cursor:pointer;background:'+(isActive?'#eff6ff':'#f5f7fb')+';font-weight:'+(isActive?'700':'400')+';color:#0b183b">'+label+'</button>';
+            }).join('')+
+          '</div>'+
+        '</div>'+
+        '<button onclick="saveClueEdit(\''+projKey+'\',\''+clueId+'\')" '+
+          'style="width:100%;padding:12px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:650;cursor:pointer">'+
+          '保存修改</button>'+
+      '</div>'+
+    '</div>';
+
+  window.__clueEditTone = c.tone;
+  document.body.appendChild(layer);
+}
+
+function saveClueEdit(projKey, clueId){
+  var p = PROJECTS[projKey]; if(!p) return;
+  var c = (p.clues||[]).find(function(x){return x.id===clueId;});
+  if(!c) return;
+  var name   = document.getElementById('cedit-name');
+  var kind   = document.getElementById('cedit-kind');
+  var region = document.getElementById('cedit-region');
+  var reason = document.getElementById('cedit-reason');
+  if(name)   c.name   = name.value.trim() || c.name;
+  if(kind)   c.kind   = kind.value.trim() || c.kind;
+  if(region) c.region = region.value.trim() || c.region;
+  if(reason) c.reason = reason.value.trim() || c.reason;
+  c.tone = window.__clueEditTone || c.tone;
+  var toneStatusMap = {slate:'待接触',amber:'资源核验中',teal:'可安排首次沟通'};
+  c.status = toneStatusMap[c.tone] || c.status;
+  persist();
+  document.getElementById('clueEditLayer').remove();
+  render();
+  toast('✓ 线索已更新');
+}
+
+function addClueManual(projKey){
+  var p = PROJECTS[projKey]; if(!p) return;
+  if(!p.clues) p.clues = [];
+  var newClue = {
+    id: 'clue_manual_'+Date.now().toString(36),
+    name: '待填写企业名称',
+    kind: '待填写企业方向',
+    region: '待填写区域',
+    source: '招商干部录入',
+    status: '待资源核验',
+    tone: 'slate',
+    reason: '待填写核验理由',
+    signal: '来源：招商干部录入，需人工核验',
+    questions: ['核验企业主营方向','确认与本次招商需求的结合点','判断资源可达性与沟通窗口']
+  };
+  p.clues.push(newClue);
+  persist();
+  render();
+  // 自动打开编辑弹窗
+  setTimeout(function(){ editClue(projKey, newClue.id); }, 100);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   projMgmtPage 完整重写
+   ══════════════════════════════════════════════════════════════ */
+function projMgmtPage(p){
+  var projKeys = Object.keys(PROJECTS);
+  if(!projKeys.length){
+    return '<div class="page">'+
+      '<div class="page-header"><div><span class="eyebrow">PROJECTS</span><h1>项目管理</h1>'+
+      '<p>研判报告确认后，立项导入的方向会出现在这里。</p></div></div>'+
+      '<div class="knowledge-scroll"><div style="text-align:center;padding:60px 20px">'+
+        '<div style="font-size:36px;margin-bottom:12px">📂</div>'+
+        '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">暂无立项</div>'+
+        '<div style="font-size:13px;color:#8492a6;line-height:1.7;margin-bottom:20px">'+
+          '在「研判需求」生成完整报告后，<br>点击「🏁 可立项招引方向」中的「立项导入 →」按钮建立项目'+
+        '</div>'+
+        '<button onclick="go(\'report\')" style="padding:10px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:650;cursor:pointer">前往研判需求 →</button>'+
+      '</div></div></div>';
+  }
+
+  var groups = projKeys.map(function(k){
+    var x = PROJECTS[k];
+    var sc = stColor(x.stage);
+    var expanded = (window.__projOpen === k);
+
+    // 自动派生线索（如有报告）
+    deriveCluesFromReport(k);
+    // 自动触发真实 AI 企业漏斗分析（每个项目首次进入时，静默后台跑；不再用硬编码假数据）
+    if(!window.__funnelAuto) window.__funnelAuto={};
+    if(!window.__funnelAuto[k]){
+      window.__funnelAuto[k]=true;
+      var _pf=PROJECTS[k];
+      if(_pf && !_pf.funnel && (_pf.topic||'').trim()){
+        runAIFunnel(k, function(err){ if(!err){ try{ renderOpsV2&&renderOpsV2(); }catch(e){ try{render();}catch(_){}} } });
+      }
+    }
+
+    var clues = x.clues || [];
+    var teal  = clues.filter(function(c){return c.tone==='teal';}).length;
+    var amber = clues.filter(function(c){return c.tone==='amber';}).length;
+    var slate = clues.filter(function(c){return c.tone==='slate';}).length;
+
+    // 线索摘要标签
+    var cluesSummary = clues.length
+      ? (teal?'<span style="padding:2px 8px;background:#f0fdf4;color:#166534;border-radius:12px;font-size:11px;margin-left:4px">'+teal+'条可沟通</span>':'')
+        +(amber?'<span style="padding:2px 8px;background:#fffbeb;color:#92400e;border-radius:12px;font-size:11px;margin-left:4px">'+amber+'条核验中</span>':'')
+        +(slate?'<span style="padding:2px 8px;background:#f5f7fb;color:#6b7280;border-radius:12px;font-size:11px;margin-left:4px">'+slate+'条待接触</span>':'')
+      : '<span style="font-size:11px;color:#9aa5b5;margin-left:4px">待生成线索</span>';
+
+    // 展开内容
+    var expandedContent = '';
+    if(expanded){
+      // 进度条（标准5阶段 + 该项目自定义追加阶段）
+      var _projStages = projStages(x);
+      var stageBar = '<div style="margin-bottom:16px">'+
+        '<div style="font-size:11px;font-weight:650;color:#4a5568;letter-spacing:.3px;margin-bottom:6px">阶段进度</div>'+
+        '<div style="display:flex;gap:0;border-radius:8px;overflow:hidden;border:1px solid #e8edf5">'+
+        _projStages.map(function(s,si){
+          var n=si+1;
+          var isDone = n < x.stage;
+          var isCur  = n === x.stage;
+          var bg = isDone?'#1a56db':isCur?'#eff6ff':'#f9fafb';
+          var color = isDone?'#fff':isCur?'#1a56db':'#9aa5b5';
+          var fw = isCur?'700':'400';
+          return '<div style="flex:1;padding:8px 4px;text-align:center;background:'+bg+';border-right:1px solid #e8edf5">'+
+            '<div style="font-size:10.5px;font-weight:'+fw+';color:'+color+';line-height:1.3">'+
+              (isDone?'✓ ':'')+(isCur?'⬤ ':'')+s[0]+
+            '</div>'+
+          '</div>';
+        }).join('')+
+        '</div></div>';
+
+      // 阶段推进面板：回复说明 + 选下一阶段 + 新增自定义阶段 + 留痕列表
+      var stagePanel = '<div style="margin-bottom:16px;padding:14px 16px;background:#fafbff;border:1px solid #e0e7ff;border-radius:12px">'+
+        '<div style="font-size:12px;font-weight:700;color:#1a56db;margin-bottom:10px">🔄 阶段推进与回复</div>'+
+        '<textarea id="stage-note-'+k+'" placeholder="填写回复说明（如：材料已初审通过，建议约下周三第一次会议）…" '+
+          'style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;resize:vertical;min-height:56px;outline:none;line-height:1.6"></textarea>'+
+        '<div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">'+
+          '<select id="stage-target-'+k+'" style="flex:1;min-width:150px;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;background:#fff;color:#0b183b;outline:none">'+stageOptions(x)+'</select>'+
+          '<button onclick="saveStageAdvance(\''+k+'\')" style="padding:9px 16px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:650;cursor:pointer;white-space:nowrap">保存并推进</button>'+
+          '<button onclick="addCustomStage(\''+k+'\')" style="padding:9px 14px;background:#fff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:13px;color:#6d28d9;cursor:pointer;font-weight:600;white-space:nowrap">＋ 新增阶段</button>'+
+        '</div>'+
+        renderStageLog(x)+
+      '</div>';
+
+      // 历史报告
+      var reportHist = '';
+      var rs = REPORTSTATE[k];
+      if(rs){
+        reportHist = '<div style="margin-bottom:14px;padding:10px 14px;background:#f8faff;border-radius:10px;border:1px solid #e8edf5">'+
+          '<div style="display:flex;align-items:center;gap:8px">'+
+            '<span style="font-size:14px">📋</span>'+
+            '<div style="flex:1">'+
+              '<div style="font-size:13px;font-weight:650;color:#0b183b">研判报告</div>'+
+              '<div style="font-size:11.5px;color:#8492a6">置信度 '+rs.score+'% · '+new Date(rs.ts).toLocaleDateString('zh-CN')+'</div>'+
+            '</div>'+
+            '<button onclick="gotoStudy(\''+k+'\')" style="padding:5px 12px;background:#fff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer">查看报告</button>'+
+          '</div>'+
+        '</div>';
+      }
+
+      // stage=2 引导：前往研判需求生成本方向报告
+      var stageGuide = '';
+      if(x.stage===2){
+        // stage=2：报告已从父项目继承，直接引导确认方向
+        stageGuide=
+          '<div style="margin-bottom:16px;padding:14px 16px;background:linear-gradient(135deg,#eff6ff,#f0f9ff);border:1.5px solid #bfdbfe;border-radius:12px">'+
+            '<div style="display:flex;align-items:center;gap:10px">'+
+              '<span style="font-size:24px">🎯</span>'+
+              '<div style="flex:1">'+
+                '<div style="font-size:13.5px;font-weight:700;color:#1d4ed8;margin-bottom:3px">下一步：确认「'+x.topic+'」研判方向</div>'+
+                '<div style="font-size:12px;color:#4a5568;line-height:1.6">研判报告已从母项目继承，可直接确认方向并提交招引需求。</div>'+
+              '</div>'+
+              '<button onclick="(function(){cur=\''+k+'\';view=\'report\';render();})()" '+
+                'style="padding:9px 18px;background:#1a56db;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer;white-space:nowrap;flex-shrink:0">'+
+                '查看并确认 →</button>'+
+            '</div>'+
+          '</div>';
+      } else if(x.stage===3){
+        stageGuide=
+          '<div style="margin-bottom:16px;padding:14px 16px;background:linear-gradient(135deg,#f0fdf4,#f0f9ff);border:1.5px solid #86efac;border-radius:12px">'+
+            '<div style="display:flex;align-items:center;gap:10px">'+
+              '<span style="font-size:24px">📤</span>'+
+              '<div style="flex:1">'+
+                '<div style="font-size:13.5px;font-weight:700;color:#166534;margin-bottom:3px">下一步：正式提交招引需求</div>'+
+                '<div style="font-size:12px;color:#4a5568;line-height:1.6">研判已完成。提交后候选企业线索自动派生，可发起资源核验。</div>'+
+              '</div>'+
+              '<button onclick="cur=\''+k+'\';submitDemand()" '+
+                'style="padding:9px 18px;background:#22c55e;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer;white-space:nowrap;flex-shrink:0">'+
+                '提交招引需求 →</button>'+
+            '</div>'+
+          '</div>';
+      }
+      // 线索列表
+      var cluesList = renderCluesTwoPanel(k)+
+        // 递交按钮
+        (x.stage>=3 && x.stage<4
+          ? '<button onclick="advanceStage(\''+k+'\')" style="width:100%;margin-top:12px;padding:11px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:650;cursor:pointer">📤 正式递交需求，进入资源匹配</button>'
+          : ''
+        );
+
+      expandedContent = '<div style="padding:0 16px 16px">'+
+        stageBar+
+        stagePanel+
+        stageGuide+
+        reportHist+
+        cluesList+
+      '</div>';
+    }
+
+    return '<div style="margin-bottom:12px;border-radius:14px;border:1.5px solid '+(expanded?'#bfdbfe':'#e8edf5')+';overflow:hidden;background:#fff">'+
+      '<button onclick="toggleProjGroup(\''+k+'\')" '+
+        'style="width:100%;display:flex;align-items:center;gap:12px;padding:14px 18px;background:'+(expanded?'#f8faff':'#fff')+';border:none;cursor:pointer;text-align:left">'+
+        '<span style="font-size:22px;flex-shrink:0">🎯</span>'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
+            '<strong style="font-size:14px;color:#0b183b">'+x.topic+'</strong>'+
+            cluesSummary+
+          '</div>'+
+          '<div style="font-size:12px;color:#8492a6;margin-top:3px">'+x.city+' · '+stageNameOf(x,x.stage)+' · '+clues.length+'条线索</div>'+
+        '</div>'+
+        '<span style="padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:600;background:'+sc.bg+';color:'+sc.c+'">'+stageNameOf(x,x.stage)+'</span>'+
+        '<span style="font-size:13px;color:#9aa5b5;margin-left:4px">'+(expanded?'▲':'▼')+'</span>'+
+      '</button>'+
+      expandedContent+
+    '</div>';
+  }).join('');
+
+  return '<div class="page">'+
+    '<div class="page-header"><div>'+
+      '<span class="eyebrow">PROJECTS</span><h1>项目管理 · 企业线索</h1>'+
+      '<p>展开产业方向查看候选企业线索、研判报告与阶段进度；发起资源核验或安排首次沟通。</p>'+
+    '</div></div>'+
+    '<div class="knowledge-scroll">'+
+      '<div style="width:100%">'+groups+'</div>'+
+      '<div style="margin-top:10px;padding:10px 14px;background:#f9fafb;border-radius:8px;border:1px solid #e8edf5;font-size:12px;color:#8492a6">'+
+        'ⓘ 企业线索仅展示脱敏代号、公开依据和核验问题；具体资源可达性由资源团队人工核验，系统不自动联系企业。'+
+      '</div>'+
+    '</div></div>';
+}
+
+/* 推进阶段（向后兼容：默认推进到下一阶段） */
+function advanceStage(projKey){
+  var p = PROJECTS[projKey]; if(!p) return;
+  var st=projStages(p);
+  if(p.stage < st.length){
+    advanceStageTo(projKey, p.stage+1, '');
+  }
+}
+
+/* 推进到指定阶段 + 填回复说明 + 操作留痕 */
+function advanceStageTo(projKey, target, note){
+  var p = PROJECTS[projKey]; if(!p) return;
+  target = parseInt(target);
+  var st = projStages(p);
+  if(!target || target<1 || target>st.length){
+    toast('无效的阶段'); return;
+  }
+  if(target === p.stage){ toast('已在该阶段'); return; }
+  var from = p.stage;
+  p.stage = target;
+  if(!p.stageLog) p.stageLog=[];
+  p.stageLog.unshift({ts:Date.now(), from:from, to:target, note:(note||'').trim(), who:'运营端'});
+  persist();
+  render();
+  toast('✓ 已推进到「' + stageNameOf(p,target) + '」阶段');
+}
+
+/* 阶段推进面板：下拉选项（当前阶段之后的所有阶段） */
+function stageOptions(p){
+  var st = projStages(p);
+  var cur = p.stage || 1;
+  var html = '';
+  for(var n=cur+1; n<=st.length; n++){
+    html += '<option value="'+n+'">推进到「'+st[n-1][0]+'」</option>';
+  }
+  if(!html) html = '<option value="" disabled>已是最后阶段</option>';
+  return html;
+}
+
+/* 阶段留痕列表 */
+function renderStageLog(p){
+  var log = (p && p.stageLog) || [];
+  if(!log.length) return '<div style="font-size:11.5px;color:#9aa5b5;margin-top:10px">暂无阶段推进记录</div>';
+  return '<div style="margin-top:12px;border-top:1px dashed #e0e7ff;padding-top:10px">'+
+    log.slice(0,6).map(function(l){
+      return '<div style="display:flex;gap:8px;padding:6px 0;font-size:12px;color:#4a5568">'+
+        '<span style="color:#1a56db;flex-shrink:0">▸</span>'+
+        '<div style="min-width:0"><span style="font-weight:650">'+stageNameOf(p,l.to)+'</span>'+
+        (l.note?'<span style="color:#8492a6"> — '+l.note+'</span>':'')+
+        '<div style="font-size:11px;color:#9aa5b5;margin-top:1px">'+new Date(l.ts).toLocaleString('zh-CN')+(l.who?' · '+l.who:'')+'</div></div>'+
+      '</div>';
+    }).join('')+
+  '</div>';
+}
+
+/* 读取阶段推进面板表单并提交 */
+function saveStageAdvance(projKey){
+  var targetEl = document.getElementById('stage-target-'+projKey);
+  var noteEl = document.getElementById('stage-note-'+projKey);
+  if(!targetEl) return;
+  advanceStageTo(projKey, targetEl.value, noteEl ? noteEl.value : '');
+}
+
+/* 新增后续自定义阶段 */
+function addCustomStage(projKey){
+  var p = PROJECTS[projKey]; if(!p) return;
+  openModal('新增后续阶段',
+    '<p class="modal-intro">输入要追加的阶段名称（如「第二次会议」「实地考察」「签约落地」），追加到当前流程末尾，后续不写死。</p>'+
+    '<input id="customStageName" placeholder="阶段名称…" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none">',
+    '<button class="secondary-button" onclick="closeModal()">取消</button>'+
+    '<button class="primary-button" onclick="confirmAddCustomStage(\''+projKey+'\')">添加</button>');
+}
+function confirmAddCustomStage(projKey){
+  var p = PROJECTS[projKey]; if(!p) return;
+  var name = ((document.getElementById('customStageName')||{}).value||'').trim();
+  if(!name){ toast('请输入阶段名称'); return; }
+  if(!p.customStages) p.customStages=[];
+  p.customStages.push(name);
+  persist();
+  closeModal();
+  render();
+  toast('✓ 已新增阶段「'+name+'」');
+}
+
+function toggleProjGroup(k){
+  window.__projOpen=(window.__projOpen===k)?null:k;
+  render();
+}
+// 招引项目独立工作页 = 该方向的"对话作战室"（雷总三栏：中=持续对话，右=证据卡片）
+function subWorkPage(p){
+  var subs=subprojOf(cur);var s=subs[curSub];
+  if(!s){view='home';return projMgmtPage(p);}
+  var dir=P();var st=REPORTSTATE[cur];
+  var stg=s.stage||4;var sc=stColor(stg);
+  var stageName=STAGES[Math.min(stg,STAGES.length)-1][0];
+  // 顶部上下文条：项目本质信息 + 已双确认（一屏交代"这是什么项目/推进到哪"）
+  var ctx='<div class="context-bar" style="margin:0 22px">'+
+    '<div class="context-icon"><i class="i">🎯</i></div>'+
+    '<div style="flex:1;min-width:0"><strong>'+s.dir+'</strong>'+
+      '<span>来源：'+s.from+' 报告 v'+(st?st.ver:1)+(st&&st.finalized?'（已定稿）':'')+' · 候选：'+(s.clueName||'暂无')+' · 双确认已完成</span></div>'+
+    '<span class="status-tag" style="color:'+sc.c+';background:'+sc.bg+'">'+stageName+'</span></div>';
+  return '<div class="page">'+
+    '<div style="display:flex;align-items:center;gap:10px;padding:12px 22px 6px">'+
+      '<button class="ghost-button" onclick="go(\'home\')"><i class="i">‹</i>返回项目管理</button><div style="flex:1"></div>'+
+      '<button class="ghost-button" onclick="exportSub()"><i class="i">📤</i>导出项目材料</button></div>'+
+    ctx+
+    '<div class="conversation-scroll" id="conv">'+
+      '<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble">'+
+        '<p>这是「<strong>'+s.dir.split(' · ')[0]+'</strong>」招引项目的工作区。它由'+s.from+'研判报告的补链方向经双确认后自动生成，候选线索为 <strong>'+(s.clueName||'暂无')+'</strong>。</p>'+
+        '<p>我可以基于这个项目的上下文，帮你把下一步的<strong>材料</strong>准备出来——起草对接方案、列核验清单、写领导汇报、或补充该方向其它可招引环节。生成的都是草稿，需你确认，系统不会自动联系企业。</p></div></div>'+
+      '<div class="prompt-list">'+
+        promptRow('📝','起草企业对接方案','面向候选企业的初步对接思路与本地承接优势',"subQuick('draft')")+
+        promptRow('🔍','生成核验问题清单','对接前需向企业核实的关键问题（供资源端参考）',"subQuick('verify')")+
+        promptRow('📤','写给领导的进展汇报','把该项目当前状态汇总成一段可上报的进展',"subQuick('report')")+
+        promptRow('➕','补充该方向其它招引环节','围绕本方向，研判还可以补哪些上下游环节',"subQuick('expand')")+
+      '</div>'+
+    '</div>'+composer()+'</div>';
+}
+// 项目工作区快捷指令：基于项目上下文，AI生成对应材料草稿（人工可编辑，不自动联系企业）
+function subQuick(kind){
+  var subs=subprojOf(cur);var s=subs[curSub];if(!s)return;
+  var pl=$('.prompt-list');if(pl)pl.remove();
+  var dirName=s.dir.split(' · ')[0];
+  var p=P();
+  var ask={
+    draft:'帮我起草一份面向「'+dirName+'」候选企业的初步对接方案',
+    verify:'对接前，我需要向「'+dirName+'」候选企业核实哪些关键问题？',
+    report:'把「'+dirName+'」这个项目的当前进展汇总成一段给领导的汇报',
+    expand:'围绕「'+dirName+'」这个方向，还可以补充研判哪些上下游环节？'
+  }[kind]||('关于「'+dirName+'」项目，请给出建议');
+  addU(ask);
+  setTimeout(function(){ subReply(kind,s,p); },500);
+}
+function subReply(kind,s,p){
+  var dirName=s.dir.split(' · ')[0];
+  var body,tag,fileHint;
+  var _kbInd2=p.kb&&p.kb[0]||{};var _kbPark2=p.kb&&p.kb[1]||{};
+  var _kbFirm2=p.kb&&p.kb[2]||{};var _kbPol2=p.kb&&p.kb[3]||{};
+  var _ind2Txt=(_kbInd2.known||[]).slice(0,2).join('；')||p.city+'产业基础扎实，具体配套率见产业链图谱';
+  var _park2Txt=(_kbPark2.known||[]).slice(0,1).join('')||p.city+'高新区/经开区具备承接载体';
+  var _pol2Txt=(_kbPol2.known||[]).slice(0,1).join('')||'本地产业扶持政策方向明确，专项资金额度待领导确认';
+  if(kind==='draft'){
+    tag='对接方案（草稿 · 待确认）';fileHint='对接方案';
+    body='<p>已结合<strong>'+s.from+'</strong>报告结论与'+p.city+'本地承接条件，起草「'+dirName+'」初步对接方案草稿——</p>'+
+      '<div class="report" style="margin-top:6px"><div class="rbody" style="padding:12px 14px;font-size:12.5px;line-height:1.9;color:#33415a">'+
+        '<b>一、'+p.city+'承接优势</b><br>'+_ind2Txt+'。'+_park2Txt+'，可与候选企业形成上下游/场景协同配套。<br>'+
+        '<b>二、对企业的核心价值点</b><br>本地整车/改装产量大（配套采购需求稳定）；'+(_kbFirm2.known||[]).slice(0,1).join('')||'骨干链主提供稳定订单'+'；示范场景开放可加速企业渗透市场。<br>'+
+        '<b>三、拟对接方式</b><br>由资源端核验「'+s.clueName+'」真实意向后，安排实地走访'+p.city+'承接园区 + 政企座谈；我方准备承接材料与可用时段。<br>'+
+        '<b>四、待补充确认</b><br>'+_pol2Txt+'；首选承接园区地块需向领导确认后填入本方案。'+
+      '</div></div>';
+  }else if(kind==='verify'){
+    tag='核验清单（供资源端参考）';fileHint='核验清单';
+    var qs=(P().clues||[]).filter(function(c){return c.name===s.clueName})[0];
+    var list=(qs&&qs.qs)?qs.qs:['未来三年产能与异地布局计划','对落地城市的应用场景与政策诉求','与本地存量企业的配套/联合开发可能性'];
+    body='<p>对接「'+dirName+'」候选企业前，建议资源端重点核实以下问题（系统不直接联系企业）——</p>'+
+      '<div class="report" style="margin-top:6px"><div class="rbody" style="padding:12px 14px"><ol class="number-list">'+
+      list.map(function(q,i){return '<li><span>'+(i+1)+'</span>'+q+'</li>'}).join('')+'</ol></div></div>';
+  }else if(kind==='report'){
+    tag='进展汇报（草稿）';fileHint='进展汇报';
+    var _rptKb=p.kb&&p.kb[0]||{};var _rptInd=(_rptKb.known||[])[0]||p.city+'产业基础扎实';
+    body='<p>已把「'+dirName+'」项目当前状态汇总为一段可上报进展——</p>'+
+      '<div class="report" style="margin-top:6px"><div class="rbody" style="padding:12px 14px;font-size:12.5px;line-height:1.9;color:#33415a">'+
+      '关于随州「'+s.from+'」方向的「'+dirName+'」招引项目：'+
+      '产业基础：'+_rptInd+'。'+
+      '当前进展：已完成研判报告并经干部+授权领导双确认，形成正式招商需求并递交资源端。候选线索：'+(s.clueName||'待资源端补充')+'，资源端正核验企业真实意向与决策层触达，预计 2 个工作日反馈。'+
+      '下一步：资源核验通过后安排实地走访随州承接园区，并准备政策/园区/配套等承接材料。</div></div>';
+  }else{
+    tag='方向拓展建议';fileHint='拓展建议';
+    // 从当前项目 kb[0] 的 known 推导上下游
+    var _kbExpand=p.kb&&p.kb[0]||{};
+    var _expandItems=[];
+    (_kbExpand.known||[]).forEach(function(kn){
+      if(/外购|缺口|空白|全靠/.test(kn)){
+        // 找到缺口关键词，截取主语作为建议方向
+        var short=kn.replace('本地仍属空白','').replace('几乎全部外购','').replace('全部外购','').replace('缺乏本地供给','').trim();
+        if(short.length>4&&short.length<40)_expandItems.push(short+'（补链候选）');
+      }
+    });
+    if(!_expandItems.length){
+      _expandItems=['上游关键部件 / 材料本地配套','面向新场景的系统集成能力','检测认证 / 中试等生产性服务环节'];
+    }
+    body='<p>围绕「'+dirName+'」，从产业链上下游看，以下环节尚可深入研判——</p>'+
+      '<div class="report" style="margin-top:6px"><div class="rbody" style="padding:12px 14px"><ul class="check-list">'+
+      _expandItems.map(function(x){return '<li><i class="i">•</i>'+x+'</li>'}).join('')+
+      '</ul></div></div><p style="margin-top:6px;font-size:12px;color:#667590">如需研判某个环节，可到「研判需求」新增产业方向。</p>';
+  }
+  var d=addA(body+'<div class="answer-note" style="margin-top:8px">⚠ 以上为 AI 生成草稿，关键判断需人工确认；系统不自动联系企业、不跳过确认关口。</div>');
+  // 生成结果附操作条：导出该材料
+  if(d){var bar=document.createElement('div');bar.style.cssText='margin:8px 0 0 60px';
+    bar.innerHTML='<button class="ghost-button" style="font-size:11.5px;padding:5px 10px" onclick="exportSub()"><i class="i">📤</i>连同项目材料一起导出</button>'+
+      '<span style="font-size:11px;color:#9aa5b5;margin-left:8px">'+tag+'</span>';
+    var c=$('#conv');if(c)c.appendChild(bar);sd();}
+}
+// 导出项目卡
+function exportSub(){
+  var subs=subprojOf(cur);var s=subs[curSub];if(!s){toast('项目不存在');return;}
+  var p=P();var now=new Date().toLocaleString('zh-CN');var L=[];
+  L.push('招引项目卡 · '+s.name.split(' · ')[0]);
+  L.push('导出时间：'+now+'　|　编制：'+p.org+' · '+p.who);
+  L.push('====================================================\n');
+  L.push('招引方向：'+s.dir);
+  L.push('来源产业方向：'+s.from);
+  L.push('候选企业（脱敏）：'+(s.clueName||'暂无'));
+  L.push('确认状态：干部确认 + 授权领导确认 已完成，已正式递交');
+  L.push('当前阶段：'+stageNameOf(s, s.stage||4));
+  L.push('');
+  L.push('----------------------------------------------------');
+  L.push('对接进度：需求已递交 → 资源匹配中 → 安排招商对接（待资源回传）');
+  L.push('使用边界：脱敏展示，不显示内部人脉路径；对接由资源端线下推进，系统不自动联系企业。');
+  var blob=new Blob([L.join('\n')],{type:'text/plain;charset=utf-8'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='招引项目_'+s.name.split(' · ')[0]+'.txt';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  toast('已导出项目卡：'+s.name.split(' · ')[0]);
+}
+// 招商对接：独立tab，展示所有项目的对接进度
+/* ══════════════════════════════════════════════════════════════
+   招商对接页面重建
+   ══════════════════════════════════════════════════════════════ */
+
+/* 对接记录存储 {projKey: [{ts, note, type}]} */
+var DOCK_LOGS = DOCK_LOGS || {};
+var OPS_ENT = OPS_ENT || [];  // 管理端企业库（无硬编码，全部来自用户录入）
+
+function dockingPage(p){
+  var projKeys=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k].stage>=3;});
+
+  if(!projKeys.length){
+    return '<div class="page">'+
+      '<div class="page-header"><div><span class="eyebrow">DOCKING</span><h1>招商对接</h1>'+
+      '<p>招引需求提交后，资源核验与对接进度会出现在这里。</p></div></div>'+
+      '<div class="knowledge-scroll"><div style="text-align:center;padding:60px 20px">'+
+        '<div style="font-size:36px;margin-bottom:12px">🤝</div>'+
+        '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">尚未提交招引需求</div>'+
+        '<div style="font-size:13px;color:#8492a6;line-height:1.7;margin-bottom:20px">'+
+          '在「项目管理」中提交招引需求后，<br>候选线索的资源核验与对接进度会出现在这里'+
+        '</div>'+
+        '<button onclick="go(\'home\')" style="padding:10px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:650;cursor:pointer">前往项目管理 →</button>'+
+      '</div></div></div>';
+  }
+
+  if(!window.__dockPick || !PROJECTS[window.__dockPick]) window.__dockPick=projKeys[0];
+  var pk=window.__dockPick;
+  var px=PROJECTS[pk];
+  var clues=px.clues||[];
+  var logs=DOCK_LOGS[pk]||[];
+
+  // ── 左侧项目列表 ──
+  var projectList=projKeys.map(function(k){
+    var x=PROJECTS[k];
+    var sc=stColor(x.stage);
+    var xClues=x.clues||[];
+    var teal=xClues.filter(function(c){return c.tone==='teal';}).length;
+    var amber=xClues.filter(function(c){return c.tone==='amber';}).length;
+    var isOn=(k===pk);
+    return '<button onclick="pickDock(\''+k+'\')" style="width:100%;text-align:left;padding:12px 14px;border:1.5px solid '+(isOn?'#1a56db':'#e8edf5')+';border-radius:12px;background:'+(isOn?'#f0f4ff':'#fff')+';cursor:pointer;margin-bottom:8px">'+
+      '<div style="display:flex;align-items:center;gap:10px">'+
+        '<span style="font-size:18px;flex-shrink:0">🎯</span>'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:13px;font-weight:700;color:#0b183b;margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+x.topic+'</div>'+
+          '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+            (teal?'<span style="padding:1px 7px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:11px">'+teal+'条可沟通</span>':'')+
+            (amber?'<span style="padding:1px 7px;background:#fffbeb;color:#92400e;border-radius:10px;font-size:11px">'+amber+'条核验中</span>':'')+
+            (!teal&&!amber?'<span style="padding:1px 7px;background:#f5f7fb;color:#6b7280;border-radius:10px;font-size:11px">'+xClues.length+'条待接触</span>':'')+
+          '</div>'+
+        '</div>'+
+        '<span style="padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;background:'+sc.bg+';color:'+sc.c+';flex-shrink:0">'+stageNameOf(x,x.stage)+'</span>'+
+      '</div>'+
+    '</button>';
+  }).join('');
+
+  // ── 右侧：时间线 + 候选线索状态 + 对接记录 ──
+
+  // 递交时间线
+  var submitTime=logs.length?new Date(logs[0].ts).toLocaleString('zh-CN'):new Date().toLocaleString('zh-CN');
+  var timeline=
+    '<div style="margin-bottom:20px">'+
+      '<div style="font-size:12px;font-weight:650;color:#4a5568;letter-spacing:.3px;margin-bottom:12px">递交时间线</div>'+
+      '<div style="display:flex;flex-direction:column;gap:0">'+
+        // 节点1：需求已递交
+        '<div style="display:flex;gap:12px">'+
+          '<div style="display:flex;flex-direction:column;align-items:center">'+
+            '<div style="width:28px;height:28px;border-radius:50%;background:#1a56db;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;flex-shrink:0">✓</div>'+
+            '<div style="width:2px;flex:1;background:#e8edf5;margin:4px 0"></div>'+
+          '</div>'+
+          '<div style="padding:2px 0 16px">'+
+            '<div style="font-size:13px;font-weight:650;color:#0b183b">需求已递交</div>'+
+            '<div style="font-size:12px;color:#8492a6;margin-top:2px">已同步招商需求、承接区域与报告证据链</div>'+
+          '</div>'+
+        '</div>'+
+        // 节点2：资源核验
+        (px.stage>=4?
+          '<div style="display:flex;gap:12px">'+
+            '<div style="display:flex;flex-direction:column;align-items:center">'+
+              '<div style="width:28px;height:28px;border-radius:50%;background:'+(px.stage>=5?'#22c55e':'#f59e0b')+';display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;flex-shrink:0">'+(px.stage>=5?'✓':'◔')+'</div>'+
+              '<div style="width:2px;flex:1;background:#e8edf5;margin:4px 0"></div>'+
+            '</div>'+
+            '<div style="padding:2px 0 16px">'+
+              '<div style="font-size:13px;font-weight:650;color:#0b183b">资源可达性核验中</div>'+
+              '<div style="font-size:12px;color:#8492a6;margin-top:2px">资源团队正在核验企业真实意向与决策层触达路径</div>'+
+            '</div>'+
+          '</div>'
+        :'<div style="display:flex;gap:12px">'+
+            '<div style="display:flex;flex-direction:column;align-items:center">'+
+              '<div style="width:28px;height:28px;border-radius:50%;background:#f0f4ff;border:2px solid #e8edf5;display:flex;align-items:center;justify-content:center;color:#9aa5b5;font-size:12px;flex-shrink:0">2</div>'+
+              '<div style="width:2px;flex:1;background:#e8edf5;margin:4px 0"></div>'+
+            '</div>'+
+            '<div style="padding:2px 0 16px">'+
+              '<div style="font-size:13px;font-weight:650;color:#9aa5b5">资源可达性核验</div>'+
+              '<div style="font-size:12px;color:#b0bac8;margin-top:2px">待候选线索核验启动</div>'+
+            '</div>'+
+          '</div>')+
+        // 节点3：首次沟通
+        (px.stage>=5?
+          '<div style="display:flex;gap:12px">'+
+            '<div style="display:flex;flex-direction:column;align-items:center">'+
+              '<div style="width:28px;height:28px;border-radius:50%;background:#22c55e;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;flex-shrink:0">✓</div>'+
+            '</div>'+
+            '<div style="padding:2px 0">'+
+              '<div style="font-size:13px;font-weight:650;color:#0b183b">可安排首次沟通</div>'+
+              '<div style="font-size:12px;color:#8492a6;margin-top:2px">核验通过，请准备承接材料与可用时段</div>'+
+            '</div>'+
+          '</div>'
+        :'<div style="display:flex;gap:12px">'+
+            '<div style="width:28px;height:28px;border-radius:50%;background:#f0f4ff;border:2px solid #e8edf5;display:flex;align-items:center;justify-content:center;color:#9aa5b5;font-size:12px;flex-shrink:0">3</div>'+
+            '<div style="padding:2px 0">'+
+              '<div style="font-size:13px;font-weight:650;color:#9aa5b5">首次沟通</div>'+
+              '<div style="font-size:12px;color:#b0bac8;margin-top:2px">核验通过后安排</div>'+
+            '</div>'+
+          '</div>')+
+      '</div>'+
+    '</div>';
+
+  // 候选企业状态
+  var clueStatus=clues.length
+    ? '<div style="margin-bottom:20px">'+
+        '<div style="font-size:12px;font-weight:650;color:#4a5568;letter-spacing:.3px;margin-bottom:10px">候选企业线索</div>'+
+        clues.map(function(c){
+          var toneMap={slate:{bg:'#f5f7fb',dot:'#9aa5b5',label:'待接触'},amber:{bg:'#fffbeb',dot:'#f59e0b',label:'核验中'},teal:{bg:'#f0fdf4',dot:'#22c55e',label:'可安排沟通'}};
+          var t=toneMap[c.tone]||toneMap.slate;
+          return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:'+t.bg+';border-radius:10px;margin-bottom:6px">'+
+            '<span style="width:8px;height:8px;border-radius:50%;background:'+t.dot+';flex-shrink:0"></span>'+
+            '<div style="flex:1;min-width:0">'+
+              '<div style="font-size:13px;font-weight:650;color:#0b183b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.name+'</div>'+
+              '<div style="font-size:11.5px;color:#8492a6">'+c.kind+'</div>'+
+            '</div>'+
+            '<span style="padding:2px 8px;background:'+t.bg+';color:'+t.dot+';border:1px solid;border-radius:20px;font-size:11px;font-weight:600;flex-shrink:0">'+t.label+'</span>'+
+          '</div>';
+        }).join('')+
+      '</div>'
+    : '<div style="margin-bottom:20px;padding:14px;background:#f9fafb;border-radius:10px;font-size:13px;color:#9aa5b5;text-align:center">'+
+        '尚无候选线索 · 在「项目管理」中发起资源核验后出现'+
+      '</div>';
+
+  // 对接记录
+  var dockLogs=
+    '<div>'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'+
+        '<span style="font-size:12px;font-weight:650;color:#4a5568;letter-spacing:.3px">对接记录</span>'+
+        '<span style="font-size:11px;color:#9aa5b5">'+logs.length+'条</span>'+
+      '</div>'+
+      (logs.length
+        ? logs.map(function(l){
+            var typeIcon={visit:'🤝',call:'📞',email:'📧',material:'📎'}[l.type]||'📝';
+            return '<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid #f0f4ff">'+
+              '<span style="font-size:16px;flex-shrink:0">'+typeIcon+'</span>'+
+              '<div style="flex:1">'+
+                '<div style="font-size:12.5px;color:#1e293b;line-height:1.6">'+l.note+'</div>'+
+                '<div style="font-size:11px;color:#9aa5b5;margin-top:3px">'+new Date(l.ts).toLocaleString('zh-CN')+'</div>'+
+              '</div>'+
+            '</div>';
+          }).join('')
+        : '<div style="font-size:12.5px;color:#9aa5b5;padding:8px 0">暂无对接记录</div>'
+      )+
+      // 录入区
+      '<div style="margin-top:12px">'+
+        '<div style="display:flex;gap:6px;margin-bottom:8px">'+
+          ['visit:🤝拜访','call:📞电话','email:📧邮件','material:📎材料'].map(function(s){
+            var parts=s.split(':'), val=parts[0], label=parts[1];
+            return '<button onclick="setDockType(\''+pk+'\',\''+val+'\')" id="dtype-'+pk+'-'+val+'" '+
+              'style="padding:5px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:12px;cursor:pointer;background:#f5f7fb;color:#4a5568">'+label+'</button>';
+          }).join('')+
+        '</div>'+
+        '<textarea id="dock-note-'+pk+'" placeholder="记录本次沟通内容、关键信息或待跟进事项…" '+
+          'style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;resize:vertical;min-height:72px;outline:none;line-height:1.6" '+
+          'onfocus="this.style.border=\'1.5px solid #6366f1\'" onblur="this.style.border=\'1.5px solid #e8edf5\'"></textarea>'+
+        '<button onclick="saveDockLog(\''+pk+'\')" '+
+          'style="width:100%;margin-top:8px;padding:9px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:650;cursor:pointer">'+
+          '保存对接记录</button>'+
+      '</div>'+
+    '</div>';
+
+  // 下一步政府待办
+  var nextStep='';
+  if(px.stage===3){
+    nextStep='<div style="padding:12px 14px;background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;margin-bottom:16px">'+
+      '<div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">⏳ 等待资源核验启动</div>'+
+      '<div style="font-size:12px;color:#4a5568;line-height:1.7">候选线索已录入，等待资源团队判断可触达路径。可在「项目管理」中点「请资源团队核验」推进。</div>'+
+    '</div>';
+  } else if(px.stage===4){
+    nextStep='<div style="padding:12px 14px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;margin-bottom:16px">'+
+      '<div style="font-size:12px;font-weight:700;color:#c2410c;margin-bottom:6px">🔍 资源核验进行中（预计2个工作日）</div>'+
+      '<div style="font-size:12px;color:#4a5568;line-height:1.7">政府侧待办：准备<strong>园区承接条件说明</strong>（可用厂房/能耗指标）和<strong>可用时段</strong>，核验通过后即可安排首次沟通。</div>'+
+    '</div>';
+  } else if(px.stage>=5){
+    nextStep='<div style="padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;margin-bottom:16px">'+
+      '<div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:6px">✓ 可安排首次沟通</div>'+
+      '<div style="font-size:12px;color:#4a5568;line-height:1.7">政府侧待办：确认<strong>接待时段</strong>、准备<strong>承接方案</strong>（园区/政策/配套）。在下方填写对接记录跟踪进展。</div>'+
+    '</div>';
+  }
+
+  // 查看/下载报告
+  var reportActions=REPORTSTATE[pk]
+    ? '<div style="display:flex;gap:8px;margin-bottom:16px">'+
+        '<button onclick="cur=\''+pk+'\';viewCurrentReport()" style="flex:1;padding:9px;background:#f8faff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer;font-weight:600">📋 查看研判报告</button>'+
+        '<button onclick="cur=\''+pk+'\';downloadReport(\'full\')" style="padding:9px 14px;background:#f8faff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer">⬇ 下载</button>'+
+      '</div>'
+    : '';
+
+  return '<div class="page">'+
+    '<div class="page-header"><div><span class="eyebrow">DOCKING</span><h1>招商对接</h1>'+
+    '<p>已递交需求的核验进度与对接记录。候选企业信息均为脱敏展示，资源细节由资源团队掌握。</p></div></div>'+
+    '<div style="display:grid;grid-template-columns:280px 1fr;gap:16px;height:calc(100vh - 130px);padding:0 22px 16px;overflow:hidden">'+
+      // 左列
+      '<div style="overflow-y:auto;padding-right:8px">'+
+        '<div style="font-size:11px;font-weight:650;color:#9aa5b5;letter-spacing:.5px;margin-bottom:10px;padding-top:2px">已提交项目</div>'+
+        projectList+
+      '</div>'+
+      // 右列
+      '<div style="overflow-y:auto;padding-left:8px;border-left:1px solid #f0f4ff">'+
+        nextStep+
+        reportActions+
+        timeline+
+        clueStatus+
+        dockLogs+
+        '<div style="margin-top:14px;padding:10px 12px;background:#f9fafb;border-radius:8px;font-size:11.5px;color:#9aa5b5;line-height:1.6">'+
+          'ⓘ 政府端展示边界：仅展示脱敏状态与下一步；企业真实名称、联系方式由资源团队保管。系统不会自动联系企业。'+
+        '</div>'+
+      '</div>'+
+    '</div></div>';
+}
+
+/* ── 对接记录辅助函数 ── */
+var __dockType = {};
+function setDockType(projKey, type){
+  __dockType[projKey] = type;
+  // 更新按钮样式
+  ['visit','call','email','material'].forEach(function(t){
+    var btn=document.getElementById('dtype-'+projKey+'-'+t);
+    if(!btn) return;
+    btn.style.background = t===type ? '#eff6ff' : '#f5f7fb';
+    btn.style.borderColor = t===type ? '#bfdbfe' : '#e8edf5';
+    btn.style.color = t===type ? '#1a56db' : '#4a5568';
+  });
+}
+
+function saveDockLog(projKey){
+  var ta=document.getElementById('dock-note-'+projKey);
+  if(!ta||!ta.value.trim()){toast('请填写对接记录内容');return;}
+  if(!DOCK_LOGS[projKey]) DOCK_LOGS[projKey]=[];
+  DOCK_LOGS[projKey].unshift({
+    ts: Date.now(),
+    note: ta.value.trim(),
+    type: __dockType[projKey]||'visit'
+  });
+  persist();
+  ta.value='';
+  render();
+  toast('✓ 对接记录已保存');
+}
+function ctxBar(icon,strong,span){
+  return '<div class="context-bar"><div class="context-icon"><i class="i">'+icon+'</i></div>'+
+    '<div><strong>'+strong+'</strong><span>'+span+'</span></div>'+
+    '<span class="context-fresh"><i class="i">🕒</i>今日 06:00 已更新</span></div>';
+}
+function composer(){
+  var sub=view==='subwork';
+  var isKb=view==='knowledge';
+  var activeTopic=null;
+  if(isKb){var b=document.getElementById('kbTopicBadge');
+    if(b){var tel=b.querySelectorAll('div>div');tel.forEach(function(d){if(d.style&&d.fontSize==='13px')activeTopic=d.textContent.trim();});
+      if(!activeTopic){var els=b.querySelectorAll('div');els.forEach(function(d){if(d.textContent&&d.textContent.length>4&&d.textContent.length<20)activeTopic=d.textContent.trim();});}
+    }
+  }
+  var pillColors={'主导产业与产业链':'background:#eff6ff;color:#1d4ed8;border:1.5px solid #bfdbfe',
+    '园区与承载条件':'background:#f0fdf4;color:#166534;border:1.5px solid #bbf7d0',
+    '链主与存量企业':'background:#fdf4ff;color:#6b21a8;border:1.5px solid #e9d5ff',
+    '政策、规划与领导关注':'background:#fffbeb;color:#92400e;border:1.5px solid #fde68a'};
+  var topicPill='';
+  if(isKb&&activeTopic){
+    var ps=pillColors[activeTopic]||'background:#f5f7fb;color:#4a5568;border:1.5px solid #e8edf5';
+    topicPill='<div style="display:flex;align-items:center;gap:6px;padding:6px 14px 2px">'+
+      '<span style="font-size:11px;color:#9aa5b5">正在询问：</span>'+
+      '<span style="padding:2px 10px;border-radius:20px;font-size:12px;font-weight:600;'+ps+'">'+activeTopic+'</span>'+
+      '<button onclick="clearKbActiveTopic()" style="background:none;border:none;color:#b0bac8;font-size:13px;cursor:pointer;padding:0 3px" title="取消">✕</button>'+
+    '</div>';
+  }
+  var ph=isKb&&activeTopic?'针对「'+activeTopic+'」提问，我会优先检索该主题数据…':
+      isKb?'直接输入问题，例如：'+P().city+'最值得补链的核心缺口是哪些？':
+      sub?'针对本项目：让我起草对接方案、列核验清单、写领导汇报，或补充招引环节…':
+      '可直接描述产业方向、细分环节、目标企业或领导交办任务，我会结合城市智库与最新公开信息研判…';
+  return '<div class="composer-wrap">'+topicPill+'<div class="composer">'+
+    '<div class="composer-tools">'+
+      '<button onclick="uploadHint()"><i class="i"></i>上传材料</button>'+
+      (isKb&&activeTopic?'<button onclick="clearKbActiveTopic()"><i class="i">⌂</i>全局问答</button>':'')+
+      '<button onclick="go(\'knowledge\')"><i class="i"></i>'+P().city+'城市智库</button></div>'+
+    '<textarea id="composerTa" placeholder="'+ph+'"></textarea>'+
+    '<button class="send-button" onclick="sendMsg()"><i class="i">➤</i></button></div>'+
+    '<div class="composer-helper"><span>支持上传：政府工作报告 / 领导发言稿 / 产业报告 / 园区资料 / 企业名单</span>'+
+    '<button onclick="uploadHint()">查看建议材料清单</button></div></div>';
+}
+
+function renderComposer(){
+  var wrap=document.querySelector('.composer-wrap');
+  if(!wrap)return;
+  var tmp=document.createElement('div');
+  tmp.innerHTML=composer();
+  wrap.replaceWith(tmp.firstChild);
+  bind();
+}
+
+/* topic helpers */
+function editTopic(){
+  var d=document.getElementById('topicDisplay');
+  var e=document.getElementById('topicEdit');
+  var inp=document.getElementById('topicInput');
+  if(d)d.style.display='none';
+  if(e)e.style.display='block';
+  if(inp){inp.focus();inp.select();}
+}
+function saveTopic(){
+  var inp=document.getElementById('topicInput');
+  var t=inp&&inp.value.trim();
+  if(!t)return;
+  var p=P();if(!p)return;
+  p.topic=t; persist();
+  var txt=document.getElementById('topicText');
+  if(txt)txt.textContent=t;
+  cancelTopicEdit();
+  toast('\u2713 \u7814\u5224\u65b9\u5411\u5df2\u66f4\u65b0\u4e3a\u300c'+t+'\u300d');
+}
+function cancelTopicEdit(){
+  var d=document.getElementById('topicDisplay');
+  var e=document.getElementById('topicEdit');
+  if(d)d.style.display='flex';
+  if(e)e.style.display='none';
+}
+
+/* ── 研判需求页辅助函数 ── */
+
+// 选择研判方向（卡片点击 or 自定义输入）
+function selectTopic(val, isCustom){
+  var p=P(); if(!p||!val||!val.trim()) return;
+  var newTopic=val.trim();
+  // If project already has report or submitted demand, create a new project for the new direction
+  if(p.topic!==newTopic && (REPORTSTATE[cur] || DEMANDS.find(function(d){return d.projKey===cur;}))){
+    var id='p'+Date.now().toString(36);
+    PROJECTS[id]={id:id,city:p.city,org:p.org,who:p.who,topic:newTopic,stage:1,
+      kb:JSON.parse(JSON.stringify(p.kb)),report:null,clues:[]};
+    // Reset kb confirmations for new project
+    cur=id; persist(); render();
+    toast('已为「'+newTopic+'」创建独立研判，原方向数据不变');
+    return;
+  }
+  p.topic=newTopic;
+  persist();
+  var badge=document.getElementById('currentTopicBadge');
+  if(badge) badge.textContent=p.topic;
+  if(!isCustom){
+    var inp=document.getElementById('topicCustomInput');
+    if(inp) inp.value='';
+  }
+  // 同步刷新报告区（切换方向时换报告文本+图谱）
+  var _ra=document.getElementById('reportArea');
+  if(_ra){
+    var _rs=REPORTSTATE[cur];
+    if(_rs&&(_rs.finalized||_rs.phase===2)){
+      var _nt=getTopicReport(p.topic);
+      if(_nt){ _rs.text=_nt; }
+      _rs.topic=p.topic;
+      _ra.innerHTML=reportHtml(p);
+      var _cmEl=document.getElementById('chainMapBlock');
+      if(_cmEl){ _cmEl.innerHTML=chainMapHtml(p); }
+      else{
+        var _cm2=document.createElement('div');
+        _cm2.id='chainMapBlock';
+        _cm2.innerHTML=chainMapHtml(p);
+        _ra.appendChild(_cm2);
+      }
+    }
+  }
+  // 同步刷新右侧面板（报告状态·研判方向）
+  var _dp=document.querySelector('.detail-pane');
+  if(_dp){
+    _dp.innerHTML='<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button>'+
+      '<div class="detail-page">'+detailReport(p)+'</div>';
+  }
+  // 重渲染卡片高亮
+  var cardGrid=document.getElementById('topicCardGrid');
+  if(!cardGrid) return;
+  var topics=generateTopicsFromKb(p);
+  cardGrid.innerHTML=topics.map(function(t){
+    var act=p.topic===t.label;
+    return '<button onclick="selectTopic(this.getAttribute(\'data-v\'))" data-v="'+t.label+'" style="'+
+      'display:flex;flex-direction:column;align-items:flex-start;padding:14px 16px;'+
+      'background:'+(act?'linear-gradient(135deg,#eff6ff,#f0f9ff)':'#fff')+';'+
+      'border:2px solid '+(act?'#1a56db':'#e8edf5')+';'+
+      'border-radius:14px;cursor:pointer;text-align:left;flex:1;min-width:0">'+
+      '<span style="font-size:20px;margin-bottom:6px">'+t.icon+'</span>'+
+      '<span style="font-size:13px;font-weight:700;color:#0b183b;display:block;margin-bottom:4px">'+t.label+'</span>'+
+      '<span style="font-size:11.5px;color:#8492a6;line-height:1.4">'+t.desc+'</span>'+
+      (act?'<div style="margin-top:8px;width:8px;height:8px;border-radius:50%;background:#1a56db"></div>':'')+
+    '</button>';
+  }).join('');
+}
+
+// 触发生成报告
+/* ══════════════════════════════════════════════════════════════
+   研判需求 — 待确认事项结构化面板
+   流程：进入页面自动触发草稿 → 解析⚠️ → 渲染确认面板 → 全部确认后解锁完整报告
+   ══════════════════════════════════════════════════════════════ */
+
+// 待确认事项状态 {projKey: [{text, status:'pending'|'confirmed'|'edited', editedText, files:[]}]}
+var PENDING_CONFIRMS = PENDING_CONFIRMS || {};
+
+/* 解析草稿文本，提取⚠️条目 */
+function parsePendingItems(text){
+  var items = [];
+  var lines = text.split('\n');
+  lines.forEach(function(line){
+    var clean = line.replace(/^[\s\-•*]+/, '').trim();
+    if(!clean) return;
+    // 含⚠️的行
+    if(clean.indexOf('⚠️') >= 0 || clean.indexOf('⚠') >= 0){
+      var t = clean.replace('⚠️','').replace('⚠','').replace(/^[\s:：]+/,'').trim();
+      if(t.length > 5) items.push({text: t, status:'pending', editedText:'', files:[]});
+    }
+  });
+  return items;
+}
+
+
+/* ══ 报告历史记录 ══ */
+var REPORT_HISTORY = REPORT_HISTORY || {};
+var USER_PROFILES = (typeof USER_PROFILES!=='undefined'&&USER_PROFILES) || {};  // 政府端注册用户资料，跨端同步查看
+
+function saveReportHistory(){try{localStorage.setItem('hxz_rpt_history',JSON.stringify(REPORT_HISTORY));}catch(e){}}
+function loadReportHistory(){try{var d=localStorage.getItem('hxz_rpt_history');if(d)REPORT_HISTORY=JSON.parse(d);}catch(e){}}
+loadReportHistory();
+
+function archiveCurrentReport(key){
+  var rs=REPORTSTATE[key];
+  if(!rs||!rs.text) return;
+  if(!REPORT_HISTORY[key]) REPORT_HISTORY[key]=[];
+  // 避免重复归档（同 ts）
+  var exists=REPORT_HISTORY[key].some(function(h){return h.ts===rs.ts;});
+  if(!exists){
+    REPORT_HISTORY[key].unshift({text:rs.text,topic:rs.topic,ts:rs.ts,score:rs.score,phase:rs.phase});
+    if(REPORT_HISTORY[key].length>10) REPORT_HISTORY[key]=REPORT_HISTORY[key].slice(0,10);
+    saveReportHistory();
+  }
+}
+
+function deleteHistoryReport(key, idx){
+  if(!REPORT_HISTORY[key]) return;
+  REPORT_HISTORY[key].splice(idx,1);
+  saveReportHistory();
+  renderHistoryReports(key);
+}
+
+function toggleHistoryReport(key, idx){
+  var body=document.getElementById('hrpt-body-'+key+'-'+idx);
+  var ico=document.getElementById('hrpt-ico-'+key+'-'+idx);
+  if(!body) return;
+  var open=body.style.display!=='none';
+  body.style.display=open?'none':'block';
+  if(ico) ico.textContent=open?'▶':'▼';
+}
+
+function renderHistoryReports(key){
+  var container=document.getElementById('reportHistoryArea');
+  if(!container) return;
+  var list=REPORT_HISTORY[key]||[];
+  if(!list.length){container.innerHTML='';return;}
+  var h='<div style="margin-bottom:12px">';
+  h+='<div style="font-size:11.5px;font-weight:700;color:#64748b;letter-spacing:.3px;margin-bottom:6px;display:flex;align-items:center;gap:6px">';
+  h+='<span style="display:inline-block;width:3px;height:12px;background:#94a3b8;border-radius:2px"></span>';
+  h+='历史报告（'+list.length+' 份）</div>';
+  list.forEach(function(rep,i){
+    var dt=rep.ts?new Date(rep.ts).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'未知时间';
+    var phaseLabel=rep.phase===2?'完整报告':'初步草稿';
+    var phaseColor=rep.phase===2?'#1d4ed8':'#92400e';
+    var phaseBg=rep.phase===2?'#dbeafe':'#fef3c7';
+    h+='<div style="border-radius:12px;border:1.5px solid #e2e8f0;overflow:hidden;margin-bottom:6px;background:#fff">';
+    // 折叠头
+    h+='<div style="padding:10px 14px;background:#f8faff;display:flex;align-items:center;gap:8px;cursor:pointer" onclick="toggleHistoryReport(\''+key+'\','+i+')">';
+    h+='<span id="hrpt-ico-'+key+'-'+i+'" style="font-size:10px;color:#94a3b8;flex-shrink:0">▶</span>';
+    h+='<span style="font-size:11px;padding:1px 7px;border-radius:10px;background:'+phaseBg+';color:'+phaseColor+';font-weight:700">'+phaseLabel+'</span>';
+    h+='<span style="font-size:12px;font-weight:600;color:#374151;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+rep.topic+'</span>';
+    h+='<span style="font-size:11px;color:#94a3b8;flex-shrink:0">'+dt+'</span>';
+    if(rep.score!=null) h+='<span style="font-size:11px;color:#64748b;flex-shrink:0;margin-left:4px">'+rep.score+'%</span>';
+    h+='<button onclick="event.stopPropagation();deleteHistoryReport(\''+key+'\','+i+')" style="flex-shrink:0;margin-left:6px;padding:2px 8px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;font-size:11px;color:#ef4444;cursor:pointer;font-weight:600">删除</button>';
+    h+='</div>';
+    // 折叠体（默认收起）
+    h+='<div id="hrpt-body-'+key+'-'+i+'" style="display:none;padding:14px 16px;font-size:12.5px;color:#1e293b;line-height:1.8;border-top:1px solid #f0f4ff;max-height:400px;overflow-y:auto">';
+    // 简单 markdown 渲染
+    var txt=rep.text||'';
+    txt=txt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    txt=txt.replace(/\*\*([^*\n]+)\*\*/g,'<strong>$1</strong>');
+    txt=txt.replace(/^#{1,3}\s(.+)$/gm,'<div style="font-weight:700;color:#0b183b;margin:8px 0 3px">$1</div>');
+    txt=txt.replace(/^[-•]\s(.+)$/gm,'<div style="padding-left:12px;margin:2px 0">· $1</div>');
+    txt=txt.replace(/\n\n/g,'<br>');
+    h+=txt;
+    h+='</div>';
+    h+='</div>';
+  });
+  h+='</div>';
+  container.innerHTML=h;
+}
+
+/* 渲染待确认面板（插在草稿下方） */
+function renderConfirmPanel(items, projKey){
+  if(!items || !items.length) return '';
+
+  var rows = items.map(function(item, idx){
+    var isDone = item.status === 'confirmed' || item.status === 'edited';
+    var displayText = item.editedText || item.text;
+    var filesBadge = item.files && item.files.length
+      ? '<span style="margin-left:6px;padding:1px 7px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:10.5px;border:1px solid #86efac">'+item.files.length+' 个附件</span>'
+      : '';
+
+    if(isDone){
+      return '<div id="ci-'+projKey+'-'+idx+'" style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px">'+
+        '<span style="color:#22c55e;font-size:16px;flex-shrink:0;margin-top:1px">✓</span>'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
+          (item.status==='edited'?'<div style="font-size:11px;color:#22c55e;margin-top:3px">已修改并确认</div>':'<div style="font-size:11px;color:#22c55e;margin-top:3px">已确认</div>')+
+        '</div>'+
+        '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#22c55e;cursor:pointer;flex-shrink:0">撤回</button>'+
+      '</div>';
+    }
+
+    return '<div id="ci-'+projKey+'-'+idx+'" style="border-radius:12px;background:#fffbeb;border:1.5px solid #fed7aa;overflow:hidden;transition:box-shadow .2s" onmouseenter="this.style.boxShadow=\'0 2px 8px rgba(245,158,11,0.15)\'" onmouseleave="this.style.boxShadow=\'none\'">'+
+      '<div style="padding:13px 15px">'+
+        '<div style="display:flex;gap:10px;align-items:flex-start">'+
+          '<span style="flex-shrink:0;width:22px;height:22px;background:#fef3c7;border:1.5px solid #fcd34d;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;margin-top:1px">⚠️</span>'+
+          '<div id="ci-text-'+projKey+'-'+idx+'" style="flex:1;font-size:13px;color:#78350f;line-height:1.7;font-weight:500">'+displayText+'</div>'+
+        '</div>'+
+        // 编辑框（默认隐藏）
+        '<div id="ci-edit-'+projKey+'-'+idx+'" style="display:none;margin-top:10px">'+
+          '<textarea id="ci-ta-'+projKey+'-'+idx+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #6366f1;border-radius:8px;font-size:13px;color:#1e293b;resize:vertical;min-height:64px;outline:none;line-height:1.6">'+displayText+'</textarea>'+
+          // 附件上传
+          '<div id="ci-drop-'+projKey+'-'+idx+'" '+
+            'onclick="ciPickFile(\''+projKey+'\','+idx+')" '+
+            'ondragover="event.preventDefault();this.style.background=\'#eef2ff\'" '+
+            'ondragleave="this.style.background=\'#f8faff\'" '+
+            'ondrop="ciDropFile(event,\''+projKey+'\','+idx+')" '+
+            'style="margin-top:8px;padding:10px;border:1.5px dashed #c7d2fe;border-radius:8px;text-align:center;cursor:pointer;background:#f8faff;font-size:12px;color:#6366f1">'+
+            '<span id="ci-file-hint-'+projKey+'-'+idx+'">📎 上传附件（可选，拖拽或点击）</span>'+
+          '</div>'+
+          '<input id="ci-finp-'+projKey+'-'+idx+'" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.csv" style="display:none" onchange="ciFileSelected(this,\''+projKey+'\','+idx+')"/>'+
+          '<div style="display:flex;gap:8px;margin-top:8px">'+
+            '<button onclick="ciSave(\''+projKey+'\','+idx+')" style="flex:1;padding:7px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer">✓ 保存修改</button>'+
+            '<button onclick="ciCancelEdit(\''+projKey+'\','+idx+')" style="padding:7px 12px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;color:#4a5568;cursor:pointer">取消</button>'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+      // 操作栏
+      '<div style="padding:10px 15px;background:linear-gradient(135deg,#fefce8,#fef9c3);border-top:1px solid #fde68a;display:flex;gap:8px">'+
+        '<button onclick="cfmItem(\''+projKey+'\','+idx+')" style="flex:1;padding:8px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1.5px solid #86efac;border-radius:10px;font-size:12.5px;font-weight:700;color:#166534;cursor:pointer;transition:all .15s" onmouseenter="this.style.background=\'#dcfce7\'" onmouseleave="this.style.background=\'linear-gradient(135deg,#f0fdf4,#dcfce7)\'">✓ 领导确认</button>'+
+        '<button onclick="ciShowEdit(\''+projKey+'\','+idx+')" style="flex:1;padding:8px;background:linear-gradient(135deg,#f5f3ff,#ede9fe);border:1.5px solid #c4b5fd;border-radius:10px;font-size:12.5px;font-weight:600;color:#6d28d9;cursor:pointer" onmouseenter="this.style.background=\'#ede9fe\'" onmouseleave="this.style.background=\'linear-gradient(135deg,#f5f3ff,#ede9fe)\'">✎ 修改内容</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+
+  var total = items.length;
+  var done = items.filter(function(x){return x.status==='confirmed'||x.status==='edited';}).length;
+  var allDone = done === total;
+
+  return '<div id="confirmPanel-'+projKey+'" style="margin-top:20px;border-radius:16px;border:1.5px solid #fde68a;overflow:hidden;box-shadow:0 2px 10px rgba(245,158,11,0.1)">'+
+    '<div style="padding:13px 18px;background:linear-gradient(135deg,#fffbeb,#fef9c3);border-bottom:1px solid #fde68a;display:flex;align-items:center;gap:10px">'+
+      '<span style="font-size:18px">📋</span>'+
+      '<div style="flex:1">'+
+        '<div style="font-size:13px;font-weight:800;color:#92400e;letter-spacing:.2px">待领导确认事项</div>'+
+        '<div style="font-size:11px;color:#b45309;margin-top:1px">全部确认后方可生成完整五章报告</div>'+
+      '</div>'+
+      '<div style="display:flex;align-items:center;gap:8px">'+
+        '<span id="cp-progress-'+projKey+'" style="font-size:12px;font-weight:700;color:'+(allDone?'#166534':'#92400e')+'">'+done+' / '+total+'</span>'+
+        '<div style="width:80px;height:6px;background:#fef3c7;border-radius:3px;overflow:hidden">'+
+          '<div id="cp-bar-'+projKey+'" style="height:100%;width:'+(total?Math.round(done/total*100):0)+'%;background:linear-gradient(90deg,#f59e0b,#22c55e);border-radius:3px;transition:width .5s"></div>'+
+        '</div>'+
+      '</div>'+
+    '</div>'+
+    '<div style="padding:12px 16px;display:flex;flex-direction:column;gap:8px;background:#fff" id="cp-items-'+projKey+'">'+rows+'</div>'+
+    '<div id="cp-unlock-'+projKey+'" style="padding:12px 18px;background:'+(allDone?'linear-gradient(135deg,#f0fdf4,#dcfce7)':'#f9fafb')+';border-top:1px solid '+(allDone?'#86efac':'#f0f4ff')+';display:flex;align-items:center;justify-content:center;gap:8px">'+
+      (allDone
+        ? '<span style="font-size:13px;font-weight:700;color:#166534">✅ 所有事项已确认，立即生成完整报告</span>'
+        : '<span style="font-size:12.5px;color:#9aa5b5">还有 <strong style="color:#f59e0b">'+(total-done)+'</strong> 条事项待确认</span>'
+      )+
+    '</div>'+
+  '</div>';
+}
+
+/* 更新进度条和解锁状态 */
+function updateConfirmProgress(projKey){
+  var items=PENDING_CONFIRMS[projKey]||[];
+  var total=items.length;
+  var done=items.filter(function(x){return x.status==='confirmed'||x.status==='edited';}).length;
+  var allDone=done===total&&total>0;
+  var prog=document.getElementById('cp-progress-'+projKey);
+  if(prog) prog.textContent=done+' / '+total+' 已确认';
+  var bar=document.getElementById('cp-bar-'+projKey);
+  if(bar) bar.style.width=(total?Math.round(done/total*100):0)+'%';
+  var unlock=document.getElementById('cp-unlock-'+projKey);
+  if(unlock){
+    unlock.style.background=allDone?'#f0fdf4':'#f9fafb';
+    unlock.style.borderColor=allDone?'#86efac':'#e8edf5';
+    unlock.innerHTML=allDone
+      ?'<span style="font-size:13px;font-weight:650;color:#166534">✓ 所有事项已确认，可生成完整报告</span>'
+      :'<span style="font-size:13px;color:#9aa5b5">还剩 '+(total-done)+' 条待确认</span>';
+  }
+  // 始终强制重建底部操作栏
+  var bottomBar=document.querySelector('.report-bottom-bar');
+  if(!bottomBar) return persist();
+  if(allDone){
+    bottomBar.innerHTML=
+      '<div style="flex:1;font-size:12.5px;color:#166534;background:#f0fdf4;padding:10px 14px;border-radius:10px;border:1px solid #86efac">✓ 所有待确认事项已完成</div>'+
+      '<button onclick="triggerReport(2)" style="padding:12px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;box-shadow:0 4px 16px rgba(26,86,219,.3)">生成完整报告 →</button>'+
+      '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>';
+  } else {
+    bottomBar.innerHTML=
+      '<div style="flex:1;font-size:12.5px;color:#92400e;background:#fffbeb;padding:10px 14px;border-radius:10px;border:1px solid #fde68a">请确认上方 '+(total-done)+' 条待确认事项后生成完整报告</div>'+
+      '<button disabled style="padding:12px 20px;background:#e8edf5;color:#9aa5b5;border:none;border-radius:12px;font-size:13.5px;cursor:not-allowed">完成确认后解锁 →</button>'+
+      '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>';
+  }
+  persist();
+}
+
+/* 确认一条 */
+function cfmItem(projKey, idx){
+  if(!PENDING_CONFIRMS[projKey]) return;
+  PENDING_CONFIRMS[projKey][idx].status = 'confirmed';
+  var card = document.getElementById('ci-'+projKey+'-'+idx);
+  if(card){
+    var item = PENDING_CONFIRMS[projKey][idx];
+    var displayText = item.editedText || item.text;
+    var filesBadge = item.files&&item.files.length?'<span style="margin-left:6px;padding:1px 7px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:10.5px;border:1px solid #86efac">'+item.files.length+' 个附件</span>':'';
+    card.style.cssText='display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px';
+    card.innerHTML=
+      '<span style="color:#22c55e;font-size:16px;flex-shrink:0;margin-top:1px">✓</span>'+
+      '<div style="flex:1;min-width:0"><div style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
+      '<div style="font-size:11px;color:#22c55e;margin-top:3px">已确认</div></div>'+
+      '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#22c55e;cursor:pointer;flex-shrink:0">撤回</button>';
+  }
+  updateConfirmProgress(projKey);
+}
+
+/* 撤回确认 */
+function uncfmItem(projKey, idx){
+  if(!PENDING_CONFIRMS[projKey]) return;
+  PENDING_CONFIRMS[projKey][idx].status = 'pending';
+  // 重新渲染整个面板
+  var panel = document.getElementById('confirmPanel-'+projKey);
+  if(panel){
+    var tmp = document.createElement('div');
+    tmp.innerHTML = renderConfirmPanel(PENDING_CONFIRMS[projKey], projKey);
+    panel.replaceWith(tmp.firstChild);
+  }
+  updateConfirmProgress(projKey);
+}
+
+/* 显示编辑框 */
+function ciShowEdit(projKey, idx){
+  var edit = document.getElementById('ci-edit-'+projKey+'-'+idx);
+  var ta   = document.getElementById('ci-ta-'+projKey+'-'+idx);
+  var item = PENDING_CONFIRMS[projKey] && PENDING_CONFIRMS[projKey][idx];
+  if(edit){ edit.style.display='block'; }
+  if(ta && item){ ta.value = item.editedText || item.text; ta.focus(); ta.select(); }
+}
+
+/* 取消编辑 */
+function ciCancelEdit(projKey, idx){
+  var edit = document.getElementById('ci-edit-'+projKey+'-'+idx);
+  if(edit) edit.style.display='none';
+}
+
+/* 保存修改 */
+function ciSave(projKey, idx){
+  var ta = document.getElementById('ci-ta-'+projKey+'-'+idx);
+  if(!ta||!ta.value.trim()) return;
+  var item = PENDING_CONFIRMS[projKey][idx];
+  item.editedText = ta.value.trim();
+  item.status = 'edited';
+  var card = document.getElementById('ci-'+projKey+'-'+idx);
+  if(card){
+    var displayText = item.editedText;
+    var filesBadge = item.files&&item.files.length?'<span style="margin-left:6px;padding:1px 7px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:10.5px;border:1px solid #86efac">'+item.files.length+' 个附件</span>':'';
+    card.style.cssText='display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px';
+    card.innerHTML=
+      '<span style="color:#22c55e;font-size:16px;flex-shrink:0;margin-top:1px">✓</span>'+
+      '<div style="flex:1;min-width:0"><div style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
+      '<div style="font-size:11px;color:#22c55e;margin-top:3px">已修改并确认</div></div>'+
+      '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#22c55e;cursor:pointer;flex-shrink:0">撤回</button>';
+  }
+  updateConfirmProgress(projKey);
+  toast('✓ 修改已保存');
+}
+
+/* 附件相关 */
+function ciPickFile(projKey, idx){
+  var inp = document.getElementById('ci-finp-'+projKey+'-'+idx);
+  if(inp) inp.click();
+}
+function ciDropFile(e, projKey, idx){
+  e.preventDefault();
+  var files = Array.from(e.dataTransfer&&e.dataTransfer.files||[]);
+  if(files.length) ciAttachFiles(files, projKey, idx);
+}
+function ciFileSelected(inp, projKey, idx){
+  var files = Array.from(inp&&inp.files||[]);
+  if(files.length) ciAttachFiles(files, projKey, idx);
+}
+function ciAttachFiles(files, projKey, idx){
+  var item = PENDING_CONFIRMS[projKey] && PENDING_CONFIRMS[projKey][idx];
+  if(!item) return;
+  if(!item.files) item.files = [];
+  files.forEach(function(f){ item.files.push({name:f.name, size:f.size, ts:Date.now()}); });
+  ingestFiles(files, null);  // 加入城市智库 corpus
+  var hint = document.getElementById('ci-file-hint-'+projKey+'-'+idx);
+  if(hint) hint.innerHTML = '✅ 已上传 '+item.files.length+' 个附件：'+item.files.map(function(f){return f.name;}).join('、');
+  persist();
+  toast('📎 已上传 '+files.length+' 个附件并加入知识库');
+}
+
+
+/* 立项卡片 */
+function renderActionItems(text, p, r){
+  if(!text||!p) return;
+  var area=document.getElementById('reportArea');
+  if(!area) return;
+
+  var items=[];
+  var tlines=text.split('\n');
+  var inTop5=false;
+  for(var i=0;i<tlines.length;i++){
+    var l=tlines[i];
+    if(l.indexOf('补链优先级')>=0||l.indexOf('TOP5')>=0||l.indexOf('优先级清单')>=0) inTop5=true;
+    if(inTop5&&l.trim().charAt(0)==='|'){
+      var cells=l.trim().slice(1,-1).split('|').map(function(c){return c.replace(/[*★<>]/g,'').trim();});
+      if(cells.length>=2){
+        var isSep=cells.every(function(c){return /^[\s\-:]+$/.test(c);});
+        if(isSep||cells[0]==='排名'||cells[0]==='缺口节点'||cells[0]==='缺口') continue;
+        var rank=parseInt(cells[0]);
+        if(!isNaN(rank)&&rank>=1&&rank<=3&&cells[1]){
+          items.push({rank:rank,gap:cells[1],attr:cells[2]||'',score:cells[cells.length-1]||''});
+        }
+      }
+    }
+    if(inTop5&&items.length>=3) break;
+  }
+
+  if(!items.length){
+    tlines.forEach(function(l){
+      if((l.indexOf('❌')>=0||l.indexOf('缺失')>=0||l.indexOf('全部外购')>=0)&&items.length<3){
+        var clean=l.replace(/^[*\-•|#\s]+/,'').replace(/❌|\*\*/g,'').trim();
+        if(clean.length>4&&clean.length<60) items.push({rank:items.length+1,gap:clean,attr:'',score:''});
+      }
+    });
+  }
+  if(!items.length) return;
+
+  var colors=['#1a56db','#6366f1','#0891b2'];
+  var icons=['🥇','🥈','🥉'];
+
+  var cards=items.map(function(it,idx){
+    var color=colors[idx%3];
+    var safeGap=it.gap.replace(/"/g,'&quot;');
+    var safeCity=p.city.replace(/"/g,'&quot;');
+    var safeTopic=p.topic.replace(/"/g,'&quot;');
+    return '<div style="border-radius:14px;border:2px solid '+color+';overflow:hidden;background:#fff;margin-bottom:2px">'+
+      '<div style="padding:12px 16px;background:'+color+';display:flex;align-items:center;gap:8px">'+
+        '<span style="font-size:18px">'+icons[idx]+'</span>'+
+        '<span style="font-size:13px;font-weight:700;color:#fff;flex:1">'+it.gap+'</span>'+
+        (it.attr?'<span style="padding:2px 8px;background:rgba(255,255,255,.2);color:#fff;border-radius:20px;font-size:11px">'+it.attr+'</span>':'')+
+      '</div>'+
+      '<div style="padding:12px 16px;display:flex;align-items:center;gap:10px">'+
+        '<div style="flex:1;font-size:12px;color:#4a5568;line-height:1.6">'+
+          '<strong>'+p.city+'</strong> · '+p.topic+'<br>'+
+          '置信度 '+r.score+'% · 来源：慧小招实测报告'+
+        '</div>'+
+        '<button data-gap="'+safeGap+'" data-city="'+safeCity+'" data-topic="'+safeTopic+'"'+
+          ' onclick="importToProject(this.getAttribute(\'data-gap\'),this.getAttribute(\'data-city\'),this.getAttribute(\'data-topic\'))"'+
+          ' style="padding:8px 16px;background:'+color+';color:#fff;border:none;border-radius:10px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap;flex-shrink:0">'+
+          '立项导入 →'+
+        '</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+
+  var wrapper=document.createElement('div');
+  wrapper.innerHTML=
+    '<div style="margin-top:20px;padding:16px;background:#f8faff;border-radius:14px;border:1.5px solid #e8edf5">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'+
+        '<span style="font-size:13px;font-weight:750;color:#0b183b;letter-spacing:.2px">🏁 可立项招引方向</span>'+
+        '<span style="font-size:11px;color:#9aa5b5">· 点击「立项导入」自动生成招商项目，进入项目管理</span>'+
+      '</div>'+
+      '<div>'+cards+'</div>'+
+    '</div>';
+  area.appendChild(wrapper);
+}
+
+/* 立项导入 */
+function importToProject(gap, city, topic){
+  var key='proj_'+Date.now().toString(36);
+  var p=P();
+  PROJECTS[key]={
+    id:key, city:city||p.city, org:(city||p.city)+'市招商局', who:p?p.who:'负责人',
+    topic:gap, stage:3,  // 立项即跳过研判，直接到「确认需求」
+    kb: p ? JSON.parse(JSON.stringify(p.kb)) : [],
+    report: REPORTSTATE[cur] ? {
+      title:(city||p.city)+'·'+gap+'招商研判报告',
+      lead:gap+'方向招引，基于慧小招实测报告',
+      sections:[{h:'研判依据',p:(REPORTSTATE[cur].text||'').substring(0,300)+'…',type:'real',ev:'慧小招研判报告',chk:''}],
+      summary:[['数据来源','慧小招实测'],['置信度',(REPORTSTATE[cur].score||0)+'%'],['生成时间',new Date().toLocaleDateString('zh-CN')]]
+    } : null,
+    clues:[]
+  };
+  // 把父项目的报告复制给新项目（让研判需求页可以直接使用）
+  if(cur && REPORTSTATE[cur] && !REPORTSTATE[key]){
+    REPORTSTATE[key]=JSON.parse(JSON.stringify(REPORTSTATE[cur]));
+    REPORTSTATE[key].topic=gap;   // 更新 topic 为新方向
+    REPORTSTATE[key].phase=2;     // 保留完整报告（研判已完成）
+  }
+  // 不切换 cur — 保留当前研判页所有状态
+  persist();
+  // 弹出确认浮层，让用户主动跳转
+  showImportConfirm(key, gap);
+}
+
+function showImportConfirm(projKey, gap){
+  var old=document.getElementById('importConfirmLayer');
+  if(old) old.remove();
+
+  // 注入 fadeUp keyframe（只注一次）
+  if(!document.getElementById('fadeUpStyle')){
+    var st=document.createElement('style');st.id='fadeUpStyle';
+    st.textContent='@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}';
+    document.head.appendChild(st);
+  }
+
+  var layer=document.createElement('div');
+  layer.id='importConfirmLayer';
+  // 点遮罩关闭
+  layer.onclick=function(e){ if(e.target===layer) layer.remove(); };
+  layer.style.cssText='position:fixed;inset:0;background:rgba(11,24,59,.4);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);padding:20px;box-sizing:border-box';
+
+  var safeGap=gap.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  layer.innerHTML=
+    '<div style="background:#fff;border-radius:24px;width:100%;max-width:440px;overflow:hidden;box-shadow:0 24px 80px rgba(11,24,59,.18);animation:fadeUp .3s ease">'+
+
+      // ── 顶部彩条 ──
+      '<div style="background:linear-gradient(135deg,#1a56db,#6366f1);padding:28px 28px 24px;position:relative">'+
+        '<button onclick="document.getElementById(\'importConfirmLayer\').remove()" '+
+          'style="position:absolute;top:14px;right:14px;width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.2);border:none;color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1" '+
+          'onmouseover="this.style.background=\'rgba(255,255,255,.35)\'" onmouseout="this.style.background=\'rgba(255,255,255,.2)\'">✕</button>'+
+        '<div style="font-size:32px;margin-bottom:10px">🏁</div>'+
+        '<div style="font-size:18px;font-weight:750;color:#fff;margin-bottom:4px">立项成功</div>'+
+        '<div style="font-size:13px;color:rgba(255,255,255,.75)">已自动生成招商项目</div>'+
+      '</div>'+
+
+      // ── 内容区 ──
+      '<div style="padding:24px 28px">'+
+        '<div style="display:flex;align-items:flex-start;gap:12px;padding:14px 16px;background:#f8faff;border-radius:12px;border:1.5px solid #dbeafe;margin-bottom:18px">'+
+          '<span style="font-size:20px;flex-shrink:0;margin-top:2px">📋</span>'+
+          '<div>'+
+            '<div style="font-size:13.5px;font-weight:700;color:#0b183b;margin-bottom:3px">'+safeGap+'</div>'+
+            '<div style="font-size:12px;color:#8492a6;line-height:1.6">城市智库数据已同步 · 处于「确认需求」阶段</div>'+
+          '</div>'+
+        '</div>'+
+        '<p style="font-size:13px;color:#4a5568;margin:0 0 20px;line-height:1.7">'+
+          '你可以继续完善当前研判报告，或前往项目管理查看新项目。'+
+        '</p>'+
+
+        // ── 按钮 ──
+        '<div style="display:flex;flex-direction:column;gap:8px">'+
+          '<button onclick="(function(){document.getElementById(\'importConfirmLayer\').remove();cur=\''+projKey+'\';view=\'home\';render();})()" '+
+            'style="width:100%;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px" '+
+            'onmouseover="this.style.opacity=\'0.92\'" onmouseout="this.style.opacity=\'1\'">'+
+            '前往项目管理 →'+
+          '</button>'+
+          '<button onclick="document.getElementById(\'importConfirmLayer\').remove()" '+
+            'style="width:100%;padding:12px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13.5px;color:#4a5568;cursor:pointer" '+
+            'onmouseover="this.style.background=\'#eef2ff\'" onmouseout="this.style.background=\'#f5f7fb\'">'+
+            '继续当前研判'+
+          '</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+
+  document.body.appendChild(layer);
+}
+
+
+function triggerReport(phase){
+  phase=phase||1;
+  var p=P(); if(!p) return;
+  var inp=document.getElementById('topicCustomInput');
+  if(inp&&inp.value.trim()) p.topic=inp.value.trim();
+  persist();
+  var area=document.getElementById('reportArea');
+  if(!area) return;
+  var r=kbReadiness();
+  var corpus=buildKBCorpus(p.city);
+  var query=phase===1
+    ? '请基于'+p.city+'城市智库数据，针对「'+p.topic+'」方向，快速输出：①最关键的3个产业链缺口（每条附具体数据）②建议的3个招引方向（标注方向类型：补链/承接转移/精深加工/协同枢纽）③需要领导确认的待确认事项（用⚠️标注）④数据可靠性评估（哪些有数据支撑，哪些需补充）'
+    : '请基于'+p.city+'城市智库数据，针对「'+p.topic+'」方向，输出完整招商研判报告，严格按五章结构：\n一、产业基础判断（具体数字，来自知识片段）\n二、产业链缺口分析（逐环节标注✅已有/⚠️薄弱/❌缺失，标注本地化属性A必须本地化/B可跨区域/C优先本地化）\n三、补链优先级清单TOP5（表格格式：缺口节点|本地化属性|经济拉动★|招引可行性★|综合优先级）\n四、目标企业画像（每个TOP缺口：目标企业类型+规模+开口话术模板）\n五、待确认事项（⚠️标注每条需领导确认的专项资金/园区地块/政策口径）';
+  var chunks=kbSearch(query,corpus,phase===1?5:8);
+  var t0=Date.now(); var accText='';
+  if(!document.getElementById('spinStyle')){
+    var s=document.createElement('style');s.id='spinStyle';
+    s.textContent='@keyframes spin{to{transform:rotate(360deg)}}';
+    document.head.appendChild(s);
+  }
+  area.innerHTML=
+    '<div style="border-radius:14px;border:1.5px solid '+(phase===1?'#fde68a':'#bfdbfe')+';overflow:hidden;margin-bottom:8px">'+
+      '<div style="padding:12px 16px;background:'+(phase===1?'#fffbeb':'#f8faff')+';border-bottom:1px solid '+(phase===1?'#fde68a':'#e8edf5')+';display:flex;align-items:center;gap:8px">'+
+        '<span style="font-size:13px;font-weight:700;color:'+(phase===1?'#92400e':'#1d4ed8')+'">'+(phase===1?'📋 初步研判草稿':'📊 完整研判报告')+'</span>'+
+        '<span style="font-size:11.5px;color:#8492a6">'+p.topic+'</span>'+
+        '<span style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:'+(r.score>=80?'#f0fdf4':'#fffbeb')+';color:'+(r.score>=80?'#166534':'#92400e')+'">置信度 '+r.score+'%</span>'+
+        '<div id="reportSpinner" style="width:16px;height:16px;border:2px solid #e8edf5;border-top-color:#1a56db;border-radius:50%;animation:spin 1s linear infinite;flex-shrink:0;margin-left:4px"></div>'+
+      '</div>'+
+      '<div id="reportContent" style="padding:18px 20px;font-size:13px;color:#1e293b;line-height:1.85;min-height:100px">'+
+        '<span style="color:#9aa5b5">'+(phase===1?'初步研判中…（约10秒）':'完整报告生成中…（约30秒）')+'</span>'+
+      '</div>'+
+      '<div id="reportFooter" style="display:none;padding:10px 16px;background:#f9fafb;border-top:1px solid #f0f4ff;font-size:11px;color:#9aa5b5"></div>'+
+    '</div>';
+  var content=document.getElementById('reportContent');
+  function renderMd(md){
+    md=md.replace(/\n{3,}/g,'\n\n');
+    md=md.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    md=md.replace(/\*\*([^*\n]+)\*\*/g,'<strong style="color:#0b183b">$1</strong>');
+    md=md.replace(/`([^`]+)`/g,'<code style="background:#f0f4ff;color:#1a56db;padding:1px 5px;border-radius:4px;font-size:11.5px">$1</code>');
+    md=md.replace(/⚠️/g,'<span style="color:#d97706;font-weight:600">⚠️</span>');
+    md=md.replace(/✅/g,'<span style="color:#16a34a">✅</span>');
+    md=md.replace(/❌/g,'<span style="color:#dc2626">❌</span>');
+    md=md.replace(/★+/g,function(m){return '<span style="color:#f59e0b;letter-spacing:1px">'+m+'</span>';});
+    md=md.replace(/A[=]必须本地化/g,'<span style="padding:1px 6px;background:#fee2e2;color:#991b1b;border-radius:4px;font-size:11px;font-weight:600">A 必须本地化</span>');
+    md=md.replace(/B[=]可跨区域/g,'<span style="padding:1px 6px;background:#dbeafe;color:#1e3a8a;border-radius:4px;font-size:11px;font-weight:600">B 可跨区域</span>');
+    md=md.replace(/C[=]优先本地化/g,'<span style="padding:1px 6px;background:#d1fae5;color:#064e3b;border-radius:4px;font-size:11px;font-weight:600">C 优先本地化</span>');
+    // 章节标题：## 一、格式 和 纯 一、格式，统一渲染，防止双重
+    md=md.replace(/^#{0,3}\s*([一二三四五六七八九十]+)[、]\s*(.+)$/gm,function(m,num,title){
+      return '<div style="display:flex;align-items:center;gap:10px;margin:20px 0 8px;padding-bottom:7px;border-bottom:2px solid #1a56db">'+
+        '<span style="display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;background:#1a56db;color:#fff;border-radius:50%;font-size:12px;font-weight:700;flex-shrink:0">'+num+'</span>'+
+        '<span style="font-size:14px;font-weight:750;color:#0b183b">'+title+'</span>'+
+      '</div>';
+    });
+    md=md.replace(/^###\s(.+)$/gm,'<div style="font-size:13px;font-weight:700;color:#4a5568;margin:10px 0 4px;padding-left:10px;border-left:3px solid #6366f1">$1</div>');
+    md=md.replace(/^##\s(.+)$/gm,'<div style="font-size:13.5px;font-weight:750;color:#0b183b;margin:12px 0 6px;padding:5px 12px;background:#f8faff;border-radius:8px;border-left:4px solid #1a56db">$1</div>');
+    md=md.replace(/^#\s(.+)$/gm,'<div style="font-size:15px;font-weight:800;color:#0b183b;margin:14px 0 8px">$1</div>');
+    // 表格逐行解析（正确跳过分隔行）
+    var outLines=[]; var inTbl=false;
+    var mdLines=md.split('\n');
+    for(var li=0;li<mdLines.length;li++){
+      var line=mdLines[li];
+      var tr=line.trim();
+      if(tr.charAt(0)==='|'&&tr.charAt(tr.length-1)==='|'){
+        var isSep=tr.slice(1,-1).split('|').every(function(c){return /^[\s\-:]+$/.test(c);});
+        if(isSep) continue;
+        var cells=tr.slice(1,-1).split('|').map(function(c){return c.trim();});
+        if(!inTbl){
+          inTbl=true;
+          outLines.push('<div style="overflow-x:auto;margin:10px 0"><table style="width:100%;border-collapse:collapse;font-size:12.5px">');
+          outLines.push('<thead><tr>'+cells.map(function(c){
+            return '<th style="padding:8px 12px;background:#f0f4ff;border:1px solid #dbeafe;font-weight:700;color:#1e3a8a;text-align:left;white-space:nowrap">'+c+'</th>';
+          }).join('')+'</tr></thead><tbody>');
+        } else {
+          outLines.push('<tr>'+cells.map(function(c,ci){
+            return '<td style="padding:8px 12px;border:1px solid #e8edf5;color:#1e293b;vertical-align:top;background:'+(ci===0?'#fafbff':'#fff')+'">'+c+'</td>';
+          }).join('')+'</tr>');
+        }
+      } else {
+        if(inTbl){outLines.push('</tbody></table></div>');inTbl=false;}
+        outLines.push(line);
+      }
+    }
+    if(inTbl)outLines.push('</tbody></table></div>');
+    md=outLines.join('\n');
+    // 列表
+    md=md.replace(/^[-•]\s(.+)$/gm,'<li style="margin:4px 0;color:#1e293b">$1</li>');
+    md=md.replace(/^\d+\.\s(.+)$/gm,'<li style="margin:4px 0;color:#1e293b">$1</li>');
+    // 段落：空行分隔，block 元素不再包裹
+    var parts=md.split('\n\n');
+    md=parts.map(function(chunk){
+      var c=chunk.trim();
+      if(!c) return '';
+      if(/^<(div|table|ul|ol|li|thead|tbody|tr)/.test(c)) return c;
+      return '<p style="margin:5px 0;line-height:1.85;color:#1e293b">'+c.replace(/\n/g,'<br>')+'</p>';
+    }).filter(Boolean).join('\n');
+    return md;
+  }
+  fetch(((location.origin && location.origin.indexOf('http')===0) ? location.origin : 'http://localhost:5050')+'/api/kb-chat',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question:query,chunks:chunks,city:p.city,stream:true,mode:phase===1?'draft':'full'})
+  }).then(function(resp){
+    if(!resp.ok){
+      if(content) content.innerHTML='<span style="color:#ef4444">服务错误：'+resp.status+'<br><small>请确认 kb-server 已在 localhost:5050 运行</small></span>';
+      return;
+    }
+    var reader=resp.body.getReader(); var decoder=new TextDecoder(); var buf='';
+    function pump(){
+      reader.read().then(function(d){
+        if(d.done){
+          var elapsed=Date.now()-t0;
+          REPORTSTATE[cur]={text:accText,topic:p.topic,ts:Date.now(),score:r.score,phase:phase};
+          persist();
+          var sp=document.getElementById('reportSpinner');if(sp)sp.style.display='none';
+          var footer=document.getElementById('reportFooter');
+          if(footer){
+            var cites=[...new Set(chunks.map(function(c){return c.cite;}).filter(Boolean))];
+            footer.innerHTML='数据来源：'+cites.map(function(c){
+              return '<span style="padding:1px 6px;background:#f0f4ff;color:#1a56db;border-radius:4px;font-size:10.5px">'+c+'</span>';
+            }).join(' ')+' · DeepSeek · '+elapsed+'ms · 置信度 '+r.score+'%';
+            footer.style.display='block';
+          }
+          var bottomBar=document.querySelector('.report-bottom-bar');
+          if(bottomBar){
+            if(phase===1){
+              // 解析⚠️ → 渲染确认面板
+              var pendingItems=parsePendingItems(accText);
+              if(pendingItems.length>0){
+                if(!PENDING_CONFIRMS[cur]) PENDING_CONFIRMS[cur]=[];
+                // 保留已有确认状态，追加新条目
+                var existTexts=PENDING_CONFIRMS[cur].map(function(x){return x.text;});
+                pendingItems.forEach(function(it){
+                  if(existTexts.indexOf(it.text)<0) PENDING_CONFIRMS[cur].push(it);
+                });
+                persist();
+                // 把确认面板插到报告区下方
+                var reportArea=document.getElementById('reportArea');
+                var panelHtml=renderConfirmPanel(PENDING_CONFIRMS[cur],cur);
+                var panelDiv=document.createElement('div');
+                panelDiv.innerHTML=panelHtml;
+                if(reportArea) reportArea.appendChild(panelDiv.firstChild);
+              }
+              // 底部：根据是否有待确认项决定按钮状态
+              var hasPending=PENDING_CONFIRMS[cur]&&PENDING_CONFIRMS[cur].length>0;
+              var allDone=hasPending&&PENDING_CONFIRMS[cur].every(function(x){return x.status==='confirmed'||x.status==='edited';});
+              bottomBar.innerHTML=
+                '<div style="flex:1;font-size:12.5px;color:#92400e;background:#fffbeb;padding:10px 14px;border-radius:10px;border:1px solid #fde68a;line-height:1.6">'+
+                  (hasPending&&!allDone?'请确认上方待确认事项后，才可生成完整报告':'以上为初步研判草稿，确认方向后生成完整五章报告')+
+                '</div>'+
+                '<button onclick="triggerReport(2)" '+(allDone||!hasPending?'':'disabled style="opacity:.4;cursor:not-allowed;"')+' style="padding:12px 20px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:13.5px;font-weight:650;cursor:pointer;white-space:nowrap">' +(allDone||!hasPending?'生成完整报告 →':'待确认后生成 →')+'</button>'+
+                '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>';
+            } else {
+              bottomBar.innerHTML=
+                '<button onclick="triggerReport(1)" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">🔄 重新生成</button>'+
+                '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>'+
+                '<button onclick="submitDemand()" style="flex:1;padding:12px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer">✓ 确认方向，提交招引需求</button>';
+              // 产业链图谱：完整报告生成后动态追加，避免须重新进入页面才能看到
+              var _raEl=document.getElementById('reportArea');
+              if(_raEl && !document.getElementById('chainMapBlock')){
+                var _cmEl=document.createElement('div');
+                _cmEl.id='chainMapBlock';
+                _cmEl.innerHTML=chainMapHtml(p);
+                _raEl.appendChild(_cmEl);
+              }
+            setTimeout(function(){renderActionItems(accText,p,r);},300);
+            }
+          }
+          return;
+        }
+        buf+=decoder.decode(d.value,{stream:true});
+        var lines2=buf.split('\n'); buf=lines2.pop();
+        lines2.forEach(function(line){
+          if(!line.startsWith('data:')) return;
+          var d2=line.slice(5).trim(); if(d2==='[DONE]') return;
+          try{
+            var j=JSON.parse(d2);
+            var delta=j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content||'';
+            if(delta){ accText+=delta; if(content) content.innerHTML='<p style="margin:0">'+renderMd(accText)+'</p>'; }
+          }catch(e){}
+        });
+        pump();
+      });
+    }
+    pump();
+  }).catch(function(err){
+    if(content) content.innerHTML='<span style="color:#ef4444">连接失败：'+err.message+'<br><small>请确认 kb-server 已在 localhost:5050 运行</small></span>';
+  });
+}
+
+// 提交招引需求到管理端需求池
+function submitDemand(){
+  var p=P(); if(!p) return;
+  var rs=REPORTSTATE[cur];
+  if(!rs){toast('请先生成研判报告'); return;}
+  // 检查是否已提交
+  var existing=DEMANDS.find(function(d){return d.projKey===cur;});
+  if(existing){toast('该方向已提交需求池'); return;}
+  DEMANDS.push({
+    id:'d'+Date.now().toString(36),
+    projKey:cur,
+    city:p.city, gov:p.org+'·'+p.who,
+    topic:p.topic, domain:p.topic.replace('补链','').replace('升级',''),
+    need:'基于研判报告（置信度'+rs.score+'%），见报告全文',
+    submit:'刚刚', res:'none', resLabel:'待研判', clues:0,
+    note:rs.text?rs.text.slice(0,120)+'…':'', ai:''
+  });
+  p.stage=Math.max(p.stage,3);
+  // 立即派生线索（如果有报告）
+  deriveCluesFromReport(cur);
+  persist();
+  toast('✓ 招引需求已提交，候选线索已自动派生');
+}
+
+// REPORTSTATE: 存储已生成的报告
+
+// reportHtml: 如果已有报告，直接渲染
+function reportHtml(p){
+  var rs=REPORTSTATE[cur]; if(!rs) return '';
+  var r=kbReadiness();
+  function renderMd(md){
+    md=md.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    md=md.replace(/\*\*([^*\n]+)\*\*/g,'<strong style="color:#0b183b">$1</strong>');
+    md=md.replace(/⚠️/g,'<span style="color:#d97706;font-weight:600">⚠️</span>');
+    md=md.replace(/✅/g,'<span style="color:#16a34a">✅</span>');
+    md=md.replace(/❌/g,'<span style="color:#dc2626">❌</span>');
+    md=md.replace(/★+/g,function(m){return '<span style="color:#f59e0b">'+m+'</span>';});
+    md=md.replace(/^#{0,3}\s*([一二三四五六七八九十]+)[、]\s*(.+)$/gm,
+      '<div style="display:flex;align-items:center;gap:10px;margin:18px 0 8px;padding-bottom:6px;border-bottom:2px solid #1a56db">'+
+        '<span style="display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;background:#1a56db;color:#fff;border-radius:50%;font-size:12px;font-weight:700">$1</span>'+
+        '<span style="font-size:14px;font-weight:750;color:#0b183b">$2</span></div>');
+    md=md.replace(/^###\s(.+)$/gm,'<div style="font-size:13px;font-weight:700;color:#4a5568;margin:10px 0 4px;padding-left:10px;border-left:3px solid #6366f1">$1</div>');
+    md=md.replace(/^##\s(.+)$/gm,'<div style="font-size:13.5px;font-weight:750;color:#0b183b;margin:12px 0 6px;padding:5px 12px;background:#f8faff;border-radius:8px;border-left:4px solid #1a56db">$1</div>');
+    // 表格
+    var outLines=[]; var inTbl=false;
+    md.split('\n').forEach(function(line){
+      var tr=line.trim();
+      if(tr.charAt(0)==='|'&&tr.charAt(tr.length-1)==='|'){
+        if(tr.slice(1,-1).split('|').every(function(c){return /^[\s\-:]+$/.test(c);})) return;
+        var cells=tr.slice(1,-1).split('|').map(function(c){return c.trim();});
+        if(!inTbl){inTbl=true;outLines.push('<div style="overflow-x:auto;margin:10px 0"><table style="width:100%;border-collapse:collapse;font-size:12.5px">');
+          outLines.push('<thead><tr>'+cells.map(function(c){return '<th style="padding:7px 10px;background:#f0f4ff;border:1px solid #dbeafe;font-weight:700;color:#1e3a8a;text-align:left">'+c+'</th>';}).join('')+'</tr></thead><tbody>');}
+        else outLines.push('<tr>'+cells.map(function(c,ci){return '<td style="padding:7px 10px;border:1px solid #e8edf5;color:#1e293b;background:'+(ci===0?'#fafbff':'#fff')+'">'+c+'</td>';}).join('')+'</tr>');
+      } else {if(inTbl){outLines.push('</tbody></table></div>');inTbl=false;} outLines.push(line);}
+    });
+    if(inTbl)outLines.push('</tbody></table></div>');
+    md=outLines.join('\n');
+    md=md.replace(/^[-•]\s(.+)$/gm,'<li style="margin:4px 0;color:#1e293b">$1</li>');
+    var parts=md.split('\n\n');
+    md=parts.map(function(chunk){var c=chunk.trim();if(!c)return '';if(/^<(div|table|ul)/.test(c))return c;return '<p style="margin:5px 0;line-height:1.85;color:#1e293b">'+c.replace(/\n/g,'<br>')+'</p>';}).filter(Boolean).join('\n');
+    return md;
+  }
+  return '<div style="border-radius:14px;border:1.5px solid #e8edf5;overflow:hidden;margin-bottom:8px">'+
+    '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
+      '<span style="font-size:12px;font-weight:650;color:#1a56db">📋 研判报告</span>'+
+      '<span style="font-size:11.5px;color:#4a5568">'+p.topic+'</span>'+
+      '<span style="margin-left:auto;font-size:11px;color:'+(rs.score>=80?'#22c55e':'#f59e0b')+'">置信度 '+rs.score+'%</span>'+
+      '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
+    '</div>'+
+    '<div style="padding:16px 18px;font-size:13px;color:#1e293b;line-height:1.8">'+
+      '<p style="margin:0">'+renderMd(rs.text||'')+'</p>'+
+    '</div>'+
+  '</div>';
+}
+
+function generateTopicsFromKb(p){
+  if(!p||!p.kb) return [];
+  var allKnown=[];
+  p.kb.forEach(function(k){ (k.known||[]).forEach(function(x){ allKnown.push(x); }); });
+  var patterns=[
+    {re:/氢能|电堆|储氢|燃料电池/, type:'补链', icon:'⚡', label:'氢能专用车补链',
+     descFn:function(t){var m=t.match(/(\d+%)/);return m?'电堆'+m[0]+'外购，新楚风已量产':'氢能核心零部件本地空白';}},
+    {re:/应急机器人|无人机|5G通信|智慧应急/, type:'补链', icon:'🚨', label:'智慧应急装备补链',
+     descFn:function(t){return t.indexOf('启灵')>=0?'机器人靠启灵外采，无人机靠迅北斗':'感知层核心系统依赖外采';}},
+    {re:/香菇|菌种|多糖|精深加工/, type:'精深加工', icon:'🍄', label:'香菇精深加工升级',
+     descFn:function(t){return (t.indexOf('2家')>=0||t.indexOf('仅')>=0)?'功能成分提取仅2家布局':'香菇向高附加值延伸';}},
+    {re:/底盘|动力总成|新能源配套/, type:'补链', icon:'🔧', label:'新能源专用车零部件配套',
+     descFn:function(t){var m=t.match(/(\d+%)/);return m?'底盘动力总成占成本'+m[0]+'外购':'核心零部件本地空白';}},
+    {re:/产业转移|承接|沿海/, type:'承接转移', icon:'🏭', label:'产业转移承接',
+     descFn:function(){return '承接沿海制造业转移，利用区位成本优势';}},
+  ];
+  var topics=[]; var matched={};
+  allKnown.forEach(function(text){
+    patterns.forEach(function(pat){
+      if(!matched[pat.label]&&pat.re.test(text)){
+        matched[pat.label]=true;
+        topics.push({label:pat.label,icon:pat.icon,type:pat.type,desc:pat.descFn(text)});
+      }
+    });
+  });
+  if(!topics.length) topics=[
+    {label:p.city+'主导产业补链',icon:'🏭',type:'补链',desc:'基于城市智库产业链缺口分析'},
+    {label:p.city+'产业转移承接',icon:'🔄',type:'承接转移',desc:'承接沿海转移，利用区位成本优势'},
+    {label:p.city+'特色产业升级',icon:'⬆️',type:'精深加工',desc:'现有产业向高附加值延伸'},
+  ];
+  return topics.slice(0,4);
+}
+
+
+function homePage(p){
+  var r=kbReadiness();
+
+  // ── 可靠性横幅 ──
+  var reliabilityBanner=
+    '<div style="display:flex;align-items:center;gap:12px;padding:12px 18px;background:'+(r.score>=80?'#f0fdf4':'#fffbeb')+';border-bottom:1px solid '+(r.score>=80?'#86efac':'#fde68a')+'">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'+
+          '<span style="font-size:12px;font-weight:650;color:'+(r.score>=80?'#166534':'#92400e')+'">从城市智库继承数据</span>'+
+          '<span style="font-size:11px;color:'+(r.score>=80?'#22c55e':'#f59e0b')+';font-weight:700">'+r.score+'%</span>'+
+          '<span style="font-size:11px;color:'+(r.score>=80?'#22c55e':'#f59e0b')+'">'+r.label+'</span>'+
+          '<span title="置信度计算：确认⚠️事项×60% + 上传材料×10%（上限40%）。确认全部4条→+60，上传2份材料→+20，合计80%自动解锁" style="font-size:11px;color:#9aa5b5;cursor:help;text-decoration:underline dotted;margin-left:4px">ⓘ 如何提升</span>'+
+        '</div>'+
+        '<div style="height:4px;background:'+(r.score>=80?'#dcfce7':'#fef3c7')+';border-radius:2px;overflow:hidden">'+
+          '<div style="height:100%;width:'+r.score+'%;background:'+(r.score>=80?'#22c55e':'#f59e0b')+';border-radius:2px;transition:width .4s"></div>'+
+        '</div>'+
+      '</div>'+
+      (r.score<80
+        ? '<button onclick="go(\'knowledge\')" style="flex-shrink:0;padding:6px 12px;background:#fff;border:1.5px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e;cursor:pointer;font-weight:600">补充城市智库 →</button>'
+        : '<span style="flex-shrink:0;font-size:12px;color:#22c55e">✓ 可直接生成研判</span>'
+      )+
+    '</div>';
+
+  // ── 推荐方向卡片 ──
+  var recommendedTopics=generateTopicsFromKb(p);
+
+  var topicCards=recommendedTopics.map(function(t){
+    var isActive=p.topic===t.label;
+    return '<button onclick="selectTopic(\''+t.label+'\')" style="'+
+      'display:flex;flex-direction:column;align-items:flex-start;padding:14px 16px;'+
+      'background:'+(isActive?'linear-gradient(135deg,#eff6ff,#f0f9ff)':'#fff')+';'+
+      'border:2px solid '+(isActive?'#1a56db':'#e8edf5')+';'+
+      'border-radius:14px;cursor:pointer;text-align:left;transition:all .15s;flex:1;min-width:0">'+
+      '<div style="font-size:20px;margin-bottom:6px">'+t.icon+'</div>'+
+      '<div style="font-size:13px;font-weight:700;color:#0b183b;margin-bottom:4px">'+t.label+'</div>'+
+      '<div style="font-size:11.5px;color:#8492a6;line-height:1.4">'+t.desc+'</div>'+
+      (isActive?'<div style="margin-top:8px;width:8px;height:8px;border-radius:50%;background:#1a56db"></div>':'')+
+    '</button>';
+  }).join('');
+
+  var topicSelector=
+    '<div style="padding:0 0 20px">'+
+      '<div style="font-size:12px;font-weight:650;color:#4a5568;margin-bottom:10px;letter-spacing:.3px">选择研判方向</div>'+
+      '<div id="topicCardGrid" style="display:flex;gap:10px;margin-bottom:12px">'+topicCards+'</div>'+
+      '<div style="display:flex;align-items:center;gap:8px">'+
+        '<div style="flex:1;position:relative">'+
+          '<input id="topicCustomInput" placeholder="或输入自定义方向…" value="'+(recommendedTopics.some(function(t){return t.label===p.topic;})?'':p.topic)+'" '+
+            'style="width:100%;box-sizing:border-box;padding:10px 14px;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#0b183b;outline:none;transition:border .15s" '+
+            'onfocus="this.style.border=\'1.5px solid #6366f1\'" '+
+            'onblur="this.style.border=\'1.5px solid #e8edf5\'" '+
+            'oninput="selectTopic(this.value,true)" '+
+            'onkeydown="if(event.key===\'Enter\')triggerReport()" />'+
+        '</div>'+
+        '<div id="currentTopicBadge" style="flex-shrink:0;padding:6px 12px;background:#f0f4ff;border-radius:8px;font-size:12px;color:#1a56db;font-weight:600;white-space:nowrap">'+
+          p.topic+
+        '</div>'+
+      '</div>'+
+    '</div>';
+
+  // ── 报告区 ──
+  // 进入研判需求页时清除旧报告状态，强制重新分析
+  if(REPORTSTATE[cur]&&REPORTSTATE[cur].phase===1){
+    // 保留 Phase 2 完整报告，但草稿不缓存展示
+  }
+  var reportArea=
+    '<div id="reportArea">'+
+      (REPORTSTATE[cur]&&REPORTSTATE[cur].phase===2
+        ? reportHtml(p)
+        : '<div style="text-align:center;padding:48px 20px">'+
+            '<div style="font-size:40px;margin-bottom:12px">📋</div>'+
+            '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">'+
+              '选择上方研判方向，点击「🔍 开始初步研判」'+
+            '</div>'+
+            '<div style="font-size:12.5px;color:#8492a6;line-height:1.8">'+
+              '① AI 先出初步草稿（约10秒）② 逐条确认待确认事项 ③ 生成完整五章报告'+
+            '</div>'+
+          '</div>'
+      )+
+    '</div>';
+  // 自动触发 Phase 1（若非完整报告）
+
+
+
+
+  return '<div class="page">'+
+    reliabilityBanner+
+    '<div class="conversation-scroll" style="padding:16px 22px 0">'+
+      topicSelector+
+      reportArea+
+    '</div>'+
+    // 底部行动栏（替代 composer）
+    '<div class="report-bottom-bar" style="border-top:1px solid #f0f4ff;background:#fff;padding:12px 22px;display:flex;gap:10px;align-items:center">'+
+      (REPORTSTATE[cur]&&REPORTSTATE[cur].phase===2
+        ? ('<button onclick="viewCurrentReport()" '+
+            'style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">📊 查看完整报告</button>'+
+           '<button onclick="downloadReport(\'full\')" style="padding:13px 16px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;font-size:13px;color:#1a56db;cursor:pointer;font-weight:600">⬇ 下载</button>'+
+           '<button onclick="triggerReport(1)" style="padding:13px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:12.5px;color:#4a5568;cursor:pointer">🔄 重新研判</button>')
+        : ('<button id="generateBtn" onclick="triggerReport(1)" '+
+            'style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">'+
+            '🔍 开始初步研判'+
+      '</button>'))+
+      '<button onclick="doUpload()" style="padding:13px 16px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>'+
+      (REPORTSTATE[cur]
+        ? '<button onclick="submitDemand()" style="padding:13px 16px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;font-size:13px;color:#166534;cursor:pointer;font-weight:600">提交招引需求 →</button>'
+        : ''
+      )+
+    '</div>'+
+  '</div>';
+}
+
+
+function promptRow(icon,strong,small,fn){
+  return '<button class="prompt-row" onclick="'+fn+'"><i class="i">'+icon+'</i><span><strong>'+strong+'</strong><small>'+small+'</small></span><i class="i">➜</i></button>';
+}
+function aiAvatar(){return 'data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="46" height="46"><rect width="46" height="46" rx="23" fill="#ebf3fd"/><text x="23" y="30" font-size="18" fill="#0757ad" text-anchor="middle" font-family="sans-serif">慧</text></svg>')}
+function kbPage(p){
+  return '<div class="page">'+
+    (function(){
+      var r=kbReadiness();
+      return '<div class="page-header"><div>'+
+        '<span class="eyebrow">CITY INTELLIGENCE</span><h1>城市智库 · 招商问答</h1>'+
+        '<p>点击主题卡展开详细结论，或直接在下方对话框提问。</p>'+
+        '<div style="display:flex;align-items:center;gap:10px;margin-top:8px">'+
+          '<div style="flex:1;background:#f0f4ff;border-radius:4px;height:6px;overflow:hidden">'+
+            '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:4px;transition:width .4s"></div>'+
+          '</div>'+
+          '<span style="font-size:12px;font-weight:700;color:'+r.color+'">'+r.score+'%</span>'+
+          '<span style="font-size:11px;color:'+r.color+'">'+r.label+'</span>'+
+          '<span title="计算方式：确认⚠️事项×60% + 上传材料×10%（上限40%）" '+
+            'style="font-size:11px;color:#9aa5b5;cursor:help;margin-left:2px">ⓘ</span>'+
+        '</div>'+
+        (r.score<80?'<p style="font-size:11.5px;color:#f59e0b;margin:5px 0 0">'+          '⚡ 上传越多材料、领导确认越多结论，研判数据可靠性越高（差 '+(80-r.score)+'% 自动解锁后续步骤）</p>':'')+
+        '</div>'+
+        '<div style="display:flex;gap:8px">'+
+        '<button class="ghost-button" onclick="showDownloadReport()"><i class="i"></i>下载分析报告</button>'+
+        '</div></div>';
+    })()+
+
+    '<div class="knowledge-scroll"><div class="topic-grid">'+
+      p.kb.map(function(k,i){
+        var tagColor=k.known&&k.known.length?
+          (k.tag.indexOf('待')>=0?'color:#c08a2a;background:#fff8e6':'color:#006d70;background:#e4f5f3'):
+          'color:#9aa5b5;background:#f5f7fb';
+        var dot=k.known&&k.known.length?'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:5px;vertical-align:middle"></span>':'';
+        var firstKnown=k.known&&k.known.length?k.known.filter(function(x){return x.indexOf('⚠️')<0;})[0]:'';
+        return '<button class="topic-row" onclick="kbDetail('+i+')">'+
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
+            '<span style="font-size:20px">'+k.icon+'</span>'+
+            '<strong style="font-size:13px;color:#0b183b">'+k.t+'</strong>'+
+            '<em style="'+tagColor+';margin-left:auto;flex-shrink:0">'+dot+k.tag+'</em>'+
+          '</div>'+
+          '<small style="display:block;font-size:11.5px;color:#8492a6;margin-bottom:6px;line-height:1.4">'+k.sub+'</small>'+
+          (firstKnown?'<div style="font-size:12px;color:#33415a;line-height:1.65;border-top:1px solid #f0f4ff;padding-top:8px;margin-top:auto">'+highlightKeyData(firstKnown)+'</div>':'')+
+        '</button>';
+      }).join('')+
+    '</div>'+
+    '<div class="suggestion-strip">可以这样问：'+
+    '<button onclick="askKB(\''+P().city+'最值得补链的核心环节是哪些？\')">最值得补链的核心环节</button>'+
+    '<button onclick="askKB(\''+P().city+'各园区如何分工承接不同细分产业？\')">园区分工承接方案</button>'+
+    '<button onclick="askKB(\'本地链主企业还缺哪些关键上游配套？\')">链主缺口分析</button>'+
+    '</div>'+
+    '<div id="kbConv" style="padding:0 0 8px">'+
+      '<div class="message" style="margin-top:0"><img src="'+aiAvatar()+'">'+
+      '<div class="message-bubble"><p>'+p.city+'城市智库已就位，你可以直接提问——例如：</p>'+
+      '<ul style="margin:6px 0 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px">'+
+      '<li style="font-size:12.5px;color:#4a5568">• '+p.city+'最值得补链的核心缺口是哪些？</li>'+
+      '<li style="font-size:12.5px;color:#4a5568">• 本地链主企业还缺哪些关键上游配套？</li>'+
+      '<li style="font-size:12.5px;color:#4a5568">• 各园区如何分工承接不同细分产业？</li>'+
+      '<li style="font-size:12.5px;color:#4a5568">• 随州与十堰/荆门的竞争差异化空间在哪里？</li>'+
+      '</ul></div></div>'+
+    '</div></div>'+composer()+'</div>';
+}
+function settingsPage(p){
+  return '<div class="page">'+
+    '<div class="page-header"><div><span class="eyebrow">PERSONALIZATION</span><h1>个人与提醒设置</h1>'+
+    '<p>调整个性化范围，但不改变确认关口与资源核验责任。</p></div></div>'+
+    '<div class="settings-scroll">'+
+    '<div class="settings-section"><h2>账号身份（由系统开通，不可修改）</h2>'+
+      '<div class="form-grid">'+
+      '<label>所属单位<input value="'+p.org+'" disabled></label>'+
+      '<label>姓名 / 角色<input value="'+p.who+' / 招商干部" disabled></label>'+
+      '<label>所属地区<input value="'+p.city+'" disabled></label>'+
+      '<label>数据权限<input value="仅限 '+p.city+' 城市智库" disabled></label></div>'+
+      '<div class="boundary-note" style="margin-top:14px"><i class="i">🔒</i>账号的地区与身份在开通时绑定，用户不可自行更改；如需变更请联系系统管理员。</div></div>'+
+    '<div class="settings-section"><h2>提醒偏好（可自行调整）</h2>'+
+      '<div class="toggle-row"><span><strong>状态变化通知</strong><small>需求进度更新时提醒我</small></span><input type="checkbox" checked></div>'+
+      '<div class="toggle-row"><span><strong>超时提醒</strong><small>3 个工作日无更新时提醒</small></span><input type="checkbox" checked></div>'+
+      '<div class="toggle-row"><span><strong>每日摘要</strong><small>每天 09:00 汇总进行中事项</small></span><input type="checkbox" checked></div>'+
+      '<button class="primary-button settings-save" onclick="toast(\'提醒偏好已保存\')">保存偏好</button></div>'+
+    '<div class="settings-section"><h2>系统会据此调整</h2><ul class="plain-list">'+
+      ['首页任务提示','报告中的产业关注顺序','进度提醒频率'].map(function(x){return '<li>'+x+'</li>'}).join('')+'</ul>'+
+      '<div class="boundary-note"><i class="i">🔒</i>干部与领导确认关口、资源核验责任和企业触达边界，不会因个人设置而跳过。</div></div>'+
+    '</div></div>';
+}
+/* ===== 右侧详情栏（复刻雷总"本次分析" + 证据联动）===== */
+function detailPane(p){
+  var body;
+  if(detailData&&detailData.kind==='fold'){body=detailFold(detailData.d);}
+  else if(detailData&&detailData.kind==='clue'){body=detailClue(detailData.d);}
+  else if(detailData&&detailData.kind==='sub'){body=detailSub(detailData.d);}
+  else if(view==='home'){body=detailNeeds(p);}       // 项目管理→需求概览
+  else if(view==='docking'){body=detailDocking(p);}   // 招商对接→对接概览
+  else if(view==='settings'){body=detailSettings(p);}
+  else if(view==='knowledge'){body=detailKbIntro(p);}
+  else{body=detailReport(p);}                          // report研判需求→本次研判
+  return '<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button>'+
+    '<div class="detail-page">'+body+'</div>';
+}
+// 我的需求页 → 右侧：需求汇总统计
+function detailNeeds(p){
+  var ks=Object.keys(PROJECTS);var byStage={};ks.forEach(function(k){var s=PROJECTS[k].stage;byStage[s]=(byStage[s]||0)+1});
+  return '<div class="detail-header"><div><span class="eyebrow">OVERVIEW</span><h2>需求概览</h2><p>'+p.who+' 名下研判汇总</p></div></div>'+
+    '<div class="detail-scroll">'+
+      '<div class="detail-block"><h3>研判总数</h3><p class="detail-copy" style="font-size:22px;font-weight:700;color:#013582">'+ks.length+' 个产业方向</p></div>'+
+      '<div class="detail-block"><h3>阶段分布</h3><ul class="check-list">'+
+        STAGES.map(function(s,i){var n=byStage[i+1]||0;return n?'<li><i class="i">•</i>'+s[0]+'：'+n+' 个</li>':''}).join('')+'</ul></div>'+
+      '<div class="detail-block"><h3>提示</h3><div class="info-callout" style="margin-top:0">点击左侧任意研判方向可切换进入；每条为独立研判线，进度互不干扰。</div></div>'+
+    '</div>';
+}
+// 设置页 → 右侧：账号与权限概览
+function detailSettings(p){
+  return '<div class="detail-header"><div><span class="eyebrow">ACCOUNT</span><h2>账号概览</h2><p>由系统开通 · 不可自行修改</p></div></div>'+
+    '<div class="detail-scroll">'+
+      '<div class="detail-block"><h3>身份</h3><ul class="check-list"><li><i class="i">✔</i>'+p.org+'</li><li><i class="i">✔</i>'+p.who+' · 招商干部</li></ul></div>'+
+      '<div class="detail-block"><h3>数据权限</h3><div class="info-callout" style="margin-top:0">仅可访问 <b>'+p.city+'</b> 城市智库；跨城市数据由运营端管理。</div></div>'+
+      '<div class="detail-block"><h3>安全边界</h3><div class="boundary-note" style="margin-top:0"><i class="i">🔒</i>确认关口、资源核验责任与企业触达边界，不因个人设置而跳过。</div></div>'+
+    '</div>';
+}
+// 城市智库页（未点类目时）→ 右侧：智库范围说明
+function detailKbIntro(p){
+  return '<div class="detail-header"><div><span class="eyebrow">KNOWLEDGE SCOPE</span><h2>智库范围</h2><p>'+p.city+'城市智库已连接</p></div></div>'+
+    '<div class="detail-scroll">'+
+      '<div class="detail-block"><h3>可查询范围</h3><ul class="check-list">'+p.kb.map(function(k){return '<li><i class="i">✔</i>'+k.t+'</li>'}).join('')+'</ul></div>'+
+      '<div class="detail-block"><h3>如何使用</h3><div class="info-callout" style="margin-top:0">点击左侧任一主题查看已知信息与可调用材料，或在下方输入框直接提问。</div></div>'+
+      '<div class="detail-block"><div class="boundary-note" style="margin-top:0"><i class="i">🔒</i>公开信息仅辅助研判；园区承载、企业采购、领导任务仍需政府授权材料确认。</div></div>'+
+    '</div>';
+}
+// 招引方向项目 → 右侧：该项目对接详情
+function detailSub(s){
+  return '<div class="detail-header"><div><span class="eyebrow">PROJECT</span><h2>'+s.name.split(' · ')[0]+'</h2><p>'+(s.from||'')+' · 招引方向项目</p></div></div>'+
+    '<div class="detail-scroll">'+
+      '<div class="detail-block"><h3>项目来源</h3><div class="info-callout" style="margin-top:0">由「'+(s.from||'')+'」研判报告的招引方向派生。</div></div>'+
+      '<div class="detail-block"><h3>候选线索</h3><ul class="source-list"><li><i class="i">🏢</i>'+(s.clueName||'脱敏候选企业')+'<small>脱敏 · 由资源端核验可达性</small></li></ul></div>'+
+      '<div class="detail-block"><h3>对接进度</h3><div class="timeline"><div class="timeline-item done"><div class="timeline-dot"><i class="i">✓</i></div><div><div class="timeline-title"><strong>需求已递交</strong></div></div></div>'+
+        '<div class="timeline-item current"><div class="timeline-dot"><i class="i">◔</i></div><div><div class="timeline-title"><strong>资源匹配中</strong></div><p>资源端核验候选企业真实意向。</p></div></div>'+
+        '<div class="timeline-item"><div class="timeline-dot"><i class="i">•</i></div><div><div class="timeline-title"><strong>安排招商对接</strong></div></div></div></div></div>'+
+      '<div class="detail-block"><div class="boundary-note" style="margin-top:0"><i class="i">🔒</i>脱敏展示，不显示内部人脉路径；系统不自动联系企业。</div></div>'+
+    '</div>';
+}
+// 研判需求页 → 右侧：本次研判（版本/进度/待核实/已传材料）
+function detailReport(p){
+  var st=REPORTSTATE[cur]; var ups=(UPLOADS[cur]||[]);
+  return '<div class="detail-header"><div><span class="eyebrow">CURRENT STUDY</span><h2>本次研判</h2><p>'+p.topic+'</p></div></div>'+
+    '<div class="detail-scroll">'+
+      '<div class="detail-block"><h3>报告状态</h3>'+(st
+        ? '<ul class="check-list">'+
+            '<li><i class="i">'+(st.phase===2?'✅':'✎')+'</i>'+(st.phase===2?'完整报告已生成':'初步草稿')+' · 置信度 '+st.score+'%</li>'+
+            '<li><i class="i"></i>研判方向：'+p.topic+'</li>'+
+            '<li><i class="i"></i>生成时间：'+(st.ts?new Date(st.ts).toLocaleDateString('zh-CN'):'未知')+'</li>'+
+          '</ul>'
+        : '<div class="info-callout" style="margin-top:0">尚未生成报告。请先在「研判需求」选择方向并点击生成。</div>'      )+'</div>'+
+      '<div class="detail-block"><h3>当前阶段</h3>'+
+        '<div class="info-callout" style="margin-top:0">'+(STAGES[p.stage-1]?STAGES[p.stage-1][0]:'未知')+' · '+(STAGES[p.stage-1]?STAGES[p.stage-1][1]:'')+'</div>'+
+      '</div>'+
+      '<div class="detail-block"><h3>已上传材料</h3>'+(ups.length
+        ? '<ul class="source-list">'+ups.map(function(u){return '<li><i class="i"></i>'+u.name+'<small style="color:#9aa5b5;margin-left:6px">'+Math.round(u.size/1024)+'KB</small></li>';}).join('')+'</ul>'
+        : '<div style="font-size:12.5px;color:#9aa5b5">暂无上传材料</div>'      )+'</div>'+
+      (st&&st.phase===2
+        ? '<div class="detail-block">'+
+      '<div style="display:flex;gap:8px">'+
+      '<button onclick="viewCurrentReport()" style="flex:1;padding:9px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer;font-weight:600">📋 查看完整报告</button>'+
+      '<button onclick="downloadReport(\'full\')" style="padding:9px 14px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer">⬇ 下载</button>'+
+      '</div></div>'
+        : ''
+      )+
+      '<div class="detail-block"><div class="boundary-note" style="margin-top:0"><i class="i">ℹ</i>报告为AI辅助草稿，关键判断需人工确认；定稿后正式递交。</div></div>'+
+    '</div>';
+}
+// 招商对接页 → 右侧：对接概览
+function detailDocking(p){
+  var ks=Object.keys(PROJECTS);
+  var n4=ks.filter(function(k){return PROJECTS[k].stage>=4}).length;
+  var n5=ks.filter(function(k){return PROJECTS[k].stage>=5}).length;
+  return '<div class="detail-header"><div><span class="eyebrow">DOCKING</span><h2>对接概览</h2><p>各项目对接进度</p></div></div>'+
+    '<div class="detail-scroll">'+
+      '<div class="detail-block"><h3>进行中</h3><ul class="check-list"><li><i class="i">🔄</i>资源匹配中：'+n4+' 个</li><li><i class="i">🤝</i>已进入对接：'+n5+' 个</li></ul></div>'+
+      '<div class="detail-block"><h3>说明</h3><div class="info-callout" style="margin-top:0">点左侧项目查看对接时间线。进度由资源端回传，系统只做提醒。</div></div>'+
+      '<div class="detail-block"><div class="boundary-note" style="margin-top:0"><i class="i">🔒</i>系统不自动联系企业；对接由资源端线下推进。</div></div>'+
+    '</div>';
+}
+// 默认：本次分析（雷总原版右侧）
+function detailAnalysis(p){
+  var rp=p.report;
+  return '<div class="detail-header"><div><span class="eyebrow">CURRENT ANALYSIS</span><h2>本次分析</h2>'+
+    '<p>'+p.city+'城市智库已连接</p></div></div>'+
+    '<div class="detail-scroll">'+
+      '<div class="detail-block"><h3>已掌握</h3>'+
+        '<ul class="check-list">'+
+        (p.kb||[]).map(function(k){return '<li><i class="i">✔</i>'+k.t+'（'+k.sub+'）</li>';}).join('')+
+        '<li><i class="i">✔</i>今日公开信息已更新（7月20日 06:00）</li>'+
+        ((UPLOADS[cur]&&UPLOADS[cur].length)?'<li><i class="i">✔</i>已上传 '+UPLOADS[cur].length+' 份材料</li>':'')+
+        '</ul></div>'+
+      '<div class="detail-block"><h3>建议补充</h3>'+
+        '<div class="fact-with-icon warning"><i class="i">⚠</i><div><strong>随州市2026年政府工作报告、领导近期产业发言（氢能/应急/香菇升级方向交办口径）</strong>'+
+        '<span>补充后可提升判断完整度</span></div></div>'+
+        '<button class="text-action" onclick="uploadHint()">立即补充材料 ➜</button></div>'+
+      '<div class="detail-block"><h3>报告将包含</h3><ol class="outline-list">'+
+        ['产业基础判断','关键链条缺口','建议招引方向','候选企业线索','待核实事项'].map(function(x){return '<li>'+x+'</li>'}).join('')+'</ol></div>'+
+      '<div class="info-callout">公开信息只用于辅助研判；园区承载、企业采购和领导任务仍需政府授权材料确认。</div>'+
+    '</div>'+
+    '<div class="detail-actions-stack" style="gap:7px;padding:12px 22px 16px">'+
+      '<button class="primary-button" onclick="'+(rp?"showReport()":"startFlow('direction')")+'"><i class="i">📊</i>'+(rp?'查看并确认报告':'生成招商策略与需求报告')+'</button>'+
+      '<small>补充材料可提升完整度，也可先基于现有资料生成</small>'+
+    '</div>';
+}
+// 点报告结论 → 证据
+function detailFold(b){
+  var vj=b.type==='virt'?'<div class="warning-callout"><strong>虚实判断：待核实</strong><p>方向性表述，缺具体金额/地块/落地主体，需政府授权材料确认。</p></div>':'<div class="info-callout" style="border-color:#acd7ce;color:#155c58;background:#e9f7f6">虚实判断：<strong>实据</strong> · 有具体数据支撑，可作为研判依据。</div>';
+  var chk=b.chk?'<div class="detail-block"><h3>仍需确认</h3><div class="fact-with-icon warning"><i class="i">⚠</i><div><strong>'+b.chk+'</strong></div></div></div>':'';
+  return '<div class="detail-header"><div><button class="text-action" style="margin:0 0 6px" onclick="backToAnalysis()">‹ 返回本次分析</button><span class="eyebrow">EVIDENCE</span><h2>判断依据</h2><p>点击的报告结论溯源</p></div></div>'+
+    '<div class="detail-scroll">'+
+      '<div class="detail-block"><h3>当前查看的判断</h3><p class="detail-copy">'+b.h+'</p></div>'+
+      '<div class="detail-block"><h3>判断依据</h3><p class="detail-copy">'+b.p+'</p></div>'+
+      '<div class="detail-block"><h3>来源（可追溯）</h3><div class="source-chips"><span><i class="i">📄</i>'+b.ev+'</span></div></div>'+
+      chk+vj+
+    '</div>';
+}
+// 点脱敏线索 → 核验要点
+function detailClue(c){
+  return '<div class="detail-header"><div><button class="text-action" style="margin:0 0 6px" onclick="backToAnalysis()">‹ 返回本次分析</button><span class="eyebrow">CANDIDATE CLUE</span><h2>'+c.name+'</h2><p>'+c.dir+'</p></div></div>'+
+    '<div class="detail-scroll">'+
+      '<div class="detail-block"><h3>为什么值得核验</h3><p class="detail-copy">'+c.why+'</p></div>'+
+      '<div class="detail-block"><h3>公开信号与资源边界</h3><p class="detail-copy">'+c.signal+'</p>'+
+        '<span class="source-note">来源：'+c.src+'</span></div>'+
+      '<div class="detail-block"><h3>待核实问题</h3><ol class="number-list">'+
+        c.qs.map(function(q,i){return '<li><span>'+(i+1)+'</span>'+q+'</li>'}).join('')+'</ol></div>'+
+      '<div class="boundary-note"><i class="i">🔒</i>仅展示脱敏状态、公开依据和下一步，不展示内部人脉路径。</div>'+
+    '</div>';
+}
+function toggleDetail(){detailOpen=!detailOpen;render()}
+// 返回：按当前视图回到对应右栏（报告页→本次研判，项目页→项目详情），而不是永远跳旧的通用分析栏
+function backToAnalysis(){detailData=null;var dp=$('.detail-pane');
+  var back=view==='report'?detailReport(P()):(view==='subwork'&&subprojOf(cur)[curSub])?detailSub(subprojOf(cur)[curSub]):detailAnalysis(P());
+  if(dp){dp.innerHTML='<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button><div class="detail-page">'+back+'</div>';}else render();}
+/* ===== 对话流交互 ===== */
+// localStorage 持久化：报告版本状态 + 上传材料历史（关掉页面第二天还在）
+function saveReportState(){try{localStorage.setItem('hxz_reportstate',JSON.stringify(REPORTSTATE))}catch(e){}}
+function loadReportState(){try{var d=localStorage.getItem('hxz_reportstate');if(d)REPORTSTATE=JSON.parse(d)}catch(e){}}
+
+/* ── localStorage 持久化 ── */
+var LS_KEY='huixiaozhao_kb_v1';
+
+function persist(){
+  if(!window._opsDataReady){return;} // block persist until server data loaded
+  try{
+    var data={
+      cur:cur, view:view,
+      PROJECTS:PROJECTS,
+      UPLOADS:UPLOADS,
+      KB_CONFIRMS:KB_CONFIRMS,
+      KB_CONFIRM_TOMBS:KB_CONFIRM_TOMBS,
+      KB_ITEM_TOMBS:KB_ITEM_TOMBS,
+      KB_FILE_CHUNKS:KB_FILE_CHUNKS,
+      KB_UNLOCKED:KB_UNLOCKED,
+      REPORTSTATE:REPORTSTATE,
+      PENDING_CONFIRMS:PENDING_CONFIRMS,
+      DOCK_LOGS:DOCK_LOGS,
+      OPS_ENT:OPS_ENT,
+      DEMANDS:DEMANDS,
+      REPORT_REQUESTS:REPORT_REQUESTS,
+      // 【2026-09-21 修复】管理端从不读写问答记忆，但原来写的是
+      //   KB_CHAT: typeof KB_CHAT!=='undefined' ? KB_CHAT : {}
+      // 而 ops.html 里 KB_CHAT 根本没有定义，于是每次 persist 都往共用的
+      // LS_KEY 里写一个空对象；政府端刷新走 restore() 时就被冲成空（问答记忆归零）。
+      // 管理端不该成为该字段的写入方：原样读回已存值带上，自己绝不产生空值。
+      KB_CHAT:(function(){
+        if(typeof KB_CHAT!=='undefined' && KB_CHAT && Object.keys(KB_CHAT).length) return KB_CHAT;
+        try{ var _p=JSON.parse(localStorage.getItem(LS_KEY)||'{}'); if(_p && _p.KB_CHAT) return _p.KB_CHAT; }catch(_){}
+        return {};
+      })(),
+      USER_PROFILES:USER_PROFILES,
+      CITY_ACCOUNTS:CITY_ACCOUNTS,
+      RESET_GEN:(typeof RESET_GEN!=='undefined'?RESET_GEN:null),
+      DELETED_CLUES:window.DELETED_CLUES||[],
+      syncTs:Date.now()
+    };
+    try{ localStorage.setItem(LS_KEY, JSON.stringify(data)); }catch(_){}
+    // 同步到服务器（持久化存储）
+    // Guard: don't overwrite server if OPS_ENT is empty (likely not yet loaded)
+    if(OPS_ENT.length>0 || !window._opsServerHadData){ try{ fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+      .then(function(r){return r.json();}).then(function(resp){
+        if(resp&&resp.rejected==='stale-generation'){
+          console.warn('[sync] write rejected by reset barrier, resyncing from server');
+          if(typeof restoreFromServer==='function') restoreFromServer(function(){ if(typeof render==='function')try{render();}catch(_){} });
+        }
+      }).catch(function(){}); }catch(_){} }
+  }catch(e){ console.warn('[persist] failed:',e.message); }
+}
+
+/* 【2026-09-18】知识条目删除墓碑 {projKey:{kbIdx:{指纹:ts}}}。
+   根因：storage 监听里 `PROJECTS=incoming` 会把对端旧快照的 kb.known 整体灌回，
+   而那份快照里被删的条目还在 —— 表现为「删了又自己回来」。
+   既有合并已保护 customTopics/stage/clues，独缺 kb.known。
+   用内容指纹而不用 itemIdx 作键：splice 后后续索引整体前移，索引做键必然错位。 */
+var KB_ITEM_TOMBS={};
+function _kbItemFp(t){
+  return String(t==null?'':t).replace(/[\s\u3000]/g,'').replace(/^[\u2705\u26a0\ufe0f]+/,'').slice(0,80);
+}
+function _tombKbItem(pk,kbIdx,text){
+  if(!pk) return;
+  var fp=_kbItemFp(text); if(!fp) return;
+  if(!KB_ITEM_TOMBS[pk]) KB_ITEM_TOMBS[pk]={};
+  if(!KB_ITEM_TOMBS[pk][kbIdx]) KB_ITEM_TOMBS[pk][kbIdx]={};
+  KB_ITEM_TOMBS[pk][kbIdx][fp]=Date.now();
+}
+function _isKbItemTombed(pk,kbIdx,text){
+  var fp=_kbItemFp(text); if(!fp) return false;
+  return !!(KB_ITEM_TOMBS[pk]&&KB_ITEM_TOMBS[pk][kbIdx]&&KB_ITEM_TOMBS[pk][kbIdx][fp]);
+}
+function _mergeKbItemTombs(src){
+  try{ src=src||{};
+    Object.keys(src).forEach(function(pk){
+      if(!KB_ITEM_TOMBS[pk]) KB_ITEM_TOMBS[pk]={};
+      Object.keys(src[pk]||{}).forEach(function(ki){
+        if(!KB_ITEM_TOMBS[pk][ki]) KB_ITEM_TOMBS[pk][ki]={};
+        Object.keys(src[pk][ki]||{}).forEach(function(fp){
+          var a=Number(src[pk][ki][fp])||0, b=Number(KB_ITEM_TOMBS[pk][ki][fp])||0;
+          if(a>b) KB_ITEM_TOMBS[pk][ki][fp]=a;
+        });
+      });
+    });
+  }catch(_e){}
+}
+/* 将墓碑应用到即将生效的快照：已删条目不得随同步回流。 */
+function _applyKbItemTombs(projMap){
+  try{
+    Object.keys(KB_ITEM_TOMBS||{}).forEach(function(pk){
+      var pr=projMap&&projMap[pk]; if(!pr||!pr.kb) return;
+      Object.keys(KB_ITEM_TOMBS[pk]||{}).forEach(function(ki){
+        var sec=pr.kb[Number(ki)]; if(!sec||!sec.known) return;
+        sec.known=sec.known.filter(function(x){
+          return !_isKbItemTombed(pk,ki,(typeof _kbText==='function')?_kbText(x):x);
+        });
+      });
+    });
+  }catch(_e){}
+}
+var KB_CONFIRMS={};  // {projKey:{kbIdx:{itemIdx:{status,text,ts}}}}
+
+function restore(){
+  try{
+    var raw=localStorage.getItem(LS_KEY);
+    if(!raw) return false;
+    var data=JSON.parse(raw);
+    if(data.PROJECTS&&Object.keys(data.PROJECTS).length>0){
+      PROJECTS=data.PROJECTS;
+      cur=data.cur||null;
+      view=data.view||'setup';
+      UPLOADS=data.UPLOADS||{};
+      _mergeKbItemTombs(data.KB_ITEM_TOMBS);
+      _applyKbItemTombs(PROJECTS);
+      _mergeTombs(data.KB_CONFIRM_TOMBS);
+      KB_CONFIRMS=_mergeConfirms(data.KB_CONFIRMS||{});
+      KB_FILE_CHUNKS=data.KB_FILE_CHUNKS||{};
+      KB_UNLOCKED=data.KB_UNLOCKED||{};
+      REPORTSTATE=data.REPORTSTATE||{};
+      PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
+      DOCK_LOGS=data.DOCK_LOGS||{};
+      OPS_ENT=data.OPS_ENT||[];
+      if(data.REPORT_REQUESTS) REPORT_REQUESTS=data.REPORT_REQUESTS;
+      if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
+      if(data.CITY_ACCOUNTS) CITY_ACCOUNTS=data.CITY_ACCOUNTS;
+      if(data.RESET_GEN) RESET_GEN=data.RESET_GEN;
+      console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
+      return true;
+    }
+  }catch(e){ console.warn('[restore] failed:',e.message); }
+  return false;
+}
+
+function restoreFromServer(callback){
+  var localENT = OPS_ENT && OPS_ENT.length ? OPS_ENT.slice() : [];
+  fetch('/api/sync?raw=1').then(function(r){return r.json();}).then(function(raw){
+    if(!raw){ window._opsDataReady=true; if(callback)callback(false); return; }
+    var srv = (raw.huixiaozhao_kb_v1 && raw.huixiaozhao_kb_v1.PROJECTS)
+              ? raw.huixiaozhao_kb_v1 : raw;
+    if(!srv||!srv.PROJECTS||!Object.keys(srv.PROJECTS).length){
+      window._opsDataReady=true;
+      if(localENT.length && !OPS_ENT.length) OPS_ENT = localENT;
+      if(callback)callback(false); return;
+    }
+    PROJECTS         = srv.PROJECTS         || {};
+    UPLOADS          = srv.UPLOADS          || {};
+    _mergeKbItemTombs(srv.KB_ITEM_TOMBS);
+    // 【2026-09-18】必须过滤 srv.PROJECTS 本体，而不是只过滤内存里的 PROJECTS。
+    // 本函数末尾会 `localStorage.setItem(LS_KEY, JSON.stringify(srv))` 回写原始 srv，
+    // 只过滤内存的话脏数据仍会落盘，下次 restore 又把已删条目读回来。
+    _applyKbItemTombs(srv.PROJECTS);
+    _applyKbItemTombs(PROJECTS);
+    _mergeTombs(srv.KB_CONFIRM_TOMBS);
+    KB_CONFIRMS      = _mergeConfirms(srv.KB_CONFIRMS || {});  // 只进不退
+    KB_FILE_CHUNKS   = srv.KB_FILE_CHUNKS   || {};
+    KB_UNLOCKED      = srv.KB_UNLOCKED      || {};
+    REPORTSTATE      = srv.REPORTSTATE      || {};
+    PENDING_CONFIRMS = srv.PENDING_CONFIRMS || {};
+    DOCK_LOGS        = srv.DOCK_LOGS        || {};
+    if(srv.DEMANDS) DEMANDS = srv.DEMANDS;
+    if(srv.REPORT_REQUESTS) REPORT_REQUESTS = srv.REPORT_REQUESTS;
+    // Merge: server wins if non-empty; otherwise keep local/hardcoded
+    if(srv.OPS_ENT && srv.OPS_ENT.length){
+      OPS_ENT = srv.OPS_ENT;
+    } else if(localENT.length){
+      OPS_ENT = localENT;
+    }
+    if(srv.USER_PROFILES){ Object.keys(srv.USER_PROFILES).forEach(function(uk){ USER_PROFILES[uk]=srv.USER_PROFILES[uk]; }); }
+    if(srv.CITY_ACCOUNTS){ CITY_ACCOUNTS = srv.CITY_ACCOUNTS; }
+    if(srv.RESET_GEN){ RESET_GEN = srv.RESET_GEN; }  // reset代际:persist时带回,否则被服务端拒绝
+    // 政府端移除的企业线索墓碑：读回后既不重复推送，也从拉到的 clues 里剔除
+    if(srv.DELETED_CLUES){
+      window.DELETED_CLUES = srv.DELETED_CLUES;
+      var _ct = srv.DELETED_CLUES;
+      if(_ct.length){
+        Object.keys(PROJECTS).forEach(function(_pk){
+          var _pp=PROJECTS[_pk]; if(!_pp||!_pp.clues||!_pp.clues.length) return;
+          _pp.clues=_pp.clues.filter(function(_c){ return !(_c && isClueDeleted(_pk, _c)); });
+        });
+      }
+    }
+    cur  = srv.cur  || Object.keys(PROJECTS)[0] || null;
+    try{ localStorage.setItem(LS_KEY, JSON.stringify(srv)); }catch(e){}
+    window._opsServerHadData=true;
+    window._opsDataReady=true;
+    // If server had no OPS_ENT but we have local data, push it up now
+    if((!srv.OPS_ENT || !srv.OPS_ENT.length) && OPS_ENT.length){
+      persist();
+    }
+    if(callback) callback(true);
+  }).catch(function(e){ console.warn('[restoreFromServer]',e); window._opsDataReady=true; if(callback)callback(false); });
+}
+
+function clearPersist(){
+  localStorage.removeItem(LS_KEY);
+  toast('已清除本地存储');
+}
+
+var UPLOADS={};
+var RESET_GEN=null;  // reset代际标记,从服务端读取后persist带回
+var KB_FILE_CHUNKS={};
+
+/* 【2026-09-18】确认墓碑 + 只进不退合并，与政府端 index.html 对称。
+   两端共用同一 LS_KEY，任一端整体覆盖 KB_CONFIRMS 都会把对端刚点的确认回滚。 */
+var KB_CONFIRM_TOMBS={};
+function _tombConfirm(pk,kbIdx,itemIdx){
+  if(!pk)return;
+  if(!KB_CONFIRM_TOMBS[pk])KB_CONFIRM_TOMBS[pk]={};
+  if(!KB_CONFIRM_TOMBS[pk][kbIdx])KB_CONFIRM_TOMBS[pk][kbIdx]={};
+  KB_CONFIRM_TOMBS[pk][kbIdx][itemIdx]=Date.now();
+}
+function _mergeTombs(src){
+  try{ src=src||{};
+    Object.keys(src).forEach(function(pk){ if(!KB_CONFIRM_TOMBS[pk])KB_CONFIRM_TOMBS[pk]={};
+      Object.keys(src[pk]||{}).forEach(function(ki){ if(!KB_CONFIRM_TOMBS[pk][ki])KB_CONFIRM_TOMBS[pk][ki]={};
+        Object.keys(src[pk][ki]||{}).forEach(function(ii){
+          var a=Number(src[pk][ki][ii])||0, b=Number(KB_CONFIRM_TOMBS[pk][ki][ii])||0;
+          if(a>b) KB_CONFIRM_TOMBS[pk][ki][ii]=a;
+        });
+      });
+    });
+  }catch(_e){}
+}
+function _mergeConfirms(incoming){
+  incoming=incoming||{};
+  try{
+    var localC=KB_CONFIRMS||{};
+    Object.keys(localC).forEach(function(pk){
+      var lSec=localC[pk]||{};
+      Object.keys(lSec).forEach(function(ki){
+        var lItems=lSec[ki]||{};
+        Object.keys(lItems).forEach(function(ii){
+          var lv=lItems[ii]; if(!lv) return;
+          var tomb=KB_CONFIRM_TOMBS[pk]&&KB_CONFIRM_TOMBS[pk][ki]&&KB_CONFIRM_TOMBS[pk][ki][ii];
+          if(tomb&&Number(tomb)>=(Number(lv.ts)||0)) return;
+          if(!incoming[pk]) incoming[pk]={};
+          if(!incoming[pk][ki]) incoming[pk][ki]={};
+          var iv=incoming[pk][ki][ii];
+          if(!iv||(Number(lv.ts)||0)>(Number(iv.ts)||0)) incoming[pk][ki][ii]=lv;
+        });
+      });
+    });
+    Object.keys(KB_CONFIRM_TOMBS||{}).forEach(function(pk){
+      Object.keys(KB_CONFIRM_TOMBS[pk]||{}).forEach(function(ki){
+        Object.keys(KB_CONFIRM_TOMBS[pk][ki]||{}).forEach(function(ii){
+          var tb=Number(KB_CONFIRM_TOMBS[pk][ki][ii])||0;
+          var iv=incoming[pk]&&incoming[pk][ki]&&incoming[pk][ki][ii];
+          if(iv&&tb>=(Number(iv.ts)||0)) delete incoming[pk][ki][ii];
+        });
+      });
+    });
+  }catch(_e){}
+  return incoming;
+}
+// 招引方向派生的项目（方案A三层：产业方向→报告→招引方向项目）{产业key:[{name,stage,from}]}
+var SUBPROJ={};
+function saveSubproj(){try{localStorage.setItem('hxz_subproj',JSON.stringify(SUBPROJ))}catch(e){}}
+function loadSubproj(){try{var d=localStorage.getItem('hxz_subproj');if(d)SUBPROJ=JSON.parse(d)}catch(e){}}
+function subprojOf(k){return SUBPROJ[k]||[]}
+function saveUploads(){try{localStorage.setItem('hxz_uploads',JSON.stringify(UPLOADS))}catch(e){}}
+function loadUploads(){try{var d=localStorage.getItem('hxz_uploads');if(d)UPLOADS=JSON.parse(d)}catch(e){}}
+function addUpload(name){var k=cur;if(!UPLOADS[k])UPLOADS[k]=[];UPLOADS[k].push({name:name,at:new Date().toLocaleString('zh-CN')});saveUploads();}
+loadReportState();loadUploads();loadSubproj();
+var TOPIC_REPORTS={
+  '\u9999\u83c7\u7cbe\u6df1\u52a0\u5de5\u5347\u7ea7': '## 一、产业基础判断\n\n随州香菇全产业链2024年产值超**500亿元**，区域品牌价值205.8亿，连续3年全国食药用菌第一。全球白花菇约**50%**产自随州，品源「菇的辣克」2024签1亿美元+2025续签3亿美元出口订单。种植端极强但精深加工本地布局极薄，高附加值环节大量外流。\n\n## 二、产业链缺口分析\n\n- ✅ 已有：种植采摘（全球最大白花菇产区）、品牌出口（品源4亿美元订单）、初加工\n- ❌ 缺失：香菇多糖/多肽规模化提取（仅裕国/肽源2家，A=必须本地化）\n- ❌ 缺失：菌种自主研发（国外7925/7917品种垄断，本地零布局）\n- ⚠️ 薄弱：功能性食品OEM（市场空间大，本地无规模企业）\n\n## 三、补链优先级TOP3\n\n| 排名 | 缺口节点 | 属性 | 综合优先级 |\n|---|---|---|---|\n| 1 | 香菇多糖/多肽提取平台 | A=必须本地化 | 第一优先 |\n| 2 | 菌种自主研发基地 | A=必须本地化 | 第二优先 |\n| 3 | 功能性食品OEM | B=可跨区域 | 第三优先 |\n\n## 四、目标企业画像\n\n**香菇多糖/多肽提取（第一优先）**\n- 目标：功能成分提取企业，年处理鲜菇≥5万吨，寻求中部原料产地合作\n- 话术：随州年产香菇约70万吨，落地可将原料采购成本降低40%+，与裕国/肽源形成产能协作。\n\n**菌种研发（第二优先）**\n- 目标：具备食用菌育种能力的科研院所或企业\n- 话术：随州种植规模为全球最大实验场景，育种成果可立即实现万亩级产业化验证。\n\n## 五、待确认事项\n\n⚠️ 随县香菇产业园精深加工区GMP洁净厂房现状，需现场核实\n⚠️ 菌种研发基地用地指标与配套政策，需园区管委会确认',
+  '\u6c22\u80fd\u4e13\u7528\u8f66\u8865\u94fe': '## 一、产业基础判断\n\n随州是中国专用汽车之都，2025年专用汽车产值**703亿元**（+12.1%），年产专用车约**16万辆**，全国占比>10%。新楚风49T氢重卡已量产，百公里氢耗7.1kg续航1000km。本地配套率仅**41%**，燃料电池电堆全部外采，成本占整车53%。\n\n## 二、产业链缺口分析\n\n- ✅ 已有：整车改装（97家资质企业）、车身驾驶室（齐星）、车规级晶振（泰晶）\n- ❌ 缺失：燃料电池电堆（占整车成本53%，全部外购，A=必须本地化）\n- ❌ 缺失：高压储氢瓶阀与管路（占整车成本14%，全部外采）\n- ⚠️ 薄弱：底盘/动力总成（依赖十堰，占整车50%成本）\n\n## 三、补链优先级TOP3\n\n| 排名 | 缺口节点 | 属性 | 综合优先级 |\n|---|---|---|---|\n| 1 | 燃料电池电堆 | A=必须本地化 | 第一优先 |\n| 2 | 高压储氢瓶阀管路 | A=必须本地化 | 第二优先 |\n| 3 | 电堆密封件/碳纸 | B=可跨区域 | 第三优先 |\n\n## 四、目标企业画像\n\n**燃料电池电堆（第一优先）**\n- 目标：商用车功率段燃料电池系统集成商，年产能≥3000台\n- 话术：随州新楚风49T氢重卡已量产，年产能16万辆整车基地是进入商用车场景最快验证通道，落地即锁定程力/新楚风稳定采购订单。\n\n## 五、待确认事项\n\n⚠️ 湖北省氢能专项补贴额度与首选承接园区需向领导确认\n⚠️ 程力/新楚风首批电堆采购意向与数量，需走访链主企业核实',
+  '\u667a\u6167\u5e94\u6025\u88c5\u5907\u8865\u94fe': '## 一、产业基础判断\n\n随州安全应急产业2023年总产值**502亿元**，其中移动应急装备324亿，是国家安全应急产业示范基地。博利特高空系留无人机消防车、齐星无人机指挥车已量产，金龙篷布全国占比30%。但感知层（机器人/传感器）与通信层（5G模块）本地几乎空白。\n\n## 二、产业链缺口分析\n\n- ✅ 已有：移动应急整车（博利特/齐星/江南）、篷布风机（金龙30%全国市场）\n- ❌ 缺失：应急机器人本体（依赖外采启灵，B=可跨区域）\n- ❌ 缺失：5G/卫星应急通信模块（本地零布局）\n- ⚠️ 薄弱：无人机本体（依赖外采迅北斗，未本地化）\n\n## 三、补链优先级TOP3\n\n| 排名 | 缺口节点 | 属性 | 综合优先级 |\n|---|---|---|---|\n| 1 | 应急机器人本体 | B=可跨区域 | 第一优先 |\n| 2 | 无人机本体 | B=可跨区域 | 第二优先 |\n| 3 | 5G应急通信模块 | B=可跨区域 | 第三优先 |\n\n## 四、目标企业画像\n\n**应急机器人（第一优先）**\n- 目标：消防/救援机器人制造企业，具备防爆/耐高温认证\n- 话术：随州是国家安全应急示范基地，博利特/齐星整车平台就是机器人最好的集成搭载场景。\n\n## 五、待确认事项\n\n⚠️ 国家示范基地配套用地指标与政策，需主管部门确认\n⚠️ 博利特/齐星对机器人本地化配套采购意向，需走访核实',
+  '\u4ea7\u4e1a\u8f6c\u79fb\u627f\u63a5': '## 一、产业基础判断\n\n随州地处中部交通枢纽，用工/土地成本较沿海低30-40%，经开区/高新区厂房资源充裕。专用汽车产业链为承接汽车零部件配套提供了天然需求端，香菇产业为食品加工提供了原料优势。当前沿海制造业向中部转移窗口明确，随州承接条件具备。\n\n## 二、适合承接的产业方向\n\n- ✅ 优先：汽车零部件配套（就近供应程力/新楚风/齐星，需求稳定）\n- ✅ 优先：劳动密集型轻工制造（篷布/纺织/包装，人力成本优势显著）\n- ⚠️ 潜力：食品精深加工（香菇/农产品原料丰富，冷链待完善）\n- ⚠️ 培育：电子零部件组装（泰晶晶振生态初步形成）\n\n## 三、承接优先方向TOP3\n\n| 排名 | 方向 | 核心优势 | 综合评级 |\n|---|---|---|---|\n| 1 | 汽车零部件配套 | 专汽产业链需求牵引 | 第一优先 |\n| 2 | 劳动密集型制造 | 用工/土地成本优势 | 第二优先 |\n| 3 | 食品精深加工 | 农业原料资源丰富 | 第三优先 |\n\n## 四、目标企业画像\n\n**汽车零部件（第一优先）**\n- 目标：沿海汽车零部件企业，寻求降本转移，年产值5000万以上\n- 话术：随州16万辆/年专用车产量就是您稳定的本地订单，就近配套可节省15-20%物流成本。\n\n## 五、待确认事项\n\n⚠️ 各园区可承接厂房面积与租金优惠政策，需园区管委会确认\n⚠️ 转移企业税收减免与人才补贴，需招商局确认'
+};
+function getTopicReport(topic){
+  if(!topic) return null;
+  var keys=Object.keys(TOPIC_REPORTS);
+  for(var i=0;i<keys.length;i++){ if(topic===keys[i]) return TOPIC_REPORTS[keys[i]]; }
+// 预置样板：随州氢能一条完整主线（其余方向留白，避免全空也不塞满假数据）
+(function seedDemo(){
+  if(localStorage.getItem('hxz_seeded_v3'))return;
+  REPORTSTATE.sz={ver:2,finalized:true,patches:['楚胜汽车园区可承接电控配套'],edits:{}};
+  UPLOADS.sz=[];
+  // 派生项目：dir 与 clueName 必须与 PROJECTS.sz.clues 完全一致，右侧栏/工作页才能匹配到候选企业
+  SUBPROJ.sz=[
+    {name:'商用车燃料电池系统集成商 · 引进项目',dir:'商用车燃料电池系统集成商 · 长三角',clueName:'脱敏企业 A（氢驰动力·代号）',stage:5,from:'氢能专用车补链'},
+    {name:'燃料电池电堆研发与制造 · 引进项目',dir:'燃料电池电堆研发与制造企业 · 华南',clueName:'脱敏企业 B（势通氢能·代号）',stage:4,from:'氢能专用车补链'}
+  ];
+  // 随州氢能已定稿并派生项目、进入对接 → 阶段应到「招商对接」，否则进度条/招商对接页与事实矛盾
+  if(PROJECTS.sz)PROJECTS.sz.stage=5;
+  saveReportState();saveUploads();saveSubproj();
+  try{localStorage.setItem('hxz_seeded_v3','1')}catch(e){}
+})();
+}
+// 历史报告 / 上传材料 弹窗（历史报告入口）
+function openHistory(){
+  var st=REPORTSTATE[cur];var ups=UPLOADS[cur]||[];
+  var repHtml = st ? ('<div class="source-list"><li onclick="closeModal();go(\'report\');setTimeout(showReport,60)" style="cursor:pointer"><i class="i">📄</i>'+P().topic+' 研判报告 · v'+st.ver+(st.finalized?'（已定稿）':'（草稿）')+'<small>点击重新打开</small></li></div>') : '<p class="modal-intro">该项目暂无已生成的报告。</p>';
+  var upHtml = ups.length ? ('<ul class="source-list">'+ups.map(function(u){return '<li><i class="i">📎</i>'+u.name+'<small>'+u.at+'</small></li>'}).join('')+'</ul>') : '<p class="modal-intro">暂无上传的材料。</p>';
+  openModal('历史报告 / 上传材料',
+    '<div style="font-size:12px;font-weight:650;color:#0b183b;margin:2px 0 8px">📄 历史报告</div>'+repHtml+
+    '<div style="font-size:12px;font-weight:650;color:#0b183b;margin:16px 0 8px">📎 上传过的材料</div>'+upHtml+
+    '<div class="boundary-note" style="margin-top:14px"><i class="i">ℹ</i>报告与材料已本地保存，关闭页面后再次打开仍可查看。</div>',
+    '<button class="primary-button" onclick="closeModal()">完成</button>');
+}
+function convEl(){return $('#conv')||$('#kbConv')}
+function addU(t){var c=$('#conv');if(!c)return;var d=document.createElement('div');d.className='message is-user';
+  d.innerHTML='<div class="message-bubble"><p>'+t+'</p></div>';c.appendChild(d);sd()}
+function addA(html){var c=$('#conv');if(!c)return;var d=document.createElement('div');d.className='message';
+  d.innerHTML='<img src="'+aiAvatar()+'"><div class="message-bubble">'+html+'</div>';c.appendChild(d);sd();return d}
+function addRaw(html){var c=$('#conv');if(!c)return;var d=document.createElement('div');d.style.margin='0 0 20px 60px';d.innerHTML=html;c.appendChild(d);sd();return d}
+function sd(){var c=$('#conv');if(c)c.scrollTop=c.scrollHeight}
+function setStage(n){P().stage=n;var f=$('.progress-footer');if(f)f.outerHTML=progressFooter(P());}
+
+function startFlow(mode){
+  if(view!=='report'){view='report';render();}
+  var p=P();
+  var label={direction:'围绕 '+p.topic+' 分析'+p.city+'的上下游缺口与招引环节',
+             upload:'[上传] '+p.city+'市2026年政府工作报告.pdf',
+             verify:'帮我核验几家目标企业是否值得招引'}[mode];
+  // 清空prompt-list
+  var pl=$('.prompt-list');if(pl)pl.remove();
+  addU(label);
+  if(p.stage<2)setStage(2);
+  var _kbStr=(p.kb||[]).map(function(k){return k.t}).join('、');
+  addA('<p>已开始结合<strong>'+p.city+'城市智库</strong>（覆盖：'+_kbStr+'）、授权材料与最新公开信息研判「'+p.topic+'」。下一步先给出产业链缺口与建议招引方向，再明确仍需补充与核实的事项。</p><p>可继续补充材料，也可直接生成初步报告。</p>');
+  setTimeout(function(){ p.report?showReport():addA('<p>正在基于城市智库生成「'+p.topic+'」研判报告，请稍候…</p>'); },600);
+}
+// 报告：复刻雷总 report-document 结构 + 版本迭代/人工可编辑/定稿
+function showReport(){
+  var r=P().report;if(!r){startFlow('direction');return;}
+  var st=rs();
+  var band='<div class="report-summary-band">'+r.summary.map(function(s){return '<div><span>'+s[0]+'</span><strong>'+s[1]+'</strong></div>'}).join('')+'</div>';
+  var secs=r.sections.map(function(s,i){var ev=encodeURIComponent(JSON.stringify(s));
+    var badge=s.type==='virt'?'<span class="status-tag amber" style="margin-left:8px">待核实</span>':'<span class="status-tag teal" style="margin-left:8px">实据</span>';
+    var chk=s.chk?'<span class="report-evidence" style="color:#a34c09"><i class="i">⚠</i>仍需确认：'+s.chk+'</span>':'';
+    var edited=st.edits[i];  // 人工修正过的文字
+    var body=edited?('<p style="color:#013582"><i class="i">✎</i> '+edited+' <em style="color:#9aa5b5;font-style:normal;font-size:11px">（人工修正）</em></p>'):('<p>'+s.p+'</p>');
+    var editBtn=st.finalized?'':'<button class="link-btn" style="border:0;background:none;color:#0757ad;font-size:11px;cursor:pointer;padding:2px 0" onclick="event.stopPropagation();editSection('+i+')">✎ 修正此条</button>';
+    return '<div class="report-section"><span>0'+(i+1)+'</span>'+
+      '<div style="flex:1"><h2 style="cursor:pointer" onclick="pickFold(\''+ev+'\',this)">'+s.h+badge+'</h2>'+body+
+      '<span class="report-evidence" style="cursor:pointer" onclick="pickFold(\''+ev+'\',this)"><i class="i">🔎</i>依据：'+s.ev+'</span>'+chk+' '+editBtn+'</div></div>';}).join('');
+  // 版本头 + 补充优化区
+  var verTag='<span class="status-tag" style="background:#eef3fb;color:#013582">v'+st.ver+(st.finalized?' · 已定稿':' · 草稿')+'</span>';
+  var patchLog=st.patches.length?('<div style="margin-top:10px;padding:10px 12px;background:#f7f9fc;border-radius:8px;font-size:12px;color:#556"><strong>修订记录：</strong>'+st.patches.map(function(p,i){return '<div style="margin-top:4px">v'+(i+2)+' · 据补充「'+p+'」重新生成</div>'}).join('')+'</div>'):'';
+  var optArea=st.finalized?
+    '<div class="report-footnote" style="color:#15803d">✅ 报告已定稿并锁定，可进行双确认递交。</div>':
+    '<div style="margin-top:14px;padding:13px 15px;background:#f3f7fd;border:1px solid #d8e0ed;border-radius:10px">'+
+      '<div style="font-size:13px;font-weight:650;color:#0b183b;margin-bottom:8px">🔄 报告来回优化</div>'+
+      '<div style="font-size:11.5px;color:#667590;margin-bottom:8px">补充材料或指出问题，我会<strong>结合你的补充重新生成一份完整报告</strong>（保留历史版本）；也可点每条「✎ 修正此条」直接人工改写。</div>'+
+      '<textarea id="patchInput" placeholder="例如：补充——楚胜汽车园区可承接；或：第2条判断有误，电控本地已有供应…" style="width:100%;min-height:52px;border:1px solid #cdd8e8;border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit;resize:vertical;box-sizing:border-box"></textarea>'+
+      '<div style="display:flex;gap:8px;margin-top:9px"><button class="primary-button" style="flex:0 0 auto" onclick="applyPatch()">🔄 结合补充重新生成</button>'+
+      '<button class="ghost-button" onclick="finalizeReport()">🔒 报告定稿</button></div>'+
+    '</div>';
+  var confirmArea=st.finalized?
+    ('<div class="detail-actions-stack" style="border:0;padding:16px 0 0">'+
+      '<div class="confirm-row" onclick="cadreOK(this)"><input type="checkbox" id="ck1"><span><strong>干部确认</strong><small>确认判断准确、需求成立</small></span></div>'+
+      '<div class="confirm-row" onclick="leaderOK(this)"><input type="checkbox" id="ck2" disabled><span><strong>授权领导确认</strong><small>干部确认后开放</small></span></div>'+
+      '<button class="primary-button" id="submitBtn" disabled onclick="submitNeed()"><i class="i">🚀</i>完成双确认 · 正式递交</button>'+
+      '<small>双确认通过后，报告的补链方向将自动建成项目并挂到「项目管理」</small>'+
+    '</div>'):
+    '<div class="report-footnote" style="color:#a34c09">⚠ 报告定稿后才能进行双确认与递交（避免半成品报告进入流程）。</div>';
+  addRaw('<div class="report-document">'+
+    '<div class="report-lead" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px"><div><span>STRATEGY REPORT '+verTag+'</span><p>'+r.lead+'</p></div>'+
+      '<button class="ghost-button" style="flex:0 0 auto;white-space:nowrap" onclick="exportReport()"><i class="i">📤</i>导出报告</button></div>'+
+    band+secs+
+    '<div class="report-footnote">'+r.footnote+'</div>'+patchLog+optArea+confirmArea+'</div>');
+}
+// 人工修正某条结论（不依赖AI，直接编辑）
+function editSection(i){
+  var st=rs();var cur=st.edits[i]||P().report.sections[i].p;
+  var v=prompt('人工修正第'+(i+1)+'条结论（直接改写，标注为人工修正）：',cur);
+  if(v!==null&&v.trim()){st.edits[i]=v.trim();saveReportState();rerenderReport();toast('已人工修正第'+(i+1)+'条');}
+}
+// 补充意见→AI重出整份（务实：不假装只改某条）
+function applyPatch(){
+  var ta=$('#patchInput');if(!ta)return;var v=ta.value.trim();if(!v){toast('请先输入补充或修改意见');return;}
+  var st=rs();st.patches.push(v);st.ver++;saveReportState();
+  toast('已结合补充「'+v.slice(0,12)+'…」重新生成 v'+st.ver);
+  rerenderReport();
+}
+function finalizeReport(){var st=rs();st.finalized=true;saveReportState();toast('报告已定稿并锁定');rerenderReport();}
+// 重绘报告：删掉当前报告DOM重新showReport
+function rerenderReport(){
+  var doc=document.querySelector('.report-document');
+  if(doc&&doc.parentElement)doc.parentElement.remove();
+  showReport();
+}
+function pickFold(ev,el){detailData={kind:'fold',d:JSON.parse(decodeURIComponent(ev))};if(!detailOpen)detailOpen=true;
+  var dp=$('.detail-pane');if(dp){dp.innerHTML='<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button><div class="detail-page">'+detailFold(detailData.d)+'</div>';}else render();}
+function cadreOK(row){var ck=row.querySelector('input');ck.checked=true;$('#ck2').disabled=false;toast('干部已确认，待授权领导确认')}
+function leaderOK(row){var ck=row.querySelector('input');if(ck.disabled){toast('请先完成干部确认');return;}ck.checked=true;$('#submitBtn').disabled=false;toast('双确认完成，可正式递交')}
+// 双确认 == 从研判进入项目管理的唯一关口：通过后报告的「补链方向」自动派生为项目
+/* 跨端桥接：政府端双确认递交 → upsert 一条管理端需求池记录（黄金演示动线第1→2步） */
+function syncDemandFromProject(){
+  var p=P();if(!p)return;
+  var cl=p.clues||[];
+  var domain=(cl[0]&&(cl[0].dir||'').split(' · ')[0])||p.topic.replace('补链','').replace('升级','').replace('智能化','');
+  var exist=DEMANDS.find(function(d){return d.city===p.city&&d.topic===p.topic});
+  var payload={
+    city:p.city, gov:p.org+'·'+p.who, topic:p.topic, domain:domain,
+    need:cl.map(function(c){return c.dir.split(' · ')[0]}).join(' / ')||p.topic,
+    submit:'刚刚', res:'checking', resLabel:'核验中', clues:cl.length,
+    note:'政府端双确认递交，等待资源端核验匹配。', fromGov:true
+  };
+  if(exist){Object.keys(payload).forEach(function(k){if(k!=='res'&&k!=='resLabel'&&k!=='clues')exist[k]=payload[k];});exist.submit='刚刚';}
+  else{payload.id='dg'+Date.now();DEMANDS.unshift(payload);}
+  // 更新城市漏斗（提交+确认各+1；若该城市不存在则新建）
+  var f=CITY_FUNNEL.find(function(x){return x.city===p.city});
+  if(f){f.submit++;f.confirm++;}else{CITY_FUNNEL.push({city:p.city,submit:1,confirm:1,match:0,dock:0,sign:0});}
+}
+function submitNeed(){
+  setStage(3);
+  var cl=P().clues||[];var n=cl.length;
+  syncDemandFromProject();
+  // 【自动派生项目】把报告里每个补链方向变成一个招引项目，挂到当前产业方向下（去重）
+  if(!SUBPROJ[cur])SUBPROJ[cur]=[];
+  var made=0;
+  cl.forEach(function(c){
+    if(SUBPROJ[cur].some(function(m){return m.name===c.dir}))return;
+    SUBPROJ[cur].push({name:c.dir,dir:c.dir,clueName:c.name,stage:4,from:P().topic});
+    made++;
+  });
+  saveSubproj();
+  if(n===0){
+    // 无补链方向可派生（高概率一家都没有）——需求仍进入资源池
+    addA('<p>✅ 双确认完成，已生成<strong>正式招商需求</strong>并递交资源端。</p>');
+    addRaw('<div class="clue-origin"><i class="i">🔗</i>需求已递交<button onclick="scrollToReport()">查看报告</button></div>'+
+      '<div style="border:1px dashed #cdd8e8;border-radius:10px;padding:20px;text-align:center;background:#fafbfd">'+
+        '<div style="font-size:26px;margin-bottom:6px">📭</div>'+
+        '<div style="font-size:13.5px;font-weight:650;color:#0b183b">报告暂无明确补链方向</div>'+
+        '<div style="font-size:12px;color:#667590;margin-top:6px;line-height:1.7">需求已进入资源池，资源端将持续核验可触达渠道，有匹配会通知你。</div>'+
+        '<div style="margin-top:12px"><span class="status-tag" style="background:#fff0de;color:#a34c09">已纳入长期跟踪</span></div>'+
+      '</div>'+
+      '<div class="boundary-note"><i class="i">ℹ</i>无匹配也是有效结果——资源端会据此对接外部渠道，或等待新资源进入。</div>');
+    setStage(4);
+    setTimeout(function(){addRaw(dockPanel());setStage(5);},700);
+    return;
+  }
+  addA('<p>✅ 双确认完成，已生成<strong>正式招商需求</strong>。系统已把报告的 <strong>'+n+' 个补链方向自动建成招引项目</strong>，挂在「项目管理 › '+P().topic+'」下，可分别推进对接——</p>');
+  addRaw('<div class="clue-origin"><i class="i">🔗</i>项目由报告补链方向自动派生<button onclick="scrollToReport()">查看报告</button></div>'+
+    '<div class="clue-list">'+cl.map(function(c,i){return '<div class="clue-row" onclick="go(\'home\');setTimeout(function(){toggleProjGroup(\''+cur+'\')},60)"><div class="clue-icon"><i class="i">🎯</i></div>'+
+      '<div class="clue-main"><strong>'+c.dir.split(' · ')[0]+'</strong><small>候选线索 '+c.name+'</small><em>已建为项目 · 点击到「项目管理」查看</em></div>'+
+      '<span class="status-tag" style="background:#ebf3fd;color:#013582">已建项目</span><i class="i">➜</i></div>';}).join('')+'</div>'+
+    '<div style="margin-top:10px"><button class="primary-button" onclick="go(\'home\');setTimeout(function(){toggleProjGroup(\''+cur+'\')},60)"><i class="i">📋</i>前往项目管理查看 '+n+' 个项目</button></div>'+
+    '<div class="boundary-note"><i class="i">ℹ</i>项目自动生成后即为独立对接线；候选企业由资源端核验可达性，系统不自动联系企业。</div>');
+  setStage(4);
+  setTimeout(function(){addRaw(dockPanel());setStage(5);},700);
+}
+function scrollToReport(){var r=document.querySelector('.report-document');if(r){r.scrollIntoView({behavior:'smooth',block:'start'});r.style.outline='2px solid #0757ad';setTimeout(function(){r.style.outline=''},1200);}else{toast('报告在当前对话上方')}}
+// 导出报告：生成完整研判报告文件并下载
+function exportReport(){
+  var p=P();var r=p.report;if(!r){toast('请先生成报告');return;}
+  var now=new Date().toLocaleString('zh-CN');var L=[];
+  L.push(r.title);
+  L.push('导出时间：'+now+'　|　编制：'+p.org+' · '+p.who);
+  L.push('数据来源：'+p.city+'城市智库 + 公开信息（更新至 7月20日 06:00）');
+  L.push('====================================================\n');
+  L.push('【摘要】');L.push(r.lead+'\n');
+  L.push('【关键指标】');r.summary.forEach(function(s){L.push('  '+s[0]+'：'+s[1])});L.push('');
+  L.push('【研判结论】');
+  r.sections.forEach(function(s,i){
+    L.push('  '+(i+1)+'、'+s.h+'　['+(s.type==='virt'?'待核实':'实据')+']');
+    L.push('     '+s.p);
+    L.push('     依据来源：'+s.ev);
+    if(s.chk)L.push('     ⚠ 仍需确认：'+s.chk);
+    L.push('');
+  });
+  L.push('----------------------------------------------------');
+  L.push('确认状态：需经 干部确认 → 授权领导确认 后方可正式递交');
+  L.push('使用边界：'+r.footnote);
+  L.push('====================================================');
+  L.push('本报告由慧小招根据城市智库与公开信息自动生成，供招商研判参考；正式对接前需政府授权材料确认。');
+  var blob=new Blob([L.join('\n')],{type:'text/plain;charset=utf-8'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=r.title+'.txt';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  toast('报告已导出：'+r.title);
+}
+function pickClue(i){detailData={kind:'clue',d:P().clues[i]};if(!detailOpen)detailOpen=true;
+  var dp=$('.detail-pane');if(dp){dp.innerHTML='<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button><div class="detail-page">'+detailClue(detailData.d)+'</div>';}else render();
+  toast('右侧显示「'+P().clues[i].name+'」核验要点')}
+function dockPanel(){
+  var _dp=P();var _dpClue=(_dp.clues||[])[0]||{};
+  return '<div class="timeline-panel"><h2>📡 递交与对接（资源端处理，此处只读）</h2><div class="timeline">'+
+    '<div class="timeline-item done"><div class="timeline-dot"><i class="i">✓</i></div><div><div class="timeline-title"><strong>需求已正式递交</strong><time>今天</time></div><p>已同步「'+_dp.topic+'」招商需求、随州承接区域与报告证据链至资源端。</p></div></div>'+
+    '<div class="timeline-item current"><div class="timeline-dot"><i class="i">◔</i></div><div><div class="timeline-title"><strong>资源可达性核验中</strong><time>预计 2 个工作日</time></div><p>资源团队正在核验'+(_dpClue.name||'候选脱敏企业')+'的真实投资意向与决策层触达路径。</p></div></div>'+
+    '<div class="timeline-item"><div class="timeline-dot"><i class="i">•</i></div><div><div class="timeline-title"><strong>首次沟通待安排</strong><time>待资源回传</time></div><p>核验可触达后，系统提醒准备随州承接材料（园区/政策/可用时段），安排实地走访+政企座谈。</p></div></div>'+
+    '</div></div>'+
+    '<div class="task-panel"><h2>轻自动化（只做这些）</h2>'+
+      ['状态变化时通知政府端','超时提醒（3个工作日无更新）','根据阶段生成政府待办','每日 09:00 汇总进行中事项'].map(function(x){return '<div class="task-row"><i class="i">🔔</i><span><strong>'+x+'</strong></span></div>'}).join('')+
+      '<div class="boundary-note"><i class="i">🔒</i>自动化只负责材料抽取、状态建议、提醒和台账更新建议，<strong>不自动联系企业、不跳过确认关口</strong>。</div>'+
+    '</div>';
+}
+// 城市智库快捷提问（顶部"可以这样问"）→ 填入输入框，由用户点发送
+function askKB(q){
+  var c=document.getElementById('kbConv');
+  if(!c){fillComposer(q);return;}
+  var ud=document.createElement('div');
+  ud.className='message is-user';
+  ud.innerHTML='<div class="message-bubble"><p>'+q+'</p></div>';
+  c.appendChild(ud);c.scrollTop=c.scrollHeight;
+  kbRAGQuery(q,c);
+}
+// 把问题填进输入框并聚焦（不自动发送）
+function fillComposer(q){
+  var ta=$('#composerTa');
+  if(ta){ta.value=q;ta.focus();ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,120)+'px';toast('已填入输入框，点发送即可提问');}
+}
+// 统一的城市智库问答：回复对应主题 + 底部列出调用来源
+/* ══ RAG ENGINE START ══ */
+/* ══════════════════════════════════════════════════════════════
+   KB RAG ENGINE — 纯前端 BM25-style 检索 + 结构化生成
+   数据来源：慧小招2026-07实测报告（随州专项）
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── 1. 知识语料库 buildKBCorpus(city) ── */
+function buildKBCorpus(city){
+  var p=P(); var isSZ=city&&city.indexOf('随州')>=0;
+  // 每条 chunk: {id, topic, tags:[], text, cite}
+  var chunks=[];
+  if(p&&p.kb){
+    p.kb.forEach(function(k){
+      (k.known||[]).forEach(function(t,i){
+        chunks.push({id:k.t+':'+i, topic:k.t, tags:topicTags(k.t), text:t, cite:k.t});
+      });
+    });
+  }
+  var fc=(cur&&KB_FILE_CHUNKS[cur])||[];
+  if(fc.length){ chunks=chunks.concat(fc); console.log('[RAG] +'+fc.length+' file chunks'); }
+  // 追加竞争格局数据（随州专项）
+  if(isSZ){
+    var compChunks=[
+      {id:'comp:gdp',   topic:'竞争格局', tags:['GDP','经济','总量','对比'],
+       text:'随州2024年GDP 1442.35亿元，全省第12/13位，规上工业增速+9.9%，人均GDP 71981元',cite:'竞争格局分析'},
+      {id:'comp:sz',    topic:'竞争格局', tags:['竞争','十堰','对手','商用车'],
+       text:'十堰是最直接竞争对手：2023年汽车产业产值960亿，整车12家+零部件3167家，目标2026年破2500亿，主攻新能源商用车+高端应急装备车，正抢应急专用车赛道',cite:'竞争格局分析'},
+      {id:'comp:jm',    topic:'竞争格局', tags:['竞争','荆门','锂电','电池'],
+       text:'荆门是锂电领域碾压性对手：亿纬动力212GWh占全省50%，长城汽车整车300亿；随州不宜正面竞争锂电赛道',cite:'竞争格局分析'},
+      {id:'comp:xg',    topic:'竞争格局', tags:['竞争','孝感','应急','产业园'],
+       text:'孝感中能华中应急智能制造低碳产业园42.8亿，省唯一应急装备智造先导区，直接对标随州应急产业',cite:'竞争格局分析'},
+      {id:'comp:diff',  topic:'竞争格局', tags:['差异化','机会','氢能','低空','香菇'],
+       text:'随州差异化空间：氢能专用车(全国唯一已量产49T氢重卡)、应急软体新材料(金龙篷布全国30%)、低空经济+专汽融合、香菇/银杏农产品加工(全国唯一性)',cite:'竞争格局分析'},
+      {id:'sz:ind1',    topic:'主导产业', tags:['专用汽车','产值','规模','整车'],
+       text:'专用汽车：2025年专汽应急产业产值703亿元(+12.1%)，年产约16万辆，全国占比>10%，专汽出口+71%全省第一，资质企业97家/零部件企业220家，整体目标2026年破千亿',cite:'产业链缺口测绘报告'},
+      {id:'sz:ind2',    topic:'主导产业', tags:['新能源','配套率','缺口','外购'],
+       text:'本地配套率仅41%，远低于山东梁山65%和十堰75%+；底盘/动力总成(占整车成本50%)几乎全外购十堰潍柴/法士特/汉德；新能源占比仅3-5%(2024年新能源专车5247辆)',cite:'产业链缺口测绘报告'},
+      {id:'sz:h2',      topic:'氢能专用车', tags:['氢能','电堆','储氢','新楚风','补链'],
+       text:'氢燃料电池电堆占整车成本53%、储氢瓶占14%，两项核心系统全部外购；新楚风49T氢重卡已量产(百公里氢耗7.1kg/续航1000km)；空压机、氢气循环泵、膜电极、质子交换膜同为本地空白',cite:'产业链缺口测绘报告'},
+      {id:'sz:emg',     topic:'安全应急', tags:['应急','消防','无人机','机器人','智慧'],
+       text:'应急装备2023年总产值502亿，移动应急装备324亿；江南专汽泡沫消防车/通信指挥车600-1000万/台；博利特高空系留无人机消防车；但应急机器人依赖启灵外采、无人机依赖迅北斗外采，5G通信模块本地零布局',cite:'产业链缺口测绘报告'},
+      {id:'sz:mush',    topic:'香菇产业', tags:['香菇','精深加工','品种','提取','品源'],
+       text:'香菇2024年全产业链产值超500亿，区域品牌价值205.8亿(连续3年全国食药用菌第一)；品源"菇的辣克"2024签1亿美元+2025续签3亿美元，进沃尔玛/Costco；但菌种长期依赖国外7925/7917老品种，多糖/多肽提取仅裕国/肽源2家布局',cite:'产业链缺口测绘报告'},
+      {id:'sz:park1',   topic:'园区', tags:['高新区','国家级','园区','曾都'],
+       text:'随州高新区2015年升级国家级，拥有国字号11块，含"移动应急装备国家创新型产业集群"牌子；曾都区为国家安全应急产业示范基地',cite:'产业链缺口测绘报告'},
+      {id:'sz:park2',   topic:'园区', tags:['专汽','产业园','香菇','随县','承接'],
+       text:'30公里专汽长廊是整车/改装承载主区，已有程力/齐星等入驻；随县香菇产业园已有初加工企业入驻，精深加工GMP洁净厂房条件待核实；区位：汉十高铁至武汉50分钟/至襄阳30分钟',cite:'产业链缺口测绘报告'},
+      {id:'sz:pol1',    topic:'政策', tags:['氢能走廊','政策','省级','补贴'],
+       text:'湖北省氢能走廊：武汉-十堰-随州-襄阳沿线布局，随州以氢能专用车为主攻，专项支持方向已明确；但专项资金具体额度需向主管部门确认',cite:'政策规划研究'},
+      {id:'sz:pol2',    topic:'政策', tags:['应急示范','基地','政策','机器人'],
+       text:'曾都区国家安全应急产业示范基地政策支持智慧应急装备落地，对机器人/无人机/5G通信模块有专项引导；孝感应急产业园42.8亿为直接竞争对手，需尽快锁定差异化方向',cite:'政策规划研究'},
+      {id:'sz:pol3',    topic:'政策', tags:['香菇','农业','精深加工','政策'],
+       text:'随州将香菇精深加工与品牌化列为农业升级重点；但菌种自主研发基地、洁净厂房用地指标、首选承接园区等具体事项须向领导确认',cite:'政策规划研究'},
+    ];
+    chunks=chunks.concat(compChunks);
+  }
+  return chunks;
+}
+
+/* 关键数据高亮 */
+function highlightKeyData(text){
+  if(!text) return text;
+  return text.replace(/(\d+[\d,.]*)\s*(亿元|亿|万辆|万吨|万m³|万㎡|万顶|万台|GWh|km|kg)/g,'<strong style=\"color:#1a56db;font-weight:700\">$1$2</strong>')
+    .replace(/(\d+[\d.]*%)/g,'<strong style=\"color:#1a56db;font-weight:700\">$1</strong>')
+    .replace(/(程力|新楚风|齐星|江南专汽|博利特|金龙新材料|品源|裕国药业|肽源|泰晶科技|犇星|昱通)/g,'<strong style=\"color:#6d28d9;font-weight:650\">$1</strong>')
+    .replace(/(燃料电池电堆|储氢瓶|质子交换膜|膜电极|应急机器人|无人机本体|菌种自主权|香菇多糖|多肽提取)/g,'<em style=\"background:#fef3c7;color:#92400e;border-radius:3px;padding:0 3px;font-style:normal\">$1</em>')
+    .replace(/(全部外购|靠外采|本地空白|国外垄断|待领导确认|待核实)/g,'<span style=\"color:#dc2626;font-weight:600\">$1</span>');
+}
+
+function topicTags(t){
+  if(t.indexOf('产业')>=0) return ['产业','主导','集群','链条','规模','产值'];
+  if(t.indexOf('园区')>=0) return ['园区','承接','厂房','能耗','载体','开发区'];
+  if(t.indexOf('链主')>=0||t.indexOf('企业')>=0) return ['企业','链主','配套','采购','缺口','外购'];
+  if(t.indexOf('政策')>=0) return ['政策','规划','资金','补贴','领导','交办'];
+  return [];
+}
+
+/* ── 2. BM25-style 检索 ── */
+function kbSearch(query, chunks, topK){
+  topK=topK||4;
+  // 分词：中文按字/词切割，英文按空格
+  function tokenize(s){
+    var tokens=[];
+    // 提取所有2-4字中文词组 + 数字+单位
+    var m; var re=/[\u4e00-\u9fff]{2,4}|[A-Za-z0-9]+[%亿万辆元]/g;
+    while((m=re.exec(s))!==null) tokens.push(m[0]);
+    // 单字 fallback
+    s.replace(/[\u4e00-\u9fff]/g,function(c){tokens.push(c);});
+    return tokens;
+  }
+  var qTokens=tokenize(query);
+
+  // IDF: log(N/df+1), TF: count/len
+  var N=chunks.length;
+  var df={};
+  chunks.forEach(function(c){
+    var seen={};
+    tokenize(c.text+' '+c.topic+' '+(c.tags||[]).join(' ')).forEach(function(t){
+      if(!seen[t]){df[t]=(df[t]||0)+1; seen[t]=1;}
+    });
+  });
+
+  var scored=chunks.map(function(c){
+    var doc=c.text+' '+c.topic+' '+(c.tags||[]).join(' ');
+    var docTokens=tokenize(doc);
+    var len=Math.max(docTokens.length,1);
+    var score=0;
+    qTokens.forEach(function(qt){
+      var tf=0;
+      docTokens.forEach(function(dt){ if(dt===qt||dt.indexOf(qt)>=0||qt.indexOf(dt)>=0) tf++; });
+      var idf=Math.log((N+1)/((df[qt]||0)+1));
+      // BM25 k1=1.5 b=0.75 avgdl=50
+      var bm25=(tf*(1.5+1))/(tf+1.5*(1-0.75+0.75*len/50));
+      score+=bm25*idf;
+    });
+    // boost: tag 精确匹配
+    (c.tags||[]).forEach(function(tag){
+      if(query.indexOf(tag)>=0) score+=2.5;
+    });
+    return {chunk:c, score:score};
+  });
+
+  scored.sort(function(a,b){return b.score-a.score;});
+  return scored.slice(0,topK).filter(function(x){return x.score>0;}).map(function(x){return x.chunk;});
+}
+
+/* ── 3. 结构化 Answer 生成 ── */
+function generateKBAnswer(query, chunks, city){
+  if(!chunks||!chunks.length){
+    return {
+      html:'<p>暂未找到与「'+query+'」直接相关的已知内容。建议补充政府工作报告或产业链图谱后重新提问，或切换到「研判需求」页生成完整报告。</p>',
+      cites:[], followups:[]
+    };
+  }
+
+  var isSZ=city&&city.indexOf('随州')>=0;
+  var q=query;
+
+  // ── intent 识别 ──
+  var isGap=/缺口|缺什么|缺哪|补链|外购|外采|空白/.test(q);
+  var isPark=/园区|承接|厂房|能耗|载体|开发区|高新区/.test(q);
+  var isFirm=/链主|企业|采购|配套|哪些企业|供应商/.test(q);
+  var isPol=/政策|资金|补贴|领导|规划|交办|支持/.test(q);
+  var isComp=/竞争|对手|差异化|机会|优势|十堰|荆门|孝感/.test(q);
+  var isRec=/建议|推荐|优先|应该怎么|怎么做|如何招/.test(q);
+
+  // ── 构建回答段落 ──
+  var paragraphs=[];
+  var cites=[];
+
+  // 主体：把检索到的 chunks 按 topic 分组
+  var byTopic={};
+  chunks.forEach(function(c){
+    if(!byTopic[c.topic]) byTopic[c.topic]=[];
+    byTopic[c.topic].push(c);
+    if(cites.indexOf(c.cite)<0) cites.push(c.cite);
+  });
+
+  Object.keys(byTopic).forEach(function(topic){
+    var items=byTopic[topic];
+    var bullets=items.map(function(c){
+      var isWarn=c.text.indexOf('⚠️')>=0||c.text.indexOf('待确认')>=0||c.text.indexOf('待领导')>=0;
+      return '<li style="'+(isWarn?'color:#92400e':'color:#1a202c')+'">'+
+        (isWarn?'<span style="color:#d97706;margin-right:4px">⚠</span>':
+                '<span style="color:#22c55e;margin-right:4px">•</span>')+
+        c.text.replace('⚠️ ','')+'</li>';
+    }).join('');
+    paragraphs.push(
+      '<div style="margin-bottom:14px">'+
+        '<div style="font-size:12px;font-weight:650;color:#6366f1;letter-spacing:.4px;margin-bottom:6px">'+topic.toUpperCase()+'</div>'+
+        '<ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px">'+bullets+'</ul>'+
+      '</div>'
+    );
+  });
+
+  // ── 结论段 ──
+  var conclusion='';
+  if(isGap&&isSZ){
+    conclusion='<div style="background:#f0f9ff;border-left:3px solid #1a56db;padding:10px 14px;border-radius:0 8px 8px 0;margin-top:12px;font-size:12.5px;color:#1e3a5f;line-height:1.75">'+
+      '<strong>补链优先级建议：</strong>①燃料电池电堆（整车成本53%，新楚风/程力有稳定采购需求）→②应急机器人/无人机系统（替代启灵/迅北斗外采依赖）→③香菇多糖/多肽提取（70万吨/年原料红利，就近落地降成本40%+）'+
+    '</div>';
+  } else if(isPark&&isSZ){
+    conclusion='<div style="background:#f0fdf4;border-left:3px solid #22c55e;padding:10px 14px;border-radius:0 8px 8px 0;margin-top:12px;font-size:12.5px;color:#14532d;line-height:1.75">'+
+      '<strong>承接建议：</strong>氢能专用车→专汽产业园/随州高新区；智慧应急→曾都经开区（安全应急示范基地）；香菇精深加工→随县香菇产业园（洁净厂房条件需向管委会确认）'+
+    '</div>';
+  } else if(isComp&&isSZ){
+    conclusion='<div style="background:#fffbeb;border-left:3px solid #f59e0b;padding:10px 14px;border-radius:0 8px 8px 0;margin-top:12px;font-size:12.5px;color:#78350f;line-height:1.75">'+
+      '<strong>差异化窗口：</strong>锂电/新能源乘用车让给荆门/襄阳；氢能专用车（全国唯一已量产）+低空经济+应急软体新材料+香菇（全国唯一性）是随州真正的护城河。'+
+    '</div>';
+  } else if(isRec){
+    conclusion='<div style="background:#f5f3ff;border-left:3px solid #6366f1;padding:10px 14px;border-radius:0 8px 8px 0;margin-top:12px;font-size:12.5px;color:#3730a3;line-height:1.75">'+
+      '<strong>行动建议：</strong>将以上分析转化为正式招商需求，递交资源端核验企业可达性；同时向领导确认专项资金额度与首选承接园区，形成完整对接方案。'+
+    '</div>';
+  }
+  if(conclusion) paragraphs.push(conclusion);
+
+  // ── 追问建议 ──
+  var followups=[];
+  if(isSZ){
+    if(!isGap) followups.push(city+'最值得优先补链的核心缺口是哪些？');
+    if(!isPark) followups.push('各园区如何分工承接不同细分方向？');
+    if(!isComp) followups.push('随州与十堰/荆门的竞争差异化空间在哪里？');
+    if(!isFirm) followups.push('本地链主企业还缺哪些关键上游配套？');
+  } else {
+    followups=['最值得优先补链的核心缺口是哪些？','各园区如何分工承接不同细分产业？','本地链主企业还缺哪些关键上游配套？'];
+  }
+  followups=followups.slice(0,3);
+
+  var body=paragraphs.join('');
+  var warn='<div style="margin-top:10px;padding:8px 12px;background:#f9fafb;border-radius:8px;font-size:11px;color:#9aa5b5;line-height:1.6">⚠ 以上内容基于公开信息与慧小招2026-07实测数据；园区承载、企业采购规模与领导具体交办仍需政府授权材料确认</div>';
+
+  return {html:body+warn, cites:cites, followups:followups};
+}
+
+/* ── 4. 打字机渲染 + 来源引用 + 追问按钮 ── */
+
+/* ── KB RAG: 流式渲染 + 追问按钮 ── */
+var KB_API = ((location.origin && location.origin.indexOf('http')===0) ? location.origin : 'http://localhost:5050')+'/api/kb-chat';
+
+function kbAnswerRender(container, query, chunks, city){
+  // 1. 思考气泡
+  var thinking = document.createElement('div');
+  thinking.className = 'message';
+  thinking.innerHTML = '<img src="'+aiAvatar()+'">'+
+    '<div class="message-bubble" style="display:flex;align-items:center;gap:8px;color:#9aa5b5;font-size:13px">'+
+    '<span class="kb-thinking-dot"></span>正在调用 AI 分析…</div>';
+  container.appendChild(thinking);
+  container.scrollTop = container.scrollHeight;
+
+  // 2. 创建回答气泡（流式填充）
+  var ansNode = document.createElement('div');
+  ansNode.className = 'message';
+  ansNode.style.display = 'none';
+  var bodyDiv = document.createElement('div');
+  bodyDiv.className = 'kb-stream-body';
+  ansNode.innerHTML = '<img src="'+aiAvatar()+'">';
+  var bubble = document.createElement('div');
+  bubble.className = 'message-bubble';
+  bubble.appendChild(bodyDiv);
+  ansNode.appendChild(bubble);
+  container.appendChild(ansNode);
+
+  var accText = '';
+  var t0 = Date.now();
+
+  function renderMarkdown(md){
+    // 简单 markdown: **bold**, - list, \n段落
+    return md
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+      .replace(/⚠️/g,'<span style="color:#d97706">⚠️</span>')
+      .replace(/^[-•]\s(.+)$/gm,'<li style="margin:4px 0;padding-left:4px">$1</li>')
+      .replace(/(<li[\s\S]*?<\/li>)+/g,'<ul style="margin:6px 0;padding:0 0 0 18px;list-style:disc">$&</ul>')
+      .replace(/\n{2,}/g,'</p><p style="margin:8px 0">')
+      .replace(/\n/g,'<br>');
+  }
+
+  fetch(KB_API, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({question:query, chunks:chunks, city:city, stream:true})
+  }).then(function(resp){
+    thinking.remove();
+    ansNode.style.display = '';
+
+    if(!resp.ok){
+      return resp.json().then(function(e){
+        bodyDiv.innerHTML = '<span style="color:#ef4444">服务错误：'+(e.error||resp.status)+'</span>';
+      });
+    }
+
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder();
+    var buf = '';
+
+    function pump(){
+      reader.read().then(function(d){
+        if(d.done){
+          // 完成：追加来源 + 追问
+          var elapsed = Date.now()-t0;
+          var cites = [...new Set(chunks.map(function(c){return c.cite;}).filter(Boolean))];
+          var citeTags = cites.map(function(c){
+            return '<span style="display:inline-block;padding:2px 8px;background:#f0f4ff;color:#1a56db;border-radius:12px;font-size:11px;margin:2px 3px">📌 '+c+'</span>';
+          }).join('');
+
+          // 追问按钮
+          var isSZ = city && city.indexOf('随州')>=0;
+          var followups = isSZ
+            ? ['随州各园区如何分工承接？','随州与十堰/荆门的差异化空间？','链主企业还缺哪些关键配套？']
+            : ['最值得优先补链的核心环节？','各园区如何分工承接？','本地链主还缺哪些关键配套？'];
+          var followHtml = '<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">'+
+            followups.map(function(f){
+              return '<button onclick="kbSendQuestion(this,\''+f.replace(/'/g,"\\'")+'\')" '+
+                'style="padding:5px 11px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:20px;font-size:12px;color:#0b183b;cursor:pointer;transition:background .1s" '+
+                'onmouseover="this.style.background=\'#eef2ff\'" onmouseout="this.style.background=\'#f5f7fb\'">'+f+'</button>';
+            }).join('')+
+          '</div>';
+
+          var footer = (citeTags?'<div style="margin-top:8px">'+citeTags+'</div>':'')+
+            '<div style="font-size:10.5px;color:#b0bac8;margin-top:6px">DeepSeek · 响应 '+elapsed+'ms · 检索 '+chunks.length+' 个数据块</div>'+
+            followHtml+
+            '<div style="margin-top:8px;padding:8px 10px;background:#f9fafb;border-radius:8px;font-size:11px;color:#9aa5b5;line-height:1.6">⚠ 以上内容基于公开信息与慧小招实测数据，园区承载、企业采购规模及领导具体交办仍需政府授权材料确认</div>';
+
+          bubble.insertAdjacentHTML('beforeend', footer);
+          container.scrollTop = container.scrollHeight;
+          return;
+        }
+
+        buf += decoder.decode(d.value, {stream:true});
+        var lines2 = buf.split('\n');
+        buf = lines2.pop(); // 保留不完整行
+
+        lines2.forEach(function(line){
+          if(!line.startsWith('data:')) return;
+          var data = line.slice(5).trim();
+          if(data === '[DONE]') return;
+          try{
+            var j = JSON.parse(data);
+            var delta = (j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||'';
+            if(delta){
+              accText += delta;
+              bodyDiv.innerHTML = '<p style="margin:0;line-height:1.75">'+renderMarkdown(accText)+'</p>';
+              container.scrollTop = container.scrollHeight;
+            }
+          }catch(e){}
+        });
+        pump();
+      });
+    }
+    pump();
+
+  }).catch(function(err){
+    thinking.remove();
+    ansNode.style.display = '';
+    bodyDiv.innerHTML = '<span style="color:#ef4444">连接失败：'+err.message+
+      '<br><small style="color:#9aa5b5">请确认 kb-server 已在 localhost:5050 运行</small></span>';
+  });
+}
+
+function kbSendQuestion(btn, q){
+  if(btn){btn.style.opacity='0.5';btn.disabled=true;}
+  var c=document.getElementById('kbConv')||document.getElementById('conv');
+  if(!c)return;
+  var ud=document.createElement('div');
+  ud.className='message is-user';
+  ud.innerHTML='<div class="message-bubble"><p>'+q+'</p></div>';
+  c.appendChild(ud); c.scrollTop=c.scrollHeight;
+  kbRAGQuery(q, c);
+}
+
+function kbRAGQueryWithHint(query, container, kbTopic){
+  var p=P(); if(!p) return;
+  var corpus=buildKBCorpus(p.city);
+  var chunks=kbSearch(query,corpus,4);
+  if(kbTopic&&kbTopic.known){
+    var pinned=kbTopic.known.map(function(t,i){
+      return {id:'pin:'+i,topic:kbTopic.t,tags:topicTags(kbTopic.t),text:t,cite:kbTopic.t+'(置顶)'};
+    });
+    var seen=chunks.map(function(c){return c.text;});
+    pinned.forEach(function(pc){if(seen.indexOf(pc.text)<0)chunks.unshift(pc);});
+    chunks=chunks.slice(0,7);
+  }
+  kbAnswerRender(container,query,chunks,p.city);
+}
+
+function kbRAGQuery(query, container){
+  var p=P(); if(!p) return;
+  var corpus=buildKBCorpus(p.city);
+  var chunks=kbSearch(query, corpus, 5);
+  kbAnswerRender(container, query, chunks, p.city);
+}
+
+
+/* ══ RAG ENGINE END ══ */
+
+function kbAsk(q,k){
+  var c=$('#kbConv');if(!c)return;
+  c.insertAdjacentHTML('beforeend','<div class="message is-user" style="margin-top:14px"><div class="message-bubble"><p>'+q+'</p></div></div>');
+  c.scrollTop=c.scrollHeight;
+  var p0=P();
+  var bullet0=k.known.map(function(x){return '<li style="margin-bottom:5px">'+x+'</li>';}).join('');
+  var intro0='结合'+p0.city+'「'+k.t+'」当前已知情况：<ul style="margin:8px 0 8px 18px;padding:0;line-height:1.7">'+bullet0+'</ul>';
+  var tip0=(k.t.indexOf('产业')>-1||k.t.indexOf('主导')>-1)?
+    '<p style="margin-top:5px">本地配套率不足与核心系统外购是当前最大补链切入点，建议优先针对这些缺口方向招引。</p>':
+    (k.t.indexOf('园区')>-1)?
+    '<p style="margin-top:5px">具体厂房面积、能耗指标与用地条件仍以政府授权材料为准，以上为初步研判。</p>':
+    (k.t.indexOf('链主')>-1||k.t.indexOf('企业')>-1)?
+    '<p style="margin-top:5px">骨干企业采购规模与技术路线需进一步核实；以上为公开信息初步归类。</p>':
+    '<p style="margin-top:5px">方向性政策表述已识别，具体交办口径需补充领导最新发言后确认。</p>';
+  var ans=intro0+tip0;
+  var srcs=k.calls.map(function(s){return '<span>'+s+'</span>'}).join('');
+  setTimeout(function(){
+    c.insertAdjacentHTML('beforeend','<div class="message" style="margin-top:14px"><img src="'+aiAvatar()+'"><div class="message-bubble"><p>'+ans+'</p>'+
+      '<div class="answer-sources"><em>本次回答调用（可追溯）：</em>'+srcs+'</div>'+
+      '<div class="answer-note">⚠ 公开信息仅用于辅助研判；园区承载、企业采购和领导任务仍需政府授权材料确认。</div></div></div>');
+    c.scrollTop=c.scrollHeight;
+  },400);
+}
+
+/* ── 领导确认/修改 known 条目 ── */
+function confirmKbItem(kbIdx,itemIdx){
+  var p=P();if(!p)return;
+  if(!KB_CONFIRMS[cur])KB_CONFIRMS[cur]={};
+  if(!KB_CONFIRMS[cur][kbIdx])KB_CONFIRMS[cur][kbIdx]={};
+  var k=p.kb[kbIdx];if(!k)return;
+  var orig=k.known[itemIdx]||'';
+  var clean=orig.replace('\u26a0\ufe0f ','');
+  // 写回 known：去掉 ⚠️，前缀改为 ✅
+  k.known[itemIdx]='\u2705 '+clean;
+  KB_CONFIRMS[cur][kbIdx][itemIdx]={status:'confirmed',text:clean,ts:Date.now()};
+  persist();
+  // 刷新 corpus（确认项从待核实变为已确认）
+  if(KB_FILE_CHUNKS[cur]){
+    KB_FILE_CHUNKS[cur]=KB_FILE_CHUNKS[cur].filter(function(c){return c.id!=='pin:'+kbIdx+':'+itemIdx;});
+  }
+  // 重新渲染 modal
+  kbDetail(kbIdx);
+  toast('已确认：'+clean.slice(0,20)+'…');
+}
+
+
+/* 编辑框附件上传：读取文本内容填充 textarea */
+function editPickFile(kbIdx,itemIdx){
+  var inp=document.createElement('input');
+  inp.type='file'; inp.multiple=true;
+  inp.accept='.txt,.md,.csv,.pdf,.doc,.docx,.xls,.xlsx';
+  inp.onchange=function(){
+    var files=Array.from(inp.files||[]);
+    if(!files.length)return;
+    processEditFiles(files,kbIdx,itemIdx);
+  };
+  inp.click();
+}
+
+function editDropFile(e,kbIdx,itemIdx){
+  e.preventDefault();
+  var files=Array.from(e.dataTransfer&&e.dataTransfer.files||[]);
+  if(!files.length)return;
+  processEditFiles(files,kbIdx,itemIdx);
+}
+
+function processEditFiles(files,kbIdx,itemIdx){
+  var hint=document.getElementById('kb-file-hint-'+kbIdx+'-'+itemIdx);
+  var ta=document.getElementById('kb-edit-'+kbIdx+'-'+itemIdx);
+  // 先触发全局 ingestFiles（更新 corpus）
+  ingestFiles(files, kbIdx);
+  // 然后读取文本文件内容追加到 textarea
+  var textFiles=files.filter(function(f){return /\.(txt|md|csv|json)$/i.test(f.name);});
+  var binary=files.filter(function(f){return !/\.(txt|md|csv|json)$/i.test(f.name);});
+  // 更新 hint 文本
+  if(hint)hint.textContent='✅ 已上传 '+files.length+' 个文件：'+files.map(function(f){return f.name;}).join('、');
+  // binary 文件只记录名称到 textarea
+  if(binary.length&&ta){
+    ta.value+=(ta.value?'\n':'')+'[已上传文件：'+binary.map(function(f){return f.name;}).join('、')+'，内容已加入知识库]';
+  }
+  if(!textFiles.length)return;
+  // 读取纯文本文件，提取摘要追加到 textarea
+  var done=0;
+  textFiles.forEach(function(f){
+    var reader=new FileReader();
+    reader.onload=function(e){
+      var text=(e.target.result||'').trim();
+      // 取前 500 字作为摘要
+      var summary=text.slice(0,500).replace(/\n+/g,' ').trim();
+      if(ta&&summary){
+        ta.value+=(ta.value?'\n':'')+'['+f.name+'] '+summary;
+      }
+      done++;
+      if(done===textFiles.length&&ta){
+        ta.focus();
+        ta.setSelectionRange(ta.value.length,ta.value.length);
+      }
+    };
+    reader.readAsText(f,'utf-8');
+  });
+}
+
+function editKbItem(kbIdx,itemIdx){
+  // 把对应条目替换为 inline 编辑框
+  var cardId='kb-card-'+kbIdx+'-'+itemIdx;
+  var card=document.getElementById(cardId);
+  if(!card)return;
+  var p=P();if(!p)return;
+  var k=p.kb[kbIdx];if(!k)return;
+  var orig=(k.known[itemIdx]||'').replace('\u26a0\ufe0f ','').replace('\u2705 ','');
+  if(_isKbPlaceholder(orig)) orig='';   // 占位符不回填进输入框，避免被原样保存成条目
+  card.innerHTML=
+    '<div style="padding:10px 13px">'+
+      '<div style="font-size:11px;color:#6366f1;font-weight:650;margin-bottom:6px">修改内容（领导确认后写入知识库）</div>'+
+      '<textarea id="kb-edit-'+kbIdx+'-'+itemIdx+'" '+
+        'style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #6366f1;border-radius:8px;font-size:13px;line-height:1.6;color:#1e293b;resize:vertical;min-height:72px;outline:none" '+
+        'onkeydown="if(event.key===\'Enter\'&&event.metaKey)saveKbEdit('+kbIdx+','+itemIdx+')">'+orig+'</textarea>'+
+      '<div style="margin:8px 0 0;padding:8px 10px;background:#f8faff;border:1.5px dashed #c7d2fe;border-radius:8px;cursor:pointer;text-align:center;font-size:12px;color:#4f46e5" '+
+        'onclick="editPickFile('+kbIdx+','+itemIdx+')" '+
+        'ondragover="event.preventDefault();this.style.background=\'#eef2ff\'" '+
+        'ondragleave="this.style.background=\'#f8faff\'" '+
+        'ondrop="editDropFile(event,'+kbIdx+','+itemIdx+')">'+
+        '<span id="kb-file-hint-'+kbIdx+'-'+itemIdx+'">📎 上传附件辅助修改（PDF/Word/TXT · 拖拽或点击）</span>'+
+      '</div>'+
+      '<div style="display:flex;gap:8px;margin-top:8px">'+
+        '<button onclick="saveKbEdit('+kbIdx+','+itemIdx+')" '+
+          'style="flex:1;padding:8px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer">'+
+          '\u2713 保存修改</button>'+
+        '<button onclick="pickLocalFile('+kbIdx+')" '+
+          'style="padding:8px 12px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12.5px;color:#166534;cursor:pointer;font-weight:600">'+
+          '📎 更多文件</button>'+
+        '<button onclick="cancelKbEdit('+kbIdx+','+itemIdx+')" '+
+          'style="padding:8px 12px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;color:#4a5568;cursor:pointer">取消</button>'+
+      '</div>'+
+    '</div>';
+  card.style.border='1.5px solid #6366f1';
+  card.style.background='#faf5ff';
+  var ta=document.getElementById('kb-edit-'+kbIdx+'-'+itemIdx);
+  if(ta){ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}
+}
+
+function saveKbEdit(kbIdx,itemIdx){
+  var ta=document.getElementById('kb-edit-'+kbIdx+'-'+itemIdx);
+  if(!ta)return;
+  var newText=ta.value.trim();
+  if(!newText){toast('内容不能为空');return;}
+  var p=P();if(!p)return;
+  var k=p.kb[kbIdx];if(!k)return;
+  // 写回 known，添加 ✅ 已确认标记
+  k.known[itemIdx]='\u2705 '+newText;
+  if(!KB_CONFIRMS[cur])KB_CONFIRMS[cur]={};
+  if(!KB_CONFIRMS[cur][kbIdx])KB_CONFIRMS[cur][kbIdx]={};
+  KB_CONFIRMS[cur][kbIdx][itemIdx]={status:'edited',text:newText,ts:Date.now()};
+  persist();
+  buildKBCorpus(p.city);
+  kbDetail(kbIdx);
+  toast('\u2705 已更新并写入知识库');
+}
+
+/* 【2026-09-23 修复】占位条目残留：原来 addKbItem 先把占位符 push 进 kb.known
+   再弹编辑框，用户点「取消」或关掉弹窗后，占位符就永久留在数据里。
+   政府端 13 处显示路径都用 _isJunkKbItem 过滤掉它，干部看不见；
+   但 kbReadiness 计分会把它算进待确认分母且永远无法确认——
+   实测随州 4 个项目各残留 6 条，确认率被从 100% 压到 60%、就绪分 100→92。
+   计分侧已在 index.html 同步过滤；这里堵住产生源：取消编辑时清掉空占位。 */
+var KB_ITEM_PLACEHOLDER='\u26a0\ufe0f 请在此输入补充内容（保存后写入知识库）';
+function _isKbPlaceholder(t){
+  return /请在此输入|保存后写入|请输入补充/.test(String(t||''));
+}
+/* 取消新增：仅当该条目仍是未填写的占位符时才移除，绝不碰已有真实内容 */
+function cancelKbEdit(kbIdx,itemIdx){
+  var p=P(), k=p&&p.kb&&p.kb[kbIdx];
+  if(k && k.known && itemIdx>=0 && itemIdx<k.known.length && _isKbPlaceholder(k.known[itemIdx])){
+    k.known.splice(itemIdx,1);
+    persist();
+  }
+  kbDetail(kbIdx);
+}
+function addKbItem(kbIdx){
+  // 领导手动新增一条 known 条目
+  var p=P();if(!p)return;
+  var k=p.kb[kbIdx];if(!k)return;
+  k.known.push(KB_ITEM_PLACEHOLDER);
+  kbDetail(kbIdx);
+  // 自动触发最后一条的编辑
+  setTimeout(function(){editKbItem(kbIdx,k.known.length-1);},50);
+}
+
+function kbDetail(i){
+  var k=P().kb[i]; if(!k) return;
+  curKb=i;
+
+  // 已知条目列表
+  var knownHtml=(k.known&&k.known.length)
+    ? '<div style="display:flex;flex-direction:column;gap:8px">'+
+        k.known.map(function(x,xi){
+          var warn=x.indexOf('⚠️')>=0;
+          var isFile=x.indexOf('📎')===0;
+          var clean=x.replace('⚠️ ','');
+          var badges=[];
+          clean.replace(/(\d+[\d,.]*)(亿元|亿|万辆|万吨|万m³|万㎡|GWh|%)/g,function(m){badges.push(m);return m;});
+          var badgeHtml=badges.length
+            ?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:7px">'+
+               badges.map(function(b){
+                 return '<span style="padding:2px 8px;background:#dbeafe;color:#1e40af;border-radius:6px;font-size:11.5px;font-weight:700;letter-spacing:.3px">'+b+'</span>';
+               }).join('')+'</div>':'';
+          var accent=warn?'#f59e0b':isFile?'#22c55e':xi===0?'#6366f1':'#94a3b8';
+          var bg=warn?'#fffbeb':isFile?'#f0fdf4':'#f8faff';
+          var bd=warn?'#fde68a':isFile?'#bbf7d0':'#e8edf5';
+          var icon=warn?'⚠':isFile?'📎':xi===0?'★':'•';
+          var txtColor=warn?'#78350f':isFile?'#14532d':'#1e293b';
+          // 检查是否已确认
+          var confirmed=KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][i]&&KB_CONFIRMS[cur][i][xi];
+          var isConfirmed=!!confirmed;
+          // 已确认条目：绿色样式
+          if(isConfirmed){
+            bg='#f0fdf4';bd='#86efac';accent='#22c55e';icon='\u2705';txtColor='#14532d';
+          }
+          // ⚠️ 条目的操作按钮
+          var actionBtns='';
+          if(warn&&!isConfirmed){
+            actionBtns='<div style="display:flex;gap:6px;margin-top:8px">'+
+              '<button onclick="confirmKbItem('+i+','+xi+')" '+
+                'style="flex:1;padding:6px 0;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12px;color:#166534;cursor:pointer;font-weight:600" '+
+                'onmouseover="this.style.background=\'#dcfce7\'" onmouseout="this.style.background=\'#f0fdf4\'">'+
+                '\u2713 领导确认'+
+              '</button>'+
+              '<button onclick="editKbItem('+i+','+xi+')" '+
+                'style="flex:1;padding:6px 0;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600" '+
+                'onmouseover="this.style.background=\'#ede9fe\'" onmouseout="this.style.background=\'#f5f3ff\'">'+
+                '\u270e 修改内容'+
+              '</button>'+
+            '</div>';
+          } else if(isConfirmed){
+            actionBtns='<div style="margin-top:6px;font-size:11px;color:#22c55e;display:flex;align-items:center;gap:4px">'+
+              '<span>\u2713 已由领导确认</span>'+
+              '<button onclick="editKbItem('+i+','+xi+')" style="background:none;border:none;color:#94a3b8;font-size:11px;cursor:pointer;margin-left:6px">修改</button>'+
+            '</div>';
+          }
+          return '<div id="kb-card-'+i+'-'+xi+'" style="border-radius:12px;background:'+bg+';border:1.5px solid '+bd+';overflow:hidden;transition:border-color .15s">'+
+            '<div style="display:flex">'+
+              '<div style="width:4px;background:'+accent+';flex-shrink:0"></div>'+
+              '<div style="padding:10px 13px;flex:1">'+
+                '<div style="display:flex;gap:8px;align-items:flex-start">'+
+                  '<span style="font-size:12px;flex-shrink:0;margin-top:2px;color:'+accent+'">'+icon+'</span>'+
+                  '<div style="flex:1">'+
+                    '<span style="font-size:13px;color:'+txtColor+';line-height:1.7">'+highlightKeyData(clean)+'</span>'+
+                    badgeHtml+
+                    actionBtns+
+                  '</div>'+
+                '</div>'+
+              '</div>'+
+            '</div>'+
+          '</div>';
+        }).join('')+
+      '</div>'
+    : '<div style="color:#9aa5b5;font-size:13px;padding:12px 0">暂无已知内容，点击下方按钮基于此主题提问。</div>';
+
+  // 数据来源标签
+  var callsHtml=(k.calls&&k.calls.length)
+    ? '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">'+
+        k.calls.map(function(c){
+          return '<span style="padding:3px 10px;background:#f0f4ff;color:#1a56db;border-radius:12px;font-size:11.5px">'+c+'</span>';
+        }).join('')+'</div>'
+    : '';
+
+  var modalHtml=
+    '<div id="kbDetailModal" onclick="if(event.target.id===\'kbDetailModal\')closeKbDetail()" '+
+      'style="position:fixed;inset:0;background:rgba(11,24,59,.4);z-index:8888;display:flex;align-items:flex-start;justify-content:flex-end;padding:16px;backdrop-filter:blur(2px)">'+
+      '<div style="background:#fff;border-radius:18px;width:420px;max-width:95vw;max-height:calc(100vh - 32px);overflow:hidden;display:flex;flex-direction:column;box-shadow:0 8px 48px rgba(11,24,59,.16);animation:slideIn .22s ease">'+
+
+        // 顶栏
+        '<div style="padding:20px 22px 16px;border-bottom:1px solid #f0f4ff;flex:0 0 auto">'+
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'+
+            '<span style="font-size:11px;font-weight:650;color:#6366f1;letter-spacing:.5px">KNOWLEDGE SCOPE</span>'+
+            '<button onclick="closeKbDetail()" style="background:none;border:none;font-size:18px;color:#9aa5b5;cursor:pointer;padding:2px 6px;border-radius:6px" onmouseover="this.style.background=\'#f5f7fb\'" onmouseout="this.style.background=\'none\'">✕</button>'+
+          '</div>'+
+          '<h2 style="font-size:17px;font-weight:750;color:#0b183b;margin:0 0 4px">'+k.icon+' '+k.t+'</h2>'+
+          '<p style="font-size:12.5px;color:#8492a6;margin:0">'+k.sub+'</p>'+
+        '</div>'+
+
+        // 内容区（可滚动）
+        '<div style="flex:1;overflow-y:auto;padding:18px 22px">'+
+
+          '<div style="margin-bottom:18px">'+
+            '<h3 style="font-size:12px;font-weight:650;color:#4a5568;letter-spacing:.3px;margin:0 0 10px">当前已知'+
+              '<span style="font-weight:400;color:#b0bac8;margin-left:6px">⚠ 标注项需政府确认</span>'+
+            '</h3>'+
+            knownHtml+
+          '</div>'+
+
+          (callsHtml?
+          '<div style="margin-bottom:16px">'+
+            '<h3 style="font-size:12px;font-weight:650;color:#4a5568;letter-spacing:.3px;margin:0 0 8px">本次回答可调用来源</h3>'+
+            callsHtml+
+          '</div>':'')+
+
+          '<div style="padding:10px 12px;background:#f8faff;border-radius:10px;font-size:11.5px;color:#9aa5b5;line-height:1.6">'+
+            '公开信息仅用于辅助研判；园区承载、企业采购和领导任务仍需政府授权材料确认。'+
+          '</div>'+
+        '</div>'+
+
+        // 确认进度条
+        +(function(){
+          var warns=k.known.filter(function(x){return x.indexOf('\u26a0\ufe0f')>=0;});
+          var total=warns.length;
+          var done=(KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][i])?Object.keys(KB_CONFIRMS[cur][i]).length:0;
+          if(!total)return '';
+          return '<div style="padding:0 22px 12px">'+
+            '<div style="display:flex;justify-content:space-between;font-size:11px;color:#9aa5b5;margin-bottom:5px">'+
+              '<span>领导确认进度</span><span>'+done+' / '+total+'</span>'+
+            '</div>'+
+            '<div style="height:5px;background:#f0f4ff;border-radius:3px;overflow:hidden">'+
+              '<div style="height:100%;width:'+(total?Math.round(done/total*100):0)+'%;background:linear-gradient(90deg,#22c55e,#16a34a);border-radius:3px;transition:width .4s"></div>'+
+            '</div></div>';
+        })()+
+        '<div style="padding:14px 22px 18px;border-top:1px solid #f0f4ff;flex:0 0 auto;display:flex;flex-wrap:wrap;gap:8px">'+
+          '<button onclick="closeKbDetail();askAboutKb('+i+')" style="flex:1;min-width:120px;padding:11px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer">'+
+            '基于此主题提问 →'+
+          '</button>'+
+          '<button onclick="addKbItem('+i+')" style="padding:11px 13px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;font-size:13px;color:#166534;cursor:pointer;font-weight:600">'+
+            '+ 补充结论'+
+          '</button>'+
+          '<button onclick="pickLocalFile('+i+')" style="padding:11px 13px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer">'+
+            '📎 上传材料'+
+          '</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+    '</div>';
+
+  // 注入 slideIn keyframe（只注一次）
+  if(!document.getElementById('kbDetailStyle')){
+    var st=document.createElement('style');st.id='kbDetailStyle';
+    st.textContent='@keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}';
+    document.head.appendChild(st);
+  }
+
+  closeKbDetail(); // 清掉旧的
+  var wrap=document.createElement('div');
+  wrap.innerHTML=modalHtml;
+  document.body.appendChild(wrap.firstChild);
+}
+
+function closeKbDetail(){
+  var m=document.getElementById('kbDetailModal');
+  if(m)m.remove();
+}
+
+function setKbActiveTopic(idx,k,conv){
+  var rows=document.querySelectorAll('.topic-row');
+  rows.forEach(function(r,ri){
+    r.style.boxShadow=ri===idx?'0 0 0 2.5px #1a56db,0 4px 18px rgba(26,86,219,.15)':'';
+    r.style.borderColor=ri===idx?'#1a56db':'';
+    r.style.background=ri===idx?'#f0f4ff':'';
+  });
+  var old=document.getElementById('kbTopicBadge');if(old)old.remove();
+  var CM={'主导产业与产业链':{bg:'#eff6ff',br:'#bfdbfe',tx:'#1d4ed8',dt:'#3b82f6'},
+    '园区与承载条件':{bg:'#f0fdf4',br:'#bbf7d0',tx:'#166534',dt:'#22c55e'},
+    '链主与存量企业':{bg:'#fdf4ff',br:'#e9d5ff',tx:'#6b21a8',dt:'#a855f7'},
+    '政策、规划与领导关注':{bg:'#fffbeb',br:'#fde68a',tx:'#92400e',dt:'#f59e0b'}};
+  var c=CM[k.t]||{bg:'#f5f7fb',br:'#e8edf5',tx:'#4a5568',dt:'#9aa5b5'};
+  var badge=document.createElement('div');badge.id='kbTopicBadge';
+  badge.style.cssText='margin:0 0 12px;padding:10px 14px;background:'+c.bg+';border:1.5px solid '+c.br+';border-radius:12px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:10';
+  badge.innerHTML='<span style="width:8px;height:8px;border-radius:50%;background:'+c.dt+';flex:0 0 auto"></span>'
+    +'<div style="flex:1"><div style="font-size:11px;font-weight:650;color:'+c.tx+';letter-spacing:.4px">当前提问主题</div>'
+    +'<div style="font-size:13px;font-weight:700;color:'+c.tx+'">'+k.icon+' '+k.t+'</div></div>'
+    +'<button onclick="clearKbActiveTopic()" style="background:none;border:none;color:'+c.tx+';opacity:.5;cursor:pointer;font-size:15px;padding:2px 6px">✕</button>';
+  if(conv){conv.insertBefore(badge,conv.children[1]||null);}
+  setTimeout(renderComposer,0);
+}
+function clearKbActiveTopic(){
+  document.querySelectorAll('.topic-row').forEach(function(r){
+    r.style.boxShadow='';r.style.borderColor='';r.style.background='';
+  });
+  var b=document.getElementById('kbTopicBadge');if(b)b.remove();
+  renderComposer();
+}
+
+// 「基于这个主题提问」→ 在城市智库对话区直接问答（回复对应 + 底部调用来源）
+function askAboutKb(i){
+  var k=P().kb[i]; if(!k) return;
+  var qMap={
+    '主导产业与产业链':P().city+'主导产业链上最值得优先补链的核心缺口是哪些？结合配套率和链主外采情况分析。',
+    '园区与承载条件':P().city+'各园区如何分工承接不同细分产业？厂房、能耗与用地条件是否满足？',
+    '链主与存量企业':P().city+'本地链主企业的外采依赖集中在哪些核心环节？招引上游配套的优先级如何？',
+    '政策、规划与领导关注':P().city+'在「'+P().topic+'」方向，政策支持最强、待干部确认的关键事项有哪些？'
+  };
+  var q=qMap[k.t]||('请结合「'+k.t+'」主题数据，分析'+P().city+'的现状与最值得优先推进的招引方向。');
+  closeKbDetail();
+  if(view!=='knowledge'){view='knowledge';render();}
+  var c=document.getElementById('kbConv');
+  if(!c){setTimeout(function(){askAboutKb(i);},100);return;}
+  var ud=document.createElement('div');ud.className='message is-user';
+  ud.innerHTML='<div class="message-bubble"><p>'+q+'</p></div>';
+  c.appendChild(ud);c.scrollTop=c.scrollHeight;
+  setKbActiveTopic(i,k,c);
+  kbRAGQueryWithHint(q,c,k);
+}
+// 真实文件选择器：弹系统文件夹
+function pickLocalFile(kbTopicIdx){
+  var inp=document.createElement('input');
+  inp.type='file';inp.multiple=true;
+  inp.accept='.txt,.md,.csv,.pdf,.doc,.docx,.xls,.xlsx';
+  inp.onchange=function(){
+    var files=Array.from(inp.files||[]);
+    if(!files.length)return;
+    closeKbDetail();
+    ingestFiles(files,kbTopicIdx);
+  };
+  inp.click();
+}
+
+/* ── 文件摄取：读取 → 切 chunk → 存 KB_FILE_CHUNKS → 更新 kb.known ── */
+function ingestFiles(files, kbTopicIdx){
+  var p=P(); if(!p) return;
+  var total=files.length, done=0, allChunks=[];
+
+  var c=document.getElementById('kbConv');
+  if(c){
+    var nd=document.createElement('div'); nd.className='message is-user';
+    nd.innerHTML='<div class="message-bubble"><p>📎 已上传 '+total+' 个文件：'+
+      files.map(function(f){return f.name;}).join('、')+'</p></div>';
+    c.appendChild(nd); c.scrollTop=c.scrollHeight;
+  }
+
+  files.forEach(function(file){
+    var canRead=/\.(txt|md|csv|json)$/i.test(file.name);
+    var isPDF=/\.pdf$/i.test(file.name);
+    if(canRead){
+      var reader=new FileReader();
+      reader.onload=function(e){
+        var chunks=textToChunks(e.target.result||'', file.name, p, kbTopicIdx);
+        allChunks=allChunks.concat(chunks);
+        done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
+      };
+      reader.onerror=function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p); };
+      reader.readAsText(file,'utf-8');
+    } else if(isPDF && typeof pdfjsLib!=='undefined'){
+      var reader2=new FileReader();
+      reader2.onload=function(e){
+        var typedArr=new Uint8Array(e.target.result);
+        pdfjsLib.getDocument({data:typedArr}).promise.then(function(pdf){
+          var pages=[]; var numPages=pdf.numPages;
+          var pDone=0;
+          for(var pi=1;pi<=numPages;pi++){
+            (function(pageNum){
+              pdf.getPage(pageNum).then(function(page){
+                page.getTextContent().then(function(tc){
+                  pages[pageNum-1]=tc.items.map(function(it){return it.str;}).join(' ');
+                  pDone++;
+                  if(pDone===numPages){
+                    var fullText=pages.join('\n\n');
+                    var chunks=textToChunks(fullText, file.name, p, kbTopicIdx);
+                    allChunks=allChunks.concat(chunks);
+                    done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
+                  }
+                });
+              });
+            })(pi);
+          }
+        }).catch(function(){
+          allChunks.push({id:'file:'+file.name+':0',topic:kbTopicIdx!=null&&p.kb[kbTopicIdx]?p.kb[kbTopicIdx].t:'上传材料',tags:['上传','材料'],text:'用户已上传文件「'+file.name+'」('+Math.round(file.size/1024)+'KB)，PDF解析失败，该文件包含与'+p.city+'招商研判相关的材料。',cite:file.name});
+          done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
+        });
+      };
+      reader2.onerror=function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p); };
+      reader2.readAsArrayBuffer(file);
+    } else {
+      allChunks.push({
+        id:'file:'+file.name+':0',
+        topic: kbTopicIdx!=null&&p.kb[kbTopicIdx] ? p.kb[kbTopicIdx].t : '上传材料',
+        tags:['上传','材料'],
+        text:'用户已上传文件「'+file.name+'」('+Math.round(file.size/1024)+'KB)，该文件包含与'+p.city+'招商研判相关的材料。',
+        cite:file.name
+      });
+      done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
+    }
+  });
+}
+
+/* 文本切 chunk — 按段落，每块约150字 */
+function textToChunks(text, fname, p, kbTopicIdx){
+  var topic=kbTopicIdx!=null&&p&&p.kb[kbTopicIdx] ? p.kb[kbTopicIdx].t : '上传材料';
+  text=text.replace(/\r\n/g,'\n').trim();
+  var paras=text.split(/\n{2,}/), chunks=[], buf='', ci=0;
+  paras.forEach(function(para){
+    para=para.trim(); if(!para) return;
+    buf+=(buf?' ':'')+para;
+    if(buf.length>=120){
+      chunks.push({id:'file:'+fname+':'+ci, topic:topic,
+        tags:topicTags(topic).concat([fname.replace(/\.[^.]+$/,''),'上传']),
+        text:buf.slice(0,300), cite:fname});
+      buf=''; ci++;
+    }
+  });
+  if(buf.trim()) chunks.push({id:'file:'+fname+':'+ci, topic:topic,
+    tags:topicTags(topic).concat(['上传']), text:buf.slice(0,300), cite:fname});
+  return chunks.slice(0,30);
+}
+
+/* 摄取完成 — 存 KB_FILE_CHUNKS，更新 kb.known，触发 RAG 摘要 */
+function finalizeIngest(chunks, files, kbTopicIdx, p){
+  if(!cur) return;
+  if(!KB_FILE_CHUNKS[cur]) KB_FILE_CHUNKS[cur]=[];
+  KB_FILE_CHUNKS[cur]=KB_FILE_CHUNKS[cur].concat(chunks);
+
+  if(!UPLOADS[cur]) UPLOADS[cur]=[];
+  files.forEach(function(f){
+    var rec={name:f.name, size:f.size, ts:Date.now(),
+      chunks:chunks.filter(function(c){return c.cite===f.name;}).length,
+      kbIdx:kbTopicIdx};
+    UPLOADS[cur].push(rec);
+    // 关键修复：dataUrl 靠 FileReader 异步补写，之前 rec 先入库若在补写前 persist/刷新，
+    // 同步到服务器的记录就没有 dataUrl → 管理端下载提示「该文件无原始数据」。
+    // 改为读完(或失败)后都再 persist 一次，保证原始数据落库。
+    (function(record, file){
+      var fr=new FileReader();
+      fr.onload=function(ev){ record.dataUrl=ev.target.result; persist(); };
+      fr.onerror=function(){ persist(); };
+      fr.readAsDataURL(file);
+    })(rec, f);
+  });
+
+  if(kbTopicIdx!=null && p.kb && p.kb[kbTopicIdx]){
+    var k=p.kb[kbTopicIdx];
+    files.forEach(function(f){
+      var entry='📎 '+f.name+' 已解析（'+chunks.filter(function(c){return c.cite===f.name;}).length+' 片段）';
+      if(k.known.indexOf(entry)<0) k.known.push(entry);
+    });
+    k.tag='已补充材料';
+    persist();
+    // 更新卡片标签
+    var rows=document.querySelectorAll('.topic-row');
+    if(rows[kbTopicIdx]){
+      var em=rows[kbTopicIdx].querySelector('em');
+      if(em){em.textContent='已补充材料';em.style.color='#006d70';em.style.background='#e4f5f3';}
+    }
+  }
+
+  var c=document.getElementById('kbConv'); if(!c) return;
+  var totalChunks=KB_FILE_CHUNKS[cur].length;
+  var topicLabel=kbTopicIdx!=null&&p.kb&&p.kb[kbTopicIdx] ? p.kb[kbTopicIdx].t : '城市智库';
+  var nd=document.createElement('div'); nd.className='message';
+  nd.innerHTML='<img src="'+aiAvatar()+'"><div class="message-bubble">'+
+    '<p>✅ 已摄取 <strong>'+files.length+' 个文件</strong>，提取 <strong>'+chunks.length+' 个知识片段</strong>，追加至「'+topicLabel+'」。</p>'+
+    '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">'+
+    files.map(function(f){
+      var n=chunks.filter(function(c){return c.cite===f.name;}).length;
+      return '<span style="padding:3px 10px;background:#f0fdf4;color:#166534;border-radius:12px;font-size:11.5px;border:1px solid #bbf7d0">'+f.name+' · '+n+' 片段</span>';
+    }).join('')+
+    '</div><p style="margin-top:8px;font-size:12px;color:#8492a6">知识库现有 '+totalChunks+' 个片段，提问时自动检索最相关内容。</p>'+
+    '</div>';
+  c.appendChild(nd); c.scrollTop=c.scrollHeight;
+
+  if(chunks.length>0){
+    setTimeout(function(){
+      var autoQ='根据刚才上传的材料，'+p.city+'在「'+topicLabel+'」方向有哪些关键发现？请补充分析。';
+      var qd=document.createElement('div'); qd.className='message is-user';
+      qd.innerHTML='<div class="message-bubble"><p>'+autoQ+'</p></div>';
+      c.appendChild(qd); c.scrollTop=c.scrollHeight;
+      var kHint=kbTopicIdx!=null&&p.kb ? p.kb[kbTopicIdx] : null;
+      kbRAGQueryWithHint(autoQ, c, kHint);
+    },800);
+  }
+}
+
+function kbFileParsed(fname){
+  var c=$('#kbConv');if(!c)return;
+  c.insertAdjacentHTML('beforeend','<div class="message is-user" style="margin-top:14px"><div class="message-bubble"><p>[已上传本地材料] '+fname+'</p></div></div>');
+  setTimeout(function(){
+    c.insertAdjacentHTML('beforeend','<div class="message" style="margin-top:14px"><img src="'+aiAvatar()+'"><div class="message-bubble"><p>已解析 <b>'+fname+'</b> 并并入本地材料库。识别到与当前主题相关的要点，已更新到右侧「本次回答可调用」清单，可据此继续提问。</p><div class="answer-sources"><span>调用：'+fname+'</span></div></div></div>');
+    c.scrollTop=c.scrollHeight;
+  },400);
+  toast('已解析并加入本地材料库');
+}
+function sendMsg(){var ta=$('#composerTa');if(!ta)return;var v=ta.value.trim();if(!v)return;
+  // 城市智库页：留在本页作答（回复进 kbConv）
+  if(view==='knowledge'){doSend(v);ta.value='';ta.style.height='auto';return;}
+  // 项目工作区：留在本页，基于项目上下文作答（回复进 #conv）
+  if(view==='subwork'){doSend(v);ta.value='';ta.style.height='auto';return;}
+  // 其他非首页：切回当前研判再作答
+  if(view!=='home'){view='home';render();setTimeout(function(){var t=$('#composerTa');if(t)t.value=v;doSend(v)},60);return;}
+  doSend(v);ta.value='';}
+function doSend(v){
+  // 城市智库页：走 RAG 检索引擎
+  if(view==='knowledge'){
+    var _kbC=document.getElementById('kbConv');
+    if(!_kbC)return;
+    var _ud=document.createElement('div');
+    _ud.className='message is-user';
+    _ud.innerHTML='<div class="message-bubble"><p>'+v+'</p></div>';
+    _kbC.appendChild(_ud);_kbC.scrollTop=_kbC.scrollHeight;
+    kbRAGQuery(v,_kbC);return;
+  }
+  // 项目工作区：结合项目上下文自由问答，命中快捷意图则走 subReply
+  if(view==='subwork'){
+    addU(v);var pl2=$('.prompt-list');if(pl2)pl2.remove();
+    var subs=subprojOf(cur);var s=subs[curSub];
+    if(/方案|对接|起草|洽谈/.test(v)){setTimeout(function(){subReply('draft',s,P())},450);return;}
+    if(/核验|核实|问题|尽调/.test(v)){setTimeout(function(){subReply('verify',s,P())},450);return;}
+    if(/汇报|上报|领导|进展|总结/.test(v)){setTimeout(function(){subReply('report',s,P())},450);return;}
+    if(/补充|拓展|还有|环节|上下游/.test(v)){setTimeout(function(){subReply('expand',s,P())},450);return;}
+    setTimeout(function(){addA('<p>我已结合「'+(s?s.dir.split(' · ')[0]:'该项目')+'」的报告结论与候选线索理解你的需求。可让我起草对接方案、列核验清单、写领导汇报或补充招引环节——生成的是草稿，需你确认，系统不会自动联系企业。</p>')},450);
+    return;
+  }
+  addU(v);var pl=$('.prompt-list');if(pl)pl.remove();
+  var _p=P();var _kb=_p.kb||[];
+  var _kbPark=_kb[1]||{};var _kbFirm=_kb[2]||{};var _kbPol=_kb[3]||{};var _kbInd=_kb[0]||{};
+  var _clues=_p.clues||[];
+  var reply;
+  if(/园区|开发区|承接|厂房|能耗|载体/.test(v)){
+    var _parkKnown=(_kbPark.known||[]).slice(0,2).join('；');
+    reply='关于园区承载（'+_p.city+'）：'+(_parkKnown||'已整理主要载体，可按细分领域匹配承接区域')+      '。具体厂房面积、能耗指标与用地条件以政府授权材料为准。';
+  }else if(/企业|链主|名单|采购|配套/.test(v)){
+    var _firmKnown=(_kbFirm.known||[]).slice(0,2).join('；');
+    reply='关于本地企业（'+_p.city+'）：'+(_firmKnown||'骨干企业已按产品方向归类，公开资料作初步依据')+      '。采购规模与技术路线仍需核实。';
+  }else if(/政策|规划|领导|报告|交办/.test(v)){
+    var _polKnown=(_kbPol.known||[]).slice(0,2).join('；');
+    reply='关于政策与规划（'+_p.city+'）：'+(_polKnown||'已识别重点方向')+      '。领导最新产业发言尚未上传，建议补充后确认交办口径。';
+  }else if(/缺口|补链|缺什么|缺哪/.test(v)){
+    var _indKnown=(_kbInd.known||[]).slice(0,2).join('；');
+    reply='关于'+_p.topic+'的链条缺口：'+(_indKnown||'核心系统外购比例高，本地配套率偏低')+      '。可直接生成完整报告查看具体分析。';
+  }else if(/线索|候选|企业/.test(v)&&_clues.length){
+    reply='当前研判方向「'+_p.topic+'」已识别 '+_clues.length+' 条候选线索：'+      _clues.slice(0,2).map(function(c){return c.name+'（'+c.dir+'）'}).join('、')+      '。可在「招商对接」模块查看核验要点，或在当前页生成完整报告。';
+  }else{
+    reply='我已结合'+_p.city+'城市智库（'+_p.topic+'方向）与最新公开信息研判。可以继续补充材料，也可以直接生成初步报告——报告将涵盖产业基础判断、链条缺口、建议招引方向与候选线索。';
+  }
+  setTimeout(function(){addA('<p>'+reply+'</p>')},400);}
+function uploadHint(){
+  var mats=[
+    ['📄','政府工作报告','年度产业方向、重点任务与投资承诺（最能体现虚实）'],
+    ['🎤','领导经济发言稿','领导近期关注的产业与交办事项'],
+    ['📊','产业 / 园区报告','产业链现状、园区载体与承接条件'],
+    ['🏢','园区资料','厂房、能耗、用地等承载条件明细'],
+    ['📇','目标企业名单','已接触或拟核验的企业清单']
+  ];
+  var body='<p class="modal-intro">上传后我会结合城市智库与公开信息研判；材料仅用于本次分析，园区承载、企业采购和领导任务仍需政府授权材料确认。</p>'+
+    '<ul class="material-guide">'+mats.map(function(m){return '<li><i class="i">'+m[0]+'</i><span><strong>'+m[1]+'</strong><small>'+m[2]+'</small></span></li>'}).join('')+'</ul>';
+  var foot='<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="doUpload()">选择文件上传</button>';
+  openModal('上传城市与产业材料',body,foot);
+}
+// 真实动作：弹系统文件夹选择文件，选完后在对话里出现「已上传文件 + 解析结果」
+function doUpload(){
+  closeModal();
+  var inp=document.createElement('input');
+  inp.type='file';inp.multiple=true;
+  inp.accept='.pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.csv';
+  inp.onchange=function(){
+    var files=Array.from(inp.files||[]);
+    if(!files.length)return;
+    if(view!=='knowledge'){view='knowledge';render();}
+    setTimeout(function(){ingestFiles(files,null);},100);
+  };
+  inp.click();
+}
+function uploadParsed(fname){
+  if(view!=='home'){view='home';render();}
+  setTimeout(function(){
+    addU('[已上传] '+fname);
+    var pl=$('.prompt-list');if(pl)pl.remove();
+    var _up=P();var _upKb=_up.kb||[];var _upInd=_upKb[0]||{};var _upPol=_upKb[3]||{};
+    var _real1=(_upInd.known||[])[0]||(_up.topic+'被列为主导产业，含具体产值与项目表述');
+    var _virt1=(_upPol.known||[])[1]||'方向性政策表述，缺具体金额/地块/落地主体，需向领导确认';
+    addA('<p>已收到 <b>'+fname+'</b>，完成解析。从材料中提取到与「'+_up.topic+'」研判相关的要点：</p>'+
+      '<div class="report" style="margin-top:6px"><div class="rbody">'+
+        '<div class="fold open"><div class="head"><span class="num">1</span><span class="concl">识别到重点产业表述 3 处</span><span class="badge real">实据</span></div>'+
+          '<div class="detail">'+_real1+'，含具体数据，可作为研判依据。<div class="src">来源：'+fname+' · 第 8 页</div></div></div>'+
+        '<div class="fold open"><div class="head"><span class="num">2</span><span class="concl">政策方向表述待核实落地细则</span><span class="badge virt">待核实</span></div>'+
+          '<div class="detail">'+_virt1+'。<div class="src">来源：'+fname+' · 第 12 页</div></div></div>'+
+      '</div></div>'+
+      '<p style="margin-top:8px">材料已并入本次研判，可继续补充，或直接生成完整报告。</p>');
+    if(P().stage<2)setStage(2);
+    toast('材料已解析并加入本次研判');
+  },200);
+}
+// 直接下载：生成一份详细的城市智库摘要文件并触发浏览器下载
+function downloadSummary(){
+  var p=P();var kb=p.kb;var now=new Date().toLocaleString('zh-CN');
+  var L=[];
+  L.push('慧小招 · '+p.city+'城市智库摘要');
+  L.push('导出时间：'+now+'　|　数据更新至：7月20日 06:00');
+  L.push('当前研判方向：'+p.topic);
+  L.push('====================================================\n');
+  kb.forEach(function(k,i){
+    L.push((i+1)+'、'+k.t+'　（'+k.sub+'）');
+    L.push('  当前已知：');
+    k.known.forEach(function(x){L.push('    · '+x)});
+    L.push('  可调用材料（可追溯）：'+k.calls.join('、'));
+    L.push('');
+  });
+  L.push('----------------------------------------------------');
+  L.push('可下载的原始材料清单：');
+  ['重点园区清单.xlsx（随州高新区/曾都经开区/专汽产业园/随县香菇产业园载体明细）',
+   '随州三大产业链图谱.pdf（氢能专用车/智慧应急/香菇深加工缺口分析）',
+   '今日公开信息摘要（更新至 7月20日 06:00，含新楚风/程力/博利特/品源最新动态）',
+   '2026年随州市政府工作报告（完整版）',
+   '随州市领导近期产业发言（含氢能走廊/应急示范基地/香菇升级方向公开报道整理）'].forEach(function(x){L.push('  - '+x)});
+  L.push('');
+  L.push('====================================================');
+  L.push('使用边界：公开信息仅用于辅助研判；园区承载、企业采购和领导任务仍需政府授权材料确认。');
+  L.push('本文件由慧小招根据城市智库与公开信息自动汇总，仅供研判参考。');
+  var blob=new Blob([L.join('\n')],{type:'text/plain;charset=utf-8'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=p.city+'城市智库摘要_'+p.topic+'.txt';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  toast('已下载：'+p.city+'城市智库摘要');
+}
+function newProjModal(){
+  var body='<p class="modal-intro">围绕本市（'+P().city+'）新增一个产业方向的研判，将生成一条独立研判线（进度、报告、证据互不干扰）。</p>'+
+    '<div class="form-stack">'+
+    '<label>产业方向 / 关注环节<input placeholder="例如：新能源电池回收、智能网联零部件…"></label>'+
+    '<label>当下任务（可选）<textarea placeholder="例如：领导交办、近期考察、拟对接的目标企业…"></textarea></label></div>';
+  var foot='<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="doCreateProj()">创建研判</button>';
+  openModal('新建产业研判',body,foot);
+}
+// 真实动作：新增一条研判项目并切换过去
+function doCreateProj(){
+  var inp=document.querySelector('#modalLayer input');
+  var dir=(inp&&inp.value.trim())||'新产业方向';
+  var id='p'+Date.now();
+  PROJECTS[id]={id:id,city:P().city,org:P().org,who:P().who,topic:dir+'补链',stage:1,
+    kb:P().kb,report:null,clues:[]};
+  closeModal();cur=id;view='home';detailData=null;render();
+  toast('已创建研判：'+dir+'补链');
+}
+
+/* ================= 整合联动层：管理端(ops) ================= */
+// DEMANDS 已在上方初始化
+
+
+
+
+
+var matchDemandId=null;
+var opsView='pool';
+var RESOURCES=[];
+var leaderFilter='all';
+var RES_COLOR={matched:{bg:'#e4f5f3',c:'#006d70'},checking:{bg:'#ebf3fd',c:'#013582'},none:{bg:'#fff0de',c:'#a34c09'}};
+var MATCH_CHAT=[{who:'ai',text:'我是招商匹配助手。可以问我：这条需求针对随州这条需求该找哪类企业？有哪些渠道能为随州找源（电堆/机器人/香菇提取方向）？如何写面向随州产业背景的定向招募话术？'}];
+var RES_SEED=[];
+
+
+
+
+/* ===== 管理端扩展：数据 + 新模块 ===== */
+var LEADER_DOCS=[];
+
+
+
+
+
+
+var RESOURCES=[]; // 冷启动：空库
+var MATCH_CHAT=[{who:'ai',text:'我是招商匹配助手。可以问我：这条需求该找哪类企业？有哪些外部渠道能找源？如何写定向招募话术？'}];
+var RES_SEED=[
+  {alias:'华南某燃料电池电堆企业',real:'（内部可见真名）',tag:'燃料电池电堆',domain:'燃料电池电堆',loc:'华南',intent:'有异地设厂意向',status:'可用',
+   profile:'年产电堆约5000台，掌握金属双极板与膜电极核心工艺；现有产能饱和，公开释放异地扩产信号。',
+   why:'随州新楚风49T氢重卡已量产、程力整车体量大，但电堆占整车成本53%全靠外购，该企业补最核心缺口，可直接与本地整车厂形成配套。',
+   risk:'异地设厂尚在选址阶段，需核实真实投资时间表与决策层意向；同期有2个竞争城市在接触。'},
+  {alias:'长三角某应急无人机集成商',real:'（内部可见真名）',tag:'应急机器人与无人机',domain:'应急机器人与无人机',loc:'长三角',intent:'具备可对接窗口',status:'可用',
+   profile:'应急无人机系统集成商，产品线覆盖消防侦察/通信中继/载荷挂载；有区域总部下沉布局意愿。',
+   why:'随州博利特系留无人机平台、齐星6架无人机指挥车均已量产，但无人机本体靠外采（依迅北斗），该企业落地可形成本地闭环，直接替代外购依赖。',
+   risk:'更看重政府应急演练/示范场景开放程度，需确认随州曾都区安全应急示范基地能提供对应场景与奖补。'},
+  {alias:'华东某香菇功能成分提取企业',real:'（内部可见真名）',tag:'香菇功能成分提取',domain:'香菇功能成分提取',loc:'华东',intent:'寻求中部原料产地合作',status:'可用',
+   profile:'香菇多糖/多肽功能成分提取，下游对接保健品/生物医药客户；正在寻求贴近原料产地的生产基地。',
+   why:'随州年产香菇约70万吨（全球白花菇约50%），就近落地可将原料采购成本降低40%+；与裕国药业/肽源形成产能协作，共同做大提取环节。',
+   risk:'需核实洁净厂房等级与能耗是否符合GMP要求，以及随州现有产业园是否有配套条件。'}
+];
+var DOCK_ITEMS=[];
+
+
+
+var CITY_FUNNEL=[];
+
+
+
+
+var OPEN_ACCOUNTS=[];
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function renderOps(){
+  document.body.classList.add('ops-mode');
+  if(curDemand===null&&DEMANDS.length)curDemand=DEMANDS[0].id;
+  var hasDetail=(opsView==='pool');
+  var footer=(opsView==='pool')?opsFooter():'';
+  $('#root').innerHTML=
+   '<div class="app-shell">'+
+    opsTopbar()+
+    '<div class="app-content">'+opsSidebar()+
+      '<div class="pane-divider"><span class="divider-grip"><i class="i">⋮</i></span></div>'+
+      '<div class="content-column"><div class="workspace">'+
+        '<div class="main-pane">'+opsRoute()+'</div>'+
+        (hasDetail&&detailOpen?('<div class="detail-pane">'+opsDetail()+'</div>')
+          :(hasDetail?('<button class="reopen-detail" onclick="toggleDetail()"><i class="i">🧾</i>展开详情</button>'):''))+
+      '</div></div>'+
+    '</div>'+
+    footer+
+   '</div>';
+  bind();
+}
+function opsNav(v){opsView=v;detailOpen=true;render()}
+function opsRoute(){
+  switch(opsView){
+    case 'pool': return opsMain();
+    case 'leader': return opsLeader();
+    case 'res': return opsRes();
+    case 'match': return opsMatch();
+    case 'dock': return opsDock();
+    case 'city': return opsCity();
+    case 'open': return opsOpen();
+    case 'board': return opsBoard();
+    default: return opsMain();
+  }
+}
+function opsCrumb(){
+  var map={pool:['📥','需求池','全国需求池'],leader:['📂','领导材料台','各地资料汇总'],res:['🤝','资源库','可对接企业'],match:['🧩','智能匹配','AI 撮合 + 核验'],dock:['🗂️','对接管理','落地看板'],city:['🗺️','城市总览','漏斗与卡点'],open:['🔑','账号·城市开通','对外开户'],board:['📊','数据看板','经营 KPI']};
+  var c=map[opsView]||map.pool;
+  return '<div class="org-block"><i class="i">'+c[0]+'</i><strong style="font-weight:650">'+c[1]+'</strong>'+
+    '<span style="margin:0 10px;color:#cbd7e6">/</span><strong style="color:var(--blue-dark)">'+c[2]+'</strong></div>';
+}
+function opsTopbar(){
+  return '<div class="topbar">'+
+    '<div class="brand-block"><img src="'+brandLogo()+'"><div><strong>慧小招</strong><span>管理端 · 资源调度</span></div></div>'+
+    opsCrumb()+
+    roleSwitch()+
+    '<div class="top-meta"><span><i class="i">🏙️</i>覆盖 '+OPEN_ACCOUNTS.length+' 个试点城市</span><span><i class="i">📥</i>'+DEMANDS.length+' 条在办需求</span></div>'+
+  '</div>';
+}
+function opsSidebar(){
+  // 按周总日常动线重排：主线在上(需求→匹配→对接→资源)，全局视野居中(总览/看板)，材料参考次之，账号管理沉底
+  var items=[['📥','pool','需求池','各地干部提交'],['🧩','match','智能匹配','AI撮合+核验'],['🗂️','dock','对接管理','落地看板'],['🤝','res','资源库','可对接企业'],['🗺️','city','城市总览','漏斗与卡点'],['📊','board','数据看板','经营KPI'],['📂','leader','领导材料台','各地资料汇总'],['🔑','open','账号·城市开通','对外开户']];
+  return '<div class="sidebar"><div class="nav-list">'+
+    items.map(function(n){var on=opsView===n[1];return '<button class="nav-item'+(on?' active':'')+'" onclick="opsNav(\''+n[1]+'\')"><i class="i">'+n[0]+'</i><span class="nav-copy"><strong>'+n[2]+'</strong><small>'+n[3]+'</small></span></button>';}).join('')+
+    '</div><div class="system-status"><span></span>管理端</div></div>';
+}
+function opsFooter(){
+  var stat={matched:0,checking:0,none:0};DEMANDS.forEach(function(d){stat[d.res]++});
+  return '<div class="progress-footer"><div class="progress-track">'+
+    '<div class="progress-step done"><div class="progress-node"><i class="i">✓</i></div><div class="progress-copy"><strong>已匹配</strong><small>'+stat.matched+' 条可对接</small></div></div><div class="progress-line"></div>'+
+    '<div class="progress-step current"><div class="progress-node">◔</div><div class="progress-copy"><strong>核验中</strong><small>'+stat.checking+' 条待核验</small></div></div><div class="progress-line"></div>'+
+    '<div class="progress-step"><div class="progress-node">•</div><div class="progress-copy"><strong>暂无资源</strong><small>'+stat.none+' 条待跟踪</small></div></div>'+
+    '</div><div class="progress-mobile">需求池：共 '+DEMANDS.length+' 条 · 已匹配 '+stat.matched+' / 核验中 '+stat.checking+' / 暂无 '+stat.none+'</div></div>';
+}
+// 需求状态 → 统一语义色
+function demandBadge(res){var m={matched:'green',checking:'blue',none:'orange'};return m[res]||'gray';}
+function opsMain(){
+  var st={matched:0,checking:0,none:0};DEMANDS.forEach(function(d){if(st[d.res]!=null)st[d.res]++});
+  var todayN=DEMANDS.filter(function(d){return /今天|刚刚/.test(d.submit)}).length;
+  // AI 经营早报（对话气泡）
+  var _stuckDemand=DEMANDS.find(function(d){return d.res==='none'});
+  var _matchedFirst=DEMANDS.find(function(d){return d.res==='matched'});
+  var brief='截至现在，需求池共 <strong>'+DEMANDS.length+'</strong> 条'+(todayN?'（今日新增 '+todayN+' 条）':'')+'：<strong>'+st.matched+'</strong> 条已匹配可安排对接，<strong>'+st.checking+'</strong> 条核验中，<strong>'+st.none+'</strong> 条暂无资源需找源。'+
+    (_matchedFirst?'建议今天优先推进「'+_matchedFirst.city+' · '+_matchedFirst.topic+'」，候选线索已核验通过，等待安排实地走访；':'')+(st.none&&_stuckDemand?'「'+_stuckDemand.city+' · '+_stuckDemand.topic+'」卡在资源缺口（'+_stuckDemand.domain+'方向暂无企业），建议优先补录或走外部渠道。':'');
+  var briefBubble='<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble"><p>'+brief+'</p></div></div>';
+  var rows=DEMANDS.map(function(d){var on=d.id===curDemand;
+    return '<div onclick="pickDemand(\''+d.id+'\')" class="ops-row'+(on?' on':'')+'" style="align-items:flex-start">'+
+      '<div class="r-ic">📥</div>'+
+      '<div class="r-main"><div style="display:flex;align-items:center;gap:8px"><strong>'+d.city+' · '+d.topic+'</strong><span class="ops-badge '+demandBadge(d.res)+'">'+d.resLabel+'</span></div>'+
+      '<small>'+d.gov+' · 递交于 '+d.submit+' · 线索 '+(d.clues||0)+' 家</small>'+
+      '<em style="display:flex;gap:5px;margin-top:4px"><span style="color:#0757ad">AI 初判</span>'+d.ai+'</em></div>'+
+      '<i class="i" style="color:#c3cfdd;font-size:18px;align-self:center">›</i></div>';
+  }).join('');
+  return '<div class="page">'+
+    '<div class="page-header"><div><span class="eyebrow">DEMAND POOL</span><h1>跨城市需求池</h1>'+
+    '<p>各地招商干部经双确认后递交的正式需求，点任意一条在右侧判断资源、组织对接。</p></div></div>'+
+    '<div class="conversation-scroll" style="padding:22px 28px 20px">'+
+      briefBubble+
+      rrPanel()+
+      '<div class="ops-chips" style="margin:2px 0 12px"><span class="lbl">筛选</span>'+
+        '<span class="ops-badge green">已匹配 '+st.matched+'</span><span class="ops-badge blue">核验中 '+st.checking+'</span><span class="ops-badge orange">暂无资源 '+st.none+'</span></div>'+
+      '<div class="ops-card"><div class="ops-card-head"><span class="t">📥 全部需求</span><span class="sub">点击查看详情 / 组织对接</span></div>'+
+      '<div class="ops-card-body flush">'+rows+'</div></div>'+
+    '</div></div>';
+}
+function opsDetail(){
+  var d=DEMANDS.find(function(x){return x.id===curDemand})||DEMANDS[0];var rc=RES_COLOR[d.res];
+  return '<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button>'+
+    '<div class="detail-page">'+
+    '<div class="detail-header"><div><span class="eyebrow">DEMAND DETAIL</span><h2>'+d.city+' · '+d.topic+'</h2><p>'+d.gov+'</p></div></div>'+
+    '<div class="detail-scroll">'+
+      '<div class="detail-block"><h3>递交需求</h3><p class="detail-copy">'+d.need+'</p><span class="source-note">递交于 '+d.submit+'</span></div>'+
+      '<div class="detail-block"><h3>资源端判断</h3><div class="'+(d.res==='none'?'warning-callout':'info-callout')+'" style="margin-top:0"><b style="color:'+rc.c+'">'+d.resLabel+'</b> · '+d.note+'</div></div>'+
+      '<div class="detail-block"><h3>候选线索</h3>'+(d.clues>0?'<ul class="source-list"><li><i class="i">🔗</i>已匹配 '+d.clues+' 家脱敏候选企业<small>资源端从企业资源库匹配并经人工核验</small></li></ul>':'<div class="fact-with-icon warning"><i class="i">⚠</i><div><strong>暂无匹配线索</strong><span>建议纳入长期跟踪或对接外部渠道</span></div></div>')+'</div>'+
+      '<div class="boundary-note"><i class="i">🔒</i>资源可达性、关键人触达由资源团队线下核验；系统只做需求汇总、状态跟踪与提醒，不自动联系企业。</div>'+
+    '</div>'+
+    '<div class="detail-actions-stack" style="gap:8px;padding:12px 22px 16px">'+
+      '<button class="primary-button" onclick="opsAction(\''+d.id+'\')"><i class="i">'+(d.res==='matched'?'🤝':d.res==='checking'?'🔍':'📌')+'</i>'+(d.res==='matched'?'安排招商对接':d.res==='checking'?'查看核验进度':'纳入长期跟踪')+'</button>'+
+      '<small>对接进度会同步回该城市干部的「当前研判」时间线</small>'+
+    '</div></div>';
+}
+function pickDemand(id){curDemand=id;detailOpen=true;render()}
+function opsAction(id){
+  var d=DEMANDS.find(function(x){return x.id===id});if(!d)return;
+  if(d.res==='matched'){
+    // 已匹配 → 弹出对接安排表单（真实内容）
+    var body='<p class="modal-intro">为「'+d.city+' · '+d.topic+'」安排招商对接，确认后将同步回该城市干部的「当前研判」时间线。</p>'+
+      '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">需求方</span><span class="vv">'+d.gov+'</span></div>'+
+      '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">候选线索</span><span class="vv">'+d.clues+' 家脱敏企业（资源端核验通过）</span></div>'+
+      '<div class="form-stack" style="margin-top:12px"><label>拟对接时间<input value="本周内 · 待与双方确认"></label>'+
+      '<label>对接方式<input value="资源端带队实地走访 + 政企座谈"></label></div>';
+    openModal('安排招商对接',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="doArrangeDock(\''+d.id+'\')">确认发起对接</button>');
+  }else if(d.res==='checking'){
+    // 核验中 → 弹出核验进度详情
+    var body='<p class="modal-intro">「'+d.city+' · '+d.topic+'」资源可达性核验进度：</p>'+
+      '<div class="timeline"><div class="timeline-item done"><div class="timeline-dot"><i class="i">✓</i></div><div><div class="timeline-title"><strong>需求已接收</strong></div><p>已同步需求与报告证据链。</p></div></div>'+
+      '<div class="timeline-item current"><div class="timeline-dot"><i class="i">◔</i></div><div><div class="timeline-title"><strong>资源匹配中</strong></div><p>正在核验 '+d.clues+' 家候选线索的真实意向与决策层触达。</p></div></div>'+
+      '<div class="timeline-item"><div class="timeline-dot"><i class="i">•</i></div><div><div class="timeline-title"><strong>反馈可对接企业</strong></div><p>核验完成后回传该城市干部。</p></div></div></div>';
+    openModal('资源核验进度',body,'<button class="primary-button" onclick="closeModal()">知道了</button>');
+  }else{
+    // 暂无资源 → 弹出长期跟踪确认
+    var body='<p class="modal-intro">「'+d.city+' · '+d.topic+'」当前资源库暂无直接匹配，可纳入长期跟踪或对接外部渠道。</p>'+
+      '<div class="fact-with-icon warning"><i class="i">⚠</i><div><strong>暂无匹配线索</strong><span>纳入跟踪后，有新资源进入将自动提醒</span></div></div>';
+    openModal('纳入长期跟踪',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="closeModal();toast(\'已纳入长期跟踪，有匹配将提醒\')">确认纳入</button>');
+  }
+}
+function doArrangeDock(id){
+  var d=DEMANDS.find(function(x){return x.id===id});if(!d)return;
+  var contact=(d.gov.split('·')[1]||d.gov)+' / 待确认';
+  var exist=DOCK_ITEMS.find(function(k){return k.city===d.city&&k.topic===d.topic});
+  if(exist){exist.stage='对接中';exist.next='本周实地走访 + 政企座谈';}
+  else{DOCK_ITEMS.unshift({id:'k'+Date.now(),city:d.city,topic:d.topic,company:(d.clues+' 家脱敏候选企业'),stage:'对接中',contact:contact,next:'本周实地走访 + 政企座谈'});}
+  d.arranged=true;
+  closeModal();render();
+  toast('已发起对接，「'+d.city+' · '+d.topic+'」进入对接看板"对接中"');
+}
+function setRole(r){role=r;view='home';render();toast(r==='ops'?'已切换到管理端（全局）':'已切换到政府端（随州·张主任）')}
+function opsLeader(){
+  var cities=['all'].concat(LEADER_DOCS.map(function(d){return d.city}).filter(function(v,i,a){return a.indexOf(v)===i}));
+  var chips=cities.map(function(c){var on=leaderFilter===c;
+    return '<button class="ghost-button" style="min-height:30px;padding:5px 12px;'+(on?'background:#ebf3fd;color:#013582;border-color:#0757ad':'')+'" onclick="setLeaderFilter(\''+c+'\')">'+(c==='all'?'全部':c)+'</button>';
+  }).join('');
+  var list=LEADER_DOCS.map(function(d,i){return {d:d,i:i}}).filter(function(o){return leaderFilter==='all'||o.d.city===leaderFilter});
+  var rows=list.map(function(o){var d=o.d;
+    return '<button onclick="leaderAct('+o.i+')" style="width:100%;display:flex;align-items:center;gap:14px;padding:14px 18px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer;text-align:left">'+
+      '<i class="i" style="font-size:22px;flex:0 0 auto">📄</i>'+
+      '<span style="flex:1;min-width:0;display:grid;gap:3px"><strong style="font-size:14.5px">'+d.name+'</strong>'+
+      '<small style="color:var(--muted);font-size:12px">'+d.city+' · '+d.who+' · '+d.type+' · '+d.time+'</small>'+
+      '<em style="color:#52627a;font-size:11px;font-style:normal">'+d.sum+'</em></span>'+
+      '<span class="status-tag" style="flex:0 0 auto;color:#013582;background:#ebf3fd">'+d.topic+'</span></button>';
+  }).join('')||'<div style="padding:20px;text-align:center;color:#9aa5b5;font-size:12.5px">该城市暂无材料</div>';
+  return '<div class="page"><div class="page-header"><div><span class="eyebrow">LEADER MATERIALS</span><h1>领导材料台</h1>'+
+    '<p>各地领导/干部在「资料准备」阶段上传的材料汇总。</p></div></div>'+
+    '<div class="knowledge-scroll"><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px"><span style="font-size:12px;color:#8490a5;align-self:center;margin-right:2px">按城市筛选：</span>'+chips+'</div>'+
+    '<div class="prompt-list" style="margin-left:0;width:100%">'+rows+'</div>'+
+    '<div class="boundary-note"><i class="i">🔒</i>材料仅运营高层可见；系统只做汇总与解析，出谋划策由老板决策。</div></div></div>';
+}
+function setLeaderFilter(c){leaderFilter=c;render()}
+function leaderAct(i){var d=LEADER_DOCS[i];
+  var body='<p class="modal-intro">'+d.city+' · '+d.who+' 上传的《'+d.name+'》（'+d.type+'）</p>'+
+    '<div class="detail-block" style="padding-top:0"><h3>AI 已解析摘要</h3><p class="detail-copy">'+d.sum+'</p></div>'+
+    '<div class="detail-block"><h3>关联研判课题</h3><p class="detail-copy">'+d.topic+'</p></div>'+
+    '<div class="info-callout" style="margin-top:8px">点「一键出谋划策」将基于该材料生成招商建议草稿，可编辑后下发给 '+d.who+'。</div>';
+  openModal('材料详情 · '+d.city,body,'<button class="secondary-button" onclick="closeModal()">关闭</button><button class="primary-button" onclick="leaderAdvise('+i+')"><i class="i">✨</i>一键出谋划策</button>');
+}
+function leaderAdvise(i){var d=LEADER_DOCS[i];
+  var _lt=d.topic||'';
+  var _lbg=_lt.indexOf('氢能')>-1?'随州新楚风49T氢重卡已量产，电堆占整车成本53%全部外购，本地配套率仅41%（十堰75%+）':_lt.indexOf('应急')>-1?'随州移动应急装备2023产值324亿，应急机器人/无人机本体靠外采（启灵/迅北斗），智慧感知层空白':'随州香菇全产业链产值超500亿，品源4亿美元出口订单，菌种国外垄断、功能成分提取仅2家布局';
+  var _lpk=_lt.indexOf('氢能')>-1?'专汽产业园/随州高新区':_lt.indexOf('应急')>-1?'曾都区国家安全应急产业示范基地':'随县香菇产业园';
+  var draft='基于《'+d.name+'》（'+d.type+'）与随州城市智库，就「'+d.topic+'」建议：\n'+
+    '① 产业背景：'+_lbg+'。\n'+
+    '② 缺口研判：'+d.sum+'\n'+
+    '③ 招引重点：优先补「'+_lt+'」最缺的核心环节（'+_lpk+'方向），匹配具异地设厂意向的龙头。\n'+
+    '④ 承接准备：请'+d.who+'确认首选承接园区（'+_lpk+'）与专项资金口径，便于对接时报价。\n'+
+    '⑤ 下一步：完善后作为研判输入下发给'+d.who+'，纳入其「资料准备」。';
+  var body='<p class="modal-intro">基于《'+d.name+'》生成的招商建议草稿（可编辑后下发给 '+d.who+'）：</p>'+
+    '<div class="form-stack"><label>招商建议草稿<textarea id="adviseTa" rows="9" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:13px;line-height:1.7;resize:vertical">'+draft+'</textarea></label></div>'+
+    '<div class="answer-note">⚠ AI 生成草稿，需人工确认后再下发；出谋划策的决策权在老板/运营高层。</div>';
+  openModal('招商建议草稿 · '+d.city+' · '+d.topic,body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="closeModal();toast(\'已下发招商建议给 '+d.who+'\')"><i class="i">📤</i>确认下发 '+d.who+'</button>');
+}
+function opsRes(){
+  var head='<div class="page"><div class="page-header"><div><span class="eyebrow">RESOURCE BASE</span><h1>资源库 · 企业推荐</h1>'+
+    '<p>录入慧小招团队推荐企业，直接推送到对应项目的「慧小招团队推荐」区，政府端可见脱敏信息。</p></div>'+
+    '<div style="display:flex;gap:8px">'+
+    '<button class="ghost-button" onclick="resAdd()" style="background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none"><i class="i">📝</i>录入推荐企业</button>'+
+    '</div></div>';
+  if(RESOURCES.length===0){
+    return head+'<div class="knowledge-scroll"><div class="empty-page"><div class="empty-state">'+
+      '<i class="i">🗄️</i><h1>资源库</h1>'+
+
+      '<div class="topic-grid" style="margin:0;width:100%;grid-template-columns:1fr">'+
+        '<button class="topic-row" onclick="resAdd()"><i class="i">✍️</i><span><strong>手动录入企业</strong><small>一家一家建档，打产业链标签</small></span></button>'+
+        '<button class="topic-row" onclick="resImport()"><i class="i">📥</i><span><strong>批量导入名录</strong><small>Excel/CSV 一次导入行业名录</small></span></button>'+
+        '<button class="topic-row" onclick="resChannel()"><i class="i">🔗</i><span><strong>对接外部渠道</strong><small>招商平台 / 行业协会 / 园区名录</small></span></button>'+
+      '</div>'+
+      '<div class="warning-callout" style="margin-top:18px;text-align:left">'+
+        '<strong>📝 录入推荐企业流程</strong>'+
+        '<p style="margin:8px 0 0;font-size:13px;line-height:1.7">'+
+          '① 点击「录入推荐企业」→ 填写脱敏代号/补链方向/扩张信号（必须有可查证来源）<br>'+
+          '② 选择关联项目 → 保存后自动推送到政府端「慧小招团队推荐」区<br>'+
+          '③ 政府端看到脱敏信息，可点「请资源团队核验」→ 进入资源核验流程'+
+        '</p>'+
+      '</div>'+
+      '<div class="warning-callout" style="margin-top:12px;text-align:left"><strong>当前待补充推荐（燃料电池电堆（随州电堆外购占整车成本53%）/ 应急机器人与无人机（江南专汽/齐星依赖外采）/ 香菇功能成分提取（仅裕国/肽源2家布局）等缺口暂无资源，建议优先补录这三类企业。</p></div>'+
+    '</div></div></div>';
+  }
+  var rows=RESOURCES.map(function(r,i){
+    var vtag=r.verify==='ok'?'<span class="ops-badge green">已核验</span>':r.verify==='rej'?'<span class="ops-badge orange">已驳回</span>':'<span class="ops-badge gray">待核验</span>';
+    return '<tr class="row-click" onclick="resView('+i+')"><td><strong>'+r.alias+'</strong></td><td>'+r.tag+'</td><td>'+r.loc+'</td><td>'+r.intent+'</td><td>'+vtag+'</td></tr>';
+  }).join('');
+  var domains=RESOURCES.map(function(r){return r.domain}).filter(function(v,i,a){return a.indexOf(v)===i});
+  var lead='资源库现有 <strong>'+RESOURCES.length+'</strong> 家可对接企业，覆盖 '+domains.join(' / ')+'。'+(DEMANDS.filter(function(d){return d.res==='none';}).length?'「'+DEMANDS.filter(function(d){return d.res==='none';}).map(function(d){return d.domain;}).join('、')+'」方向仍是缺口，对应随州在办需求，建议优先补录以激活匹配。':'当前在办需求均已有候选资源，可进入核验流程。');
+  var leadBubble='<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble"><p>'+lead+'</p></div></div>';
+  return head+'<div class="conversation-scroll" style="padding:22px 28px 20px">'+leadBubble+
+    '<div class="ops-card"><div class="ops-card-head"><span class="t">🏢 可对接企业库</span><span class="sub">共 '+RESOURCES.length+' 家 · 点行看档案</span></div>'+
+    '<div class="ops-card-body flush"><table class="ops-table"><thead><tr><th>脱敏名</th><th>产业链标签</th><th>所在地</th><th>意向</th><th>核验状态</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'+
+    '<div style="margin-top:14px;display:flex;gap:10px"><button class="ghost-button" onclick="resImport()"><i class="i">📥</i>批量导入名录</button><button class="ghost-button" onclick="resChannel()"><i class="i">🔗</i>对接外部渠道</button></div></div></div>';
+}
+function resView(i){var r=RESOURCES[i];if(!r)return;
+  var body='<div class="detail-block" style="padding-top:0"><h3>脱敏名（对政府端展示）</h3><p class="detail-copy">'+r.alias+'</p></div>'+
+    '<div class="detail-block"><h3>企业真名（内部可见）</h3><p class="detail-copy">'+(r.real||'（内部可见真名）')+'</p></div>'+
+    '<div class="kv"><span class="kk" style="width:90px;color:#8490a5">产业链标签</span><span class="vv">'+r.tag+'</span></div>'+
+    '<div class="kv"><span class="kk" style="width:90px;color:#8490a5">所在地/意向</span><span class="vv">'+r.loc+' · '+r.intent+'</span></div>'+
+    '<div class="kv"><span class="kk" style="width:90px;color:#8490a5">核验状态</span><span class="vv">'+(r.verify==='ok'?'✓ 已核验通过':r.verify==='rej'?'已驳回（'+(r.rejReason||'')+'）':'待核验')+'</span></div>'+
+    '<div class="boundary-note" style="margin-top:12px"><i class="i">🔒</i>真名仅内部可见；派生到政府端时只展示脱敏名。</div>';
+  openModal('企业档案 · '+r.alias,body,'<button class="primary-button" onclick="closeModal()">知道了</button>');
+}
+function resImport(){
+  var body='<p class="modal-intro">从 Excel / CSV 批量导入行业名录，导入后自动打产业链标签、生成脱敏名。</p>'+
+    '<div class="form-stack"><label>选择文件<input value="行业名录_示例.xlsx" readonly></label>'+
+    '<label>默认产业链标签<input placeholder="如：氢能装备（可导入后逐条修正）"></label></div>'+
+    '<div class="info-callout" style="margin-top:8px">Demo 演示：确认后将载入 '+RES_SEED.length+' 家示例企业入库。真实环境按表头字段映射批量建档。</div>';
+  openModal('批量导入名录',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="resSeed()"><i class="i">📥</i>确认导入</button>');
+}
+function resChannel(){
+  var body='<p class="modal-intro">当资源库无匹配时，从外部渠道找源，回流后入库。</p>'+
+    '<div class="prompt-list" style="margin-left:0;width:100%">'+
+      '<div class="topic-row" style="cursor:default"><i class="i">🏛️</i><span><strong>行业协会 / 龙头供应链名录</strong><small>向协会/链主索取上下游名单</small></span></div>'+
+      '<div class="topic-row" style="cursor:default"><i class="i">💰</i><span><strong>产业基金 / 投行项目库</strong><small>从在投项目筛异地扩产标的</small></span></div>'+
+      '<div class="topic-row" style="cursor:default"><i class="i">🤝</i><span><strong>异地商会 / 开发区互推</strong><small>与兄弟园区招商局交换线索</small></span></div>'+
+    '</div>'+
+    '<div class="boundary-note" style="margin-top:10px"><i class="i">🔒</i>渠道对接由资源团队线下推进；系统只登记来源与回流线索。</div>';
+  openModal('对接外部渠道',body,'<button class="primary-button" onclick="closeModal()">知道了</button>');
+}
+
+/* 管理端录入企业推荐，直接写入对应项目的 clues（慧小招团队推荐区）*/
+function saveResAdd(){
+  var projKey = (document.getElementById('ra-proj')||{}).value;
+  var alias   = ((document.getElementById('ra-alias')||{}).value||'').trim();
+  var real    = ((document.getElementById('ra-real')||{}).value||'').trim();
+  var gap     = ((document.getElementById('ra-gap')||{}).value||'').trim();
+  var kind    = ((document.getElementById('ra-kind')||{}).value||'').trim();
+  var signal  = ((document.getElementById('ra-signal')||{}).value||'').trim();
+  var reason  = ((document.getElementById('ra-reason')||{}).value||'').trim();
+  var qsRaw   = ((document.getElementById('ra-qs')||{}).value||'').trim();
+
+  if(!projKey){ toast('请选择关联项目'); return; }
+  if(!alias)  { toast('请填写脱敏代号'); return; }
+  if(!signal) { toast('扩张信号不能为空（必须有可查证来源）'); return; }
+
+  var p = PROJECTS[projKey];
+  if(!p){ toast('项目不存在'); return; }
+  if(!p.clues) p.clues=[];
+
+  var questions = qsRaw ? qsRaw.split(/[,，、；;]/).map(function(q){return q.trim();}).filter(Boolean) : [];
+
+  var newClue = {
+    id:     'ops_clue_'+Date.now().toString(36),
+    name:   alias,
+    realName: real,    // 仅内部，不传政府端
+    kind:   kind||gap,
+    region: kind.split('·').pop().trim()||'待填写',
+    gap:    gap,
+    source: '慧小招团队推荐（'+new Date().toLocaleDateString('zh-CN')+'）',
+    signal: signal,
+    signalSrc: '慧小招内部渠道',
+    reason: reason,
+    questions: questions,
+    tone:   'amber',   // 团队推荐直接进入核验中状态
+    status: 'ops_rec', // 区别于 ai_scan
+    priority: 4,
+    localAttr: 'A',
+    hasMoveSignal: true,
+    addedBy: 'ops'
+  };
+
+  p.clues.push(newClue);
+
+  // 同步写入 RESOURCES（资源库备案）
+  RESOURCES.push({
+    alias: alias,
+    real:  real,
+    domain: gap,
+    loc:   kind,
+    intent: signal.substring(0,40),
+    status: '可用',
+    profile: reason,
+    why:    reason,
+    risk:   '需人工核验后推送政府端'
+  });
+
+  persist();
+  closeModal();
+  render();
+  toast('✓ 已录入「'+alias+'」→ 已推送至「'+p.city+'·'+p.topic.substring(0,15)+'」项目线索');
+}
+function resAdd(){
+  var projKeys=Object.keys(PROJECTS);
+  var projOptions=projKeys.map(function(k){
+    return '<option value="'+k+'">'+PROJECTS[k].city+' · '+PROJECTS[k].topic.substring(0,20)+'</option>';
+  }).join('');
+  var body=
+    '<p style="font-size:13px;color:#4a5568;margin:0 0 16px;line-height:1.7">以下内容仅管理端可见，政府端只展示脱敏名称和公开信号。</p>'+
+    '<div style="display:flex;flex-direction:column;gap:12px">'+
+      '<div>'+
+        '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">关联项目</label>'+
+        '<select id="ra-proj" style="width:100%;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none">'+
+          '<option value="">-- 选择项目 --</option>'+
+          projOptions+
+        '</select>'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+        '<div>'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">企业脱敏代号（政府端可见）</label>'+
+          '<input id="ra-alias" placeholder="如：脱敏企业X（电堆集成商）" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/>'+
+        '</div>'+
+        '<div>'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">企业真名（仅内部）</label>'+
+          '<input id="ra-real" placeholder="内部可见，不对外" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/>'+
+        '</div>'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+        '<div>'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">补链方向</label>'+
+          '<input id="ra-gap" placeholder="如：燃料电池电堆" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/>'+
+        '</div>'+
+        '<div>'+
+          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">企业类型与区域</label>'+
+          '<input id="ra-kind" placeholder="如：系统集成商 · 华南" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/>'+
+        '</div>'+
+      '</div>'+
+      '<div>'+
+        '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">扩张/落地信号（必填，需有可查证来源）</label>'+
+        '<textarea id="ra-signal" placeholder="如：2025年7月与湖北省政府签署备忘录，明确布局中部生产基地（来源：港交所公告2025-07-15）" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none;resize:vertical;min-height:68px;line-height:1.6"></textarea>'+
+      '</div>'+
+      '<div>'+
+        '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">为什么值得招引（可见政府端）</label>'+
+        '<textarea id="ra-reason" placeholder="如：直补随州电堆53%最大缺口，与新楚风/程力形成直接配套" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none;resize:vertical;min-height:56px;line-height:1.6"></textarea>'+
+      '</div>'+
+      '<div>'+
+        '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">核验问题（逗号分隔）</label>'+
+        '<input id="ra-qs" placeholder="是否有湖北建厂计划，与本地整车厂技术路线匹配度" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/>'+
+      '</div>'+
+    '</div>';
+  openModal('📝 录入慧小招推荐企业', body,
+    '<button class="secondary-button" onclick="closeModal()">取消</button>'+
+    '<button class="primary-button" onclick="saveResAdd()">保存并推送给政府端</button>');
+}
+function resSeed(){RESOURCES=RES_SEED.slice();closeModal();toast('已入库随州种子企业 '+RESOURCES.length+' 家（电堆/无人机/香菇提取各1家），可去智能匹配');render()}
+function matchDemand(){
+  // 默认取第一条"非暂无资源"的需求；用户可切换
+  if(matchDemandId){var f=DEMANDS.find(function(x){return x.id===matchDemandId});if(f)return f;}
+  return DEMANDS.find(function(x){return x.res!=='none'})||DEMANDS[0];
+}
+function setMatchDemand(id){matchDemandId=id;render()}
+function opsMatch(){
+  var d=matchDemand();
+  var head='<div class="page"><div class="page-header"><div><span class="eyebrow">AI MATCHING</span><h1>智能匹配</h1>'+
+    '<p>为随州招商需求匹配资源库企业：三大核心缺口——①燃料电池电堆（整车成本53%全部外购）②应急机器人/无人机（靠外采启灵/迅北斗）③香菇功能成分提取（仅裕国/肽源2家）。AI给建议，你线下核实后记录结论。</p></div></div>';
+  // 需求切换器（统一 chips）
+  var picker='<div class="ops-chips"><span class="lbl">针对需求</span>'+
+    DEMANDS.map(function(x){var on=x.id===d.id;var rc=RES_COLOR[x.res];
+      return '<button class="ops-chip'+(on?' on':'')+'" onclick="setMatchDemand(\''+x.id+'\')"><span class="dot" style="background:'+rc.c+'"></span>'+x.city+' · '+x.topic.replace('补链','').replace('升级','').replace('智能化','')+'</button>';
+    }).join('')+'</div>';
+  // 候选企业：仅展示与该需求 domain 匹配的资源
+  var pool=RESOURCES.map(function(r,gi){return {r:r,gi:gi}}).filter(function(o){return o.r.domain===d.domain;});
+  var okCnt=pool.filter(function(o){return o.r.verify==='ok'}).length;
+  // AI 匹配分析引导语（对话气泡，随需求与库存状态动态生成）
+  var lead;
+  if(RESOURCES.length===0){
+    var _bg0=d.domain.indexOf('电堆')>-1?'该环节是随州氢能整车成本最大缺口（占53%），新楚风/程力急需本地配套':d.domain.indexOf('无人机')>-1||d.domain.indexOf('机器人')>-1?'随州江南专汽/齐星整机能力强但感知层全靠外采，是智慧应急补链最大突破口':'随州香菇年产70万吨全球第一，功能成分提取仅2家，是向价值链上移的核心瓶颈';
+    lead='已锁定「'+d.city+' · '+d.topic+'」缺口：「'+d.domain+'」（'+_bg0+'）。资源库目前是空的——建议先补录该方向 2-3 家种子企业（可在右侧资源库冷启动），有内容后立即可以开始匹配。';
+  }else if(pool.length===0){
+    var _bg1=d.domain.indexOf('电堆')>-1?'电堆/储氢/空压机（随州整车成本53%缺口）':d.domain.indexOf('无人机')>-1||d.domain.indexOf('机器人')>-1?'应急机器人/无人机/5G通信（随州感知层外采依赖）':'香菇多糖/多肽提取/菌种研发（随州精深加工空白）';
+    lead='「'+d.city+' · '+d.topic+'」缺口「'+d.domain+'」（'+_bg1+'）。已扫描资源库现有 '+RESOURCES.length+' 家企业，暂无该方向匹配项。建议：①去资源库补录 '+d.domain+' 方向企业；②或让我规划外部找源渠道（行业协会/产业基金/展会名单）。';
+  }else{
+    var _bg2=d.domain.indexOf('电堆')>-1?'，补随州整车成本53%最大缺口，与新楚风/程力直接配套':d.domain.indexOf('无人机')>-1||d.domain.indexOf('机器人')>-1?'，替代随州江南专汽/齐星对外采依赖':'，就近使用随州年产70万吨香菇原料，提取成本可降40%+';
+    lead='针对「'+d.city+' · '+d.topic+'」缺口「'+d.domain+'」'+_bg2+'，从资源库匹配到 <strong>'+pool.length+' 家</strong>候选企业'+(okCnt?'（其中 '+okCnt+' 家已核验通过）':'')+'。下面每家我都给了匹配理由、证据和需要你线下核实的风险点——核验属实后点「核验通过」，即派生线索并进入对接看板。';
+  }
+  var leadBubble='<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble"><p>'+lead+'</p></div></div>';
+  // prompt-row 引导卡
+  var guides='<div class="prompt-list" style="margin:0 0 6px 60px;width:auto">'+
+    promptRow('🔍','分析随州这条需求的缺口','拆解随州产业链，定位最该补的核心环节（电堆/机器人/提取）',"matchAsk('帮我分析随州这条需求的缺口在哪')")+
+    promptRow('🏭','该找哪类企业，企业画像是什么','按随州需求缺口给出目标企业画像与优先级',"matchAsk('针对随州这条需求该找哪类企业？')")+
+    promptRow('🌐','规划随州外部找源渠道','面向三大缺口（电堆/机器人/香菇提取），从哪些渠道补源',"matchAsk('有哪些外部渠道可以为随州找源？')")+
+    promptRow('✍️','生成随州定向招募话术','含随州产业基础优势的企业邀请话术草稿',"matchAsk('帮我写一段针对随州的定向招募话术')")+
+  '</div>';
+  var boundary='<div class="ops-hint" style="background:#fbfaf5;color:#7a6b4a"><i class="i" style="color:#c08a2a">🔒</i>AI 只给匹配建议；真实意向与关键人触达由你线下核实，「核验通过」是记录你的人工结论并推动流转，系统不自动联系企业。</div>';
+  function wrap(inner){return head+'<div class="conversation-scroll" style="padding:22px 28px 8px">'+picker+leadBubble+guides+inner+matchChatPanel()+'</div></div>';}
+  if(RESOURCES.length===0){
+    return wrap('<div class="ops-card" style="margin:6px 0 14px"><div class="ops-card-body"><div class="fact-with-icon warning"><i class="i">⚠</i><div><strong>资源库暂无企业</strong><span>先去资源库冷启动——随州优先补录：①燃料电池电堆企业（华南/长三角，对接新楚风/程力整车需求）②应急机器人/无人机集成商（长三角，替代启灵/迅北斗外采）③香菇功能成分提取企业（华东，就近使用70万吨原料）。录入后回来匹配。</span></div></div>'+
+      '<div style="margin-top:12px"><button class="ghost-button" onclick="opsNav(\'res\')"><i class="i">🗄️</i>去资源库冷启动</button></div></div></div>');
+  }
+  if(pool.length===0){
+    return wrap('<div class="ops-card" style="margin:6px 0 14px"><div class="ops-card-body"><div class="fact-with-icon warning"><i class="i">⚠</i><div><strong>资源库暂无「'+d.domain+'」方向的匹配企业</strong><span>可去资源库补录该方向，或从外部渠道找源。</span></div></div>'+
+      '<div style="margin-top:12px;display:flex;gap:8px"><button class="ghost-button" onclick="opsNav(\'res\')"><i class="i">🗄️</i>去资源库补录</button><button class="ghost-button" onclick="resChannel()"><i class="i">🔗</i>对接外部渠道</button></div></div></div>'+boundary);
+  }
+  var cands=pool.map(function(o){
+    var r=o.r;var gi=o.gi;var score=[94,88,83][gi%3];
+    var done=r.verify==='ok';var rej=r.verify==='rej';
+    var badge=done?'<span class="ops-badge green">✓ 已核验通过</span>':rej?'<span class="ops-badge orange">已驳回</span>':'<span class="ops-badge blue">置信度 '+score+'%</span>';
+    var actions=done
+      ? '<div style="font-size:11px;color:#8490a5;margin-top:8px">已派生脱敏线索，进入对接看板「匹配中」。</div>'
+      : rej
+      ? '<div style="font-size:11px;color:#a85408;margin-top:8px">已驳回：'+(r.rejReason||'')+'</div>'
+      : '<div style="display:flex;gap:8px;margin-top:10px"><button class="primary-button" style="min-height:36px;padding:0 14px;font-size:12.5px" onclick="opsVerify('+gi+')"><i class="i">✓</i>核验通过</button>'+
+        '<button class="ghost-button" style="min-height:36px;padding:0 14px;font-size:12.5px" onclick="opsReject('+gi+')">驳回</button></div>';
+    return '<div class="ops-card cand-card"><div class="ops-card-body">'+
+      '<div style="display:flex;align-items:flex-start;gap:12px">'+
+        '<div class="r-ic" style="flex:0 0 40px;width:40px;height:40px;font-size:20px">🏢</div>'+
+        '<div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><strong style="font-size:14.5px;color:#0b183b">'+r.alias+'</strong>'+badge+'</div>'+
+          '<div style="font-size:11.5px;color:#8490a5;margin-top:3px">'+r.tag+' · '+r.loc+' · '+r.intent+'</div></div>'+
+      '</div>'+
+      '<div style="margin-top:12px;display:grid;gap:9px">'+
+        '<div class="cand-line"><span class="cl-k">🏭 企业画像</span><span class="cl-v">'+r.profile+'</span></div>'+
+        '<div class="cand-line"><span class="cl-k">🎯 匹配理由</span><span class="cl-v">'+r.why+'</span></div>'+
+        '<div class="cand-line"><span class="cl-k">⚠ 需核实</span><span class="cl-v" style="color:#a85408">'+r.risk+'</span></div>'+
+        '<div class="cand-line"><span class="cl-k">📎 证据</span><span class="cl-v">产业链图谱缺口分析 + 该企业公开扩产信息 + '+d.city+'城市智库</span></div>'+
+      '</div>'+actions+'</div></div>';
+  }).join('');
+  var cardHead='<div class="ops-hint" style="margin-top:6px"><i class="i">🧩</i>AI 候选企业 · 匹配 <strong style="margin:0 3px">'+pool.length+'</strong> 家（缺口方向「'+d.domain+'」）<span class="grow"></span></div>';
+  return wrap(cardHead+boundary+'<div class="ops-stack" style="margin-top:12px">'+cands+'</div>');
+}
+function opsVerify(i){
+  var r=RESOURCES[i];if(!r)return;
+  var d=matchDemand();
+  var body='<p class="modal-intro">确认你已<strong>线下核实</strong>「'+r.alias+'」对「'+d.city+' · '+d.topic+'」的真实意向与可触达性？</p>'+
+    '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">候选企业</span><span class="vv">'+r.alias+'（'+r.tag+'·'+r.loc+'）</span></div>'+
+    '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">对应需求</span><span class="vv">'+d.city+' · '+d.topic+'</span></div>'+
+    '<div class="info-callout" style="margin-top:10px">通过后：① 该企业以脱敏名派生为候选线索 ② 自动进入「对接管理」看板"匹配中" ③ 回写需求状态并通知该城市干部。系统仅记录你的人工结论，不代替核实、不自动联系企业。</div>';
+  openModal('记录核验结论 · '+r.alias,body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="doVerify('+i+')"><i class="i">✓</i>确认已核实·通过</button>');
+}
+function doVerify(i){
+  var r=RESOURCES[i];if(!r)return;
+  var d=matchDemand();
+  r.verify='ok';
+  d.res='matched';d.resLabel='已匹配';d.clues=(d.clues||0)+1;
+  d.note='「'+r.alias+'」经人工核验通过，已进入对接流程。';
+  // 进对接看板"匹配中"（去重）
+  if(!DOCK_ITEMS.some(function(k){return k.company===r.alias&&k.topic===d.topic})){
+    DOCK_ITEMS.unshift({id:'k'+Date.now(),city:d.city,topic:d.topic,company:r.alias,stage:'匹配中',contact:d.gov.split('·')[1]||d.gov+' / 待确认',next:'核验决策层触达，安排走访'});
+  }
+  // 漏斗 match+1
+  var f=CITY_FUNNEL.find(function(x){return x.city===d.city});if(f)f.match++;
+  // 【回传政府端】给对应城市干部推一条通知（黄金演示动线第4步）
+  var pk=projKeyByCityTopic(d.city,d.topic);
+  NOTIFS.unshift({id:'n'+Date.now(),type:'状态变化',icon:'🔵',proj:pk,title:d.topic+' · 资源端已反馈',desc:'资源端核验通过 1 家脱敏候选企业（'+r.alias+'），已进入对接流程，建议准备承接材料。',time:'刚刚',read:false});
+  closeModal();render();
+  toast('已记录核验结论：'+r.alias+' 通过，进入对接看板，并已通知政府端');
+}
+/* 按城市+课题反查政府端项目key（用于回传通知定位） */
+function projKeyByCityTopic(city,topic){
+  var hit=Object.keys(PROJECTS).find(function(k){return PROJECTS[k].city===city&&PROJECTS[k].topic===topic});
+  return hit||null;
+}
+function opsReject(i){
+  var r=RESOURCES[i];if(!r)return;
+  var body='<p class="modal-intro">驳回候选「'+r.alias+'」，请记录驳回理由（供复盘）：</p>'+
+    '<div class="form-stack"><label>驳回理由<input id="rejReason" placeholder="如：产能不符 / 无异地设厂意向 / 关键人无法触达"></label></div>';
+  openModal('驳回候选 · '+r.alias,body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="doReject('+i+')">确认驳回</button>');
+}
+function doReject(i){
+  var r=RESOURCES[i];if(!r)return;
+  var reason=(document.querySelector('#rejReason')||{}).value||'未填写理由';
+  r.verify='rej';r.rejReason=reason;
+  closeModal();render();
+  toast('已驳回并记录理由：'+reason);
+}
+function matchChatPanel(){
+  var logo=brandLogo();
+  // 只有用户真正问过（>1条）才显示对话流，避免与顶部引导卡重复出现欢迎语
+  var conv=MATCH_CHAT.filter(function(m,i){return !(i===0&&m.who==='ai')});
+  var msgs=conv.map(function(m){
+    if(m.who==='user'){return '<div class="message is-user"><div class="message-bubble"><p>'+m.text+'</p></div></div>';}
+    return '<div class="message"><img src="'+logo+'"><div class="message-bubble"><p>'+m.text+'</p></div></div>';
+  }).join('');
+  return '<div class="ops-card" style="overflow:hidden">'+
+    '<div class="ops-card-head"><span class="t">💬 追问 AI 匹配助手</span><span class="sub">基于当前需求与产业图谱</span></div>'+
+    (msgs?'<div id="matchChatLog" style="max-height:280px;overflow:auto;padding:16px 16px 4px">'+msgs+'</div>':'')+
+    '<div style="display:flex;gap:10px;align-items:flex-end;padding:12px 16px;border-top:1px solid var(--line-soft);background:#fafbfd">'+
+      '<textarea id="matchChatInput" placeholder="继续问：换个方向找源 / 写招募话术 / 这家企业风险点…（Enter 发送）" rows="1" style="flex:1;min-height:42px;max-height:120px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;outline:0;resize:none;font-size:14px;line-height:22px" onkeydown="matchChatKey(event)"></textarea>'+
+      '<button class="send-button" style="position:static;width:46px;height:46px;flex:0 0 46px" onclick="matchSend()"><i class="i">➤</i></button></div></div>';
+}
+function matchAsk(q){var t=$('#matchChatInput'); if(t){t.value=q;} matchSend();}
+function matchChatKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();matchSend();}}
+function matchReply(q){
+  var d=matchDemand();
+  if(/渠道|找源|哪里找/.test(q)){
+    var domainTip=d.domain||d.topic.replace('补链','').replace('升级','').replace('智能化','');
+    return '针对「'+d.city+' · '+d.topic+'」（核心缺口：'+domainTip+'），建议外部找源渠道：① 全国「'+domainTip+'」行业协会/龙头供应链名录；② 产业基金/PE项目库（筛选有异地扩产意向的标的）；③ 与十堰/长三角/华南同类产业园开发区互推名单；④ 专利/招投标/展会公开信息监测（'+domainTip+'关键词）。确认方向后可一键生成定向招募话术。';
+  }
+  if(/话术|招募|文案/.test(q)){
+    var _szzBase=d.topic.indexOf('氢能')>-1?'年产16万辆专用汽车整车与改装能力，新楚风49T氢重卡已量产':d.topic.indexOf('应急')>-1?'移动应急装备2023产值324亿，曾都区国家安全应急产业示范基地':'全产业链产值超500亿，区域品牌价值205.8亿连续3年全国第一';
+    return '定向招募话术草稿：「随州正围绕「'+d.topic+'」补强核心产业链（'+d.domain+'方向），诚邀相关领域龙头企业深度合作。随州具备：'+_szzBase+'；完善的配套政策与一事一议机制。有意向者请对接招商专班。」可直接投放至行业协会/展会/定向拜访渠道。';
+  }
+  if(/缺口|缺什么|哪个环节/.test(q)){
+    var _res=RESOURCES.filter(function(r){return r.domain===d.domain});
+    return '「'+d.city+' · '+d.topic+'」产业链核心缺口在「'+d.domain+'」方向。'+(d.need||'')+      '当前资源库'+(_res.length?'已有 '+_res.length+' 家该方向候选企业，可直接进入匹配核验流程':'该方向企业尚空，建议先补录或走外部渠道找源')+'。';
+  }
+  return '针对「'+d.city+' · '+d.topic+'」，核心缺口方向为「'+d.domain+'」。AI建议优先匹配：具备落地意向、产业链位置直接补这一缺口的企业。当前资源库'+(RESOURCES.length===0?'尚空，建议先去资源库录入或从外部渠道找源':'共 '+RESOURCES.length+' 家候选，可逐条核验后派生线索')+'。';
+}
+function matchSend(){
+  var t=$('#matchChatInput'); if(!t) return; var q=(t.value||'').trim(); if(!q) return;
+  MATCH_CHAT.push({who:'user',text:q});
+  MATCH_CHAT.push({who:'ai',text:matchReply(q)});
+  render();
+  setTimeout(function(){var log=$('#matchChatLog'); if(log){log.scrollTop=log.scrollHeight;}},30);
+}
+function opsDock(){
+  var cols=[['匹配中','#013582','blue'],['对接中','#006d70','green'],['已对接','#5e6d82','gray'],['签约','#c85b09','orange']];
+  function card(k){
+    var alert=k.alert?'<div style="margin-top:7px;display:flex;gap:6px;font-size:11px;color:#a85408;background:#fdf0e0;border-radius:6px;padding:5px 8px;line-height:1.5"><span>🔔</span><span>'+k.alert+'</span></div>':'';
+    return '<div class="kanban-card"><strong>'+k.city+' · '+k.topic.replace('补链','').replace('升级','').replace('智能化','')+'</strong>'+
+    '<div class="kc-sub">🏢 '+k.company+'</div>'+
+    (k.contact?'<div class="kc-sub">👤 '+k.contact+'</div>':'')+
+    '<div class="kc-next">下一步：'+k.next+'</div>'+alert+
+    (k.stage!=='签约'?'<div style="margin-top:8px;text-align:right"><button class="ghost-button" style="min-height:28px;padding:3px 10px;font-size:11px" onclick="dockAdvance(\''+k.id+'\')">推进 ›</button></div>':'')+
+    '</div>';}
+  var board=cols.map(function(c){
+    var list=DOCK_ITEMS.filter(function(k){return k.stage===c[0]});
+    var items=list.map(card).join('')||'<div style="color:#9aa7bb;font-size:12px;padding:10px 2px">—</div>';
+    return '<div class="kanban-col"><div class="col-head"><span class="ops-badge '+c[2]+'">'+c[0]+'</span><span class="cnt">'+list.length+'</span></div>'+items+'</div>';
+  }).join('');
+  // AI 对接调度引导语
+  var alertN=DOCK_ITEMS.filter(function(k){return k.alert}).length;
+  var docking=DOCK_ITEMS.filter(function(k){return k.stage!=='签约'}).length;
+  var lead='对接看板共 <strong>'+DOCK_ITEMS.length+'</strong> 个项目在推进'+(alertN?'，其中 <strong>'+alertN+'</strong> 个需要你关注（超时未更新）':'')+'。核验通过的项目会自动进「匹配中」，你线下推进后逐列往右推。'+(alertN?'建议先处理带🔔提醒的项目。':'');
+  var leadBubble='<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble"><p>'+lead+'</p></div></div>';
+  return '<div class="page"><div class="page-header"><div><span class="eyebrow">DOCKING BOARD</span><h1>对接管理</h1><p>核验通过后的落地看板，可推进状态；结果回写漏斗与看板。</p></div></div>'+
+    '<div class="docking-scroll" style="padding:22px 28px 20px">'+leadBubble+
+    '<div class="ops-card" style="margin-bottom:12px"><div class="ops-card-head"><span class="t">🗂️ 对接落地看板</span><span class="sub">匹配中 → 对接中 → 已对接 → 签约</span></div><div class="ops-card-body"><div class="kanban">'+board+'</div></div></div>'+
+    '<div class="ops-hint" style="background:#f7f8fa;color:#8490a5"><i class="i" style="color:#8490a5">🔒</i>看板状态流转会记录操作人 + 时间 + 理由，进入审计日志。</div></div></div>';
+}
+function dockAdvance(id){
+  var k=DOCK_ITEMS.find(function(x){return x.id===id});if(!k)return;
+  var flow=['匹配中','对接中','已对接','签约'];
+  var ni=flow.indexOf(k.stage)+1;if(ni>=flow.length){toast('已是签约状态');return;}
+  var nextStage=flow[ni];
+  var nextTip={'对接中':'实地走访 + 政企座谈','已对接':'推进落地条件磋商','签约':'签约落地，纳入统计'}[nextStage]||'';
+  k.stage=nextStage;k.next=nextTip;
+  render();
+  toast('已推进「'+k.city+' · '+k.topic+'」→ '+nextStage);
+}
+function opsCity(){
+  var cards=CITY_FUNNEL.map(function(c){
+    var steps=[['提交',c.submit],['确认',c.confirm],['匹配',c.match],['对接',c.dock],['签约',c.sign]];
+    var stuckIdx=-1;
+    var bars=steps.map(function(s,i){var stuck=(i>0&&steps[i-1][1]-s[1]>=2);if(stuck&&stuckIdx<0)stuckIdx=i;
+      return '<div class="fn-step"><div class="fn-v'+(stuck?' stuck':'')+'">'+s[1]+'</div><div class="fn-l">'+s[0]+'</div></div>';
+    }).join('<div class="fn-arrow">›</div>');
+    var conv=c.submit?Math.round(c.match/c.submit*100):0;var stuck=conv<50;
+    var diag=stuck?'<div style="margin-top:10px;display:flex;gap:7px;font-size:11.5px;color:#a85408;background:#fdf0e0;border-radius:7px;padding:8px 10px;line-height:1.6"><span>🔎</span><span>AI 卡点诊断：随州「'+(c.city.indexOf('·')>-1?c.city.split('·')[1]:c.city)+'」卡在'+(steps[stuckIdx]?steps[stuckIdx][0]:'匹配')+'环节。根因：资源库该方向暂无企业（燃料电池电堆/应急机器人/香菇提取三类最缺），建议优先补录或走行业协会/基金项目库外部渠道。</span></div>':'<div style="margin-top:10px;display:flex;gap:7px;font-size:11.5px;color:#046d5b;background:#e3f6f0;border-radius:7px;padding:8px 10px"><span>✓</span><span>AI 诊断：转化顺畅，无明显卡点。</span></div>';
+    return '<div class="ops-card" style="margin-bottom:12px"><div class="ops-card-head"><span class="t">🗺️ '+c.city+'</span><span class="ops-badge '+(stuck?'orange':'green')+'" style="margin-left:auto">匹配转化 '+conv+'%</span></div><div class="ops-card-body"><div class="funnel">'+bars+'</div>'+diag+'</div></div>';
+  }).join('');
+  var _stuckFunnel=CITY_FUNNEL.filter(function(c){return c.submit&&c.match/c.submit<0.5});
+  var lead='当前跟踪随州 '+CITY_FUNNEL.length+' 个产业方向招商漏斗。'+(CITY_FUNNEL.length>0?'各方向从需求提交到匹配转化情况如下——':'')+(_stuckFunnel.length?'带橙色的「'+_stuckFunnel.map(function(c){return c.city;}).join('、')+'」方向存在卡点，根因多为资源库该方向企业不足，建议优先补源。':'各方向转化尚顺畅，可推进核验中需求的进度。');
+  var leadBubble='<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble"><p>'+lead+'</p></div></div>';
+  return '<div class="page"><div class="page-header"><div><span class="eyebrow">CITY OVERVIEW</span><h1>城市总览</h1><p>各试点城市漏斗、转化率与卡点（红色=停滞环节）。</p></div></div>'+
+    '<div class="conversation-scroll" style="padding:22px 28px 20px">'+leadBubble+cards+'</div></div>';
+}
+function opsOpen(){
+  var rows=OPEN_ACCOUNTS.map(function(a){
+    var _aSpec=a.org.indexOf('氢能')>-1?'氢能专用车补链':a.org.indexOf('农业')>-1?'香菇深加工补链':'智慧应急装备补链';
+    return '<tr><td><strong>'+a.city+'</strong></td><td>'+a.org+'<br><small style="color:#9aa5b5">'+_aSpec+'</small></td><td>'+a.who+' · '+a.role+'</td><td>'+a.crawl+'</td><td><span class="status-tag" style="color:#006d70;background:#e4f5f3">'+a.status+'</span></td></tr>';
+  }).join('');
+  return '<div class="page"><div class="page-header"><div><span class="eyebrow">ACCOUNT & CITY</span><h1>账号 · 城市开通</h1><p>为新城市注册、绑定政府端账号，并触发每日 0 点数据抓取。</p></div>'+
+    '<button class="ghost-button" onclick="openCity()"><i class="i">🔑</i>开通新城市</button></div>'+
+    '<div class="settings-scroll"><div class="ops-card" style="padding:14px 16px"><div class="ops-sec-title">🏙️ 已开通城市账号<span class="sub">共 '+OPEN_ACCOUNTS.length+' 个</span></div>'+
+    '<table class="ops-table"><thead><tr><th>城市</th><th>招商单位</th><th>联系人/角色</th><th>数据抓取</th><th>状态</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+    '<div class="ops-card" style="padding:16px;margin-top:12px"><div class="ops-sec-title">⚙️ 开通即自动化</div>'+
+    '<div class="toggle-row"><span><strong>每日 0 点数据抓取</strong><small>产业链/政策/行业公开信息，为 AI 研判备料</small></span><input type="checkbox" checked></div>'+
+    '<div class="toggle-row"><span><strong>生成登录邀请链接</strong><small>发送给对应干部/领导</small></span><input type="checkbox" checked></div></div></div></div>';
+}
+function doOpenCity(){
+  var ins=document.querySelectorAll('#modalLayer input');
+  var city=(ins[0]&&ins[0].value.trim())||'新城市';
+  var org=(ins[1]&&ins[1].value.trim())||(city+'市招商局');
+  var who=(ins[2]&&ins[2].value.trim())||'待绑定';
+  OPEN_ACCOUNTS.push({city:city,org:org,who:who,role:'干部',status:'已开通',crawl:'每日00:00 运行中'});
+  closeModal();render();
+  toast('已开通「'+city+'」并触发首轮 0 点抓取');
+}
+function opsBoard(){
+  var st={matched:0,checking:0,none:0};DEMANDS.forEach(function(d){st[d.res]++});
+  var total=DEMANDS.length;
+  var reachable=st.matched+st.checking;  // 匹配率口径：可推进/总数（暂无资源不计入分子）
+  var matchRate=total?Math.round(st.matched/total*100):0;
+  var cities=OPEN_ACCOUNTS.length;  // 覆盖城市数由已开通账号动态取
+  var signed=DOCK_ITEMS.filter(function(k){return k.stage==='签约'}).length;
+  var docking=DOCK_ITEMS.filter(function(k){return k.stage==='对接中'||k.stage==='已对接'}).length;
+  function tile(v,l,sub,cls){return '<div class="kpi-tile '+(cls||'')+'"><div class="kpi-label">'+l+'</div><div class="kpi-value">'+v+'</div>'+(sub?'<div class="kpi-sub">'+sub+'</div>':'')+'</div>';}
+  var tiles='<div class="kpi-grid">'+
+    tile(total,'📥 在办需求','跨 '+cities+' 城','accent')+
+    tile(matchRate+'%','🎯 匹配率','已匹配/总需求','teal')+
+    tile(st.matched,'✅ 已匹配','可安排对接')+
+    tile(docking,'🤝 对接推进中','走访/座谈')+
+    tile(st.checking,'🔍 核验中','待资源反馈','orange')+
+    tile(st.none,'📭 暂无资源','待找源')+
+  '</div>';
+  // 各城市转化明细表
+  var rows=CITY_FUNNEL.map(function(c){var conv=c.submit?Math.round(c.match/c.submit*100):0;
+    var stuck=conv<50;
+    return '<tr><td><strong>'+c.city+'</strong></td><td>'+c.submit+'</td><td>'+c.confirm+'</td><td>'+c.match+'</td><td>'+c.dock+'</td><td>'+c.sign+'</td>'+
+      '<td><span class="status-tag" style="color:'+(stuck?'#c85b09':'#006d70')+';background:'+(stuck?'#fff0de':'#e4f5f3')+'">'+conv+'%</span></td></tr>';
+  }).join('');
+  var table='<div class="ops-card"><div class="ops-card-head"><span class="t">📊 各城市转化明细</span><span class="sub">红色转化率 = 存在卡点</span></div>'+
+    '<div class="ops-card-body flush"><table class="ops-table"><thead><tr><th>城市</th><th>提交</th><th>确认</th><th>匹配</th><th>对接</th><th>签约</th><th>匹配转化</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+  // AI 经营洞察（对话气泡分析口吻）
+  var topCity=CITY_FUNNEL.slice().sort(function(a,b){return (b.submit?b.match/b.submit:0)-(a.submit?a.match/a.submit:0)})[0];
+  var stuckCity=CITY_FUNNEL.filter(function(c){return c.submit&&c.match/c.submit<0.5})[0];
+  var _topName=topCity?topCity.city.replace('随州·','随州（')+(topCity.city.indexOf('·')>-1?'方向）':''):'—';
+  var _stuckName=stuckCity?stuckCity.city.replace('随州·','随州（')+(stuckCity.city.indexOf('·')>-1?'方向）':''):null;
+  var insight='本周经营面看三点：① 转化最快的是 <strong>'+_topName+'</strong>，需求到匹配跑得最顺；'+
+    (_stuckName?'② <strong>'+_stuckName+'</strong> 卡在匹配环节，根因是资源库没有「'+(stuckCity.city.split('·')[1]||stuckCity.city)+'」方向企业——这是当前最大瓶颈，建议本周优先补录该方向；':'② 各方向转化尚均衡；')+
+    '③ 全局匹配率 '+matchRate+'%，'+(st.none?st.none+' 条需求（'+DEMANDS.filter(function(d){return d.res==='none';}).map(function(d){return d.topic;}).join('/')+'）因暂无资源停滞，':'')+'资源库仍在冷启动。<strong>建议</strong>：本周集中补录燃料电池电堆 / 应急机器人与无人机 / 香菇功能成分提取三类企业，可直接激活 '+(st.checking+st.none)+' 条在办需求。';
+  var insightBubble='<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble"><p>'+insight+'</p>'+
+    '<div class="message-note">AI 基于当前需求池、资源库与漏斗数据生成；原型示意，接入真实后端后自动统计。</div></div></div>';
+  return '<div class="page"><div class="page-header"><div><span class="eyebrow">DASHBOARD</span><h1>数据看板</h1><p>经营面：需求、匹配、对接、周期。</p></div></div>'+
+    '<div class="report-scroll"><div class="ops-stack">'+tiles+
+    '<div style="margin:2px 0"><div class="message" style="margin-bottom:0"><img src="'+aiAvatar()+'"><div class="message-bubble"><p>'+insight+'</p><div class="message-note">AI 基于当前需求池、资源库与漏斗数据生成；原型示意，接入真实后端后自动统计。</div></div></div></div>'+
+    table+'</div></div></div>';
+}
+function roleSwitch(){
+  return ''/* removed */ + '<button style="display:none" onclick="setRole(\''+(role==='ops'?'gov':'ops')+'\')" title="切换视角(演示用)"><i class="i">'+(role==='ops'?'👤':'🛰️')+'</i>'+(role==='ops'?'切到政府端':'切到管理端')+'</button>';
+}
+/* ================= /整合联动层 ================= */
+
+render();
+
+render();
+
+
+/* ══════════════════════════════════════════════════════════════
+   管理端 v2 — 精简为两个模块
+   Tab1: 城市需求概览  Tab2: 企业资源库
+   ══════════════════════════════════════════════════════════════ */
+
+/* ─ 全局状态 ─ */
+var opsTab = 'overview';  // 'overview' | 'enterprises'
+var OPS_ENT = OPS_ENT || [];  // 企业库 [{id,name,realName,kind,gap,region,signal,signalSrc,reason,scale,matchScore,status}]
+
+/* ─ 主渲染入口 ─ */
+function renderOpsV2(){
+  var root = $('#root');
+  if(!root) return;
+  var opsContent = document.getElementById('opsContent');
+  var scrollTop = opsContent ? opsContent.scrollTop : 0;
+  root.innerHTML = opsShell();
+  bind();
+  var newContent = document.getElementById('opsContent');
+  if(newContent) newContent.scrollTop = scrollTop;
+}
+
+function opsShell(){
+  return '<div class="app-shell ops-v2">' +
+    opsTopbarV2() +
+    '<div style="display:flex;height:calc(100vh - 52px);overflow:hidden">' +
+      opsTabBar() +
+      '<div id="opsContent" style="flex:1;overflow-y:auto">' +
+        (opsTab==='overview' ? opsOverview() : opsTab==='profile' ? opsCityProfile() : opsTab==='rag' ? opsRag() : opsTab==='users' ? opsUsers() : opsEnterprises()) +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function opsTopbarV2(){
+  var projectCount = Object.keys(PROJECTS).length;
+  var cityCount = (function(){var s={};Object.keys(PROJECTS).forEach(function(k){var c=PROJECTS[k]&&PROJECTS[k].city;if(c)s[c]=1;});return Object.keys(s).length;})();
+  var demandCount  = DEMANDS.length;
+  return '<div style="height:52px;background:#0b183b;display:flex;align-items:center;padding:0 20px;gap:16px;flex-shrink:0">' +
+    '<div style="display:flex;align-items:center;gap:8px">' +
+      '<div style="width:28px;height:28px;background:linear-gradient(135deg,#1a56db,#6366f1);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff">慧</div>' +
+      '<span style="color:#fff;font-weight:700;font-size:14px">慧小招 · 管理端</span>' +
+    '</div>' +
+    '<div style="display:flex;gap:12px;margin-left:8px">' +
+      '<span style="font-size:12px;color:#94a3b8">' + cityCount + ' 个城市</span>' +
+      '<span style="font-size:12px;color:#94a3b8">' + demandCount + ' 条需求</span>' +
+      '<span style="font-size:12px;color:#94a3b8">' + OPS_ENT.length + ' 家企业</span>' +
+    '</div>' +
+    '<div style="flex:1"></div>' +
+    '' +
+  '</div>';
+}
+
+function opsTabBar(){
+  var tabs=[
+    {id:'overview', icon:'🏙️', label:'城市需求概览', sub:'用户·进度·需求'},
+    {id:'profile', icon:'🧭', label:'城市画像', sub:'客观条件·招商偏好'},
+    {id:'rag', icon:'📚', label:'城市智库 RAG', sub:'材料·检索·推送日志'},
+    {id:'enterprises', icon:'🏭', label:'企业资源库', sub:'录入·扫描·推送'},
+    {id:'users', icon:'👤', label:'注册用户', sub:'政府端账号资料'},
+  ];
+  return '<div style="width:200px;flex-shrink:0;background:#f8faff;border-right:1px solid #e8edf5;padding:16px 12px;display:flex;flex-direction:column;gap:4px">' +
+    tabs.map(function(t){
+      var isOn=(opsTab===t.id);
+      return '<button onclick="opsTab=\'' + t.id + '\';renderOpsV2()" style="display:flex;align-items:center;gap:10px;padding:11px 12px;border:none;border-radius:10px;cursor:pointer;text-align:left;background:' + (isOn?'#eff6ff':'transparent') + ';border:1.5px solid ' + (isOn?'#bfdbfe':'transparent') + '">' +
+        '<span style="font-size:18px">' + t.icon + '</span>' +
+        '<div>' +
+          '<div style="font-size:13px;font-weight:' + (isOn?'700':'500') + ';color:' + (isOn?'#1d4ed8':'#0b183b') + '">' + t.label + '</div>' +
+          '<div style="font-size:11px;color:#9aa5b5;margin-top:1px">' + t.sub + '</div>' +
+        '</div>' +
+      '</button>';
+    }).join('') +
+  '</div>';
+}
+
+
+/* ══ Tab: 城市智库 RAG（材料·检索·推送日志）══ */
+var ragCity=null, ragTopic=0, ragQuery='', ragHits=null, ragLog=null, ragFilter='';
+// 对话更新 RAG：多轮消息 [{role,content}]；ragChatPending=可入库的最近一条 AI 结论草稿
+var ragChatMsgs=[], ragChatBusy=false, ragChatPending=null;
+function ragProjKey(){
+  // 【2026-09-18】放宽：原来要求 kb 里已有材料，导致「＋新增城市」建的空城市
+  // 会在下面 keys.indexOf(ragCity) 处被踢回旧城市，新城市切不进去也传不了材料。
+  // 只要有 kb 数组结构就算有效城市；默认选中仍优先已初始化/材料多的项目（见下 sort）。
+  var keys=Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&Array.isArray(p.kb);});
+  if(!keys.length) return null;
+  if(!ragCity){
+    // 默认优先：流水线初始化过的项目(kbInitTs) > 材料量最大的项目
+    var best=keys.slice().sort(function(a,b){
+      var pa=PROJECTS[a],pb=PROJECTS[b];
+      var ia=pa.kbInitTs?1:0, ib=pb.kbInitTs?1:0;
+      if(ia!==ib) return ib-ia;
+      var ca=pa.kb.reduce(function(s,t){return s+(t.known||[]).length;},0);
+      var cb=pb.kb.reduce(function(s,t){return s+(t.known||[]).length;},0);
+      return cb-ca;
+    })[0];
+    ragCity=best;
+  }
+  return keys.indexOf(ragCity)>=0?ragCity:keys[0];
+}
+function ragCityOptions(){
+  // 按城市去重：同一城市可能有多个项目(主账号+各招商方向子项目)，下拉只展示一个城市一项，
+  // 代表项 = 该城市材料量最大的项目(优先 kbInitTs)，避免出现多个"随州"。
+  // 【2026-09-18】原过滤要求 kb 里已有材料，导致管理端「＋新增城市」建的空城市进不了下拉、
+  // 也就没法给它上传材料。改为「有 kb 数组结构」即可，零材料的城市在选项里标注待上传。
+  var keys=Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&Array.isArray(p.kb);});
+  var byCity={};
+  keys.forEach(function(k){
+    var c=PROJECTS[k].city||k;
+    if(!byCity[c]){ byCity[c]=k; return; }
+    // 取代表项：kbInitTs 优先，其次 known 材料量更大者
+    var cur=byCity[c], pc=PROJECTS[cur], pk=PROJECTS[k];
+    var ic=pc.kbInitTs?1:0, ik=pk.kbInitTs?1:0;
+    if(ik!==ic){ if(ik>ic) byCity[c]=k; return; }
+    var nc=pc.kb.reduce(function(s,t){return s+(t.known||[]).length;},0);
+    var nk=pk.kb.reduce(function(s,t){return s+(t.known||[]).length;},0);
+    if(nk>nc) byCity[c]=k;
+  });
+  var activeCity = (PROJECTS[ragProjKey()]||{}).city;
+  return Object.keys(byCity).map(function(c){
+    var k=byCity[c];
+    var _n=(PROJECTS[k].kb||[]).reduce(function(s,t){return s+((t.known||[]).length);},0);
+    return '<option value="'+k+'"'+(c===activeCity?' selected':'')+'>'+c+(_n?'':' · 待上传材料')+'</option>';
+  }).join('');
+}
+function opsRag(){
+  var key=ragProjKey();
+  if(!key) return '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:#9aa5b5;padding:60px">'+
+    '<div style="font-size:36px">📚</div><div style="font-size:14px;font-weight:700;color:#0b183b">暂无已初始化的城市智库</div>'+
+    '<div style="font-size:13px;text-align:center;line-height:1.7">可直接新增城市并上传材料建库，<br>或在「城市需求概览」发起报告生成由流水线自动入库</div>'+
+    '<button class="ghost-button" onclick="ragAddCityModal()" style="margin-top:4px;border-color:#c7d2fe;color:#4f46e5">＋ 新增城市</button></div>';
+  var p=PROJECTS[key];
+  var total=p.kb.reduce(function(s,t){return s+(t.known||[]).length;},0);
+  var rs=REPORTSTATE[key]||{};
+  var initT=p.kbInitTs?new Date(p.kbInitTs):null;
+  var initStr=initT?(initT.getMonth()+1)+'/'+initT.getDate()+' '+initT.getHours()+':'+('0'+initT.getMinutes()).slice(-2):'—';
+  return '<div style="padding:24px">'+
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'+
+      '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">城市智库 RAG</h1>'+
+      '<select onchange="ragCity=this.value;ragTopic=0;ragHits=null;renderOpsV2()" style="min-height:34px;padding:4px 10px;border:1px solid #d8e0ed;border-radius:8px;font-size:13px">'+ragCityOptions()+'</select>'+
+      '<button onclick="ragAddCityModal()" title="新增一个城市智库，建好后可直接上传材料" '+
+        'style="min-height:34px;padding:4px 12px;border:1px solid #c7d2fe;border-radius:8px;background:#f5f3ff;color:#4f46e5;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap">＋ 新增城市</button>'+
+      '<span style="font-size:12px;color:#9aa5b5">'+(p.org||'—')+' · 初始化于 '+initStr+'</span></div>'+
+    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">'+
+      ragStatCard('📦','智库材料总量',total+' 条','来自 AI 招商智能体研判')+
+      ragStatCard('🗂️','主题分区',p.kb.length+' 个','产业链/园区/企业/政策')+
+      ragStatCard('📄','研判报告',(rs.text?Math.round(rs.text.length/100)/10+'k 字':'未生成'),rs.finalized?'已定稿·政府端可见':'')+
+      ragStatCard('🕐','版本历史',((p.kbVersions||[]).length||1)+' 版','支持时间线回溯')+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">'+ragUploadPanel(p,key)+ragVersionPanel(p,key)+'</div>'+
+    ragSearchBox()+
+    ragChatBox(p,key)+
+    '<div style="display:grid;grid-template-columns:230px 1fr;gap:14px;margin-top:14px">'+ragTopicNav(p)+ragChunkList(p)+'</div>'+
+    ragPushLog()+
+  '</div>';
+}
+/* ══ 新增城市智库（管理端 RAG 页）══
+   建一个带标准四大主题骨架的空项目，建好后直接切到该城市，
+   用户即可用下方现成的上传面板传材料（/api/kb-upload 支持空 kb，见 server.py:1490）。 */
+function ragAddCityModal(){
+  var body='<div style="display:flex;flex-direction:column;gap:12px">'+
+    '<div style="font-size:12.5px;color:#5a7398;line-height:1.7;background:#f8fbff;border:1px solid #e3ebf6;border-radius:8px;padding:10px 12px">'+
+      '新增后会建立该城市的空智库（产业/园区/企业/政策四个主题分区），'+
+      '随后在本页「📎 上传文件」直接传材料，AI 自动切分入库。'+
+    '</div>'+
+    '<label style="font-size:12px;color:#5a7398;font-weight:600">城市名称 <span style="color:#dc2626">*</span>'+
+      '<input id="ragNewCity" placeholder="如 荆门市 / 松江区" '+
+      'style="width:100%;min-height:38px;margin-top:5px;padding:4px 10px;border:1px solid #d8e0ed;border-radius:7px;font-size:13px;box-sizing:border-box"></label>'+
+    '<label style="font-size:12px;color:#5a7398;font-weight:600">招商单位'+
+      '<input id="ragNewOrg" placeholder="留空则自动填「<城市>招商局」" '+
+      'style="width:100%;min-height:38px;margin-top:5px;padding:4px 10px;border:1px solid #d8e0ed;border-radius:7px;font-size:13px;box-sizing:border-box"></label>'+
+    '<div id="ragNewErr" style="display:none;font-size:12px;color:#dc2626"></div>'+
+  '</div>';
+  var foot='<button class="secondary-button" onclick="closeModal()">取消</button>'+
+    '<button class="primary-button" onclick="ragDoAddCity()">创建并开始上传</button>';
+  openModal('新增城市智库', body, foot);
+  setTimeout(function(){ var el=document.getElementById('ragNewCity'); if(el) el.focus(); },80);
+}
+function ragDoAddCity(){
+  function val(id){ var e=document.getElementById(id); return e?e.value.trim():''; }
+  function err(m){ var e=document.getElementById('ragNewErr'); if(e){ e.textContent=m; e.style.display='block'; } }
+  var city=val('ragNewCity');
+  if(!city){ err('请填写城市名称'); return; }
+  if(city.length>20){ err('城市名称过长'); return; }
+  // 同名城市已存在则直接切过去，不重复建壳（避免出现两个同名城市）
+  var exist=Object.keys(PROJECTS).filter(function(k){ return PROJECTS[k] && PROJECTS[k].city===city; });
+  if(exist.length){
+    closeModal();
+    ragCity=exist[0]; ragTopic=0; ragHits=null;
+    try{ renderOpsV2(); }catch(_){}
+    toast&&toast('「'+city+'」已存在，已切换到该城市智库');
+    return;
+  }
+  var org=val('ragNewOrg')||(city+'招商局');
+  var key='city'+Date.now().toString(36);
+  PROJECTS[key]={
+    id:key, city:city, org:org, who:'待绑定', topic:city+'产业链招引', stage:1,
+    kb:[
+      {icon:'🏭',t:'主导产业与产业链',sub:'待上传材料',tag:'待补充',known:[],calls:['城市公开信息','产业链图谱']},
+      {icon:'🏢',t:'园区与承载条件',sub:'待上传材料',tag:'待补充',known:[],calls:['园区基础资料','政府官网']},
+      {icon:'🏗️',t:'链主与存量企业',sub:'待上传材料',tag:'待补充',known:[],calls:['企业名录','工商信息']},
+      {icon:'📜',t:'政策、规划与领导关注',sub:'待上传材料',tag:'待补充',known:[],calls:['政府工作报告','领导发言']}
+    ],
+    kbInitTs:Date.now(),
+    report:null, clues:[], customStages:[]
+  };
+  closeModal();
+  ragCity=key; ragTopic=0; ragHits=null;
+  // 【关键】同步 XHR 先把新项目推到服务端再渲染。
+  // 只用 persist() 不够：它的 POST 还在路上时，其它逻辑触发的 restoreFromServer
+  // 会拿回不含新城市的旧快照覆盖内存，新城市就"建了又消失"（实测复现）。
+  // 与 index.html doRegister 同一套做法，只推 PROJECTS 增量避免空快照灾难。
+  var _saved=false;
+  try{
+    var _body={PROJECTS:PROJECTS, syncTs:Date.now()};
+    if(typeof RESET_GEN!=='undefined'&&RESET_GEN) _body.RESET_GEN=RESET_GEN;
+    var _x=new XMLHttpRequest();
+    _x.open('POST','/api/sync',false);
+    _x.setRequestHeader('Content-Type','application/json');
+    _x.send(JSON.stringify(_body));
+    _saved=(_x.status>=200&&_x.status<300);
+  }catch(e){ _saved=false; }
+  try{ persist(); }catch(_){}
+  try{ renderOpsV2(); }catch(_){}
+  if(_saved) toast&&toast('已创建「'+city+'」智库，请在下方上传材料');
+  else toast&&toast('已创建「'+city+'」，但同步到服务端失败，请检查网络后重试');
+}
+
+/* ── 接口1 UI：管理员上传文件补充/修正（极简：选文件+主题+性质）── */
+function ragUploadPanel(p,key){
+  var topicOpts=(p.kb||[]).map(function(t){return '<option value="'+t.t.replace(/"/g,'')+'">'+t.t+'</option>';}).join('')+
+    '<option value="__new__">＋ 新建主题</option>';
+  var uploads=(p.kbUploads||[]).slice().reverse().slice(0,3);
+  var log=uploads.length?('<div style="margin-top:9px;font-size:11px;color:#8492a6;line-height:1.7">'+
+    uploads.map(function(u){var t=new Date(u.ts);var nt=u.nature==='fix'?'🟡修正':'🟢佐证';return nt+' '+u.filename+' → '+u.topic+'（+'+u.chunks+'条）';}).join('<br>')+'</div>'):'';
+  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:14px 16px">'+
+    '<div style="font-size:13px;font-weight:700;color:#0b183b;margin-bottom:4px">📎 上传文件 · 补充 / 修正</div>'+
+    '<div style="font-size:11px;color:#8492a6;margin-bottom:11px">选择文件即可，AI 自动切分入库；佐证=绿色追加，修正=黄色覆盖</div>'+
+    '<div style="display:flex;gap:8px;margin-bottom:9px">'+
+      '<select id="ragUpTopic" style="flex:1;min-height:38px;padding:4px 9px;border:1px solid #d8e0ed;border-radius:7px;font-size:12px">'+topicOpts+'</select>'+
+      '<select id="ragUpNature" style="flex:0 0 118px;min-height:38px;padding:4px 9px;border:1px solid #d8e0ed;border-radius:7px;font-size:12px"><option value="support">🟢 佐证补充</option><option value="fix">🟡 修正覆盖</option></select>'+
+    '</div>'+
+    '<label id="ragDrop" style="display:flex;align-items:center;justify-content:center;gap:8px;min-height:60px;border:1.5px dashed #b9cbe4;border-radius:9px;background:#f8fbff;color:#5a7398;font-size:12.5px;cursor:pointer">'+
+      '<span style="font-size:18px">📁</span><span id="ragUpFileName">点击选择文件（.pdf / .docx / .txt / .md / .csv）</span>'+
+      '<input type="file" id="ragUpFile" accept=".pdf,.docx,.txt,.md,.csv" onchange="ragReadFile(this,\''+key+'\')" style="display:none"></label>'+
+    log+'</div>';
+}
+function ragReadFile(inp,key){
+  var f=inp.files&&inp.files[0]; if(!f)return;
+  var nm=document.getElementById('ragUpFileName'); if(nm)nm.textContent='正在读取：'+f.name;
+  var isBin=/\.(pdf|docx)$/i.test(f.name);
+  if(isBin){
+    // PDF/Word：读为 base64 交后端解析（pdfplumber / python-docx）
+    var rb=new FileReader();
+    rb.onload=function(){
+      var b64=String(rb.result||'').split(',')[1]||'';  // 去掉 data:...;base64, 前缀
+      ragDoUpload(key, null, f.name, b64);
+    };
+    rb.onerror=function(){toast&&toast('文件读取失败');if(nm)nm.textContent='点击选择文件（.pdf / .docx / .txt / .md / .csv）';};
+    rb.readAsDataURL(f);
+  } else {
+    var rd=new FileReader();
+    rd.onload=function(){ ragDoUpload(key, rd.result, f.name, null); };
+    rd.readAsText(f);
+  }
+}
+function ragDoUpload(key, text, name, fileB64){
+  var topic=(document.getElementById('ragUpTopic')||{}).value||'';
+  var nature=(document.getElementById('ragUpNature')||{}).value||'support';
+  if(!fileB64 && (!text||!text.trim())){toast&&toast('文件内容为空');return;}
+  var p=PROJECTS[key];
+  var restLabel='点击选择文件（.pdf / .docx / .txt / .md / .csv）';
+  function send(finalTopic){
+    var mode=nature==='fix'?'replace':'append';
+    var nm=document.getElementById('ragUpFileName'); if(nm)nm.textContent='正在解析入库…';
+    var payload={projectKey:key,city:p.city,topic:finalTopic,filename:name||'上传文件',
+        mode:mode,origin:'admin',nature:nature,by:'管理端·周总',source:'file'};
+    if(fileB64){ payload.fileB64=fileB64; } else { payload.text=text; }
+    fetch('/api/kb-upload',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)})
+      .then(function(r){return r.json();}).then(function(res){
+        if(res.ok){
+          var extra=res.matched?('，命中已有 '+res.matched+' 条'):'';
+          toast&&toast('已入库 '+res.chunks+' 条（'+(nature==='fix'?'修正':'佐证')+'）'+extra);
+          restoreFromServer(function(){renderOpsV2();});
+        }
+        else{toast&&toast('上传失败：'+(res.error||''));if(nm)nm.textContent=restLabel;}
+      }).catch(function(e){toast&&toast('上传出错');if(nm)nm.textContent=restLabel;});
+  }
+  // 新建主题：用页面内 modal 取名（不使用原生 prompt）
+  if(topic==='__new__'){
+    ragCommitModal({key:key,city:p.city,topics:(p.kb||[]).map(function(t){return t.t;}),
+      defaultTopic:'__new__',preview:(text||name||''),
+      onConfirm:function(finalTopic,finalNature){ nature=finalNature||nature; send(finalTopic||'管理员补充资料'); }});
+  } else {
+    send(topic);
+  }
+}
+/* ── 接口2 UI：版本管理（时间线快照+回滚）── */
+function ragVersionPanel(p,key){
+  var vers=(p.kbVersions||[]).slice().reverse();
+  var curTot=(p.kb||[]).reduce(function(s,t){return s+(t.known||[]).length;},0);
+  var rows=vers.length?vers.map(function(v){
+    var t=new Date(v.ts);var tm=(t.getMonth()+1)+'/'+t.getDate()+' '+t.getHours()+':'+('0'+t.getMinutes()).slice(-2);
+    return '<div style="display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:7px;border-bottom:1px solid #f2f5f9" onmouseover="this.style.background=\'#f6faff\'" onmouseout="this.style.background=\'transparent\'">'+
+      '<span style="flex:0 0 auto;padding:2px 7px;border-radius:9px;background:#ebf3fd;color:#013582;font-size:10px;font-weight:600">v'+v.ver+'</span>'+
+      '<span style="font-size:11px;color:#40506a;flex:1">'+tm+(v.label?' · '+v.label:'')+' · '+v.chunks+' 条</span>'+
+      '<button onclick="ragRollback(\''+key+'\','+v.ver+')" style="border:1px solid #d8e0ed;background:#fff;color:#0757ad;border-radius:6px;font-size:10.5px;cursor:pointer;padding:3px 9px">回滚到此版本</button></div>';
+  }).join(''):'<div style="font-size:11.5px;color:#9aa5b5;padding:8px 0">暂无历史版本 —— 每次重新研判会自动存一版</div>';
+  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:14px 16px">'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'+
+      '<div style="font-size:13px;font-weight:700;color:#0b183b">🕐 版本历史</div>'+
+      '<button onclick="ragSnapshot(\''+key+'\')" style="margin-left:auto;border:1px solid #bfe5e0;background:#e4f5f3;color:#006d70;border-radius:6px;font-size:10.5px;cursor:pointer;padding:4px 10px">📸 存当前为快照</button></div>'+
+    '<div style="font-size:11px;color:#8492a6;margin-bottom:10px">同一城市多次研判按时间留存；可随时回滚到任一历史版本（当前 '+curTot+' 条）</div>'+
+    '<div style="max-height:180px;overflow:auto">'+rows+'</div></div>';
+}
+function ragSnapshot(key){
+  var p=PROJECTS[key];var label=prompt('为当前版本加个标注（可选，如：8月政策更新前）：','')||'';
+  fetch('/api/kb-version',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'snapshot',projectKey:key,city:p.city,label:label})})
+    .then(function(r){return r.json();}).then(function(res){
+      if(res.ok){toast&&toast('已存为 v'+res.ver);restoreFromServer(function(){renderOpsV2();});}
+      else{toast&&toast('快照失败：'+(res.error||''));}
+    });
+}
+function ragRollback(key,ver){
+  var p=PROJECTS[key];
+  if(!confirm('确定回滚「'+p.city+'」智库到 v'+ver+'？当前版本会被覆盖（建议先存快照）。'))return;
+  fetch('/api/kb-version',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'rollback',projectKey:key,city:p.city,ver:ver})})
+    .then(function(r){return r.json();}).then(function(res){
+      if(res.ok){toast&&toast('已回滚到 v'+ver);restoreFromServer(function(){renderOpsV2();});}
+      else{toast&&toast('回滚失败：'+(res.error||''));}
+    });
+}
+function ragStatCard(ic,label,val,sub){
+  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:14px 16px">'+
+    '<div style="font-size:12px;color:#8492a6;display:flex;align-items:center;gap:6px"><span>'+ic+'</span>'+label+'</div>'+
+    '<div style="font-size:20px;font-weight:750;color:#0b183b;margin:6px 0 2px">'+val+'</div>'+
+    '<div style="font-size:11px;color:#9aa5b5">'+(sub||'')+'</div></div>';
+}
+
+function ragEsc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function ragSearchBox(){
+  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:14px 16px">'+
+    '<div style="display:flex;gap:10px;align-items:center">'+
+      '<input id="ragQ" value="'+(ragQuery||'').replace(/"/g,'&quot;')+'" placeholder="检索验证：输入问题，看 RAG 实际召回哪些材料（如：工业用地价格 / 氢能补链）" '+
+        'onkeydown="if(event.key===\'Enter\')ragDoSearch()" '+
+        'style="flex:1;min-height:40px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:8px;font-size:13px">'+
+      '<button class="primary-button" style="min-height:40px" onclick="ragDoSearch()">检索测试</button>'+
+      (ragHits?'<button class="ghost-button" style="min-height:40px" onclick="ragHits=null;ragQuery=\'\';renderOpsV2()">清除</button>':'')+
+    '</div>'+(ragHits?ragHitsView():'')+'</div>';
+}
+function ragDoSearch(){
+  var q=(document.getElementById('ragQ')||{}).value||'';
+  if(!q.trim())return;
+  ragQuery=q;
+  var key=ragProjKey(), p=PROJECTS[key];
+  var corpus=[];
+  p.kb.forEach(function(t){(t.known||[]).forEach(function(txt,i){corpus.push({id:t.t+':'+i,topic:t.t,tags:[],text:txt,cite:t.t});});});
+  var hits=[];
+  try{ hits=(typeof kbSearch==='function')?(kbSearch(q,corpus,8)||[]):[]; }catch(e){ hits=[]; }
+  if(!hits.length){
+    var terms=q.trim().split(/\s+/);
+    hits=corpus.map(function(c){var s=0;terms.forEach(function(t){if(c.text.indexOf(t)>=0)s+=2;if(c.topic.indexOf(t)>=0)s+=1;});return{c:c,s:s};})
+      .filter(function(x){return x.s>0;}).sort(function(a,b){return b.s-a.s;}).slice(0,8).map(function(x){return x.c;});
+  }
+  ragHits=hits;
+  renderOpsV2();
+}
+function ragHitsView(){
+  if(!ragHits.length) return '<div style="margin-top:12px;padding:12px;background:#fff5e9;border:1px solid #efcfaa;border-radius:8px;font-size:12.5px;color:#7a4a1f">未召回任何材料 —— 该问题在当前智库中没有覆盖，政府端问这个问题时 AI 只能靠通用知识回答（幻觉风险），建议补充相关材料。</div>';
+  var qTerms=ragQuery.trim();
+  return '<div style="margin-top:12px">'+
+    '<div style="font-size:12px;color:#667590;margin-bottom:8px">「'+ragEsc(ragQuery)+'」召回 <b style="color:#0757ad">'+ragHits.length+'</b> 条材料（按相关度排序，即政府端提问时喂给 AI 的上下文）：</div>'+
+    ragHits.map(function(h,i){
+      var card=ragRenderChunk(h.text,i+1,qTerms);
+      // 前3名加蓝框+主题标；其余灰
+      var head='<div style="display:flex;gap:8px;align-items:center;margin:0 0 4px 24px">'+
+        '<span style="font-size:10px;font-weight:700;color:#fff;background:'+(i<3?'#0757ad':'#9aa5b5')+';border-radius:8px;padding:1px 7px">TOP '+(i+1)+'</span>'+
+        '<span style="font-size:11px;color:#0757ad">'+h.topic+'</span></div>';
+      return '<div style="'+(i<3?'border-left:3px solid #0757ad;padding-left:8px;margin-bottom:2px':'padding-left:11px')+'">'+head+card+'</div>';
+    }).join('')+'</div>';
+}
+/* ── 对话更新 RAG：与 AI 就该城市智库对话，认可某条结论后「加入智库」显式落库 ── */
+function ragChatBox(p,key){
+  var msgs=ragChatMsgs.map(function(m,i){
+    if(m.role==='user'){
+      return '<div style="display:flex;justify-content:flex-end;margin:6px 0"><div style="max-width:78%;background:#0757ad;color:#fff;border-radius:12px 12px 2px 12px;padding:8px 12px;font-size:12.5px;line-height:1.6;white-space:pre-wrap">'+ragEsc(m.content)+'</div></div>';
+    }
+    var canAdd=(m.role==='assistant'&&m.content&&!m.streaming);
+    var addBtn=canAdd?('<div style="margin-top:6px"><button onclick="ragChatCommit('+i+',\''+key+'\')" style="border:1px solid #bfe5e0;background:#e4f5f3;color:#006d70;border-radius:6px;font-size:11px;cursor:pointer;padding:4px 11px">＋ 把这条结论加入智库</button></div>'):'';
+    return '<div style="display:flex;justify-content:flex-start;margin:6px 0"><div style="max-width:82%;background:#f4f7fc;color:#1e2a44;border-radius:12px 12px 12px 2px;padding:8px 12px;font-size:12.5px;line-height:1.7;white-space:pre-wrap">'+ragEsc(m.content||(m.streaming?'…':''))+addBtn+'</div></div>';
+  }).join('');
+  var body=ragChatMsgs.length?msgs:'<div style="color:#9aa5b5;font-size:12px;text-align:center;padding:22px 8px;line-height:1.7">与 AI 讨论该城市智库，补充或修正事实。<br>认可某条结论后，点「加入智库」即可显式落库（可控、留痕）。</div>';
+  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:14px 16px;margin-top:14px">'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
+      '<div style="font-size:13px;font-weight:700;color:#0b183b">💬 对话更新智库</div>'+
+      '<span style="font-size:11px;color:#8492a6">基于当前智库对话，确认结论后入库</span>'+
+      (ragChatMsgs.length?'<button onclick="ragChatMsgs=[];ragChatPending=null;renderOpsV2()" style="margin-left:auto;border:1px solid #d8e0ed;background:#fff;color:#5a7398;border-radius:6px;font-size:11px;cursor:pointer;padding:3px 10px">清空对话</button>':'')+
+    '</div>'+
+    '<div id="ragChatScroll" style="max-height:280px;overflow:auto;padding:2px 2px 6px">'+body+'</div>'+
+    '<div style="display:flex;gap:8px;margin-top:8px">'+
+      '<input id="ragChatIn" placeholder="例：产业链缺口有哪些？该市规上工业企业最新数是多少？" '+
+        'onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();ragChatSend(\''+key+'\');}" '+
+        (ragChatBusy?'disabled ':'')+'style="flex:1;min-height:40px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:8px;font-size:13px'+(ragChatBusy?';background:#f4f6f9':'')+'">'+
+      '<button class="primary-button" style="min-height:40px" '+(ragChatBusy?'disabled':'')+' onclick="ragChatSend(\''+key+'\')">'+(ragChatBusy?'生成中…':'发送')+'</button>'+
+    '</div></div>';
+}
+function ragChatScrollBottom(){ var el=document.getElementById('ragChatScroll'); if(el)el.scrollTop=el.scrollHeight; }
+function ragChatSend(key){
+  if(ragChatBusy)return;
+  var inp=document.getElementById('ragChatIn'); var q=inp?(inp.value||'').trim():'';
+  if(!q)return;
+  var p=PROJECTS[key];
+  // 组装当前智库语料作为 RAG 上下文
+  var corpus=[];
+  (p.kb||[]).forEach(function(t){(t.known||[]).forEach(function(txt,i){
+    var s=(txt&&typeof txt==='object')?(txt.text||''):txt;
+    corpus.push({id:t.t+':'+i,topic:t.t,text:s,cite:t.t});
+  });});
+  ragChatMsgs.push({role:'user',content:q});
+  var aiMsg={role:'assistant',content:'',streaming:true};
+  ragChatMsgs.push(aiMsg);
+  ragChatBusy=true; renderOpsV2(); ragChatScrollBottom();
+  var hist=ragChatMsgs.filter(function(m){return m.content&&!m.streaming;}).slice(-8).map(function(m){return {role:m.role,content:m.content};});
+  fetch('/api/kb-chat',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question:q,chunks:corpus,city:p.city,mode:'chat',stream:true,history:hist})})
+    .then(function(resp){
+      if(!resp.ok||!resp.body){ throw new Error('HTTP '+resp.status); }
+      var reader=resp.body.getReader(), dec=new TextDecoder(), buf='';
+      function pump(){
+        return reader.read().then(function(r){
+          if(r.done){ aiMsg.streaming=false; ragChatBusy=false; renderOpsV2(); ragChatScrollBottom(); return; }
+          buf+=dec.decode(r.value,{stream:true});
+          var lines=buf.split('\n'); buf=lines.pop();
+          lines.forEach(function(line){
+            line=line.trim(); if(line.indexOf('data:')!==0)return;
+            var d=line.slice(5).trim(); if(!d||d==='[DONE]')return;
+            try{ var j=JSON.parse(d); var delta=((j.choices||[{}])[0].delta||{}).content||''; if(delta){aiMsg.content+=delta; renderOpsV2(); ragChatScrollBottom();} }catch(e){}
+          });
+          return pump();
+        });
+      }
+      return pump();
+    })
+    .catch(function(e){ aiMsg.streaming=false; aiMsg.content=(aiMsg.content||'')+'\n[生成失败：'+e.message+']'; ragChatBusy=false; renderOpsV2(); });
+}
+function ragChatCommit(msgIdx, key){
+  var m=ragChatMsgs[msgIdx]; if(!m||m.role!=='assistant'||!m.content)return;
+  var p=PROJECTS[key];
+  // 用页面内 modal 替代 prompt/confirm（嵌入式浏览器不支持原生弹窗）
+  ragCommitModal({
+    key:key, city:p.city, topics:(p.kb||[]).map(function(t){return t.t;}),
+    defaultTopic:((p.kb||[])[ragTopic]||{}).t||'对话补充',
+    preview:m.content,
+    onConfirm:function(topic,nature){
+      var mode=nature==='fix'?'replace':'append';
+      fetch('/api/kb-upload',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({projectKey:key,city:p.city,topic:topic,text:m.content,
+          filename:'对话确认',mode:mode,origin:'admin',nature:nature,by:'管理端·对话',source:'chat'})})
+        .then(function(r){return r.json();}).then(function(res){
+          if(res.ok){
+            var extra=res.matched?('，命中已有 '+res.matched+' 条'):'';
+            toast&&toast('已加入智库 '+res.chunks+' 条（'+(nature==='fix'?'修正':'佐证')+'）'+extra);
+            m.committed=true;
+            restoreFromServer(function(){renderOpsV2();});
+          } else { toast&&toast('入库失败：'+(res.error||'')); }
+        }).catch(function(e){toast&&toast('入库出错');});
+    }
+  });
+}
+/* ── 通用入库确认弹窗（自建 modal，不依赖 window.prompt/confirm）── */
+function ragCommitModal(opt){
+  var old=document.getElementById('ragCommitModal'); if(old)old.parentNode.removeChild(old);
+  var topics=opt.topics||[]; var def=opt.defaultTopic||topics[0]||'对话补充';
+  var newVal='__new__';
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  var opts=topics.map(function(t){return '<option value="'+esc(t)+'"'+(t===def?' selected':'')+'>'+esc(t)+'</option>';}).join('')+
+    '<option value="'+newVal+'">＋ 新建主题…</option>';
+  var prev=(opt.preview||'').slice(0,140)+((opt.preview||'').length>140?'…':'');
+  var wrap=document.createElement('div');
+  wrap.id='ragCommitModal';
+  wrap.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(10,20,40,.42);display:flex;align-items:center;justify-content:center';
+  wrap.innerHTML=
+    '<div style="width:440px;max-width:92vw;background:#fff;border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.28);padding:20px 22px">'+
+      '<div style="font-size:15px;font-weight:750;color:#0b183b;margin-bottom:4px">加入「'+esc(opt.city)+'」城市智库</div>'+
+      '<div style="font-size:12px;color:#8492a6;margin-bottom:12px">确认目标主题与入库性质，确认后写入 RAG 库（问答时可被检索命中）</div>'+
+      (prev?'<div style="font-size:12px;color:#40506a;background:#f4f7fc;border:1px solid #e3ebf6;border-radius:8px;padding:8px 10px;margin-bottom:12px;max-height:78px;overflow:auto;line-height:1.6">'+esc(prev)+'</div>':'')+
+      '<div style="font-size:12px;font-weight:600;color:#40506a;margin-bottom:5px">目标主题</div>'+
+      '<select id="ragCmTopic" onchange="ragCmToggleNew()" style="width:100%;min-height:38px;padding:6px 10px;border:1px solid #d8e0ed;border-radius:8px;font-size:13px;margin-bottom:8px">'+opts+'</select>'+
+      '<input id="ragCmNewTopic" placeholder="输入新主题名称" style="display:none;width:100%;min-height:38px;padding:6px 10px;border:1px solid #d8e0ed;border-radius:8px;font-size:13px;margin-bottom:10px;box-sizing:border-box">'+
+      '<div style="font-size:12px;font-weight:600;color:#40506a;margin:6px 0 5px">入库性质</div>'+
+      '<div style="display:flex;gap:10px;margin-bottom:16px">'+
+        '<label style="flex:1;display:flex;align-items:center;gap:6px;border:1px solid #bfe5e0;background:#f2fbf9;border-radius:8px;padding:8px 10px;font-size:12.5px;cursor:pointer"><input type="radio" name="ragCmNature" value="support" checked>🟢 佐证补充（追加）</label>'+
+        '<label style="flex:1;display:flex;align-items:center;gap:6px;border:1px solid #f0d99a;background:#fffaf0;border-radius:8px;padding:8px 10px;font-size:12.5px;cursor:pointer"><input type="radio" name="ragCmNature" value="fix">🟡 修正覆盖</label>'+
+      '</div>'+
+      '<div style="display:flex;justify-content:flex-end;gap:10px">'+
+        '<button onclick="ragCmClose()" style="border:1px solid #d8e0ed;background:#fff;color:#5a7398;border-radius:8px;font-size:13px;cursor:pointer;padding:8px 16px">取消</button>'+
+        '<button onclick="ragCmSubmit()" class="primary-button" style="min-height:38px">确认加入</button>'+
+      '</div>'+
+    '</div>';
+  wrap.addEventListener('click',function(e){if(e.target===wrap)ragCmClose();});
+  document.body.appendChild(wrap);
+  window.__ragCmOnConfirm=opt.onConfirm;
+}
+function ragCmToggleNew(){
+  var sel=document.getElementById('ragCmTopic'), inp=document.getElementById('ragCmNewTopic');
+  if(!sel||!inp)return;
+  if(sel.value==='__new__'){inp.style.display='block';inp.focus();}else{inp.style.display='none';}
+}
+function ragCmClose(){var w=document.getElementById('ragCommitModal');if(w)w.parentNode.removeChild(w);window.__ragCmOnConfirm=null;}
+function ragCmSubmit(){
+  var sel=document.getElementById('ragCmTopic');
+  var topic=sel?sel.value:'';
+  if(topic==='__new__'){topic=((document.getElementById('ragCmNewTopic')||{}).value||'').trim();
+    if(!topic){toast&&toast('请填写新主题名称');return;}}
+  var nature='support';
+  var r=document.querySelectorAll('input[name="ragCmNature"]');
+  for(var i=0;i<r.length;i++){if(r[i].checked)nature=r[i].value;}
+  var cb=window.__ragCmOnConfirm; ragCmClose();
+  if(typeof cb==='function')cb(topic,nature);
+}
+function ragTopicNav(p){
+  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:10px;align-self:start">'+
+    '<div style="font-size:11px;font-weight:700;color:#8492a6;letter-spacing:.08em;padding:4px 8px">主题分区</div>'+
+    p.kb.map(function(t,i){
+      var on=(i===ragTopic);
+      return '<button onclick="ragTopic='+i+';ragFilter=\'\';renderOpsV2()" style="display:flex;justify-content:space-between;align-items:center;width:100%;padding:10px 12px;border:none;border-radius:8px;cursor:pointer;text-align:left;background:'+(on?'#eff6ff':'transparent')+'">'+
+        '<span style="font-size:13px;font-weight:'+(on?'700':'500')+';color:'+(on?'#1d4ed8':'#0b183b')+'">'+t.t+'</span>'+
+        '<span style="font-size:11px;color:#9aa5b5">'+(t.known||[]).length+'</span></button>';
+    }).join('')+'</div>';
+}
+/* 结构化渲染一条智库材料：标题章 → 正文（加粗、数字高亮、关键词高亮）→ 来源徽章 */
+// 来源+性质 → 标识条颜色与徽章
+function ragOriginStyle(origin,nature){
+  // AI 采集=中性；管理员佐证=绿 / 修正=黄；用户佐证或确认=绿 / 修改=红
+  if(origin==='admin'){
+    return nature==='fix'?{bar:'#e0a516',badge:'🟡 管理员修正',bg:'#fffaf0',bc:'#f0d99a',bt:'#8a6d1b'}
+                         :{bar:'#0aa696',badge:'🟢 管理员佐证',bg:'#f2fbf9',bc:'#bfe5e0',bt:'#087067'};
+  }
+  if(origin==='user'){
+    if(nature==='fix') return {bar:'#e0574a',badge:'🔴 用户修改',bg:'#fdf3f2',bc:'#f2c3bd',bt:'#b0362a'};
+    return {bar:'#0aa696',badge:(nature==='confirm'?'🟢 用户确认':'🟢 用户补充'),bg:'#f2fbf9',bc:'#bfe5e0',bt:'#087067'};
+  }
+  return null; // AI 基础材料：无标识条
+}
+// markdown 表格 → HTML table（输入已 HTML 转义）
+function ragMdTables(s){
+  var lines=s.split('\n');
+  var out=[], i=0;
+  while(i<lines.length){
+    var ln=lines[i];
+    // 表格起点：以 | 开头、含至少2个 |，下一行是分隔行 |---|---|
+    if(/^\s*\|.*\|/.test(ln) && i+1<lines.length && /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(lines[i+1].replace(/&\w+;/g,''))){
+      var header=ln, sep=lines[i+1], rows=[], j=i+2;
+      while(j<lines.length && /^\s*\|.*\|/.test(lines[j])){ rows.push(lines[j]); j++; }
+      var splitCells=function(r){ return r.trim().replace(/^\||\|$/g,'').split('|').map(function(c){return c.trim();}); };
+      var ths=splitCells(header);
+      var thead='<tr>'+ths.map(function(c){return '<th style="padding:5px 9px;background:#eef3fb;color:#013582;font-weight:650;text-align:left;border:1px solid #d3e0f0;white-space:nowrap">'+c+'</th>';}).join('')+'</tr>';
+      var tbody=rows.map(function(r,ri){
+        var tds=splitCells(r);
+        return '<tr style="background:'+(ri%2?'#f8fbff':'#fff')+'">'+tds.map(function(c){return '<td style="padding:5px 9px;border:1px solid #e6edf6;color:#334155;vertical-align:top">'+c+'</td>';}).join('')+'</tr>';
+      }).join('');
+      out.push('<div style="overflow-x:auto;margin:7px 0"><table style="border-collapse:collapse;font-size:11.5px;min-width:100%;line-height:1.5">'+thead+tbody+'</table></div>');
+      i=j;
+    } else {
+      out.push(ln); i++;
+    }
+  }
+  return out.join('\n');
+}
+function ragRenderChunk(raw, idx, hl){
+  // 兼容结构化 chunk（对象）与旧字符串
+  var origin='ai', nature='base', srcName='', annots=[];
+  if(raw && typeof raw==='object'){ origin=raw.origin||'ai'; nature=raw.nature||'base'; srcName=raw.src||''; annots=raw.annotations||[]; raw=raw.text||''; }
+  var text=String(raw);
+  // 1) 抽取【标题】前缀
+  var title=null; var m=text.match(/^【([^】]{2,40})】\s*/);
+  if(m){ title=m[1]; text=text.slice(m[0].length); }
+  // 2) 抽取（来源：URL，日期）尾注（可多个，取全部）
+  var sources=[];
+  text=text.replace(/[（(]来源[:：]\s*(https?:\/\/[^，,）)\s]+)\s*[，,]?\s*([\d]{4}-[\d]{2}-[\d]{2})?\s*[）)]/g,function(_,url,date){
+    sources.push({url:url,date:date||''});return '';});
+  var pending=/未获公开来源|待核实|二手来源/.test(text);
+  // 3) 转义后做行内渲染 —— 先把 markdown 表格转成 HTML table
+  var html=ragMdTables(ragEsc(text.trim()));
+  html=html.replace(/\*\*([^*]{1,60})\*\*/g,'<b style="color:#0b183b">$1</b>');   // **bold**
+  // 数字高亮：避开 HTML 标签内部（表格已生成标签）
+  html=html.replace(/(^|[^\w.<])(\d[\d,.]*\s*(?:亿元|万元|亿|万吨|万人|万辆|万平|公里|千米|元\/㎡|元|%|个|家|条|亿千瓦时))(?![^<]*>)/g,
+    '$1<span style="color:#0757ad;font-weight:650">$2</span>');                    // 数字+单位高亮
+  html=html.replace(/(✅|⚠️|❌|❓)/g,'<span style="font-size:11px">$1</span>');
+  if(hl){
+    String(hl).trim().split(/\s+/).filter(function(w){return w.length>=2;}).forEach(function(w){
+      var esc=w.replace(/[.*+?^${}()|[\]\\]/g,'\\'+'$'+'&');
+      html=html.replace(new RegExp('('+esc+')(?![^<]*>)','g'),'<mark style="background:#ffe9a8;padding:0 2px;border-radius:3px">$1</mark>');
+    });
+  }
+  // 4) 组装卡片
+  var srcHtml=sources.map(function(s){
+    var dom=(s.url.match(/^https?:\/\/([^\/]+)/)||[])[1]||'';
+    var gov=/gov\.cn|cninfo|sse\.com|szse\.cn|landchina/.test(dom);
+    return '<a href="'+s.url+'" target="_blank" title="'+s.url+'" style="display:inline-flex;align-items:center;gap:4px;font-size:10.5px;padding:2px 8px;border-radius:9px;text-decoration:none;'+
+      (gov?'background:#e4f5f3;color:#006d70;border:1px solid #bfe5e0':'background:#eef3fb;color:#0757ad;border:1px solid #d3e3f8')+'">'+
+      (gov?'🏛':'🔗')+' '+dom+(s.date?' · '+s.date:'')+' ↗</a>';
+  }).join(' ');
+  if(pending) srcHtml+=(srcHtml?' ':'')+'<span style="display:inline-flex;font-size:10.5px;padding:2px 8px;border-radius:9px;background:#fff0de;color:#a34c09;border:1px solid #f2d9b8">⚠ 待核实</span>';
+  // 来源标识：AI 基础材料无条；管理员/用户标注加彩色左条+徽章
+  var os=ragOriginStyle(origin,nature);
+  var origBadge=os?('<span style="display:inline-flex;align-items:center;font-size:10px;padding:2px 8px;border-radius:9px;background:'+os.bg+';color:'+os.bt+';border:1px solid '+os.bc+'">'+os.badge+(srcName?' · '+ragEsc(srcName):'')+'</span>'):'';
+  var barCss=os?('border-left:3px solid '+os.bar+';'):'';
+  var cardBg=os?os.bg:'#fff';
+  return '<div style="border:1px solid #e9eef5;'+barCss+'border-radius:10px;padding:11px 14px;margin-bottom:8px;background:'+cardBg+';transition:box-shadow .15s" '+
+      'onmouseover="this.style.boxShadow=\'0 2px 10px rgba(7,87,173,.08)\'" onmouseout="this.style.boxShadow=\'none\'">'+
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:'+((title||srcHtml||origBadge)?'5px':'0')+'">'+
+      '<span style="flex-shrink:0;font-size:10px;color:#b0bac7;font-variant-numeric:tabular-nums">'+String(idx).padStart(2,'0')+'</span>'+
+      (title?'<span style="font-size:12px;font-weight:700;color:#013582;background:#ebf3fd;padding:1px 9px;border-radius:6px">'+ragEsc(title)+'</span>':'')+
+      origBadge+
+    '</div>'+
+    '<div style="font-size:12.5px;color:#334155;line-height:1.75;padding-left:24px">'+html+'</div>'+
+    (annots.length?ragAnnots(annots):'')+
+    (srcHtml?'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;padding-left:24px">'+srcHtml+'</div>':'')+
+  '</div>';
+}
+// 就地标注：已有条目被上传材料佐证/修正时，在条目内嵌入显示
+function ragAnnots(annots){
+  return '<div style="margin-top:7px;margin-left:24px;padding-left:10px;border-left:2px solid #e2e8f2;display:flex;flex-direction:column;gap:5px">'+
+    annots.map(function(a){
+      var os=ragOriginStyle(a.origin,a.nature);
+      if(!os) return '';
+      var who=(a.origin==='admin'?'管理员':'用户');
+      var act=a.nature==='fix'?'修正':(a.nature==='confirm'?'确认':'佐证');
+      return '<div style="font-size:11px;color:'+os.bt+';background:'+os.bg+';border:1px solid '+os.bc+';border-radius:7px;padding:5px 9px">'+
+        '<b>'+(a.nature==='fix'?(a.origin==='user'?'🔴':'🟡'):'🟢')+' '+who+act+'</b>'+(a.src?' · '+ragEsc(a.src):'')+
+        '：'+ragEsc(String(a.text||'').slice(0,140))+'</div>';
+    }).join('')+'</div>';
+}
+function ragChunkList(p){
+  var t=p.kb[ragTopic]||p.kb[0];
+  var items=(t.known||[]);
+  var f=(ragFilter||'').trim();
+  var _txt=function(x){return (x&&typeof x==='object')?(x.text||''):String(x);};
+  var shown=f?items.filter(function(x){return _txt(x).indexOf(f)>=0;}):items;
+  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fbfcfe;padding:0 14px 14px;max-height:560px;overflow-y:auto">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fbfcfe;padding:14px 0 10px;z-index:2;border-bottom:1px solid #eef2f7;margin-bottom:10px">'+
+      '<div style="font-size:13px;font-weight:700;color:#0b183b">'+t.t+' <span style="color:#9aa5b5;font-weight:400">'+shown.length+(f?' / '+items.length:'')+' 条</span></div>'+
+      '<input value="'+(ragFilter||'').replace(/"/g,'&quot;')+'" placeholder="筛选本区材料…" oninput="ragFilter=this.value;renderOpsV2();var el=document.querySelectorAll(\'input[placeholder^=筛选]\')[0];if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}" '+
+        'style="width:200px;min-height:32px;padding:4px 10px;border:1px solid #d8e0ed;border-radius:8px;font-size:12px"></div>'+
+    (shown.length?shown.map(function(x,i){return ragRenderChunk(x,i+1,f||null);}).join(''):
+     '<div style="color:#9aa5b5;font-size:12.5px;padding:14px 0">无匹配材料</div>')+'</div>';
+}
+function ragPushLog(){
+  var logs=(ragLog&&ragLog.recs)||null;
+  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:14px 16px;margin-top:14px">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
+      '<div><span style="font-size:13px;font-weight:700;color:#0b183b">推送视图 · RAG 调用审计</span>'+
+      '<span style="font-size:11px;color:#9aa5b5;margin-left:8px">政府端每次 AI 问答/研判实际消费了哪些智库材料</span></div>'+
+      '<button class="ghost-button" style="min-height:32px;font-size:12px" onclick="ragLoadLog()">'+(logs?'刷新':'加载调用日志')+'</button></div>'+
+    (logs===null?'<div style="color:#9aa5b5;font-size:12.5px">点击「加载调用日志」拉取 /rag-log 审计记录</div>':
+     !logs.length?'<div style="color:#9aa5b5;font-size:12.5px">暂无调用记录 —— 政府端还没有发起过 AI 问答</div>':
+     ragLogSummary(logs)+'<div style="max-height:340px;overflow-y:auto">'+logs.slice().reverse().slice(0,30).map(function(rec){
+       var t=rec.ts?new Date(rec.ts):null;
+       var tm=t?(t.getMonth()+1)+'/'+t.getDate()+' '+t.getHours()+':'+('0'+t.getMinutes()).slice(-2):'';
+       var up=rec.upload_chunks||0;
+       var kb=rec.kb_chunks!=null?rec.kb_chunks:Math.max(0,(rec.total_chunks||0)-up);
+       var tot=rec.total_chunks||0;
+       var kbPct=tot?Math.round(kb/tot*100):0;
+       return '<div style="padding:8px 0;border-bottom:1px dashed #e9eef5">'+
+         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
+           '<span style="font-size:11px;color:#9aa5b5;font-variant-numeric:tabular-nums">'+tm+'</span>'+
+           '<span style="font-size:11px;padding:1px 7px;border-radius:8px;background:#ebf3fd;color:#013582">'+(rec.mode||'chat')+'</span>'+
+           '<span style="font-size:12.5px;color:#0b183b;font-weight:600">'+ragEsc(rec.question||'').slice(0,60)+'</span></div>'+
+         '<div style="display:flex;align-items:center;gap:10px;margin-top:5px">'+
+           '<div style="flex:0 0 120px;height:6px;border-radius:3px;background:#eef1f5;overflow:hidden">'+
+             '<div style="height:100%;width:'+kbPct+'%;background:linear-gradient(90deg,#0757ad,#007f82)"></div></div>'+
+           '<span style="font-size:11.5px;color:#667590">消费 '+tot+' 条（智库 '+kb+' + 上传 '+up+'）'+(rec.city?' · '+rec.city:'')+'</span></div></div>';
+     }).join('')+'</div>')+'</div>';
+}
+function ragLogSummary(logs){
+  var n=logs.length,tot=0,up=0;
+  logs.forEach(function(r){tot+=(r.total_chunks||0);up+=(r.upload_chunks||0);});
+  return '<div style="display:flex;gap:18px;padding:8px 0 10px;font-size:12px;color:#3d5471;border-bottom:1px solid #eef2f7;margin-bottom:6px">'+
+    '<span>累计调用 <b>'+n+'</b> 次</span><span>消费材料 <b>'+tot+'</b> 条</span>'+
+    '<span>智库占比 <b>'+(tot?Math.round((tot-up)/tot*100):0)+'%</b></span>'+
+    '<span>用户上传占比 <b>'+(tot?Math.round(up/tot*100):0)+'%</b></span></div>';
+}
+function ragLoadLog(){
+  fetch('/rag-log?format=json').then(function(r){return r.json();}).then(function(recs){
+    ragLog={recs:Array.isArray(recs)?recs:[]};renderOpsV2();
+  }).catch(function(){ragLog={recs:[]};renderOpsV2();});
+}
+/* ══ Tab: 城市画像（客观条件 + 招商偏好）══
+   数据源：① onboarding 招商偏好问卷（PROJECTS[k].onboarding，政府端填写）
+           ② 城市智库 RAG 全量材料（PROJECTS[k].kb[].known[]）
+   结论由后端 mode=city_profile 生成结构化 JSON，缓存在 PROJECTS[k].profile，
+   打开即读缓存；材料更新后点「重新生成」重算。 */
+var cpCity=null, cpBusy=false, cpErr='', cpRaw='';
+
+/* 有材料的城市：按城市去重，代表项取材料最多者（与 ragCityOptions 同口径）*/
+function cpCityMap(){
+  var byCity={};
+  Object.keys(PROJECTS).forEach(function(k){
+    var p=PROJECTS[k];
+    if(!p||!p.kb||!p.kb.some(function(t){return (t.known||[]).length;})) return;
+    var c=p.city||k;
+    if(!byCity[c]){ byCity[c]=k; return; }
+    var pc=PROJECTS[byCity[c]];
+    var nc=pc.kb.reduce(function(s,t){return s+(t.known||[]).length;},0);
+    var nk=p.kb.reduce(function(s,t){return s+(t.known||[]).length;},0);
+    if(nk>nc) byCity[c]=k;
+  });
+  return byCity;
+}
+function cpProjKey(){
+  var m=cpCityMap(), cities=Object.keys(m);
+  if(!cities.length) return null;
+  if(cpCity && m[cpCity]) return m[cpCity];
+  cpCity=cities[0];
+  return m[cpCity];
+}
+/* 该城市全部材料（跨同城项目合并，画像要看城市而非单个方向）*/
+function cpCorpus(city){
+  var out=[];
+  Object.keys(PROJECTS).forEach(function(k){
+    var p=PROJECTS[k];
+    if(!p||(p.city||k)!==city) return;
+    (p.kb||[]).forEach(function(t){
+      (t.known||[]).forEach(function(it,i){
+        var s=(it&&typeof it==='object')?(it.text||''):it;
+        if(!s) return;
+        var org=(it&&typeof it==='object')?(it.origin||''):'';
+        var nat=(it&&typeof it==='object')?(it.nature||''):'';
+        var src=(it&&typeof it==='object')?(it.src||''):'';
+        out.push({id:k+':'+t.t+':'+i, topic:t.t, text:s,
+                  cite:(src||t.t)+(nat?('·'+nat):''), origin:org, nature:nat});
+      });
+    });
+  });
+  return out;
+}
+/* 该城市的问卷答案：同城任一项目填过就算（政府端按项目存）*/
+function cpOnboarding(city){
+  var found=null;
+  Object.keys(PROJECTS).forEach(function(k){
+    var p=PROJECTS[k];
+    if(!p||(p.city||k)!==city||found) return;
+    if(p.onboarding && Object.keys(p.onboarding).length) found=p.onboarding;
+  });
+  return found;
+}
+/* 问卷 → {options,custom}（与政府端 onboardingPrefs 同口径，管理端自带一份避免跨文件依赖）*/
+var CP_Q=[['park','您重点招商的产业园区是'],['capacity','产业园区的承载能力为'],
+          ['scale','理想的招商企业规模为'],['industry','优先招引的产业方向为'],
+          ['invest','期望的企业投资强度为']];
+function cpPrefs(ob){
+  if(!ob) return null;
+  var opts=[], cus=[], cmap=ob.__custom||{};
+  CP_Q.forEach(function(q){
+    var v=ob[q[0]];
+    if(v&&(!Array.isArray(v)||v.length)) opts.push('· '+q[1]+'：'+(Array.isArray(v)?v.join('、'):v));
+    if(cmap[q[0]]) cus.push('· '+q[1]+'：'+cmap[q[0]]);
+  });
+  if(!opts.length&&!cus.length) return null;
+  return {options:opts.join('\n'), custom:cus.join('\n')};
+}
+/* 访谈类材料条数：访谈信息完备度的客观指标 */
+function cpInterviewCount(city){
+  return cpCorpus(city).filter(function(c){return c.nature==='interview';}).length;
+}
+/* ── 生成画像：吃全量语料 + 问卷 → 结构化 JSON 缓存到 PROJECTS[key].profile ── */
+function cpGenerate(force){
+  var key=cpProjKey(); if(!key||cpBusy) return;
+  var p=PROJECTS[key], city=p.city||key;
+  var corpus=cpCorpus(city);
+  if(!corpus.length){ cpErr='该城市暂无智库材料，无法生成画像'; renderOpsV2(); return; }
+  cpBusy=true; cpErr=''; cpRaw=''; renderOpsV2();
+  var ob=cpOnboarding(city);
+  var body={question:'为'+city+'生成城市画像：客观自身条件与招商偏好',
+            chunks:corpus, city:city, mode:'city_profile', stream:true};
+  var pf=cpPrefs(ob); if(pf) body.prefs=pf;
+  fetch('/api/kb-chat',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)})
+    .then(function(resp){
+      if(!resp.ok||!resp.body) throw new Error('HTTP '+resp.status);
+      var reader=resp.body.getReader(), dec=new TextDecoder(), buf='', acc='';
+      function pump(){
+        return reader.read().then(function(r){
+          if(r.done){ cpFinish(key, acc, corpus.length, !!ob); return; }
+          buf+=dec.decode(r.value,{stream:true});
+          var lines=buf.split('\n'); buf=lines.pop();
+          lines.forEach(function(line){
+            line=line.trim(); if(line.indexOf('data:')!==0) return;
+            var d=line.slice(5).trim(); if(!d||d==='[DONE]') return;
+            try{ var j=JSON.parse(d);
+                 var delta=((j.choices||[{}])[0].delta||{}).content||'';
+                 if(delta) acc+=delta;
+            }catch(e){}
+          });
+          return pump();
+        });
+      }
+      return pump();
+    })
+    .catch(function(e){ cpBusy=false; cpErr='生成失败：'+e.message; renderOpsV2(); });
+}
+/* 【2026-09-17】JSON 保守修复：把字符串值内部的裸双引号替换成中文引号。
+   逐字符扫描并跟踪是否处于字符串内；只有当一个双引号后面紧跟的不是
+   结构字符（, } ] : 或换行结尾）时，才判定它是文中引用而非字符串结束符。
+   同时顺手去掉对象/数组尾部多余逗号。不改变任何合法 JSON 的语义。 */
+function cpRepairJson(t){
+  var out='', inStr=false, esc=false, _qOpen=false;
+  for(var i=0;i<t.length;i++){
+    var ch=t[i];
+    if(esc){ out+=ch; esc=false; continue; }
+    if(ch==='\\'){ out+=ch; esc=true; continue; }
+    if(ch==='"'){
+      if(!inStr){ inStr=true; out+=ch; continue; }
+      // 处于字符串内遇到双引号：向后看第一个非空白字符判断它是不是真正的结束引号
+      var j=i+1;
+      while(j<t.length && (t[j]===' '||t[j]==='\t'||t[j]==='\r'||t[j]==='\n')) j++;
+      var nx=j<t.length?t[j]:'';
+      if(nx===','||nx==='}'||nx===']'||nx===':'||nx===''){ inStr=false; out+=ch; }
+      else { out+=(_qOpen?'\u201d':'\u201c'); _qOpen=!_qOpen; }   // 文中引用 -> 中文引号(左右交替)，避免截断字符串
+      continue;
+    }
+    out+=ch;
+  }
+  // 去掉 , 后紧跟 } 或 ] 的尾随逗号
+  return out.replace(/,\s*([}\]])/g,'$1');
+}
+/* 解析并落库：容错剥离可能的 markdown 围栏 */
+function cpFinish(key, txt, nChunks, hadOb){
+  cpBusy=false;
+  var s=(txt||'').trim();
+  cpRaw=s;
+  var a=s.indexOf('{'), b=s.lastIndexOf('}');
+  if(a<0||b<=a){ cpErr='返回内容不是有效 JSON，请重试'; renderOpsV2(); return; }
+  var obj=null, _jsonTxt=s.slice(a,b+1);
+  try{ obj=JSON.parse(_jsonTxt); }
+  catch(e){
+    // 【2026-09-17】DeepSeek 常在中文字符串里直接用英文双引号做引用，
+    // 例如 "summary": "随州是"中国专用汽车之都"，..." —— 双引号提前闭合字符串，
+    // 整个画像就卡在 position 20 解析失败。这里做一次保守修复再重试，
+    // 而不是直接让用户重新生成（重生成大概率仍会踩同一个坑）。
+    try{ obj=JSON.parse(cpRepairJson(_jsonTxt)); }
+    catch(e2){ cpErr='画像 JSON 解析失败：'+e.message+'（可重新生成）'; renderOpsV2(); return; }
+  }
+  if(!obj||typeof obj!=='object'){ cpErr='画像数据为空'; renderOpsV2(); return; }
+  obj.__ts=Date.now(); obj.__chunks=nChunks; obj.__hasOnboarding=!!hadOb;
+  PROJECTS[key].profile=obj;
+  cpErr='';
+  try{ persist(); }catch(e){}
+  renderOpsV2();
+  try{ toast&&toast('城市画像已生成（消费 '+nChunks+' 条材料）'); }catch(e){}
+}
+/* ── 渲染 ── */
+function cpEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function cpCityOptions(){
+  var m=cpCityMap();
+  return Object.keys(m).map(function(c){
+    var n=cpCorpus(c).length;
+    return '<option value="'+cpEsc(c)+'"'+(c===cpCity?' selected':'')+'>'+cpEsc(c)+'（'+n+' 条）</option>';
+  }).join('');
+}
+function cpStat(icon,label,val,sub){
+  return '<div style="border:1px solid #e8edf5;border-radius:10px;padding:12px 14px;background:#fff">'+
+    '<div style="font-size:11px;color:#9aa5b5;display:flex;align-items:center;gap:5px"><span>'+icon+'</span>'+cpEsc(label)+'</div>'+
+    '<div style="font-size:16px;font-weight:750;color:#0b183b;margin-top:5px">'+cpEsc(val)+'</div>'+
+    (sub?'<div style="font-size:11px;color:#9aa5b5;margin-top:2px">'+cpEsc(sub)+'</div>':'')+'</div>';
+}
+/* 客观条件分组卡 */
+function cpObjBlock(title, icon, rows){
+  rows=rows||[];
+  if(!rows.length) return '';
+  return '<div style="border:1px solid #e8edf5;border-radius:10px;background:#fff;overflow:hidden">'+
+    '<div style="padding:10px 14px;background:#f8faff;border-bottom:1px solid #eef2f7;font-size:13px;font-weight:700;color:#0b183b">'+icon+' '+cpEsc(title)+'</div>'+
+    '<div style="padding:4px 14px 10px">'+
+    rows.map(function(r){
+      if(!r||typeof r!=='object') return '';
+      return '<div style="padding:9px 0;border-bottom:1px solid #f4f7fb">'+
+        '<div style="display:flex;gap:10px;align-items:baseline">'+
+          '<div style="font-size:12px;color:#7a879b;min-width:88px;flex-shrink:0">'+cpEsc(r.label)+'</div>'+
+          '<div style="font-size:13px;font-weight:650;color:#0b183b;flex:1">'+cpEsc(r.value)+'</div>'+
+        '</div>'+
+        (r.detail?'<div style="font-size:12px;color:#5a7398;margin:3px 0 0 98px;line-height:1.6">'+cpEsc(r.detail)+'</div>':'')+
+        (r.cite?'<div style="font-size:10.5px;color:#a8b3c4;margin:3px 0 0 98px">来源：'+cpEsc(r.cite)+'</div>':'')+
+      '</div>';
+    }).join('')+'</div></div>';
+}
+/* 偏好维度卡：区分 stated / inferred，标注置信度 */
+function cpPrefCard(label, icon, d){
+  d=d||{};
+  var items=Array.isArray(d.items)?d.items:[];
+  var isStated=(d.source==='stated');
+  var conf=d.confidence||'low';
+  var cc={high:['#0f766e','#e9f7f6','高'],medium:['#b45309','#fff7ed','中'],low:['#64748b','#f1f5f9','低']}[conf]||['#64748b','#f1f5f9','低'];
+  var sc=isStated?['#1d4ed8','#eff6ff','问卷明示']:['#7c3aed','#f5f3ff','材料反推'];
+  return '<div style="border:1px solid '+(isStated?'#bfdbfe':'#e8edf5')+';border-radius:10px;background:#fff;padding:12px 14px">'+
+    '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px">'+
+      '<span style="font-size:14px">'+icon+'</span>'+
+      '<span style="font-size:13px;font-weight:700;color:#0b183b">'+cpEsc(label)+'</span>'+
+      '<span style="font-size:10px;padding:2px 7px;border-radius:5px;color:'+sc[0]+';background:'+sc[1]+';font-weight:650">'+sc[2]+'</span>'+
+      '<span style="font-size:10px;padding:2px 7px;border-radius:5px;color:'+cc[0]+';background:'+cc[1]+'">置信度'+cc[2]+'</span>'+
+    '</div>'+
+    (items.length
+      ? '<div style="display:flex;flex-wrap:wrap;gap:6px">'+items.map(function(x){
+          return '<span style="font-size:12px;padding:4px 9px;border-radius:14px;background:#f1f5fb;color:#28405f">'+cpEsc(x)+'</span>';
+        }).join('')+'</div>'
+      : '<div style="font-size:12px;color:#a8b3c4">未标定——材料中无足够依据</div>')+
+    (d.basis?'<div style="font-size:11.5px;color:#5a7398;margin-top:8px;line-height:1.65;padding-top:7px;border-top:1px solid #f4f7fb">依据：'+cpEsc(d.basis)+'</div>':'')+
+  '</div>';
+}
+/* 要点列表（优势/短板/缺口/冲突）*/
+function cpList(title, icon, arr, color, bg){
+  arr=Array.isArray(arr)?arr.filter(Boolean):[];
+  if(!arr.length) return '';
+  return '<div style="border:1px solid #e8edf5;border-radius:10px;background:#fff;overflow:hidden">'+
+    '<div style="padding:10px 14px;background:'+bg+';border-bottom:1px solid #eef2f7;font-size:13px;font-weight:700;color:'+color+'">'+icon+' '+cpEsc(title)+'</div>'+
+    '<div style="padding:10px 14px">'+arr.map(function(x,i){
+      return '<div style="display:flex;gap:8px;padding:5px 0;font-size:12.5px;color:#33465f;line-height:1.7">'+
+        '<span style="color:'+color+';flex-shrink:0;font-weight:700">'+(i+1)+'.</span><span>'+cpEsc(x)+'</span></div>';
+    }).join('')+'</div></div>';
+}
+/* ══ 城市画像·纯图表区 ══
+   零依赖内联 SVG（ops.html 无图表库，且不能加 CDN——离线 demo 会挂）。
+   数据来自后端 profile.charts（纯数字），不做字符串正则解析，避免措辞一变就崩。 */
+function cpNum(v){ var n=parseFloat(v); return isFinite(n)?n:null; }
+
+/* ── 图1：三次产业结构（堆叠条 + 图例）── */
+function cpChartStructure(s){
+  if(!s) return '';
+  var a=cpNum(s.primary), b=cpNum(s.secondary), c=cpNum(s.tertiary);
+  if(a===null||b===null||c===null) return '';
+  var tot=a+b+c; if(tot<=0) return '';
+  var W=460,H=54,pad=0;
+  var segs=[['第一产业',a,'#f59e0b'],['第二产业',b,'#1a56db'],['第三产业',c,'#0ea5a4']];
+  var x=pad,bars='',lab='';
+  segs.forEach(function(g){
+    var w=(g[1]/tot)*(W-pad*2);
+    bars+='<rect x="'+x.toFixed(1)+'" y="12" width="'+w.toFixed(1)+'" height="26" fill="'+g[2]+'"/>';
+    if(w>42) lab+='<text x="'+(x+w/2).toFixed(1)+'" y="29" fill="#fff" font-size="12" font-weight="700" text-anchor="middle">'+g[1]+'%</text>';
+    x+=w;
+  });
+  var legend=segs.map(function(g){
+    return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:#5a7398">'+
+      '<i style="width:9px;height:9px;border-radius:2px;background:'+g[2]+';display:inline-block"></i>'+g[0]+' '+g[1]+'%</span>';
+  }).join('<span style="width:14px;display:inline-block"></span>');
+  return cpChartBox('三次产业结构'+(s.year?'（'+cpEsc(s.year)+'）':''),
+    '<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'" preserveAspectRatio="none">'+bars+lab+'</svg>'+
+    '<div style="margin-top:8px">'+legend+'</div>', s.cite);
+}
+
+/* ── 图2：GDP 走势（折线 + 数据点）── */
+function cpChartGdp(arr){
+  if(!Array.isArray(arr)||arr.length<2) return '';
+  var pts=arr.map(function(d){return {y:String(d.year||''),v:cpNum(d.value)};})
+             .filter(function(d){return d.v!==null;});
+  if(pts.length<2) return '';
+  var W=460,H=150,L=52,R=12,T=14,B=26;
+  var vs=pts.map(function(p){return p.v;});
+  var mx=Math.max.apply(null,vs), mn=Math.min.apply(null,vs);
+  var lo=mn-(mx-mn)*0.25, hi=mx+(mx-mn)*0.18; if(hi===lo){hi=lo+1;}
+  var px=function(i){ return L+(pts.length===1?0:i*(W-L-R)/(pts.length-1)); };
+  var py=function(v){ return T+(hi-v)/(hi-lo)*(H-T-B); };
+  var line=pts.map(function(p,i){return (i?'L':'M')+px(i).toFixed(1)+' '+py(p.v).toFixed(1);}).join(' ');
+  var area=line+' L'+px(pts.length-1).toFixed(1)+' '+(H-B)+' L'+px(0).toFixed(1)+' '+(H-B)+' Z';
+  var g='',dots='',xl='';
+  [0,0.5,1].forEach(function(f){
+    var v=lo+(hi-lo)*f, y=py(v);
+    g+='<line x1="'+L+'" y1="'+y.toFixed(1)+'" x2="'+(W-R)+'" y2="'+y.toFixed(1)+'" stroke="#eef2f7"/>'+
+       '<text x="'+(L-6)+'" y="'+(y+3.5).toFixed(1)+'" fill="#9aa5b5" font-size="10" text-anchor="end">'+Math.round(v)+'</text>';
+  });
+  pts.forEach(function(p,i){
+    dots+='<circle cx="'+px(i).toFixed(1)+'" cy="'+py(p.v).toFixed(1)+'" r="3.5" fill="#fff" stroke="#1a56db" stroke-width="2"/>'+
+          '<text x="'+px(i).toFixed(1)+'" y="'+(py(p.v)-9).toFixed(1)+'" fill="#1d4ed8" font-size="10.5" font-weight="700" text-anchor="middle">'+p.v+'</text>';
+    xl+='<text x="'+px(i).toFixed(1)+'" y="'+(H-8)+'" fill="#7a879b" font-size="10.5" text-anchor="middle">'+cpEsc(p.y)+'</text>';
+  });
+  return cpChartBox('GDP 总量走势（亿元）',
+    '<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'">'+g+
+    '<path d="'+area+'" fill="#1a56db" opacity="0.07"/>'+
+    '<path d="'+line+'" fill="none" stroke="#1a56db" stroke-width="2.2" stroke-linejoin="round"/>'+
+    dots+xl+'</svg>','');
+}
+
+/* ── 图3：增速对比（横向条）── */
+function cpChartGrowth(arr){
+  if(!Array.isArray(arr)||!arr.length) return '';
+  var rows=arr.map(function(d){return {l:String(d.label||''),v:cpNum(d.value),u:d.unit||'%'};})
+              .filter(function(d){return d.v!==null;}).slice(0,6);
+  if(!rows.length) return '';
+  var mx=Math.max.apply(null,rows.map(function(r){return Math.abs(r.v);}))||1;
+  var body=rows.map(function(r){
+    var w=Math.abs(r.v)/mx*100, neg=r.v<0;
+    return '<div style="display:flex;align-items:center;gap:9px;padding:5px 0">'+
+      '<div style="width:118px;flex-shrink:0;font-size:11.5px;color:#5a7398;text-align:right;line-height:1.35">'+cpEsc(r.l)+'</div>'+
+      '<div style="flex:1;background:#f1f5fb;border-radius:4px;height:19px;position:relative;overflow:hidden">'+
+        '<div style="width:'+w.toFixed(1)+'%;height:100%;border-radius:4px;background:'+(neg?'linear-gradient(90deg,#f87171,#ef4444)':'linear-gradient(90deg,#60a5fa,#1a56db)')+'"></div></div>'+
+      '<div style="width:52px;flex-shrink:0;font-size:12px;font-weight:700;color:'+(neg?'#b91c1c':'#1d4ed8')+'">'+r.v+cpEsc(r.u)+'</div>'+
+    '</div>';
+  }).join('');
+  return cpChartBox('关键增速指标', body, '');
+}
+/* ── 图4：产业链环节强弱（招商最关心：哪里缺）── */
+function cpChartChain(arr){
+  if(!Array.isArray(arr)||!arr.length) return '';
+  var M={strong:['#0f766e','#e9f7f6','本地强'],weak:['#b45309','#fff7ed','薄弱'],missing:['#b91c1c','#fef2f2','缺失']};
+  var rows=arr.filter(function(d){return d&&d.node&&M[d.status];}).slice(0,12);
+  if(!rows.length) return '';
+  var cnt={strong:0,weak:0,missing:0};
+  rows.forEach(function(r){cnt[r.status]++;});
+  var chips=rows.map(function(r){
+    var m=M[r.status];
+    return '<div style="display:flex;align-items:center;gap:7px;padding:6px 9px;border-radius:7px;background:'+m[1]+';border:1px solid '+m[0]+'22">'+
+      '<span style="width:7px;height:7px;border-radius:50%;background:'+m[0]+';flex-shrink:0"></span>'+
+      '<span style="font-size:12px;color:#28405f;flex:1">'+cpEsc(r.node)+'</span>'+
+      '<span style="font-size:10px;font-weight:700;color:'+m[0]+'">'+m[2]+'</span></div>';
+  }).join('');
+  var bar='';
+  var tot=rows.length;
+  [['strong',M.strong],['weak',M.weak],['missing',M.missing]].forEach(function(g){
+    if(!cnt[g[0]]) return;
+    bar+='<div style="width:'+(cnt[g[0]]/tot*100).toFixed(1)+'%;background:'+g[1][0]+';display:flex;align-items:center;justify-content:center">'+
+      '<span style="font-size:10px;color:#fff;font-weight:700">'+cnt[g[0]]+'</span></div>';
+  });
+  return cpChartBox('产业链环节强弱分布',
+    '<div style="display:flex;height:20px;border-radius:5px;overflow:hidden;margin-bottom:10px">'+bar+'</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'+chips+'</div>', '');
+}
+
+/* ── 图5：与竞争城市对比（同口径指标）── */
+function cpChartCompare(c){
+  if(!c||!c.self) return '';
+  var self={l:String(c.self.label||'本市'),v:cpNum(c.self.value)};
+  if(self.v===null) return '';
+  var peers=(Array.isArray(c.peers)?c.peers:[]).map(function(p){return {l:String(p.label||''),v:cpNum(p.value)};})
+              .filter(function(p){return p.v!==null;}).slice(0,4);
+  var all=[self].concat(peers);
+  var mx=Math.max.apply(null,all.map(function(r){return r.v;}))||1;
+  var u=c.unit||'';
+  var body=all.map(function(r,i){
+    var isSelf=(i===0), w=r.v/mx*100;
+    return '<div style="display:flex;align-items:center;gap:9px;padding:5px 0">'+
+      '<div style="width:74px;flex-shrink:0;font-size:11.5px;font-weight:'+(isSelf?'750':'400')+';color:'+(isSelf?'#0b183b':'#7a879b')+';text-align:right">'+cpEsc(r.l)+'</div>'+
+      '<div style="flex:1;background:#f1f5fb;border-radius:4px;height:19px;overflow:hidden">'+
+        '<div style="width:'+w.toFixed(1)+'%;height:100%;border-radius:4px;background:'+(isSelf?'linear-gradient(90deg,#1a56db,#6366f1)':'#cbd7e6')+'"></div></div>'+
+      '<div style="width:50px;flex-shrink:0;font-size:12px;font-weight:'+(isSelf?'750':'600')+';color:'+(isSelf?'#1d4ed8':'#7a879b')+'">'+r.v+cpEsc(u)+'</div>'+
+    '</div>';
+  }).join('');
+  return cpChartBox((c.metric?cpEsc(c.metric):'指标')+' · 与竞争城市对比', body, '');
+}
+
+/* ── 图6：招商偏好置信度雷达（五维，反映画像可信程度）── */
+function cpChartPrefRadar(pref){
+  if(!pref) return '';
+  var dims=[['industry','产业方向'],['park','园区'],['scale','企业规模'],['invest','投资强度'],['capacity','承载能力']];
+  var SC={high:3,medium:2,low:1};
+  var vals=dims.map(function(d){
+    var x=pref[d[0]]||{};
+    var s=SC[x.confidence]||0;
+    if(!(x.items||[]).length) s=Math.min(s,1);
+    return {n:d[1],v:s,stated:(x.source==='stated')};
+  });
+  var W=300,H=210,cx=W/2,cy=H/2+4,R=72,N=vals.length;
+  var ang=function(i){ return -Math.PI/2 + i*2*Math.PI/N; };
+  var pt=function(i,f){ return [cx+Math.cos(ang(i))*R*f, cy+Math.sin(ang(i))*R*f]; };
+  var grid='';
+  [1,0.667,0.333].forEach(function(f){
+    var d=vals.map(function(_,i){var p=pt(i,f);return (i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1);}).join(' ')+' Z';
+    grid+='<path d="'+d+'" fill="none" stroke="#e8edf5"/>';
+  });
+  vals.forEach(function(_,i){
+    var p=pt(i,1);
+    grid+='<line x1="'+cx+'" y1="'+cy+'" x2="'+p[0].toFixed(1)+'" y2="'+p[1].toFixed(1)+'" stroke="#eef2f7"/>';
+  });
+  var poly=vals.map(function(d,i){var p=pt(i,Math.max(d.v,0.001)/3);return (i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1);}).join(' ')+' Z';
+  var dots='',labs='';
+  vals.forEach(function(d,i){
+    var p=pt(i,Math.max(d.v,0.001)/3);
+    dots+='<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="3" fill="'+(d.stated?'#1a56db':'#7c3aed')+'"/>';
+    var lp=pt(i,1.3), a=ang(i);
+    var anc=Math.abs(Math.cos(a))<0.3?'middle':(Math.cos(a)>0?'start':'end');
+    labs+='<text x="'+lp[0].toFixed(1)+'" y="'+(lp[1]+3.5).toFixed(1)+'" fill="#5a7398" font-size="10.5" text-anchor="'+anc+'">'+cpEsc(d.n)+'</text>';
+  });
+  var nStated=vals.filter(function(d){return d.stated;}).length;
+  return cpChartBox('招商偏好置信度（'+nStated+'/5 维来自问卷）',
+    '<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'">'+grid+
+    '<path d="'+poly+'" fill="#1a56db" opacity="0.16" stroke="#1a56db" stroke-width="1.8"/>'+dots+labs+'</svg>'+
+    '<div style="font-size:10.5px;color:#9aa5b5;text-align:center;margin-top:-4px">外圈=置信度高 · 蓝点=问卷明示 · 紫点=材料反推</div>','');
+}
+
+/* ── 图7：优势/短板/缺口 数量对比（一眼看画像健康度）── */
+function cpChartBalance(prof){
+  var g=[['不可复制优势',(prof.strength||[]).length,'#0f766e'],
+         ['真实短板',(prof.weakness||[]).length,'#b45309'],
+         ['问卷冲突',(prof.conflicts||[]).length,'#b91c1c'],
+         ['画像缺口',(prof.gaps||[]).length,'#4f46e5']];
+  if(!g.some(function(x){return x[1];})) return '';
+  var mx=Math.max.apply(null,g.map(function(x){return x[1];}))||1;
+  // TOP=数值标签预留高度：柱高按 (H-BOT-TOP) 缩放，否则最高柱的标签会被裁到 viewBox 外
+  var H=128, bw=44, gap=26, W=g.length*(bw+gap), TOP=20, BOT=24;
+  var bars='';
+  g.forEach(function(x,i){
+    var h=x[1]/mx*(H-BOT-TOP), bx=i*(bw+gap)+gap/2, by=H-BOT-h;
+    bars+='<rect x="'+bx+'" y="'+by.toFixed(1)+'" width="'+bw+'" height="'+Math.max(h,1).toFixed(1)+'" rx="4" fill="'+x[2]+'" opacity="0.85"/>'+
+          '<text x="'+(bx+bw/2)+'" y="'+(by-5).toFixed(1)+'" fill="'+x[2]+'" font-size="12" font-weight="750" text-anchor="middle">'+x[1]+'</text>'+
+          '<text x="'+(bx+bw/2)+'" y="'+(H-8)+'" fill="#7a879b" font-size="10" text-anchor="middle">'+x[0]+'</text>';
+  });
+  return cpChartBox('画像结论分布', '<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'">'+bars+'</svg>', '');
+}
+
+/* 图表卡外壳 */
+function cpChartBox(title, inner, cite){
+  return '<div style="border:1px solid #e8edf5;border-radius:10px;background:#fff;padding:13px 15px">'+
+    '<div style="font-size:12.5px;font-weight:700;color:#0b183b;margin-bottom:10px">'+cpEsc(title)+'</div>'+
+    inner+
+    (cite?'<div style="font-size:10px;color:#a8b3c4;margin-top:7px">来源：'+cpEsc(cite)+'</div>':'')+
+  '</div>';
+}
+
+/* ── 纯图表区总装 ── */
+function cpChartsSection(prof){
+  var ch=prof.charts||{};
+  var cards=[
+    cpChartStructure(ch.structure),
+    cpChartGdp(ch.gdp_trend),
+    cpChartGrowth(ch.growth),
+    cpChartCompare(ch.compare),
+    cpChartChain(ch.chain),
+    cpChartPrefRadar(prof.preference),
+    cpChartBalance(prof)
+  ].filter(Boolean);
+  if(!cards.length) return '';
+  // 图表放在最前，必须先交代读图前提：年份口径不统一、未覆盖项、以及本轮缺哪些图。
+  // 否则读者会把不同年份的数字横向比较，或误以为"没画的图=该市没有这项"。
+  var prem=cpChartsPremise(prof, ch, cards.length);
+  return '<div style="font-size:14px;font-weight:750;color:#0b183b;margin:18px 0 4px;padding-left:9px;border-left:3px solid #0ea5a4">一、数据图表</div>'+
+    prem+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">'+cards.join('')+'</div>';
+}
+
+/* 读图前提说明：口径 / 数据源 / 本轮未出图的项 */
+function cpChartsPremise(prof, ch, nCards){
+  // 年份：从 structure.year 与 gdp_trend 年份汇总，提示口径可能跨年
+  var yrs={};
+  if(ch.structure&&ch.structure.year) yrs[String(ch.structure.year)]=1;
+  (ch.gdp_trend||[]).forEach(function(d){ if(d&&d.year) yrs[String(d.year)]=1; });
+  var yl=Object.keys(yrs).sort();
+  // 本轮缺哪些图（明确告知，避免"没画=没有"的误读）
+  var miss=[];
+  if(!ch.structure)  miss.push('三次产业结构');
+  if(!(ch.gdp_trend&&ch.gdp_trend.length>1)) miss.push('GDP走势');
+  if(!(ch.growth&&ch.growth.length))  miss.push('增速指标');
+  if(!ch.compare)    miss.push('竞争城市对比');
+  if(!(ch.chain&&ch.chain.length))    miss.push('产业链强弱');
+  var items=[];
+  items.push('<b>数据源</b>：本市智库材料（含政府公报、统计公报与上传佐证），'+
+             '仅呈现可提取到纯数值的指标，缺数据的图自动隐藏、不以 0 充数');
+  if(yl.length) items.push('<b>年份口径</b>：图中数据年份为 '+yl.map(cpEsc).join('、')+
+             '，各指标统计年度可能不一致，横向比较前请先核对年份');
+  items.push('<b>统计口径</b>：绝对量按现价、增速按不变价；公报数为快报口径，'+
+             '后续经普查修订可能与本图存在差异');
+  if(miss.length) items.push('<b>本轮未出图</b>：'+miss.join('、')+
+             '——材料中暂无可用纯数值，非该市不存在该项');
+  items.push('<b>偏好类图表</b>：置信度雷达反映的是判断依据强弱，'+
+             '非该市招商意愿强弱');
+  return '<div style="border:1px solid #d6e6f2;background:#f6fbfe;border-radius:9px;padding:11px 13px;margin:0 0 12px 0">'+
+    '<div style="font-size:11px;font-weight:750;color:#0e7490;letter-spacing:.06em;margin-bottom:6px">读图前提 · 共 '+nCards+' 张图</div>'+
+    items.map(function(x){
+      return '<div style="font-size:11.5px;color:#4a6480;line-height:1.75;padding:1.5px 0">· '+x+'</div>';
+    }).join('')+
+  '</div>';
+}
+
+/* ── 主视图 ── */
+function opsCityProfile(){
+  var key=cpProjKey();
+  if(!key) return '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:#9aa5b5;padding:60px">'+
+    '<div style="font-size:36px">🏙️</div><div style="font-size:14px;font-weight:700;color:#0b183b">暂无可画像的城市</div>'+
+    '<div style="font-size:13px;text-align:center;line-height:1.7">城市画像基于智库材料生成，<br>请先在「城市需求概览」发起报告生成并推送到 RAG</div></div>';
+  var p=PROJECTS[key], city=p.city||key;
+  var prof=p.profile||null;
+  var nChunks=cpCorpus(city).length;
+  var ob=cpOnboarding(city);
+  var nItv=cpInterviewCount(city);
+  var ts=prof&&prof.__ts?new Date(prof.__ts):null;
+  var tsStr=ts?((ts.getMonth()+1)+'/'+ts.getDate()+' '+ts.getHours()+':'+('0'+ts.getMinutes()).slice(-2)):'—';
+  var stale=(prof&&prof.__chunks&&nChunks>prof.__chunks);
+
+  var head='<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap">'+
+    '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">城市画像</h1>'+
+    '<select onchange="cpCity=this.value;cpErr=\'\';renderOpsV2()" style="min-height:34px;padding:4px 10px;border:1px solid #d8e0ed;border-radius:8px;font-size:13px">'+cpCityOptions()+'</select>'+
+    '<span style="font-size:12px;color:#9aa5b5">'+cpEsc(p.org||'')+(prof?' · 生成于 '+tsStr:'')+'</span>'+
+    '<div style="flex:1"></div>'+
+    '<button onclick="cpGenerate(1)"'+(cpBusy?' disabled':'')+' style="min-height:34px;padding:0 14px;border-radius:8px;border:none;cursor:'+(cpBusy?'wait':'pointer')+';font-size:13px;font-weight:650;color:#fff;background:'+(cpBusy?'#9aa5b5':'linear-gradient(135deg,#1a56db,#6366f1)')+'">'+
+      (cpBusy?'生成中…':(prof?'重新生成':'生成城市画像'))+'</button>'+
+  '</div>';
+
+  // 数据源条：明确告诉运营方这份画像吃了什么
+  var srcBar='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">'+
+    cpStat('📦','智库材料', nChunks+' 条', '画像事实底座')+
+    cpStat('📋','招商偏好问卷', ob?'已填写':'未填写', ob?'作为 stated 证据校准':'偏好只能反推')+
+    cpStat('📇','干部访谈', nItv+' 条', nItv?'偏好与信息完备度参考':'暂无访谈记录')+
+    cpStat('🕐','画像状态', prof?(stale?'待更新':'已生成'):'未生成', stale?'材料已新增，建议重算':'')+
+  '</div>';
+
+  if(cpErr) head+='<div style="padding:11px 14px;border:1px solid #fecaca;background:#fef2f2;border-radius:9px;color:#b91c1c;font-size:12.5px;margin-bottom:12px">'+cpEsc(cpErr)+'</div>';
+
+  if(cpBusy) return '<div style="padding:24px">'+head+srcBar+
+    '<div style="border:1px solid #e8edf5;border-radius:10px;background:#fff;padding:34px;text-align:center">'+
+      '<div style="font-size:13px;font-weight:700;color:#0b183b">正在读取 '+cpEsc(city)+' 全量智库材料并刻画画像…</div>'+
+      '<div style="font-size:12px;color:#9aa5b5;margin-top:6px;line-height:1.7">跨全部同城项目合并 '+nChunks+' 条材料，检索取 Top40 片段<br>结构化画像约需 40-90 秒，请勿切换页面</div>'+
+    '</div></div>';
+
+  if(!prof) return '<div style="padding:24px">'+head+srcBar+
+    '<div style="border:1px dashed #cbd7e6;border-radius:10px;background:#fbfcfe;padding:34px;text-align:center">'+
+      '<div style="font-size:30px;margin-bottom:8px">🧭</div>'+
+      '<div style="font-size:14px;font-weight:700;color:#0b183b">尚未生成 '+cpEsc(city)+' 的城市画像</div>'+
+      '<div style="font-size:12.5px;color:#5a7398;margin-top:8px;line-height:1.8">画像会从 '+nChunks+' 条智库材料反推该市的客观条件（经济体量·产业结构·园区承载·链主·配套）<br>与招商偏好（产业方向·园区·企业规模·投资强度），每条结论标注来源与置信度'+
+      (ob?'<br>并用已填写的招商偏好问卷做校准':'<br><b style="color:#b45309">该市未填写招商偏好问卷，偏好部分将全部为「材料反推」</b>')+'</div>'+
+      '<button onclick="cpGenerate(1)" style="margin-top:16px;padding:10px 20px;border-radius:9px;border:none;cursor:pointer;font-size:13px;font-weight:650;color:#fff;background:linear-gradient(135deg,#1a56db,#6366f1)">开始生成</button>'+
+    '</div></div>';
+
+  var o=prof.objective||{}, pref=prof.preference||{};
+  var body='';
+  if(prof.summary) body+='<div style="border:1px solid #bfdbfe;background:#f5f9ff;border-radius:10px;padding:14px 16px;margin-bottom:14px">'+
+    '<div style="font-size:11px;font-weight:750;color:#1d4ed8;letter-spacing:.08em;margin-bottom:6px">画像总览</div>'+
+    '<div style="font-size:13.5px;color:#22364f;line-height:1.85">'+cpEsc(prof.summary)+'</div></div>';
+
+  // 一、数据图表（图最直观，放最前；细节文字在后）
+  body+=cpChartsSection(prof);
+
+  // 二、客观自身条件
+  var objBlocks=[
+    cpObjBlock('经济体量','💰',o.economy), cpObjBlock('产业结构','📊',o.structure),
+    cpObjBlock('主导产业','🏭',o.industry), cpObjBlock('园区与承载','🏢',o.park),
+    cpObjBlock('链主企业','⚓',o.anchor),   cpObjBlock('配套与成本','🔗',o.cost)
+  ].filter(Boolean);
+  body+='<div style="font-size:14px;font-weight:750;color:#0b183b;margin:18px 0 10px;padding-left:9px;border-left:3px solid #1d4ed8">二、客观自身条件</div>';
+  body+= objBlocks.length
+    ? '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">'+objBlocks.join('')+'</div>'
+    : '<div style="font-size:12.5px;color:#a8b3c4;padding:12px 0">材料中未提取到可量化的客观条件</div>';
+
+  // 三、招商偏好
+  body+='<div style="font-size:14px;font-weight:750;color:#0b183b;margin:20px 0 4px;padding-left:9px;border-left:3px solid #7c3aed">三、招商偏好</div>';
+  body+='<div style="font-size:11.5px;color:#8492a6;margin:0 0 10px 12px">'+
+    (prof.__hasOnboarding?'蓝框=问卷明示（stated），其余=材料反推（inferred）':'该市未填问卷，全部为材料反推，建议补填问卷提升置信度')+'</div>';
+  body+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">'+
+    cpPrefCard('优先产业方向','🏭',pref.industry)+
+    cpPrefCard('重点园区','🏢',pref.park)+
+    cpPrefCard('理想企业规模','📊',pref.scale)+
+    cpPrefCard('期望投资强度','💰',pref.invest)+
+    cpPrefCard('承载能力','🏗️',pref.capacity)+
+  '</div>';
+
+  // 四、优劣势与缺口
+  var lists=[
+    cpList('不可复制优势','✅',prof.strength,'#0f766e','#e9f7f6'),
+    cpList('真实短板','⚠️',prof.weakness,'#b45309','#fff7ed'),
+    cpList('问卷与材料冲突','⚡',prof.conflicts,'#b91c1c','#fef2f2'),
+    cpList('画像缺口·待补材料','📌',prof.gaps,'#4f46e5','#f5f3ff')
+  ].filter(Boolean);
+  if(lists.length){
+    body+='<div style="font-size:14px;font-weight:750;color:#0b183b;margin:20px 0 10px;padding-left:9px;border-left:3px solid #0f766e">四、优劣势与画像缺口</div>';
+    body+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">'+lists.join('')+'</div>';
+  }
+
+  // 信息完备度（原「干部配合度」——措辞会指向对方担责，客户看到易生嫌隙；
+  // 改为只描述材料本身状态：待补充 / 部分完备 / 较完备）
+  var eng=prof.engagement||{};
+  if(eng.level||(eng.signals||[]).length){
+    var el={high:['#0f766e','#e9f7f6','较完备'],medium:['#b45309','#fff7ed','部分完备'],low:['#5a7398','#f1f5f9','待补充']}[eng.level]||['#64748b','#f1f5f9','待评估'];
+    body+='<div style="margin-top:14px;border:1px solid #e8edf5;border-radius:10px;background:#fff;padding:12px 14px">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
+        '<span style="font-size:13px;font-weight:700;color:#0b183b">📇 访谈信息完备度</span>'+
+        '<span style="font-size:10px;padding:2px 8px;border-radius:5px;color:'+el[0]+';background:'+el[1]+';font-weight:650">'+el[2]+'</span></div>'+
+      (eng.signals||[]).map(function(s){
+        return '<div style="font-size:12px;color:#5a7398;line-height:1.7;padding:3px 0">· '+cpEsc(s)+'</div>';
+      }).join('')+'</div>';
+  }
+  return '<div style="padding:24px">'+head+srcBar+body+'</div>';
+}
+
+/* ══ Tab1: 城市需求概览 ══ */
+function opsOverview(){
+  // 管理端（运营方）跨城市查看所有项目
+  // 关键修复：只显示「已正式提交招商需求」的子项目。父项目/城市产业分析工作区
+  // (如 sz、id==城市名、topic 形如「XX产业链招引」的占位项目) 的 topic 会随政府端
+  // 选中的产业方向实时变化，绝不能当招商项目展示——否则政府端点氢气，管理端就跟着变。
+  function _isParentProj(k){
+    var x=PROJECTS[k]; if(!x) return true;
+    if(k==='sz') return true;
+    if(x.id && x.city && x.id===x.city) return true;
+    if(typeof x.topic==='string' && /产业链招引$/.test(x.topic)) return true;
+    return false;
+  }
+  var projKeys = Object.keys(PROJECTS).filter(function(k){
+    var x=PROJECTS[k]; if(!x) return false;
+    // 只显示政府端正式提交的招商需求（isDemand=true），与政府端保持一致
+    return x.isDemand===true;
+  });
+
+  if(!projKeys.length){
+    return '<div style="padding:24px">' + rrPanel() + '</div>' +
+      '<div style="display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:#9aa5b5;padding:60px">' +
+      '<div style="font-size:36px">🏙️</div>' +
+      '<div style="font-size:14px;font-weight:700;color:#0b183b">暂无城市数据</div>' +
+      '<div style="font-size:13px;text-align:center;line-height:1.7">政府端完成城市智库分析并提交招引需求后，<br>城市用户信息会出现在这里</div>' +
+    '</div>';
+  }
+
+  function opsProjCard(k){
+    var p  = PROJECTS[k];
+    var rs = REPORTSTATE[k];
+    // 自动触发真实 AI 企业漏斗（每个项目首次进入静默后台跑）
+    if(!window.__funnelAuto) window.__funnelAuto={};
+    if(!window.__funnelAuto[k] && p && !p.funnel && (p.topic||'').trim()){
+      window.__funnelAuto[k]=true;
+      runAIFunnel(k, function(err){ if(!err){ try{ render(); }catch(e){} } });
+    }
+    var ups = (UPLOADS[k]||[]);
+    var clues = (p.clues||[]);
+    // 已确认结论：按该项目「当前产业方向」自己确认的待确认事项数统计
+    var confirmedCount = 0;
+    (function(){
+      var topic = p.topic || '';
+      var pend = null;
+      // 优先取该方向缓存的 pendingByTopic
+      if(rs && rs.pendingByTopic && topic && rs.pendingByTopic[topic]) pend = rs.pendingByTopic[topic];
+      // 回退：该项目当前 PENDING_CONFIRMS（单方向项目）
+      if((!pend||!pend.length) && typeof PENDING_CONFIRMS!=='undefined' && PENDING_CONFIRMS[k]) pend = PENDING_CONFIRMS[k];
+      if(pend && pend.length){
+        confirmedCount = pend.filter(function(x){return x.status==='confirmed'||x.status==='edited';}).length;
+      }
+    })();
+    var stage = p.stage||1;
+    var stageNames = projStages(p);
+    var stageName  = stageNameOf(p, stage);
+    var stageColors= ['#9aa5b5','#f59e0b','#3b82f6','#6366f1','#22c55e'];
+    var stageColor = stageColors[stage-1]||'#8b5cf6';
+
+    // 需求摘要：从 DEMANDS 里找关联的
+    var demand = DEMANDS.find(function(d){return d.projKey===k;});
+
+    // 候选线索统计
+    var aiClues  = clues.filter(function(c){return c.status==='ai_scan';});
+    var opsClues = clues.filter(function(c){return c.status==='ops_rec';});
+    // 从企业资源库统计匹配到该城市的企业数
+    var matchedEnts = OPS_ENT.filter(function(e){
+      return (e.matches||[]).some(function(m){ return m.city===p.city; });
+    });
+    var verified = matchedEnts.filter(function(e){return (e.matches||[]).some(function(m){return m.city===p.city&&m.pushed;});});
+    var checking = matchedEnts.filter(function(e){return (e.matches||[]).some(function(m){return m.city===p.city&&!m.pushed;});});
+
+    var _pOpen = !!(window.__opsProjOpen && window.__opsProjOpen[k]);
+    return '<div style="background:#fff;border:1.5px solid #e8edf5;border-radius:16px;overflow:hidden;margin-bottom:16px">' +
+      // 头部
+      '<div onclick="toggleOpsProj(\'' + k + '\')" style="padding:16px 20px;background:#f8faff;border-bottom:1px solid ' + (_pOpen?'#e8edf5':'transparent') + ';display:flex;align-items:center;gap:12px;cursor:pointer">' +
+        '<span style="font-size:12px;color:#1a56db;display:inline-block;transform:rotate(' + (_pOpen?'90':'0') + 'deg);transition:transform .15s">&#9654;</span>' +
+        '<div style="font-size:14px;color:#0b183b;font-weight:700">' + p.topic + '</div>' +
+        '<div style="margin-left:auto;text-align:right">' +
+          '<div style="padding:4px 12px;background:' + stageColor + ';color:#fff;border-radius:20px;font-size:12px;font-weight:650;display:inline-block">' + stageName + '</div>' +
+        '</div>' +
+      '</div>' +
+      (_pOpen ? (
+      // 进度条
+      '<div style="padding:12px 20px;border-bottom:1px solid #f0f4ff;display:flex;gap:0">' +
+        stageNames.map(function(s,si){
+          var n=si+1;
+          var isDone=(n<stage), isCur=(n===stage);
+          var bg=isDone?'#1a56db':isCur?'#eff6ff':'#f5f7fb';
+          var color=isDone?'#fff':isCur?'#1a56db':'#9aa5b5';
+          var fw=isCur?'700':'400';
+          return '<div style="flex:1;padding:6px 4px;text-align:center;background:'+bg+';font-size:10.5px;font-weight:'+fw+';color:'+color+';border-right:1px solid #e8edf5">' +
+            (isDone?'✓ ':'')+s[0]+'</div>';
+        }).join('') +
+      '</div>' +
+      // 阶段推进面板：回复说明 + 选下一阶段 + 新增自定义阶段 + 留痕列表
+      '<div style="padding:12px 20px;border-bottom:1px solid #e0e7ff;background:#fafbff">' +
+        '<div style="font-size:12px;font-weight:700;color:#1a56db;margin-bottom:8px">🔄 阶段推进与回复</div>' +
+        '<textarea id="stage-note-' + k + '" placeholder="填写回复说明（如：材料已初审通过，建议约下周三第一次会议）…" ' +
+          'style="width:100%;box-sizing:border-box;padding:8px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;resize:vertical;min-height:50px;outline:none;line-height:1.6"></textarea>' +
+        '<div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">' +
+          '<select id="stage-target-' + k + '" style="flex:1;min-width:140px;padding:8px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;background:#fff;color:#0b183b;outline:none">' + stageOptions(p) + '</select>' +
+          '<button onclick="saveStageAdvance(\'' + k + '\')" style="padding:8px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap">保存并推进</button>' +
+          '<button onclick="addCustomStage(\'' + k + '\')" style="padding:8px 12px;background:#fff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12.5px;color:#6d28d9;cursor:pointer;font-weight:600;white-space:nowrap">＋ 新增阶段</button>' +
+        '</div>' +
+        renderStageLog(p) +
+      '</div>' +
+      // 统计网格
+      '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0;border-bottom:1px solid #f0f4ff">' +
+        statCell('🔍 AI扫描线索', aiClues.length+'条', aiClues.length>0?'#6d28d9':'#9aa5b5') +
+        statCell('✓ 可对接企业', verified.length+(checking.length?'/'+checking.length+'核验中':'条'), verified.length>0?'#166534':'#9aa5b5') +
+      '</div>' +
+      // 指标说明
+      '<div style="padding:10px 20px;background:#fbfcff;border-bottom:1px solid #f0f4ff;display:flex;flex-direction:column;gap:6px">' +
+        '<div style="display:flex;align-items:flex-start;gap:7px;font-size:11.5px;color:#6b7280;line-height:1.6">' +
+          '<span style="color:#6d28d9;font-weight:700;flex-shrink:0">🔍 AI扫描线索</span>' +
+          '<span>系统根据该方向的产业报告缺口，自动从公开信息中扫出的<b>候选企业线索</b>，供参考，尚未经人工核实真实投资意向。</span>' +
+        '</div>' +
+        '<div style="display:flex;align-items:flex-start;gap:7px;font-size:11.5px;color:#6b7280;line-height:1.6">' +
+          '<span style="color:#166534;font-weight:700;flex-shrink:0">✓ 可对接企业</span>' +
+          '<span>已在<b>企业资源库</b>中匹配并推送到该城市的企业；「核验中」表示已匹配待资源团队核实，核实通过后即为可安排对接的确定资源。</span>' +
+        '</div>' +
+      '</div>' +
+      // 需求块
+      (demand ?
+        '<div style="padding:14px 20px;background:#fffbeb;border-bottom:1px solid #fde68a">' +
+          '<div style="font-size:11.5px;font-weight:650;color:#92400e;margin-bottom:6px">📤 招引需求</div>' +
+          '<div style="font-size:13px;color:#1e293b;line-height:1.65"><strong>' + (demand.topic||p.topic||'') + '</strong>' + (demand.domain?' · ' + demand.domain:'') + '</div>' +
+          '<div style="font-size:12px;color:#8492a6;margin-top:3px">' + (demand.need||'需求详情见研判报告') + '</div>' +
+        '</div>'
+      : rs ?
+        '<div style="padding:12px 20px;background:#f9fafb;border-bottom:1px solid #f0f4ff">' +
+          '<div style="font-size:12px;color:#8492a6">研判报告已生成（置信度 '+rs.score+'%），需求尚未提交</div>' +
+        '</div>'
+      : '<div style="padding:12px 20px;background:#f9fafb;border-bottom:1px solid #f0f4ff">' +
+          '<div style="font-size:12px;color:#b0bac8">尚未生成研判报告</div>' +
+        '</div>'
+      ) +
+      // AI 企业漏斗（真实 DeepSeek 分析）
+      funnelBlock(k) +
+      // 操作
+      '<div style="padding:12px 20px;display:flex;gap:8px;flex-wrap:wrap">' +
+        (rs ? '<button onclick="opsViewCityReport(\'' + k + '\')" style="padding:7px 14px;background:#f8faff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer">📋 查看报告</button>' : '') +
+      '</div>'
+      ) : '') +
+    '</div>';
+  }
+
+  // AI 企业漏斗展示块（真实 DeepSeek 分析结果 + 一键推送 Top8）
+  function funnelBlock(k){
+    var p=PROJECTS[k]; if(!p) return '';
+    var fn=p.funnel; var running=(typeof _funnelRunning!=='undefined')&&_funnelRunning[k];
+    if(!window.__funnelCollapse) window.__funnelCollapse={};
+    var collapsed=window.__funnelCollapse[k]===true;
+    var head='<div style="padding:12px 20px 4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
+      '<span onclick="toggleFunnelBlock(\''+k+'\')" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none">'+'<span style="font-size:11px;color:#6d28d9;display:inline-block;transform:rotate('+(collapsed?'-90':'0')+'deg)">▼</span>'+'<span style="font-size:12.5px;font-weight:750;color:#0b183b">AI 企业漏斗</span>'+'</span>'+
+      (fn?'<span style="font-size:11px;padding:2px 8px;background:#f5f3ff;color:#6d28d9;border-radius:10px">扫描'+(fn.total||fn.companies.length)+'家 · 精筛'+fn.companies.length+'家</span>':'')+
+      '<div style="flex:1"></div>'+
+      (fn&&fn.companies&&fn.companies.length?'<button onclick="showFunnelPyramid(\''+k+'\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:11.5px;color:#1a56db;cursor:pointer;font-weight:600;margin-right:8px">📊 分级图谱</button>':'')+
+      (running?'<span style="font-size:11.5px;color:#6d28d9">⏳ 分析中…</span>':'<button onclick="loadAIScanClues(\''+k+'\')" style="padding:4px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:11.5px;color:#6d28d9;cursor:pointer;font-weight:600">🔄 重新分析</button>')+
+    '</div>';
+    if(collapsed) return head;
+    var body;
+    if(running && !fn){
+      body='<div style="margin:6px 20px 14px;text-align:center;padding:20px;background:#faf9ff;border-radius:10px;border:1px solid #ede9fe;font-size:12.5px;color:#6d28d9">⏳ AI 正在按该方向缺口分析适配企业，约需 1-2 分钟…</div>';
+    } else if(!fn){
+      body='<div style="margin:6px 20px 14px;text-align:center;padding:18px;background:#f9fafb;border-radius:10px;border:1px solid #e8edf5">'+
+        '<div style="font-size:12.5px;color:#9aa5b5;margin-bottom:8px">尚未生成企业漏斗</div>'+
+        '<button onclick="loadAIScanClues(\''+k+'\')" style="padding:6px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600">🔍 立即 AI 分析</button>'+
+      '</div>';
+    } else {
+      var pushedTip=fn.pushed?'<span style="font-size:11px;color:#166534;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:3px 9px">✓ 已推送 '+(fn.pushedNames?fn.pushedNames.length:0)+' 家到政府端</span>':'';
+      var pushBtn='<button onclick="pushFunnelTopToGov(\''+k+'\',8)" style="padding:7px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer">🚀 推送 Top8 精准企业到政府端</button>';
+      if(!window.__funnelExpand) window.__funnelExpand={};
+      var expandAll=window.__funnelExpand[k]===true;
+      var COLLAPSE_N=8;
+      var showList=expandAll?fn.companies:fn.companies.slice(0,COLLAPSE_N);
+      var rows=showList.map(function(c,i){
+        var isTop=i<8;
+        return '<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid #f1f3f7">'+
+          '<span style="flex-shrink:0;width:22px;height:22px;background:'+(isTop?'#eef2ff':'#f5f7fb')+';color:'+(isTop?'#4338ca':'#9aa5b5')+';border-radius:50%;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">'+(i+1)+'</span>'+
+          '<div style="flex:1;min-width:0">'+
+            '<div style="font-size:12.5px;font-weight:650;color:#0b183b;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
+              '<span>'+c.name+'</span>'+
+              (c.listed?'<span style="font-size:10px;color:#6d28d9;background:#f5f3ff;border-radius:6px;padding:1px 6px">'+c.listed+'</span>':'')+
+              (isTop?'<span style="font-size:10px;color:#1a56db;background:#eff6ff;border-radius:6px;padding:1px 6px">Top8</span>':'')+
+            '</div>'+
+            '<div style="font-size:11px;color:#8492a6;margin-top:2px">'+(c.region||'')+(c.kind?' \u00b7 '+c.kind:'')+'</div>'+
+            (c.fit?'<div style="font-size:11px;color:#4a5568;margin-top:3px;line-height:1.5">'+c.fit+'</div>':'')+
+            (c.signal
+              ? '<div style="font-size:10.5px;color:#b45309;margin-top:3px;line-height:1.5">📡 '+c.signal+'</div>'
+              : '<div style="font-size:10.5px;color:#b45309;margin-top:3px;line-height:1.5">📝 '+(c.score_reason||c.fit||'AI 按该方向缺口精筛，建议资源团队核验投资意向')+'</div>')+
+            // 优质标注：有扩张需求 / 派系关联（无则不显示）
+            (c.expansion?'<div style="font-size:10.5px;color:#166534;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:2px 7px;margin-top:4px;display:inline-block;line-height:1.5">🚀 有扩张需求：'+c.expansion+'</div>':'')+
+            (c.faction?'<div style="font-size:10.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:2px 7px;margin-top:4px;margin-left:4px;display:inline-block;line-height:1.5">🤝 派系关联：'+c.faction+'</div>':'')+
+            // 评分卡分项构成
+            '<div style="font-size:10px;color:#9aa5b5;margin-top:4px">匹配 '+(c.score_match||0)+' + 可招引 '+(c.score_relocate||0)+' + 实力 '+(c.score_strength||0)+'</div>'+
+          '</div>'+
+          '<span style="flex-shrink:0;font-size:13px;font-weight:800;color:'+(c.fit_score>=80?'#16a34a':c.fit_score>=60?'#d97706':'#6b7280')+'">'+(c.fit_score||0)+'<span style="font-size:10px;font-weight:600">\u5206</span></span>'+
+        '</div>';
+      }).join('');
+      var toggle='';
+      if(fn.companies.length>COLLAPSE_N){
+        toggle=expandAll
+          ? '<div onclick="toggleFunnelExpand(\'' +k+ '\')" style="text-align:center;font-size:12px;color:#6d28d9;padding:10px 0 2px;cursor:pointer;font-weight:600">\u6536\u8d77 \u25b2</div>'
+          : '<div onclick="toggleFunnelExpand(\'' +k+ '\')" style="text-align:center;font-size:12px;color:#6d28d9;padding:10px 0 2px;cursor:pointer;font-weight:600">\u5c55\u5f00\u5168\u90e8 '+fn.companies.length+' \u5bb6 \u25bc</div>';
+      }
+      body='<div style="margin:6px 20px 14px;padding:12px 14px;background:#fbfcff;border:1px solid #e8edf5;border-radius:10px">'+
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">'+pushBtn+pushedTip+'</div>'+
+        rows+toggle+
+      '</div>';
+      '</div>';
+    }
+    return head+body;
+  }
+
+  // 按城市分组
+  var cityGroups = {}; var cityOrder = [];
+  projKeys.forEach(function(k){
+    var c = (PROJECTS[k]||{}).city || '未分类';
+    if(!cityGroups[c]){ cityGroups[c]=[]; cityOrder.push(c); }
+    cityGroups[c].push(k);
+  });
+  if(window.__opsCityOpen == null){
+    window.__opsCityOpen = {};
+    cityOrder.forEach(function(c){ window.__opsCityOpen[c] = true; });
+  }
+  var _stgN = ['资料准备','AI研判','确认需求','资源匹配','招商对接'];
+  var groups = cityOrder.map(function(city){
+    var keys = cityGroups[city];
+    var isOpen = window.__opsCityOpen[city] !== false;
+    var maxStage = Math.max.apply(null, keys.map(function(k){ return (PROJECTS[k]||{}).stage||1; }));
+    // 材料/城市智库确认是「城市级共享数据」，政府端上传在城市工作区(父项目 sz)上，
+    // 而 keys 已过滤掉父项目 → 必须按「该城市全部项目」统计，否则显示「暂无材料」。
+    var allCityKeys = Object.keys(PROJECTS).filter(function(k){ return (PROJECTS[k]||{}).city === city; });
+    var totalUps = allCityKeys.reduce(function(n,k){ return n+((UPLOADS[k]||[]).length); }, 0);
+    // 城市智库确认（城市级共享数据）：汇总该城市各项目的 KB_CONFIRMS
+    var cityKbConfirms = allCityKeys.reduce(function(n,k){
+      var cf = KB_CONFIRMS[k]||{};
+      return n + Object.keys(cf).reduce(function(m,ki){return m+Object.keys(cf[ki]).length;},0);
+    }, 0);
+    var org = (PROJECTS[keys[0]]||{}).org || '';
+    var header = '<div onclick="toggleOpsCity(\'' + city.replace(/'/g,"\\'") + '\')" style="display:flex;align-items:center;gap:12px;padding:16px 20px;background:#eef4ff;border:1.5px solid #d6e4ff;border-radius:14px;cursor:pointer;margin-bottom:' + (isOpen?'14px':'0') + '">' +
+      '<span style="font-size:13px;color:#1a56db;display:inline-block;transform:rotate(' + (isOpen?'90':'0') + 'deg)">&#9654;</span>' +
+      '<span style="font-size:16px;font-weight:750;color:#0b183b">' + city + '</span>' +
+      '<span style="font-size:12px;color:#8492a6">' + org + '</span>' +
+      '<span style="margin-left:auto;display:flex;align-items:center;gap:10px">' +
+        '<span style="font-size:12px;color:#4a5568">' + keys.length + ' 个项目</span>' +
+        (cityKbConfirms>0 ? '<span style="font-size:12px;color:#1d4ed8;font-weight:600">✅ 城市智库已确认 ' + cityKbConfirms + ' 条</span>' : '') +
+        (totalUps>0 ? '<button onclick="event.stopPropagation();opsViewCityUploads(\'' + encodeURIComponent(city) + '\')" style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600">📎 上传材料 ' + totalUps + ' 份 · 查看</button>' : '<span style="font-size:12px;color:#9aa5b5">暂无材料</span>') +
+        '<span style="padding:3px 10px;background:#1a56db;color:#fff;border-radius:20px;font-size:11px;font-weight:650">' + (_stgN[maxStage-1]||'进行中') + '</span>' +
+      '</span>' +
+    '</div>';
+    var body = isOpen ? '<div style="padding-left:6px">' + keys.map(opsProjCard).join('') + '</div>' : '';
+    return '<div style="margin-bottom:18px">' + header + body + '</div>';
+  }).join('');
+
+  return '<div style="padding:24px">' +
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">' +
+      '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">城市需求概览</h1>' +
+      '<span style="font-size:12px;color:#9aa5b5">共 ' + cityOrder.length + ' 个城市 · ' + projKeys.length + ' 个项目</span>' +
+    '</div>' +
+    rrPanel() +
+    groups +
+  '</div>';
+}
+
+function toggleFunnelBlock(k){
+  if(!window.__funnelCollapse) window.__funnelCollapse={};
+  window.__funnelCollapse[k]=!(window.__funnelCollapse[k]===true);
+  try{ renderOpsV2&&renderOpsV2(); }catch(e){ try{render();}catch(_){} }
+}
+
+/* 折叠/展开某个城市分组 */
+function toggleOpsCity(city){
+  if(window.__opsCityOpen == null) window.__opsCityOpen = {};
+  window.__opsCityOpen[city] = (window.__opsCityOpen[city] === false);
+  renderOpsV2();
+}
+
+/* 折叠/展开单个项目卡片（默认收起，点击头部展开） */
+function toggleOpsProj(k){
+  if(window.__opsProjOpen == null) window.__opsProjOpen = {};
+  window.__opsProjOpen[k] = !window.__opsProjOpen[k];
+  try{ renderOpsV2&&renderOpsV2(); }catch(e){ try{render();}catch(_){} }
+}
+
+function statCell(label, value, color){
+  return '<div style="padding:12px 16px;border-right:1px solid #f0f4ff">' +
+    '<div style="font-size:11px;color:#9aa5b5;margin-bottom:3px">' + label + '</div>' +
+    '<div style="font-size:15px;font-weight:700;color:' + color + '">' + value + '</div>' +
+  '</div>';
+}
+
+function statCellClickable(label, value, color, onclick){
+  return '<div style="padding:12px 16px;border-right:1px solid #f0f4ff;cursor:pointer;transition:background .15s" onclick="'+onclick+'" onmouseover="this.style.background=\'#eff6ff\'" onmouseout="this.style.background=\'\'">'+
+    '<div style="font-size:11px;color:#9aa5b5;margin-bottom:3px">' + label + '</div>' +
+    '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:15px;font-weight:700;color:' + color + '">' + value + '</span><span style="font-size:12px;color:#1a56db;font-weight:600;padding:4px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px">查看</span></div>' +
+  '</div>';
+}
+
+/* 查看城市上传材料列表 */
+function opsViewCityUploads(cityEnc){
+  var city = decodeURIComponent(cityEnc);
+  // 汇总该城市下所有项目的上传材料
+  var items = [];
+  Object.keys(PROJECTS).forEach(function(k){
+    if((PROJECTS[k]||{}).city !== city) return;
+    (UPLOADS[k]||[]).forEach(function(u){ items.push({proj:k, projTopic:(PROJECTS[k]||{}).topic||'', u:u}); });
+  });
+  if(!items.length){ toast('该城市暂无上传材料'); return; }
+  var body = '<div style="display:flex;flex-direction:column;gap:10px">' +
+    items.map(function(it){
+      var u = it.u;
+      var sizeStr = u.size ? (u.size>1048576 ? (u.size/1048576).toFixed(1)+'MB' : Math.round(u.size/1024)+'KB') : '';
+      var dateStr = u.ts ? new Date(u.ts).toLocaleString('zh-CN') : (u.at || '');
+      return '<div style="padding:12px 14px;background:#f8faff;border:1px solid #e8edf5;border-radius:10px;display:flex;align-items:center;gap:12px">' +
+        '<div style="width:36px;height:36px;background:#eff6ff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">' +
+          (u.name.match(/\.pdf$/i)?'PDF':u.name.match(/\.xlsx?$/i)?'XLS':u.name.match(/\.docx?$/i)?'DOC':'') +
+        '</div>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-size:13px;font-weight:600;color:#0b183b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + u.name + '</div>' +
+          '<div style="font-size:11.5px;color:#8492a6;margin-top:2px">' + (it.projTopic?it.projTopic+' · ':'') + (sizeStr?sizeStr+' · ':'') + dateStr + (u.chunks?' · '+u.chunks+'个知识片段':'') + '</div>' +
+        '</div>' +
+        '<button data-proj="'+it.proj+'" data-file="'+u.name.replace(/"/g,'&quot;')+'" onclick="opsViewFileChunks(this.dataset.proj,this.dataset.file)" style="flex-shrink:0;font-size:11px;color:#1a56db;padding:4px 10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;cursor:pointer">查看内容</button>' +
+        '<button data-proj="'+it.proj+'" data-file="'+u.name.replace(/"/g,'&quot;')+'" onclick="opsDownloadFile(this.dataset.proj,this.dataset.file)" style="flex-shrink:0;margin-left:6px;font-size:11px;color:#166534;padding:4px 10px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;cursor:pointer">下载</button>' +
+      '</div>';
+    }).join('') +
+  '</div>';
+  openModal(city + ' 上传材料（'+items.length+'份）', body,
+    '<button class="secondary-button" onclick="closeModal()">关闭</button>');
+}
+
+function opsViewUploads(projKey){
+  var ups = UPLOADS[projKey] || [];
+  var p = PROJECTS[projKey] || {};
+  if(!ups.length){ toast('该城市暂无上传材料'); return; }
+  var body = '<div style="display:flex;flex-direction:column;gap:10px">' +
+    ups.map(function(u, i){
+      var sizeStr = u.size ? (u.size>1048576 ? (u.size/1048576).toFixed(1)+'MB' : Math.round(u.size/1024)+'KB') : '';
+      var dateStr = u.ts ? new Date(u.ts).toLocaleString('zh-CN') : (u.at || '');
+      return '<div style="padding:12px 14px;background:#f8faff;border:1px solid #e8edf5;border-radius:10px;display:flex;align-items:center;gap:12px">' +
+        '<div style="width:36px;height:36px;background:#eff6ff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">' +
+          (u.name.match(/\.pdf$/i)?'PDF':u.name.match(/\.xlsx?$/i)?'XLS':u.name.match(/\.docx?$/i)?'DOC':'') +
+        '</div>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-size:13px;font-weight:600;color:#0b183b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + u.name + '</div>' +
+          '<div style="font-size:11.5px;color:#8492a6;margin-top:2px">' + (sizeStr?sizeStr+' · ':'') + dateStr + (u.chunks?' · '+u.chunks+'个知识片段':'') + '</div>' +
+        '</div>' +
+        '<button data-proj="'+projKey+'" data-file="'+u.name.replace(/"/g,'&quot;')+'" onclick="opsViewFileChunks(this.dataset.proj,this.dataset.file)" style="flex-shrink:0;font-size:11px;color:#1a56db;padding:4px 10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;cursor:pointer">查看内容</button>' +
+        '<button data-proj="'+projKey+'" data-file="'+u.name.replace(/"/g,'&quot;')+'" onclick="opsDownloadFile(this.dataset.proj,this.dataset.file)" style="flex-shrink:0;margin-left:6px;font-size:11px;color:#166534;padding:4px 10px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;cursor:pointer">下载</button>' +
+      '</div>';
+    }).join('') +
+  '</div>';
+  openModal(' ' + p.city + ' 上传材料（'+ups.length+'份）', body,
+    '<button class="secondary-button" onclick="closeModal()">关闭</button>');
+}
+
+/* 查看某个文件（优先显示原始文件，fallback到解析片段） */
+function opsViewFileChunks(projKey, fname){
+  var ups = UPLOADS[projKey] || [];
+  var rec = null;
+  for(var i=ups.length-1;i>=0;i--){ if(ups[i].name===fname && ups[i].dataUrl){ rec=ups[i]; break; } }
+  function esc(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  var isPDF   = /\.pdf$/i.test(fname);
+  var isImage = /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(fname);
+  var isText  = /\.(txt|md|markdown|csv|tsv|json|log|xml|yaml|yml|ini|htm|html)$/i.test(fname);
+  var chunks  = (KB_FILE_CHUNKS[projKey]||[]).filter(function(c){ return c.cite === fname; });
+  var parsedHtml = chunks.length ? '<div style="padding:16px 20px;background:#f8faff;border:1px solid #e8edf5;border-radius:10px;font-size:13px;color:#1e293b;line-height:2;white-space:pre-wrap;max-height:50vh;overflow-y:auto">' + esc(chunks.map(function(c){ return c.text; }).join('\n\n')) + '</div>' : '';
+  var closeBtn = '<button class="secondary-button" onclick="closeModal()">关闭</button>';
+
+  if(rec && rec.dataUrl){
+    if(isPDF){
+      openModal(fname, '<iframe src="'+rec.dataUrl+'" style="width:100%;height:72vh;border:none;border-radius:8px"></iframe>', closeBtn);
+      return;
+    }
+    if(isImage){
+      openModal(fname, '<div style="text-align:center;max-height:72vh;overflow:auto"><img src="'+rec.dataUrl+'" style="max-width:100%;border-radius:8px"></div>', closeBtn);
+      return;
+    }
+    if(isText){
+      openModal(fname, '<div id="ftxtBox" style="padding:16px 20px;background:#f8faff;border:1px solid #e8edf5;border-radius:10px;font-size:13px;color:#1e293b;line-height:1.9;white-space:pre-wrap;max-height:64vh;overflow-y:auto">加载中…</div>', closeBtn);
+      fetch(rec.dataUrl).then(function(r){ return r.text(); }).then(function(txt){
+        var el=document.getElementById('ftxtBox'); if(el) el.textContent = txt;
+      }).catch(function(){ var el=document.getElementById('ftxtBox'); if(el) el.textContent='无法读取文件内容'; });
+      return;
+    }
+    // office / 其他格式：优先内联渲染文本，另附下载
+    var dl = '<div style="padding:12px;text-align:center"><a href="'+rec.dataUrl+'" download="'+fname+'" style="display:inline-block;padding:10px 20px;background:#1a56db;color:#fff;border-radius:8px;text-decoration:none;font-size:13px">⬇ 下载原始文件</a>' +
+      '<div style="font-size:12px;color:#8492a6;margin-top:8px">该格式（'+esc(fname.split('.').pop())+'）暂不支持浏览器内直接渲染，可下载后查看'+(parsedHtml?'；下方为已解析文本':'')+'</div></div>';
+    openModal(fname, dl + (parsedHtml?'<div style="margin-top:12px">'+parsedHtml+'</div>':''), closeBtn);
+    return;
+  }
+  // 无 dataUrl（历史数据）：显示解析内容
+  openModal(fname, parsedHtml || '<div style="padding:20px;text-align:center;color:#8492a6;font-size:13px">该文件的解析内容暂未保存。</div>', closeBtn);
+}
+
+
+/* 下载上传的原始文件 */
+function opsDownloadFile(projKey, fname){
+  var ups = UPLOADS[projKey] || [];
+  var rec = null;
+  for(var i=ups.length-1;i>=0;i--){ if(ups[i].name===fname && ups[i].dataUrl){ rec=ups[i]; break; } }
+  if(!rec || !rec.dataUrl){ toast('该文件无原始数据，无法下载'); return; }
+  var a=document.createElement('a');
+  a.href=rec.dataUrl;
+  a.download=fname;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ a.remove(); }, 300);
+}
+
+/* 查看城市研判报告 */
+function opsViewCityReport(projKey){
+  var rs = REPORTSTATE[projKey];
+  if(!rs||!rs.text){ toast('暂无报告'); return; }
+  var p = PROJECTS[projKey];
+  function simpleMd(t){
+    var md=t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    md=md.replace(/\*\*([^*\n]+)\*\*/g,'<strong style="color:#0b183b">$1</strong>');
+    md=md.replace(/⚠️/g,'<span style="color:#d97706;font-weight:600">⚠️</span>');
+    md=md.replace(/✅/g,'<span style="color:#16a34a">✅</span>');
+    md=md.replace(/❌/g,'<span style="color:#dc2626">❌</span>');
+    md=md.replace(/★+/g,function(m){return '<span style="color:#f59e0b">'+m+'</span>';});
+    md=md.replace(/^#{0,3}\s*([一二三四五六七八九十]+)[、]\s*(.+)$/gm,
+      '<div style="display:flex;align-items:center;gap:10px;margin:18px 0 8px;padding-bottom:6px;border-bottom:2px solid #1a56db">'+
+        '<span style="display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;background:#1a56db;color:#fff;border-radius:50%;font-size:12px;font-weight:700">$1</span>'+
+        '<span style="font-size:14px;font-weight:750;color:#0b183b">$2</span></div>');
+    md=md.replace(/^###\s(.+)$/gm,'<div style="font-size:13px;font-weight:700;color:#4a5568;margin:10px 0 4px;padding-left:10px;border-left:3px solid #6366f1">$1</div>');
+    md=md.replace(/^##\s(.+)$/gm,'<div style="font-size:13.5px;font-weight:750;color:#0b183b;margin:12px 0 6px;padding:5px 12px;background:#f8faff;border-radius:8px;border-left:4px solid #1a56db">$1</div>');
+    var outLines=[]; var inTbl=false;
+    md.split('\n').forEach(function(line){
+      var tr=line.trim();
+      if(tr.charAt(0)==='|'&&tr.charAt(tr.length-1)==='|'){
+        if(tr.slice(1,-1).split('|').every(function(c){return /^[\s\-:]+$/.test(c);})) return;
+        var cells=tr.slice(1,-1).split('|').map(function(c){return c.trim();});
+        if(!inTbl){inTbl=true;outLines.push('<div style="overflow-x:auto;margin:10px 0"><table style="width:100%;border-collapse:collapse;font-size:12.5px">');
+          outLines.push('<thead><tr>'+cells.map(function(c){return '<th style="padding:7px 10px;background:#f0f4ff;border:1px solid #dbeafe;font-weight:700;color:#1e3a8a;text-align:left">'+c+'</th>';}).join('')+'</tr></thead><tbody>');}
+        else outLines.push('<tr>'+cells.map(function(c,ci){return '<td style="padding:7px 10px;border:1px solid #e8edf5;color:#1e293b;background:'+(ci===0?'#fafbff':'#fff')+'">'+c+'</td>';}).join('')+'</tr>');
+      } else {if(inTbl){outLines.push('</tbody></table></div>');inTbl=false;} outLines.push(line);}
+    });
+    if(inTbl)outLines.push('</tbody></table></div>');
+    md=outLines.join('\n');
+    md=md.replace(/^[-•]\s(.+)$/gm,'<li style="margin:4px 0;color:#1e293b;list-style:none">$1</li>');
+    var parts=md.split('\n\n');
+    md=parts.map(function(chunk){var c=chunk.trim();if(!c)return '';if(/^<(div|table|ul|li)/.test(c))return c;return '<p style="margin:5px 0;line-height:1.85;color:#1e293b">'+c.replace(/\n/g,'<br>')+'</p>';}).filter(Boolean).join('\n');
+    return md;
+  }
+  var layer=document.createElement('div');
+  layer.onclick=function(e){if(e.target===layer)layer.remove();};
+  layer.style.cssText='position:fixed;inset:0;background:rgba(11,24,59,.4);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(3px)';
+  layer.innerHTML=
+    '<div style="background:#fff;border-radius:20px;width:100%;max-width:640px;max-height:85vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(11,24,59,.18)">' +
+      '<div style="padding:16px 20px;border-bottom:1px solid #f0f4ff;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">' +
+        '<div>' +
+          '<div style="font-size:14px;font-weight:750;color:#0b183b">' + p.city + ' · ' + rs.topic + '</div>' +
+          '<div style="font-size:12px;color:#9aa5b5;margin-top:2px">置信度 '+rs.score+'% · '+new Date(rs.ts).toLocaleDateString('zh-CN')+'</div>' +
+        '</div>' +
+        '<button onclick="this.closest(\'[style*=fixed]\').remove()" style="background:none;border:none;font-size:18px;color:#9aa5b5;cursor:pointer">✕</button>' +
+      '</div>' +
+      '<div style="flex:1;overflow-y:auto;padding:20px;font-size:13px;line-height:1.85;color:#1e293b"><p style="margin:0">'+simpleMd(rs.text)+'</p></div>' +
+    '</div>';
+  document.body.appendChild(layer);
+}
+
+
+/* == Tab: 注册用户（政府端账号资料，供电话/微信联系） == */
+function opsUsers(){
+  var keys = Object.keys(USER_PROFILES||{});
+  keys.sort(function(a,b){ return (USER_PROFILES[b].ts||0)-(USER_PROFILES[a].ts||0); });
+  var head = '<div style="padding:24px;max-width:1100px;margin:0 auto">' +
+    '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:20px">' +
+      '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">注册用户</h1>' +
+      '<span style="font-size:12px;color:#9aa5b5">共 ' + keys.length + ' 位政府端注册用户 · 可电话/微信联系</span>' +
+    '</div>';
+  if(!keys.length){
+    return head + '<div style="text-align:center;padding:60px 20px;color:#9aa5b5;font-size:14px">暂无注册用户<div style="font-size:12px;margin-top:8px;color:#b8c0cc">政府端用户注册后，账号资料会自动同步到这里</div></div></div>';
+  }
+  var cards = keys.map(function(u){
+    var d = USER_PROFILES[u]||{};
+    var dateStr = d.ts ? new Date(d.ts).toLocaleString('zh-CN') : '';
+    function field(icon,label,val){
+      return '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0">' +
+        '<span style="font-size:16px;flex-shrink:0;line-height:1.4">' + icon + '</span>' +
+        '<div style="min-width:0">' +
+          '<div style="font-size:11px;color:#9aa5b5;margin-bottom:2px">' + label + '</div>' +
+          '<div style="font-size:13.5px;color:#1e293b;font-weight:550;word-break:break-all">' + (val||'—') + '</div>' +
+        '</div>' +
+      '</div>';
+    }
+    return '<div style="background:#fff;border:1px solid #e8edf5;border-radius:16px;padding:22px 24px;margin-bottom:16px;box-shadow:0 1px 4px rgba(11,24,59,.05)">' +
+      '<div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #f2f5f9">' +
+        '<div style="width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#1a56db,#6366f1);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:700;flex-shrink:0">' + (d.name?d.name.charAt(0):'?') + '</div>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' +
+            '<span style="font-size:19px;font-weight:750;color:#0b183b">' + (d.name||u) + '</span>' +
+            (d.city?'<span style="display:inline-flex;align-items:center;gap:4px;font-size:15px;font-weight:700;color:#1a56db;background:#eef3ff;padding:4px 14px;border-radius:20px">' + '📍' + d.city + '</span>':'') +
+            '<span style="font-size:12px;font-weight:400;color:#9aa5b5">@' + u + '</span>' +
+          '</div>' +
+          '<div style="font-size:12.5px;color:#8492a6;margin-top:4px">' + (d.title||'') + (d.dept?' · '+d.dept:'') + (d.org?' · '+d.org:'') + '</div>' +
+        '</div>' +
+        '<span style="font-size:11px;color:#94a3b8;flex-shrink:0">' + dateStr + '</span>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 32px">' +
+        field('📱','手机', d.phone) +
+        field('💬','微信', d.wechat) +
+        field('🏢','单位', d.org) +
+        field('📍','城市', d.city) +
+        field('🗂','部门', d.dept) +
+        field('💼','职务', d.title) +
+      '</div>' +
+    '</div>';
+  }).join('');
+  return head + cards + '</div>';
+}
+
+/* == Tab2: 企业资源库 == */
+function opsEnterprises(){
+  var filtered = opsEntFilter(OPS_ENT);
+  return '<div style="padding:24px">' +
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">' +
+      '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">企业资源库</h1>' +
+      '<span style="font-size:12px;color:#9aa5b5">共 ' + OPS_ENT.length + ' 家' + (filtered.length!==OPS_ENT.length?' · 筛选 '+filtered.length+' 家':'') + '</span>' +
+      '<div style="flex:1"></div>' +
+      '<button onclick="opsEntAdd()" style="padding:8px 16px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer">+ 手动录入</button>' +
+      '<button onclick="opsEntImport()" style="padding:8px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer;margin-left:6px"> 文件导入</button>' +
+      '<button onclick="opsEntScanAll()" style="padding:8px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:10px;font-size:13px;color:#6d28d9;cursor:pointer;margin-left:6px" id="scanAllBtn"> 全局扫描</button>' +
+    '</div>' +
+    '<div style="margin:12px 0 16px">' +
+      '<input id="opsEntSearch" type="text" placeholder="搜索企业名称 / 标签 / 派系 / 方向…" value="'+(window._opsEntQ||'')+'" oninput="window._opsEntQ=this.value;opsEntRefreshList()" style="width:100%;padding:10px 14px;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;outline:none;transition:border .15s" onfocus="this.style.borderColor=\'#1a56db\'" onblur="this.style.borderColor=\'#e8edf5\'" />' +
+    '</div>' +
+    (filtered.length===0&&OPS_ENT.length>0 ? '<div style="text-align:center;padding:40px;color:#9aa5b5;font-size:13px">无匹配结果</div>' : filtered.length===0 ? opsEntEmpty() : opsEntListV2(filtered)) +
+  '</div>';
+}
+
+function opsEntFilter(list){
+  var q=(window._opsEntQ||'').trim().toLowerCase();
+  if(!q) return list;
+  return list.filter(function(e){
+    var haystack=(e.name+' '+e.kind+' '+e.region+' '+(e.gap||'')+' '+(e.tags||[]).join(' ')+' '+(e.faction||[]).map(function(f){return f.type+' '+f.label+' '+(f.person||'');}).join(' ')+' '+(e.note||'')+' '+(e.contact||'')).toLowerCase();
+    return haystack.indexOf(q)>=0;
+  });
+}
+
+function opsEntRefreshList(){
+  var filtered = opsEntFilter(OPS_ENT);
+  var container = document.getElementById('opsContent');
+  if(!container) return;
+  // Find the grid container and replace its content
+  var grid = container.querySelector('[style*="grid-template-columns"]');
+  if(!grid) { renderOpsV2(); return; }
+  var countEl = container.querySelector('span[style*="color:#9aa5b5"]');
+  if(countEl) countEl.textContent = '共 ' + OPS_ENT.length + ' 家' + (filtered.length!==OPS_ENT.length?' · 筛选 '+filtered.length+' 家':'');
+  if(filtered.length===0 && OPS_ENT.length>0){
+    grid.innerHTML='<div style="text-align:center;padding:40px;color:#9aa5b5;font-size:13px;grid-column:1/-1">无匹配结果</div>';
+  } else if(filtered.length===0){
+    grid.innerHTML=opsEntEmpty();
+  } else {
+    grid.innerHTML=opsEntListV2(filtered).replace(/^<div[^>]*>|<\/div>$/g,'');
+  }
+}
+
+function opsEntListV2(list){
+  return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+    list.map(function(e){
+      var idx=OPS_ENT.indexOf(e);
+      var matchCount=(e.matches||[]).filter(function(m){return !m.pushed;}).length;
+      var statusColor=e.status==='scanned'?'#6d28d9':e.status==='pushed'?'#166534':'#9aa5b5';
+      var statusBg=e.status==='scanned'?'#f5f3ff':e.status==='pushed'?'#f0fdf4':'#f5f7fb';
+      var statusLabel=e.status==='scanned'?'已扫描'+matchCount+'匹配':e.status==='pushed'?'已推送':'待扫描';
+
+      var tagsHtml=(e.tags||[]).length?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px">'+(e.tags||[]).map(function(t){return '<span style="padding:2px 7px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;font-size:10.5px;color:#1a56db">'+t+'</span>';}).join('')+'</div>':'';
+
+      var factionHtml=(e.faction||[]).length?'<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">'+(e.faction||[]).map(function(f){var lbl=f.person?(f.person+' · '+f.label+(f.type==='校友会'?'毕业':'')):''+f.label;return '<span style="padding:2px 7px;background:#fef9e7;border:1px solid #fde68a;border-radius:10px;font-size:10.5px;color:#78350f">'+lbl+'</span>';}).join('')+'</div>':'';
+
+      var matchHtml=matchCount>0?'<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">'+(e.matches||[]).map(function(m){return '<span style="padding:2px 7px;background:'+(m.pushed?'#f0fdf4':'#f5f3ff')+';border:1px solid '+(m.pushed?'#86efac':'#c4b5fd')+';border-radius:10px;font-size:10.5px;color:'+(m.pushed?'#166534':'#6d28d9')+'">'+m.city+'·'+m.gap+(m.pushed?' ✓':'')+'</span>';}).join('')+'</div>':'';
+
+      return '<div style="background:#fff;border:1.5px solid #e8edf5;border-radius:12px;padding:14px 16px;display:flex;flex-direction:column">' +
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
+          '<span style="font-size:14px;font-weight:750;color:#0b183b">'+e.name+'</span>' +
+          (e.hasMoveSignal?'<span style="padding:1px 6px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:10px;border:1px solid #bbf7d0">扩张</span>':'') +
+          '<span style="padding:1px 7px;background:'+statusBg+';color:'+statusColor+';border-radius:10px;font-size:10px;font-weight:600">'+statusLabel+'</span>' +
+        '</div>' +
+        '<div style="font-size:12px;color:#4a5568">'+e.kind+' · '+e.region+(e.revenue?' · '+e.revenue:'')+'</div>' +
+        (e.gap?'<div style="font-size:11.5px;color:#667590;margin-top:2px">'+e.gap+'</div>':'') +
+        (e.signal&&e.signal!=='（无扩张信号）'?'<div style="font-size:11px;color:#b45309;margin-top:5px;line-height:1.5;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:6px 9px">📡 '+e.signal+'</div>':'') +
+        tagsHtml +
+        factionHtml +
+        (e.contact?'<div style="margin-top:6px;font-size:11.5px;color:#4a5568"><b>'+e.contact+'</b>'+(e.note?' · '+e.note:'')+'</div>':'') +
+        matchHtml +
+        '<div style="margin-top:auto;padding-top:8px;display:flex;gap:6px">' +
+          '<button onclick="opsEntAiFillExisting('+idx+')" style="padding:6px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);border:none;border-radius:8px;font-size:12px;color:#fff;cursor:pointer;font-weight:600">AI补全</button>'+
+          '<button onclick="opsEntManualEdit('+idx+')" style="padding:6px 14px;background:#fff;border:1.5px solid #1a56db;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600">手动编辑</button>' +
+          '<button onclick="opsEntScanOne('+idx+')" style="padding:6px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600">'+(e.status==='scanned'||e.status==='pushed'?'重新扫描':'扫描')+'</button>' +
+          '<button onclick="opsEntManualPushModal('+idx+')" style="padding:6px 14px;background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:8px;font-size:12px;color:#4338ca;cursor:pointer;font-weight:600">🎯 定向推送</button>' +
+          '<button onclick="opsEntDelete('+idx+')" style="padding:6px 14px;background:none;border:1.5px solid #e8edf5;border-radius:8px;font-size:12px;color:#9aa5b5;cursor:pointer">删除</button>' +
+        '</div>' +
+      '</div>';
+    }).join('') +
+  '</div>';
+}
+
+function opsEntEmpty(){
+  return '<div style="text-align:center;padding:60px 20px;background:#f9fafb;border-radius:14px;border:1.5px dashed #e8edf5">' +
+    '<div style="font-size:36px;margin-bottom:12px">🏭</div>' +
+    '<div style="font-size:14px;font-weight:700;color:#0b183b;margin-bottom:6px">还没有企业</div>' +
+    '<div style="font-size:13px;color:#8492a6;line-height:1.7;margin-bottom:20px">手动录入、上传文件批量导入，或直接粘贴企业名单<br>系统会自动扫描匹配适合推荐的城市方向</div>' +
+    '<div style="display:flex;gap:10px;justify-content:center">' +
+      '<button onclick="opsEntAdd()" style="padding:10px 20px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:650;cursor:pointer">+ 手动录入</button>' +
+      '<button onclick="opsEntImport()" style="padding:10px 20px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13.5px;color:#4a5568;cursor:pointer">📁 文件导入</button>' +
+    '</div>' +
+  '</div>';
+}
+
+function opsEntList(){
+  return '<div style="display:flex;flex-direction:column;gap:10px">' +
+    OPS_ENT.map(function(e,idx){
+      var totalMatch = (e.matches||[]).length;
+      var pushed = (e.matches||[]).filter(function(m){return m.pushed;}).length;
+      var matchCount = totalMatch - pushed;
+      var statusColor = e.status==='scanned'?'#6d28d9':e.status==='pushed'?'#166534':'#9aa5b5';
+      var statusBg    = e.status==='scanned'?'#f5f3ff':e.status==='pushed'?'#f0fdf4':'#f5f7fb';
+      var statusLabel = e.status==='scanned'?'已扫描 '+matchCount+'个匹配':e.status==='pushed'?'已推送':e.status==='manual'?'待扫描':'待扫描';
+      return '<div style="background:#fff;border:1.5px solid #e8edf5;border-radius:14px;overflow:hidden">' +
+        '<div style="padding:14px 18px;display:flex;align-items:flex-start;gap:12px">' +
+          '<div style="flex:1;min-width:0">' +
+            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">' +
+              '<span style="font-size:14px;font-weight:700;color:#0b183b">' + e.name + '</span>' +
+              (e.hasMoveSignal ? '<span style="padding:1px 7px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:11px;border:1px solid #bbf7d0">✅ 有扩张信号</span>' :
+                '<span style="padding:1px 7px;background:#fffbeb;color:#92400e;border-radius:10px;font-size:11px;border:1px solid #fde68a">⚠ 待核实信号</span>') +
+            '</div>' +
+            '<div style="font-size:12.5px;color:#4a5568">' + e.kind + ' · ' + e.region + '</div>' +
+            (e.gap ? '<div style="font-size:12px;color:#8492a6;margin-top:2px">补链方向：' + e.gap + '</div>' : '') +
+          '</div>' +
+          '<div style="text-align:right;flex-shrink:0">' +
+            '<div style="padding:3px 10px;background:'+statusBg+';color:'+statusColor+';border-radius:20px;font-size:11.5px;font-weight:600;margin-bottom:6px">' + statusLabel + '</div>' +
+            '<div style="display:flex;gap:6px;justify-content:flex-end">' +
+              (e.status!=='scanned'&&e.status!=='pushed' ?
+                '<button onclick="opsEntScanOne('+idx+')" style="padding:5px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:7px;font-size:11.5px;color:#6d28d9;cursor:pointer">扫描</button>' : '') +
+              '<button onclick="opsEntDelete('+idx+')" style="padding:5px 8px;background:#fff5f5;border:1px solid #fecaca;border-radius:7px;font-size:11.5px;color:#ef4444;cursor:pointer">删</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        (matchCount>0 ?
+          '<div style="padding:0 18px 12px">' +
+            '<div style="font-size:11px;color:#9aa5b5;margin-bottom:6px">匹配方向：</div>' +
+            '<div style="display:flex;flex-wrap:wrap;gap:6px">' +
+              (e.matches||[]).map(function(m){
+                return '<div style="padding:4px 10px;background:'+(m.pushed?'#f0fdf4':'#f5f3ff')+';border:1px solid '+(m.pushed?'#86efac':'#c4b5fd')+';border-radius:8px;font-size:11.5px;color:'+(m.pushed?'#166534':'#6d28d9')+'">' +
+                  m.city + ' · ' + m.gap + (m.pushed?' ✓':'') +
+                '</div>';
+              }).join('') +
+            '</div>' +
+          '</div>' : '') +
+      '</div>';
+    }).join('') +
+  '</div>';
+}
+
+
+/* ══ 企业录入/导入/扫描/推送 操作函数 ══ */
+
+/* 手动录入 */
+function opsEntAdd(){
+  var body=
+    '<div style="display:flex;flex-direction:column;gap:12px">'+
+    '<div style="display:flex;gap:10px;align-items:flex-end">'+
+      '<div style="flex:1"><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">企业名称</label>'+
+      '<input id="oe-name" placeholder="输入企业全称，如：京东物流" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+      '<button onclick="opsEntAiFill()" id="oe-ai-btn" style="padding:8px 16px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap;height:36px">AI 智能填充</button>'+
+    '</div>'+
+    '<div id="oe-ai-status" style="display:none;font-size:12px;color:#6366f1;padding:6px 10px;background:#f5f3ff;border-radius:8px"></div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">行业类型</label>'+
+      '<input id="oe-kind" placeholder="如：燃料电池系统集成" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">所在地区</label>'+
+      '<input id="oe-region" placeholder="如：上海" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">营收规模</label>'+
+      '<input id="oe-revenue" placeholder="如：3.2亿" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">员工规模</label>'+
+      '<input id="oe-employees" placeholder="如：280人" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '</div>'+
+    '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">补链方向</label>'+
+    '<input id="oe-gap" placeholder="如：氢能专用车产业补链·电堆系统" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">企业标签</label>'+
+    '<input id="oe-tags" placeholder="用逗号分隔，如：氢能,燃料电池,电堆集成,商用车" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">人脉/派系（核心领导层校友会/商会）</label>'+
+    '<input id="oe-faction" placeholder="如：李总·同济汽车系毕业,张总·深圳新能源商会" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">联系人</label>'+
+      '<input id="oe-contact" placeholder="如：张工 (商务总监)" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">扩张信号</label>'+
+      '<input id="oe-signal" placeholder="如：华中区寻找新基地" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '</div>'+
+    '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:5px">备注</label>'+
+    '<input id="oe-note" placeholder="其他补充信息" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '</div>';
+  openModal('+ 手动录入企业',body,
+    '<button class="secondary-button" onclick="closeModal()">取消</button>'+
+    '<button class="primary-button" onclick="opsEntSaveV2()">保存</button>');
+}
+
+/* AI智能填充：输入企业名后自动查询公开信息填充表单 */
+/* AI补全已有企业信息（标签/派系/营收等）- 需人工确认 */
+function opsEntAiFillExisting(idx){
+  var e = OPS_ENT[idx]; if(!e) return;
+  toast('正在为「'+e.name+'」查询信息…');
+
+  var prompt='请查询企业「'+e.name+'」的以下公开信息，以JSON格式返回（不要markdown代码块）：'+
+    '{"kind":"行业类型(简短)","region":"总部所在城市","revenue":"年营收(如3.2亿)","employees":"员工数(如280人)",'+
+    '"tags":["标签1","标签2","标签3","标签4"],"faction":[{"person":"核心人物姓名","label":"其毕业院校或所属商会","type":"校友会或商会"}],'+
+    '"gap":"该企业可能适合的产业补链方向","signal":"近期是否有产能扩张/异地投资信号(如有写具体内容,无则写空字符串)","note":"一句话企业简介"}'+
+    '已知信息：行业='+e.kind+'，地区='+e.region+'，方向='+(e.gap||'')+
+    '。要求：①faction重点列出CEO/董事长/CTO的毕业院校（校友会）和参与的商会组织；②tags包含行业关键词；③基于公开可查资料，不确定的标注"待核实"';
+
+  fetch('/api/kb-chat',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question:prompt,city:'企业查询',role:'ops'})
+  }).then(function(r){return r.text();}).then(function(text){
+    var full='';
+    text.split('\n').forEach(function(line){
+      if(!line.startsWith('data:'))return;
+      var d=line.slice(5).trim();if(d==='[DONE]')return;
+      try{var j=JSON.parse(d);var c=(j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||'';full+=c;}catch(ex){}
+    });
+    var jsonMatch=full.match(/\{[\s\S]*\}/);
+    if(!jsonMatch){toast('AI返回格式异常');return;}
+    try{
+      var info=JSON.parse(jsonMatch[0]);
+      // 弹出确认面板让用户逐项确认
+      window._aiFillPending={idx:idx, info:info};
+      showAiFillConfirm(idx, info, e);
+    }catch(ex){toast('解析失败：'+ex.message);}
+  }).catch(function(err){toast('连接失败：'+err.message);});
+}
+
+/* AI补全确认面板 */
+function showAiFillConfirm(idx, info, e){
+  var fields=[
+    {key:'kind',label:'行业类型',old:e.kind,new:info.kind},
+    {key:'region',label:'地区',old:e.region,new:info.region},
+    {key:'revenue',label:'营收',old:e.revenue,new:info.revenue},
+    {key:'employees',label:'员工数',old:e.employees,new:info.employees},
+    {key:'gap',label:'补链方向',old:e.gap,new:info.gap},
+    {key:'tags',label:'标签',old:(e.tags||[]).join(', '),new:(info.tags||[]).join(', ')},
+    {key:'faction',label:'人脉/派系',old:(e.faction||[]).map(function(f){return (f.person||'')+' · '+(f.label||'');}).join(', '),
+     new:(info.faction||[]).map(function(f){return (f.person||'')+' · '+(f.label||'');}).join(', ')},
+    {key:'signal',label:'扩张信号',old:e.signal,new:info.signal},
+    {key:'note',label:'备注',old:e.note,new:info.note}
+  ];
+
+  var rows=fields.map(function(f,fi){
+    var hasOld=f.old&&f.old.trim();
+    var hasNew=f.new&&f.new.trim();
+    if(!hasNew) return '';
+    if(hasOld && f.old===f.new) return '';
+    var checked=hasOld?'':'checked';
+    var safeNew=String(f.new).replace(/"/g,'&quot;');
+    return '<div style="padding:10px 12px;background:#f8faff;border:1px solid #e8edf5;border-radius:8px;margin-bottom:8px">'+
+      '<div style="display:flex;align-items:flex-start;gap:10px">'+
+        '<input type="checkbox" data-field="'+f.key+'" '+checked+' style="margin-top:3px;width:16px;height:16px;cursor:pointer" />'+
+        '<div style="flex:1">'+
+          '<div style="font-size:12px;font-weight:650;color:#4a5568;margin-bottom:3px">'+f.label+'</div>'+
+          (hasOld?'<div style="font-size:12px;color:#9aa5b5;text-decoration:line-through;margin-bottom:4px">现有：'+f.old+'</div>':'')+
+          '<div style="display:flex;align-items:center;gap:6px">'+
+            '<span style="font-size:12px;color:#6d28d9;font-weight:600;flex-shrink:0">AI建议</span>'+
+            '<input type="text" data-fieldval="'+f.key+'" value="'+safeNew+'" '+
+              'style="flex:1;box-sizing:border-box;padding:6px 9px;border:1.5px solid #ddd6fe;border-radius:7px;font-size:13px;color:#1e293b;outline:none;background:#fff" '+
+              'onfocus="this.style.border=\'1.5px solid #6d28d9\'" onblur="this.style.border=\'1.5px solid #ddd6fe\'" '+
+              'oninput="var cb=this.closest(\'div[style*=background\']\')?this.closest(\'div\').parentNode.parentNode.querySelector(\'input[type=checkbox]\'):null;if(cb)cb.checked=true;" />'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  }).filter(Boolean).join('');
+
+  if(!rows){
+    toast('AI未发现新信息可补全');return;
+  }
+
+  var body='<div style="max-height:60vh;overflow-y:auto">'+
+    '<div style="font-size:12.5px;color:#8492a6;margin-bottom:12px">勾选需要采纳的字段，取消勾选则保留原值：</div>'+
+    rows+
+  '</div>';
+
+  openModal('AI补全确认 · '+e.name, body,
+    '<button class="secondary-button" onclick="closeModal()">取消</button>'+
+    '<button class="primary-button" onclick="applyAiFill()">确认采纳</button>');
+}
+
+/* 应用AI补全（仅勾选的字段） */
+/* 手动编辑企业信息 */
+function opsEntManualEdit(idx){
+  var e = OPS_ENT[idx]; if(!e) return;
+  var body=
+    '<div style="display:flex;flex-direction:column;gap:10px">'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">行业类型</label>'+
+      '<input id="me-kind" value="'+(e.kind||'')+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">地区</label>'+
+      '<input id="me-region" value="'+(e.region||'')+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">营收</label>'+
+      '<input id="me-revenue" value="'+(e.revenue||'')+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">员工数</label>'+
+      '<input id="me-employees" value="'+(e.employees||'')+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '</div>'+
+    '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">补链方向</label>'+
+    '<input id="me-gap" value="'+(e.gap||'')+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">标签（逗号分隔）</label>'+
+    '<input id="me-tags" value="'+((e.tags||[]).join(','))+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">人脉/派系（逗号分隔，格式：人名·院校/商会）</label>'+
+    '<input id="me-faction" value="'+((e.faction||[]).map(function(f){return (f.person||"")+"·"+(f.label||"");}).join(","))+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">联系人</label>'+
+      '<input id="me-contact" value="'+(e.contact||'')+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+      '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">扩张信号</label>'+
+      '<input id="me-signal" value="'+(e.signal||'')+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '</div>'+
+    '<div><label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:4px">备注</label>'+
+    '<input id="me-note" value="'+(e.note||'')+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none"/></div>'+
+    '</div>';
+  window._manualEditIdx=idx;
+  openModal('编辑 · '+e.name, body,
+    '<button class="secondary-button" onclick="closeModal()">取消</button>'+
+    '<button class="primary-button" onclick="applyManualEdit()">保存</button>');
+}
+
+function applyManualEdit(){
+  var idx=window._manualEditIdx; var e=OPS_ENT[idx]; if(!e) return;
+  e.kind=((document.getElementById('me-kind')||{}).value||'').trim();
+  e.region=((document.getElementById('me-region')||{}).value||'').trim()||'待填写';
+  e.revenue=((document.getElementById('me-revenue')||{}).value||'').trim();
+  e.employees=((document.getElementById('me-employees')||{}).value||'').trim();
+  e.gap=((document.getElementById('me-gap')||{}).value||'').trim();
+  var tagsStr=((document.getElementById('me-tags')||{}).value||'').trim();
+  e.tags=tagsStr?tagsStr.split(/[,，]/).map(function(t){return t.trim();}).filter(Boolean):[];
+  var factionStr=((document.getElementById('me-faction')||{}).value||'').trim();
+  e.faction=factionStr?factionStr.split(/[,，]/).map(function(f){
+    var parts=f.trim().split('·');
+    return {person:parts[0]||'',label:parts[1]||'',type:(parts[1]||'').indexOf('商会')>=0?'商会':'校友会'};
+  }).filter(function(f){return f.person||f.label;}):[];
+  e.contact=((document.getElementById('me-contact')||{}).value||'').trim();
+  e.signal=((document.getElementById('me-signal')||{}).value||'').trim();
+  e.hasMoveSignal=!!e.signal;
+  e.note=((document.getElementById('me-note')||{}).value||'').trim();
+  persist();
+  closeModal();
+  renderOpsV2();
+  toast('✓ 已更新「'+e.name+'」');
+}
+
+function applyAiFill(){
+  var pending=window._aiFillPending; if(!pending) return;
+  var e=OPS_ENT[pending.idx]; var info=pending.info;
+  var checkboxes=document.querySelectorAll('#modalLayer input[type=checkbox]');
+  checkboxes.forEach(function(cb){
+    if(!cb.checked) return;
+    var field=cb.dataset.field;
+    // 读取输入框里（可能被手动修改过的）值，回退到 AI 原值
+    var inp=document.querySelector('#modalLayer input[data-fieldval="'+field+'"]');
+    var editedVal=inp?inp.value.trim():'';
+    if(field==='tags'){ e.tags=editedVal?editedVal.split(/[,，、]+/).map(function(t){return t.trim();}).filter(Boolean):(info.tags||e.tags); }
+    else if(field==='faction' && info.faction) e.faction=info.faction;
+    else if(field==='signal'){ e.signal=editedVal||info.signal; e.hasMoveSignal=true; }
+    else if(editedVal) e[field]=editedVal;
+    else if(info[field]) e[field]=info[field];
+  });
+  persist();
+  closeModal();
+  renderOpsV2();
+  toast('✓ 已更新「'+e.name+'」信息');
+}
+
+
+function opsEntAiFill(){
+  var name=((document.getElementById('oe-name')||{}).value||'').trim();
+  if(!name){toast('请先输入企业名称');return;}
+  var btn=document.getElementById('oe-ai-btn');
+  var status=document.getElementById('oe-ai-status');
+  if(btn){btn.disabled=true;btn.textContent='查询中…';}
+  if(status){status.style.display='block';status.textContent='正在查询「'+name+'」的公开信息…';}
+
+  var prompt='请查询企业「'+name+'」的以下公开信息，以JSON格式返回（不要markdown代码块）：'+
+    '{"kind":"行业类型(简短)","region":"总部所在城市","revenue":"年营收(如3.2亿)","employees":"员工数(如280人)",'+
+    '"tags":["标签1","标签2","标签3","标签4"],"faction":[{"person":"核心人物姓名","label":"其毕业院校或所属商会","type":"校友会或商会"}],'+
+    '"gap":"该企业可能适合的产业补链方向","signal":"近期是否有产能扩张/异地投资信号(如有写具体内容,无则写空字符串)","note":"一句话企业简介"}'+
+    '要求：①faction重点列出CEO/董事长/CTO的毕业院校（校友会）和参与的商会组织；②tags包含行业关键词；③信息必须基于公开可查资料，不确定的标注"待核实"';
+
+  fetch('/api/kb-chat',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question:prompt,city:'企业查询',role:'ops'})
+  }).then(function(r){return r.text();}).then(function(text){
+    // Parse streaming response
+    var full='';
+    text.split('\n').forEach(function(line){
+      if(!line.startsWith('data:'))return;
+      var d=line.slice(5).trim();if(d==='[DONE]')return;
+      try{var j=JSON.parse(d);var c=(j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||'';full+=c;}catch(e){}
+    });
+    // Try to extract JSON from response
+    var jsonStr=full;
+    var jsonMatch=full.match(/\{[\s\S]*\}/);
+    if(jsonMatch) jsonStr=jsonMatch[0];
+    try{
+      var info=JSON.parse(jsonStr);
+      // Fill form fields
+      if(info.kind) document.getElementById('oe-kind').value=info.kind;
+      if(info.region) document.getElementById('oe-region').value=info.region;
+      if(info.revenue) document.getElementById('oe-revenue').value=info.revenue;
+      if(info.employees) document.getElementById('oe-employees').value=info.employees;
+      if(info.gap) document.getElementById('oe-gap').value=info.gap;
+      if(info.tags&&info.tags.length) document.getElementById('oe-tags').value=info.tags.join(',');
+      if(info.faction&&info.faction.length){
+        document.getElementById('oe-faction').value=info.faction.map(function(f){
+          return (f.person||'')+'·'+(f.label||'')+(f.type==='校友会'?'毕业':'');
+        }).join(',');
+      }
+      if(info.signal) document.getElementById('oe-signal').value=info.signal;
+      if(info.note) document.getElementById('oe-note').value=info.note;
+      if(status){status.textContent='✓ 已自动填充，请核对后保存';status.style.color='#059669';status.style.background='#f0fdf4';}
+    }catch(e){
+      if(status){status.textContent='⚠ AI返回格式异常，请手动填写：'+full.substring(0,100);status.style.color='#d97706';status.style.background='#fffbeb';}
+    }
+    if(btn){btn.disabled=false;btn.textContent='AI 智能填充';}
+  }).catch(function(e){
+    if(status){status.textContent='连接失败：'+e.message;status.style.color='#ef4444';status.style.background='#fef2f2';}
+    if(btn){btn.disabled=false;btn.textContent='AI 智能填充';}
+  });
+}
+
+/* 保存企业（新版表单） */
+function opsEntSaveV2(){
+  var name=((document.getElementById('oe-name')||{}).value||'').trim();
+  if(!name){toast('请填写企业名称');return;}
+  var kind=((document.getElementById('oe-kind')||{}).value||'').trim();
+  var region=((document.getElementById('oe-region')||{}).value||'').trim()||'待填写';
+  var revenue=((document.getElementById('oe-revenue')||{}).value||'').trim();
+  var employees=((document.getElementById('oe-employees')||{}).value||'').trim();
+  var gap=((document.getElementById('oe-gap')||{}).value||'').trim();
+  var tagsStr=((document.getElementById('oe-tags')||{}).value||'').trim();
+  var factionStr=((document.getElementById('oe-faction')||{}).value||'').trim();
+  var contact=((document.getElementById('oe-contact')||{}).value||'').trim();
+  var signal=((document.getElementById('oe-signal')||{}).value||'').trim();
+  var note=((document.getElementById('oe-note')||{}).value||'').trim();
+
+  var tags=tagsStr?tagsStr.split(/[,，]/).map(function(t){return t.trim();}).filter(Boolean):[];
+  var faction=factionStr?factionStr.split(/[,，]/).map(function(f){
+    var parts=f.trim().split('·');
+    var person=parts[0]||'';
+    var label=parts[1]||'';
+    var type=label.indexOf('毕业')>=0?'校友会':'商会';
+    label=label.replace('毕业','');
+    return {person:person,label:label,type:type};
+  }).filter(function(f){return f.person||f.label;}):[];
+
+  var ent={
+    name:name,kind:kind,region:region,revenue:revenue,employees:employees,
+    gap:gap,tags:tags,faction:faction,contact:contact,note:note,
+    hasMoveSignal:!!signal,signal:signal,status:'manual',matches:[]
+  };
+  OPS_ENT.push(ent);
+  persist();
+  closeModal();
+  opsTab='enterprises'; renderOpsV2();
+  toast('✓ 已录入「'+name+'」');
+}
+
+
+function opsEntSave(){
+  var name  =((document.getElementById('oe-name')||{}).value||'').trim();
+  var kind  =((document.getElementById('oe-kind')||{}).value||'').trim();
+  var gap   =((document.getElementById('oe-gap')||{}).value||'').trim();
+  var scale =((document.getElementById('oe-scale')||{}).value||'').trim();
+  var signal=((document.getElementById('oe-signal')||{}).value||'').trim();
+  if(!name){toast('请填写企业名称');return;}
+  if(!signal){toast('扩张信号不能为空');return;}
+  var ent={
+    id:'ent_'+Date.now().toString(36),
+    name:name, kind:kind, gap:gap, scale:scale,
+    signal:signal, hasMoveSignal:true,
+    region:kind.split('·').pop().trim()||'待填写',
+    status:'manual', matches:[]
+  };
+  OPS_ENT.push(ent);
+  opsEntScanOne(OPS_ENT.length-1, true);  // 静默扫描
+  closeModal();
+  opsTab='enterprises'; renderOpsV2();
+  toast('✓ 已录入「'+name+'」，正在扫描匹配城市');
+}
+
+/* 文件导入：读取 TXT/CSV/MD，按行解析企业名+方向 */
+/* 解析结构化表格（CSV/带表头多列）：一行一家企业 */
+function parseEntTable(text){
+  var rows=text.split(/\r?\n/).map(function(l){return l.trim();}).filter(Boolean);
+  if(!rows.length) return 0;
+  // 表头映射
+  var header=rows[0].split(/[,\t，]/).map(function(s){return s.trim();});
+  function col(names){ for(var i=0;i<header.length;i++){ for(var n=0;n<names.length;n++){ if(header[i].indexOf(names[n])>=0) return i; } } return -1; }
+  var ci={name:col(['企业名称','名称','company','name']), ind:col(['行业']), prod:col(['产品','主营']),
+    region:col(['所在地','地区','区域']), scale:col(['规模']), signal:col(['信号','扩张']),
+    src:col(['来源']), match:col(['匹配','环节','方向'])};
+  if(ci.name<0) ci.name=0;
+  var added=0;
+  for(var r=1;r<rows.length;r++){
+    var p=rows[r].split(/[,\t，]/).map(function(s){return s.trim();});
+    var name=p[ci.name]||'';
+    if(name.length<2||name.length>40) continue;
+    if(OPS_ENT.find(function(e){return e.name===name;})) continue;
+    var signal=ci.signal>=0?(p[ci.signal]||''):'';
+    var hasSig=!!signal && !/无(信号|公开)/.test(signal) && signal!=='-';
+    OPS_ENT.push({
+      id:'ent_'+Date.now().toString(36)+'_'+added,
+      name:name,
+      industry:ci.ind>=0?p[ci.ind]||'':'',
+      product:ci.prod>=0?p[ci.prod]||'':'',
+      region:ci.region>=0?p[ci.region]||'':'',
+      scale:ci.scale>=0?p[ci.scale]||'':'',
+      kind:ci.ind>=0?p[ci.ind]||'待扫描确认':'待扫描确认',
+      gap:ci.match>=0?p[ci.match]||'':'',
+      signal:hasSig?signal:'（无扩张信号）',
+      signalSrc:ci.src>=0?p[ci.src]||'':'',
+      hasMoveSignal:hasSig, status:'manual', matches:[]
+    });
+    added++;
+  }
+  return added;
+}
+
+/* 解析单个企业档案（多行 txt/md）：整个文件=一家企业，按「字段：值」提取 */
+function parseEntProfile(text, fname){
+  var lines=text.split(/\r?\n/).map(function(l){return l.trim();}).filter(Boolean);
+  function field(labels){
+    for(var i=0;i<lines.length;i++){
+      var ln=lines[i];
+      var ci=ln.indexOf('：'); if(ci<0) ci=ln.indexOf(':');
+      if(ci<=0) continue;
+      var label=ln.slice(0,ci).trim();
+      for(var j=0;j<labels.length;j++){
+        if(label===labels[j]||label.indexOf(labels[j])>=0){
+          return ln.slice(ci+1).trim().replace(/[。.\s]+$/,'');
+        }
+      }
+    }
+    return '';
+  }
+  var name=field(['企业名称','企业名','名称']);
+  if(!name){
+    var tm=text.match(/企业档案[:：]\s*([^\n（(]+)/);
+    if(tm) name=tm[1].trim();
+  }
+  if(!name){ name=(fname||'').replace(/\.(txt|md|csv)$/i,'').replace(/^企业[-_]?/,''); }
+  name=name.trim();
+  if(name.length<2) return 0;
+  if(OPS_ENT.find(function(e){return e.name===name;})) return 0;
+  var signal=field(['扩张/迁址信号','扩张信号','迁址信号','信号']);
+  var industry=field(['所属行业','行业']);
+  var product=field(['主营产品','产品']);
+  var region=field(['所在地','地区','区域']);
+  var scale=field(['规模']);
+  var src=field(['信号来源','来源']);
+  var match=field(['匹配环节','匹配','环节']);
+  var noSig=/无(任何)?(公开)?(的)?(扩张|迁址|新建)/.test(text) || /信号来源[:：]\s*无/.test(text);
+  var hasSig=!!signal && !noSig;
+  OPS_ENT.push({
+    id:'ent_'+Date.now().toString(36)+'_'+Math.floor(Math.random()*1000),
+    name:name, industry:industry, product:product, region:region, scale:scale,
+    kind:industry||'待扫描确认', gap:match,
+    signal:hasSig?signal:'（无扩张信号）', signalSrc:src,
+    hasMoveSignal:hasSig, status:'manual', matches:[]
+  });
+  return 1;
+}
+
+function opsEntImport(){
+  var inp=document.createElement('input');
+  inp.type='file'; inp.multiple=true;
+  inp.accept='.txt,.csv,.md,.xlsx,.xls';
+  inp.onchange=function(){
+    var files=Array.from(inp.files||[]);
+    if(!files.length)return;
+    var total=0;
+    var done=0;
+    files.forEach(function(f){
+      if(/\.(xlsx|xls)$/i.test(f.name)){
+        // Excel: 只记录文件名提示，提醒用另存为 CSV
+        toast('请将 '+f.name+' 另存为 CSV 格式后重新导入');
+        done++; return;
+      }
+      var reader=new FileReader();
+      reader.onload=function(e){
+        var text=e.target.result||'';
+        var added=0;
+        var isCsv=/\.csv$/i.test(f.name);
+        // 判定：CSV 或 带表头的多列文本 → 结构化逐行；否则 → 整个文件=一家企业档案
+        var firstLine=(text.split(/\n/)[0]||'').trim();
+        var looksTabular=isCsv || (/[,\t，]/.test(firstLine) && /企业名称|名称|company|name/i.test(firstLine));
+        if(looksTabular){
+          added+=parseEntTable(text);
+        } else {
+          added+=parseEntProfile(text, f.name);
+        }
+        total+=added;
+        done++;
+        if(done===files.length){
+          opsTab='enterprises'; renderOpsV2();
+          toast('✓ 已导入 '+total+' 家企业，点「全局扫描」评估匹配方向');
+        }
+      };
+      reader.readAsText(f,'utf-8');
+    });
+  };
+  inp.click();
+}
+
+/* 扫描单家企业：匹配所有城市的缺口方向 */
+function opsEntScanOne(idx, silent){
+  var e=OPS_ENT[idx]; if(!e) return;
+  var matches=e.matches||[];  // 保留已有匹配，不清空
+  var existingKeys={};
+  matches.forEach(function(m){existingKeys[(m.projKey||m.city)+':'+m.gap]=true;});
+
+  var gapKw=(e.gap||e.kind||'').toLowerCase();
+  var nameKw=(e.name||'').toLowerCase();
+  var tagKws=(e.tags||[]).map(function(t){return t.toLowerCase();});
+
+  Object.keys(PROJECTS).forEach(function(k){
+    var p=PROJECTS[k];
+    var rs=REPORTSTATE[k];
+    var kb=p.kb||[];
+
+    // 从报告文本中提取缺口
+    var gaps=[];
+    if(rs&&rs.text){
+      rs.text.split('\n').forEach(function(l){
+        if(l.indexOf('\u274c')>=0||l.indexOf('\u26a0')>=0||l.indexOf('\u8584\u5f31')>=0||l.indexOf('\u7f3a\u5931')>=0){
+          var clean=l.replace(/[\u274c\u2705\u26a0\ufe0f*#|]/g,'').replace(/\s+/g,' ').trim();
+          if(clean.length>3&&clean.length<80) gaps.push(clean);
+        }
+      });
+    }
+
+    // 从KB主题卡中提取方向
+    kb.forEach(function(card){
+      if(card&&card.t) gaps.push(card.t);
+      (card.known||[]).forEach(function(item){
+        var c=item.replace(/[\u2705\u26a0\ufe0f\s]/g,'').trim();
+        if(c.indexOf('\u7f3a')>=0||c.indexOf('\u8865\u94fe')>=0||c.indexOf('\u5f15\u8fdb')>=0){
+          if(c.length>4&&c.length<60) gaps.push(c);
+        }
+      });
+    });
+
+    // 匹配逻辑：企业关键词 vs 城市缺口
+    gaps.forEach(function(gapTxt){
+      var gapLow=gapTxt.toLowerCase();
+      var kws=(e.gap||'').toLowerCase().split(/[/\u3001\uff0c,\s]+/).filter(function(w){return w.length>1;});
+      // 企业gap关键词命中缺口
+      var hit=kws.some(function(kw){return gapLow.indexOf(kw)>=0;});
+      // 企业tags命中缺口
+      if(!hit) hit=tagKws.some(function(t){return t.length>1&&gapLow.indexOf(t)>=0;});
+      // 企业kind命中缺口
+      if(!hit){
+        var kindKws=(e.kind||'').toLowerCase().split(/[/\u3001\uff0c,\s]+/).filter(function(w){return w.length>1;});
+        hit=kindKws.some(function(kw){return gapLow.indexOf(kw)>=0;});
+      }
+      // 反向：缺口词出现在企业信息里
+      if(!hit){
+        var gapWords=gapLow.split(/[/\u3001\uff0c,\s]+/).filter(function(w){return w.length>1;});
+        hit=gapWords.some(function(w){
+          return nameKw.indexOf(w)>=0||gapKw.indexOf(w)>=0||(e.kind||'').toLowerCase().indexOf(w)>=0;
+        });
+      }
+      if(hit){
+        var key=k+':'+gapTxt.slice(0,25);
+        if(!existingKeys[key]){
+          existingKeys[key]=true;
+          matches.push({city:p.city,projKey:k,gap:gapTxt.slice(0,25),pushed:false});
+        }
+      }
+    });
+  });
+
+  // 去重并限制
+  matches=matches.slice(0,8);
+  OPS_ENT[idx].matches=matches;
+  OPS_ENT[idx].status=matches.length>0?'scanned':'manual';
+  if(!silent){
+    persist(); renderOpsV2();
+    toast(matches.length>0?'\u2713 \u626b\u63cf\u5b8c\u6210\uff0c\u627e\u5230 '+matches.length+' \u4e2a\u5339\u914d\u65b9\u5411':'\u672a\u627e\u5230\u5339\u914d\u65b9\u5411');
+  }
+}
+
+/* 全局扫描所有企业 */
+function opsEntScanAll(){
+  var btn=document.getElementById('scanAllBtn');
+  if(btn){btn.textContent='⏳ 扫描中…';btn.disabled=true;}
+  var count=0;
+  OPS_ENT.forEach(function(e,i){
+    opsEntScanOne(i, true);
+    count+=(e.matches||[]).length;
+  });
+  persist();
+  renderOpsV2();
+  toast('✓ 全局扫描完成，共找到 '+count+' 个匹配方向，可逐条推送');
+}
+
+/* 推送弹窗 */
+function opsEntPushModal(idx){
+  var e=OPS_ENT[idx]; if(!e) return;
+  var matches=(e.matches||[]).map(function(m,i){return {m:m,i:i};}).filter(function(x){return !x.m.pushed;});
+  if(!matches.length){toast('所有匹配方向已推送');return;}
+  var rows=matches.map(function(x){
+    var m=x.m, mi=x.i;
+    return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f9fafb;border-radius:10px;margin-bottom:8px">'+
+      '<input type="checkbox" id="pm-'+mi+'" checked style="width:16px;height:16px;cursor:pointer"/>'+
+      '<label for="pm-'+mi+'" style="flex:1;cursor:pointer">'+
+        '<div style="font-size:13px;font-weight:650;color:#0b183b">'+m.city+'</div>'+
+        '<div style="font-size:12px;color:#8492a6">缺口方向：'+m.gap+'</div>'+
+      '</label>'+
+    '</div>';
+  }).join('');
+  var body=
+    '<p style="font-size:13px;color:#4a5568;margin:0 0 14px">将「'+e.name+'」推送到选中的城市项目，政府端「慧小招团队推荐」区会立即出现该企业（脱敏名）。</p>'+
+    rows+
+    '<div style="padding:10px 12px;background:#fffbeb;border-radius:8px;border:1px solid #fde68a;font-size:12px;color:#92400e">'+
+    '推送后政府端可见：脱敏名称、扩张信号、匹配理由，不可见企业真实联系方式。</div>';
+  openModal('📤 推送「'+e.name.substring(0,20)+'」', body,
+    '<button class="secondary-button" onclick="closeModal()">取消</button>'+
+    '<button class="primary-button" onclick="opsEntDoPush('+idx+','+JSON.stringify(matches.map(function(x){return x.i;}))+')">'+'确认推送</button>');
+}
+
+function opsEntDoPush(entIdx, miArr){
+  var e=OPS_ENT[entIdx]; if(!e) return;
+  var pushed=0;
+  miArr.forEach(function(mi){
+    var chk=document.getElementById('pm-'+mi);
+    if(chk&&!chk.checked) return;
+    var m=(e.matches||[])[mi]; if(!m||m.pushed) return;
+    var p=PROJECTS[m.projKey]; if(!p) return;
+    if(!p.clues) p.clues=[];
+    // 避免重复推送
+    var exists=p.clues.find(function(c){return c.id===e.id+'_to_'+m.projKey;});
+    if(exists) return;
+    p.clues.push({
+      id: e.id+'_to_'+m.projKey,
+      name: e.name+'（脱敏）',
+      kind: e.kind, gap: m.gap.slice(0,30),
+      region: e.region||'',
+      signal: e.signal,
+      signalSrc: '慧小招管理端扫描推送',
+      reason: '系统扫描发现该企业方向与贵市「'+m.gap+'」缺口高度匹配',
+      questions:['企业落地意向与时间表','与本地链主的配套合作方案','落地规模与政策诉求'],
+      tone:'amber', status:'ops_rec',
+      priority:4, localAttr:'A', hasMoveSignal:e.hasMoveSignal,
+      addedBy:'ops_scan'
+    });
+    m.pushed=true;
+    pushed++;
+  });
+  e.status=pushed>0?'pushed':'scanned';
+  persist();
+  closeModal();
+  renderOpsV2();
+  toast('✓ 已推送至 '+pushed+' 个城市，政府端「慧小招团队推荐」区即时更新');
+}
+
+/* 删除企业 */
+function opsEntDelete(idx){
+  if(!confirm('确认删除该企业？')) return;
+  OPS_ENT.splice(idx,1);
+  renderOpsV2();
+  toast('已删除');
+}
+
+/* 推送到指定城市（从城市概览页触发）*/
+function opsPushEntToCity(projKey){
+  var available=OPS_ENT.filter(function(e){return (e.matches||[]).some(function(m){return m.projKey===projKey&&!m.pushed;});});
+  if(!available.length){
+    toast('暂无未推送的匹配企业，请先在「企业资源库」录入企业并扫描');
+    return;
+  }
+  var p=PROJECTS[projKey];
+  var rows=available.map(function(e,ei){
+    var m=(e.matches||[]).find(function(m){return m.projKey===projKey;});
+    return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f9fafb;border-radius:10px;margin-bottom:8px">'+
+      '<input type="checkbox" id="ptc-'+ei+'" checked style="width:16px;height:16px;cursor:pointer"/>'+
+      '<label for="ptc-'+ei+'" style="flex:1;cursor:pointer">'+
+        '<div style="font-size:13px;font-weight:650;color:#0b183b">'+e.name+'</div>'+
+        '<div style="font-size:12px;color:#8492a6">'+(m?'缺口方向：'+m.gap:e.kind)+'</div>'+
+      '</label>'+
+    '</div>';
+  }).join('');
+  var body='<p style="font-size:13px;color:#4a5568;margin:0 0 14px">将以下企业推送到「'+p.city+'·'+p.topic.substring(0,15)+'」：</p>'+rows;
+  openModal('📤 推送企业到 '+p.city, body,
+    '<button class="secondary-button" onclick="closeModal()">取消</button>'+
+    '<button class="primary-button" onclick="opsDoPushToCity(\''+projKey+'\','+available.length+')">确认推送</button>');
+}
+
+function opsDoPushToCity(projKey, count){
+  var p=PROJECTS[projKey]; if(!p) return;
+  if(!p.clues) p.clues=[];
+  var pushed=0;
+  OPS_ENT.forEach(function(e,ei){
+    var chk=document.getElementById('ptc-'+ei);
+    if(chk&&!chk.checked) return;
+    var m=(e.matches||[]).find(function(m){return m.projKey===projKey;});
+    if(!m||m.pushed) return;
+    var exists=p.clues.find(function(c){return c.id===e.id+'_to_'+projKey;});
+    if(exists) return;
+    p.clues.push({
+      id:e.id+'_to_'+projKey, name:e.name+'（脱敏）',
+      kind:e.kind, gap:(m?m.gap:e.gap||e.kind).slice(0,30),
+      region:e.region||'', signal:e.signal,
+      signalSrc:'慧小招管理端推送', tone:'amber', status:'ops_rec',
+      reason:'系统扫描发现该企业与贵市缺口高度匹配',
+      questions:['落地意向与时间表','与本地链主配套方案','政策诉求'],
+      priority:4, localAttr:'A', hasMoveSignal:e.hasMoveSignal, addedBy:'ops_scan'
+    });
+    m.pushed=true; pushed++;
+  });
+  persist();
+  closeModal();
+  renderOpsV2();
+  toast('✓ 已推送 '+pushed+' 家企业到「'+p.city+'」，政府端即时更新');
+}
+
+function opsEntImport(){
+  var inp=document.createElement('input');
+  inp.type='file'; inp.multiple=true;
+  inp.accept='.txt,.csv,.md,.xlsx,.xls';
+  inp.onchange=function(){
+    var files=Array.from(inp.files||[]);
+    if(!files.length)return;
+    var total=0;
+    var done=0;
+    files.forEach(function(f){
+      if(/\.(xlsx|xls)$/i.test(f.name)){
+        // Excel: 只记录文件名提示，提醒用另存为 CSV
+        toast('请将 '+f.name+' 另存为 CSV 格式后重新导入');
+        done++; return;
+      }
+      var reader=new FileReader();
+      reader.onload=function(e){
+        var text=e.target.result||'';
+        var added=0;
+        var isCsv=/\.csv$/i.test(f.name);
+        // 判定：CSV 或 带表头的多列文本 → 结构化逐行；否则 → 整个文件=一家企业档案
+        var firstLine=(text.split(/\n/)[0]||'').trim();
+        var looksTabular=isCsv || (/[,\t，]/.test(firstLine) && /企业名称|名称|company|name/i.test(firstLine));
+        if(looksTabular){
+          added+=parseEntTable(text);
+        } else {
+          added+=parseEntProfile(text, f.name);
+        }
+        total+=added;
+        done++;
+        if(done===files.length){
+          opsTab='enterprises'; renderOpsV2();
+          toast('✓ 已导入 '+total+' 家企业，点「全局扫描」评估匹配方向');
+        }
+      };
+      reader.readAsText(f,'utf-8');
+    });
+  };
+  inp.click();
+}
+
+/* 扫描单家企业：匹配所有城市的缺口方向 */
+/* 领域聚类：把一段文本归到若干产业领域（用于企业↔缺口的语义匹配） */
+function opsEntDomains(text){
+  text=(text||'').toLowerCase();
+  var DICT={
+    'h2stack':['电堆','燃料电池','氢燃料','氢能','pem','fcv','双极板','膜电极'],
+    'h2store':['储氢','氢瓶','瓶阀','高压气态','储氢瓶','气瓶','复合材料'],
+    'powertrain':['动力总成','底盘','发动机','变速','传动','驱动桥'],
+    'drone':['无人机','应急','机器人','卫星','通信模块','5g','低空','消防'],
+    'mushroom':['香菇','食用菌','菌菇','菌种','多糖','多肽','提取','精深','预制菜','植物提取','烘干','菌棒','深加工']
+  };
+  var doms={};
+  for(var d in DICT){ if(DICT[d].some(function(w){return text.indexOf(w)>=0;})) doms[d]=true; }
+  return doms;
+}
+
+function opsEntScanOne(idx, silent){
+  var e=OPS_ENT[idx]; if(!e) return;
+  var matches=[];
+  // 企业侧领域：综合 名称+方向+行业+标签
+  var entText=(e.name||'')+' '+(e.gap||'')+' '+(e.kind||'')+' '+((e.tags||[]).join(' '));
+  var entDoms=opsEntDomains(entText);
+  var entDomList=Object.keys(entDoms);
+  Object.keys(PROJECTS).forEach(function(k){
+    var p=PROJECTS[k];
+    var rs=REPORTSTATE[k];
+    var kb=p.kb||[];
+    // 缺口来源：报告文本 ❌/⚠/薄弱/缺失 行 + KB 主题卡方向
+    var gaps=[];
+    if(rs&&rs.text){
+      rs.text.split('\n').forEach(function(l){
+        if(l.indexOf('❌')>=0||l.indexOf('⚠')>=0||l.indexOf('薄弱')>=0||l.indexOf('缺失')>=0){
+          var clean=l.replace(/[❌✅⚠️*#|]/g,'').replace(/\s+/g,' ').trim();
+          if(clean.length>3&&clean.length<80) gaps.push(clean);
+        }
+      });
+    }
+    kb.forEach(function(card){
+      (card&&card.known||[]).forEach(function(item){
+        var c=item.replace(/[✅⚠️]/g,'').replace(/\s+/g,' ').trim();
+        if((c.indexOf('缺')>=0||c.indexOf('薄弱')>=0||c.indexOf('补链')>=0||c.indexOf('引进')>=0)&&c.length>4&&c.length<80) gaps.push(c);
+      });
+    });
+    gaps.forEach(function(gapTxt){
+      var gapLow=gapTxt.toLowerCase();
+      var kws=(e.gap||'').toLowerCase().split(/[/、，,\s]+/).filter(function(w){return w.length>1;});
+      // ① 字面命中（企业方向词出现在缺口里）
+      var hit=kws.some(function(kw){return gapLow.indexOf(kw)>=0;});
+      // ② 领域聚类命中（企业领域 ∩ 缺口领域 非空）
+      if(!hit && entDomList.length){
+        var gapDoms=opsEntDomains(gapTxt);
+        hit=entDomList.some(function(d){return gapDoms[d];});
+      }
+      if(hit){
+        matches.push({projKey:k, city:p.city, gap:gapTxt.slice(0,25), pushed:false});
+      }
+    });
+  });
+  // 去重：按「城市+缺口语义」合并（同一缺口在多个项目重复出现时只保留一条）
+  var seen={};
+  matches=matches.filter(function(m){
+    // 规范化缺口文本：去标点/前后缀「缺失/薄弱/核心缺口」等，抓取核心词做去重键
+    var g=(m.gap||'').replace(/[\s\-—：:（）()、，,。.]/g,'')
+                     .replace(/^(核心缺口|缺失|薄弱|缺口方向)/,'');
+    var key=(m.city||'')+':'+g.slice(0,10);
+    if(seen[key]) return false;
+    seen[key]=true; return true;
+  }).slice(0,6);
+  OPS_ENT[idx].matches=matches;
+  OPS_ENT[idx].status=matches.length>0?'scanned':'manual';
+  if(!silent){
+    persist();
+    renderOpsV2();
+    toast(matches.length>0?'✓ 扫描完成，找到 '+matches.length+' 个匹配方向':'未找到匹配方向，请检查企业方向填写');
+  }
+}
+
+/* 全局扫描所有企业 */
+function opsEntScanAll(){
+  var btn=document.getElementById('scanAllBtn');
+  if(btn){btn.textContent='⏳ 扫描中…';btn.disabled=true;}
+  var count=0;
+  OPS_ENT.forEach(function(e,i){
+    opsEntScanOne(i, true);
+    count+=(e.matches||[]).length;
+  });
+  persist();
+  renderOpsV2();
+  toast('✓ 全局扫描完成，共找到 '+count+' 个匹配方向，可逐条推送');
+}
+
+/* 推送弹窗 */
+function opsEntPushModal(idx){
+  var e=OPS_ENT[idx]; if(!e) return;
+  var matches=(e.matches||[]).map(function(m,i){return {m:m,i:i};}).filter(function(x){return !x.m.pushed;});
+  if(!matches.length){toast('所有匹配方向已推送');return;}
+  var rows=matches.map(function(x){
+    var m=x.m, mi=x.i;
+    return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f9fafb;border-radius:10px;margin-bottom:8px">'+
+      '<input type="checkbox" id="pm-'+mi+'" checked style="width:16px;height:16px;cursor:pointer"/>'+
+      '<label for="pm-'+mi+'" style="flex:1;cursor:pointer">'+
+        '<div style="font-size:13px;font-weight:650;color:#0b183b">'+m.city+'</div>'+
+        '<div style="font-size:12px;color:#8492a6">缺口方向：'+m.gap+'</div>'+
+      '</label>'+
+    '</div>';
+  }).join('');
+  var body=
+    '<p style="font-size:13px;color:#4a5568;margin:0 0 14px">将「'+e.name+'」推送到选中的城市项目，政府端「慧小招团队推荐」区会立即出现该企业（脱敏名）。</p>'+
+    rows+
+    '<div style="padding:10px 12px;background:#fffbeb;border-radius:8px;border:1px solid #fde68a;font-size:12px;color:#92400e">'+
+    '推送后政府端可见：脱敏名称、扩张信号、匹配理由，不可见企业真实联系方式。</div>';
+  openModal('📤 推送「'+e.name.substring(0,20)+'」', body,
+    '<button class="secondary-button" onclick="closeModal()">取消</button>'+
+    '<button class="primary-button" onclick="opsEntDoPush('+idx+','+JSON.stringify(matches.map(function(x){return x.i;}))+')">'+'确认推送</button>');
+}
+
+function opsEntDoPush(entIdx, miArr){
+  var e=OPS_ENT[entIdx]; if(!e) return;
+  var pushed=0;
+  miArr.forEach(function(mi){
+    var chk=document.getElementById('pm-'+mi);
+    if(chk&&!chk.checked) return;
+    var m=(e.matches||[])[mi]; if(!m||m.pushed) return;
+    var p=PROJECTS[m.projKey]; if(!p) return;
+    if(!p.clues) p.clues=[];
+    // 避免重复推送
+    var exists=p.clues.find(function(c){return c.id===e.id+'_to_'+m.projKey;});
+    if(exists) return;
+    p.clues.push({
+      id: e.id+'_to_'+m.projKey,
+      name: e.name+'（脱敏）',
+      kind: e.kind, gap: m.gap.slice(0,30),
+      region: e.region||'',
+      signal: e.signal,
+      signalSrc: '慧小招管理端扫描推送',
+      reason: '系统扫描发现该企业方向与贵市「'+m.gap+'」缺口高度匹配',
+      questions:['企业落地意向与时间表','与本地链主的配套合作方案','落地规模与政策诉求'],
+      tone:'amber', status:'ops_rec',
+      priority:4, localAttr:'A', hasMoveSignal:e.hasMoveSignal,
+      addedBy:'ops_scan'
+    });
+    m.pushed=true;
+    pushed++;
+  });
+  e.status=pushed>0?'pushed':'scanned';
+  persist();
+  closeModal();
+  renderOpsV2();
+  toast('✓ 已推送至 '+pushed+' 个城市，政府端「慧小招团队推荐」区即时更新');
+}
+
+/* 删除企业 */
+function opsEntDelete(idx){
+  if(!confirm('确认删除该企业？')) return;
+  OPS_ENT.splice(idx,1);
+  renderOpsV2();
+  toast('已删除');
+}
+
+/* 推送到指定城市（从城市概览页触发）*/
+function opsPushEntToCity(projKey){
+  var available=OPS_ENT.filter(function(e){return (e.matches||[]).some(function(m){return m.projKey===projKey&&!m.pushed;});});
+  if(!available.length){
+    toast('暂无未推送的匹配企业，请先在「企业资源库」录入企业并扫描');
+    return;
+  }
+  var p=PROJECTS[projKey];
+  var rows=available.map(function(e,ei){
+    var m=(e.matches||[]).find(function(m){return m.projKey===projKey;});
+    return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f9fafb;border-radius:10px;margin-bottom:8px">'+
+      '<input type="checkbox" id="ptc-'+ei+'" checked style="width:16px;height:16px;cursor:pointer"/>'+
+      '<label for="ptc-'+ei+'" style="flex:1;cursor:pointer">'+
+        '<div style="font-size:13px;font-weight:650;color:#0b183b">'+e.name+'</div>'+
+        '<div style="font-size:12px;color:#8492a6">'+(m?'缺口方向：'+m.gap:e.kind)+'</div>'+
+      '</label>'+
+    '</div>';
+  }).join('');
+  var body='<p style="font-size:13px;color:#4a5568;margin:0 0 14px">将以下企业推送到「'+p.city+'·'+p.topic.substring(0,15)+'」：</p>'+rows;
+  openModal('📤 推送企业到 '+p.city, body,
+    '<button class="secondary-button" onclick="closeModal()">取消</button>'+
+    '<button class="primary-button" onclick="opsDoPushToCity(\''+projKey+'\','+available.length+')">确认推送</button>');
+}
+
+function opsDoPushToCity(projKey, count){
+  var p=PROJECTS[projKey]; if(!p) return;
+  if(!p.clues) p.clues=[];
+  var pushed=0;
+  OPS_ENT.forEach(function(e,ei){
+    var chk=document.getElementById('ptc-'+ei);
+    if(chk&&!chk.checked) return;
+    var m=(e.matches||[]).find(function(m){return m.projKey===projKey;});
+    if(!m||m.pushed) return;
+    var exists=p.clues.find(function(c){return c.id===e.id+'_to_'+projKey;});
+    if(exists) return;
+    p.clues.push({
+      id:e.id+'_to_'+projKey, name:e.name+'（脱敏）',
+      kind:e.kind, gap:(m?m.gap:e.gap||e.kind).slice(0,30),
+      region:e.region||'', signal:e.signal,
+      signalSrc:'慧小招管理端推送', tone:'amber', status:'ops_rec',
+      reason:'系统扫描发现该企业与贵市缺口高度匹配',
+      questions:['落地意向与时间表','与本地链主配套方案','政策诉求'],
+      priority:4, localAttr:'A', hasMoveSignal:e.hasMoveSignal, addedBy:'ops_scan'
+    });
+    m.pushed=true; pushed++;
+  });
+  persist();
+  closeModal();
+  renderOpsV2();
+  toast('✓ 已推送 '+pushed+' 家企业到「'+p.city+'」，政府端即时更新');
+}
+
+/* ===== 定向推送：手动选城市 + 选该城市下的产业方向，推到政府端「慧小招团队推荐」区 ===== */
+function opsEntManualPushModal(idx){
+  var e=OPS_ENT[idx]; if(!e){ toast('企业不存在'); return; }
+  var keys=Object.keys(PROJECTS);
+  if(!keys.length){ toast('暂无可推送的城市产业方向，请先在城市研判中创建产业方向'); return; }
+  var byCity={};
+  keys.forEach(function(k){
+    var p=PROJECTS[k]; if(!p||!p.city) return;
+    (byCity[p.city]=byCity[p.city]||[]).push({key:k, topic:p.topic||'（未命名方向）'});
+  });
+  var cities=Object.keys(byCity);
+  window.__manualPushEnt=idx;
+  window.__manualPushByCity=byCity;
+  var cityOpts=cities.map(function(c){return '<option value="'+c+'">'+c+'</option>';}).join('');
+  var firstTopics=byCity[cities[0]].map(function(t){return '<option value="'+t.key+'">'+t.topic+'</option>';}).join('');
+  var body=
+    '<p style="font-size:13px;color:#4a5568;margin:0 0 14px">将「'+e.name+'」定向推送到你指定的城市与产业方向，政府端「慧小招团队推荐」区会立即出现该企业（脱敏名）。</p>'+
+    '<label style="display:block;font-size:12px;font-weight:650;color:#4a5568;margin-bottom:6px">选择城市</label>'+
+    '<select id="mpCity" onchange="opsEntManualPushCityChange()" style="width:100%;min-height:42px;padding:9px 11px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;margin-bottom:14px;background:#fff;cursor:pointer">'+cityOpts+'</select>'+
+    '<label style="display:block;font-size:12px;font-weight:650;color:#4a5568;margin-bottom:6px">选择产业方向</label>'+
+    '<select id="mpTopic" style="width:100%;min-height:42px;padding:9px 11px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;margin-bottom:14px;background:#fff;cursor:pointer">'+firstTopics+'</select>'+
+    '<div style="padding:10px 12px;background:#fffbeb;border-radius:8px;border:1px solid #fde68a;font-size:12px;color:#92400e">推送后政府端可见：脱敏名称、扩张信号、匹配理由，不可见企业真实联系方式。</div>';
+  openModal('🎯 定向推送「'+e.name.substring(0,20)+'」', body,
+    '<button class="secondary-button" onclick="closeModal()">取消</button>'+
+    '<button class="primary-button" onclick="opsEntDoManualPush()">确认推送</button>');
+}
+
+function opsEntManualPushCityChange(){
+  var sel=document.getElementById('mpCity'); if(!sel) return;
+  var byCity=window.__manualPushByCity||{};
+  var list=byCity[sel.value]||[];
+  var tSel=document.getElementById('mpTopic'); if(!tSel) return;
+  tSel.innerHTML=list.map(function(t){return '<option value="'+t.key+'">'+t.topic+'</option>';}).join('');
+}
+
+function opsEntDoManualPush(){
+  var idx=window.__manualPushEnt;
+  var e=OPS_ENT[idx]; if(!e){ toast('企业不存在'); return; }
+  var tSel=document.getElementById('mpTopic');
+  var projKey=tSel&&tSel.value;
+  var p=projKey&&PROJECTS[projKey];
+  if(!p){ toast('请选择产业方向'); return; }
+  if(!p.clues) p.clues=[];
+  var clueId=e.id+'_manual_'+projKey;
+  if(p.clues.find(function(c){return c.id===clueId;})){ toast('该企业已推送到此产业方向，无需重复推送'); return; }
+  p.clues.push({
+    id: clueId,
+    name: e.name+'（脱敏）',
+    kind: e.kind, gap: (p.topic||'').slice(0,30),
+    region: e.region||'',
+    signal: e.signal,
+    signalSrc: '慧小招管理端定向推送',
+    reason: '管理端定向推荐：该企业适配「'+p.city+' · '+(p.topic||'')+'」，建议资源团队核验投资意向',
+    questions:['企业落地意向与时间表','与本地链主的配套合作方案','落地规模与政策诉求'],
+    tone:'amber', status:'ops_rec',
+    priority:4, localAttr:'A', hasMoveSignal:e.hasMoveSignal,
+    addedBy:'ops_manual'
+  });
+  if(!e.matches) e.matches=[];
+  var mExist=e.matches.find(function(m){return m.projKey===projKey;});
+  if(mExist){ mExist.pushed=true; }
+  else { e.matches.push({city:p.city, gap:(p.topic||'').slice(0,20), projKey:projKey, pushed:true}); }
+  if(e.status!=='pushed') e.status='pushed';
+  persist();
+  closeModal();
+  renderOpsV2();
+  toast('✓ 已定向推送「'+e.name+'」到「'+p.city+' · '+(p.topic||'')+'」');
+}

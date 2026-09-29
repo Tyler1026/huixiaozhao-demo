@@ -1,0 +1,1 @@
+function _clueLegacyTombKey(projKey, clueId){ return String(projKey)+'::'+String(clueId); }

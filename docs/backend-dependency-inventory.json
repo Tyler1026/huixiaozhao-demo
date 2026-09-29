@@ -1,0 +1,681 @@
+{
+  "server.py": [
+    {
+      "scope": "_is_noise_chunk",
+      "globals": [
+        "_NOISE_RE",
+        "_re_noise",
+        "len"
+      ]
+    },
+    {
+      "scope": "_chunk_text",
+      "globals": [
+        "dict",
+        "isinstance",
+        "str"
+      ]
+    },
+    {
+      "scope": "_tokenize",
+      "globals": [
+        "_STOP",
+        "_re",
+        "len",
+        "range",
+        "set"
+      ]
+    },
+    {
+      "scope": "_retrieve_chunks",
+      "globals": [
+        "_chunk_text",
+        "_is_upload_chunk",
+        "_tokenize",
+        "len",
+        "list"
+      ]
+    },
+    {
+      "scope": "_retrieve_chunks.lambda",
+      "globals": []
+    },
+    {
+      "scope": "_chat_token_budget",
+      "globals": [
+        "MAX_TOKENS_CHAT",
+        "MAX_TOKENS_CHAT_ANALYTIC",
+        "MAX_TOKENS_CHAT_SIMPLE",
+        "_CHAT_ANALYTIC_HINTS",
+        "_CHAT_SIMPLE_HINTS",
+        "any",
+        "len"
+      ]
+    },
+    {
+      "scope": "_chat_token_budget.genexpr",
+      "globals": []
+    },
+    {
+      "scope": "_chat_token_budget.genexpr",
+      "globals": []
+    },
+    {
+      "scope": "_is_upload_chunk",
+      "globals": [
+        "any",
+        "dict",
+        "isinstance",
+        "str"
+      ]
+    },
+    {
+      "scope": "_is_upload_chunk.genexpr",
+      "globals": []
+    },
+    {
+      "scope": "_is_upload_chunk.genexpr",
+      "globals": []
+    },
+    {
+      "scope": "audit_log",
+      "globals": [
+        "DATABASE_URL",
+        "Exception",
+        "LOG_PATH",
+        "_PG_AVAIL",
+        "_db_get",
+        "_db_set",
+        "datetime",
+        "int",
+        "json",
+        "open",
+        "print"
+      ]
+    },
+    {
+      "scope": "_classify_and_summarize",
+      "globals": [
+        "DS_KEY",
+        "DS_OPENER",
+        "DS_URL",
+        "Exception",
+        "MODEL",
+        "SYSTEM_KB_CLASSIFY",
+        "_KB_SUMMARY_CACHE",
+        "all",
+        "hashlib",
+        "json",
+        "len",
+        "print",
+        "urllib"
+      ]
+    },
+    {
+      "scope": "_classify_and_summarize.genexpr",
+      "globals": [
+        "len"
+      ]
+    },
+    {
+      "scope": "_clean_kb_text",
+      "globals": [
+        "_re",
+        "isinstance",
+        "str"
+      ]
+    },
+    {
+      "scope": "_is_junk_item",
+      "globals": [
+        "_re",
+        "len"
+      ]
+    },
+    {
+      "scope": "_clean_sync_data",
+      "globals": [
+        "Exception",
+        "dict",
+        "isinstance",
+        "list"
+      ]
+    },
+    {
+      "scope": "_load_ds_key",
+      "globals": [
+        "os"
+      ]
+    },
+    {
+      "scope": "Handler",
+      "globals": []
+    },
+    {
+      "scope": "Handler.log_message",
+      "globals": [
+        "print"
+      ]
+    },
+    {
+      "scope": "Handler.cors",
+      "globals": []
+    },
+    {
+      "scope": "Handler.do_OPTIONS",
+      "globals": []
+    },
+    {
+      "scope": "Handler.do_GET",
+      "globals": [
+        "DATABASE_URL",
+        "DS_KEY",
+        "Exception",
+        "FileNotFoundError",
+        "HTML_GOV",
+        "HTML_OPS",
+        "LOG_PATH",
+        "MODEL",
+        "PORT_OPS",
+        "SYNC_PATH",
+        "_PG_AVAIL",
+        "_classify_and_summarize",
+        "_clean_kb_text",
+        "_clean_sync_data",
+        "_db_conn",
+        "_db_get",
+        "_is_junk_item",
+        "bool",
+        "dict",
+        "int",
+        "isinstance",
+        "json",
+        "len",
+        "next",
+        "open",
+        "os",
+        "print",
+        "sorted",
+        "str",
+        "sum"
+      ]
+    },
+    {
+      "scope": "Handler.do_GET.genexpr",
+      "globals": []
+    },
+    {
+      "scope": "Handler.do_GET.genexpr",
+      "globals": []
+    },
+    {
+      "scope": "Handler.do_POST",
+      "globals": [
+        "DATABASE_URL",
+        "DS_KEY",
+        "DS_OPENER",
+        "DS_RESP_URL",
+        "DS_URL",
+        "Exception",
+        "FileNotFoundError",
+        "MAX_TOKENS_CHAIN",
+        "MAX_TOKENS_DRAFT",
+        "MAX_TOKENS_FULL",
+        "MAX_TOKENS_RESEARCH",
+        "MODEL",
+        "MODEL_CHAT",
+        "RuntimeError",
+        "SYNC_PATH",
+        "SYSTEM_CHAT",
+        "SYSTEM_CITY_PROFILE",
+        "SYSTEM_DRAFT",
+        "SYSTEM_FULL",
+        "SYSTEM_FUNNEL",
+        "SYSTEM_ONBOARD",
+        "SYSTEM_RESEARCH",
+        "SYSTEM_RESEARCH_CHAIN",
+        "SYSTEM_SUGGEST",
+        "SYSTEM_TOPICS",
+        "ValueError",
+        "_PG_AVAIL",
+        "__import__",
+        "_apply_kb_item_tombs",
+        "_chat_token_budget",
+        "_clean_sync_data",
+        "_clue_tombstoned",
+        "_db_get",
+        "_db_set",
+        "_extract_doc_text",
+        "_file_snapshot",
+        "_is_noise_chunk",
+        "_is_upload_chunk",
+        "_merge_kb_item_tombs",
+        "_merge_map",
+        "_retrieve_chunks",
+        "any",
+        "audit_log",
+        "base64",
+        "bool",
+        "dict",
+        "enumerate",
+        "id",
+        "int",
+        "isinstance",
+        "json",
+        "len",
+        "list",
+        "max",
+        "next",
+        "open",
+        "print",
+        "set",
+        "sorted",
+        "str",
+        "sum",
+        "time",
+        "urllib"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST.genexpr",
+      "globals": []
+    },
+    {
+      "scope": "Handler.do_POST.genexpr",
+      "globals": []
+    },
+    {
+      "scope": "Handler.do_POST.genexpr",
+      "globals": []
+    },
+    {
+      "scope": "Handler.do_POST._merge_rr",
+      "globals": [
+        "dict",
+        "isinstance",
+        "sorted"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST._merge_rr.lambda",
+      "globals": []
+    },
+    {
+      "scope": "Handler.do_POST._merge_kbchat",
+      "globals": [
+        "dict",
+        "isinstance",
+        "set"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST._merge_kbchat._norm",
+      "globals": [
+        "dict",
+        "isinstance",
+        "list"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST._merge_kbchat._take",
+      "globals": [
+        "dict",
+        "isinstance",
+        "len"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST._merge_kbchat_tombs",
+      "globals": [
+        "TypeError",
+        "ValueError",
+        "dict",
+        "int",
+        "isinstance"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST._merge_file_tombs",
+      "globals": [
+        "TypeError",
+        "ValueError",
+        "dict",
+        "int",
+        "isinstance"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST._merge_uploads",
+      "globals": [
+        "dict",
+        "isinstance",
+        "len",
+        "list",
+        "set",
+        "str"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST._merge_chunks",
+      "globals": [
+        "dict",
+        "isinstance",
+        "list",
+        "set",
+        "str"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST.genexpr",
+      "globals": [
+        "dict",
+        "isinstance"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST.genexpr",
+      "globals": [
+        "len"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST.genexpr",
+      "globals": [
+        "dict",
+        "isinstance"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST.genexpr",
+      "globals": []
+    },
+    {
+      "scope": "Handler.do_POST._strip_tag",
+      "globals": [
+        "str"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST._norm",
+      "globals": []
+    },
+    {
+      "scope": "Handler.do_POST._chunk_text",
+      "globals": [
+        "dict",
+        "isinstance",
+        "str"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST._sal_nums",
+      "globals": [
+        "int",
+        "len",
+        "set"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST._similar",
+      "globals": [
+        "len",
+        "max",
+        "range",
+        "sum"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST._similar.genexpr",
+      "globals": []
+    },
+    {
+      "scope": "Handler.do_POST._ind_hit",
+      "globals": [
+        "any"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST._ind_hit.genexpr",
+      "globals": []
+    },
+    {
+      "scope": "Handler.do_POST._is_strong_num",
+      "globals": [
+        "len"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST.genexpr",
+      "globals": []
+    },
+    {
+      "scope": "Handler.do_POST.genexpr",
+      "globals": [
+        "dict",
+        "isinstance"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST.genexpr",
+      "globals": [
+        "len"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST.genexpr",
+      "globals": []
+    },
+    {
+      "scope": "Handler.do_POST._ctext",
+      "globals": [
+        "dict",
+        "isinstance",
+        "str"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST.genexpr",
+      "globals": [
+        "dict",
+        "isinstance"
+      ]
+    },
+    {
+      "scope": "Handler.do_POST.genexpr",
+      "globals": []
+    }
+  ],
+  "backend/storage.py": [
+    {
+      "scope": "_db_conn",
+      "globals": [
+        "DATABASE_URL",
+        "psycopg2"
+      ]
+    },
+    {
+      "scope": "_init_db",
+      "globals": [
+        "DATABASE_URL",
+        "Exception",
+        "_PG_AVAIL",
+        "_db_conn",
+        "print"
+      ]
+    },
+    {
+      "scope": "_db_get",
+      "globals": [
+        "Exception",
+        "_db_conn",
+        "print"
+      ]
+    },
+    {
+      "scope": "_db_snapshot",
+      "globals": [
+        "Exception",
+        "SNAPSHOT_KEEP",
+        "int",
+        "len",
+        "print",
+        "time"
+      ]
+    },
+    {
+      "scope": "_db_set",
+      "globals": [
+        "Exception",
+        "_db_conn",
+        "_db_snapshot",
+        "print"
+      ]
+    },
+    {
+      "scope": "_file_snapshot",
+      "globals": [
+        "Exception",
+        "SNAPSHOT_KEEP",
+        "SYNC_PATH",
+        "int",
+        "os",
+        "print",
+        "sorted",
+        "time"
+      ]
+    }
+  ],
+  "backend/documents.py": [
+    {
+      "scope": "_extract_doc_text",
+      "globals": [
+        "Exception",
+        "_DOCX_AVAIL",
+        "_PDF_AVAIL",
+        "_docx",
+        "io",
+        "len",
+        "pdfplumber",
+        "str"
+      ]
+    }
+  ],
+  "backend/sync_merge.py": [
+    {
+      "scope": "_keep_nonempty",
+      "globals": [
+        "dict",
+        "isinstance",
+        "len",
+        "list",
+        "str"
+      ]
+    },
+    {
+      "scope": "_kb_item_fp",
+      "globals": [
+        "dict",
+        "isinstance",
+        "str"
+      ]
+    },
+    {
+      "scope": "_apply_kb_item_tombs",
+      "globals": [
+        "TypeError",
+        "ValueError",
+        "_kb_item_fp",
+        "dict",
+        "int",
+        "isinstance",
+        "len",
+        "list"
+      ]
+    },
+    {
+      "scope": "_merge_kb_item_tombs",
+      "globals": [
+        "TypeError",
+        "ValueError",
+        "dict",
+        "int",
+        "isinstance",
+        "str"
+      ]
+    },
+    {
+      "scope": "_kb_material_count",
+      "globals": [
+        "dict",
+        "isinstance",
+        "len",
+        "list"
+      ]
+    },
+    {
+      "scope": "_clue_name_key",
+      "globals": [
+        "_CLUE_NAME_SUFFIX",
+        "_re_clue",
+        "str"
+      ]
+    },
+    {
+      "scope": "_clue_tombstoned",
+      "globals": [
+        "_REUSABLE_CLUE_ID",
+        "_clue_name_key",
+        "dict",
+        "isinstance",
+        "str"
+      ]
+    },
+    {
+      "scope": "_merge_stage_by_topic",
+      "globals": [
+        "TypeError",
+        "ValueError",
+        "dict",
+        "int",
+        "isinstance"
+      ]
+    },
+    {
+      "scope": "_merge_clues",
+      "globals": [
+        "_CLUE_TONE_RANK",
+        "dict",
+        "isinstance",
+        "list"
+      ]
+    },
+    {
+      "scope": "_merge_map",
+      "globals": [
+        "TypeError",
+        "ValueError",
+        "_kb_material_count",
+        "_keep_nonempty",
+        "_merge_clues",
+        "_merge_stage_by_topic",
+        "dict",
+        "int",
+        "isinstance",
+        "len",
+        "list",
+        "str"
+      ]
+    }
+  ],
+  "backend/http_responses.py": [
+    {
+      "scope": "serve_html",
+      "globals": [
+        "FileNotFoundError",
+        "len",
+        "open",
+        "str"
+      ]
+    }
+  ]
+}
