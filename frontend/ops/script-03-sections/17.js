@@ -1830,31 +1830,64 @@ function inviteCodeSection(){
   var rows=codes.map(function(c){
     var inv=INVITE_CODES[c];
     var used=(inv.usedBy||[]).length;
-    var stTxt=inv.revoked?'已作废':'生效中';
-    var dupHint=(cityCounts[inv.city]>1)?'<br><small style="color:#c07a00">⚠ 同城市名有多个独立工作区，勿混淆</small>':'';
-    // 是否已分发 + 已分发邮箱：方便管理员追踪"这个码发给谁了"，避免重复分发或对不上人
+    var dupWarn=(cityCounts[inv.city]>1)?'<span class="ic-warn" title="同城市名有多个独立工作区，勿混淆">⚠</span>':'';
     var distCell=inv.distributed
-      ? '<span class="status-tag" style="color:#006d70;background:#e4f5f3">已分发</span><br><small style="color:#52637a">'+(inv.distributedEmail||'—')+'</small>'
-      : '<span class="status-tag" style="color:#8492a6;background:#eef0f3">未分发</span>';
-    return '<tr><td><code style="font-weight:700;letter-spacing:1px">'+c+'</code></td><td>'+(inv.city||'—')+dupHint+
-      '<br><small style="color:#9aa5b5;font-family:monospace">工作区 '+(inv.projKey||'—')+'</small></td>'+
-      '<td>'+used+' 人已用</td><td>'+distCell+'</td>'+
-      '<td>'+new Date(inv.createdAt||0).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})+'</td>'+
-      '<td><span class="status-tag" style="color:'+(inv.revoked?'#5e6d82':'#006d70')+';background:'+(inv.revoked?'#eef0f3':'#e4f5f3')+'">'+stTxt+'</span></td>'+
-      '<td>'+(inv.revoked?'':(
-        '<button class="ghost-button" style="min-height:26px;padding:2px 8px;font-size:11px" onclick="openMarkDistributedModal(\''+c+'\')">'+(inv.distributed?'改邮箱':'标记分发')+'</button> '+
-        '<button class="ghost-button" style="min-height:26px;padding:2px 8px;font-size:11px" onclick="revokeInviteCode(\''+c+'\')">作废</button>'
-      ))+'</td></tr>';
-  }).join('')||'<tr><td colspan="7" style="color:#9aa5b5;text-align:center;padding:16px">暂无邀请码，点击上方「生成邀请码」创建</td></tr>';
-  return '<div style="margin-bottom:20px"><div style="background:#fff;border:1px solid #e8edf5;border-radius:16px;padding:18px 20px;box-shadow:0 1px 4px rgba(11,24,59,.05)">'+
-    '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">'+
-      '<strong style="font-size:14px;color:#0b183b">🔑 邀请码管理</strong>'+
-      '<span style="font-size:11.5px;color:#9aa5b5">凭邀请码提前知道对方要哪个城市，可提前准备城市数据包；同一码可被多人重复注册</span>'+
-      '<div style="flex:1"></div>'+
-      '<button onclick="openInviteCodeModal()" style="padding:6px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer">+ 生成邀请码</button>'+
+      ? '<div class="ic-dist"><span class="invite-badge on">已分发</span><span class="ic-dist-email">'+(inv.distributedEmail||'—')+'</span></div>'
+      : '<span class="invite-badge off">未分发</span>';
+    var stTag=inv.revoked?'<span class="invite-badge revoked">已作废</span>':'<span class="invite-badge on">生效中</span>';
+    var actions=inv.revoked?'':
+      '<button class="ic-iconbtn" onclick="openMarkDistributedModal(\''+c+'\')" title="'+(inv.distributed?'修改分发邮箱':'标记为已分发')+'">'+(inv.distributed?'✎':'✉')+'</button>'+
+      '<button class="ic-iconbtn danger" onclick="revokeInviteCode(\''+c+'\')" title="作废邀请码">⊘</button>';
+    return '<tr>'+
+      '<td><div class="ic-code-cell"><span class="ic-code">'+c+'</span><button class="ic-copy" data-code="'+c+'" onclick="copyInviteCode(this)" title="复制邀请码">⧉</button></div></td>'+
+      '<td><div class="ic-city">'+(inv.city||'—')+dupWarn+'</div><div class="ic-workspace" title="工作区 '+(inv.projKey||'—')+'（同城市名不同工作区，数据互不共享）">工作区 '+(inv.projKey||'—')+'</div></td>'+
+      '<td class="ic-used"><strong>'+used+'</strong> 人已用</td>'+
+      '<td>'+distCell+'</td>'+
+      '<td class="ic-time">'+new Date(inv.createdAt||0).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})+'</td>'+
+      '<td>'+stTag+'</td>'+
+      '<td><div class="ic-actions">'+actions+'</div></td>'+
+    '</tr>';
+  }).join('');
+  var body=rows?('<table class="invite-table"><colgroup>'+
+      '<col class="c-code"><col class="c-city"><col class="c-used"><col class="c-dist"><col class="c-time"><col class="c-status"><col class="c-actions">'+
+    '</colgroup><thead><tr>'+
+      '<th>邀请码</th><th>绑定城市</th><th>使用情况</th><th>分发状态</th><th>生成时间</th><th>状态</th><th></th>'+
+    '</tr></thead><tbody>'+rows+'</tbody></table>')
+    : '<div class="invite-empty"><strong>还没有邀请码</strong>点击右上「生成邀请码」，为对接城市创建第一个专属工作区</div>';
+  return '<div class="invite-panel">'+
+    '<div class="invite-panel__head">'+
+      '<div class="ihd-icon">🔑</div>'+
+      '<div><h3>邀请码管理</h3><p>凭邀请码提前知道对方要哪个城市，可提前准备城市数据包；同一码可被多人重复注册，不同码即使城市名相同也各自独立</p></div>'+
+      '<button class="invite-panel__new" onclick="openInviteCodeModal()">+ 生成邀请码</button>'+
     '</div>'+
-    '<table class="ops-table" style="margin-top:10px"><thead><tr><th>邀请码</th><th>绑定城市</th><th>使用情况</th><th>分发状态</th><th>生成时间</th><th>状态</th><th>操作</th></tr></thead><tbody>'+rows+'</tbody></table>'+
-    '</div></div>';
+    body+
+  '</div>';
+}
+/* 复制邀请码到剪贴板：优先用 Clipboard API，非安全上下文(如内网http)降级用
+   textarea+execCommand，避免管理员在本地/内网环境用不了这个按钮。 */
+function copyInviteCode(btn){
+  var code=btn.getAttribute('data-code')||'';
+  if(!code) return;
+  function showCopied(){
+    var prevHtml=btn.innerHTML, prevTitle=btn.title;
+    btn.innerHTML='✓'; btn.title='已复制'; btn.classList.add('copied');
+    setTimeout(function(){ btn.innerHTML=prevHtml; btn.title=prevTitle; btn.classList.remove('copied'); },1200);
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(code).then(showCopied).catch(function(){ _copyFallback(code, showCopied); });
+  }else{
+    _copyFallback(code, showCopied);
+  }
+}
+function _copyFallback(text, onOk){
+  try{
+    var ta=document.createElement('textarea');
+    ta.value=text; ta.style.position='fixed'; ta.style.opacity='0'; ta.style.left='-9999px';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    var ok=document.execCommand('copy');
+    document.body.removeChild(ta);
+    if(ok){ onOk(); } else { toast('复制失败，请手动选中邀请码'); }
+  }catch(e){ toast('复制失败，请手动选中邀请码'); }
 }
 function openMarkDistributedModal(code){
   var inv=INVITE_CODES[code]; if(!inv) return;

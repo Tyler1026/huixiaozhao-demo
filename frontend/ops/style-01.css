@@ -116,6 +116,54 @@ body.ops-mode .ops-table tbody td{padding:11px 14px;border-bottom:1px solid #eef
 body.ops-mode .ops-table tbody tr:last-child td{border-bottom:0}
 body.ops-mode .ops-table tbody tr:hover{background:#f7f9fc}
 body.ops-mode .ops-table .row-click{cursor:pointer}
+/* ══ 邀请码管理：卡片化数据表——清晰分区、够用的呼吸感，不是纯文字表格贴数据 ══ */
+.invite-panel{margin-bottom:24px;border:1px solid var(--line);border-radius:14px;background:#fff;box-shadow:0 1px 2px rgba(11,24,59,.04),0 12px 28px -16px rgba(11,24,59,.10);overflow:hidden}
+.invite-panel__head{display:flex;align-items:center;gap:16px;padding:20px 22px;background:linear-gradient(180deg,#fbfcfe,#ffffff);border-bottom:1px solid var(--line-soft)}
+.invite-panel__head .ihd-icon{flex:0 0 40px;width:40px;height:40px;display:grid;place-items:center;border-radius:11px;background:var(--teal-soft);color:var(--teal);font-size:19px}
+.invite-panel__head h3{margin:0;color:var(--ink);font-size:15px;font-weight:700;letter-spacing:-.01em}
+.invite-panel__head p{margin:3px 0 0;color:var(--muted);font-size:12px;line-height:1.55;max-width:480px}
+.invite-panel__new{margin-left:auto;flex:0 0 auto;min-height:38px;padding:0 18px;border:1px solid var(--teal);border-radius:9px;color:#fff;background:var(--teal);font-size:13px;font-weight:650;cursor:pointer;box-shadow:0 1px 2px rgba(0,127,130,.16),0 6px 14px -6px rgba(0,127,130,.35);transition:background .15s ease-out,box-shadow .15s ease-out,transform .1s ease-out}
+.invite-panel__new:hover{background:#00696c;box-shadow:0 1px 2px rgba(0,127,130,.2),0 8px 18px -6px rgba(0,127,130,.42)}
+.invite-panel__new:active{transform:translateY(1px)}
+.invite-table{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+.invite-table thead th{padding:12px 22px;color:var(--muted);font-size:11px;font-weight:650;text-align:left;background:#fafbfd;border-bottom:1px solid var(--line-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.invite-table col.c-code{width:180px}
+.invite-table col.c-city{width:20%}
+.invite-table col.c-used{width:92px}
+.invite-table col.c-dist{width:20%}
+.invite-table col.c-time{width:116px}
+.invite-table col.c-status{width:96px}
+.invite-table col.c-actions{width:104px}
+.invite-table tbody tr{border-bottom:1px solid var(--line-soft);transition:background .12s ease-out}
+.invite-table tbody tr:nth-child(even){background:#fafbfd}
+.invite-table tbody tr:last-child{border-bottom:0}
+.invite-table tbody tr:hover{background:var(--blue-pale)}
+.invite-table td{padding:15px 22px;vertical-align:middle;overflow:hidden}
+.invite-table .ic-code-cell{display:flex;align-items:center;gap:8px}
+.invite-table .ic-code{display:inline-flex;align-items:center;padding:3px 9px;border-radius:6px;background:#f1f4f9;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;font-weight:650;letter-spacing:.03em;color:var(--blue-dark);overflow:hidden;text-overflow:ellipsis}
+.invite-table .ic-copy{flex:0 0 auto;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:7px;color:#7c8aa0;background:#fff;font-size:13px;line-height:1;cursor:pointer;transition:color .15s ease-out,background .15s ease-out,border-color .15s ease-out,transform .12s ease-out}
+.invite-table .ic-copy:hover{color:var(--blue-dark);background:var(--blue-soft);border-color:#b9cfe9}
+.invite-table .ic-copy:active{transform:scale(.9)}
+.invite-table .ic-copy.copied{color:#fff;background:var(--teal);border-color:var(--teal);transform:scale(1.05)}
+.invite-table .ic-city{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--ink)}
+.invite-table .ic-city .ic-warn{flex:0 0 auto;margin-left:1px;color:var(--orange);font-size:12px;cursor:default}
+.invite-table .ic-workspace{margin-top:3px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;color:#a7b0be;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help}
+.invite-table .ic-used{font-size:13px;color:var(--muted)}
+.invite-table .ic-used strong{font-weight:700;color:var(--ink);font-size:14px}
+.invite-table .ic-dist{display:grid;gap:3px;overflow:hidden}
+.invite-table .ic-dist-email{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.invite-table .ic-time{font-size:12px;color:var(--muted);white-space:nowrap}
+.invite-table .ic-actions{display:flex;align-items:center;gap:4px;justify-content:flex-end}
+.invite-table .ic-iconbtn{flex:0 0 auto;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:8px;color:#5c6d87;background:#fff;font-size:14px;cursor:pointer;transition:color .15s ease-out,background .15s ease-out,border-color .15s ease-out}
+.invite-table .ic-iconbtn:hover{color:var(--blue-dark);background:var(--blue-soft);border-color:#b9cfe9}
+.invite-table .ic-iconbtn.danger:hover{color:#a3402c;background:#fdf1ee;border-color:#eec2b3}
+.invite-badge{display:inline-flex;align-items:center;gap:6px;min-height:24px;padding:0 10px;border-radius:6px;font-size:11.5px;font-weight:650;white-space:nowrap}
+.invite-badge:before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.invite-badge.on{color:var(--teal);background:var(--teal-soft)}
+.invite-badge.off{color:#8f99aa;background:#f0f2f6}
+.invite-badge.revoked{color:#8a94a6;background:#eef1f5}
+.invite-empty{padding:52px 22px;color:#a7b0be;font-size:13px;text-align:center}
+.invite-empty strong{display:block;margin-bottom:4px;color:#7c8aa0;font-size:14px;font-weight:650}
 
 /* 看板列（对接管理） */
 body.ops-mode .kanban{display:flex;gap:12px;align-items:flex-start}
