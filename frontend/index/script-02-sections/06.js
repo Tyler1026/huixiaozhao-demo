@@ -115,6 +115,15 @@ function onInviteCodeInput(){
 function regMarkInvalid(id){ var el=document.getElementById(id); if(el){ el.style.borderColor='#dc2626'; el.style.boxShadow='0 0 0 3px rgba(220,38,38,.12)'; } }
 function regClearInvalid(el){ if(el){ el.style.borderColor='#d8e0ed'; el.style.boxShadow='none'; } var e=document.getElementById('regErr'); if(e){ e.style.display='none'; } }
 function doRegister(){
+  // 【2026-09-29】防重复提交：doRegister 之前完全没有并发保护，双击/网络慢导致的
+  // 二次点击会在第一次的 restoreFromServer 异步回调完成前再触发一次 proceed()，
+  // 此时 USER_PROFILES[u] 已经被第一次写入，第二次直接命中"该账号已被注册"报错——
+  // 表现正是"跳转正常（第一次成功）+ 提示账号已存在（第二次误判）"，账号本身没有
+  // 真的重复，是提示时序错了。加锁后第二次点击直接忽略，不再进入判断分支。
+  if(doRegister._inFlight) return;
+  doRegister._inFlight = true;
+  doRegister._registered = false; // 每次新调用重置，避免上一轮注册成功的标记挡住下一轮
+  var _releaseLock=function(){ doRegister._inFlight=false; };
   function v(id){ var el=document.getElementById(id); return el?el.value.trim():''; }
   var inviteCode=v('regInviteCode'), u=v('regUser').toLowerCase(), pw=v('regPwd'), name=v('regName'), phone=v('regPhone'),
       wechat=v('regWechat'), org=v('regOrg'), dept=v('regDept'), title=v('regTitle');
@@ -126,15 +135,21 @@ function doRegister(){
     if(first){ first.focus(); first.scrollIntoView({behavior:'smooth',block:'center'}); }
     regErr('还有 '+missing.length+' 项未填：'+missing.map(function(f){return f[2];}).join('、'));
     if(typeof toast==='function') toast('请填写：'+missing.map(function(f){return f[2];}).join('、'));
-    return;
+    _releaseLock(); return;
   }
-  if(!/^1[3-9]\d{9}$/.test(phone)){ regMarkInvalid('regPhone'); var pe=document.getElementById('regPhone'); if(pe){pe.focus();} regErr('手机号码格式不正确（应为11位手机号）'); if(typeof toast==='function') toast('手机号码格式不正确'); return; }
-  if(ACCOUNTS[u]){ regErr('该账号为系统保留账号，请换一个'); return; }
+  if(!/^1[3-9]\d{9}$/.test(phone)){ regMarkInvalid('regPhone'); var pe=document.getElementById('regPhone'); if(pe){pe.focus();} regErr('手机号码格式不正确（应为11位手机号）'); if(typeof toast==='function') toast('手机号码格式不正确'); _releaseLock(); return; }
+  if(ACCOUNTS[u]){ regErr('该账号为系统保留账号，请换一个'); _releaseLock(); return; }
   // 先从服务器拉最新邀请码库+用户库再校验，避免用本地过期数据误判
   var proceed=function(){
-    if(USER_PROFILES[u]){ regErr('该账号已被注册'); return; }
+    // 【2026-09-29】proceed 会被两条异步路径分别调用（restoreFromServer 正常回调 +
+    // 1.5s 兜底 setTimeout）。若正常回调较慢，兜底先跑完一次成功注册后，正常回调
+    // 才到达，此时 USER_PROFILES[u] 已经是刚才自己写的，会误判"该账号已被注册"。
+    // 用 _registered 标志短路：只要本次 doRegister 已经成功注册过，后续到达的
+    // 第二条路径直接跳过，不再重新判断。
+    if(doRegister._registered){ return; }
+    if(USER_PROFILES[u]){ regErr('该账号已被注册'); _releaseLock(); return; }
     var inv=validateInviteCode(inviteCode);
-    if(!inv.ok){ regMarkInvalid('regInviteCode'); regErr(inv.msg); return; }
+    if(!inv.ok){ regMarkInvalid('regInviteCode'); regErr(inv.msg); _releaseLock(); return; }
     var city=inv.city, role=inv.role||'member';
     // 邀请码可重复使用：用同一个码注册的多个账号加入同一工作区（团队协作）；
     // 不同邀请码即使城市名相同也是完全独立的工作区，隔离边界是 projKey 不是城市名。
@@ -165,6 +180,8 @@ function doRegister(){
     var done=false; var fb=setTimeout(function(){ if(!done){done=true;render();} },2000);
     restoreFromServer(function(){ if(!done){done=true;clearTimeout(fb);render();} });
     toast('✓ 注册成功，欢迎 '+name);
+    doRegister._registered = true;
+    _releaseLock();
   };
   restoreFromServer(function(){ proceed(); });
   // 服务器无数据时 restoreFromServer 回调可能不触发，兜底
