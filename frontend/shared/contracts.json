@@ -1,0 +1,33 @@
+{
+  "_clueNameKey": {
+    "inputs": "function parameters only",
+    "dependencies": "JavaScript built-ins only",
+    "consumers": [
+      "index.html",
+      "ops.html"
+    ]
+  },
+  "_isReusableClueId": {
+    "inputs": "function parameters only",
+    "dependencies": "JavaScript built-ins only",
+    "consumers": [
+      "index.html",
+      "ops.html"
+    ]
+  },
+  "_clueLegacyTombKey": {
+    "inputs": "function parameters only",
+    "dependencies": "JavaScript built-ins only",
+    "consumers": [
+      "index.html"
+    ]
+  },
+  "_kbItemFp": {
+    "inputs": "function parameters only",
+    "dependencies": "JavaScript built-ins only",
+    "consumers": [
+      "index.html",
+      "ops.html"
+    ]
+  }
+}

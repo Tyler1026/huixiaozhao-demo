@@ -16,10 +16,14 @@ def environment(raw, store='{}', write_ok=True, path='/api/sync'):
     writes = []
     ns = dict(BaseHTTPRequestHandler=BaseHTTPRequestHandler, json=json,
               _PG_AVAIL=True, DATABASE_URL='synthetic', _NOISE_RE=[],
+              SYNC_PATH='unused', _file_snapshot=lambda:None,
               _db_get=lambda: store)
     def save(value):
         writes.append(value)
         return write_ok
+    from backend import sync_merge
+    for name in names:
+        if hasattr(sync_merge,name):ns[name]=getattr(sync_merge,name)
     ns['_db_set'] = save
     exec(compile(ast.Module(body=nodes, type_ignores=[]), 'server.py', 'exec'), ns)
     handler = object.__new__(ns['Handler'])
