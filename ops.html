@@ -7125,7 +7125,7 @@ function opsRag(){
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">'+ragUploadPanel(p,key)+ragVersionPanel(p,key)+'</div>'+
     ragSearchBox()+
     ragChatBox(p,key)+
-    '<div style="display:grid;grid-template-columns:230px 1fr;gap:14px;margin-top:14px">'+ragTopicNav(p)+ragChunkList(p)+'</div>'+
+    ragBaseVsSupportLayout(p,key)+
     ragPushLog()+
   '</div>';
 }
@@ -7496,15 +7496,65 @@ function ragCmSubmit(){
   var cb=window.__ragCmOnConfirm; ragCmClose();
   if(typeof cb==='function')cb(topic,nature);
 }
-function ragTopicNav(p){
-  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;padding:10px;align-self:start">'+
-    '<div style="font-size:11px;font-weight:700;color:#8492a6;letter-spacing:.08em;padding:4px 8px">主题分区</div>'+
-    p.kb.map(function(t,i){
-      var on=(i===ragTopic);
-      return '<button onclick="ragTopic='+i+';ragFilter=\'\';renderOpsV2()" style="display:flex;justify-content:space-between;align-items:center;width:100%;padding:10px 12px;border:none;border-radius:8px;cursor:pointer;text-align:left;background:'+(on?'#eff6ff':'transparent')+'">'+
-        '<span style="font-size:13px;font-weight:'+(on?'700':'500')+';color:'+(on?'#1d4ed8':'#0b183b')+'">'+t.t+'</span>'+
-        '<span style="font-size:11px;color:#9aa5b5">'+(t.known||[]).length+'</span></button>';
-    }).join('')+'</div>';
+/* 【2026-09-29】管理端左右结构布局：左=城市基础包(nature=base，只读，14-Agent流水线
+   产出)，右=按账号分组的补充材料(support/interview/fix)。取代原来"主题导航+材料列表"
+   混合展示——那种视图分不清一条材料是流水线基础研判还是某个账号自己补的，也看不出
+   到底是谁补的。左侧完全只读；右侧脱离主题概念，平铺该工作区全部补充材料按账号分组。*/
+function ragBaseVsSupportLayout(p,key){
+  var base=getCityBasePackage(p.city);
+  var baseHtml=!base?
+    '<div style="padding:24px 16px;text-align:center;color:#9aa5b5;font-size:12.5px">'+
+      '该城市还没有基础包<br>请在「城市需求概览」发起报告生成申请，由14-Agent流水线产出后自动接入'+
+    '</div>':
+    base.map(function(t){
+      return '<div style="padding:10px 14px;border-bottom:1px solid #eef2f7">'+
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">'+
+          '<span style="font-size:13px">'+t.icon+'</span>'+
+          '<span style="font-size:12.5px;font-weight:650;color:#0b183b">'+ragEsc(t.t)+'</span>'+
+          '<span style="font-size:10.5px;color:#9aa5b5;margin-left:auto">'+(t.known||[]).length+' 条</span>'+
+        '</div>'+
+        (t.sub?'<div style="font-size:10.5px;color:#7c8aa0">'+ragEsc(t.sub)+(t.tag?' · '+ragEsc(t.tag):'')+'</div>':'')+
+      '</div>';
+    }).join('');
+  var baseTotal=base?base.reduce(function(s,t){return s+(t.known||[]).length;},0):0;
+  var left='<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;overflow:hidden;align-self:start">'+
+    '<div style="padding:12px 14px;background:#fafbfd;border-bottom:1px solid #eef2f7">'+
+      '<div style="font-size:12.5px;font-weight:700;color:#0b183b">📦 基础包（只读）</div>'+
+      '<div style="font-size:10.5px;color:#9aa5b5;margin-top:2px">14-Agent流水线首轮产出 · 共 '+baseTotal+' 条 · 全部工作区共享同一份</div>'+
+    '</div>'+
+    '<div style="max-height:420px;overflow-y:auto">'+baseHtml+'</div>'+
+    '<div style="padding:10px 14px;border-top:1px solid #eef2f7">'+
+      '<button onclick="opsTab=\'overview\';renderOpsV2()" style="width:100%;min-height:32px;border:1px solid #d8e0ed;border-radius:7px;background:#fff;color:#3d5471;font-size:11.5px;cursor:pointer">↻ 需要更新？去「城市需求概览」发起报告重跑</button>'+
+    '</div>'+
+  '</div>';
+  // 收集该工作区全部主题下的补充材料(base之外)，按account分组
+  var byAccount={};
+  p.kb.forEach(function(t){
+    (t.known||[]).forEach(function(it){
+      if(!(it&&typeof it==='object')) return;
+      if(it.nature==='base') return; // 基础包内容不在右侧重复出现
+      var who=it.account||(it.origin==='admin'?'管理员':(it.origin==='user'?'用户':'未知'));
+      (byAccount[who]=byAccount[who]||[]).push(it);
+    });
+  });
+  var accounts=Object.keys(byAccount).sort(function(a,b){return byAccount[b].length-byAccount[a].length;});
+  var rightHtml=!accounts.length?
+    '<div style="padding:24px 16px;text-align:center;color:#9aa5b5;font-size:12.5px">还没有账号补充过材料</div>':
+    accounts.map(function(who){
+      var items=byAccount[who];
+      return '<div style="margin-bottom:14px">'+
+        '<div style="display:flex;align-items:center;gap:6px;padding:0 2px 6px;border-bottom:1px solid #eef2f7">'+
+          '<span style="font-size:12.5px;font-weight:700;color:#0b183b">👤 '+ragEsc(who)+'</span>'+
+          '<span style="font-size:10.5px;color:#9aa5b5">'+items.length+' 条</span>'+
+        '</div>'+
+        items.map(function(it,i){return ragRenderChunk(it,i+1,null);}).join('')+
+      '</div>';
+    }).join('');
+  var right='<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fbfcfe;padding:12px 14px;max-height:560px;overflow-y:auto">'+
+    '<div style="font-size:12.5px;font-weight:700;color:#0b183b;margin-bottom:8px">👥 补充材料（按账号）<span style="color:#9aa5b5;font-weight:400;margin-left:4px">'+accounts.length+' 个账号</span></div>'+
+    rightHtml+
+  '</div>';
+  return '<div style="display:grid;grid-template-columns:280px 1fr;gap:14px;margin-top:14px">'+left+right+'</div>';
 }
 /* 结构化渲染一条智库材料：标题章 → 正文（加粗、数字高亮、关键词高亮）→ 来源徽章 */
 // 来源+性质 → 标识条颜色与徽章
@@ -7615,20 +7665,6 @@ function ragAnnots(annots){
         '<b>'+(a.nature==='fix'?(a.origin==='user'?'🔴':'🟡'):'🟢')+' '+who+act+'</b>'+(a.src?' · '+ragEsc(a.src):'')+
         '：'+ragEsc(String(a.text||'').slice(0,140))+'</div>';
     }).join('')+'</div>';
-}
-function ragChunkList(p){
-  var t=p.kb[ragTopic]||p.kb[0];
-  var items=(t.known||[]);
-  var f=(ragFilter||'').trim();
-  var _txt=function(x){return (x&&typeof x==='object')?(x.text||''):String(x);};
-  var shown=f?items.filter(function(x){return _txt(x).indexOf(f)>=0;}):items;
-  return '<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fbfcfe;padding:0 14px 14px;max-height:560px;overflow-y:auto">'+
-    '<div style="display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fbfcfe;padding:14px 0 10px;z-index:2;border-bottom:1px solid #eef2f7;margin-bottom:10px">'+
-      '<div style="font-size:13px;font-weight:700;color:#0b183b">'+t.t+' <span style="color:#9aa5b5;font-weight:400">'+shown.length+(f?' / '+items.length:'')+' 条</span></div>'+
-      '<input value="'+(ragFilter||'').replace(/"/g,'&quot;')+'" placeholder="筛选本区材料…" oninput="ragFilter=this.value;renderOpsV2();var el=document.querySelectorAll(\'input[placeholder^=筛选]\')[0];if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}" '+
-        'style="width:200px;min-height:32px;padding:4px 10px;border:1px solid #d8e0ed;border-radius:8px;font-size:12px"></div>'+
-    (shown.length?shown.map(function(x,i){return ragRenderChunk(x,i+1,f||null);}).join(''):
-     '<div style="color:#9aa5b5;font-size:12.5px;padding:14px 0">无匹配材料</div>')+'</div>';
 }
 function ragPushLog(){
   var logs=(ragLog&&ragLog.recs)||null;
