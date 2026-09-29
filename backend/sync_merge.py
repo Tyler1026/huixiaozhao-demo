@@ -253,4 +253,3 @@ def _merge_map(old, new):
                 continue
             base[fk] = _keep_nonempty(base.get(fk), fv)
     return merged
-

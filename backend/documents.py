@@ -92,5 +92,3 @@ def _extract_doc_text(filename, file_bytes):
         return "", "无法解码文本文件"
     except Exception as e:
         return "", "解析失败：" + str(e)
-
-

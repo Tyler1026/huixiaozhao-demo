@@ -100,4 +100,3 @@ def _file_snapshot():
                 pass
     except Exception as e:
         print(f"[snap] 文件快照失败(不阻断写入): {e}")
-
