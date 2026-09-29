@@ -43,3 +43,6 @@ jobs:
 
       - name: Build production container without running application
         run: docker build --tag hxz-refactor-check:${{ github.sha }} .
+
+      - name: Smoke actual entrypoint in isolated container
+        run: docker run --rm --network none --entrypoint python hxz-refactor-check:${{ github.sha }} scripts/smoke_entrypoint.py

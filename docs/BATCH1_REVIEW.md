@@ -20,10 +20,10 @@ Remaining business routes, stateful frontend/global effects, provider configurat
 
 ## Merge gates
 
-A remote CI run and actual Docker build must pass for the fixed candidate. Local machine has no Docker. Draft PR publication needs confirmation; merging main triggers production automation and requires separate confirmation. Prior identity experiments are excluded.
+Draft PR #3 is published. Initial head d29a1b8 passed CI and Docker build (run 36518462745). The final cleanup candidate must pass again, now including actual server.py entrypoint smoke in a network-disabled container. Local actual-entrypoint smoke passed using only a temporary file store and empty credential environment. Merging main triggers production automation and requires separate confirmation. Prior identity experiments are excluded.
 
 ## Security note
 
-The existing local Git remote URL embeds a credential; it was accidentally emitted by a remote inspection command. It must be revoked/rotated and replaced with a credential-helper workflow. Never copy the URL into this PR. Source fragments reproduce existing baseline code; this extraction does not certify that legacy client authentication or embedded baseline configuration is secure.
+The local Git remote URL previously embedded a credential; it was accidentally emitted by a remote inspection command. The remote URL is now credential-free. It must be revoked/rotated and replaced with a credential-helper workflow. Never copy the URL into this PR. Source fragments reproduce existing baseline code; this extraction does not certify that legacy client authentication or embedded baseline configuration is secure.
 
-No commit, PR, merge or production deployment has yet been performed for this batch.
+Commits and PR #3 are published; no merge or production deployment performed. Six unreferenced intermediate frontend copies have been moved outside the repository to a recoverable local archive. Active source files remain governed by frontend/manifest.json; delivery HTML is unchanged.
