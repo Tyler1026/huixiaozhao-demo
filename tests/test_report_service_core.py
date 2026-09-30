@@ -248,9 +248,13 @@ class WorkerTests(unittest.TestCase):
         store, d = temp_store()
         try:
             r = store.create_report("org-A", "湖北省", "随州", "req-1")
-            # each stage sleeps ~2x the ttl; heartbeat thread must keep it alive
-            p = FakeProvider(delay=0.2)
-            summary = run_once(store, p, ttl=0.1)
+            # Each stage sleeps well beyond the lease ttl; the heartbeat thread
+            # (interval = ttl/4) must renew the lease before it expires. The
+            # margin here is generous (ttl=1.0s, heartbeat every 250ms) so this
+            # stays reliable under slower/shared CI runners, not just a quiet
+            # local machine.
+            p = FakeProvider(delay=0.3)
+            summary = run_once(store, p, ttl=1.0)
             self.assertEqual(summary["status"], "completed")
             self.assertEqual(store.get_report("org-A", r["id"])["status"], "completed")
         finally:
