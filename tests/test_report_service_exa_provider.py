@@ -66,6 +66,61 @@ def make_exa_provider(**overrides):
     return providers.OpenAIResearchProvider(**params)
 
 
+class DataFreshnessTests(unittest.TestCase):
+    """Regression: Minhang pilot cited 2024 data with zero indication of
+    whether that was the latest available year -- the pipeline had no
+    mechanism to surface publish dates or ask the model to check recency."""
+
+    def test_exa_published_date_is_preserved_in_normalized_results(self):
+        p = make_exa_provider()
+        out = p._normalize_results({"results": [
+            {"title": "T", "url": "https://a.example.com", "text": "d",
+             "publishedDate": "2023-05-01T00:00:00.000Z"},
+        ]})
+        self.assertEqual(out[0].get("published"), "2023-05-01T00:00:00.000Z")
+
+    def test_missing_published_date_is_explicitly_marked_unknown(self):
+        p = make_exa_provider()
+        out = p._normalize_results({"results": [
+            {"title": "T", "url": "https://a.example.com", "text": "d"},
+        ]})
+        self.assertEqual(out[0].get("published"), "发布日期未知")
+
+    def test_evidence_block_shown_to_model_includes_published_date(self):
+        chat = {"choices": [{"message": {"content": "结论"}}]}
+        router = RecordingRouter({
+            "chat/completions": (200, json.dumps(chat)),
+            "exa.ai/search": (200, json.dumps({"results": [
+                {"title": "T1", "url": "https://a.example.com", "text": "d",
+                 "publishedDate": "2022-01-15"},
+            ]})),
+        })
+        p = make_exa_provider(transport=router)
+        p.run("economy", {"city": "松江区"}, None)
+        chat_req = next(r for r in router.calls if "chat/completions" in r.get_full_url())
+        user_content = json.loads(chat_req.data.decode("utf-8"))["messages"][-1]["content"]
+        self.assertIn("2022-01-15", user_content)
+
+    def test_prompt_requires_recency_check_and_year_labeling(self):
+        p = providers.OpenAIResearchProvider(
+            model_url="https://m.example.com/x", api_key="k", model_name="m",
+            search_provider="exa", search_key="s", enabled=False,
+        )
+        messages = p._build_messages("economy", "松江区", "", [])
+        instructions = messages[-1]["content"]
+        self.assertIn("年份", instructions)
+        self.assertIn("最新", instructions)
+
+    def test_system_prompt_states_current_date_context(self):
+        p = providers.OpenAIResearchProvider(
+            model_url="https://m.example.com/x", api_key="k", model_name="m",
+            search_provider="exa", search_key="s", enabled=False,
+        )
+        messages = p._build_messages("economy", "松江区", "", [])
+        system_content = messages[0]["content"]
+        self.assertRegex(system_content, r"当前日期[:：].*\d{4}-\d{2}-\d{2}")
+
+
 class ExaProtocolTests(unittest.TestCase):
     def _router(self, exa_body):
         chat = {"choices": [{"message": {"content": "结论，来源 https://a.example.com"}}]}
@@ -73,6 +128,16 @@ class ExaProtocolTests(unittest.TestCase):
             "chat/completions": (200, json.dumps(chat)),
             "exa.ai/search": (200, json.dumps(exa_body)),
         })
+
+    def test_exa_search_requests_recent_evidence_via_start_published_date(self):
+        router = self._router({"results": [{"title": "t", "url": "https://a.example.com", "text": "d"}]})
+        p = make_exa_provider(transport=router)
+        p.run("economy", {"city": "松江区"}, None)
+        search_req = next(r for r in router.calls if "exa.ai" in r.get_full_url())
+        payload = json.loads(search_req.data.decode("utf-8"))
+        self.assertIn("startPublishedDate", payload)
+        import re
+        self.assertRegex(payload["startPublishedDate"], r"^\d{4}-\d{2}-\d{2}$")
 
     def test_search_request_is_post_json_with_x_api_key_header(self):
         router = self._router({"results": [{"title": "t", "url": "https://a.example.com", "text": "d"}]})
