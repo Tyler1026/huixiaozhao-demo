@@ -657,6 +657,32 @@ function pushReportToRag(city,btn){
       toast('网络错误，推送提交失败');
     });
 }
+/* 取消卡死申请：pending/running 状态下用户主动放弃这条申请，不再等待调度
+   消费或流水线继续跑。写 cancelled 状态到服务端；_rr_rank 保证这个决定
+   不会被稍后到达的旧调度回写（比如仍在跑的 orchestrator/claim）覆盖回去。 */
+function cancelReportRequest(id,btn){
+  if(!confirm('确认取消这条申请？取消后不可恢复，需要重新发起。'))return;
+  var loc=REPORT_REQUESTS.find(function(r){return r.id===id;});
+  if(!loc)return;
+  var prevStatus=loc.status;
+  if(btn){btn.disabled=true;btn.textContent='取消中…';}
+  loc.status='cancelled';loc.cancelTs=Date.now();
+  fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({REPORT_REQUESTS:REPORT_REQUESTS,syncTs:Date.now()})})
+    .then(function(r){return r.json();})
+    .then(function(res){
+      if(res&&res.ok){toast('已取消该申请');render();}
+      else{
+        loc.status=prevStatus;/* 回滚本地乐观更新到取消前的真实状态 */
+        if(btn){btn.disabled=false;btn.textContent='✕ 取消';}
+        toast('取消失败：'+(res&&res.rejected||'请重试'));render();
+      }
+    }).catch(function(){
+      loc.status=prevStatus;
+      if(btn){btn.disabled=false;btn.textContent='✕ 取消';}
+      toast('网络错误，取消失败');render();
+    });
+}
 /* 轮询服务器刷新申请状态（每30秒，仅状态前进时更新，避免打断输入） */
 setInterval(function(){
   if(!REPORT_REQUESTS.length) return;
@@ -665,7 +691,7 @@ setInterval(function(){
   fetch('/api/sync?raw=1').then(function(r){return r.json();}).then(function(raw){
     var srv=(raw&&raw.huixiaozhao_kb_v1&&raw.huixiaozhao_kb_v1.REPORT_REQUESTS)?raw.huixiaozhao_kb_v1.REPORT_REQUESTS:(raw&&raw.REPORT_REQUESTS);
     if(!srv||!srv.length) return;
-    var rank={pending:0,running:1,failed:2,done:3};var changed=false;
+    var rank={pending:0,running:1,failed:2,done:3,cancelled:4};var changed=false;
     srv.forEach(function(sr){
       var loc=REPORT_REQUESTS.find(function(r){return r.id===sr.id;});
       if(!loc){REPORT_REQUESTS.push(sr);changed=true;}
@@ -678,6 +704,7 @@ function rrStatusBadge(s){
   return s==='done'?'<span class="ops-badge green">已完成·RAG已初始化</span>':
          s==='running'?'<span class="ops-badge blue"><span class="rr-spin"></span>AI 研判进行中</span>':
          s==='failed'?'<span class="ops-badge orange">失败·可重试</span>':
+         s==='cancelled'?'<span class="ops-badge" style="background:#f1f2f4;color:#6b7280">已取消</span>':
          '<span class="ops-badge">排队中</span>';
 }
 /* ===== 动态效果样式（注入一次） ===== */
@@ -905,11 +932,15 @@ function rrPanel(){
         pushCtrl='<button onclick="pushReportToRag(\''+r.city+'\',this)" style="flex-shrink:0;padding:6px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap">🚀 推送到 RAG</button>';
       }
     }
+    var cancelBtn='';
+    if(r.status==='pending'||r.status==='running'){
+      cancelBtn='<button onclick="cancelReportRequest(\''+r.id+'\',this)" style="flex-shrink:0;padding:6px 12px;background:#fff;border:1.5px solid #fca5a5;border-radius:8px;font-size:12px;color:#dc2626;cursor:pointer;font-weight:600;white-space:nowrap">✕ 取消</button>';
+    }
     return '<div class="ops-row" style="align-items:flex-start;flex-direction:column"><div style="display:flex;align-items:center;gap:10px;width:100%">'+
       '<div class="r-ic"></div>'+
       '<div class="r-main"><div style="display:flex;align-items:center;gap:8px"><strong>'+r.province+' · '+r.city+'</strong>'+rrStatusBadge(r.status)+'</div>'+
       '<small>'+r.by+' · '+tm+' 发起'+doneInfo+(r.status==='failed'&&r.failReason?' · '+r.failReason:'')+'</small></div>'+
-      '<div style="margin-left:auto;display:flex;align-items:center;gap:8px">'+dlBtn+pushCtrl+'</div></div>'+
+      '<div style="margin-left:auto;display:flex;align-items:center;gap:8px">'+dlBtn+pushCtrl+cancelBtn+'</div></div>'+
       rrProgress(r)+'</div>';
   }).join('')||'<div style="color:#8492a6;font-size:13px;padding:8px 2px">暂无申请记录</div>';
   return '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:18px 20px;margin:0 0 16px">'+
