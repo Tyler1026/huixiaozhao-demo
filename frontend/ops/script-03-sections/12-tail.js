@@ -1475,7 +1475,11 @@ function getCityBasePackage(city){
   var authorityKey=CITY_BASE_PACKAGES[city];
   var authority=authorityKey&&PROJECTS[authorityKey];
   if(!authority||!Array.isArray(authority.kb)) return null;
-  return authority.kb.map(function(topic){
+  // 【2026-09-29】只处理4个标准主题，权威工作区可能带额外非标准主题（同步政府端03.js修复）
+  var STANDARD_TITLES=['主导产业与产业链','园区与承载条件','链主与存量企业','政策、规划与领导关注'];
+  return authority.kb.filter(function(topic){
+    return STANDARD_TITLES.indexOf(topic.t)>=0;
+  }).map(function(topic){
     var baseKnown=(topic.known||[]).filter(function(it){
       return it&&typeof it==='object'&&it.nature==='base';
     });

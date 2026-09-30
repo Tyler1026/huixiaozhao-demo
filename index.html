@@ -1066,7 +1066,14 @@ function getCityBasePackage(city){
   var authorityKey=CITY_BASE_PACKAGES[city];
   var authority=authorityKey&&PROJECTS[authorityKey];
   if(!authority||!Array.isArray(authority.kb)) return null; // 该城市尚无基础包，调用方应展示真正的空，不是占位假文本
-  return authority.kb.map(function(topic){
+  // 【2026-09-29】权威工作区的 kb 可能带额外的非标准主题（如"数据边界与缺口"
+  // "产业分析AI问答"——运营过程中追加的，不是14-Agent首轮固定产出的4个标准
+  // 分区）。之前这里对全部主题做 map，导致这些额外主题（即使 known 是空数组）
+  // 也混进返回结果，界面上出现"7个主题、3个0条"的问题。改为只处理4个标准主题。
+  var STANDARD_TITLES=['主导产业与产业链','园区与承载条件','链主与存量企业','政策、规划与领导关注'];
+  return authority.kb.filter(function(topic){
+    return STANDARD_TITLES.indexOf(topic.t)>=0;
+  }).map(function(topic){
     var baseKnown=(topic.known||[]).filter(function(it){
       return it&&typeof it==='object'&&it.nature==='base';
     });

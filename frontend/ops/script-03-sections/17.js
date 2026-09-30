@@ -112,32 +112,40 @@ function ragWorkspaceOverview(activeKey){
   var multiCityCount=Object.keys(byCity).filter(function(c){return byCity[c].length>1;}).length;
   var rows=Object.keys(byCity).sort().map(function(city){
     var ks=byCity[city];
-    var itemsHtml=ks.map(function(k){
+    var hasBase=!!(CITY_BASE_PACKAGES&&CITY_BASE_PACKAGES[city]);
+    var itemsHtml=ks.map(function(k,idx){
       var p=PROJECTS[k];
       var n=(p.kb||[]).reduce(function(s,t){return s+(t.known||[]).length;},0);
       var inv=Object.keys(INVITE_CODES||{}).find(function(c){return INVITE_CODES[c].projKey===k;});
       var isOn=(k===activeKey);
-      return '<div onclick="ragCity=\''+k+'\';ragTopic=0;ragHits=null;renderOpsV2()" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;cursor:pointer;background:'+(isOn?'#eff6ff':'transparent')+';border:1px solid '+(isOn?'#bfdbfe':'transparent')+'">'+
+      var isAuthority=(CITY_BASE_PACKAGES&&CITY_BASE_PACKAGES[city]===k);
+      return '<div onclick="ragCity=\''+k+'\';ragTopic=0;ragHits=null;renderOpsV2()" style="display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;background:'+(isOn?'#eff6ff':'#fff')+';border-top:1px solid #eef2f7">'+
         '<span style="flex:0 0 auto;width:6px;height:6px;border-radius:50%;background:'+(n>0?'#0aa696':'#c7ced9')+'"></span>'+
-        '<span style="font-family:ui-monospace,monospace;font-size:11px;color:#5a7398;flex:0 0 auto">'+k+'</span>'+
-        (inv?'<span style="font-size:10.5px;color:#7c8aa0">邀请码 '+inv+'</span>':'<span style="font-size:10.5px;color:#c7ced9">非邀请码创建</span>')+
+        '<code style="font-size:11px;color:#5a7398;flex:0 0 auto">'+k+'</code>'+
+        (isAuthority?'<span class="invite-badge on" style="flex:0 0 auto">基础包来源</span>':'')+
+        (inv?'<span style="font-size:11px;color:#9aa5b5">邀请码 '+inv+'</span>':'<span style="font-size:11px;color:#c7ced9">非邀请码创建</span>')+
         '<span style="flex:1"></span>'+
-        '<span style="font-size:11.5px;color:'+(isOn?'#1d4ed8':'#0b183b')+';font-weight:'+(isOn?'700':'500')+'">'+n+' 条材料</span>'+
+        '<span style="font-size:12px;color:'+(isOn?'#1d4ed8':'#0b183b')+';font-weight:'+(isOn?'700':'500')+'">'+n+' 条材料</span>'+
       '</div>';
     }).join('');
-    return '<div style="margin-bottom:6px">'+
-      '<div style="font-size:12px;font-weight:700;color:#0b183b;padding:4px 12px">'+ragEsc(city)+(ks.length>1?' <span style="color:#c07a00;font-weight:600">· '+ks.length+' 个独立工作区，互不共享数据</span>':'')+'</div>'+
+    return '<div style="margin-bottom:10px;border:1px solid #e8edf5;border-radius:9px;overflow:hidden">'+
+      '<div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:#fafbfd">'+
+        '<span style="font-size:12.5px;font-weight:700;color:#0b183b">'+ragEsc(city)+'</span>'+
+        (ks.length>1?'<span style="font-size:10.5px;color:#a3711f;background:#fef6e7;padding:1px 7px;border-radius:5px">'+ks.length+' 个独立工作区，互不共享数据</span>':'')+
+        '<span style="flex:1"></span>'+
+        (hasBase?'<span style="font-size:10.5px;color:#00918f">✓ 已配置基础包</span>':'<span style="font-size:10.5px;color:#c07a00" title="该城市尚未指定基础包权威工作区，新账号注册后城市智库将是空白">⚠ 未配置基础包</span>')+
+      '</div>'+
       itemsHtml+
     '</div>';
   }).join('');
-  return '<div style="margin-bottom:16px;border:1px solid #e8edf5;border-radius:10px;background:#fff;overflow:hidden">'+
-    '<button onclick="ragOverviewOpen=!ragOverviewOpen;renderOpsV2()" style="width:100%;display:flex;align-items:center;gap:8px;padding:11px 16px;border:none;background:#fafbfd;cursor:pointer;text-align:left">'+
+  return '<div style="margin-bottom:16px;border:1px solid #e8edf5;border-radius:10px;background:#fff;overflow:hidden;box-shadow:0 1px 2px rgba(11,24,59,.03)">'+
+    '<button onclick="ragOverviewOpen=!ragOverviewOpen;renderOpsV2()" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px 16px;border:none;background:#fafbfd;cursor:pointer;text-align:left">'+
       '<span style="font-size:13px;font-weight:700;color:#0b183b">🗺️ 工作区总览</span>'+
       '<span style="font-size:11.5px;color:#9aa5b5">'+keys.length+' 个独立工作区 · '+Object.keys(byCity).length+' 个城市'+(multiCityCount?' · '+multiCityCount+' 个城市有多份工作区':'')+'</span>'+
       '<span style="flex:1"></span>'+
       '<span style="font-size:12px;color:#9aa5b5">'+(ragOverviewOpen?'收起 ▲':'展开 ▼')+'</span>'+
     '</button>'+
-    (ragOverviewOpen?'<div style="padding:10px 12px;max-height:260px;overflow-y:auto">'+rows+'</div>':'')+
+    (ragOverviewOpen?'<div style="padding:12px 14px;max-height:320px;overflow-y:auto">'+rows+'</div>':'')+
   '</div>';
 }
 function ragProjKey(){
