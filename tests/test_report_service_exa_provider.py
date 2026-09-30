@@ -160,6 +160,15 @@ class ExaProtocolTests(unittest.TestCase):
         payload = json.loads(chat_req.data.decode("utf-8"))
         self.assertEqual(payload["max_tokens"], 1000)
 
+    def test_default_output_tokens_is_large_enough_for_a_research_stage(self):
+        # Regression: DEFAULT_OUTPUT_TOKENS=800 repeatedly truncated real
+        # research-stage output (Songjiang and Minhang pilot runs both hit
+        # finish_reason=length before this was raised). This is a floor, not
+        # an exact value: it must comfortably exceed a realistic single-stage
+        # research answer with cited evidence.
+        self.assertGreaterEqual(providers.DEFAULT_OUTPUT_TOKENS, 3000)
+        self.assertLess(providers.DEFAULT_OUTPUT_TOKENS, providers.MAX_OUTPUT_TOKENS)
+
     def test_brave_protocol_still_works_when_selected_explicitly(self):
         chat = {"choices": [{"message": {"content": "ok https://a.example.com"}}]}
         brave_body = {"web": {"results": [{"title": "t", "url": "https://a.example.com", "description": "d"}]}}
