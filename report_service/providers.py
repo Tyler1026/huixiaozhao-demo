@@ -66,11 +66,14 @@ RESEARCH_STAGES = frozenset(
 
 # Bounds.  These cap the size of work and output regardless of configuration.
 DEFAULT_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
+DEFAULT_SEARCH_PROVIDER = "brave"
+SEARCH_PROVIDERS = frozenset({"brave", "exa"})
+EXA_DEFAULT_SEARCH_URL = "https://api.exa.ai/search"
 DEFAULT_MODEL_NAME = "gpt-4o-mini"
 DEFAULT_SEARCH_COUNT = 5
 MAX_SEARCH_COUNT = 8
 DEFAULT_OUTPUT_TOKENS = 800
-MAX_OUTPUT_TOKENS = 4000
+MAX_OUTPUT_TOKENS = 8000
 DEFAULT_TIMEOUT = 30.0
 MAX_TIMEOUT = 120.0
 MAX_PRIOR_CHARS = 6000
@@ -265,7 +268,8 @@ class OpenAIResearchProvider:
         model_url,
         api_key,
         model_name=DEFAULT_MODEL_NAME,
-        search_url=DEFAULT_SEARCH_URL,
+        search_provider=DEFAULT_SEARCH_PROVIDER,
+        search_url=None,
         search_key=None,
         enabled=False,
         transport=None,
@@ -274,10 +278,15 @@ class OpenAIResearchProvider:
         allow_private=False,
         search_count=DEFAULT_SEARCH_COUNT,
     ):
+        if search_provider not in SEARCH_PROVIDERS:
+            raise ValueError(f"unknown search_provider: {search_provider!r}")
         self.model_url = model_url
         self.api_key = api_key or ""
         self.model_name = model_name or DEFAULT_MODEL_NAME
-        self.search_url = search_url or DEFAULT_SEARCH_URL
+        self.search_provider = search_provider
+        self.search_url = search_url or (
+            EXA_DEFAULT_SEARCH_URL if search_provider == "exa" else DEFAULT_SEARCH_URL
+        )
         self.search_key = search_key or ""
         self.enabled = bool(enabled)
         self.allow_private = bool(allow_private)
@@ -302,13 +311,21 @@ class OpenAIResearchProvider:
         import os
 
         env = os.environ if environ is None else environ
+        provider = (env.get("HXZ_SEARCH_PROVIDER") or DEFAULT_SEARCH_PROVIDER).strip().lower()
+        max_tokens_raw = (env.get("HXZ_MODEL_MAX_TOKENS") or "").strip()
+        try:
+            max_tokens = int(max_tokens_raw) if max_tokens_raw else DEFAULT_OUTPUT_TOKENS
+        except ValueError:
+            max_tokens = DEFAULT_OUTPUT_TOKENS
         return cls(
             model_url=env.get("HXZ_MODEL_URL", ""),
             api_key=env.get("HXZ_MODEL_KEY", ""),
             model_name=env.get("HXZ_MODEL_NAME", DEFAULT_MODEL_NAME),
-            search_url=env.get("HXZ_SEARCH_URL", DEFAULT_SEARCH_URL),
+            search_provider=provider,
+            search_url=env.get("HXZ_SEARCH_URL") or None,
             search_key=env.get("HXZ_SEARCH_KEY", ""),
             enabled=env.get("HXZ_ENABLE_LIVE", "") == "1",
+            max_output_tokens=max_tokens,
         )
 
     # -- validation / plumbing ---------------------------------------------
@@ -370,6 +387,13 @@ class OpenAIResearchProvider:
         request.add_header("X-Subscription-Token", self.search_key)
         return self._request(request)
 
+    def _post_search_json(self, url, payload, key_header):
+        data = json.dumps(payload).encode("utf-8")
+        request = urllib.request.Request(url, data=data, method="POST")
+        request.add_header("Content-Type", "application/json")
+        request.add_header(key_header, self.search_key)
+        return self._request(request)
+
     def _require_ok(self, status, body, action):
         if not (200 <= status < 300):
             detail = ""
@@ -388,9 +412,13 @@ class OpenAIResearchProvider:
         return f"{place} 招商 {label}"
 
     def _search(self, query, count):
-        params = urllib.parse.urlencode({"q": query, "count": str(count)})
-        sep = "&" if "?" in self.search_url else "?"
-        status, body, _ = self._get_json(self.search_url + sep + params)
+        if self.search_provider == "exa":
+            payload = {"query": query, "numResults": count, "contents": {"text": True, "highlights": True}}
+            status, body, _ = self._post_search_json(self.search_url, payload, "x-api-key")
+        else:
+            params = urllib.parse.urlencode({"q": query, "count": str(count)})
+            sep = "&" if "?" in self.search_url else "?"
+            status, body, _ = self._get_json(self.search_url + sep + params)
         return self._require_ok(status, body, "search")
 
     def _normalize_results(self, payload):
@@ -412,7 +440,11 @@ class OpenAIResearchProvider:
             if not isinstance(url, str) or not url:
                 continue
             title = item.get("title") or ""
-            snippet = item.get("description") or item.get("snippet") or ""
+            snippet = item.get("description") or item.get("snippet") or item.get("text") or ""
+            if not snippet:
+                highlights = item.get("highlights")
+                if isinstance(highlights, list) and highlights:
+                    snippet = " ".join(str(h) for h in highlights)
             out.append({"url": url, "title": title, "snippet": snippet})
         return out[:MAX_SEARCH_COUNT]
 
@@ -444,11 +476,11 @@ class OpenAIResearchProvider:
             {"role": "user", "content": "\n\n".join(user_blocks)},
         ]
 
-    def _chat(self, messages):
+    def _chat(self, messages, max_tokens):
         payload = {
             "model": self.model_name,
             "messages": messages,
-            "max_tokens": self.max_output_tokens,
+            "max_tokens": max_tokens,
             "temperature": 0.2,
         }
         status, body, _ = self._post_json(self.model_url, payload)
@@ -496,7 +528,10 @@ class OpenAIResearchProvider:
                 )
 
         messages = self._build_messages(stage, place, prior_text, evidence)
-        data = self._chat(messages)
+        # The final synthesis stage integrates every prior stage's output and
+        # needs a materially larger budget than a single research stage.
+        budget = MAX_OUTPUT_TOKENS if stage == "report" else self.max_output_tokens
+        data = self._chat(messages, budget)
         return self._extract_text(data)
 
 
