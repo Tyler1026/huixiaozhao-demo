@@ -40,7 +40,17 @@ def handle_sync(self, raw, deps):
             # 而 incoming 三个都为空，就判定为空写入并拒绝。
             _core_had = any(existing.get(k) for k in ('PROJECTS','USER_PROFILES','OPS_ENT'))
             _core_incoming = any(incoming.get(k) for k in ('PROJECTS','USER_PROFILES','OPS_ENT'))
-            if _core_had and not _core_incoming:
+            # 【2026-09-30】受保护字段的合法局部更新不算空写：check_requests.py 等
+            # 调度脚本只 PUT {REPORT_REQUESTS, syncTs}，不带任何核心对象，被上面
+            # 的判断误杀为"整库清空"（rejected: empty-payload），claim/fail 永远
+            # 无法成功（第四次复现的已知阻塞）。只要 incoming 带了任一受保护字段
+            # （下方 _protected 列表）且值非空，就说明这是一次真实的局部更新，
+            # 不该被空写保护拦截；PROJECTS/USER_PROFILES/OPS_ENT 完全缺失时它们
+            # 在下面的合并循环里也不会被裸覆盖（未出现的 key 不会被写入 existing）。
+            _protected_incoming = any(incoming.get(k) for k in
+                ('OPS_ENT','DEMANDS','KB_CHAT','PENDING_CONFIRMS','KB_CONFIRMS',
+                 'REPORT_REQUESTS','CITY_ACCOUNTS','INVITE_CODES','CITY_BASE_PACKAGES'))
+            if _core_had and not _core_incoming and not _protected_incoming:
                 print('[sync] rejected empty write (keys=%r)' % (sorted(_incoming_keys),))
                 resp = json.dumps({'ok': False, 'rejected': 'empty-payload'}).encode()
                 self.send_response(200)
