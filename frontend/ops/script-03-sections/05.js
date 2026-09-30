@@ -206,11 +206,15 @@ function rrPanel(){
         pushCtrl='<button onclick="pushReportToRag(\''+r.city+'\',this)" style="flex-shrink:0;padding:6px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap">🚀 推送到 RAG</button>';
       }
     }
+    var cancelBtn='';
+    if(r.status==='pending'||r.status==='running'){
+      cancelBtn='<button onclick="cancelReportRequest(\''+r.id+'\',this)" style="flex-shrink:0;padding:6px 12px;background:#fff;border:1.5px solid #fca5a5;border-radius:8px;font-size:12px;color:#dc2626;cursor:pointer;font-weight:600;white-space:nowrap">✕ 取消</button>';
+    }
     return '<div class="ops-row" style="align-items:flex-start;flex-direction:column"><div style="display:flex;align-items:center;gap:10px;width:100%">'+
       '<div class="r-ic"></div>'+
       '<div class="r-main"><div style="display:flex;align-items:center;gap:8px"><strong>'+r.province+' · '+r.city+'</strong>'+rrStatusBadge(r.status)+'</div>'+
       '<small>'+r.by+' · '+tm+' 发起'+doneInfo+(r.status==='failed'&&r.failReason?' · '+r.failReason:'')+'</small></div>'+
-      '<div style="margin-left:auto;display:flex;align-items:center;gap:8px">'+dlBtn+pushCtrl+'</div></div>'+
+      '<div style="margin-left:auto;display:flex;align-items:center;gap:8px">'+dlBtn+pushCtrl+cancelBtn+'</div></div>'+
       rrProgress(r)+'</div>';
   }).join('')||'<div style="color:#8492a6;font-size:13px;padding:8px 2px">暂无申请记录</div>';
   return '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:18px 20px;margin:0 0 16px">'+

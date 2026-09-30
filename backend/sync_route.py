@@ -96,7 +96,11 @@ def handle_sync(self, raw, deps):
         _protected = ['OPS_ENT','DEMANDS','KB_CHAT','PENDING_CONFIRMS','KB_CONFIRMS','REPORT_REQUESTS','CITY_ACCOUNTS','INVITE_CODES','CITY_BASE_PACKAGES']
         # REPORT_REQUESTS 按 id 合并且状态只进不退（pending<running<done/failed）
         # 防止管理端旧快照 persist 把流水线已推进的状态倒改回 pending
-        _rr_rank = {'pending': 0, 'running': 1, 'failed': 2, 'done': 3}
+        # 【2026-09-30】cancelled 排在最高：用户手动取消是终态决定，任何调度脚本
+        # （claim/orchestrator/sync_to_kb 等）事后写回的旧状态更新都不能把它
+        # 覆盖回 pending/running/failed/done——这正是"卡死任务允许用户手动取消"
+        # 功能的服务端语义保证。
+        _rr_rank = {'pending': 0, 'running': 1, 'failed': 2, 'done': 3, 'cancelled': 4}
         def _merge_rr(old_list, new_list):
             by_id = {r.get('id'): dict(r) for r in (old_list or []) if isinstance(r, dict)}
             for r in (new_list or []):
