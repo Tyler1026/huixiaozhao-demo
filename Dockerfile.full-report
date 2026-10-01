@@ -1,0 +1,9 @@
+FROM python:3.12-slim
+WORKDIR /app
+RUN pip install --no-cache-dir python-docx==1.1.2
+COPY report_service/ /app/report_service/
+RUN python -m compileall -q report_service
+ENV HXZ_ENABLE_LIVE=0 PYTHONUNBUFFERED=1
+# Mount one host's persistent local disk at /data. Never use shared NFS SQLite.
+# API and worker are separate processes using the same single-host volume.
+CMD ["python", "-m", "report_service.full_cli", "worker", "--db", "/data/reports.db", "--artifacts", "/data/artifacts", "--provider", "synthetic"]
