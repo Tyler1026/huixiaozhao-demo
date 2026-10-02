@@ -40,7 +40,17 @@ def handle_sync(self, raw, deps):
             # 而 incoming 三个都为空，就判定为空写入并拒绝。
             _core_had = any(existing.get(k) for k in ('PROJECTS','USER_PROFILES','OPS_ENT'))
             _core_incoming = any(incoming.get(k) for k in ('PROJECTS','USER_PROFILES','OPS_ENT'))
-            if _core_had and not _core_incoming:
+            # 【2026-09-30】受保护字段的合法局部更新不算空写：check_requests.py 等
+            # 调度脚本只 PUT {REPORT_REQUESTS, syncTs}，不带任何核心对象，被上面
+            # 的判断误杀为"整库清空"（rejected: empty-payload），claim/fail 永远
+            # 无法成功（第四次复现的已知阻塞）。只要 incoming 带了任一受保护字段
+            # （下方 _protected 列表）且值非空，就说明这是一次真实的局部更新，
+            # 不该被空写保护拦截；PROJECTS/USER_PROFILES/OPS_ENT 完全缺失时它们
+            # 在下面的合并循环里也不会被裸覆盖（未出现的 key 不会被写入 existing）。
+            _protected_incoming = any(incoming.get(k) for k in
+                ('OPS_ENT','DEMANDS','KB_CHAT','PENDING_CONFIRMS','KB_CONFIRMS',
+                 'REPORT_REQUESTS','CITY_ACCOUNTS','INVITE_CODES','CITY_BASE_PACKAGES'))
+            if _core_had and not _core_incoming and not _protected_incoming:
                 print('[sync] rejected empty write (keys=%r)' % (sorted(_incoming_keys),))
                 resp = json.dumps({'ok': False, 'rejected': 'empty-payload'}).encode()
                 self.send_response(200)
@@ -86,7 +96,11 @@ def handle_sync(self, raw, deps):
         _protected = ['OPS_ENT','DEMANDS','KB_CHAT','PENDING_CONFIRMS','KB_CONFIRMS','REPORT_REQUESTS','CITY_ACCOUNTS','INVITE_CODES','CITY_BASE_PACKAGES']
         # REPORT_REQUESTS 按 id 合并且状态只进不退（pending<running<done/failed）
         # 防止管理端旧快照 persist 把流水线已推进的状态倒改回 pending
-        _rr_rank = {'pending': 0, 'running': 1, 'failed': 2, 'done': 3}
+        # 【2026-09-30】cancelled 排在最高：用户手动取消是终态决定，任何调度脚本
+        # （claim/orchestrator/sync_to_kb 等）事后写回的旧状态更新都不能把它
+        # 覆盖回 pending/running/failed/done——这正是"卡死任务允许用户手动取消"
+        # 功能的服务端语义保证。
+        _rr_rank = {'pending': 0, 'running': 1, 'failed': 2, 'done': 3, 'cancelled': 4}
         def _merge_rr(old_list, new_list):
             by_id = {r.get('id'): dict(r) for r in (old_list or []) if isinstance(r, dict)}
             for r in (new_list or []):
