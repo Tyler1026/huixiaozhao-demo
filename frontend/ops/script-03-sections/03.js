@@ -45,7 +45,7 @@ function cancelReportRequest(id,btn){
   if(btn){btn.disabled=true;btn.textContent='取消中…';}
   loc.status='cancelled';loc.cancelTs=Date.now();
   fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({REPORT_REQUESTS:REPORT_REQUESTS,syncTs:Date.now()})})
+    body:JSON.stringify({REPORT_REQUESTS:REPORT_REQUESTS,RESET_GEN:(typeof RESET_GEN!=='undefined'?RESET_GEN:null),syncTs:Date.now()})})
     .then(function(r){return r.json();})
     .then(function(res){
       if(res&&res.ok){toast('已取消该申请');render();}
