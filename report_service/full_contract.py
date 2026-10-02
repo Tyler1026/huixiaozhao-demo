@@ -463,6 +463,12 @@ def validate(stage_id, text, metadata=None, synthetic=False):
     meta = metadata if isinstance(metadata, dict) else {}
     errors.extend(_validate_evidence(stage["research"], meta, synthetic, stage_id))
 
+    if stage_id == 'industry':
+        from .full_directions import normalise_directions
+        try:
+            normalise_directions(meta.get('directions'), meta.get('evidence', []))
+        except ValueError as exc:
+            errors.append(str(exc))
     if stage_id in ("enterprises_1", "enterprises_2", "enterprises_3"):
         errors.extend(_validate_companies(stage_id, meta, synthetic))
     elif stage_id == "fact_check":
@@ -801,6 +807,10 @@ def _synthetic_metadata(stage_id, part, place, digest):
             for i in range(MIN_FINAL_COMPANIES)
         ]
         return {"evidence": evidence, "candidates": candidates, "selected": selected}
+    if stage_id == 'industry':
+        return {'evidence': evidence, 'directions': [
+            {'id': f'dir{i+1}', 'name': f'合成产业方向{i+1}', 'evidence_ref': evidence[i % len(evidence)]['url']}
+            for i in range(3)]}
     if stage_id == "fact_check":
         checks = []
         for i in range(MIN_ECONOMIC_CHECKS):
@@ -914,6 +924,8 @@ def _dedupe_key(key, item):
         return None
     if key == "evidence":
         return canonical_url(item.get("url")) or item.get("url")
+    if key == 'directions':
+        return item.get('id')
     if key in ("candidates", "selected", "scores"):
         return item.get("name")
     if key == "checks":

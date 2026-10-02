@@ -57,25 +57,30 @@ CREATE TABLE IF NOT EXISTS full_events (
 '''
 
 
+def _effective_limit(*values):
+    """Zero in persisted policy means no aggregate limit, not zero work."""
+    finite = [value for value in values if value > 0]
+    return min(finite) if finite else math.inf
+
+
 class FullStore:
     def __init__(self, path, *, stages=None, artifact_root=None, clock=time.time,
-                 backoff=(30, 120), max_attempts=3, task_budget=7200, stage_budget=900):
+                 backoff=(30, 120), max_attempts=None, task_budget=None, stage_budget=None):
         self.path = str(Path(path).absolute())
         self.artifact_root = Path(artifact_root).absolute() if artifact_root else None
         self.stages = stages
         self.clock = clock
-        if (isinstance(max_attempts, bool) or not 1 <= max_attempts <= 10 or
-                not isinstance(max_attempts, int)):
-            raise ValueError('invalid attempt budget')
-        for n in (task_budget, stage_budget, *backoff):
-            if not isinstance(n, (int, float)) or not math.isfinite(n) or n < 0:
-                raise ValueError('invalid time budget')
-        if not task_budget or not stage_budget or not backoff:
-            raise ValueError('invalid time budget')
+        if max_attempts is not None and (isinstance(max_attempts, bool) or not isinstance(max_attempts, int) or max_attempts < 1):
+            raise ValueError('invalid attempt limit')
+        for value in (task_budget, stage_budget):
+            if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0):
+                raise ValueError('invalid aggregate time limit')
+        if not backoff or any(isinstance(n, bool) or not isinstance(n, (int, float)) or not math.isfinite(n) or n < 0 for n in backoff):
+            raise ValueError('invalid retry delay')
         self.backoff = tuple(backoff)
-        self.max_attempts = max_attempts
-        self.task_budget = task_budget
-        self.stage_budget = stage_budget
+        self.max_attempts = 0 if max_attempts is None else max_attempts
+        self.task_budget = 0 if task_budget is None else task_budget
+        self.stage_budget = 0 if stage_budget is None else stage_budget
         with self.db() as c:
             c.executescript(SCHEMA)
 
@@ -137,7 +142,7 @@ class FullStore:
 
     def _fail(self, c, row, code, retryable):
         report = c.execute('SELECT * FROM full_reports WHERE id=?', (row['report_id'],)).fetchone()
-        again = retryable and row['attempts'] < min(report['max_attempts'], self.max_attempts)
+        again = retryable and row['attempts'] < _effective_limit(report['max_attempts'], self.max_attempts)
         state = 'retry_wait' if again else 'failed'
         delay = self.backoff[min(max(row['attempts'] - 1, 0), len(self.backoff) - 1)] if again else 0
         c.execute('UPDATE full_steps SET status=?,token=NULL,expires=NULL,consumed=consumed+?,next_at=?,failure_code=? WHERE id=?',
@@ -168,8 +173,8 @@ class FullStore:
                 report = dict(c.execute('SELECT * FROM full_reports WHERE id=?', (row['report_id'],)).fetchone())
                 consumed = c.execute('SELECT COALESCE(SUM(consumed),0) FROM full_steps WHERE report_id=?', (row['report_id'],)).fetchone()[0]
                 stage_used = c.execute('SELECT COALESCE(SUM(consumed),0) FROM full_steps WHERE report_id=? AND stage=?', (row['report_id'], row['stage'])).fetchone()[0]
-                remaining = min(report['task_budget'], self.task_budget) - consumed
-                stage_left = min(report['stage_budget'], self.stage_budget) - stage_used
+                remaining = _effective_limit(report['task_budget'], self.task_budget) - consumed
+                stage_left = _effective_limit(report['stage_budget'], self.stage_budget) - stage_used
                 if min(remaining, stage_left) <= 0:
                     c.execute("UPDATE full_reports SET status='failed',failure_code='budget_exhausted' WHERE id=?", (row['report_id'],))
                     c.execute("UPDATE full_steps SET status='failed',failure_code='budget_exhausted' WHERE id=?", (row['id'],))

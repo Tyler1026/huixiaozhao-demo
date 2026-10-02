@@ -23,8 +23,8 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install esprima
-        run: pip install esprima
+      - name: Install syntax and report test dependencies
+        run: pip install esprima python-docx==1.1.2
 
       - name: Verify generated frontend is unchanged
         run: python3 scripts/build_frontend.py --check
@@ -46,3 +46,9 @@ jobs:
 
       - name: Smoke actual entrypoint in isolated container
         run: docker run --rm --network none --entrypoint python hxz-refactor-check:${{ github.sha }} scripts/smoke_entrypoint.py
+
+      - name: Build standalone report image without enabling live research
+        run: docker build -f Dockerfile.full-report --tag hxz-full-report-check:${{ github.sha }} .
+
+      - name: Smoke standalone report imports with networking disabled
+        run: docker run --rm --network none --entrypoint python hxz-full-report-check:${{ github.sha }} -c "from report_service.full_cli import parse; from report_service.full_provider import FullSyntheticProvider; from report_service.full_contract import STAGES; assert len(STAGES) == 16"

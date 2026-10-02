@@ -20,7 +20,7 @@ class FullStoreTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.clock = Clock()
         self.db = Path(self.tmp.name) / 'jobs.db'
-        self.store = FullStore(self.db, stages=STAGES, clock=self.clock, backoff=(1, 2))
+        self.store = FullStore(self.db, stages=STAGES, clock=self.clock, backoff=(1, 2), max_attempts=3)
         self.r = self.store.create('org-a', 'province', 'city', 'key', synthetic=True)
 
     def tearDown(self): self.tmp.cleanup()

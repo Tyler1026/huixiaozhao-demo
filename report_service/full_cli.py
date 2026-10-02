@@ -27,7 +27,7 @@ def parse(argv):
     p.add_argument('--once', action='store_true')
     p.add_argument('--until-id')
     p.add_argument('--tenant')
-    p.add_argument('--run-limit', type=float, default=7200)
+    p.add_argument('--run-limit', type=float, default=None, help='optional acceptance timebox; default runs continuously')
     p.add_argument('--ttl', type=float, default=120)
     p.add_argument('--timeout', type=float, default=180)
     p.add_argument('--poll', type=float, default=.5)
@@ -36,7 +36,7 @@ def parse(argv):
         p.error('database and artifact paths must be absolute')
     if a.until_id and not a.tenant:
         p.error('--until-id requires --tenant')
-    if not 0 < a.run_limit <= 86400 or not 0 < a.poll <= 60:
+    if (a.run_limit is not None and not 0 < a.run_limit <= 86400) or not 0 < a.poll <= 60:
         p.error('invalid run or polling budget')
     if not 0 < a.ttl <= 600 or not 0 < a.timeout <= 900:
         p.error('invalid lease or substep timeout')
@@ -76,7 +76,7 @@ def main(argv=None):
         from .full_provider import FullLiveProvider, FullSyntheticProvider
         from .full_worker import run_once
         provider = FullSyntheticProvider() if args.provider == 'synthetic' else FullLiveProvider.from_env()
-        deadline = time.monotonic() + args.run_limit
+        deadline = time.monotonic() + args.run_limit if args.run_limit is not None else float('inf')
         while True:
             if args.until_id:
                 report = store.get(args.tenant, args.until_id)

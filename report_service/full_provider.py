@@ -193,6 +193,10 @@ class FullLiveProvider:
         parsed = self._parse_part(stage_id, part, payload, all_evidence, prior)
         text = parsed["text"]
         metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed)
+        if stage_id == 'industry':
+            saved = previous.get('metadata', {}).get('directions')
+            if saved and [(d['id'], d['name']) for d in saved] != [(d['id'], d['name']) for d in metadata['directions']]:
+                raise FullProviderError('industry direction identities changed between parts', 'quality')
         return {"text": text, "metadata": metadata}
 
     # -- helpers (reuse composed provider transport/search/chat) ---------------
@@ -256,18 +260,21 @@ class FullLiveProvider:
         seen = set()
         retrieval = "exa_fulltext" if self.search_provider == "exa" else "brave_snippet"
         queries = _queries_for(stage_id, part, place)
-        if stage_id.startswith('enterprises_') and isinstance(prior, dict):
-            direction = int(stage_id[-1]) - 1
-            directions = prior.get('industry', {}).get('metadata', {}).get('directions', [])
-            if directions and len(directions) > direction:
-                topic = directions[direction].get('name', '')
-                queries = [f'{topic} 全国 企业名录 龙头企业 上市公司 扩产 招商', f'{topic} 补链 专精特新 企业']
-            candidates = prior.get(stage_id, {}).get('metadata', {}).get('candidates', [])
+        if stage_id.startswith('enterprises_'):
+            from .full_directions import normalise_directions
+            meta = (prior or {}).get('industry', {}).get('metadata', {})
+            try:
+                directions = normalise_directions(meta.get('directions'), meta.get('evidence', []))
+            except ValueError as exc:
+                raise FullProviderError(str(exc), 'quality') from None
+            topic = directions[int(stage_id[-1]) - 1]['name']
+            queries = [f'{topic} 全国 企业名录 龙头企业 上市公司 扩产 招商', f'{topic} 补链 专精特新 企业']
+            candidates = (prior or {}).get(stage_id, {}).get('metadata', {}).get('candidates', [])
             batch = re.search(r'(\d+)$', part)
             offset = (int(batch.group(1)) - 1 if batch else 0) * 5
             if not part.startswith('候选池') and candidates:
                 chosen = candidates[offset:offset + 5]
-                queries = [f"{c['name']} {place} 项目 基地 工厂 扩产 公告" for c in chosen]
+                queries = [f"{c['name']} {topic} {place} 项目 基地 工厂 扩产 公告" for c in chosen]
         for query in queries:
             try:
                 payload = self._live._search(query, self._live.search_count)
@@ -325,6 +332,8 @@ class FullLiveProvider:
         user_blocks.append(f'本子章节至少{floor}行实质内容，不以空行或重复句子凑数。')
         if stage_id.startswith('enterprises_'):
             user_blocks.append('按持久子步骤分批研究：候选池各批新增5家不重复企业；落地情况各批核查已有候选5家；扩产信号各批精选5家并核查信号与本地项目，3批共至少15家。每条附已给出的证据URL；不足必须如实返回，不得捏造。当前阶段已保存的企业不可当新企业重复计数。')
+        if stage_id == 'industry':
+            user_blocks.append('必须返回directions数组，恰好三个不同产业方向。每项含id(dir1/dir2/dir3)、name、evidence_ref(本次或已保存的真实检索URL)。后续子章节沿用前序已确定的ID和名称，不得换方向。正文与该数组必须一致。')
         user_blocks.append(_OUTPUT_RULES)
         messages = [
             {"role": "system", "content": providers._system_prompt()},
@@ -395,6 +404,12 @@ class FullLiveProvider:
 
     def _build_metadata(self, stage_id, part, place, evidence, parsed):
         meta = {"evidence": evidence}
+        if stage_id == 'industry':
+            from .full_directions import normalise_directions
+            try:
+                meta['directions'] = normalise_directions(parsed.get('directions'), evidence)
+            except ValueError as exc:
+                raise FullProviderError(str(exc), 'quality') from None
         if stage_id in ("enterprises_1", "enterprises_2", "enterprises_3"):
             meta["candidates"] = self._ground_companies(stage_id, parsed.get("candidates"), evidence)
             meta["selected"] = self._ground_companies(stage_id, parsed.get("selected"), evidence)
@@ -522,7 +537,7 @@ def _render_structured(metadata):
     if not isinstance(metadata, dict):
         return ""
     lines = []
-    for key, label in (("candidates", "候选池"), ("selected", "精选企业"), ("checks", "核验条目"), ("scores", "评分记录")):
+    for key, label in (("directions", "已确定产业方向"), ("candidates", "候选池"), ("selected", "精选企业"), ("checks", "核验条目"), ("scores", "评分记录")):
         items = metadata.get(key)
         if not isinstance(items, list):
             continue

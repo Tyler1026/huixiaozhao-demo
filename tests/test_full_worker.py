@@ -55,6 +55,8 @@ class FullWorkerTests(unittest.TestCase):
     def tearDown(self): self.tmp.cleanup()
 
     def test_hung_child_is_reaped_and_budget_exhausts(self):
+        # A deliberately bounded test fixture, never the default service policy.
+        self.store = FullStore(self.path, stages=STAGES, backoff=(0, 0), max_attempts=3)
         r = self.store.create('a', 'p', 'hang', 'h', True)
         before = {p.pid for p in multiprocessing.active_children()}
         started = time.monotonic()

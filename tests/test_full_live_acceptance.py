@@ -57,7 +57,11 @@ def provider(transport):
 
 class LiveProtocolAcceptance(unittest.TestCase):
     def test_small_batches_can_assemble_complete_enterprise_contract(self):
-        router=StructuredTransport(); p=provider(router); parts=[]; prior={}
+        router=StructuredTransport(); p=provider(router); parts=[]
+        direction_refs=[f'https://stats.gov.cn/offline-direction/{i}' for i in range(3)]
+        prior={'industry': {'text':'OFFLINE FIXTURE: upstream directions already verified.', 'metadata': {
+            'directions':[{'id':f'dir{i+1}','name':f'测试产业{i+1}','evidence_ref':ref} for i,ref in enumerate(direction_refs)],
+            'evidence':[{'url':ref,'excerpt':'OFFLINE FIXTURE direction evidence'} for ref in direction_refs]}}}
         for part in get_stage('enterprises_1')['parts']:
             parts.append(p.run_part('enterprises_1',part,{'city':'测试城'},prior))
             prior['enterprises_1']=assemble('enterprises_1',parts)

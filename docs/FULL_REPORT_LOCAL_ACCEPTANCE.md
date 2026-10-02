@@ -4,15 +4,22 @@
 
 ## 已执行证据
 
-- `python -m unittest discover -s tests -q`：241项通过（包含旧版回归与新增完整服务）。
+- `python -m unittest discover -s tests -q`：249项通过（包含旧版回归与新增完整服务）。
 - `node --test tests/*.cjs`：14项通过。
 - `python scripts/build_frontend.py --check`：index与ops构建一致。
 - `git diff --check`：通过。
 - `test_full_cli.py`：实际独立API/worker进程完成16阶段，生成16MD、2DOCX、evidence.json共19载荷；API重启后逐个下载比对SHA256。
 - `test_full_http_bridge.py`：真实本地HTTP服务端桥接提交→worker生成→Word下载；撤销合成会话后404。授权函数只用于隔离测试，未接生产身份。
 - `test_full_process_recovery.py`：worker被强杀后研究子进程退出；租约过期可接续；完成前8阶段强杀CLI，重启后检查点哈希不变。
-- `test_full_worker.py`：无限等待、子进程崩溃、慢校验受到硬截止；最多3次尝试后明确失败；常驻循环继续处理其他报告；synthetic/live认领隔离。
+- `test_full_worker.py`：无限等待、子进程崩溃、慢校验受到硬截止；显式有限测试策略可在指定尝试数后失败，生产默认策略持续退避接续；常驻循环继续处理其他报告；synthetic/live认领隔离。
 - `test_full_live_acceptance.py`：用实际OpenAIResearchProvider传输入口注入离线HTTP结果，证明分批累积25候选/15精选、17条核验记录、Python风险反向加权、长依赖不按6000字截断、401安全失败。这些不是实际城市研究。
+
+## 10月2日后续修复
+
+- `test_full_continuation_policy.py`：30次失败、累计9000秒后可继续，worker默认不在两小时退出；单次硬截止有效。
+- `test_full_directions.py`：产业阶段的dir1/dir2/dir3与来源结构化保存；重载检查点后三个企业猎手检索各自方向，缺失或重复方向拒绝。
+- CI补充python-docx依赖与独立服务镜像构建/断网导入冒烟；本机无Docker，容器结果以远端CI实际结果为准。
+- 合并代码不等于启用服务：主站Dockerfile不复制report_service，server.py不接full-v1；默认生产入口不变。
 
 ## 真实修复而非只改提示词
 
@@ -36,7 +43,7 @@ Worker：
 
 POST `/v1/reports`：province/city/idempotency_key/synthetic；GET同路径列本组织任务；GET `/v1/reports/{id}`查询；GET `/v1/reports/{id}/artifacts/{manifest文件名}`下载。
 
-`--once`仅执行一个持久子步骤；`--until-id ID --tenant ORG --run-limit SECONDS`为有界验收模式。常驻worker默认运行预算7200秒后退出并保留状态，需要进程监督器restart策略，不把进程退出视为报告取消。
+`--once`仅执行一个持久子步骤；`--until-id ID --tenant ORG --run-limit SECONDS`为有界验收模式。常驻worker默认持续运行，不设两小时退出。默认任务无总尝试数/累计阶段或任务时长上限；单次180秒硬截止与30/120秒退避保留。`--run-limit`仅为明确指定的验收时间盒。数据库中0表示无总上限；历史已创建任务的显式非零上限仍保留，不静默改历史策略。
 
 `Dockerfile.full-report`仅为待验收镜像模板。本机没有Docker，未构建/运行容器；不能声称云端部署已通过。
 
