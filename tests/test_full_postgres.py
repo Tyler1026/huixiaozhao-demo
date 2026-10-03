@@ -35,7 +35,7 @@ class PostgresReportTests(unittest.TestCase):
         self.assertIn(parsed.hostname,('localhost','127.0.0.1'))
         self.assertEqual(parsed.path,'/report_ci')
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
-        self.root=Path(self.temp.name)/'artifacts'
+        self.root=Path(self.temp.name).resolve()/'artifacts'
         self.store=PostgresFullStore(self.url,artifact_root=self.root,stages=TINY,backoff=(0,0))
         with self.store.db() as c:
             c.execute('TRUNCATE full_reports,full_steps,full_events,full_artifact_bytes CASCADE')
@@ -104,6 +104,26 @@ class PostgresReportTests(unittest.TestCase):
         with reopened.db() as c:
             c.execute("UPDATE full_artifact_bytes SET data=? WHERE report_id=? AND name='full.docx'",(b'offline corruption',report['id']))
         with self.assertRaises(ValueError): reopened.artifact('offline-test',report['id'],'full.docx')
+
+    def test_scalar_website_cancellation_query_handles_owner_cancel_and_reset(self):
+        import json
+        from unittest.mock import patch
+        from backend import storage
+        from backend.sync_transaction import report_request_active
+        import psycopg2
+        with self.store.db() as c:
+            c.execute('CREATE TABLE IF NOT EXISTS sync_data(id INTEGER PRIMARY KEY,data TEXT NOT NULL,updated_at TIMESTAMP DEFAULT NOW())')
+            data=json.dumps({'REPORT_REQUESTS':[{'id':'rrcancel','engine':'full-v1','status':'running'}]})
+            c.execute('INSERT INTO sync_data(id,data) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET data=EXCLUDED.data',(data,))
+        with patch.object(storage,'DATABASE_URL',self.url),patch.object(storage,'psycopg2',psycopg2,create=True):
+            self.assertTrue(report_request_active('rrcancel','full-v1'))
+            self.assertFalse(report_request_active('rrcancel','wrong-owner'))
+            with self.store.db() as c:
+                c.execute('UPDATE sync_data SET data=? WHERE id=1',(data.replace('running','cancelled'),))
+            self.assertFalse(report_request_active('rrcancel','full-v1'))
+            with self.store.db() as c:
+                c.execute("UPDATE sync_data SET data='{}' WHERE id=1")
+            self.assertFalse(report_request_active('rrcancel','full-v1'))
 
 
 if __name__=='__main__':unittest.main()

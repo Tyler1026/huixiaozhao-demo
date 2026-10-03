@@ -90,7 +90,8 @@ def main(argv=None):
     from backend.sync_transaction import postgres_session, report_request_active
     from .website_queue import ENGINE
     provider = FullLiveProvider.from_env(env)
-    store = PostgresFullStore(env['DATABASE_URL'], artifact_root=env.get('HXZ_ARTIFACT_SCRATCH', '/tmp/hxz-full-artifacts'))
+    scratch = os.path.realpath(env.get('HXZ_ARTIFACT_SCRATCH', '/tmp/hxz-full-artifacts'))
+    store = PostgresFullStore(env['DATABASE_URL'], artifact_root=scratch)
     queue = WebsiteQueue(store, postgres_session)
     if args.resume_request:
         from .website_queue import TENANT, report_id, valid_request

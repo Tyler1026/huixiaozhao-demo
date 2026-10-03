@@ -141,6 +141,7 @@ class WebsiteQueue:
                     job = self.store.create(TENANT, r['province'], r['city'], r['id'], synthetic=False)
                     r.update(engine=ENGINE, engineReportId=job['id'], status='running',
                              total=job['stages_total'], done=job['stages_done'])
+                    r['claimTs'] = r.get('claimTs') or int(time.time() * 1000)
                     changed = True
             if changed:
                 self._save(session, state)
@@ -168,6 +169,8 @@ class WebsiteQueue:
         if r.get('engine') != ENGINE or not valid_request(r) or r.get('status') == 'cancelled':
             return
         if r.get('deliveryRetryAt', 0) > time.time():
+            return
+        if r.get('status') == 'done' and r.get('files') and (not r.get('pushRequested') or r.get('pushed')):
             return
         rid = report_id(r['id'])
         job = self.store.get(TENANT, rid)
@@ -201,7 +204,8 @@ class WebsiteQueue:
             target.pop('deliveryRetryAt', None)
             if files:
                 target.update(status='done', files=files)
-                target.setdefault('doneTs', int(time.time() * 1000))
+                if not target.get('doneTs'):
+                    target['doneTs'] = int(time.time() * 1000)
             elif job['status'] in ('failed', 'cancelled'):
                 target['status'] = job['status']
             else:

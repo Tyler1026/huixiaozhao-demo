@@ -7,6 +7,8 @@ import copy
 import hashlib
 import json
 import tempfile
+import multiprocessing
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -46,6 +48,12 @@ class MemoryStore:
 
     def artifact(self, tenant, rid, name):
         return self.payloads[name]
+
+
+class WaitingProvider:
+    def run_part(self, *args):
+        time.sleep(10)
+        return {'text':'OFFLINE late fixture','metadata':{}}
 
 
 class WebsiteEngineTests(unittest.TestCase):
@@ -177,8 +185,8 @@ class WebsiteEngineTests(unittest.TestCase):
             state=self.read();self.assertEqual(state['REPORT_REQUESTS'][1]['status'],'done')
             self.assertEqual(state['REPORT_REQUESTS'][0]['deliveryError'],'delivery_retry')
             calls=artifact.call_count;self.queue.mirror(continue_on_error=True)
-            # Only the other completed report is read; broken delivery is deferred.
-            self.assertEqual(artifact.call_count-calls,2)
+            # Settled delivery is not re-downloaded; broken delivery is deferred.
+            self.assertEqual(artifact.call_count-calls,0)
 
     def test_push_request_and_publication_share_transaction_and_exact_request_target(self):
         import io
@@ -210,6 +218,29 @@ class WebsiteEngineTests(unittest.TestCase):
         self.assertEqual(store.get('offline',r['id'])['parts_done'],1)
         store.cancel('offline',r['id'])
         self.assertFalse(store.resume_configuration('offline',r['id']))
+
+    def test_cancel_before_spawn_never_calls_provider(self):
+        from report_service.full_store import FullStore
+        from report_service.full_worker import run_once
+        store=FullStore(Path(self.temp.name)/'cancel-before.db',stages=({'id':'one','filename':'one.md','parts':('first',)},))
+        job=store.create('offline','测试省','测试区','cancel-before',False)
+        before={p.pid for p in multiprocessing.active_children()}
+        result=run_once(store,WaitingProvider(),synthetic=False,stop_job=lambda job:True)
+        self.assertEqual(result['status'],'cancelled')
+        self.assertEqual(store.get('offline',job['id'])['parts_done'],0)
+        self.assertEqual({p.pid for p in multiprocessing.active_children()},before)
+
+    def test_cancel_during_provider_call_reaps_child_and_keeps_report_cancelled(self):
+        from report_service.full_store import FullStore
+        from report_service.full_worker import run_once
+        store=FullStore(Path(self.temp.name)/'cancel-during.db',stages=({'id':'one','filename':'one.md','parts':('first',)},))
+        job=store.create('offline','测试省','测试区','cancel-during',False)
+        before={p.pid for p in multiprocessing.active_children()};started=time.monotonic()
+        run_once(store,WaitingProvider(),synthetic=False,ttl=1,timeout=3,
+                 stop_job=lambda job:time.monotonic()-started>.2)
+        self.assertLess(time.monotonic()-started,2)
+        self.assertEqual(store.get('offline',job['id'])['status'],'cancelled')
+        self.assertEqual({p.pid for p in multiprocessing.active_children()},before)
 
 
 if __name__=='__main__': unittest.main()
