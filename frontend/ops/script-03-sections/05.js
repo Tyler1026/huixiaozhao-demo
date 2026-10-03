@@ -146,7 +146,7 @@ function rrProgress(r){
   var fd=r.filesDone||0, ft=r.filesTotal||16;
   var pct=Math.min(96, Math.round(fd/ft*100));
   var step=r.step||'AI 研判启动中…';
-  var eta=(r.etaMin!=null)?('预计还需 '+r.etaMin+' 分钟'):'预计约 40 分钟';
+  var eta=(r.etaMin!=null)?('预计还需 '+r.etaMin+' 分钟'):'完成时间以实际研判进度为准';
   var staleMin=r.progressTs?Math.floor((Date.now()-r.progressTs)/60000):null;
   var stale=staleMin!=null&&staleMin>5;
   var lastUpd=staleMin==null?'':staleMin<1?'刚更新':staleMin+' 分钟前更新';
@@ -158,7 +158,7 @@ function rrProgress(r){
   return '<div style="margin-top:8px;padding:10px 12px;border:1px solid #e3ebf6;border-radius:8px;background:#f8fbff">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#3d5471;margin-bottom:7px">'+
       '<span><span class="'+(stale?'':'rr-dot-live')+'" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+(stale?'#c85b09':'#0aa696')+';margin-right:6px"></span>'+
-      '<b style="color:#0757ad" class="rr-step-glow">'+step+'</b>'+(stale?' <span style="color:#c85b09">（'+staleMin+' 分钟无进展，系统正在自动补全）</span>':'')+'</span>'+
+      '<b style="color:#0757ad" class="rr-step-glow">'+step+'</b>'+(stale?' <span style="color:#c85b09">（'+staleMin+' 分钟未更新，等待执行器恢复）</span>':'')+'</span>'+
       '<span style="display:inline-flex;align-items:center"><span id="rrElapsed" style="font-variant-numeric:tabular-nums">有效运行 '+ts.active+'</span>'+gapBadge+'</span></div>'+
     '<div style="height:8px;border-radius:4px;background:#e6edf6;overflow:hidden;margin-bottom:7px">'+
       '<div class="'+(stale?'':'rr-bar-live')+'" style="height:100%;width:'+pct+'%;border-radius:4px;background:linear-gradient(90deg,#0757ad,#007f82);transition:width .6s"></div></div>'+
@@ -174,7 +174,7 @@ function rrIssuesBanner(r){
   return '<div style="margin-top:8px;padding:9px 12px;border:1px solid #f2c3cb;border-radius:8px;background:#fdeef0">'+
     '<div style="font-size:11.5px;font-weight:700;color:#b0364a;margin-bottom:5px;display:flex;align-items:center;gap:6px">'+
       '<span>⚠ '+iss.length+' 个环节未达标</span>'+
-      '<span style="font-weight:400;color:#c47080">系统正在自动补全</span></div>'+
+      '<span style="font-weight:400;color:#c47080">需继续补全，当前进度已保留</span></div>'+
     '<div style="display:flex;flex-direction:column;gap:3px">'+
       iss.map(function(s){
         var parts=String(s).split('：');
@@ -183,7 +183,7 @@ function rrIssuesBanner(r){
       }).join('')+'</div></div>';
 }
 function rrPanel(){
-  var rows=REPORT_REQUESTS.slice().reverse().map(function(r){
+  var rows=REPORT_REQUESTS.concat(_rrOutboxRows()).slice().reverse().map(function(r){
     var t=new Date(r.ts);var tm=(t.getMonth()+1)+'/'+t.getDate()+' '+t.getHours()+':'+('0'+t.getMinutes()).slice(-2);
     var doneInfo='';
     if(r.status==='done'){
@@ -207,13 +207,16 @@ function rrPanel(){
       }
     }
     var cancelBtn='';
-    if(r.status==='pending'||r.status==='running'){
+    if(r.submissionBlocked){
+      cancelBtn='<button onclick="_rrDiscardBlocked(\''+r.id+'\')" style="flex-shrink:0;padding:6px 12px;border:1px solid #fca5a5;border-radius:8px;background:#fff;color:#dc2626;cursor:pointer">移除未提交项</button>';
+    }
+    if(!r.submissionPending&&(r.status==='pending'||r.status==='running')){
       cancelBtn='<button onclick="cancelReportRequest(\''+r.id+'\',this)" style="flex-shrink:0;padding:6px 12px;background:#fff;border:1.5px solid #fca5a5;border-radius:8px;font-size:12px;color:#dc2626;cursor:pointer;font-weight:600;white-space:nowrap">✕ 取消</button>';
     }
     return '<div class="ops-row" style="align-items:flex-start;flex-direction:column"><div style="display:flex;align-items:center;gap:10px;width:100%">'+
       '<div class="r-ic"></div>'+
-      '<div class="r-main"><div style="display:flex;align-items:center;gap:8px"><strong>'+r.province+' · '+r.city+'</strong>'+rrStatusBadge(r.status)+'</div>'+
-      '<small>'+r.by+' · '+tm+' 发起'+doneInfo+(r.status==='failed'&&r.failReason?' · '+r.failReason:'')+'</small></div>'+
+      '<div class="r-main"><div style="display:flex;align-items:center;gap:8px"><strong>'+r.province+' · '+r.city+'</strong>'+(r.submissionPending?'<span class="ops-badge orange">等待保存确认</span>':rrStatusBadge(r.status))+'</div>'+
+      '<small>'+r.by+' · '+tm+' 发起'+doneInfo+(r.submissionPending?' · '+(r.submissionError||'正在确认，暂未进入生成队列'):'')+(r.status==='failed'&&r.failReason?' · '+r.failReason:'')+'</small></div>'+
       '<div style="margin-left:auto;display:flex;align-items:center;gap:8px">'+dlBtn+pushCtrl+cancelBtn+'</div></div>'+
       rrProgress(r)+'</div>';
   }).join('')||'<div style="color:#8492a6;font-size:13px;padding:8px 2px">暂无申请记录</div>';

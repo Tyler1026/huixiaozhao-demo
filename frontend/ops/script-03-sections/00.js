@@ -88,16 +88,16 @@ function origReportFiles(){
   if(p.reportFiles && p.reportFiles.length) return p.reportFiles;
   // 回退：从申请队列里找该城市 done 且带 files 的最近一条
   var done=(typeof REPORT_REQUESTS!=='undefined'?REPORT_REQUESTS:[])
-    .filter(function(r){return r.city===p.city && r.files && r.files.length;});
+    .filter(function(r){return r.city===p.city && r.status==='done' && r.files && r.files.length;});
   return done.length ? done[done.length-1].files : null;
 }
 /* ── 需求池行内下载：按申请 id 定位城市 → 拉云端原始 docx ── */
 function downloadReqFile(reqId, kind){
   var r=(typeof REPORT_REQUESTS!=='undefined'?REPORT_REQUESTS:[]).filter(function(x){return x.id===reqId;})[0];
-  if(!r || !r.files || !r.files.length){ toast('暂无原始报告文件'); return; }
+  if(!r || r.status!=='done' || !r.files || !r.files.length){ toast('暂无已完成的原始报告文件'); return; }
   kind=kind||'full';
   var meta=r.files.filter(function(m){return m.kind===kind;})[0] || r.files[0];
-  var url='/api/report-file?city='+encodeURIComponent(r.city)+'&kind='+encodeURIComponent(kind);
+  var url='/api/report-file?requestId='+encodeURIComponent(reqId)+'&city='+encodeURIComponent(r.city)+'&kind='+encodeURIComponent(kind);
   var a=document.createElement('a'); a.href=url; a.download=meta.name||(r.city+'_报告.docx');
   document.body.appendChild(a); a.click();
   setTimeout(function(){a.remove();},300);
@@ -165,6 +165,5 @@ function downloadReport(mode){
   setTimeout(function(){URL.revokeObjectURL(url);a.remove();},300);
   toast('✓ 报告已下载：'+filename);
 }
-
 
 
