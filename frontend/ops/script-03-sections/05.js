@@ -203,7 +203,7 @@ function rrPanel(){
       } else if(r.pushRequested){
         pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:5px 11px;white-space:nowrap">⏳ 推送中…</span>';
       } else {
-        pushCtrl='<button onclick="pushReportToRag(\''+r.city+'\',this)" style="flex-shrink:0;padding:6px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap">🚀 推送到 RAG</button>';
+        pushCtrl='<button onclick="pushReportToRag(\''+r.id+'\',this)" style="flex-shrink:0;padding:6px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap">🚀 推送到 RAG</button>';
       }
     }
     var cancelBtn='';

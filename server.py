@@ -1253,39 +1253,81 @@ class Handler(BaseHTTPRequestHandler):
         # ── 接口3：管理端「推送到RAG」按钮 → 给已完成申请打 pushRequested 标记 ──
         # 本地议程轮询器消费该标记，执行 sync_to_kb.py 完成 RAG 推送 + 城市账号连接。
         if self.path == '/api/report-push-request':
+            def push_reply(status, body):
+                resp = json.dumps(body, ensure_ascii=False).encode()
+                self.send_response(status)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Content-Length', str(len(resp)))
+                self.cors(); self.end_headers(); self.wfile.write(resp)
+
             try:
                 body = json.loads(raw)
-                city = body.get('city', '')
+            except (ValueError, UnicodeError):
+                return push_reply(400, {'ok': False, 'error': '推送请求格式错误'})
+            if not isinstance(body, dict):
+                return push_reply(400, {'ok': False, 'error': '推送请求必须是对象'})
+            city = body.get('city')
+            request_id = body.get('requestId')
+            if not isinstance(city, str) or not city.strip():
+                return push_reply(400, {'ok': False, 'error': '请指定报告城市'})
+            city = city.strip()
+            if 'requestId' in body:
+                if not isinstance(request_id, str) or not request_id.strip():
+                    return push_reply(400, {'ok': False, 'error': '报告申请编号无效'})
+                request_id = request_id.strip()
+            try:
                 if _PG_AVAIL and DATABASE_URL:
-                    store = json.loads(_db_get() or '{}')
+                    stored = _db_get()
+                    if stored is None:
+                        raise RuntimeError('storage read failed')
+                    store = json.loads(stored)
                 else:
                     with open(SYNC_PATH, 'r', encoding='utf-8') as f2:
                         store = json.loads(f2.read())
+                if not isinstance(store, dict):
+                    raise ValueError('stored state must be an object')
                 reqs = store.get('REPORT_REQUESTS') or []
-                done = [r for r in reqs if isinstance(r, dict)
-                        and r.get('city') == city and r.get('status') == 'done']
-                target = (done[-1] if done else
-                          (reqs[-1] if reqs else None))
-                rid = None
-                if target and isinstance(target, dict):
-                    target['pushRequested'] = True
-                    target['pushRequestedTs'] = int(time.time() * 1000)
-                    target['pushed'] = False
-                    rid = target.get('id')
-                    store['REPORT_REQUESTS'] = reqs
-                    out_str = json.dumps(store, ensure_ascii=False)
-                    if _PG_AVAIL and DATABASE_URL:
-                        _db_set(out_str)
-                    else:
-                        _file_snapshot()
-                        with open(SYNC_PATH, 'w', encoding='utf-8') as f:
-                            f.write(out_str)
-                resp = json.dumps({'ok': bool(rid), 'id': rid, 'city': city}).encode()
-            except Exception as e:
-                resp = json.dumps({'ok': False, 'error': str(e)}).encode()
-            self.send_response(200); self.send_header('Content-Type', 'application/json')
-            self.send_header('Content-Length', str(len(resp)))
-            self.cors(); self.end_headers(); self.wfile.write(resp); return
+                if not isinstance(reqs, list):
+                    raise ValueError('stored requests must be a list')
+            except Exception:
+                return push_reply(503, {'ok': False, 'error': '读取报告申请失败，请重试'})
+
+            if request_id is not None:
+                matches = [r for r in reqs if isinstance(r, dict) and r.get('id') == request_id]
+            else:
+                # 兼容旧页面：仅在该城市恰有一条已完成申请时接受城市定位。
+                matches = [r for r in reqs if isinstance(r, dict)
+                           and r.get('city') == city and r.get('status') == 'done']
+            if not matches:
+                return push_reply(404, {'ok': False, 'error': '未找到对应的已完成报告申请'})
+            if len(matches) != 1:
+                return push_reply(409, {'ok': False, 'error': '报告申请不唯一，请刷新页面后重试'})
+            target = matches[0]
+            rid = target.get('id')
+            if target.get('city') != city or not isinstance(rid, str) or not rid:
+                return push_reply(404, {'ok': False, 'error': '未找到对应的报告申请'})
+            if target.get('status') != 'done':
+                return push_reply(409, {'ok': False, 'error': '该报告申请尚未完成，不能推送'})
+            if target.get('pushRequested') or target.get('pushed'):
+                return push_reply(200, {'ok': True, 'id': rid, 'city': city,
+                                        'alreadyRequested': True, 'pushed': bool(target.get('pushed'))})
+
+            target['pushRequested'] = True
+            target['pushRequestedTs'] = int(time.time() * 1000)
+            target['pushed'] = False
+            store['REPORT_REQUESTS'] = reqs
+            try:
+                out_str = json.dumps(store, ensure_ascii=False)
+                if _PG_AVAIL and DATABASE_URL:
+                    if not _db_set(out_str):
+                        raise RuntimeError('storage write failed')
+                else:
+                    _file_snapshot()
+                    with open(SYNC_PATH, 'w', encoding='utf-8') as f:
+                        f.write(out_str)
+            except Exception:
+                return push_reply(503, {'ok': False, 'error': '保存推送请求失败，请重试'})
+            return push_reply(200, {'ok': True, 'id': rid, 'city': city, 'pushed': False})
 
         if self.path != '/api/kb-chat':
             self.send_error(404); return
