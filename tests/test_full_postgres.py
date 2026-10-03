@@ -73,6 +73,16 @@ class PostgresReportTests(unittest.TestCase):
         self.assertIsNone(self.store.claim(synthetic=True))
         self.assertEqual(self.store.get('offline-test',report['id'])['parts_done'],1)
 
+    def test_deep_request_mode_survives_postgres_checkpoint_restart(self):
+        report = self.store.create('offline-test', '测试省', '测试区', 'deep', True, mode='deep')
+        first = self.store.claim(synthetic=True)
+        self.assertEqual(first['mode'], 'deep')
+        self.store.finish_part(first['step_id'], first['token'], {'text':'OFFLINE committed checkpoint', 'metadata':{}})
+        reopened = PostgresFullStore(self.url, artifact_root=self.root, backoff=(0,0))
+        self.assertEqual(reopened.get('offline-test', report['id'])['mode'], 'deep')
+        self.assertEqual(reopened.claim(synthetic=True)['mode'], 'deep')
+        self.assertEqual(reopened.parts(report['id'])['one'][0]['text'], 'OFFLINE committed checkpoint')
+
     def test_all_delivery_bytes_survive_scratch_loss_and_reject_tampering(self):
         from report_service.full_contract import STAGES, make_synthetic_part, assemble
         from report_service.full_artifacts import build_bundle

@@ -32,6 +32,20 @@ class GoodProvider:
         return {'text': 'SYNTHETIC TEST ' + stage, 'metadata': {}}
 
 
+class DeepModeProvider:
+    def run_part(self, stage, part, job, prior):
+        return {'text': 'OFFLINE mode propagation fixture', 'metadata': {'mode': job.get('mode')}}
+
+
+class DeepModeContract(TinyContract):
+    @staticmethod
+    def assemble(stage, parts):
+        return {'text': parts[0]['text'], 'metadata': parts[0]['metadata']}
+    @staticmethod
+    def validate(stage, text, metadata, synthetic=False, mode='standard'):
+        return [] if mode == 'deep' and metadata.get('mode') == 'deep' else ['deep mode was lost']
+
+
 class HungProvider:
     def run_part(self, stage, part, job, prior):
         while True: time.sleep(1)
@@ -73,6 +87,12 @@ class FullWorkerTests(unittest.TestCase):
         public = self.store.get('a', r['id'])
         self.assertEqual(public['status'], 'retry_wait')
         self.assertEqual(public['failure_code'], 'worker_crash')
+
+    def test_deep_mode_reaches_spawned_research_and_stage_gate(self):
+        report = self.store.create('a', 'p', 'deep', 'deep', False, mode='deep')
+        result = run_once(self.store, DeepModeProvider(), synthetic=False, contract=DeepModeContract)
+        self.assertEqual(result['status'], 'checkpoint')
+        self.assertEqual(self.store.parts(report['id'])['s0'][0]['metadata']['mode'], 'deep')
 
     def test_restart_keeps_first_eight_stage_bytes(self):
         r = self.store.create('a', 'p', 'resume', 'r', True)

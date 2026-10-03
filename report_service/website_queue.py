@@ -27,6 +27,7 @@ def report_id(request_id):
 def valid_request(r):
     return (isinstance(r, dict) and isinstance(r.get('id'), str)
             and bool(re.fullmatch(r'rr[A-Za-z0-9_-]{1,64}', r['id']))
+            and r.get('mode', 'standard') in ('standard', 'deep')
             and all(isinstance(r.get(k), str) and 0 < len(r[k].strip()) <= 128
                     and not any(ord(c) < 32 or c in '/\\' for c in r[k])
                     for k in ('city', 'province')))
@@ -138,7 +139,8 @@ class WebsiteQueue:
                 if r.get('engine') == ENGINE and r.get('status') == 'cancelled':
                     self.store.cancel(TENANT, report_id(r['id']))
                 elif r.get('status') == 'pending' and r.get('engine') in (None, ENGINE):
-                    job = self.store.create(TENANT, r['province'], r['city'], r['id'], synthetic=False)
+                    job = self.store.create(TENANT, r['province'], r['city'], r['id'],
+                                            synthetic=False, mode=r.get('mode', 'standard'))
                     r.update(engine=ENGINE, engineReportId=job['id'], status='running',
                              total=job['stages_total'], done=job['stages_done'])
                     r['claimTs'] = r.get('claimTs') or int(time.time() * 1000)

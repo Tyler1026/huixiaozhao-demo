@@ -31,6 +31,36 @@ class FullStoreTests(unittest.TestCase):
         self.assertIsNone(self.store.get('org-b', self.r['id']))
         self.assertNotEqual(self.store.create('org-b', 'province', 'city', 'key', True)['id'], self.r['id'])
 
+    def test_deep_mode_survives_restart_and_cannot_change_on_retry(self):
+        self.assertEqual(self.store.get('org-a', self.r['id'])['mode'], 'standard')
+        with self.assertRaises(Conflict):
+            self.store.create('org-a', 'province', 'city', 'key', True, mode='deep')
+        with self.assertRaises(ValueError):
+            self.store.create('org-a', 'province', 'city', 'invalid', True, mode='unknown')
+        deep = self.store.create('org-a', 'province', 'deep-city', 'deep', True, mode='deep')
+        reopened = FullStore(self.db, clock=self.clock)
+        self.assertEqual(reopened.get('org-a', deep['id'])['mode'], 'deep')
+        # Claim the earlier standard task before claiming the independent deep job.
+        standard = reopened.claim()
+        reopened.fail_part(standard['step_id'], standard['token'], 'configuration', False)
+        self.assertEqual(reopened.claim()['mode'], 'deep')
+        self.assertFalse(reopened.create('org-a', 'province', 'deep-city', 'deep', True, mode='deep')['created'])
+
+    def test_full_deep_research_plan_is_frozen_with_five_batches_per_direction(self):
+        path = Path(self.tmp.name) / 'deep-full.db'
+        full = FullStore(path)
+        deep = full.create('org-a', 'province', 'city', 'deep', False, mode='deep')
+        self.assertEqual(deep['parts_total'], 83)
+        self.assertEqual(full.create('org-a', 'province', 'city', 'standard', False)['parts_total'], 77)
+        reopened = FullStore(path, stages=STAGES)
+        claimed = reopened.claim(synthetic=False)
+        self.assertEqual(claimed['mode'], 'deep')
+        for direction in (1, 2, 3):
+            stage = next(s for s in claimed['definition'] if s['id'] == f'enterprises_{direction}')
+            self.assertEqual([p for p in stage['parts'] if p.startswith('扩产信号')],
+                             ['扩产信号', '扩产信号2', '扩产信号3', '扩产信号4', '扩产信号5'])
+        self.assertEqual(reopened.get('org-a', deep['id'])['parts_total'], 83)
+
     def test_pending_running_request_is_always_reclaimable_after_expiry(self):
         job = self.store.claim(ttl=2, timeout=5)
         self.assertIsNone(self.store.claim(ttl=2, timeout=5))

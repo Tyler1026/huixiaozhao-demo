@@ -55,7 +55,47 @@ def provider(transport):
     return FullLiveProvider(OpenAIResearchProvider(model_url='https://model.test-provider.cn/chat',api_key='not-real',model_name='test',search_provider='exa',search_url='https://api.exa.ai/search',search_key='not-real',enabled=True,search_count=8,transport=transport))
 
 
+class DeepStructuredTransport(StructuredTransport):
+    def __call__(self, request, timeout):
+        response = super().__call__(request, timeout)
+        if request.full_url.endswith('/search'):
+            return response
+        user = json.loads(request.data)['messages'][-1]['content']
+        if '当前阶段：enterprises_1\n' in user and '当前子章节：扩产信号' in user:
+            if '5批共至少25家' not in user:
+                raise AssertionError('deep research instruction was downgraded')
+            part = re.search(r'当前子章节：([^\n]+)', user).group(1)
+            start, end = {'扩产信号': (0, 5), '扩产信号2': (5, 10), '扩产信号3': (10, 15),
+                          '扩产信号4': (15, 20), '扩产信号5': (20, 25)}[part]
+            refs = list(dict.fromkeys(self.sources))[-8:]
+            payload = json.loads(response.body)
+            body = json.loads(payload['choices'][0]['message']['content'])
+            body['selected'] = [self.company(n, refs[n % len(refs)]) for n in range(start, end)]
+            payload['choices'][0]['message']['content'] = json.dumps(body, ensure_ascii=False)
+            return Response(request.full_url, payload)
+        return response
+
+
 class LiveProtocolAcceptance(unittest.TestCase):
+    def test_deep_batches_retrieve_all_twenty_five_companies_and_pass_original_floor(self):
+        router = DeepStructuredTransport(); p = provider(router); parts = []
+        refs = [f'https://stats.gov.cn/offline-direction/{i}' for i in range(3)]
+        prior = {'industry': {'text': 'OFFLINE FIXTURE: not real research', 'metadata': {
+            'directions': [{'id':f'dir{i+1}', 'name':f'测试产业{i+1}', 'evidence_ref':ref} for i, ref in enumerate(refs)],
+            'evidence': [{'url':ref, 'excerpt':'OFFLINE direction fixture'} for ref in refs]}}}
+        for part in get_stage('enterprises_1', mode='deep')['parts']:
+            before = len(router.calls)
+            parts.append(p.run_part('enterprises_1', part, {'city':'测试城', 'mode':'deep'}, prior))
+            if part.startswith('扩产信号'):
+                queries = [payload['query'] for url, payload in router.calls[before:] if url.endswith('/search')]
+                expected = {'扩产信号': range(0,5), '扩产信号2': range(5,10), '扩产信号3': range(10,15),
+                            '扩产信号4': range(15,20), '扩产信号5': range(20,25)}[part]
+                self.assertEqual([q.split()[0] for q in queries], [f'测试企业{n}' for n in expected])
+            prior['enterprises_1'] = assemble('enterprises_1', parts)
+        output = prior['enterprises_1']
+        self.assertEqual(len(output['metadata']['selected']), 25)
+        self.assertEqual(validate('enterprises_1', output['text'], output['metadata'], mode='deep'), [])
+
     def test_small_batches_can_assemble_complete_enterprise_contract(self):
         router=StructuredTransport(); p=provider(router); parts=[]
         direction_refs=[f'https://stats.gov.cn/offline-direction/{i}' for i in range(3)]
