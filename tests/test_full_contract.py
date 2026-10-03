@@ -241,6 +241,18 @@ class ValidateCompanyTests(unittest.TestCase):
         text, meta = self._fixture(cands, sel)
         self.assertEqual(fc.validate("enterprises_1", text, meta), [])
 
+    def test_deep_mode_requires_twenty_five_distinct_final_companies(self):
+        for count in (15, 24):
+            cands, sel = self._companies(n_sel=count)
+            text, meta = self._fixture(cands, sel)
+            self.assertEqual(fc.validate('enterprises_1', text, meta), [])
+            errors = fc.validate('enterprises_1', text, meta, mode='deep')
+            self.assertTrue(any('final companies' in e and '< 25' in e for e in errors), errors)
+        cands, sel = self._companies(n_sel=25)
+        text, meta = self._fixture(cands, sel)
+        self.assertEqual(fc.validate('enterprises_1', text, meta, mode='deep'), [])
+        self.assertEqual(fc.validate('enterprises_1', text, meta, mode='unknown'), ['invalid report mode'])
+
     def test_candidate_pool_below_25_rejected(self):
         cands, sel = self._companies(n=24)
         text, meta = self._fixture(cands, sel)

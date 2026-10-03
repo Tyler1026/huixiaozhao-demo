@@ -30,11 +30,11 @@ class MemoryStore:
             for name in names:
                 self.payloads[name] = ('\n'.join('OFFLINE FIXTURE — NOT REAL RESEARCH ' + str(n) + '。' * 100 for n in range(150))).encode()
 
-    def create(self, tenant, province, city, key, synthetic):
+    def create(self, tenant, province, city, key, synthetic, *, mode='standard'):
         self.calls.append((tenant, key, synthetic))
         rid = report_id(key)
         self.jobs.setdefault(rid, {'id': rid, 'city': city, 'province': province, 'synthetic': synthetic,
-            'status': 'queued', 'stages_done': 0, 'stages_total': 16,
+            'status': 'queued', 'mode': mode, 'stages_done': 0, 'stages_total': 16,
             'parts_done': 0, 'parts_total': 80, 'progress_at': None, 'failure_code': None,
             'current': {'stage': 'economy', 'attempts': 0, 'next_at': 0},
             'manifest': {'files': [{'name': n, 'sha256': hashlib.sha256(v).hexdigest(), 'bytes': len(v)} for n,v in self.payloads.items()]}})
@@ -82,6 +82,15 @@ class WebsiteEngineTests(unittest.TestCase):
         self.queue.ingest(); self.queue.ingest()
         self.assertEqual(self.store.calls, [(TENANT,'rrfixture',False)])
         self.assertEqual(self.read()['REPORT_REQUESTS'][1:], legacy)
+
+    def test_management_deep_request_is_handed_off_without_downgrade(self):
+        state = self.read(); state['REPORT_REQUESTS'][0]['mode'] = 'deep'; self.write(state)
+        self.queue.ingest()
+        self.assertEqual(self.store.jobs[report_id('rrfixture')]['mode'], 'deep')
+        self.assertEqual(self.read()['REPORT_REQUESTS'][0]['mode'], 'deep')
+        forged = dict(self.request, mode='unknown')
+        with self.assertRaises(ValueError):
+            fence_updates(json.dumps({'REPORT_REQUESTS': [forged]}).encode(), {})
 
     def test_handoff_commit_failure_recovers_idempotently(self):
         with patch('backend.sync_transaction.os.replace', side_effect=OSError('offline injected failure')):

@@ -27,7 +27,7 @@ produced:
   impersonation, no repeated filler URL, a minimum distinct-source floor for
   live research), and the shape/grounding of the explicit ``evidence`` /
   ``companies`` / ``checks`` / ``scores`` metadata (candidate pool >= 25,
-  >= 15 unique final companies per direction with grounded ``landing_status``
+  >= 15 standard / 25 deep unique final companies per direction with grounded ``landing_status``
   and dated ``expansion_evidence``; >= 12 independent fact checks covering
   economic / policy / high-star signals; Python-computed weighted scores and
   ranks).
@@ -90,6 +90,7 @@ SYNTHETIC_MARK = "SYNTHETIC TEST — NOT RESEARCH"
 # Numeric floors that encode the original research requirements (audit D).
 MIN_CANDIDATES = 25
 MIN_FINAL_COMPANIES = 15
+MIN_DEEP_FINAL_COMPANIES = 25
 MIN_CHECKS = 12
 MIN_ECONOMIC_CHECKS = 5
 MIN_POLICY_CHECKS = 3
@@ -232,9 +233,18 @@ _STAGE_INDEX = {s["id"]: s for s in STAGES}
 _URL_RE = re.compile(r"https?://[^\s\"'<>()\[\]{}\uFF0C\uFF01\uFF1F\uFF1B\uFF1A\u3001]+")
 
 
-def get_stage(stage_id: str) -> dict:
-    """Return the contract descriptor for ``stage_id`` (raises ``KeyError``)."""
-    return _STAGE_INDEX[stage_id]
+def get_stage(stage_id: str, *, mode='standard') -> dict:
+    """Return the immutable mode-specific plan (raises ``KeyError`` on unknown ID).
+
+    Deep mode keeps calls bounded to five companies and adds two expansion
+    parts per direction, instead of enlarging a single provider completion.
+    """
+    stage = _STAGE_INDEX[stage_id]
+    if mode not in ('standard', 'deep'):
+        raise ValueError('invalid report mode')
+    if mode == 'deep' and stage_id.startswith('enterprises_'):
+        return dict(stage, parts=stage['parts'][:-1] + ('扩产信号4', '扩产信号5', stage['parts'][-1]))
+    return stage
 
 
 def _stage_ids() -> tuple:
@@ -404,7 +414,7 @@ def rank_scores(records):
 
 # --- validation ---------------------------------------------------------------
 
-def validate(stage_id, text, metadata=None, synthetic=False):
+def validate(stage_id, text, metadata=None, synthetic=False, *, mode='standard'):
     """Return a list of error strings; empty list means the artifact passes.
 
     Checks, in order of importance:
@@ -420,7 +430,8 @@ def validate(stage_id, text, metadata=None, synthetic=False):
     6. live research stages require a metadata ``evidence`` list with at least
        :data:`MIN_DISTINCT_EVIDENCE_URLS` distinct canonical source URLs, each
        with a non-link-only excerpt.  Synthetic stages relax this.
-    7. company stages: candidate pool >= 25 (unique names) and >= 15 unique final
+    7. company stages: candidate pool >= 25 (unique names) and >= 15 standard /
+       25 deep unique final
        companies, each with a grounded ``landing_status``, a binding
        ``evidence_ref`` for factual landing statuses, and an
        ``expansion_evidence`` note (explicit ``待核实`` is allowed, never silent).
@@ -436,6 +447,8 @@ def validate(stage_id, text, metadata=None, synthetic=False):
     research, never optional).
     """
     errors = []
+    if mode not in ('standard', 'deep'):
+        return ['invalid report mode']
     if stage_id not in _STAGE_INDEX:
         return ["unknown stage: %r" % (stage_id,)]
 
@@ -470,7 +483,7 @@ def validate(stage_id, text, metadata=None, synthetic=False):
         except ValueError as exc:
             errors.append(str(exc))
     if stage_id in ("enterprises_1", "enterprises_2", "enterprises_3"):
-        errors.extend(_validate_companies(stage_id, meta, synthetic))
+        errors.extend(_validate_companies(stage_id, meta, synthetic, mode))
     elif stage_id == "fact_check":
         errors.extend(_validate_checks(stage_id, meta, synthetic))
     elif stage_id == "scoring":
@@ -569,7 +582,7 @@ def _evidence_canonicals(meta):
     return out
 
 
-def _validate_companies(stage_id, meta, synthetic):
+def _validate_companies(stage_id, meta, synthetic, mode='standard'):
     errors = []
     candidates = meta.get("candidates")
     selected = meta.get("selected")
@@ -591,9 +604,10 @@ def _validate_companies(stage_id, meta, synthetic):
     sel = [s for s in selected if isinstance(s, dict)]
     sel_names = [s.get("name") for s in sel if s.get("name")]
     sel_unique = len(set(sel_names))
-    if sel_unique < MIN_FINAL_COMPANIES:
+    minimum = MIN_DEEP_FINAL_COMPANIES if mode == 'deep' else MIN_FINAL_COMPANIES
+    if sel_unique < minimum:
         errors.append(
-            f"{stage_id} final companies {sel_unique} unique < {MIN_FINAL_COMPANIES}"
+            f"{stage_id} final companies {sel_unique} unique < {minimum}"
         )
 
     evidence_refs = _evidence_canonicals(meta) if not synthetic else set()

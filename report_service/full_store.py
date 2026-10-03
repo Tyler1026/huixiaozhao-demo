@@ -101,17 +101,29 @@ class FullStore:
             return STAGES
         return self.stages
 
-    def create(self, tenant, province, city, key, synthetic=True):
+    def create(self, tenant, province, city, key, synthetic=True, *, mode='standard'):
         tenant, province, city, key = map(_text, (tenant, province, city, key))
         if not isinstance(synthetic, bool):
             raise ValueError('synthetic must be boolean')
+        if mode not in ('standard', 'deep'):
+            raise ValueError('invalid report mode')
         rid = hashlib.sha256(('full-v1\0' + tenant + '\0' + key).encode()).hexdigest()
-        definition = json.dumps(self._definition(), ensure_ascii=False)
+        stages = self._definition()
+        # Store the requested business mode with the immutable task definition;
+        # old snapshots without this field remain standard, without a migration.
+        if mode == 'deep':
+            if self.stages is None:
+                from .full_contract import get_stage
+                stages = [get_stage(stage['id'], mode=mode) for stage in stages]
+            stages = [dict(stage, report_mode=mode) for stage in stages]
+        definition = json.dumps(stages, ensure_ascii=False)
         with self.db() as c:
             c.execute('BEGIN IMMEDIATE')
             old = c.execute('SELECT * FROM full_reports WHERE id=?', (rid,)).fetchone()
             if old:
-                if (old['province'], old['city'], bool(old['synthetic'])) != (province, city, synthetic):
+                saved = json.loads(old['definition'])
+                saved_mode = saved[0].get('report_mode', 'standard') if saved else 'standard'
+                if (old['province'], old['city'], bool(old['synthetic']), saved_mode) != (province, city, synthetic, mode):
                     raise Conflict('idempotency payload mismatch')
             else:
                 c.execute('INSERT INTO full_reports VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
@@ -192,6 +204,7 @@ class FullStore:
                         'deadline': deadline, 'tenant': report['tenant'], 'province': report['province'],
                         'city': report['city'], 'synthetic': bool(report['synthetic']),
                         'request_key': report['request_key'],
+                        'mode': (json.loads(report['definition']) or [{}])[0].get('report_mode', 'standard'),
                         'definition': json.loads(report['definition'])}
         return None
 
@@ -315,6 +328,7 @@ class FullStore:
             stage_done = sum(all(s['status'] == 'done' for s in research if s['stage'] == stage['id']) for stage in stages)
             events = c.execute('SELECT at,kind,stage,part,code FROM full_events WHERE report_id=? ORDER BY id DESC LIMIT 30', (rid,)).fetchall()
             return {'id': rid, 'version': row['version'], 'province': row['province'],
+                    'mode': (stages or [{}])[0].get('report_mode', 'standard'),
                     'city': row['city'], 'synthetic': bool(row['synthetic']), 'status': row['status'],
                     'created_at': row['created_at'], 'progress_at': row['progress_at'],
                     'heartbeat_at': row['heartbeat_at'], 'parts_done': sum(s['status'] == 'done' for s in research),

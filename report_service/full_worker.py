@@ -48,6 +48,9 @@ def _child(provider, job, db_path, artifact_root, pipe, parent_pid, contract, pr
     try:
         if contract is None:
             from . import full_contract as contract
+        validation_options = {'synthetic': job['synthetic']}
+        if job.get('mode') == 'deep':
+            validation_options['mode'] = 'deep'
         if prepared_parts is None:
             import sqlite3
             import urllib.parse
@@ -64,19 +67,20 @@ def _child(provider, job, db_path, artifact_root, pipe, parent_pid, contract, pr
                 raise PermissionError('artifact storage is not configured')
             for definition in job['definition']:
                 value = outputs.get(definition['filename'])
-                if not value or contract.validate(definition['id'], value['text'], value['metadata'], synthetic=job['synthetic']):
+                if not value or contract.validate(definition['id'], value['text'], value['metadata'], **validation_options):
                     raise ValueError('full contract failed')
             from .full_artifacts import build_bundle
             result = {'manifest': build_bundle(artifact_root, job['report_id'], job['city'], outputs, job['synthetic'])}
         else:
             safe_job = {k: job[k] for k in ('city', 'province', 'synthetic')}
             safe_job['id'] = job['report_id']
+            safe_job['mode'] = job.get('mode', 'standard')
             result = provider.run_part(job['stage'], job['part'], safe_job, prior)
             definition = next(s for s in job['definition'] if s['id'] == job['stage'])
             current = parts.get(job['stage'], []) + [result]
             if len(current) == len(definition['parts']):
                 combined = contract.assemble(job['stage'], current)
-                if contract.validate(job['stage'], combined['text'], combined['metadata'], synthetic=job['synthetic']):
+                if contract.validate(job['stage'], combined['text'], combined['metadata'], **validation_options):
                     raise ValueError('stage contract failed')
         data = json.dumps({'ok': True, 'result': result}, ensure_ascii=False, allow_nan=False).encode()
         if len(data) > MAX_RESULT_BYTES:

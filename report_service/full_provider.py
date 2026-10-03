@@ -153,7 +153,10 @@ class FullLiveProvider:
     # -- public entry point ---------------------------------------------------
 
     def run_part(self, stage_id, part, job, prior):
-        stage = get_stage(stage_id)  # KeyError on unknown stage
+        mode = (job or {}).get('mode', 'standard')
+        if mode not in ('standard', 'deep'):
+            raise FullProviderError('invalid report mode', 'configuration')
+        stage = get_stage(stage_id, mode=mode)  # KeyError on unknown stage
         if part not in stage["parts"]:
             raise ValueError(f"unknown part {part!r} for stage {stage_id!r}")
 
@@ -182,7 +185,7 @@ class FullLiveProvider:
                 )
 
         try:
-            payload = self._chat_part(stage_id, part, place, prior_text, evidence)
+            payload = self._chat_part(stage_id, part, place, prior_text, evidence, mode=mode)
         except Exception as exc:
             raise _to_provider_error(exc)
 
@@ -272,8 +275,9 @@ class FullLiveProvider:
             candidates = (prior or {}).get(stage_id, {}).get('metadata', {}).get('candidates', [])
             batch = re.search(r'(\d+)$', part)
             offset = (int(batch.group(1)) - 1 if batch else 0) * 5
+            size = 5
             if not part.startswith('候选池') and candidates:
-                chosen = candidates[offset:offset + 5]
+                chosen = candidates[offset:offset + size]
                 queries = [f"{c['name']} {topic} {place} 项目 基地 工厂 扩产 公告" for c in chosen]
         for query in queries:
             try:
@@ -306,7 +310,7 @@ class FullLiveProvider:
             host = ""
         return host.lower() or "未知来源"
 
-    def _chat_part(self, stage_id, part, place, prior_text, evidence):
+    def _chat_part(self, stage_id, part, place, prior_text, evidence, *, mode='standard'):
         instructions = _PART_INSTRUCTIONS.get(stage_id, _DEFAULT_PART_INSTRUCTION)
         user_blocks = [
             f"地区：{place}",
@@ -329,10 +333,14 @@ class FullLiveProvider:
                 )
             user_blocks.append("\n".join(ev_parts))
         user_blocks.append("本子章节任务：\n" + instructions)
-        floor = (get_stage(stage_id)['min_lines'] + len(get_stage(stage_id)['parts']) - 1) // len(get_stage(stage_id)['parts'])
+        stage = get_stage(stage_id, mode=mode)
+        floor = (stage['min_lines'] + len(stage['parts']) - 1) // len(stage['parts'])
         user_blocks.append(f'本子章节至少{floor}行实质内容，不以空行或重复句子凑数。')
         if stage_id.startswith('enterprises_'):
-            user_blocks.append('按持久子步骤分批研究：候选池各批新增5家不重复企业；落地情况各批核查已有候选5家；扩产信号各批精选5家并核查信号与本地项目，3批共至少15家。每条附已给出的证据URL；不足必须如实返回，不得捏造。当前阶段已保存的企业不可当新企业重复计数。')
+            selection = ('扩产信号各批精选5家，5批共至少25家'
+                         if mode == 'deep' else '扩产信号各批精选5家，3批共至少15家')
+            user_blocks.append('按持久子步骤分批研究：候选池各批新增5家不重复企业；落地情况各批核查已有候选5家；'
+                               + selection + '并核查信号与本地项目。每条附已给出的证据URL；不足必须如实返回，不得捏造。当前阶段已保存的企业不可当新企业重复计数。')
         if stage_id == 'industry':
             user_blocks.append('必须返回directions数组，恰好三个不同产业方向。每项含id(dir1/dir2/dir3)、name、evidence_ref(本次或已保存的真实检索URL)。后续子章节沿用前序已确定的ID和名称，不得换方向。正文与该数组必须一致。')
         user_blocks.append(_OUTPUT_RULES)
