@@ -935,7 +935,12 @@ class Handler(BaseHTTPRequestHandler):
             from backend.sync_transaction import handle_sync_serialized
             deps = SyncDependencies(bool(_PG_AVAIL and DATABASE_URL), _db_get, _db_set,
                                     SYNC_PATH, _file_snapshot, _clean_sync_data)
-            return handle_sync_serialized(self, raw, deps, transaction=globals().get('_sync_transaction'))
+            guard = None
+            from os import environ as report_environment
+            if report_environment.get('HXZ_REPORT_ENGINE') == 'standalone':
+                from report_service.website_queue import fence_updates
+                guard = fence_updates
+            return handle_sync_serialized(self, raw, deps, transaction=globals().get('_sync_transaction'), guard=guard)
         # ── 接口：管理员全量覆写（绕过merge保护，用于重置数据） ──
         if self.path == '/api/admin-reset':
             try:
@@ -1256,6 +1261,10 @@ class Handler(BaseHTTPRequestHandler):
         # ── 接口3：管理端「推送到RAG」按钮 → 给已完成申请打 pushRequested 标记 ──
         # 本地议程轮询器消费该标记，执行 sync_to_kb.py 完成 RAG 推送 + 城市账号连接。
         if self.path == '/api/report-push-request':
+            from os import environ as report_push_environment
+            if report_push_environment.get('HXZ_REPORT_ENGINE') == 'standalone' and _PG_AVAIL and DATABASE_URL:
+                from report_service.website_queue import request_publication
+                return request_publication(self, raw, _sync_transaction)
             def push_reply(status, body):
                 resp = json.dumps(body, ensure_ascii=False).encode()
                 self.send_response(status)
@@ -1619,6 +1628,8 @@ if __name__ == "__main__":
         print("[kb] WARN: DEEPSEEK_API_KEY 未设置 — 页面可访问，但 AI 问答/报告会报错。请在 Railway Variables 里配置 DEEPSEEK_API_KEY。")
     _init_db()
     import threading
+    from report_service.hosted import start_supervisor
+    start_supervisor()
 
     # 云端(Railway)：单端口，绑 0.0.0.0；政府端=/，管理端=/ops（同一端口路由）
     IS_CLOUD = bool(os.environ.get("PORT"))

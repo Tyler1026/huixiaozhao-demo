@@ -48,7 +48,7 @@ function viewCurrentReport(){
       '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
         '<span style="font-size:13px;font-weight:700;color:#1d4ed8">📊 研判报告（完整版）</span>'+
         '<span style="font-size:11.5px;color:#8492a6">'+rs.topic+'</span>'+
-        '<span style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f0fdf4;color:#166534">置信度 '+rs.score+'%</span>'+
+        '<span style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f0fdf4;color:#166534">'+(rs.sourceReportId?'核验一致项比例 ':'置信度 ')+(rs.score==null?'待核验':rs.score+'%')+'</span>'+
         (origReportFiles()?'<button onclick="downloadOrigReport(\'full\')" style="padding:4px 10px;background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:8px;font-size:12px;color:#4338ca;cursor:pointer;font-weight:600;margin-left:6px">⬇ 原始报告(docx)</button>':'')+
         '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 研判摘要</button>'+
       '</div>'+
@@ -57,7 +57,7 @@ function viewCurrentReport(){
       '</div>'+
       '<div style="padding:10px 16px;background:#f9fafb;border-top:1px solid #f0f4ff;font-size:11px;color:#9aa5b5">'+
         '生成时间：'+new Date(rs.ts).toLocaleDateString('zh-CN')+' · '+
-        '数据来源：慧小招实测报告+DeepSeek分析 · 置信度'+rs.score+'%'+
+        (rs.sourceReportId?'数据来源：报告所列原始来源 · 核验一致项比例 ':'数据来源：慧小招实测报告+DeepSeek分析 · 置信度')+(rs.score==null?'待核验':rs.score+'%')+
       '</div>'+
     '</div>';
 
@@ -165,5 +165,4 @@ function downloadReport(mode){
   setTimeout(function(){URL.revokeObjectURL(url);a.remove();},300);
   toast('✓ 报告已下载：'+filename);
 }
-
 

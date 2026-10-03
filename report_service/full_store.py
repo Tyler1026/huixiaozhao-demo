@@ -165,7 +165,7 @@ class FullStore:
             c.execute('BEGIN IMMEDIATE')
             self._recover(c)
             rows = c.execute("""SELECT s.* FROM full_steps s JOIN full_reports r ON r.id=s.report_id
-                WHERE r.status NOT IN ('failed','completed') AND (? IS NULL OR r.synthetic=?) AND s.status IN ('pending','retry_wait')
+                WHERE r.status NOT IN ('failed','completed','cancelled') AND (? IS NULL OR r.synthetic=?) AND s.status IN ('pending','retry_wait')
                 AND s.next_at<=? AND NOT EXISTS(SELECT 1 FROM full_steps p
                   WHERE p.report_id=s.report_id AND p.ordinal<s.ordinal AND p.status!='done')
                 ORDER BY r.created_at,s.ordinal""", (synthetic, synthetic, self.clock())).fetchall()
@@ -191,6 +191,7 @@ class FullStore:
                         'part': row['part'], 'attempts': row['attempts'] + 1, 'token': token,
                         'deadline': deadline, 'tenant': report['tenant'], 'province': report['province'],
                         'city': report['city'], 'synthetic': bool(report['synthetic']),
+                        'request_key': report['request_key'],
                         'definition': json.loads(report['definition'])}
         return None
 
@@ -245,7 +246,31 @@ class FullStore:
             result = {}
             for row in rows:
                 result.setdefault(row['stage'], []).append(json.loads(row['output']))
-            return result
+        return result
+
+    def cancel(self, tenant, rid):
+        """Revoke leases immediately, retaining completed research checkpoints."""
+        with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            row = c.execute('SELECT status FROM full_reports WHERE id=? AND tenant=?', (rid, tenant)).fetchone()
+            if not row or row['status'] in ('completed', 'cancelled'):
+                return False
+            c.execute("UPDATE full_steps SET status='cancelled',token=NULL,expires=NULL WHERE report_id=? AND status!='done'", (rid,))
+            c.execute("UPDATE full_reports SET status='cancelled',failure_code='cancelled' WHERE id=?", (rid,))
+            self._event(c, rid, 'cancelled', code='cancelled')
+            return True
+
+    def resume_configuration(self, tenant, rid):
+        """Explicit operator retry after credentials/configuration are repaired."""
+        with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            row = c.execute('SELECT status,failure_code FROM full_reports WHERE id=? AND tenant=?', (rid, tenant)).fetchone()
+            if not row or row['status'] != 'failed' or row['failure_code'] != 'configuration':
+                return False
+            c.execute("UPDATE full_steps SET status='pending',next_at=0,token=NULL,expires=NULL,failure_code=NULL WHERE report_id=? AND status='failed'", (rid,))
+            c.execute("UPDATE full_reports SET status='queued',failure_code=NULL WHERE id=?", (rid,))
+            self._event(c, rid, 'configuration_resumed')
+            return True
 
     def complete(self, sid, token, manifest):
         with self.db() as c:

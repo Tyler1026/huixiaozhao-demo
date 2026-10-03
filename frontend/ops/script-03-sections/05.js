@@ -8,7 +8,7 @@ setInterval(function(){
     var liveDelta=r.progressTs?Math.max(0,Math.min(Date.now()-r.progressTs,6*60000)):0;
     var ms=(r.activeMs!=null)?(r.activeMs+liveDelta):(Date.now()-(r.claimTs||r.ts));
     var s=Math.floor(ms/1000)%60,m=Math.floor(ms/60000)%60,h=Math.floor(ms/3600000);
-    el.textContent='有效运行 '+(h?h+':':'')+('0'+m).slice(-2)+':'+('0'+s).slice(-2);
+    el.textContent=(r.engine==='full-v1'?'报告耗时 ':'有效运行 ')+(h?h+':':'')+('0'+m).slice(-2)+':'+('0'+s).slice(-2);
   }
   var up=document.getElementById('rrLastUpd');
   if(up&&r.progressTs){
@@ -159,7 +159,7 @@ function rrProgress(r){
     '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#3d5471;margin-bottom:7px">'+
       '<span><span class="'+(stale?'':'rr-dot-live')+'" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+(stale?'#c85b09':'#0aa696')+';margin-right:6px"></span>'+
       '<b style="color:#0757ad" class="rr-step-glow">'+step+'</b>'+(stale?' <span style="color:#c85b09">（'+staleMin+' 分钟未更新，等待执行器恢复）</span>':'')+'</span>'+
-      '<span style="display:inline-flex;align-items:center"><span id="rrElapsed" style="font-variant-numeric:tabular-nums">有效运行 '+ts.active+'</span>'+gapBadge+'</span></div>'+
+      '<span style="display:inline-flex;align-items:center"><span id="rrElapsed" style="font-variant-numeric:tabular-nums">'+(r.engine==='full-v1'?'报告耗时 ':'有效运行 ')+ts.active+'</span>'+gapBadge+'</span></div>'+
     '<div style="height:8px;border-radius:4px;background:#e6edf6;overflow:hidden;margin-bottom:7px">'+
       '<div class="'+(stale?'':'rr-bar-live')+'" style="height:100%;width:'+pct+'%;border-radius:4px;background:linear-gradient(90deg,#0757ad,#007f82);transition:width .6s"></div></div>'+
     '<div style="display:flex;justify-content:space-between;font-size:11.5px;color:#667590">'+
