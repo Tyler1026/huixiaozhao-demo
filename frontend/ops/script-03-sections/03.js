@@ -15,19 +15,22 @@ function submitReportRequest(){
 }
 /* 管理端「推送到 RAG」按钮：给已完成申请打 pushRequested 标记，本地轮询器消费后完成
    RAG 推送 + 城市账号连接（登录名/密码自动建立并绑定该项目）。 */
-function pushReportToRag(city,btn){
+function pushReportToRag(reqId,btn){
+  var request=REPORT_REQUESTS.find(function(r){return r.id===reqId;});
+  if(!request||request.status!=='done'){toast('该报告申请尚未完成，请刷新页面后重试');return;}
+  var city=request.city;
   if(btn){btn.disabled=true;btn.textContent='⏳ 推送中…';}
-  fetch('/api/report-push-request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({city:city})})
+  fetch('/api/report-push-request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:reqId,city:city})})
     .then(function(r){return r.json();})
     .then(function(res){
-      if(res&&res.ok){
-        var loc=REPORT_REQUESTS.find(function(r){return r.city===city&&r.status==='done';});
-        if(loc){loc.pushRequested=true;loc.pushed=false;}
-        toast('已提交「'+city+'」推送任务，RAG 与城市账号将自动连接');
+      if(res&&res.ok&&res.id===reqId&&res.city===city){
+        var loc=REPORT_REQUESTS.find(function(r){return r.id===res.id;});
+        if(loc){loc.pushRequested=true;loc.pushed=!!res.pushed;}
+        toast(res.pushed?'「'+city+'」报告已推送':'已提交「'+city+'」推送请求');
         render();
       }else{
         if(btn){btn.disabled=false;btn.textContent='🚀 推送到 RAG';}
-        toast('推送提交失败：'+(res&&res.error||'该城市无已完成报告'));
+        toast('推送提交失败：'+(res&&res.error||'任务不匹配，请刷新页面后重试'));
       }
     }).catch(function(e){
       if(btn){btn.disabled=false;btn.textContent='🚀 推送到 RAG';}
