@@ -132,6 +132,24 @@ class WebsiteEngineTests(unittest.TestCase):
         self.assertNotIn('CITY_ACCOUNTS',final)
         self.assertEqual(final['CITY_BASE_PACKAGES']['隔离测试区'],'report_rrfixture')
 
+    def test_existing_download_buttons_return_correct_full_and_short_bytes(self):
+        from backend.report_route import report_file
+        import io
+        import urllib.parse
+        self.completed()
+        self.assertEqual([f['kind'] for f in self.read()['REPORT_REQUESTS'][0]['files']],
+                         ['full', 'short'])
+        for kind, artifact in [('full', 'full.docx'), ('short', 'compact.docx')]:
+            for exact in (False, True):
+                query = {'city': self.request['city'], 'kind': kind}
+                if exact:
+                    query['requestId'] = self.request['id']
+                handler = Mock(); handler.wfile = io.BytesIO()
+                handler.path = '/api/report-file?' + urllib.parse.urlencode(query)
+                report_file(handler, False, None, str(self.path))
+                handler.send_response.assert_called_once_with(200)
+                self.assertEqual(handler.wfile.getvalue(), self.store.payloads[artifact])
+
     def test_incomplete_or_synthetic_package_never_enters_rag(self):
         self.completed(); state=self.read(); state['REPORT_REQUESTS'][0]['pushRequested']=True; self.write(state)
         for _,_,names in TOPICS:
