@@ -14,6 +14,8 @@ from backend.storage import (
 )
 
 from backend.documents import _extract_doc_text
+from backend.sync_transaction import postgres_session as _sync_transaction
+from backend.sync_transaction import read_sync_bounded as _db_get, write_sync_bounded as _db_set
 
 # 入库噪声过滤：附注/免责声明/页码/落款等模板话不入 RAG
 import re as _re_noise
@@ -930,9 +932,10 @@ class Handler(BaseHTTPRequestHandler):
         # 云端数据同步：POST /api/sync 合并保存（保护字段不被空值覆盖）
         if self.path == '/api/sync':
             from backend.sync_route import handle_sync, SyncDependencies
+            from backend.sync_transaction import handle_sync_serialized
             deps = SyncDependencies(bool(_PG_AVAIL and DATABASE_URL), _db_get, _db_set,
                                     SYNC_PATH, _file_snapshot, _clean_sync_data)
-            return handle_sync(self, raw, deps)
+            return handle_sync_serialized(self, raw, deps, transaction=globals().get('_sync_transaction'))
         # ── 接口：管理员全量覆写（绕过merge保护，用于重置数据） ──
         if self.path == '/api/admin-reset':
             try:

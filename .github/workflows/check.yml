@@ -9,6 +9,19 @@ on:
 jobs:
   js-syntax-check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: isolated-ci-only
+          POSTGRES_DB: report_ci
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d report_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      HXZ_TEST_DATABASE_URL: postgresql://postgres:isolated-ci-only@127.0.0.1:5432/report_ci
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,7 +37,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install syntax and report test dependencies
-        run: pip install esprima python-docx==1.1.2
+        run: pip install esprima python-docx==1.1.2 psycopg2-binary
 
       - name: Verify generated frontend is unchanged
         run: python3 scripts/build_frontend.py --check
