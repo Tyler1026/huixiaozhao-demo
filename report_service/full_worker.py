@@ -42,19 +42,22 @@ def _child_guard(parent_pid, deadline, stop):
             os._exit(72)
 
 
-def _child(provider, job, db_path, artifact_root, pipe, parent_pid, contract):
+def _child(provider, job, db_path, artifact_root, pipe, parent_pid, contract, prepared_parts=None):
     stop = threading.Event()
     threading.Thread(target=_child_guard, args=(parent_pid, job['deadline'], stop), daemon=True).start()
     try:
         if contract is None:
             from . import full_contract as contract
-        import sqlite3
-        import urllib.parse
-        with sqlite3.connect('file:' + urllib.parse.quote(db_path) + '?mode=ro', uri=True) as c:
-            rows = c.execute("SELECT stage,output FROM full_steps WHERE report_id=? AND status='done' AND stage!='__bundle__' ORDER BY ordinal", (job['report_id'],)).fetchall()
-        parts = {}
-        for stage, raw in rows:
-            parts.setdefault(stage, []).append(json.loads(raw))
+        if prepared_parts is None:
+            import sqlite3
+            import urllib.parse
+            with sqlite3.connect('file:' + urllib.parse.quote(db_path) + '?mode=ro', uri=True) as c:
+                rows = c.execute("SELECT stage,output FROM full_steps WHERE report_id=? AND status='done' AND stage!='__bundle__' ORDER BY ordinal", (job['report_id'],)).fetchall()
+            parts = {}
+            for stage, raw in rows:
+                parts.setdefault(stage, []).append(json.loads(raw))
+        else:
+            parts = prepared_parts
         prior, outputs = _context(parts, job, contract)
         if job['stage'] == '__bundle__':
             if artifact_root is None:
@@ -115,7 +118,7 @@ def _context(parts, job, contract):
     return prior, outputs
 
 
-def run_once(store, provider, *, ttl=120, timeout=180, synthetic=True, contract=None):
+def run_once(store, provider, *, ttl=120, timeout=180, synthetic=True, contract=None, stop_job=None):
     job = store.claim(ttl=ttl, timeout=timeout, synthetic=synthetic)
     if job is None:
         return None
@@ -126,12 +129,19 @@ def run_once(store, provider, *, ttl=120, timeout=180, synthetic=True, contract=
         return {'id': rid, 'status': 'failed', 'code': 'configuration'}
     ctx = multiprocessing.get_context('spawn')
     reader, writer = ctx.Pipe(duplex=False)
-    process = ctx.Process(target=_child, args=(provider, job, store.path, store.artifact_root, writer, os.getpid(), contract))
+    process = None
     envelope = None
     code = None
     started = False
+    inputs_ready = False
     next_heartbeat = time.monotonic()
     try:
+        if stop_job is not None and stop_job(job):
+            store.cancel(job['tenant'], rid)
+            return {'id': rid, 'status': 'cancelled'}
+        parts = store.worker_parts(rid) if hasattr(store, 'worker_parts') else None
+        inputs_ready = True
+        process = ctx.Process(target=_child, args=(provider, job, store.path, store.artifact_root, writer, os.getpid(), contract, parts))
         process.start()
         started = True
         writer.close()
@@ -141,6 +151,10 @@ def run_once(store, provider, *, ttl=120, timeout=180, synthetic=True, contract=
                 code = 'timeout'
                 break
             if time.monotonic() >= next_heartbeat:
+                if stop_job is not None and stop_job(job):
+                    store.cancel(job['tenant'], rid)
+                    code = 'lost_lease'
+                    break
                 if not store.heartbeat(sid, token, ttl=ttl):
                     code = 'lost_lease'
                     break
@@ -155,7 +169,7 @@ def run_once(store, provider, *, ttl=120, timeout=180, synthetic=True, contract=
                 code = 'worker_crash'
                 break
     except Exception:
-        code = 'configuration' if not started else 'worker_crash'
+        code = 'upstream' if not inputs_ready else ('configuration' if not started else 'worker_crash')
     finally:
         writer.close()
         reader.close()

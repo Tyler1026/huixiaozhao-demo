@@ -92,6 +92,30 @@ def read_sync_bounded():
                 connection.close()
 
 
+def report_request_active(request_id, engine):
+    """Bounded scalar read: cancellation/reset stops research without loading files."""
+    from . import storage
+    connection = cursor = None
+    try:
+        connection = storage.psycopg2.connect(storage.DATABASE_URL, connect_timeout=10)
+        cursor = connection.cursor()
+        cursor.execute("SET LOCAL statement_timeout = '5s'")
+        cursor.execute("""SELECT r->>'status' FROM sync_data s,
+            LATERAL jsonb_array_elements(COALESCE(s.data::jsonb->'REPORT_REQUESTS','[]'::jsonb)) r
+            WHERE s.id=1 AND r->>'id'=%s AND r->>'engine'=%s""", (request_id, engine))
+        rows = cursor.fetchall()
+        # Durable full_reports is authoritative for done/failed; this scalar
+        # check only honours user cancellation/reset, including during resume.
+        return len(rows) == 1 and rows[0][0] != 'cancelled'
+    finally:
+        try:
+            if cursor:
+                cursor.close()
+        finally:
+            if connection:
+                connection.close()
+
+
 def write_sync_bounded(value):
     """Keep the legacy bool contract and snapshot-before-write semantics."""
     try:
@@ -143,7 +167,7 @@ def file_session(path, snapshot):
             fcntl.flock(lock, fcntl.LOCK_UN)
 
 
-def handle_sync_serialized(handler, raw, deps, *, transaction=None):
+def handle_sync_serialized(handler, raw, deps, *, transaction=None, guard=None):
     from .sync_route import handle_sync
     # Explicit injection keeps isolated HTTP tests away from real credentials.
     if deps.use_database and transaction is None:
@@ -151,6 +175,8 @@ def handle_sync_serialized(handler, raw, deps, *, transaction=None):
     try:
         factory = transaction() if deps.use_database else file_session(deps.file_path, deps.snapshot_file)
         with factory as session:
+            if guard is not None:
+                raw = guard(raw, json.loads(session.read()))
             return handle_sync(handler, raw, dataclasses.replace(deps, use_database=True, read=session.read, write=session.write))
     except (BrokenPipeError, ConnectionResetError):
         # A committed write survives a disconnected browser. Retrying its same

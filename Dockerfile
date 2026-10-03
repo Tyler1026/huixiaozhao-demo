@@ -9,6 +9,7 @@ COPY server.py index.html ops.html ./
 COPY backend/ ./backend/
 COPY frontend/ ./frontend/
 COPY scripts/ ./scripts/
+COPY report_service/ ./report_service/
 RUN python3 scripts/build_frontend.py --check
 
 # 语法门禁：ops.html/index.html 内联<script>语法错误直接fail build，

@@ -293,6 +293,7 @@ class FullLiveProvider:
                     "excerpt": (item.get("snippet") or "")[:providers.MAX_EVIDENCE_CHARS],
                     "source": self._source_of(url),
                     "published": item.get("published", "发布日期未知"),
+                    "retrieved_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                     "retrieval": retrieval,
                     "source_type": classify_source_type(self._source_of(url)),
                 })
