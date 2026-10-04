@@ -75,7 +75,7 @@ function restore(){
 
 function restoreFromServer(callback){
   var localENT = OPS_ENT && OPS_ENT.length ? OPS_ENT.slice() : [];
-  fetch('/api/sync?raw=1').then(function(r){return r.json();}).then(function(raw){
+  fetch('/api/sync?raw=1',{headers:{'X-HXZ-Report-Client':'website'}}).then(function(r){return r.json();}).then(function(raw){
     if(!raw){ window._opsDataReady=true; if(callback)callback(false); return; }
     var srv = (raw.huixiaozhao_kb_v1 && raw.huixiaozhao_kb_v1.PROJECTS)
               ? raw.huixiaozhao_kb_v1 : raw;
@@ -1547,4 +1547,3 @@ function doCreateProj(){
   closeModal();cur=id;view='home';detailData=null;render();
   toast('已创建研判：'+dir+'补链');
 }
-

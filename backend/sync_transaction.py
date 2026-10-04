@@ -11,6 +11,10 @@ import tempfile
 import time
 
 
+class SyncWriteConflict(ValueError):
+    """A sync guard refused a client write before any state was committed."""
+
+
 class PostgresSession:
     def __init__(self, connect, snapshot):
         self.connect = connect
@@ -170,7 +174,7 @@ def file_session(path, snapshot):
 def handle_sync_serialized(handler, raw, deps, *, transaction=None, guard=None):
     from .sync_route import handle_sync
     # Explicit injection keeps isolated HTTP tests away from real credentials.
-    if deps.use_database and transaction is None:
+    if deps.use_database and transaction is None and guard is None:
         return handle_sync(handler, raw, deps)
     try:
         factory = transaction() if deps.use_database else file_session(deps.file_path, deps.snapshot_file)
@@ -182,6 +186,13 @@ def handle_sync_serialized(handler, raw, deps, *, transaction=None, guard=None):
         # A committed write survives a disconnected browser. Retrying its same
         # report request ID is safe; never roll back a confirmed database commit.
         return
+    except SyncWriteConflict:
+        body = json.dumps({'ok': False, 'rejected': 'server-owned-report',
+                           'error': 'report execution is managed by the server'}).encode()
+        handler.send_response(409)
+        handler.send_header('Content-Type', 'application/json')
+        handler.send_header('Content-Length', str(len(body)))
+        handler.cors(); handler.end_headers(); handler.wfile.write(body)
     except Exception:
         body = json.dumps({'ok': False, 'error': 'storage unavailable; retry safely'}).encode()
         handler.send_response(200)

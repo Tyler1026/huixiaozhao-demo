@@ -20,6 +20,7 @@ function _rrJson(url,options){
     var controller=typeof AbortController!=='undefined'?new AbortController():null;
     var timer=setTimeout(function(){if(controller)controller.abort();reject(new Error('network-timeout'));},20000);
     options=Object.assign({},options||{});
+    options.headers=Object.assign({},options.headers||{}, {'X-HXZ-Report-Client':'website'});
     if(controller) options.signal=controller.signal;
     fetch(url,options).then(function(r){
       if(r.ok===false) throw new Error('http-failure');

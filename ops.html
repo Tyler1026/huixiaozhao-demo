@@ -641,6 +641,7 @@ function _rrJson(url,options){
     var controller=typeof AbortController!=='undefined'?new AbortController():null;
     var timer=setTimeout(function(){if(controller)controller.abort();reject(new Error('network-timeout'));},20000);
     options=Object.assign({},options||{});
+    options.headers=Object.assign({},options.headers||{}, {'X-HXZ-Report-Client':'website'});
     if(controller) options.signal=controller.signal;
     fetch(url,options).then(function(r){
       if(r.ok===false) throw new Error('http-failure');
@@ -4873,7 +4874,7 @@ function restore(){
 
 function restoreFromServer(callback){
   var localENT = OPS_ENT && OPS_ENT.length ? OPS_ENT.slice() : [];
-  fetch('/api/sync?raw=1').then(function(r){return r.json();}).then(function(raw){
+  fetch('/api/sync?raw=1',{headers:{'X-HXZ-Report-Client':'website'}}).then(function(r){return r.json();}).then(function(raw){
     if(!raw){ window._opsDataReady=true; if(callback)callback(false); return; }
     var srv = (raw.huixiaozhao_kb_v1 && raw.huixiaozhao_kb_v1.PROJECTS)
               ? raw.huixiaozhao_kb_v1 : raw;
@@ -6345,7 +6346,6 @@ function doCreateProj(){
   closeModal();cur=id;view='home';detailData=null;render();
   toast('已创建研判：'+dir+'补链');
 }
-
 /* ================= 整合联动层：管理端(ops) ================= */
 // DEMANDS 已在上方初始化
 
