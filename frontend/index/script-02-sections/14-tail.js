@@ -52,7 +52,7 @@ function restoreFromServer(callback){
   var _userCur = cur;
   var _userTopic = (cur && PROJECTS[cur]) ? PROJECTS[cur].topic : null;
   var _userView = view;
-  fetch('/api/sync').then(function(r){return r.json();}).then(function(raw){
+  fetch('/api/sync',{headers:{'X-HXZ-Report-Client':'website'}}).then(function(r){return r.json();}).then(function(raw){
     if(!raw){ if(callback)callback(false); return; }
     // 兼容两种存储格式：
     //   扁平格式（persist()写入）: {PROJECTS:{...}, UPLOADS:{...}, ...}
@@ -3370,4 +3370,3 @@ function doCreateProj(){
   closeModal();cur=id;view='home';detailData=null;render();
   toast('已创建研判：'+dir+'补链');
 }
-

@@ -12,6 +12,9 @@ import sys
 import threading
 import time
 
+_supervisor_lock = threading.Lock()
+_supervisor_state = None
+
 
 def configured_environment(environ):
     env = dict(environ)
@@ -36,12 +39,30 @@ def readiness(environ):
     return {'ready': not missing, 'missing': missing}
 
 
+def engine_status(environ=None):
+    """Safe process/configuration status; does not claim successful research."""
+    env = os.environ if environ is None else environ
+    enabled = env.get('HXZ_REPORT_ENGINE') == 'standalone'
+    config = readiness(env)
+    with _supervisor_lock:
+        state = _supervisor_state
+        active = bool(enabled and state and state['thread'].is_alive()
+                      and not state['stop'].is_set())
+        process = state['process'] if active else None
+        worker = bool(process is not None and process.poll() is None)
+    return {'engine': 'standalone' if enabled else 'disabled',
+            'configured': config['ready'], 'missing': config['missing'],
+            'supervisor_running': active, 'worker_running': worker,
+            'scope': 'process_and_configuration_only'}
+
+
 def start_supervisor(environ=None, *, stop=None):
     """Website owns the worker lifetime; crash recovery retains DB checkpoints."""
     env = os.environ if environ is None else environ
     if env.get('HXZ_REPORT_ENGINE') != 'standalone':
         return None
     stop = stop or threading.Event()
+    state = {'thread': None, 'stop': stop, 'process': None}
     def supervise():
         process = None
         try:
@@ -53,6 +74,8 @@ def start_supervisor(environ=None, *, stop=None):
                     continue
                 process = subprocess.Popen([sys.executable, '-m', 'report_service.hosted'],
                                            env=dict(env), close_fds=True)
+                with _supervisor_lock:
+                    state['process'] = process
                 while process.poll() is None and not stop.wait(1):
                     pass
                 if not stop.is_set():
@@ -65,7 +88,13 @@ def start_supervisor(environ=None, *, stop=None):
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     process.kill(); process.wait()
+            with _supervisor_lock:
+                state['process'] = None
     thread = threading.Thread(target=supervise, name='report-supervisor', daemon=True)
+    state['thread'] = thread
+    global _supervisor_state
+    with _supervisor_lock:
+        _supervisor_state = state
     thread.start()
     return stop
 

@@ -33,6 +33,34 @@ def valid_request(r):
                     for k in ('city', 'province')))
 
 
+def website_reads_queue(headers):
+    """Select the website view, not a credential or an authorization grant.
+
+    Fetch metadata also keeps already-open website tabs compatible. Legacy
+    scripts have neither the explicit view header nor browser fetch metadata.
+    Engine-owned writes remain fenced regardless of this read-view selector.
+    """
+    return (headers.get('X-HXZ-Report-Client') == 'website'
+            or (headers.get('Sec-Fetch-Site') in ('same-origin', 'same-site')
+                and headers.get('Sec-Fetch-Dest') == 'empty'
+                and headers.get('Sec-Fetch-Mode') in ('cors', 'same-origin')))
+
+
+def legacy_sync_view(state):
+    """Keep legacy records and other business fields, hide native worker jobs."""
+    if not isinstance(state, dict):
+        return state
+    value = dict(state)
+    rows = value.get('REPORT_REQUESTS')
+    if isinstance(rows, list):
+        value['REPORT_REQUESTS'] = [r for r in rows
+                                   if not (isinstance(r, dict) and r.get('engine') == ENGINE)]
+    nested = value.get('huixiaozhao_kb_v1')
+    if isinstance(nested, dict):
+        value['huixiaozhao_kb_v1'] = legacy_sync_view(nested)
+    return value
+
+
 def fence_updates(raw, state):
     """Server-owned progress cannot be overwritten by old consumers/snapshots.
 
@@ -49,6 +77,13 @@ other sync fields continue through the existing merge policy unchanged.
             continue
         saved = old.get(r.get('id'))
         if saved and saved.get('engine') == ENGINE:
+            # A legacy claimant must see failure, not a successful no-op.
+            # Stale website snapshots and explicit cancellation still work.
+            if (r.get('status') == 'running'
+                    and (saved.get('status') == 'pending'
+                         or ('claimTs' in r and r.get('claimTs') != saved.get('claimTs')))):
+                from backend.sync_transaction import SyncWriteConflict
+                raise SyncWriteConflict('server-owned report cannot be claimed through sync')
             value = copy.deepcopy(saved)
             if r.get('status') == 'cancelled' and saved.get('status') != 'cancelled':
                 value.update(status='cancelled', cancelledTs=int(time.time() * 1000))

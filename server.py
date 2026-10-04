@@ -751,7 +751,7 @@ class Handler(BaseHTTPRequestHandler):
     def cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-HXZ-Report-Client")
 
     def do_OPTIONS(self):
         self.send_response(200); self.cors(); self.end_headers()
@@ -771,7 +771,15 @@ class Handler(BaseHTTPRequestHandler):
         # 云端数据同步：GET /api/sync 直接返回原始数据
         if path == '/api/sync':
             from backend.sync_read import read_sync
-            return read_sync(self, bool(_PG_AVAIL and DATABASE_URL), _db_get, SYNC_PATH, _clean_sync_data)
+            view = None
+            vary = None
+            if os.environ.get('HXZ_REPORT_ENGINE') == 'standalone':
+                vary = 'X-HXZ-Report-Client, Sec-Fetch-Site, Sec-Fetch-Dest, Sec-Fetch-Mode'
+                from report_service.website_queue import website_reads_queue, legacy_sync_view
+                if not website_reads_queue(self.headers):
+                    view = legacy_sync_view
+            return read_sync(self, bool(_PG_AVAIL and DATABASE_URL), _db_get, SYNC_PATH,
+                             _clean_sync_data, view=view, vary=vary)
         # 政府端城市智库AI精选概括（只读，不修改数据库）
         if path == '/api/kb-summary':
             try:
@@ -914,14 +922,17 @@ class Handler(BaseHTTPRequestHandler):
             from backend.http_responses import serve_html
             serve_html(self, html_path)
         elif self.path == "/health":
+            from report_service.hosted import engine_status
             port = self.server.server_address[1]
             role = "ops" if port == PORT_OPS else "gov"
             body = json.dumps({"ok": True, "model": MODEL, "key": bool(DS_KEY),
                                "key_len": len(DS_KEY),
                                "key_prefix": (DS_KEY[:5]+"…"+DS_KEY[-3:]) if DS_KEY else "",
-                               "role": role, "port": port}).encode()
+                               "role": role, "port": port,
+                               "report_engine": engine_status()}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
             self.cors(); self.end_headers(); self.wfile.write(body)
         else:
             self.send_error(404)

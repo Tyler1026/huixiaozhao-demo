@@ -14,7 +14,7 @@ function harness({disk = new Map(), server = {REPORT_REQUESTS: []}, fail = null}
     clearTimeout: id => timers.delete(id), toast: value => messages.push(value), render() {},
     fetch: async (url, options = {}) => {
       const body = options.body ? JSON.parse(options.body) : null;
-      calls.push({url, body});
+      calls.push({url, body, headers: options.headers});
       if (fail) {const result = fail({url, body, server, calls}); if (result) return result;}
       if (body) {
         for (const r of body.REPORT_REQUESTS) if (!server.REPORT_REQUESTS.some(x => x.id === r.id)) server.REPORT_REQUESTS.push(r);
@@ -38,6 +38,8 @@ test('success is shown only after the exact request ID is saved and read back', 
   assert.equal(Object.keys(h.context._rrOutbox).length, 0);
   assert.ok(h.messages.some(m => m.includes('已确认保存')));
   assert.ok(!h.messages.some(m => m.includes('40 分钟')));
+  assert.ok(h.calls.every(c => c.headers['X-HXZ-Report-Client'] === 'website'));
+  assert.equal(h.calls.find(c => c.body).headers['Content-Type'], 'application/json');
 });
 test('offline submission survives a reload and recovers with the same ID', async () => {
   const disk = new Map(); const h = harness({disk, fail: () => {throw new Error('offline');}});
