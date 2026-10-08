@@ -8,6 +8,7 @@ import hashlib
 import json
 import tempfile
 import multiprocessing
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -15,6 +16,7 @@ from unittest.mock import Mock, patch
 
 from backend.sync_transaction import file_session, handle_sync_serialized
 from backend.sync_route import SyncDependencies
+from report_service import hosted
 from report_service.hosted import configured_environment, readiness, start_supervisor
 from report_service.website_queue import ENGINE, TENANT, TOPICS, WebsiteQueue, fence_updates, report_id, request_publication
 
@@ -193,11 +195,50 @@ class WebsiteEngineTests(unittest.TestCase):
 
     def test_configuration_requires_real_search_and_never_starts_synthetic_worker(self):
         env={'DATABASE_URL':'offline-test-only','DEEPSEEK_API_KEY':'offline-fixture',
-             'HXZ_REPORT_ENGINE':'standalone','HXZ_ENABLE_LIVE':'1'}
+             'HXZ_ENABLE_LIVE':'1'}
         result=readiness(env);self.assertFalse(result['ready']);self.assertEqual(result['missing'],['HXZ_SEARCH_KEY'])
         self.assertEqual(configured_environment(env)['HXZ_MODEL_NAME'],'deepseek-chat')
         self.assertNotIn('offline-fixture',json.dumps(result))
-        self.assertIsNone(start_supervisor({}))
+        self.assertTrue(readiness(dict(env, HXZ_SEARCH_KEY='offline-search-fixture'))['ready'])
+
+    def test_default_supervisor_waits_without_spawning_when_switches_or_configuration_are_missing(self):
+        configured = {'DATABASE_URL': 'offline-test-only',
+                      'DEEPSEEK_API_KEY': 'offline-fixture',
+                      'HXZ_SEARCH_KEY': 'offline-search-fixture'}
+        environments = ({}, configured,
+                        {'DATABASE_URL': 'offline-test-only', 'DEEPSEEK_API_KEY': 'offline-fixture',
+                         'HXZ_ENABLE_LIVE': '1'})
+        real_readiness = hosted.readiness
+        for environment in environments:
+            with self.subTest(environment_names=sorted(environment)):
+                checked = threading.Event()
+                def check_configuration(env):
+                    result = real_readiness(env)
+                    checked.set()
+                    return result
+                with patch.object(hosted, '_supervisor_state', None), \
+                     patch.object(hosted, 'readiness', side_effect=check_configuration), \
+                     patch.object(hosted.subprocess, 'Popen') as spawn, patch('builtins.print'):
+                    stop = start_supervisor(environment)
+                    state = hosted._supervisor_state
+                    try:
+                        self.assertTrue(checked.wait(timeout=2), 'supervisor did not check configuration')
+                        self.assertTrue(state['thread'].is_alive())
+                        status = hosted.engine_status(environment)
+                        self.assertEqual(status['engine'], 'standalone')
+                        self.assertFalse(status['configured'])
+                        self.assertTrue(status['supervisor_running'])
+                        self.assertFalse(status['worker_running'])
+                        self.assertNotIn('HXZ_REPORT_ENGINE=standalone', status['missing'])
+                        if 'HXZ_ENABLE_LIVE' not in environment:
+                            self.assertIn('HXZ_ENABLE_LIVE=1', status['missing'])
+                        else:
+                            self.assertIn('HXZ_SEARCH_KEY', status['missing'])
+                    finally:
+                        stop.set()
+                        state['thread'].join(timeout=2)
+                    self.assertFalse(state['thread'].is_alive())
+                    spawn.assert_not_called()
 
     def test_one_failed_delivery_does_not_block_other_reports_and_retry_is_bounded(self):
         state=self.read(); state['REPORT_REQUESTS'].append(dict(self.request,id='rrother'));self.write(state)

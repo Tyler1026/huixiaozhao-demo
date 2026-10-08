@@ -36,6 +36,8 @@ def state_fixture():
         {'id': 'rrnative', 'city': '离线区', 'province': '离线省',
          'mode': 'deep', 'status': 'pending', 'engine': ENGINE},
         {'id': 'rrlegacy', 'city': '离线旧区', 'province': '离线省', 'status': 'pending'},
+        {'id': 'rrlegacyRunning', 'city': '离线在途区', 'province': '离线省',
+         'status': 'running', 'done': 8},
         {'id': 'rrdone', 'city': '离线历史区', 'province': '离线省', 'status': 'done',
          'files': [{'kind': 'full', 'name': 'offline.txt', 'b64': 'b2xkIGJ5dGVz'}]},
     ]}
@@ -47,7 +49,7 @@ class QueueOwnershipTests(unittest.TestCase):
         state['REPORT_REQUESTS'] += [dict(state['REPORT_REQUESTS'][0], id='rrnativeDone', status='done')]
         before = copy.deepcopy(state)
         view = legacy_sync_view(state)
-        self.assertEqual([r['id'] for r in view['REPORT_REQUESTS']], ['rrlegacy', 'rrdone'])
+        self.assertEqual([r['id'] for r in view['REPORT_REQUESTS']], ['rrlegacyRunning', 'rrdone'])
         self.assertEqual(view['PROJECTS'], state['PROJECTS'])
         self.assertEqual(state, before)
         wrapped = legacy_sync_view({'huixiaozhao_kb_v1': state, 'other': 7})
@@ -141,7 +143,8 @@ class ActualQueueHTTPTests(unittest.TestCase):
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), self.handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
-        self.env = patch.dict(os.environ, {'HXZ_REPORT_ENGINE': 'standalone'}, clear=True)
+        # Exercise the production default without either opt-in switch or keys.
+        self.env = patch.dict(os.environ, {}, clear=True)
         self.env.start()
         self.addCleanup(self.env.stop)
         self.addCleanup(self.close_server)
@@ -165,12 +168,13 @@ class ActualQueueHTTPTests(unittest.TestCase):
         self.assertEqual(self.response_headers['Cache-Control'], 'no-store')
         self.assertIn('X-HXZ-Report-Client', self.response_headers['Vary'])
         self.assertIn('Sec-Fetch-Site', self.response_headers['Vary'])
-        self.assertEqual([r['id'] for r in json.loads(body)['REPORT_REQUESTS']], ['rrlegacy', 'rrdone'])
+        self.assertNotIn('HXZ_REPORT_ENGINE', os.environ)
+        self.assertEqual([r['id'] for r in json.loads(body)['REPORT_REQUESTS']], ['rrlegacyRunning', 'rrdone'])
         for headers in ({'X-HXZ-Report-Client': 'website'},
                         {'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Dest': 'empty', 'Sec-Fetch-Mode': 'cors'}):
             status, body = self.request('GET', '/api/sync?raw=1', headers=headers)
             self.assertEqual([r['id'] for r in json.loads(body)['REPORT_REQUESTS']],
-                             ['rrnative', 'rrlegacy', 'rrdone'])
+                             ['rrnative', 'rrlegacy', 'rrlegacyRunning', 'rrdone'])
         status, body = self.request('POST', '/api/sync',
             {'REPORT_REQUESTS': [{'id': 'rrnative', 'status': 'running', 'claimTs': 123}]},
             {'X-HXZ-Report-Client': 'website'})
@@ -184,22 +188,88 @@ class ActualQueueHTTPTests(unittest.TestCase):
 
     def test_old_requests_and_existing_download_bytes_keep_their_contract(self):
         status, body = self.request('POST', '/api/sync',
-            {'REPORT_REQUESTS': [{'id': 'rrlegacy', 'status': 'running', 'claimTs': 123}]})
+            {'REPORT_REQUESTS': [{'id': 'rrlegacyRunning', 'status': 'running', 'done': 9}]})
         self.assertEqual(status, 200); self.assertTrue(json.loads(body)['ok'])
         saved = json.loads(self.path.read_text())
-        self.assertEqual(next(r for r in saved['REPORT_REQUESTS'] if r['id'] == 'rrlegacy')['status'], 'running')
+        old = next(r for r in saved['REPORT_REQUESTS'] if r['id'] == 'rrlegacyRunning')
+        self.assertEqual((old['status'], old['done']), ('running', 9))
+        self.assertNotIn('engine', old)
         self.assertEqual(saved['PROJECTS'], self.original['PROJECTS'])
         query = urllib.parse.urlencode({'requestId': 'rrdone', 'city': '离线历史区', 'kind': 'full'})
         status, body = self.request('GET', '/api/report-file?' + query)
         self.assertEqual(status, 200); self.assertEqual(body, b'old bytes')
         with patch.dict(os.environ, {'HXZ_REPORT_ENGINE': ''}):
             status, body = self.request('GET', '/api/sync')
-            self.assertEqual(len(json.loads(body)['REPORT_REQUESTS']), 3)
+            self.assertEqual([r['id'] for r in json.loads(body)['REPORT_REQUESTS']],
+                             ['rrlegacyRunning', 'rrdone'])
         status, body = self.request('GET', '/health')
         status = json.loads(body)['report_engine']
         self.assertEqual(status['engine'], 'standalone')
         self.assertFalse(status['worker_running'])
         self.assertEqual(status['scope'], 'process_and_configuration_only')
+
+    def test_new_request_is_owned_before_a_worker_starts_and_old_snapshot_cannot_claim(self):
+        request = {'id': 'rrnewDefault', 'city': '默认隔离区', 'province': '离线省',
+                   'mode': 'deep', 'status': 'pending', 'by': 'offline', 'ts': 1}
+        status, body = self.request('POST', '/api/sync', {'REPORT_REQUESTS': [request]},
+                                   {'X-HXZ-Report-Client': 'website'})
+        self.assertEqual(status, 200)
+        self.assertTrue(json.loads(body)['ok'])
+        saved = json.loads(self.path.read_text())
+        target = next(r for r in saved['REPORT_REQUESTS'] if r['id'] == request['id'])
+        self.assertEqual((target['engine'], target['status'], target['mode']),
+                         (ENGINE, 'pending', 'deep'))
+        status, body = self.request('GET', '/api/sync')
+        self.assertNotIn(request['id'], [r['id'] for r in json.loads(body)['REPORT_REQUESTS']])
+        status, body = self.request('GET', '/api/sync', headers={'X-HXZ-Report-Client': 'website'})
+        self.assertIn(target, json.loads(body)['REPORT_REQUESTS'])
+        status, body = self.request('POST', '/api/sync', {'REPORT_REQUESTS': [
+            dict(request, status='running', claimTs=123)]})
+        self.assertEqual(status, 409)
+        self.assertEqual(json.loads(body)['rejected'], 'server-owned-report')
+        self.assertEqual(json.loads(self.path.read_text()), saved)
+
+    def test_unmarked_pending_is_reserved_before_ingestion_and_can_be_cancelled(self):
+        old_snapshot = copy.deepcopy(self.original['REPORT_REQUESTS'][1])
+        self.assertNotIn('engine', old_snapshot)
+        status, body = self.request('POST', '/api/sync', {'REPORT_REQUESTS': [
+            dict(old_snapshot, status='running', claimTs=123)]})
+        self.assertEqual(status, 409)
+        self.assertFalse(json.loads(body)['ok'])
+        self.assertEqual(json.loads(self.path.read_text()), self.original)
+        status, body = self.request('POST', '/api/sync', {'REPORT_REQUESTS': [
+            {'id': old_snapshot['id'], 'status': 'cancelled'}]},
+            {'X-HXZ-Report-Client': 'website'})
+        self.assertEqual(status, 200)
+        self.assertTrue(json.loads(body)['ok'])
+        cancelled = next(r for r in json.loads(self.path.read_text())['REPORT_REQUESTS']
+                         if r['id'] == old_snapshot['id'])
+        self.assertEqual((cancelled['engine'], cancelled['status']), (ENGINE, 'cancelled'))
+        self.assertGreater(cancelled['cancelledTs'], 0)
+        self.assertEqual(cancelled['city'], old_snapshot['city'])
+
+    def test_disabled_or_unconfigured_worker_never_reopens_legacy_queue(self):
+        for environment in ({}, {'HXZ_ENABLE_LIVE': '0'},
+                            {'HXZ_REPORT_ENGINE': '', 'HXZ_ENABLE_LIVE': '0'},
+                            {'HXZ_REPORT_ENGINE': 'legacy', 'HXZ_ENABLE_LIVE': '1'}):
+            with self.subTest(environment=environment), patch.dict(os.environ, environment, clear=True):
+                status, body = self.request('GET', '/api/sync')
+                self.assertEqual(status, 200)
+                self.assertEqual([r['id'] for r in json.loads(body)['REPORT_REQUESTS']],
+                                 ['rrlegacyRunning', 'rrdone'])
+                for request_id in ('rrnative', 'rrlegacy'):
+                    status, body = self.request('POST', '/api/sync', {'REPORT_REQUESTS': [
+                        {'id': request_id, 'status': 'running', 'claimTs': 123}]})
+                    self.assertEqual(status, 409)
+                    self.assertFalse(json.loads(body)['ok'])
+                self.assertEqual(json.loads(self.path.read_text()), self.original)
+                status, body = self.request('GET', '/health')
+                self.assertEqual(status, 200)
+                engine = json.loads(body)['report_engine']
+                self.assertEqual(engine['engine'], 'standalone')
+                self.assertFalse(engine['configured'])
+                self.assertFalse(engine['worker_running'])
+                self.assertIn('DATABASE_URL', engine['missing'])
 
     def test_running_reclaim_is_rejected_but_stale_snapshot_remains_compatible(self):
         state = copy.deepcopy(self.original)

@@ -18,8 +18,8 @@ function harness({response, reject = false} = {}) {
   vm.createContext(context);
   vm.runInContext(read('03.js') + '\n' + read('05.js'), context);
   context.REPORT_REQUESTS = [
-    {id: 'old', city: 'A', status: 'done', ts: 1, chunks: 1},
-    {id: 'new', city: 'A', status: 'done', ts: 2, chunks: 1},
+    {id: 'old', city: 'A', engine: 'full-v1', status: 'done', ts: 1, chunks: 1},
+    {id: 'new', city: 'A', engine: 'full-v1', status: 'done', ts: 2, chunks: 1},
   ];
   return {context, calls, messages};
 }

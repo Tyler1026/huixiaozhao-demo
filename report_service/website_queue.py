@@ -46,6 +46,14 @@ def website_reads_queue(headers):
                 and headers.get('Sec-Fetch-Mode') in ('cors', 'same-origin')))
 
 
+def server_owned_request(request):
+    """Reserve unclaimed legacy requests before worker ingestion can race a claim."""
+    return (isinstance(request, dict)
+            and (request.get('engine') == ENGINE
+                 or (request.get('engine') is None and request.get('status') == 'pending'
+                     and valid_request(request))))
+
+
 def legacy_sync_view(state):
     """Keep legacy records and other business fields, hide native worker jobs."""
     if not isinstance(state, dict):
@@ -53,8 +61,7 @@ def legacy_sync_view(state):
     value = dict(state)
     rows = value.get('REPORT_REQUESTS')
     if isinstance(rows, list):
-        value['REPORT_REQUESTS'] = [r for r in rows
-                                   if not (isinstance(r, dict) and r.get('engine') == ENGINE)]
+        value['REPORT_REQUESTS'] = [r for r in rows if not server_owned_request(r)]
     nested = value.get('huixiaozhao_kb_v1')
     if isinstance(nested, dict):
         value['huixiaozhao_kb_v1'] = legacy_sync_view(nested)
@@ -76,7 +83,7 @@ other sync fields continue through the existing merge policy unchanged.
         if not isinstance(r, dict):
             continue
         saved = old.get(r.get('id'))
-        if saved and saved.get('engine') == ENGINE:
+        if saved and server_owned_request(saved):
             # A legacy claimant must see failure, not a successful no-op.
             # Stale website snapshots and explicit cancellation still work.
             if (r.get('status') == 'running'
@@ -85,6 +92,7 @@ other sync fields continue through the existing merge policy unchanged.
                 from backend.sync_transaction import SyncWriteConflict
                 raise SyncWriteConflict('server-owned report cannot be claimed through sync')
             value = copy.deepcopy(saved)
+            value['engine'] = ENGINE
             if r.get('status') == 'cancelled' and saved.get('status') != 'cancelled':
                 value.update(status='cancelled', cancelledTs=int(time.time() * 1000))
             rows.append(value)
@@ -127,11 +135,21 @@ def request_publication(handler, raw, session_factory):
         handler.cors(); handler.end_headers(); handler.wfile.write(data)
     try:
         body = json.loads(raw)
+    except (ValueError, UnicodeError):
+        return reply(400, {'ok': False, 'error': '推送请求格式错误'})
+    try:
+        if not isinstance(body, dict):
+            return reply(400, {'ok': False, 'error': '推送请求必须是对象'})
         city, reqid = body.get('city'), body.get('requestId')
-        if not isinstance(city, str) or not city.strip() or (reqid is not None and not isinstance(reqid, str)):
+        if (not isinstance(city, str) or not city.strip()
+                or ('requestId' in body and (not isinstance(reqid, str) or not reqid.strip()))):
             return reply(400, {'ok': False, 'error': '报告申请参数无效'})
+        city = city.strip()
+        reqid = reqid.strip() if reqid is not None else None
         with session_factory() as session:
             state = json.loads(session.read())
+            if not isinstance(state, dict) or not isinstance(state.get('REPORT_REQUESTS', []), list):
+                raise ValueError('invalid report storage')
             rows = [r for r in state.get('REPORT_REQUESTS') or [] if isinstance(r, dict)]
             found = [r for r in rows if r.get('id') == reqid] if reqid else [
                 r for r in rows if r.get('city') == city and r.get('status') == 'done']
@@ -142,6 +160,9 @@ def request_publication(handler, raw, session_factory):
             target = found[0]
             if target.get('status') != 'done':
                 return reply(409, {'ok': False, 'error': '该报告申请尚未完成，不能推送'})
+            if target.get('engine') != ENGINE and not target.get('pushed'):
+                return reply(409, {'ok': False, 'code': 'legacy-report-requires-regeneration',
+                                   'error': '历史报告缺少独立发布所需的研究材料，请重新生成后推送'})
             if target.get('pushRequested') or target.get('pushed'):
                 return reply(200, {'ok': True, 'id': target['id'], 'city': city,
                                    'alreadyRequested': True, 'pushed': bool(target.get('pushed'))})

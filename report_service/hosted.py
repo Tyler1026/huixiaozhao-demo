@@ -1,6 +1,6 @@
 """Independent website report worker using the existing PostgreSQL service.
 
-Enable explicitly with HXZ_REPORT_ENGINE=standalone and HXZ_ENABLE_LIVE=1.
+The website always owns new reports. Enable paid research with HXZ_ENABLE_LIVE=1.
 There is no synthetic production mode and no persistent-volume/new-service
 requirement. Credentials remain environment-only, never command arguments.
 """
@@ -20,11 +20,11 @@ def configured_environment(environ):
     env = dict(environ)
     if not env.get('HXZ_MODEL_KEY') and env.get('DEEPSEEK_API_KEY'):
         env['HXZ_MODEL_KEY'] = env['DEEPSEEK_API_KEY']
-        env.setdefault('HXZ_MODEL_URL', 'https://api.deepseek.com/v1/chat/completions')
-        env.setdefault('HXZ_MODEL_NAME', 'deepseek-chat')
+        env['HXZ_MODEL_URL'] = env.get('HXZ_MODEL_URL') or 'https://api.deepseek.com/v1/chat/completions'
+        env['HXZ_MODEL_NAME'] = env.get('HXZ_MODEL_NAME') or 'deepseek-chat'
     if not env.get('HXZ_SEARCH_KEY') and env.get('EXA_API_KEY'):
         env['HXZ_SEARCH_KEY'] = env['EXA_API_KEY']
-        env.setdefault('HXZ_SEARCH_PROVIDER', 'exa')
+        env['HXZ_SEARCH_PROVIDER'] = env.get('HXZ_SEARCH_PROVIDER') or 'exa'
     return env
 
 
@@ -34,24 +34,34 @@ def readiness(environ):
                                 'HXZ_MODEL_NAME', 'HXZ_SEARCH_KEY') if not env.get(name)]
     if env.get('HXZ_ENABLE_LIVE') != '1':
         missing.append('HXZ_ENABLE_LIVE=1')
-    if env.get('HXZ_REPORT_ENGINE') != 'standalone':
+    if env.get('HXZ_REPORT_ENGINE', 'standalone') != 'standalone':
         missing.append('HXZ_REPORT_ENGINE=standalone')
-    return {'ready': not missing, 'missing': missing}
+    from .providers import SEARCH_PROVIDERS, validate_https_url
+    invalid = []
+    for name in ('HXZ_MODEL_URL', 'HXZ_SEARCH_URL'):
+        if env.get(name):
+            try:
+                validate_https_url(env[name])
+            except ValueError:
+                invalid.append(name)
+    if (env.get('HXZ_SEARCH_PROVIDER') or 'brave').strip().lower() not in SEARCH_PROVIDERS:
+        invalid.append('HXZ_SEARCH_PROVIDER')
+    return {'ready': not missing and not invalid, 'missing': missing, 'invalid': invalid}
 
 
 def engine_status(environ=None):
     """Safe process/configuration status; does not claim successful research."""
     env = os.environ if environ is None else environ
-    enabled = env.get('HXZ_REPORT_ENGINE') == 'standalone'
     config = readiness(env)
     with _supervisor_lock:
         state = _supervisor_state
-        active = bool(enabled and state and state['thread'].is_alive()
+        active = bool(state and state['thread'].is_alive()
                       and not state['stop'].is_set())
         process = state['process'] if active else None
         worker = bool(process is not None and process.poll() is None)
-    return {'engine': 'standalone' if enabled else 'disabled',
+    return {'engine': 'standalone',
             'configured': config['ready'], 'missing': config['missing'],
+            'invalid': config['invalid'],
             'supervisor_running': active, 'worker_running': worker,
             'scope': 'process_and_configuration_only'}
 
@@ -59,8 +69,6 @@ def engine_status(environ=None):
 def start_supervisor(environ=None, *, stop=None):
     """Website owns the worker lifetime; crash recovery retains DB checkpoints."""
     env = os.environ if environ is None else environ
-    if env.get('HXZ_REPORT_ENGINE') != 'standalone':
-        return None
     stop = stop or threading.Event()
     state = {'thread': None, 'stop': stop, 'process': None}
     def supervise():
@@ -148,9 +156,12 @@ def main(argv=None):
         os._exit(71)
     threading.Thread(target=watch_parent, daemon=True).start()
     while True:
+        phase = 'ingest'
         try:
             queue.ingest()
+            phase = 'mirror'
             queue.mirror(continue_on_error=True)
+            phase = 'worker'
             result = run_once(store, provider, synthetic=False,
                               stop_job=lambda job: not report_request_active(
                                   job['request_key'], ENGINE))
@@ -158,9 +169,14 @@ def main(argv=None):
                 print(json.dumps(result, ensure_ascii=False), flush=True)
             else:
                 time.sleep(2)
-        except Exception:
+        except Exception as error:
             # Do not log SQL, upstream response bodies or environment values.
-            print('{"report_engine":"storage_or_delivery_retry"}', flush=True)
+            diagnostic = {'report_engine': 'storage_or_delivery_retry',
+                          'phase': phase, 'error_type': type(error).__name__}
+            code = getattr(error, 'pgcode', None)
+            if isinstance(code, str) and len(code) == 5 and code.isascii() and code.isalnum():
+                diagnostic['sqlstate'] = code
+            print(json.dumps(diagnostic), flush=True)
             time.sleep(30)
 
 

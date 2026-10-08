@@ -25,6 +25,12 @@ def environment(raw, store='{}', write_ok=True, path='/api/sync'):
     for name in names:
         if hasattr(sync_merge,name):ns[name]=getattr(sync_merge,name)
     ns['_db_set'] = save
+    from contextlib import contextmanager
+    @contextmanager
+    def transaction():
+        from types import SimpleNamespace
+        yield SimpleNamespace(read=lambda: store, write=save)
+    ns['_sync_transaction'] = transaction
     exec(compile(ast.Module(body=nodes, type_ignores=[]), 'server.py', 'exec'), ns)
     handler = object.__new__(ns['Handler'])
     handler.path = path

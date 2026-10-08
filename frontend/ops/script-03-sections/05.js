@@ -190,7 +190,13 @@ function rrPanel(){
       var dur='';
       if(r.activeMs){ dur=' · 正式运行 '+rrElapsed(r.activeMs)+(r.gapMs?'（另有断点 '+rrElapsed(r.gapMs)+'）':''); }
       else if(r.doneTs&&(r.claimTs||r.ts)){ dur=' · 耗时 '+rrElapsed(r.doneTs-(r.claimTs||r.ts)); }
-      doneInfo=' · 智库材料 '+r.chunks+' 条已入库'+dur;
+      doneInfo=(r.pushed?' · 智库材料 '+(r.chunks||0)+' 条已入库':r.engine==='full-v1'?' · Word 已生成，'+(r.pushRequested?'正在发布':'待发布'):' · '+(r.files&&r.files.length?'历史 Word 可下载，':'历史报告')+'需重新生成后发布')+dur;
+    }
+    var serviceInfo='';
+    if(r.engine==='full-v1'&&r.status==='failed'&&r.failureCode==='configuration'){
+      serviceInfo=' · 报告服务配置或认证异常，已完成成果保留，需管理员处理后接续';
+    }else if(r.engine==='full-v1'&&r.status==='pending'&&!r.submissionPending&&_rrEngineHealth&&_rrEngineHealth.configured===false){
+      serviceInfo=' · 申请已保存，待管理员完成报告服务配置后自动开始';
     }
     var dlBtn='';
     if(r.status==='done' && r.files && r.files.length){
@@ -200,6 +206,8 @@ function rrPanel(){
     if(r.status==='done'){
       if(r.pushed){
         pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#166534;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:5px 11px;white-space:nowrap">✓ 已推送 · 账号 '+(r.account||'—')+'</span>';
+      } else if(r.engine!=='full-v1'){
+        pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:5px 11px;white-space:nowrap">需重新生成后发布</span>';
       } else if(r.pushRequested){
         pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:5px 11px;white-space:nowrap">⏳ 推送中…</span>';
       } else {
@@ -215,14 +223,14 @@ function rrPanel(){
     }
     return '<div class="ops-row" style="align-items:flex-start;flex-direction:column"><div style="display:flex;align-items:center;gap:10px;width:100%">'+
       '<div class="r-ic"></div>'+
-      '<div class="r-main"><div style="display:flex;align-items:center;gap:8px"><strong>'+r.province+' · '+r.city+'</strong>'+(r.submissionPending?'<span class="ops-badge orange">等待保存确认</span>':rrStatusBadge(r.status))+'</div>'+
-      '<small>'+r.by+' · '+tm+' 发起'+doneInfo+(r.submissionPending?' · '+(r.submissionError||'正在确认，暂未进入生成队列'):'')+(r.status==='failed'&&r.failReason?' · '+r.failReason:'')+'</small></div>'+
+      '<div class="r-main"><div style="display:flex;align-items:center;gap:8px"><strong>'+r.province+' · '+r.city+'</strong>'+(r.submissionPending?'<span class="ops-badge orange">等待保存确认</span>':rrStatusBadge(r.status,r))+'</div>'+
+      '<small>'+r.by+' · '+tm+' 发起'+doneInfo+serviceInfo+(r.submissionPending?' · '+(r.submissionError||'正在确认，暂未进入生成队列'):'')+(r.status==='failed'&&r.failReason&&!serviceInfo?' · '+r.failReason:'')+'</small></div>'+
       '<div style="margin-left:auto;display:flex;align-items:center;gap:8px">'+dlBtn+pushCtrl+cancelBtn+'</div></div>'+
       rrProgress(r)+'</div>';
   }).join('')||'<div style="color:#8492a6;font-size:13px;padding:8px 2px">暂无申请记录</div>';
   return '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:18px 20px;margin:0 0 16px">'+
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><strong style="font-size:15px">发起城市报告生成</strong>'+
-    '<span style="color:#8492a6;font-size:12px">AI 招商智能体 · 产出后自动初始化该城市智库</span></div>'+
+    '<span style="color:#8492a6;font-size:12px">独立报告服务 · 生成 Word 后可发布到城市智库</span></div>'+
     '<div style="display:flex;gap:10px;margin-bottom:14px">'+
       '<input id="rrProv" placeholder="省份，如 湖北" style="flex:0 0 150px;min-height:40px;padding:8px 11px;border:1px solid var(--line);border-radius:8px">'+
       '<input id="rrCity" placeholder="城市，如 随州" style="flex:0 0 150px;min-height:40px;padding:8px 11px;border:1px solid var(--line);border-radius:8px">'+
