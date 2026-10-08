@@ -266,6 +266,18 @@ class FullWorkerTests(unittest.TestCase):
         self.assertNotIn('line_count', diagnostic)
         self.assertNotIn('secret123', str(diagnostic))
 
+    def test_token_limit_has_static_diagnostic_without_raw_completion_reason(self):
+        cases = (('upstream chat output token limit reached', 'output_token_limit'),
+                 ('upstream chat output incomplete', 'incomplete_output'),
+                 ("upstream chat output incomplete (finish_reason='secret123 https://private.invalid')", 'incomplete_output'))
+        for message, issue in cases:
+            with self.subTest(issue=issue):
+                diagnostic = _failure_diagnostics(FullProviderError(message, 'quality'),
+                                                  'provider', 'policy', '区级政策')
+                self.assertEqual(diagnostic['issues'], [issue])
+                self.assertNotIn('secret123', str(diagnostic))
+                self.assertNotIn('https://', str(diagnostic))
+
     def test_provider_metrics_do_not_escape_other_failure_phases(self):
         error = ValueError('saved context must remain private')
         error.safe_metrics = {'line_count': 59, 'min_lines': 67, 'text_chars': 5500,

@@ -56,6 +56,8 @@ def _provider_issue(error):
         return 'prior_context_bound'
     if message.startswith(('model output is not json', 'model json unparseable')) or 'non-object json' in message:
         return 'json_parse'
+    if message == 'upstream chat output token limit reached':
+        return 'output_token_limit'
     if message.startswith(('upstream chat output incomplete', 'upstream chat response missing text content', 'model returned empty output')) or "missing non-empty 'text'" in message:
         return 'incomplete_output'
     if message.startswith(('direction', 'industry direction')):

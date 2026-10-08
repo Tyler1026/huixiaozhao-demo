@@ -301,6 +301,44 @@ class LiveProviderRuntimeTests(unittest.TestCase):
         supplied['line_count'] = 8
         self.assertEqual(error.safe_metrics, {'line_count': 4})
 
+    def test_length_completion_uses_fixed_token_limit_message(self):
+        p = self._provider(RecordingRouter({}))
+        with self.assertRaises(fp.FullProviderError) as caught:
+            p._extract_text({'choices': [{'finish_reason': 'length',
+                'message': {'content': 'private partial model body'}}]})
+        self.assertEqual(caught.exception.failure_code, 'quality')
+        self.assertEqual(str(caught.exception), 'upstream chat output token limit reached')
+        self.assertNotIn('private partial', str(caught.exception))
+
+    def test_unknown_completion_reason_never_appears_in_failure_message(self):
+        p = self._provider(RecordingRouter({}))
+        for reason in ('secret123', 'length secret123', {'secret123': 'hidden'}, ['secret123'], 'LENGTH'):
+            with self.subTest(reason=reason), self.assertRaises(fp.FullProviderError) as caught:
+                p._extract_text({'choices': [{'finish_reason': reason,
+                    'message': {'content': 'private partial model body'}}]})
+            self.assertEqual(str(caught.exception), 'upstream chat output incomplete')
+            self.assertEqual(caught.exception.failure_code, 'quality')
+            self.assertNotIn('secret123', str(caught.exception))
+        for reason in (None, 'stop'):
+            self.assertEqual(p._extract_text({'choices': [{'finish_reason': reason,
+                'message': {'content': 'complete output'}}]}), 'complete output')
+
+    def test_output_budget_tracks_actual_line_floor_and_respects_global_cap(self):
+        for stage, floor, configured, expected in (
+                ('economy', 38, 3500, 6000), ('economy', 60, 3500, 8000),
+                ('economy', 59, 3500, 6000), ('policy', 67, 3500, 8000),
+                ('chain', 84, 3500, 8000), ('action', 75, 3500, 8000),
+                ('summary', 80, 3500, 8000), ('scoring', 50, 3500, 8000),
+                ('compact', 200, 3500, 8000), ('economy', 38, 100_000, 8000)):
+            with self.subTest(stage=stage, floor=floor, configured=configured):
+                router = RecordingRouter({'chat/completions': (200, json.dumps({
+                    'choices': [{'message': {'content': '{"text":"OFFLINE fixture"}'}}]}))})
+                p = self._provider(router)
+                p._live.max_output_tokens = configured
+                p._chat_part(stage, fc.get_stage(stage)['parts'][0], '测试城', '', [], min_lines=floor)
+                self.assertEqual(json.loads(router.calls[0].data)['max_tokens'], expected)
+                self.assertLessEqual(expected, providers.MAX_OUTPUT_TOKENS)
+
     def test_intermediate_and_deep_floors_preserve_original_stage_totals(self):
         p = self._provider(RecordingRouter({}))
         prior = {'economy': {'text': '\n'.join(f'已保存{i}' for i in range(20))}}
@@ -697,7 +735,7 @@ class PolicyEvidencePlanningTests(unittest.TestCase):
         p.run_part('policy', '国家产业政策', {'city': '松江区', 'province': '上海市'},
                    DirectionSerializationTests._prior())
         chat = json.loads(next(call for call in router.calls if 'chat/completions' in call.full_url).data)
-        self.assertEqual(chat['max_tokens'], 6000)
+        self.assertEqual(chat['max_tokens'], 8000)
         prompt = chat['messages'][-1]['content']
         for requirement in ('实证政策卡', '发布机构', '文号', '适用产业链环节', '支持工具', '有效期',
                             '申报入口', '限制条款', '落地适配', '核查动作', '反复写同一句“待核实”',

@@ -587,7 +587,7 @@ class FullLiveProvider:
             {"role": "system", "content": _full_system_prompt()},
             {"role": "user", "content": "\n\n".join(user_blocks)},
         ]
-        token_floor = 8000 if stage_id in {'scoring', 'compact'} else 6000
+        token_floor = 8000 if stage_id in {'scoring', 'compact'} or floor >= 60 else 6000
         data = self._live._chat(messages, min(providers.MAX_OUTPUT_TOKENS, max(self._live.max_output_tokens, token_floor)))
         return self._extract_text(data)
 
@@ -600,12 +600,11 @@ class FullLiveProvider:
             if isinstance(choices, list) and choices:
                 first = choices[0]
                 if isinstance(first, dict):
-                    if first.get("finish_reason") not in (None, "stop"):
-                        raise FullProviderError(
-                            "upstream chat output incomplete (finish_reason=%r)"
-                            % (first.get("finish_reason"),),
-                            "quality",
-                        )
+                    finish_reason = first.get('finish_reason')
+                    if finish_reason == 'length':
+                        raise FullProviderError('upstream chat output token limit reached', 'quality')
+                    if finish_reason not in (None, 'stop'):
+                        raise FullProviderError('upstream chat output incomplete', 'quality')
                     message = first.get("message")
                     if isinstance(message, dict) and message.get("content") is not None:
                         return str(message["content"])
