@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from report_service.full_store import FullStore
-from report_service.full_worker import run_once, run_loop
+from report_service.full_worker import run_once, run_loop, _failure_diagnostics
 from report_service.full_provider import FullProviderError
 
 STAGES = tuple({'id': f's{i}', 'filename': f'{i}.md', 'parts': ('body',)} for i in range(10))
@@ -86,6 +86,27 @@ class RealValidationContract:
 class ProviderParseFault:
     def run_part(self, *args):
         raise FullProviderError('model JSON unparseable: secret123 https://private.example/key', 'quality')
+
+
+class ProviderMetricFault:
+    def run_part(self, *args):
+        error = FullProviderError('part line floor not met', 'quality')
+        error.safe_metrics = {'line_count': 59, 'min_lines': 67, 'text_chars': 5500,
+                              'literal_newline_count': 0, 'api_key': 'secret123',
+                              'text': 'private model body https://private.example/key',
+                              'upstream_response': {'Authorization': 'secret123'}}
+        raise error
+
+
+class UnsafeMetricMapping(dict):
+    def __getitem__(self, key):
+        raise RuntimeError('do not expose custom mapping secret123')
+
+
+class UnsafeMetricProperty(ValueError):
+    @property
+    def safe_metrics(self):
+        raise RuntimeError('do not expose property secret123')
 
 
 class ContextFaultContract(TinyContract):
@@ -200,6 +221,57 @@ class FullWorkerTests(unittest.TestCase):
         self.assertNotIn('secret123', str(result))
         self.assertNotIn('http://', str(result))
         self.assertNotIn('https://', str(result))
+
+    def test_spawned_provider_failure_reports_only_allowlisted_numeric_metrics(self):
+        self.store.create('a', 'p', 'metrics', 'metrics', False)
+        result = run_once(self.store, ProviderMetricFault(), synthetic=False, contract=TinyContract)
+        self.assertEqual((result['status'], result['code']), ('retry_wait', 'quality'))
+        self.assertEqual(result['diagnostics'], {
+            'phase': 'provider', 'stage': 's0', 'part': 'body', 'exception_class': 'FullProviderError',
+            'issues': ['line_floor'], 'line_count': 59, 'min_lines': 67,
+            'text_chars': 5500, 'literal_newline_count': 0,
+        })
+        self.assertNotIn('secret123', str(result))
+        self.assertNotIn('private model body', str(result))
+        self.assertNotIn('https://', str(result))
+
+    def test_provider_metrics_reject_boolean_noninteger_negative_and_oversized_counts(self):
+        limits = {'line_count': 10_000, 'min_lines': 10_000,
+                  'text_chars': 2_000_000, 'literal_newline_count': 10_000}
+        for field, limit in limits.items():
+            for value in (True, False, -1, 1.0, '67 secret123', [67], {'secret123': 67}, limit + 1, 10 ** 100):
+                with self.subTest(field=field, value=value):
+                    error = FullProviderError('part line floor not met', 'quality')
+                    error.safe_metrics = {field: value, 'raw': 'secret123'}
+                    diagnostic = _failure_diagnostics(error, 'provider', 'policy', '国家产业政策')
+                    self.assertNotIn(field, diagnostic)
+                    self.assertNotIn('secret123', str(diagnostic))
+            for value in (0, limit):
+                with self.subTest(field=field, value=value):
+                    error.safe_metrics = {field: value}
+                    diagnostic = _failure_diagnostics(error, 'provider', 'policy', '国家产业政策')
+                    self.assertEqual(diagnostic[field], value)
+
+    def test_provider_metrics_reject_custom_containers_and_failing_attribute(self):
+        for metrics in (None, 'secret123', [67], UnsafeMetricMapping(line_count=67)):
+            with self.subTest(metrics=type(metrics).__name__):
+                error = FullProviderError('part line floor not met', 'quality')
+                error.safe_metrics = metrics
+                diagnostic = _failure_diagnostics(error, 'provider', 'policy', '国家产业政策')
+                self.assertEqual(set(diagnostic), {'phase', 'stage', 'part', 'exception_class', 'issues'})
+                self.assertNotIn('secret123', str(diagnostic))
+        diagnostic = _failure_diagnostics(UnsafeMetricProperty('part line floor not met'),
+                                          'provider', 'policy', '国家产业政策')
+        self.assertEqual(diagnostic['exception_class'], 'Exception')
+        self.assertNotIn('line_count', diagnostic)
+        self.assertNotIn('secret123', str(diagnostic))
+
+    def test_provider_metrics_do_not_escape_other_failure_phases(self):
+        error = ValueError('saved context must remain private')
+        error.safe_metrics = {'line_count': 59, 'min_lines': 67, 'text_chars': 5500,
+                              'literal_newline_count': 10, 'raw': 'secret123'}
+        diagnostic = _failure_diagnostics(error, 'context', 'policy', '国家产业政策')
+        self.assertEqual(set(diagnostic), {'phase', 'stage', 'part', 'exception_class', 'issues'})
 
     def test_context_and_output_faults_have_distinct_safe_phases(self):
         stages = ({'id': 's0', 'filename': 'one.md', 'parts': ('first', 'last')},)
