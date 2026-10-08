@@ -54,6 +54,16 @@ CREATE TABLE IF NOT EXISTS full_events (
  id INTEGER PRIMARY KEY AUTOINCREMENT, report_id TEXT NOT NULL,
  at REAL NOT NULL, kind TEXT NOT NULL, stage TEXT, part TEXT, code TEXT
 );
+CREATE TABLE IF NOT EXISTS full_checkpoint_archive (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ report_id TEXT NOT NULL REFERENCES full_reports(id),
+ step_id TEXT NOT NULL REFERENCES full_steps(id),
+ ordinal INTEGER NOT NULL, stage TEXT NOT NULL, part TEXT NOT NULL,
+ attempts INTEGER NOT NULL, consumed REAL NOT NULL,
+ output TEXT NOT NULL, output_sha256 TEXT NOT NULL,
+ archived_at REAL NOT NULL, reason TEXT NOT NULL,
+ UNIQUE(step_id, attempts, output_sha256)
+);
 '''
 
 
@@ -61,6 +71,48 @@ def _effective_limit(*values):
     """Zero in persisted policy means no aggregate limit, not zero work."""
     finite = [value for value in values if value > 0]
     return min(finite) if finite else math.inf
+
+
+def _checkpoint_issue(raw):
+    """Identify retained URL/excerpt defects, never an aggregate content floor.
+
+    This deliberately does not run the whole stage contract: a partial stage
+    may legitimately have too few sources or lines. Original checkpoint bytes
+    remain untouched until the fenced repair transaction archives them.
+    """
+    from .full_contract import (
+        extract_urls, normalize_url, is_government_host,
+        _is_private_or_local_host, _is_placeholder_host,
+    )
+
+    try:
+        output = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(output, dict):
+        return None
+    text = output.get('text')
+    for url in extract_urls(text if isinstance(text, str) else ''):
+        norm = normalize_url(url)
+        if norm is None:
+            return 'unsafe_text_url'
+        scheme, host, path = norm
+        if (scheme != 'https' or _is_private_or_local_host(host)
+                or _is_placeholder_host(host)
+                or ('gov.cn' in path and not is_government_host(host))):
+            return 'unsafe_text_url'
+    metadata = output.get('metadata')
+    evidence = metadata.get('evidence') if isinstance(metadata, dict) else None
+    for item in evidence if isinstance(evidence, list) else []:
+        if not isinstance(item, dict):
+            continue
+        norm = normalize_url(item.get('url'))
+        if norm is not None and norm[0] == 'http':
+            return 'http_evidence'
+        excerpt = item.get('excerpt')
+        if not isinstance(excerpt, str) or not excerpt.strip():
+            return 'empty_excerpt'
+    return None
 
 
 class FullStore:
@@ -250,6 +302,60 @@ class FullStore:
             if not row:
                 return False
             self._fail(c, row, code, retryable)
+            return True
+
+    def repair_invalid_checkpoints(self, sid, token):
+        """Archive a defective committed suffix and revoke it under a live lease.
+
+        The store rechecks committed bytes inside the same serialized
+        transaction that performs the rewind. Attempts, consumed work and the
+        last real progress timestamp survive; cancellation and stale workers
+        cannot revive or overwrite the task.
+        """
+        with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            owned = self._owned(c, sid, token)
+            if not owned:
+                return False
+            rid = owned['report_id']
+            report = c.execute('SELECT status FROM full_reports WHERE id=?', (rid,)).fetchone()
+            if not report or report['status'] in ('failed', 'completed', 'cancelled'):
+                return False
+            committed = c.execute("SELECT * FROM full_steps WHERE report_id=? AND status='done' AND stage!='__bundle__' ORDER BY ordinal",
+                                  (rid,)).fetchall()
+            invalid = None
+            for checkpoint in committed:
+                reason = _checkpoint_issue(checkpoint['output'])
+                if reason:
+                    invalid = checkpoint, reason
+                    break
+            if invalid is None:
+                return False
+            checkpoint, reason = invalid
+            # An owned claim must follow the committed checkpoint it replaces.
+            # Never revoke unrelated or newly committed work ahead of it.
+            if checkpoint['ordinal'] >= owned['ordinal']:
+                return False
+            now = self.clock()
+            suffix = c.execute('SELECT * FROM full_steps WHERE report_id=? AND ordinal>=? ORDER BY ordinal',
+                               (rid, checkpoint['ordinal'])).fetchall()
+            for previous in suffix:
+                raw = previous['output']
+                if raw is None:
+                    continue
+                checksum = hashlib.sha256(raw.encode('utf-8')).hexdigest()
+                c.execute('''INSERT INTO full_checkpoint_archive
+                    (report_id,step_id,ordinal,stage,part,attempts,consumed,output,output_sha256,archived_at,reason)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING''',
+                          (rid, previous['id'], previous['ordinal'], previous['stage'], previous['part'],
+                           previous['attempts'], previous['consumed'], raw, checksum, now, reason))
+            c.execute('UPDATE full_steps SET consumed=consumed+? WHERE id=?',
+                      (self._elapsed(owned), sid))
+            c.execute("""UPDATE full_steps SET status='pending',output=NULL,token=NULL,expires=NULL,
+                deadline=NULL,started_at=NULL,next_at=0,failure_code=NULL
+                WHERE report_id=? AND ordinal>=?""", (rid, checkpoint['ordinal']))
+            c.execute("UPDATE full_reports SET status='queued',failure_code=NULL WHERE id=?", (rid,))
+            self._event(c, rid, 'checkpoint_repaired', checkpoint['stage'], checkpoint['part'], reason)
             return True
 
     def parts(self, rid):
