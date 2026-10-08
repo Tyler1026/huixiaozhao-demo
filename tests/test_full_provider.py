@@ -126,6 +126,10 @@ class LiveProviderEnvTests(unittest.TestCase):
         p = fp.FullLiveProvider.from_env(_live_env("exa"))
         self.assertEqual(p.search_provider, "exa")
 
+    def test_only_live_provider_allows_invalid_checkpoint_repair(self):
+        self.assertTrue(fp.FullLiveProvider.repair_invalid_checkpoints)
+        self.assertFalse(getattr(fp.FullSyntheticProvider(), 'repair_invalid_checkpoints', False))
+
 
 class LiveProviderRuntimeTests(unittest.TestCase):
     def _provider(self, routes):
@@ -207,6 +211,165 @@ class LiveProviderRuntimeTests(unittest.TestCase):
             p = self._provider(RecordingRouter({"exa.ai/search": (401, "bad SEARCH_SECRET")}))
             p.run_part("economy", "经济总量", {"city": "杭州"}, None)
         self.assertNotIn("SEARCH_SECRET", str(ctx.exception))
+
+    def test_invalid_search_results_are_filtered_without_upgrading_http(self):
+        urls = ['http://stats.gov.cn/insecure', 'https://127.0.0.1/private',
+                'https://example.com/placeholder', 'https://evil.cn/gov.cn/fake',
+                'https://stats.gov.cn/empty', 'https://stats.gov.cn/link-only',
+                'https://stats.gov.cn/valid', 'https://mof.gov.cn/valid']
+        entries = [{'url': url, 'text': 'OFFLINE evidence excerpt'} for url in urls]
+        entries[4]['text'] = ''
+        entries[5]['text'] = urls[5]
+        router = RecordingRouter({'exa.ai/search': (200, json.dumps({'results': entries}))})
+        out = self._provider(router)._gather_evidence('economy', '经济总量', '测试城')
+        self.assertEqual([item['url'] for item in out], urls[-2:])
+        self.assertNotIn('https://stats.gov.cn/insecure', [item['url'] for item in out])
+
+    def test_all_unusable_search_results_fail_closed_without_chat(self):
+        router = RecordingRouter({'exa.ai/search': (200, json.dumps({'results': [
+            {'url': 'http://stats.gov.cn/insecure', 'text': 'OFFLINE excerpt'},
+            {'url': 'https://stats.gov.cn/empty', 'text': ''}]}))})
+        with self.assertRaises(fp.FullProviderError) as caught:
+            self._provider(router).run_part('economy', '经济总量', {'city': '测试城'}, {})
+        self.assertEqual(caught.exception.failure_code, 'quality')
+        self.assertTrue(all('exa.ai/search' in call.full_url for call in router.calls))
+
+    def test_final_part_floor_compensates_saved_short_parts_and_keeps_prior(self):
+        prior_text = '\n'.join(f'已保存分析{i}' for i in range(81)) + '\n\n---\n\nTAIL-MUST-REMAIN'
+        # Tail is a substantive line; separator and blank lines are excluded.
+        prior = {'economy': {'text': prior_text, 'metadata': {}}}
+        text = '\n'.join(f'当前分析{i}' for i in range(68))
+        router = RecordingRouter({
+            'exa.ai/search': (200, json.dumps({'results': [
+                {'url': f'https://stats.gov.cn/offline/{i}', 'text': f'OFFLINE excerpt {i}'}
+                for i in range(8)]})),
+            'chat/completions': (200, json.dumps({'choices': [{'message': {'content': json.dumps({'text': text})}}]})),
+        })
+        p = self._provider(router)
+        self.assertEqual(p._part_floor('economy', '区域定位', prior), 68)
+        p.run_part('economy', '区域定位', {'city': '测试城'}, prior)
+        chat = next(call for call in router.calls if 'chat/completions' in call.full_url)
+        prompt = json.loads(chat.data)['messages'][-1]['content']
+        self.assertIn('至少68行', prompt)
+        self.assertIn(prior_text, prompt)
+        self.assertIn('不代表已阅读完整原文', prompt)
+
+    def test_short_final_part_is_rejected_before_checkpoint(self):
+        p = self._provider(RecordingRouter({
+            'exa.ai/search': (200, json.dumps({'results': [
+                {'url': f'https://stats.gov.cn/offline/{i}', 'text': f'OFFLINE excerpt {i}'}
+                for i in range(8)]})),
+            'chat/completions': (200, json.dumps({'choices': [{'message': {'content': json.dumps({
+                'text': '\n'.join(f'当前分析{i}' for i in range(38))})}}]})),
+        }))
+        prior = {'economy': {'text': '\n'.join(f'已保存分析{i}' for i in range(81)), 'metadata': {}}}
+        with self.assertRaises(fp.FullProviderError) as caught:
+            p.run_part('economy', '区域定位', {'city': '测试城'}, prior)
+        self.assertEqual(caught.exception.failure_code, 'quality')
+        self.assertEqual(str(caught.exception), 'part line floor not met')
+
+    def test_new_part_checks_urls_and_filler_before_checkpoint(self):
+        p = self._provider(RecordingRouter({}))
+        for bad in ('http://stats.gov.cn/insecure', 'https://127.0.0.1/private',
+                    'https://example.com/placeholder', 'https://evil.cn/gov.cn/fake'):
+            with self.subTest(url=bad), self.assertRaises(fp.FullProviderError):
+                p._validate_part_text('\n'.join(f'独立分析{i}' for i in range(38)) + '\n' + bad, 38)
+        with self.assertRaises(fp.FullProviderError):
+            p._validate_part_text('\n'.join(['重复分析'] * 30 + [f'独立分析{i}' for i in range(8)]), 38)
+
+    def test_intermediate_and_deep_floors_preserve_original_stage_totals(self):
+        p = self._provider(RecordingRouter({}))
+        prior = {'economy': {'text': '\n'.join(f'已保存{i}' for i in range(20))}}
+        self.assertEqual(p._part_floor('economy', '增长态势', prior), 54)
+        self.assertEqual(p._part_floor('economy', '经济总量', {}), 38)
+        self.assertEqual(p._part_floor('enterprises_1', '候选池', {}, 'deep'), 16)
+
+
+class SelectedCompanyFactCheckTests(unittest.TestCase):
+    _provider = LiveProviderRuntimeTests._provider
+    @staticmethod
+    def _prior():
+        prior = {}
+        for number in (1, 2, 3):
+            selected, evidence = [], []
+            for index in range(4):
+                url = f'https://cninfo.com.cn/offline-company/{number}/{index}'
+                selected.append({'name': f'方向{number}精选企业{index}', 'evidence_ref': url,
+                                 'expansion_evidence': f'已保存扩产信号{number}-{index}'})
+                evidence.append({'url': url, 'excerpt': f'OFFLINE saved disclosure {number}-{index}',
+                                 'source': 'cninfo.com.cn', 'retrieval': 'exa_fulltext'})
+            prior[f'enterprises_{number}'] = {'text': f'方向{number}前序完整报告',
+                'metadata': {'selected': selected, 'evidence': evidence}}
+        return prior
+
+    def test_retrieval_targets_three_saved_companies_per_direction_and_two_source_types(self):
+        def search(request):
+            query = json.loads(request.data)['query']
+            marker = query.split()[0]
+            family = 'disclosure' if '公司公告' in query else 'annual-report'
+            return json.dumps({'results': [
+                {'url': 'http://cninfo.com.cn/insecure', 'text': 'OFFLINE insecure'},
+                {'url': 'https://example.com/placeholder', 'text': 'OFFLINE placeholder'},
+            ] + [
+                {'url': f'https://cninfo.com.cn/offline/{marker}/{family}/{i}',
+                 'text': f'OFFLINE {marker} excerpt {family}/{i}'} for i in range(4)]})
+        router = RecordingRouter({'exa.ai/search': (200, search)})
+        p = self._provider(router)
+        out = p._gather_evidence('fact_check', '五星企业信号', '上海市松江区', self._prior())
+        queries = [json.loads(call.data)['query'] for call in router.calls]
+        expected = [f'方向{direction}精选企业{index}' for direction in (1, 2, 3) for index in range(3)]
+        self.assertEqual([query.split()[0] for query in queries[::2]], expected)
+        self.assertEqual([query.split()[0] for query in queries[1::2]], expected)
+        self.assertTrue(all('公司公告' in query for query in queries[::2]))
+        self.assertTrue(all('年度报告' in query for query in queries[1::2]))
+        self.assertTrue(all('已保存扩产信号' in query for query in queries))
+        self.assertTrue(all('五星级' not in query and '认定 名单' not in query for query in queries))
+        self.assertEqual(len(out), 36)
+
+    def test_saved_selection_grounding_remains_available_only_for_fact_check(self):
+        saved = self._prior()
+        source = saved['enterprises_1']['metadata']['evidence'][0]['url']
+        cross = 'https://stats.gov.cn/offline-new/cross'
+        text = '\n'.join(f'核验分析{i}' for i in range(80))
+        payload = {'text': text, 'checks': [
+            {'claim': '方向1精选企业0扩产信号', 'source': source, 'cross_source': cross,
+             'category': 'high_star', 'direction': 'dir1', 'verdict': '待核实'},
+            {'claim': '同一网页不能交叉核验', 'source': source, 'cross_source': source,
+             'category': 'high_star', 'direction': 'dir1'},
+        ]}
+        router = RecordingRouter({
+            'exa.ai/search': (200, json.dumps({'results': [{'url': cross, 'text': 'OFFLINE cross excerpt'}]})),
+            'chat/completions': (200, json.dumps({'choices': [{'message': {'content': json.dumps(payload)}}]})),
+        })
+        p = self._provider(router)
+        out = p.run_part('fact_check', '五星企业信号', {'city': '测试城'}, saved)
+        self.assertEqual(len(out['metadata']['checks']), 1)
+        self.assertEqual(out['metadata']['checks'][0]['direction'], 'dir1')
+        self.assertEqual(out['metadata']['checks'][0]['source'], source)
+        chat = next(call for call in router.calls if 'chat/completions' in call.full_url)
+        prompt = json.loads(chat.data)['messages'][-1]['content']
+        self.assertIn('前序enterprises_1/2/3各方向已精选企业', prompt)
+        self.assertIn('OFFLINE saved disclosure 1-0', prompt)
+        self.assertEqual(len(p._selected_evidence(saved)), 9)
+        # Other stages do not gain unrelated enterprise evidence.
+        other = p.run_part('economy', '经济总量', {'city': '测试城'}, saved)
+        self.assertEqual([e['url'] for e in other['metadata']['evidence']], [cross])
+
+    def test_invalid_saved_sources_cannot_ground_checks(self):
+        saved = self._prior()
+        saved['enterprises_1']['metadata']['evidence'][0]['excerpt'] = ''
+        saved['enterprises_2']['metadata']['evidence'][0]['url'] = 'http://cninfo.com.cn/insecure'
+        out = self._provider(RecordingRouter({}))._selected_evidence(saved)
+        self.assertEqual(len(out), 7)
+        self.assertTrue(all(e['excerpt'] and e['url'].startswith('https://') for e in out))
+
+    def test_selected_signal_and_full_prior_are_not_truncated(self):
+        saved = self._prior()
+        signal = '完整信号内容' * 100 + 'TAIL-SIGNAL-MUST-REMAIN'
+        saved['enterprises_1']['metadata']['selected'][0]['expansion_evidence'] = signal
+        p = self._provider(RecordingRouter({}))
+        self.assertIn(signal, p._company_check_queries(saved, '测试城')[0])
+        self.assertIn(signal, p._render_prior(saved, 'fact_check'))
 
 
 class SerializationTests(unittest.TestCase):

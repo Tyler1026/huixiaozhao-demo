@@ -1,5 +1,6 @@
 """Real PostgreSQL CI fixture: concurrency, leases and durable report bytes."""
 import concurrent.futures
+import hashlib
 import os
 import shutil
 import tempfile
@@ -7,6 +8,7 @@ import time
 import unittest
 from pathlib import Path
 from urllib.parse import urlsplit
+from unittest.mock import Mock, patch
 
 from report_service.full_postgres import PostgresFullStore
 from report_service.full_worker import run_once
@@ -82,6 +84,55 @@ class PostgresReportTests(unittest.TestCase):
         self.assertEqual(reopened.get('offline-test', report['id'])['mode'], 'deep')
         self.assertEqual(reopened.claim(synthetic=True)['mode'], 'deep')
         self.assertEqual(reopened.parts(report['id'])['one'][0]['text'], 'OFFLINE committed checkpoint')
+
+    def test_live_worker_repairs_committed_suffix_atomically_and_archive_survives_restart(self):
+        stages = ({'id': 'one', 'filename': 'one.md', 'parts': ('first', 'second', 'third', 'fourth')},)
+        store = PostgresFullStore(self.url, artifact_root=self.root, stages=stages, backoff=(0, 0))
+        report = store.create('offline-test', '测试省', '测试区', 'repair-live-fixture', False)
+        # These are explicitly offline fixture bytes; synthetic=False exercises
+        # the production preflight branch without any provider/API work.
+        retained = {'text': 'OFFLINE retained prefix', 'metadata': {'evidence': [
+            {'url': 'https://stats.gov.cn/offline-fixture', 'excerpt': 'OFFLINE retrieved excerpt'}]}}
+        outputs = [retained,
+                   {'text': 'OFFLINE defective checkpoint http://stats.gov.cn/历史', 'metadata': {}},
+                   {'text': 'OFFLINE dependent suffix', 'metadata': {}}]
+        committed = []
+        for value in outputs:
+            job = store.claim(synthetic=False)
+            self.assertTrue(store.finish_part(job['step_id'], job['token'], value))
+            with store.db() as c:
+                committed.append(dict(c.execute('SELECT * FROM full_steps WHERE id=?', (job['step_id'],)).fetchone()))
+        progress_before = store.get('offline-test', report['id'])['progress_at']
+        active = store.claim(synthetic=False)
+        provider = Mock(repair_invalid_checkpoints=True)
+        provider.run_part.side_effect = AssertionError('repair cannot perform provider work')
+        with patch.object(store, 'claim', return_value=active), patch('multiprocessing.process.BaseProcess.start') as spawn:
+            result = run_once(store, provider, synthetic=False, contract=TinyContract)
+        self.assertEqual(result['status'], 'checkpoint_repaired')
+        provider.run_part.assert_not_called()
+        spawn.assert_not_called()
+        self.assertFalse(store.finish_part(active['step_id'], active['token'], {'text': 'OFFLINE stale', 'metadata': {}}))
+        self.assertFalse(store.heartbeat(active['step_id'], active['token']))
+        reopened = PostgresFullStore(self.url, artifact_root=self.root, stages=stages, backoff=(0, 0))
+        with reopened.db() as c:
+            archived = [dict(row) for row in c.execute('SELECT * FROM full_checkpoint_archive WHERE report_id=? ORDER BY ordinal', (report['id'],)).fetchall()]
+            current = [dict(row) for row in c.execute('SELECT status,attempts,output,token FROM full_steps WHERE report_id=? ORDER BY ordinal', (report['id'],)).fetchall()]
+        self.assertEqual(len(archived), 2)
+        for old, saved in zip(committed[1:], archived):
+            self.assertEqual(saved['output'], old['output'])
+            self.assertEqual(saved['output_sha256'], hashlib.sha256(old['output'].encode('utf-8')).hexdigest())
+            self.assertEqual((saved['attempts'], saved['consumed']), (old['attempts'], old['consumed']))
+            self.assertEqual(saved['reason'], 'unsafe_text_url')
+        self.assertEqual([row['status'] for row in current], ['done', 'pending', 'pending', 'pending', 'pending'])
+        self.assertTrue(all(row['output'] is None and row['token'] is None for row in current[1:]))
+        self.assertEqual([row['attempts'] for row in current[:3]], [row['attempts'] for row in committed])
+        self.assertEqual(reopened.parts(report['id'])['one'], [retained])
+        self.assertEqual(reopened.get('offline-test', report['id'])['progress_at'], progress_before)
+        new = reopened.claim(synthetic=False)
+        self.assertEqual(new['part'], 'second')
+        self.assertNotEqual(new['token'], active['token'])
+        self.assertTrue(reopened.finish_part(new['step_id'], new['token'], {'text': 'OFFLINE repaired checkpoint', 'metadata': {}}))
+        self.assertEqual(reopened.get('offline-test', report['id'])['parts_done'], 2)
 
     def test_all_delivery_bytes_survive_scratch_loss_and_reject_tampering(self):
         from report_service.full_contract import STAGES, make_synthetic_part, assemble

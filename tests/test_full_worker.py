@@ -1,9 +1,11 @@
 import multiprocessing
+import hashlib
 import os
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from report_service.full_store import FullStore
 from report_service.full_worker import run_once, run_loop
@@ -101,6 +103,10 @@ class BundleFaultContract(TinyContract):
     @staticmethod
     def validate(*args, **kwargs):
         return ['URL host is local/private: http://127.0.0.1/secret123']
+
+
+class RepairGoodProvider(GoodProvider):
+    repair_invalid_checkpoints = True
 
 
 class FullWorkerTests(unittest.TestCase):
@@ -228,6 +234,70 @@ class FullWorkerTests(unittest.TestCase):
         self.assertNotIn('http://', str(result))
         self.assertNotIn('https://', str(result))
         self.assertEqual(store.get('a', report['id'])['parts_done'], 1)
+
+    def test_live_preflight_archives_retained_bytes_and_revokes_claim_before_provider(self):
+        stages = ({'id': 's0', 'filename': 'one.md', 'parts': ('first', 'second', 'third')},)
+        store = FullStore(self.path, stages=stages, backoff=(0, 0))
+        report = store.create('a', 'p', 'live', 'repair', False)
+        first = store.claim(synthetic=False)
+        kept = {'text': 'Valid retained research', 'metadata': {'evidence': [
+            {'url': 'https://stats.gov.cn/facts', 'excerpt': 'Retrieved factual excerpt'}]}}
+        self.assertTrue(store.finish_part(first['step_id'], first['token'], kept))
+        second = store.claim(synthetic=False)
+        bad = {'text': '历史记录 http://stats.gov.cn/retained', 'metadata': {}}
+        self.assertTrue(store.finish_part(second['step_id'], second['token'], bad))
+        with store.db() as c:
+            original = dict(c.execute('SELECT * FROM full_steps WHERE id=?', (second['step_id'],)).fetchone())
+        progress_before = store.get('a', report['id'])['progress_at']
+        active = store.claim(synthetic=False)
+        provider = Mock(repair_invalid_checkpoints=True)
+        provider.run_part.side_effect = AssertionError('preflight must not perform research')
+        with patch.object(store, 'claim', return_value=active), patch('multiprocessing.process.BaseProcess.start') as spawn:
+            result = run_once(store, provider, synthetic=False, contract=TinyContract)
+        self.assertEqual(result['status'], 'checkpoint_repaired')
+        provider.run_part.assert_not_called()
+        spawn.assert_not_called()
+        self.assertFalse(store.finish_part(active['step_id'], active['token'], {'text': 'stale response', 'metadata': {}}))
+        self.assertFalse(store.heartbeat(active['step_id'], active['token']))
+        with store.db() as c:
+            archive = dict(c.execute('SELECT * FROM full_checkpoint_archive WHERE report_id=?', (report['id'],)).fetchone())
+            statuses = [dict(row) for row in c.execute('SELECT status,output,attempts,token FROM full_steps WHERE report_id=? ORDER BY ordinal', (report['id'],)).fetchall()]
+        self.assertEqual(archive['output'], original['output'])
+        self.assertEqual(archive['output_sha256'], hashlib.sha256(original['output'].encode('utf-8')).hexdigest())
+        self.assertEqual((archive['attempts'], archive['consumed']), (original['attempts'], original['consumed']))
+        self.assertEqual(archive['reason'], 'unsafe_text_url')
+        self.assertEqual([row['status'] for row in statuses], ['done', 'pending', 'pending', 'pending'])
+        self.assertTrue(all(row['output'] is None and row['token'] is None for row in statuses[1:]))
+        self.assertEqual(statuses[1]['attempts'], original['attempts'])
+        self.assertEqual(store.parts(report['id'])['s0'], [kept])
+        self.assertEqual(store.get('a', report['id'])['progress_at'], progress_before)
+        reclaimed = store.claim(synthetic=False)
+        self.assertEqual(reclaimed['part'], 'second')
+        self.assertNotEqual(reclaimed['token'], active['token'])
+
+    def test_live_preflight_keeps_valid_partial_checkpoint_and_continues_research(self):
+        stages = ({'id': 's0', 'filename': 'one.md', 'parts': ('first', 'second'), 'min_lines': 100},)
+        store = FullStore(self.path, stages=stages, backoff=(0, 0))
+        report = store.create('a', 'p', 'live', 'valid-partial', False)
+        first = store.claim(synthetic=False)
+        kept = {'text': 'One valid line in a partial stage', 'metadata': {'evidence': [
+            {'url': 'https://stats.gov.cn/facts', 'excerpt': 'Retrieved factual excerpt'}]}}
+        self.assertTrue(store.finish_part(first['step_id'], first['token'], kept))
+        with store.db() as c:
+            original = c.execute('SELECT output FROM full_steps WHERE id=?', (first['step_id'],)).fetchone()['output']
+        result = run_once(store, RepairGoodProvider(), synthetic=False, contract=TinyContract)
+        self.assertEqual((result['status'], result['part']), ('checkpoint', 'second'))
+        with store.db() as c:
+            self.assertEqual(c.execute('SELECT output FROM full_steps WHERE id=?', (first['step_id'],)).fetchone()['output'], original)
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM full_checkpoint_archive').fetchone()[0], 0)
+        self.assertEqual(store.get('a', report['id'])['parts_done'], 2)
+
+    def test_synthetic_worker_does_not_run_live_checkpoint_repair(self):
+        self.store.create('a', 'p', 'offline', 'skip-repair', True)
+        with patch.object(self.store, 'repair_invalid_checkpoints', side_effect=AssertionError('synthetic work is not live repair')) as repair:
+            result = run_once(self.store, RepairGoodProvider(), synthetic=True, contract=TinyContract)
+        self.assertEqual(result['status'], 'checkpoint')
+        repair.assert_not_called()
 
     def test_synthetic_worker_cannot_execute_live_job(self):
         r = self.store.create('a', 'p', 'live', 'live', False)

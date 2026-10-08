@@ -46,6 +46,12 @@ def _provider_issue(error):
     # No substring of the exception itself leaves this process. Even parse
     # errors may include raw model text or upstream response material.
     message = str(error).lower()
+    if message == 'part line floor not met':
+        return 'line_floor'
+    if message == 'part contains repeated filler':
+        return 'repeated_lines'
+    if message == 'part source url policy failed':
+        return 'url_policy'
     if message.startswith('prior context for stage'):
         return 'prior_context_bound'
     if message.startswith(('model output is not json', 'model json unparseable')) or 'non-object json' in message:
@@ -265,6 +271,12 @@ def run_once(store, provider, *, ttl=120, timeout=180, synthetic=True, contract=
         if stop_job is not None and stop_job(job):
             store.cancel(job['tenant'], rid)
             return {'id': rid, 'status': 'cancelled'}
+        # Only the live provider opts into this upgrade repair. The store
+        # independently checks archived checkpoint bytes under the current
+        # lease; no child or client chooses which work to invalidate.
+        if (not synthetic and getattr(provider, 'repair_invalid_checkpoints', False)
+                and store.repair_invalid_checkpoints(sid, token)):
+            return {'id': rid, 'status': 'checkpoint_repaired', 'stage': job['stage']}
         parts = store.worker_parts(rid) if hasattr(store, 'worker_parts') else None
         inputs_ready = True
         process = ctx.Process(target=_child, args=(provider, job, store.path, store.artifact_root, writer, os.getpid(), contract, parts))
