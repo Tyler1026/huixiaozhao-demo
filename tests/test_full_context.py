@@ -3,6 +3,8 @@ import copy
 import unittest
 
 from report_service.full_context import scoped_prior
+from report_service.full_provider import FullLiveProvider, FullProviderError
+from report_service.full_contract import get_stage
 
 
 def _evidence(url, excerpt):
@@ -148,9 +150,163 @@ class FullContextTests(unittest.TestCase):
     def test_other_stages_pass_through_and_unknown_scoped_parts_fail_explicitly(self):
         self.assertIs(scoped_prior(self.prior, 'competition', '竞对地区'), self.prior)
         self.assertIsNone(scoped_prior(None, 'economy', '经济总量'))
-        for stage in ('fact_check', 'scoring'):
+        for stage in ('fact_check', 'scoring', 'action', 'summary', 'compact',
+                      'enterprises_1', 'enterprises_2', 'enterprises_3'):
             with self.subTest(stage=stage), self.assertRaises(ValueError):
                 scoped_prior(self.prior, stage, 'unknown')
+
+    def _decision_prior(self):
+        prior = copy.deepcopy(self.prior)
+        # The source chapters are deliberately long; decision views eliminate
+        # their repeated prose, while preserving all actual structured facts.
+        for stage in ('economy', 'policy'):
+            prior[stage]['text'] = f'OFFLINE complete {stage} dependency tail'
+        for number in (1, 2, 3):
+            for index, company in enumerate(prior[f'enterprises_{number}']['metadata']['selected']):
+                company['expansion_evidence'] = f'OFFLINE-ORIGINAL-SIGNAL-{number}-{index}'
+        prior['scoring'] = {'text': 'Repeated score narration not needed by decision task' * 10_000,
+                            'metadata': {'scores': [
+                                {'name': f'方向{number}精选企业{index}', 'direction': f'dir{number}',
+                                 'dimensions': {'risk': {'original': [index, {'uncertainty': 'preserved'}]},
+                                                'industry_fit': index / 3},
+                                 'weighted_score': index / 7, 'rank': 75 - ((number - 1) * 25 + index),
+                                 'original_audit': {'urls': ['https://gov.cn/offline/audit'], 'nested': [1, 2]}}
+                                for number in (1, 2, 3) for index in range(25)],
+                                         'scoring_method': {'original_weights': [0.2, 0.15]}}}
+        for stage in ('action', 'summary', 'compact'):
+            prior[stage] = {'text': f'OFFLINE complete {stage} current progress' * 30,
+                            'metadata': {'original_progress': {'nested': [stage, 1]}}}
+        return prior
+
+    def test_decision_views_preserve_all_seventy_five_records_and_every_original_score(self):
+        prior = self._decision_prior()
+        original = copy.deepcopy(prior)
+        dependencies = {'action': ('chain', 'policy'),
+                        'summary': ('economy', 'chain', 'action'),
+                        'compact': ('summary', 'chain', 'action')}
+        parts = {'action': '行动清单', 'summary': '执行摘要', 'compact': '精简报告'}
+        for stage, part in parts.items():
+            with self.subTest(stage=stage):
+                view = scoped_prior(prior, stage, part)
+                names = []
+                for number in (1, 2, 3):
+                    enterprise = f'enterprises_{number}'
+                    self.assertEqual(view[enterprise]['metadata']['selected'], prior[enterprise]['metadata']['selected'])
+                    self.assertEqual(len(view[enterprise]['metadata']['selected']), 25)
+                    self.assertNotIn('candidates', view[enterprise]['metadata'])
+                    self.assertNotEqual(view[enterprise]['text'], prior[enterprise]['text'])
+                    self.assertIn('全部已精选企业', view[enterprise]['text'])
+                    names.extend(company['name'] for company in view[enterprise]['metadata']['selected'])
+                    refs = {company[key] for company in view[enterprise]['metadata']['selected'] for key in ('url', 'evidence_ref')}
+                    self.assertEqual({item['url'] for item in view[enterprise]['metadata']['evidence']}, refs)
+                self.assertEqual(len(set(names)), 75)
+                self.assertEqual(view['scoring']['metadata'], prior['scoring']['metadata'])
+                self.assertEqual(len(view['scoring']['metadata']['scores']), 75)
+                self.assertNotEqual(view['scoring']['text'], prior['scoring']['text'])
+                self.assertEqual(view['industry']['metadata']['directions'], prior['industry']['metadata']['directions'])
+                for dependency in dependencies[stage] + (stage,):
+                    self.assertEqual(view[dependency], prior[dependency])
+                self.assertEqual(set(view), {'industry', 'enterprises_1', 'enterprises_2', 'enterprises_3',
+                                             'scoring', *dependencies[stage], stage})
+                view['scoring']['metadata']['scores'][0]['dimensions']['risk']['original'][1]['uncertainty'] = 'changed view'
+                view['enterprises_1']['metadata']['selected'][0]['rationale']['raw'][0] = 'changed company'
+                view[stage]['metadata']['original_progress']['nested'][0] = 'changed progress'
+                self.assertEqual(prior, original)
+
+    def test_decision_views_do_not_deduplicate_or_reorder_supplied_records(self):
+        prior = self._decision_prior()
+        extra = copy.deepcopy(prior['enterprises_1']['metadata']['selected'][0])
+        extra['original_observation'] = 'second original record must remain'
+        prior['enterprises_1']['metadata']['selected'].insert(0, extra)
+        prior['scoring']['metadata']['scores'].insert(0, copy.deepcopy(prior['scoring']['metadata']['scores'][-1]))
+        view = scoped_prior(prior, 'action', '优先级与里程碑')
+        self.assertEqual(view['enterprises_1']['metadata']['selected'], prior['enterprises_1']['metadata']['selected'])
+        self.assertEqual(view['scoring']['metadata']['scores'], prior['scoring']['metadata']['scores'])
+
+    def test_oversized_required_company_field_survives_view_and_still_fails_transport_bound(self):
+        probe = FullLiveProvider(object())
+        for stage, part in (('action', '行动清单'), ('summary', '执行摘要'), ('compact', '精简报告')):
+            with self.subTest(stage=stage):
+                prior = self._decision_prior()
+                normal = probe._render_prior(prior, stage, part)
+                self.assertIn('OFFLINE-ORIGINAL-SIGNAL-3-24', normal)
+                oversized = '完整必须保留的已精选企业事实' * 10_000 + 'REQUIRED-SIGNAL-TAIL'
+                prior['enterprises_1']['metadata']['selected'][0]['expansion_evidence'] = oversized
+                view = scoped_prior(prior, stage, part)
+                self.assertEqual(view['enterprises_1']['metadata']['selected'][0]['expansion_evidence'], oversized)
+                with self.assertRaises(FullProviderError) as caught:
+                    probe._render_prior(prior, stage, part)
+                self.assertEqual(caught.exception.failure_code, 'quality')
+                self.assertTrue(str(caught.exception).startswith('prior context for stage'))
+
+    def test_supplied_completed_summary_progress_is_not_dropped_to_bypass_bound(self):
+        prior = self._decision_prior()
+        prior['summary']['text'] = '已完成当前摘要完整保留' * 15_000 + 'SUMMARY-SELF-TAIL'
+        view = scoped_prior(prior, 'summary', '执行摘要')
+        self.assertEqual(view['summary'], prior['summary'])
+        with self.assertRaises(FullProviderError):
+            FullLiveProvider(object())._render_prior(prior, 'summary', '执行摘要')
+
+    def _enterprise_prior(self):
+        prior = self._decision_prior()
+        for number in (1, 2, 3):
+            metadata = prior[f'enterprises_{number}']['metadata']
+            metadata['candidates'] = copy.deepcopy(metadata['selected'])
+            for company in metadata['candidates']:
+                company['original_candidate_assessment'] = {'raw': ['完整初筛事实', '待核实']}
+            metadata['batch_history'] = [{'raw': ['five complete batches', {'order': [0, 1, 2, 3, 4]}]}]
+        return prior
+
+    def test_enterprise_named_parts_preserve_five_candidate_batches_and_all_current_metadata(self):
+        prior = self._enterprise_prior()
+        original = copy.deepcopy(prior)
+        for number in (1, 2, 3):
+            stage = f'enterprises_{number}'
+            for part in get_stage(stage, mode='deep')['parts']:
+                with self.subTest(stage=stage, part=part):
+                    view = scoped_prior(prior, stage, part)
+                    self.assertEqual(set(view), {'industry', 'chain', 'policy', stage})
+                    self.assertIn(f'dir{number}', view[stage]['text'])
+                    self.assertIn(part, view[stage]['text'])
+                    self.assertIn('全部已保存企业事实记录', view[stage]['text'])
+                    self.assertNotEqual(view[stage]['text'], prior[stage]['text'])
+                    self.assertEqual(view[stage]['metadata'], prior[stage]['metadata'])
+                    self.assertEqual(len(view[stage]['metadata']['candidates']), 25)
+                    self.assertEqual(len(view[stage]['metadata']['selected']), 25)
+                    for offset in (0, 5, 10, 15, 20):
+                        self.assertEqual([item['name'] for item in view[stage]['metadata']['candidates'][offset:offset + 5]],
+                                         [f'方向{number}精选企业{index}' for index in range(offset, offset + 5)])
+                    self.assertEqual(view['industry']['metadata']['directions'], prior['industry']['metadata']['directions'])
+                    refs = {item['evidence_ref'] for item in view['industry']['metadata']['directions']}
+                    self.assertEqual({item['url'] for item in view['industry']['metadata']['evidence']}, refs)
+                    self.assertEqual(view['chain'], prior['chain'])
+                    self.assertEqual(view['policy'], prior['policy'])
+        self.assertEqual(prior, original)
+
+    def test_enterprise_view_keeps_unknown_metadata_and_is_independent_of_saved_input(self):
+        prior = self._enterprise_prior()
+        original = copy.deepcopy(prior)
+        view = scoped_prior(prior, 'enterprises_2', '扩产信号5')
+        view['enterprises_2']['metadata']['batch_history'][0]['raw'][1]['order'][0] = 99
+        view['enterprises_2']['metadata']['candidates'][0]['original_candidate_assessment']['raw'][0] = 'changed view'
+        view['enterprises_2']['metadata']['selected'][0]['rationale']['raw'][0] = 'changed selected view'
+        view['industry']['metadata']['directions'][0]['full_detail'] = 'changed direction view'
+        view['chain']['text'] = 'changed dependency view'
+        self.assertEqual(prior, original)
+
+    def test_oversized_saved_candidate_fact_survives_enterprise_view_and_transport_gate(self):
+        prior = self._enterprise_prior()
+        probe = FullLiveProvider(object())
+        normal = probe._render_prior(prior, 'enterprises_3', '扩产信号5')
+        self.assertIn('OFFLINE-ORIGINAL-SIGNAL-3-24', normal)
+        self.assertNotIn('不应复制的完整企业研究正文', normal)
+        oversized = '完整必须保留的候选事实' * 12_000 + 'CANDIDATE-FACT-TAIL'
+        prior['enterprises_3']['metadata']['candidates'][24]['original_candidate_fact'] = oversized
+        view = scoped_prior(prior, 'enterprises_3', '扩产信号5')
+        self.assertEqual(view['enterprises_3']['metadata']['candidates'][24]['original_candidate_fact'], oversized)
+        with self.assertRaises(FullProviderError) as caught:
+            probe._render_prior(prior, 'enterprises_3', '扩产信号5')
+        self.assertEqual(caught.exception.failure_code, 'quality')
 
 
 if __name__ == '__main__':
