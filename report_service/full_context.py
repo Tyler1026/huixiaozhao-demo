@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import copy
 
-from .full_contract import canonical_url
+from .full_contract import canonical_url, get_stage
 
 
 def _metadata(value):
@@ -80,19 +80,64 @@ def _keep(view, prior, *stage_ids):
             view[stage_id] = copy.deepcopy(prior[stage_id])
 
 
+def _decision_view(prior, stage_id, part):
+    if part not in get_stage(stage_id)['parts']:
+        raise ValueError('unsupported decision context part')
+    # Preserve every supplied selected record in its existing direction/order.
+    # Selection and scoring have already happened; this view must not choose
+    # a smaller business list, deduplicate it again, or recompute its scores.
+    selected = [(f'enterprises_{number}', company) for number in (1, 2, 3)
+                for company in _records(_metadata(prior.get(f'enterprises_{number}')).get('selected'))]
+    view = {'industry': _direction_view(prior)}
+    view.update(_enterprise_views(prior, selected,
+                '本子步骤使用全部已精选企业的完整事实记录和已计算评分；'
+                '原企业研究正文继续保存在完整报告中。'))
+    if 'scoring' in prior:
+        view['scoring'] = {
+            'text': '本子步骤使用全部已计算评分的完整记录，原有维度、分值、排名及顺序均保留；'
+                    '评分研究正文保留在原报告中。',
+            'metadata': copy.deepcopy(_metadata(prior['scoring'])),
+        }
+    dependencies = {'action': ('chain', 'policy'),
+                    'summary': ('economy', 'chain', 'action'),
+                    'compact': ('summary', 'chain', 'action')}
+    _keep(view, prior, *dependencies[stage_id], stage_id)
+    return view
+
+
+def _enterprise_stage_view(prior, stage_id, part):
+    if part not in get_stage(stage_id, mode='deep')['parts']:
+        raise ValueError('unsupported enterprise context part')
+    view = {'industry': _direction_view(prior)}
+    _keep(view, prior, 'chain', 'policy')
+    view[stage_id] = {
+        'text': f'当前{stage_id}子步骤{part}对应dir{stage_id[-1]}，使用全部已保存企业事实记录；'
+                '候选、精选及其全部原始字段和顺序保留，原子章节正文继续保存在完整报告中。',
+        'metadata': copy.deepcopy(_metadata(prior.get(stage_id))),
+    }
+    return view
+
+
 def scoped_prior(prior, stage_id, part):
-    """Return the full facts required by one fact-check or scoring substep.
+    """Return the full facts required by a research or decision substep.
 
     Other stages retain their existing dependency handling. Scoring is split
     into the stable first/second halves of all unique selected identities;
-    no record field, excerpt or chosen dependency is clipped.
+    enterprise stages retain all their saved metadata; decision stages retain
+    all selected identities and all computed scores. No record field, excerpt
+    or chosen dependency is clipped.
     """
-    if stage_id not in {'fact_check', 'scoring'}:
+    enterprise_stages = {'enterprises_1', 'enterprises_2', 'enterprises_3'}
+    if stage_id not in {'fact_check', 'scoring', 'action', 'summary', 'compact'} | enterprise_stages:
         return prior
     if prior is None:
         prior = {}
     if not isinstance(prior, dict):
         raise TypeError('scoped report context requires a stage mapping')
+    if stage_id in enterprise_stages:
+        return _enterprise_stage_view(prior, stage_id, part)
+    if stage_id in {'action', 'summary', 'compact'}:
+        return _decision_view(prior, stage_id, part)
     if stage_id == 'fact_check':
         if part in {'经济关键数字', '政策金额'}:
             view = {}
