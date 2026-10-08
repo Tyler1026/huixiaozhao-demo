@@ -126,7 +126,9 @@ class LiveProtocolAcceptance(unittest.TestCase):
 
     def test_model_scores_are_recomputed_with_inverted_risk(self):
         p=provider(StructuredTransport())
-        out=p.run_part('scoring',get_stage('scoring')['parts'][0],{'city':'测试城'}, {})
+        prior={'enterprises_1': {'text':'OFFLINE saved selections', 'metadata': {
+            'selected':[{'name':f'测试企业{i}'} for i in range(15)]}}}
+        out=p.run_part('scoring',get_stage('scoring')['parts'][0],{'city':'测试城'}, prior)
         scores=out['metadata']['scores']
         self.assertEqual(scores[0]['weighted_score'],10)
         self.assertGreater(scores[0]['weighted_score'],scores[-1]['weighted_score'])

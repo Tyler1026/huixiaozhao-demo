@@ -20,6 +20,7 @@ import json
 import pickle
 import sys
 import unittest
+import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -284,6 +285,149 @@ class LiveProviderRuntimeTests(unittest.TestCase):
         self.assertEqual(p._part_floor('economy', '经济总量', {}), 38)
         self.assertEqual(p._part_floor('enterprises_1', '候选池', {}, 'deep'), 16)
 
+    def test_cross_part_repetition_is_rejected_without_silently_deduplicating(self):
+        p = self._provider(RecordingRouter({}))
+        previous = '\n'.join(f'已保存事实{i}' for i in range(100))
+        repeated = '\n'.join([f'已保存事实{i}' for i in range(50)] + [f'新增分析{i}' for i in range(20)])
+        # No individual line repeats inside the new part, but the assembled
+        # stage would exceed the unchanged 20% repeated-line threshold.
+        p._validate_part_text(repeated, 38)
+        with self.assertRaises(fp.FullProviderError) as caught:
+            p._validate_part_text(repeated, 38, previous)
+        self.assertEqual(str(caught.exception), 'part contains repeated filler')
+        self.assertEqual(repeated.count('已保存事实'), 50)
+        p._validate_part_text('\n'.join(f'不同新增分析{i}' for i in range(40)), 38, previous)
+
+    def test_full_json_system_prompt_preserves_security_and_date_rules(self):
+        when = datetime.datetime(2026, 10, 8, tzinfo=datetime.timezone.utc)
+        original = providers._system_prompt(when)
+        prompt = fp._full_system_prompt(when)
+        self.assertIn('当前日期：2026-10-08', prompt)
+        self.assertIn('只输出一个合法JSON对象', prompt)
+        self.assertNotIn('你只输出本阶段的文本结论。', prompt)
+        self.assertIn('禁止复制前序正文', prompt)
+        self.assertEqual(prompt[prompt.index('外部检索内容'):], original[original.index('外部检索内容'):])
+
+    def test_basic_stage_dependencies_keep_relevant_sections_complete(self):
+        dependencies = {
+            'economy': set(), 'population': {'economy'},
+            'transport': {'economy', 'population'}, 'life': {'population', 'transport'},
+            'industry': {'economy', 'transport', 'policy'},
+            'competition': {'economy', 'transport', 'industry'},
+            'policy': {'industry', 'economy'}, 'chain': {'industry', 'transport', 'policy'},
+        }
+        p = self._provider(RecordingRouter({}))
+        prior = {sid: {'text': f'{sid}-FULL-HEAD\n{sid}-FULL-TAIL'} for sid in dependencies}
+        for stage, relevant in dependencies.items():
+            with self.subTest(stage=stage):
+                rendered = p._render_prior(prior, stage)
+                for sid in dependencies:
+                    self.assertEqual(f'{sid}-FULL-TAIL' in rendered, sid in relevant or sid == stage)
+        huge = {'summary': {'text': 'irrelevant' * 30_000},
+                'economy': {'text': '经济完整保留TAIL'}}
+        self.assertEqual(p._render_prior(huge, 'population'), '【economy】\n经济完整保留TAIL')
+        with self.assertRaises(fp.FullProviderError):
+            p._render_prior({'economy': {'text': 'x' * 120_001}}, 'population')
+
+
+class EnterprisePartGateTests(unittest.TestCase):
+    _provider = LiveProviderRuntimeTests._provider
+    refs = [f'https://cninfo.com.cn/offline-company/{i}' for i in range(8)]
+
+    def _company(self, number):
+        return {'name': f'OFFLINE测试企业{number}', 'url': self.refs[number % 8],
+                'landing_status': '待核实', 'segment': '离线协议测试环节',
+                'expansion_evidence': '待核实', 'uncertainty': 'OFFLINE FIXTURE'}
+
+    def _prior(self, saved=()):
+        direction_refs = [f'https://stats.gov.cn/offline-direction/{i}' for i in range(3)]
+        prior = {'industry': {'text': 'OFFLINE方向依据，不是实际研究', 'metadata': {
+            'directions': [{'id': f'dir{i + 1}', 'name': f'OFFLINE产业{i + 1}',
+                            'evidence_ref': ref} for i, ref in enumerate(direction_refs)],
+            'evidence': [{'url': ref, 'excerpt': 'OFFLINE方向证据'} for ref in direction_refs]}}}
+        if saved:
+            prior['enterprises_1'] = {
+                'text': '\n'.join(f'前序已保存企业分析{i}' for i in range(250)),
+                'metadata': {'candidates': list(saved), 'evidence': [
+                    {'url': ref, 'excerpt': 'OFFLINE已保存企业来源'} for ref in self.refs]}}
+        return prior
+
+    def _run(self, part, fields, saved=(), mode='deep'):
+        text = '\n'.join(f'本批独立企业分析{i}' for i in range(100))
+        payload = {'text': text, **fields}
+        router = RecordingRouter({
+            'exa.ai/search': (200, json.dumps({'results': [
+                {'url': ref, 'text': 'OFFLINE企业资料 ' + ' '.join(f'OFFLINE测试企业{i}' for i in range(30))}
+                for ref in self.refs]})),
+            'chat/completions': (200, json.dumps({'choices': [{'message': {'content': json.dumps(payload)}}]})),
+        })
+        out = self._provider(router).run_part('enterprises_1', part,
+            {'city': '测试城', 'mode': mode}, self._prior(saved))
+        return out, router
+
+    def test_candidate_batches_require_five_new_grounded_identities_before_saving(self):
+        for count in (0, 4, 6):
+            with self.subTest(count=count), self.assertRaises(fp.FullProviderError) as caught:
+                self._run('候选池', {'candidates': [self._company(i) for i in range(count)]})
+            self.assertEqual(str(caught.exception), 'candidate part needs five new grounded companies')
+        out, _ = self._run('候选池', {'candidates': [self._company(i) for i in range(5)],
+            'selected': [{'name': 'premature selection', 'url': 'https://example.com/fake'}]})
+        self.assertEqual(len(out['metadata']['candidates']), 5)
+        self.assertEqual(out['metadata']['selected'], [])
+
+    def test_repeated_candidate_names_and_guessed_homepage_are_rejected(self):
+        saved = [self._company(i) for i in range(5)]
+        with self.assertRaises(fp.FullProviderError):
+            self._run('候选池2', {'candidates': [self._company(i) for i in range(4, 10)]}, saved)
+        guessed = [self._company(i) for i in range(5)]
+        guessed[0]['url'] = 'https://unretrieved-company.cn/'
+        with self.assertRaises(fp.FullProviderError) as caught:
+            self._run('候选池', {'candidates': guessed})
+        self.assertEqual(str(caught.exception), 'company identity needs a retrieved source URL')
+
+    def test_candidate_queries_cover_five_different_chain_segments_and_company_types(self):
+        router = RecordingRouter({'exa.ai/search': (200, json.dumps({'results': [
+            {'url': ref, 'text': 'OFFLINE enterprise excerpt'} for ref in self.refs]}))})
+        p = self._provider(router)
+        for part in ('候选池', '候选池2', '候选池3', '候选池4', '候选池5'):
+            p._gather_evidence('enterprises_1', part, '测试城', self._prior())
+        queries = [json.loads(call.data)['query'] for call in router.calls]
+        self.assertEqual(len(set(queries)), 10)
+        for number, (segment, kind) in enumerate(fp._CANDIDATE_BATCH_TOPICS):
+            self.assertIn(segment, queries[number * 2])
+            self.assertIn(kind, queries[number * 2])
+            self.assertIn('OFFLINE产业1', queries[number * 2])
+
+    def test_missing_saved_target_batch_fails_before_search_or_chat(self):
+        router = RecordingRouter({})
+        p = self._provider(router)
+        with self.assertRaises(fp.FullProviderError):
+            p.run_part('enterprises_1', '扩产信号5', {'city': '测试城', 'mode': 'deep'},
+                       self._prior([self._company(i) for i in range(20)]))
+        self.assertEqual(router.calls, [])
+
+    def test_expansion_batches_require_all_five_existing_targets_and_retrieved_urls(self):
+        saved = [self._company(i) for i in range(25)]
+        with self.assertRaises(fp.FullProviderError):
+            self._run('扩产信号2', {'selected': [self._company(i) for i in range(5, 9)]}, saved)
+        with self.assertRaises(fp.FullProviderError):
+            self._run('扩产信号2', {'selected': [self._company(i) for i in range(4, 9)]}, saved)
+        with self.assertRaises(fp.FullProviderError):
+            self._run('扩产信号2', {'selected': [self._company(i) for i in (5, 6, 7, 8, 29)]}, saved)
+        out, router = self._run('扩产信号2', {'selected': [self._company(i) for i in range(5, 10)]}, saved)
+        self.assertEqual([item['name'] for item in out['metadata']['selected']],
+                         [f'OFFLINE测试企业{i}' for i in range(5, 10)])
+        prompt = json.loads(next(call for call in router.calls if 'chat/completions' in call.full_url).data)['messages'][-1]['content']
+        self.assertIn('第6至10家', prompt)
+        self.assertIn('禁止复制或重述整份前序正文', prompt)
+        self.assertIn('不是猜测的企业官网地址', prompt)
+
+    def test_landing_and_risk_cannot_introduce_unknown_companies(self):
+        saved = [self._company(i) for i in range(25)]
+        for part in ('落地情况', '匹配理由与风险'):
+            with self.subTest(part=part), self.assertRaises(fp.FullProviderError):
+                self._run(part, {'candidates': [self._company(29)]}, saved)
+
 
 class SelectedCompanyFactCheckTests(unittest.TestCase):
     _provider = LiveProviderRuntimeTests._provider
@@ -370,6 +514,69 @@ class SelectedCompanyFactCheckTests(unittest.TestCase):
         p = self._provider(RecordingRouter({}))
         self.assertIn(signal, p._company_check_queries(saved, '测试城')[0])
         self.assertIn(signal, p._render_prior(saved, 'fact_check'))
+
+
+class ScoringIdentityGateTests(unittest.TestCase):
+    _provider = LiveProviderRuntimeTests._provider
+
+    @staticmethod
+    def _prior():
+        return {f'enterprises_{number}': {
+            'text': 'OFFLINE persisted company selections, not real research',
+            'metadata': {'selected': [{'name': f'方向{number}精选企业{index}'} for index in range(25)]}}
+            for number in (1, 2, 3)}
+
+    @staticmethod
+    def _score(number=1, index=0):
+        return {'name': f'方向{number}精选企业{index}', 'direction': f'dir{number}',
+                'dimensions': {key: (0 if key == 'risk' else 10) for key in fc.SCORE_DIMENSIONS},
+                'weighted_score': -999, 'rank': 999}
+
+    def _run(self, scores, prior=None):
+        payload = {'text': '\n'.join(f'OFFLINE当前评分分析{i}' for i in range(100)), 'scores': scores}
+        router = RecordingRouter({'chat/completions': (200, json.dumps({
+            'choices': [{'message': {'content': json.dumps(payload)}}]}))})
+        out = self._provider(router).run_part('scoring', '评分维度与权重',
+            {'city': '测试城', 'mode': 'deep'}, self._prior() if prior is None else prior)
+        return out, router
+
+    def test_scoring_accepts_saved_identities_from_all_directions_without_full_pool_quota(self):
+        out, router = self._run([self._score(number, 24) for number in (1, 2, 3)])
+        self.assertEqual(len(out['metadata']['scores']), 3)
+        self.assertEqual([entry['direction'] for entry in out['metadata']['scores']], ['dir1', 'dir2', 'dir3'])
+        self.assertEqual([entry['weighted_score'] for entry in out['metadata']['scores']], [10, 10, 10])
+        self.assertEqual([entry['rank'] for entry in out['metadata']['scores']], [1, 2, 3])
+        prompt = json.loads(router.calls[0].data)['messages'][-1]['content']
+        self.assertIn('评分身份允许名单仅来自前序enterprises_1/2/3的selected', prompt)
+
+    def test_unknown_company_wrong_direction_and_missing_selections_fail_closed(self):
+        for changes in ({'name': '未知企业'}, {'direction': 'dir2'}, {'direction': ['dir1']}):
+            with self.subTest(changes=changes), self.assertRaises(fp.FullProviderError) as caught:
+                self._run([{**self._score(), **changes}])
+            self.assertEqual(caught.exception.failure_code, 'quality')
+            self.assertEqual(str(caught.exception), 'score identity is absent from saved selections')
+        with self.assertRaises(fp.FullProviderError):
+            self._run([self._score()], {})
+
+    def test_missing_risk_or_other_dimension_is_rejected_instead_of_filled_with_zero(self):
+        for missing in ('risk', 'industry_fit'):
+            score = self._score()
+            del score['dimensions'][missing]
+            with self.subTest(missing=missing), self.assertRaises(fp.FullProviderError) as caught:
+                self._run([score])
+            self.assertEqual(caught.exception.failure_code, 'quality')
+            self.assertEqual(str(caught.exception), 'score dimensions require seven finite values within 0..10')
+
+    def test_out_of_range_nonfinite_boolean_and_extra_dimensions_are_rejected(self):
+        for value in (-1, 11, float('nan'), float('inf'), True, '0'):
+            score = self._score()
+            score['dimensions']['risk'] = value
+            with self.subTest(value=value), self.assertRaises(fp.FullProviderError):
+                self._run([score])
+        score = self._score()
+        score['dimensions']['unknown_dimension'] = 0
+        with self.assertRaises(fp.FullProviderError):
+            self._run([score])
 
 
 class SerializationTests(unittest.TestCase):

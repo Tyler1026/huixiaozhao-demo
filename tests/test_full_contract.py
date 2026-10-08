@@ -14,6 +14,7 @@ what "a complete city report" means.  This module tests:
 Everything is offline: no network, no model, no store.
 """
 
+import copy
 import sys
 import unittest
 from pathlib import Path
@@ -381,6 +382,111 @@ class SyntheticAndAssembleTests(unittest.TestCase):
         out = fc.assemble("summary", [p1, p2])
         urls = [x["url"] for x in out["metadata"]["evidence"]]
         self.assertEqual(urls, ["https://stats.gov.cn/t", "https://stats.gov.cn/t2"])
+
+
+class CompanyMetadataMergeTests(unittest.TestCase):
+    @staticmethod
+    def evidence(url):
+        return {'url': url, 'excerpt': 'OFFLINE source association fixture'}
+
+    @staticmethod
+    def company(name='离线企业甲', url='https://cninfo.com.cn/offline/initial', **fields):
+        return {'name': name, 'url': url, 'landing_status': '待核实',
+                'expansion_evidence': '待核实', 'expansion_date': '发布日期未知',
+                'reason': '保留初筛理由', 'rationale': '待核实',
+                'uncertainty': '保留已有风险说明', **fields}
+
+    def test_grounded_update_improves_unknown_fields_without_reordering_or_mutation(self):
+        old_url = 'https://cninfo.com.cn/offline/initial'
+        new_url = 'https://cninfo.com.cn/offline/verified'
+        b_url, c_url = 'https://cninfo.com.cn/offline/b', 'https://cninfo.com.cn/offline/c'
+        for key in ('candidates', 'selected'):
+            with self.subTest(key=key):
+                initial = self.company()
+                verified = self.company(url=new_url, evidence_ref=new_url, landing_status='已落地',
+                                        expansion_evidence='OFFLINE 后续研究扩产证据', expansion_date='2026-10-08',
+                                        rationale='OFFLINE 后续匹配理由', reason='', uncertainty='待核实')
+                parts = [
+                    {'text': 'OFFLINE 初筛', 'metadata': {'evidence': [self.evidence(old_url), self.evidence(b_url)],
+                                                        key: [initial, self.company('离线企业乙', b_url)]}},
+                    # Company arrays preceding evidence exercise JSON key-order independence.
+                    {'text': 'OFFLINE 后续核验', 'metadata': {key: [verified, self.company('离线企业丙', c_url)],
+                                                            'evidence': [self.evidence(new_url), self.evidence(c_url)]}},
+                ]
+                original = copy.deepcopy(parts)
+                output = fc.assemble('enterprises_1', parts)
+                self.assertEqual([item['name'] for item in output['metadata'][key]],
+                                 ['离线企业甲', '离线企业乙', '离线企业丙'])
+                updated = output['metadata'][key][0]
+                for field in ('url', 'evidence_ref', 'landing_status', 'expansion_evidence', 'expansion_date', 'rationale'):
+                    self.assertEqual(updated[field], verified[field])
+                self.assertEqual(updated['reason'], initial['reason'])
+                self.assertEqual(updated['uncertainty'], initial['uncertainty'])
+                self.assertEqual(output, fc.assemble('enterprises_1', parts))
+                self.assertEqual(parts, original)
+
+    def test_later_unknown_does_not_erase_grounded_landing_signal_date_or_notes(self):
+        first_url = 'https://cninfo.com.cn/offline/verified'
+        next_url = 'https://cninfo.com.cn/offline/later'
+        known = self.company(url=first_url, evidence_ref=first_url, landing_status='区域已布局',
+                             expansion_evidence='OFFLINE 已保存扩产信号', expansion_date='2026-09-01',
+                             rationale='OFFLINE 已保存匹配理由')
+        unknown = self.company(url=next_url, evidence_ref=next_url, expansion_date='unknown',
+                               reason='   ', rationale='', uncertainty='年份未知')
+        for key in ('candidates', 'selected'):
+            with self.subTest(key=key):
+                parts = [
+                    {'text': 'OFFLINE 已核验', 'metadata': {'evidence': [self.evidence(first_url)], key: [known]}},
+                    {'text': 'OFFLINE 未获得更多结论', 'metadata': {'evidence': [self.evidence(next_url)], key: [unknown]}},
+                ]
+                merged = fc.assemble('enterprises_1', parts)['metadata'][key][0]
+                self.assertEqual(merged['url'], next_url)
+                for field in ('landing_status', 'evidence_ref', 'expansion_evidence', 'expansion_date',
+                              'reason', 'rationale', 'uncertainty'):
+                    self.assertEqual(merged[field], known[field])
+
+    def test_later_retrieved_identity_corrects_unretrieved_company_homepage(self):
+        source = 'https://cninfo.com.cn/offline/verified'
+        old = self.company(url='https://company.cn/unretrieved-homepage')
+        corrected = self.company(url=source, evidence_ref=source)
+        parts = [
+            {'text': 'OFFLINE 旧身份链接', 'metadata': {'candidates': [old], 'selected': [old]}},
+            {'text': 'OFFLINE 检索身份来源', 'metadata': {'candidates': [corrected], 'selected': [corrected],
+                                                      'evidence': [self.evidence(source)]}},
+        ]
+        metadata = fc.assemble('enterprises_1', parts)['metadata']
+        for key in ('candidates', 'selected'):
+            self.assertEqual(len(metadata[key]), 1)
+            self.assertEqual(metadata[key][0]['url'], source)
+            self.assertEqual(metadata[key][0]['evidence_ref'], source)
+        self.assertFalse(any('company identity' in error
+                             for error in fc._validate_companies('enterprises_1', metadata, False)))
+
+    def test_unretrieved_or_empty_source_cannot_replace_established_fields(self):
+        source = 'https://cninfo.com.cn/offline/verified'
+        next_url = 'https://cninfo.com.cn/offline/unretrieved'
+        known = self.company(url=source, evidence_ref=source, landing_status='已落地',
+                             expansion_evidence='OFFLINE 已保存扩产信号', expansion_date='2026-09-01')
+        claimed = self.company(url=next_url, evidence_ref=next_url, landing_status='未落地',
+                               expansion_evidence='OFFLINE 未检索到的新主张', expansion_date='2026-10-08')
+        for evidence in ([], [{'url': next_url, 'excerpt': ''}]):
+            with self.subTest(evidence=evidence):
+                parts = [
+                    {'text': 'OFFLINE 已有事实', 'metadata': {'evidence': [self.evidence(source)], 'selected': [known]}},
+                    {'text': 'OFFLINE 未有依据的后续主张', 'metadata': {'evidence': evidence, 'selected': [claimed]}},
+                ]
+                self.assertEqual(fc.assemble('enterprises_1', parts)['metadata']['selected'][0], known)
+
+    def test_landing_update_cannot_borrow_earlier_reference_to_ground_a_new_claim(self):
+        source = 'https://cninfo.com.cn/offline/verified'
+        original = self.company(url=source, evidence_ref=source)
+        claimed = self.company(url=source, landing_status='已落地')
+        parts = [
+            {'text': 'OFFLINE 初筛', 'metadata': {'evidence': [self.evidence(source)], 'candidates': [original]}},
+            {'text': 'OFFLINE 没有绑定来源的新落地结论', 'metadata': {'candidates': [claimed]}},
+        ]
+        merged = fc.assemble('enterprises_1', parts)['metadata']['candidates'][0]
+        self.assertEqual(merged['landing_status'], '待核实')
 
 
 if __name__ == "__main__":

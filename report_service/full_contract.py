@@ -884,7 +884,9 @@ def assemble(stage_id, parts):
     merged preserving first-appearance order and deduplicated:
 
     * ``evidence`` deduped by canonical ``url``;
-    * ``candidates`` / ``selected`` deduped by ``name``;
+    * ``candidates`` / ``selected`` deduped by ``name``; later grounded
+      research can improve existing fields without erasing known facts with
+      unknown/empty placeholders;
     * ``checks`` deduped by ``claim``;
     * ``scores`` deduped by ``name`` (then re-ranked in Python so ranks stay a
       contiguous 1..N permutation after dedup).
@@ -902,10 +904,16 @@ def assemble(stage_id, parts):
         text = p.get("text")
         if isinstance(text, str) and text.strip():
             chunks.append(text.rstrip())
-        for key, value in (p.get("metadata") or {}).items():
+        metadata = p.get("metadata") or {}
+        # A part's evidence may occur after its company arrays in the JSON.
+        # Ground updates against all preceding/current retrieved excerpts,
+        # independently of dictionary insertion order.
+        company_sources = _company_source_urls(
+            list(merged.get('evidence') or []) + list(metadata.get('evidence') or []))
+        for key, value in metadata.items():
             if key not in merged:
                 merged[key] = []
-            _merge_list(merged, key, value)
+            _merge_list(merged, key, value, company_sources)
 
     # Re-rank scores after cross-part dedup so rank remains a stable 1..N.
     if "scores" in merged and isinstance(merged["scores"], list) and merged["scores"]:
@@ -915,9 +923,83 @@ def assemble(stage_id, parts):
     return {"text": text, "metadata": merged}
 
 
-def _merge_list(merged, key, value):
+def _company_source_urls(evidence):
+    sources = set()
+    for item in evidence:
+        if not isinstance(item, dict):
+            continue
+        url, excerpt = item.get('url'), item.get('excerpt')
+        if (not isinstance(url, str) or not isinstance(excerpt, str)
+                or not excerpt.strip() or excerpt.strip() == url.strip()):
+            continue
+        if normalize_url(url) is not None and not _validate_urls(url):
+            sources.add(canonical_url(url))
+    return sources
+
+
+def _known_company_value(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+    return value.strip().lower() not in {
+        '待核实', '待招引', '未知', '年份未知', '发布日期未知', '未核实',
+        '未披露', '不详', '暂无', '无', 'n/a', 'unknown',
+    }
+
+
+def _merge_company(previous, incoming, sources):
+    """Apply a later grounded version while retaining established facts.
+
+    Landing status and its source form a pair: a later unknown landing must
+    not replace the source that supports an established factual status. Other
+    real fields can still improve independently, using the incoming retrieved
+    identity source. The original checkpoint dictionaries are never mutated.
+    """
+    if canonical_url(incoming.get('url')) not in sources:
+        return previous
+    result = dict(previous)
+    result['url'] = incoming['url']
+    old_landing = (previous.get('landing_status') in FACTUAL_LANDING_STATUSES
+                   and canonical_url(previous.get('evidence_ref')) in sources)
+    new_status = incoming.get('landing_status')
+    new_ref = incoming.get('evidence_ref')
+    grounded_ref = canonical_url(new_ref) in sources
+    if new_status in FACTUAL_LANDING_STATUSES and grounded_ref:
+        result['landing_status'] = new_status
+        result['evidence_ref'] = new_ref
+    elif not old_landing:
+        if new_status in LANDING_STATUSES and new_status not in FACTUAL_LANDING_STATUSES:
+            result['landing_status'] = new_status
+        if grounded_ref:
+            result['evidence_ref'] = new_ref
+    for field, value in incoming.items():
+        if field in {'name', 'url', 'landing_status', 'evidence_ref'}:
+            continue
+        if _known_company_value(value):
+            result[field] = value
+        elif field not in result or not str(result.get(field) or '').strip():
+            if isinstance(value, str) and value.strip():
+                result[field] = value
+    return result
+
+
+def _merge_list(merged, key, value, company_sources=None):
     if not isinstance(value, list):
         merged[key] = value
+        return
+    if key in ('candidates', 'selected'):
+        out = list(merged[key]) if isinstance(merged[key], list) else []
+        positions = {_dedupe_key(key, item): index for index, item in enumerate(out)
+                     if _dedupe_key(key, item) is not None}
+        for item in value:
+            identity = _dedupe_key(key, item)
+            if identity is not None and identity in positions:
+                index = positions[identity]
+                out[index] = _merge_company(out[index], item, company_sources or set())
+                continue
+            out.append(item)
+            if identity is not None:
+                positions[identity] = len(out) - 1
+        merged[key] = out
         return
     seen = set()
     for item in merged[key] if isinstance(merged[key], list) else []:
