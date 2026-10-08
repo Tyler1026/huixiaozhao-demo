@@ -1,9 +1,10 @@
-/* ===== 报告生成申请队列（管理端发起 → Agent流水线消费 → RAG回填）===== */
+/* ===== 报告生成申请队列（管理端发起 → 独立报告服务 → RAG发布）===== */
 var REPORT_REQUESTS=[];
+var _rrEngineHealth=null;
 /* 城市账号连接表：{slug:{city,who,org,pwd,resident,projKey}} —— 推送到RAG时自动建立 */
 var CITY_ACCOUNTS={};
 /* Report submissions survive a lost response and a browser restart. Only the
-   server-confirmed request enters the legacy queue; retries reuse its ID. */
+   server-confirmed request enters the report queue; retries reuse its ID. */
 var _rrOutboxKey='hxz_report_outbox_v1', _rrOutbox={}, _rrSending={};
 try{
   var _rrSaved=JSON.parse(localStorage.getItem(_rrOutboxKey)||'{}');
@@ -45,7 +46,12 @@ function _rrMergeRequests(srv){
     if(!sr||!sr.id||!Object.prototype.hasOwnProperty.call(rank,sr.status)) return;
     var loc=REPORT_REQUESTS.find(function(r){return r.id===sr.id;});
     if(!loc){REPORT_REQUESTS.push(sr);changed=true;}
-    else if(rank[sr.status]>=(rank[loc.status]||0)){
+    else{
+      // A repaired native job may resume from a retained configuration failure.
+      // Keep cancellation terminal and never accept another engine/job's resume.
+      var resumed=loc.engine==='full-v1'&&sr.engine===loc.engine&&loc.status==='failed'&&loc.failureCode==='configuration'&&sr.status==='running'&&sr.failureCode!=='configuration'&&
+        (!loc.engineReportId||sr.engineReportId===loc.engineReportId)&&sr.city===loc.city&&sr.province===loc.province;
+      if(rank[sr.status]<(rank[loc.status]||0)&&!resumed) return;
       var updated=Object.assign({},loc,sr);
       if(JSON.stringify(loc)!==JSON.stringify(updated)){Object.assign(loc,sr);changed=true;}
     }
@@ -134,8 +140,8 @@ function submitReportRequest(){
   toast('正在确认「'+city+'」申请；网络中断时会保留申请并自动重试');render();
   return _rrFlushOutbox();
 }
-/* 管理端「推送到 RAG」按钮：给已完成申请打 pushRequested 标记，本地轮询器消费后完成
-   RAG 推送 + 城市账号连接（登录名/密码自动建立并绑定该项目）。 */
+/* 管理端「推送到 RAG」按钮：独立云端服务消费发布请求，
+   在事务中保存智库材料、研判正文与发布回执。 */
 function pushReportToRag(reqId,btn){
   var request=REPORT_REQUESTS.find(function(r){return r.id===reqId;});
   if(!request||request.status!=='done'){toast('该报告申请尚未完成，请刷新页面后重试');return;}
@@ -189,15 +195,32 @@ function cancelReportRequest(id,btn){
 setInterval(function(){
   _rrFlushOutbox();
   if(!REPORT_REQUESTS.length) return;
-  var active=REPORT_REQUESTS.some(function(r){return r.status==='pending'||r.status==='running';});
+  var active=REPORT_REQUESTS.some(function(r){return r.status==='pending'||r.status==='running'||(r.engine==='full-v1'&&((r.status==='done'&&r.pushRequested&&!r.pushed)||(r.status==='failed'&&r.failureCode==='configuration')));});
   if(!active) return;
-  _rrJson('/api/sync?raw=1').then(function(raw){
+  var changed=false;
+  var sync=_rrJson('/api/sync?raw=1').then(function(raw){
     var state=_rrServerState(raw),srv=state&&state.REPORT_REQUESTS;
     if(!srv||!srv.length) return;
-    if(_rrMergeRequests(srv)){render();}
+    changed=_rrMergeRequests(srv)||changed;
   }).catch(function(){});
+  var health=Promise.resolve();
+  if(REPORT_REQUESTS.some(function(r){return r.engine==='full-v1'&&r.status==='pending';})){
+    health=_rrJson('/health').then(function(raw){
+      var engine=raw&&raw.report_engine;
+      // Cache only readiness, never provider credentials or configuration names.
+      var ready=engine&&typeof engine.configured==='boolean'?{configured:engine.configured}:null;
+      if(JSON.stringify(_rrEngineHealth)!==JSON.stringify(ready)){_rrEngineHealth=ready;changed=true;}
+    }).catch(function(){if(_rrEngineHealth!==null){_rrEngineHealth=null;changed=true;}});
+  }
+  return Promise.all([sync,health]).then(function(){if(changed)render();});
 },30000);
-function rrStatusBadge(s){
+function rrStatusBadge(s,r){
+  if(r&&r.engine==='full-v1'){
+    if(s==='done') return '<span class="ops-badge '+(r.pushed?'green':'blue')+'">'+(r.pushed?'已完成·RAG已发布':r.pushRequested?'Word已生成·发布中':'Word已生成·待发布')+'</span>';
+    if(s==='failed'&&r.failureCode==='configuration') return '<span class="ops-badge orange">配置/认证异常·待管理员处理</span>';
+    if(s==='pending'&&_rrEngineHealth&&_rrEngineHealth.configured===false) return '<span class="ops-badge orange">报告服务未就绪</span>';
+  }
+  if(s==='done'&&r&&!r.pushed) return '<span class="ops-badge orange">历史Word·需重新生成后发布</span>';
   return s==='done'?'<span class="ops-badge green">已完成·RAG已初始化</span>':
          s==='running'?'<span class="ops-badge blue"><span class="rr-spin"></span>AI 研判进行中</span>':
          s==='failed'?'<span class="ops-badge orange">失败·可重试</span>':

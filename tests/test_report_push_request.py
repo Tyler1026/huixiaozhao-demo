@@ -10,6 +10,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import Mock
+from report_service.website_queue import ENGINE
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -22,16 +23,21 @@ class ReportPushRequestTests(unittest.TestCase):
         self.state = {
             'PROJECTS': {'keep': {'city': 'Other'}},
             'REPORT_REQUESTS': [
-                {'id': 'old', 'city': 'A', 'status': 'done', 'ts': 1},
-                {'id': 'new', 'city': 'A', 'status': 'done', 'ts': 2},
-                {'id': 'other', 'city': 'B', 'status': 'done', 'ts': 3},
+                {'id': 'old', 'city': 'A', 'status': 'done', 'ts': 1, 'engine': ENGINE},
+                {'id': 'new', 'city': 'A', 'status': 'done', 'ts': 2, 'engine': ENGINE},
+                {'id': 'other', 'city': 'B', 'status': 'done', 'ts': 3, 'engine': ENGINE},
             ],
         }
         self.write = Mock(return_value=True)
         self.read = Mock(side_effect=lambda: json.dumps(self.state))
+        session = Mock()
+        session.__enter__ = Mock(return_value=session)
+        session.__exit__ = Mock(return_value=False)
+        session.read = self.read
+        session.write = self.write
         self.ns = dict(json=json, time=time, _PG_AVAIL=True, DATABASE_URL='synthetic',
                        _db_get=self.read, _db_set=self.write, SYNC_PATH='unused',
-                       _file_snapshot=Mock())
+                       _file_snapshot=Mock(), _sync_transaction=lambda: session)
         unit = ast.Module(body=[post], type_ignores=[])
         exec(compile(unit, 'isolated-report-push', 'exec'), self.ns)
 
@@ -124,13 +130,27 @@ class ReportPushRequestTests(unittest.TestCase):
             with self.subTest(flag=flag):
                 self.state['REPORT_REQUESTS'][0] = {
                     'id': 'old', 'city': 'A', 'status': 'done', flag: True,
-                    'pushRequestedTs': 123,
+                    'pushRequestedTs': 123, 'engine': ENGINE,
                 }
                 status, body = self.request({'requestId': 'old', 'city': 'A'})
                 self.assertEqual(status, 200)
                 self.assertTrue(body['ok'])
                 self.assertTrue(body['alreadyRequested'])
                 self.write.assert_not_called()
+
+    def test_unpublished_historical_report_does_not_wait_for_a_desktop_publisher(self):
+        target = self.state['REPORT_REQUESTS'][0]
+        target.pop('engine')
+        target['pushRequested'] = True  # An old request must not be acknowledged again.
+        status, body = self.request({'requestId': 'old', 'city': 'A'})
+        self.assertEqual(status, 409)
+        self.assertEqual(body['code'], 'legacy-report-requires-regeneration')
+        self.write.assert_not_called()
+        target['pushed'] = True
+        status, body = self.request({'requestId': 'old', 'city': 'A'})
+        self.assertEqual(status, 200)
+        self.assertTrue(body['pushed'])
+        self.write.assert_not_called()
 
     def test_invalid_input_is_rejected_before_reading_storage(self):
         for body in [[], {}, {'city': []}, {'city': ' '}, {'city': 'A', 'requestId': []},

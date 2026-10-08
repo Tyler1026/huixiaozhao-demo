@@ -22,6 +22,15 @@ class CompositionTests(unittest.TestCase):
                 DATABASE_URL='synthetic',_NOISE_RE=[],_db_get=lambda:'{}',
                 SYNC_PATH='unused',_file_snapshot=lambda:None)
         writes=[];ns['_db_set']=lambda value:writes.append(value) or True
+        from contextlib import contextmanager
+        @contextmanager
+        def transaction():
+            # HTTP composition uses an isolated storage seam; real transaction
+            # locking and rollback are exercised by the PostgreSQL CI fixture.
+            from types import SimpleNamespace
+            yield SimpleNamespace(read=lambda: ns['_db_get'](),
+                                  write=lambda value: ns['_db_set'](value))
+        ns['_sync_transaction'] = transaction
         ns.update({name:getattr(sync_merge,name) for name in dir(sync_merge) if name.startswith('_') and not name.startswith('__')})
         exec(compile(ast.Module(body=nodes,type_ignores=[]),'isolated-handler','exec'),ns)
         server=ThreadingHTTPServer(('127.0.0.1',0),ns['Handler'])

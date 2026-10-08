@@ -1,61 +1,48 @@
-# 慧小招 — AI 招商智能体 整合联动版 Demo
+# 慧小招 — AI 招商系统
 
-> 单文件纯前端 Demo，用于演示慧小招产品的完整交互流程与数据结构。
+政府端城市智库、研判需求、项目管理、政企对接，以及管理端需求池、城市报告申请与发布。
 
-## 当前版本说明
+## 城市报告默认独立运行
 
-### 数据层现状（v1 · 演示用）
+管理端提交省份与城市 → 服务器保存申请并归属独立报告引擎 → 云端 Python worker 直接调用模型与检索 → PostgreSQL 持久保存检查点 → 完整与精简 Word 下载 → 管理端推送四类城市智库材料及研判正文。
 
-`PROJECTS` 数据目前是**基于随州报告研究结论的硬编码静态数据**，覆盖三个方向：
+报告生成无需 Violoop、Agenda、桌面在线设备或本机绝对路径。新申请以及有效未认领的历史 pending 不会交给旧 Agent；配置缺失时保留申请并等待，不回退旧执行器。历史 running/done 保留，旧 Word 下载保持不变；缺少独立研究包的未发布历史报告需重新生成后发布。
 
-- 随州 · 氢能专用车补链（新楚风49T氢重卡已量产，电堆占整车成本53%全部外购）
-- 随州 · 智慧应急装备补链（移动应急装备2023产值324亿，感知层全靠外采）
-- 随州 · 香菇深加工补链（全产业链500亿，品源4亿美元出口订单，提取环节仅2家）
+业务标准保留：产业方向 → 产业链缺口 → 对应企业 → 独立核验 → 匹配评分与行动计划。deep 每方向至少25家最终企业，standard至少15家；产出16份 Markdown、完整与精简两份 Word，知识库发布须通过完整性门禁。
 
-### 已知的产品逻辑问题（待改造）
+## 启动与配置
 
-**当前流程（错误）：** 预置数据 → 展示界面  
-**正确流程：** 空白状态 → 干部输入城市/产业方向 → AI 分析生成 → 写入界面
-
-下一步需要：
-1. 加入空状态 + 城市/方向输入引导
-2. 慧小招工作流输出时额外生成 `projects_data.json`
-3. 本 Demo 启动时 `fetch` 该文件初始化 `PROJECTS`，替换硬编码
-
-## 文件结构
-
-```
-index.html   — 完整单文件应用（HTML + CSS + JS 内嵌）
+```sh
+pip install psycopg2-binary esprima pdfplumber python-docx
+python scripts/build_frontend.py --check
+python server.py
 ```
 
-### 界面模块
+网站端口使用 Railway 注入的 `PORT`，本地默认5050；管理端地址 `/ops`。
 
-**政府端（gov）**
-| 模块 | 数据来源 |
-|------|---------|
-| 城市智库 | `PROJECTS[cur].kb` |
-| 研判需求 | `PROJECTS[cur].report` |
-| 项目管理 | `PROJECTS` 整体 |
-| 政企对接 | `PROJECTS[cur].clues` |
+真实报告需要环境配置：
 
-**管理端（ops）**
-| 模块 | 数据来源 |
-|------|---------|
-| 需求池 | `DEMANDS[]` |
-| 智能匹配 | `RESOURCES[]` + `RES_SEED[]` |
-| 对接管理 | `DOCK_ITEMS[]` |
-| 城市总览 | `CITY_FUNNEL[]` |
-| 领导材料台 | `LEADER_DOCS[]` |
-| 账号开通 | `OPEN_ACCOUNTS[]` |
+- `DATABASE_URL`：PostgreSQL，存申请、检查点与全部交付字节。
+- `DEEPSEEK_API_KEY`，或完整的 `HXZ_MODEL_KEY`、`HXZ_MODEL_URL`、`HXZ_MODEL_NAME`。
+- `HXZ_SEARCH_KEY` 与 `HXZ_SEARCH_PROVIDER=exa` 或 `brave`；已有 `EXA_API_KEY` 可在内存中适配。
+- `HXZ_ENABLE_LIVE=1`：明确允许真实付费研究；未设置时 supervisor 等待配置，不发起研究。
 
-## 本地运行
+`HXZ_REPORT_ENGINE` 可省略；现有 `standalone` 值兼容。其他值只阻止执行，不恢复旧 Agent 的队列访问。凭据只由环境注入，不写入网页或命令行。
 
-直接用浏览器打开 `index.html` 即可，无需任何构建工具或服务器。
+配置检查 `python -m report_service.hosted --check` 不访问数据库、检索或模型，仅返回缺项/无效项名称。`/health` 的 `report_engine` 仅证明配置及进程状态，不能证明真实报告质量。
 
-## Changelog
+## 开发与验证
 
-### v1.0 (2026-08-01)
-- 初始版本，整合政府端 + 管理端完整交互流程
-- 填入随州真实产业数据（氢能/应急/香菇三方向）
-- 所有 AI 回复动态化，从 `PROJECTS` 数据层读取
-- 已知问题：数据层硬编码，待接入慧小招工作流输出
+`frontend/` 是前端源文件，`index.html`、`ops.html` 由 `scripts/build_frontend.py` 生成；修改源文件后更新 manifest 的 SHA256 并构建。`backend/` 是网站存储及接口边界，`report_service/` 是独立研究、恢复、Word 构建与发布服务。
+
+```sh
+python -m unittest discover -s tests -p 'test_*.py' -q
+node --test tests/test_*.cjs
+python scripts/build_frontend.py --check
+python scripts/check_inline_js.py ops.html index.html
+python scripts/smoke_entrypoint.py
+```
+
+完整 Git 历史用于旧版行为回归。PostgreSQL 集成测试只接受本机隔离的 `report_ci` 数据库与 `HXZ_TEST_DATABASE_URL`，不能使用生产数据库；CI 自动运行该 fixture。合成数据仅用于隔离测试，不能作为客户报告发布。
+
+运行、恢复、取消、发布以及真实报告验收边界详见 [独立报告引擎说明](docs/INDEPENDENT_REPORT_ENGINE.md)。
