@@ -176,7 +176,7 @@ class FullLiveProvider:
             raise _to_provider_error(exc)
 
         place = self._place(job)
-        prior_text = self._render_prior(prior, stage_id)
+        prior_text = self._render_prior(prior, stage_id, part)
         floor = self._part_floor(stage_id, part, prior, mode)
 
         # Only previously retrieved, usable excerpts can back new claims. A
@@ -208,8 +208,11 @@ class FullLiveProvider:
 
         parsed = self._parse_part(stage_id, part, payload, all_evidence, prior)
         text = parsed["text"]
-        self._validate_part_text(text, floor)
-        metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed)
+        previous_text = previous.get('text', '') if isinstance(previous, dict) else previous
+        self._validate_part_text(text, floor, previous_text)
+        metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior)
+        if stage_id.startswith('enterprises_'):
+            self._validate_company_part(part, metadata, previous)
         if stage_id == 'industry':
             saved = previous.get('metadata', {}).get('directions')
             if saved and [(d['id'], d['name']) for d in saved] != [(d['id'], d['name']) for d in metadata['directions']]:
@@ -226,7 +229,7 @@ class FullLiveProvider:
             return f"{province}{city}"
         return city or province or "目标地区"
 
-    def _render_prior(self, prior, stage_id):
+    def _render_prior(self, prior, stage_id, part=None):
         """Select the *full* relevant dependency sections and structured entities.
 
         Prior stages are passed in full (not truncated to a few hundred chars),
@@ -234,6 +237,9 @@ class FullLiveProvider:
         synthesis and scoring never silently lose facts.  If the selected context
         still exceeds the transport bound, fail explicitly rather than truncate.
         """
+        if part is not None:
+            from .full_context import scoped_prior
+            prior = scoped_prior(prior, stage_id, part)
         if prior is None:
             return ""
         if isinstance(prior, str):
@@ -292,13 +298,19 @@ class FullLiveProvider:
         return [line.strip() for line in str(text or '').splitlines()
                 if line.strip() and line.strip() != '---']
 
-    def _validate_part_text(self, text, floor):
+    def _validate_part_text(self, text, floor, previous_text=''):
         lines = self._content_lines(text)
         if len(lines) < floor:
             raise FullProviderError('part line floor not met', 'quality')
         repeated = sum(n - 1 for n in Counter(lines).values() if n > 1)
         if repeated > len(lines) * .2:
             raise FullProviderError('part contains repeated filler', 'quality')
+        if isinstance(previous_text, str) and previous_text.strip():
+            combined = previous_text.rstrip() + '\n\n---\n\n' + text
+            combined_lines = [line.strip() for line in combined.splitlines() if line.strip()]
+            repeats = sum(n - 1 for n in Counter(combined_lines).values() if n > 1)
+            if repeats > len(combined_lines) * .2:
+                raise FullProviderError('part contains repeated filler', 'quality')
         if contract._validate_urls(text):
             raise FullProviderError('part source URL policy failed', 'quality')
 
@@ -365,6 +377,47 @@ class FullLiveProvider:
         return queries or [f'{place} 企业 扩产 投资项目 公司公告',
                            f'{place} 企业 投资计划 产能 年度报告']
 
+    @staticmethod
+    def _company_batch(part):
+        match = re.search(r'(\d+)$', part)
+        return int(match.group(1)) - 1 if match else 0
+
+    def _validate_company_part(self, part, metadata, previous):
+        """Validate a small enterprise checkpoint before it becomes immutable.
+
+        Candidate discovery adds grounded identities. Later batches address
+        their saved five names, so a missing pool batch cannot silently shift
+        the offsets or become a permanent final-stage quantity failure.
+        """
+        previous_meta = previous.get('metadata', {}) if isinstance(previous, dict) else {}
+        saved = previous_meta.get('candidates', [])
+        saved_names = {item.get('name') for item in saved if isinstance(item, dict)}
+        candidates = metadata.get('candidates', [])
+        if not part.startswith('扩产信号'):
+            # A premature model selection is outside the current checkpoint.
+            metadata['selected'] = []
+        selected = metadata.get('selected', [])
+        assoc = self._assoc(metadata.get('evidence', []))
+        for item in candidates + selected:
+            if canonical_url(item.get('url')) not in assoc:
+                raise FullProviderError('company identity needs a retrieved source URL', 'quality')
+        if part.startswith('候选池'):
+            names = {item['name'] for item in candidates}
+            if len(candidates) != 5 or len(names - saved_names) != 5 or names & saved_names:
+                raise FullProviderError('candidate part needs five new grounded companies', 'quality')
+            return
+        if any(item.get('name') not in saved_names for item in candidates + selected):
+            raise FullProviderError('company part contains a name absent from the saved candidate pool', 'quality')
+        if part.startswith(('落地情况', '扩产信号')):
+            start = self._company_batch(part) * 5
+            targets = {item.get('name') for item in saved[start:start + 5] if isinstance(item, dict)}
+            if len(targets) != 5:
+                raise FullProviderError('company target batch needs five saved candidates', 'quality')
+            if any(item.get('name') not in targets for item in candidates + selected):
+                raise FullProviderError('company part contains a name outside its target batch', 'quality')
+            if part.startswith('扩产信号') and {item['name'] for item in selected} != targets:
+                raise FullProviderError('expansion part needs five grounded target companies', 'quality')
+
     def _gather_evidence(self, stage_id, part, place, prior=None):
         out = []
         seen = set()
@@ -382,14 +435,19 @@ class FullLiveProvider:
             except ValueError as exc:
                 raise FullProviderError(str(exc), 'quality') from None
             topic = directions[int(stage_id[-1]) - 1]['name']
-            queries = [f'{topic} 全国 企业名录 龙头企业 上市公司 扩产 招商', f'{topic} 补链 专精特新 企业']
             candidates = (prior or {}).get(stage_id, {}).get('metadata', {}).get('candidates', [])
-            batch = re.search(r'(\d+)$', part)
-            offset = (int(batch.group(1)) - 1 if batch else 0) * 5
-            size = 5
-            if not part.startswith('候选池') and candidates:
-                chosen = candidates[offset:offset + size]
+            if part.startswith('候选池'):
+                segment, kind = _CANDIDATE_BATCH_TOPICS[self._company_batch(part)]
+                queries = [f'{topic} 全国 {segment} {kind} 企业名录 上市公司',
+                           f'{topic} {segment} 专精特新 企业 公司名单 扩产']
+            elif part.startswith(('落地情况', '扩产信号')):
+                offset = self._company_batch(part) * 5
+                chosen = candidates[offset:offset + 5]
+                if len(chosen) != 5:
+                    raise FullProviderError('company target batch needs five saved candidates', 'quality')
                 queries = [f"{c['name']} {topic} {place} 项目 基地 工厂 扩产 公告" for c in chosen]
+            else:
+                queries = [f'{topic} 全国 产业链 企业 竞争 风险', f'{topic} {place} 招商 产业链 匹配']
         for query in queries:
             try:
                 count = min(self._live.search_count, 2) if targeted_check else self._live.search_count
@@ -455,14 +513,21 @@ class FullLiveProvider:
         user_blocks.append("本子章节任务：\n" + instructions)
         stage = get_stage(stage_id, mode=mode)
         floor = min_lines if min_lines is not None else (stage['min_lines'] + len(stage['parts']) - 1) // len(stage['parts'])
-        user_blocks.append(f'本子章节至少{floor}行实质内容，每条独立换行（JSON text中使用\\n），不以空行、分隔符或重复句子凑数。'
-                           '前序已保存的正文完整保留，本子章节必须补足该阶段尚缺的内容行数。来源URL均须HTTPS且只能采用真实检索结果；'
+        user_blocks.append(f'本子章节至少{floor}行实质内容，建议{floor}至{floor + 8}行，每条独立换行（JSON text中使用\\n），不以空行、分隔符或重复句子凑数。'
+                           '只输出当前子章节新增正文和本批记录；前序正文及结构化数组已由服务器完整保存，禁止复制或重述整份前序正文、重复已有行或回传完整企业数组。'
+                           '可引用前序事实来展开当前主题，写出不同的具体分析、缺口和核查动作。来源URL均须HTTPS且只能采用真实检索结果；'
                            '正文可使用来源编号，避免重复粘贴同一URL。')
         if stage_id.startswith('enterprises_'):
             selection = ('扩产信号各批精选5家，5批共至少25家'
                          if mode == 'deep' else '扩产信号各批精选5家，3批共至少15家')
             user_blocks.append('按持久子步骤分批研究：候选池各批新增5家不重复企业；落地情况各批核查已有候选5家；'
                                + selection + '并核查信号与本地项目。每条附已给出的证据URL；不足必须如实返回，不得捏造。当前阶段已保存的企业不可当新企业重复计数。')
+            if part.startswith('候选池'):
+                segment, kind = _CANDIDATE_BATCH_TOPICS[self._company_batch(part)]
+                user_blocks.append(f'本候选批侧重{segment}与{kind}；只返回本批新增且不在已保存候选池中的恰好5家真实企业，禁止超过5家导致后续固定批次错位。selected必须为空数组，后续扩产步骤再精选。')
+            elif part.startswith(('落地情况', '扩产信号')):
+                user_blocks.append(f'本批目标是当前方向已保存候选池第{self._company_batch(part) * 5 + 1}至{self._company_batch(part) * 5 + 5}家，名称必须与已有记录完全一致。'
+                                   '仅返回这5家的本批核查记录，不引入其他名称。扩产信号批的selected须完整包含这5家；确无信号则在expansion_evidence与uncertainty明确待核实，不编造事实。')
         if stage_id == 'industry':
             user_blocks.append('必须返回directions数组，恰好三个不同产业方向。每项含id(dir1/dir2/dir3)、name、evidence_ref(本次或已保存的真实检索URL)。后续子章节沿用前序已确定的ID和名称，不得换方向。正文与该数组必须一致。')
         if stage_id == 'fact_check' and part == '五星企业信号':
@@ -476,12 +541,22 @@ class FullLiveProvider:
                      '五星企业信号': 'high_star核验覆盖dir1、dir2、dir3，每方向至少1条已选企业信号'}
             user_blocks.append('结构化checks要求：' + quota[part] +
                                '。每条必须有两条实际检索、互不相同且支持同一主张的来源；证据不足必须如实少报，严禁为满足数量补造主张。')
+        if stage_id == 'scoring':
+            user_blocks.append('当前子步骤只为前序中明确标为本批的已精选企业评分。完整处理本批所有记录，'
+                               '不得复制前一批scores或引入其他企业；每项准确保留企业名称和dir1/dir2/dir3方向。'
+                               '七项维度必须逐项给出有依据的0到10数值，不得把未研究的风险当作零风险。')
+        if stage_id == 'scoring':
+            user_blocks.append('评分身份允许名单仅来自前序enterprises_1/2/3的selected，'
+                               '对应direction必须分别为dir1/dir2/dir3，name与已保存名称完全一致。'
+                               '禁止对候选但未精选、未知或方向不匹配的企业评分。'
+                               'dimensions必须完整包含七个键及0至10的有限数值，不得省略risk或任何其他维度。')
         user_blocks.append(_OUTPUT_RULES)
         messages = [
-            {"role": "system", "content": providers._system_prompt()},
+            {"role": "system", "content": _full_system_prompt()},
             {"role": "user", "content": "\n\n".join(user_blocks)},
         ]
-        data = self._live._chat(messages, min(providers.MAX_OUTPUT_TOKENS, max(self._live.max_output_tokens, 6000)))
+        token_floor = 8000 if stage_id in {'scoring', 'compact'} else 6000
+        data = self._live._chat(messages, min(providers.MAX_OUTPUT_TOKENS, max(self._live.max_output_tokens, token_floor)))
         return self._extract_text(data)
 
     def _extract_text(self, data):
@@ -544,7 +619,7 @@ class FullLiveProvider:
             raise FullProviderError(f"model JSON unparseable: {exc}", "quality") from exc
         return obj
 
-    def _build_metadata(self, stage_id, part, place, evidence, parsed):
+    def _build_metadata(self, stage_id, part, place, evidence, parsed, prior=None):
         meta = {"evidence": evidence}
         if stage_id == 'industry':
             from .full_directions import normalise_directions
@@ -561,7 +636,7 @@ class FullLiveProvider:
                 meta["high_star_unavailable"] = True
                 meta["high_star_note"] = parsed.get("high_star_note", "")
         elif stage_id == "scoring":
-            meta["scores"] = self._compute_scores(stage_id, parsed.get("scores"), evidence)
+            meta["scores"] = self._compute_scores(stage_id, parsed.get("scores"), evidence, prior)
         return meta
 
     def _assoc(self, evidence):
@@ -646,7 +721,7 @@ class FullLiveProvider:
             })
         return out
 
-    def _compute_scores(self, stage_id, raw, evidence):
+    def _compute_scores(self, stage_id, raw, evidence, prior=None):
         """Compute weighted scores and stable ranks in Python.
 
         The model only supplies 0-10 ``dimensions`` sub-scores; ``weighted_score``
@@ -655,20 +730,31 @@ class FullLiveProvider:
         """
         if not isinstance(raw, list):
             return []
+        allowed = set()
+        for number in (1, 2, 3):
+            saved = (prior or {}).get(f'enterprises_{number}', {}) if isinstance(prior, dict) else {}
+            metadata = saved.get('metadata', {}) if isinstance(saved, dict) else {}
+            for company in metadata.get('selected', []):
+                if isinstance(company, dict) and isinstance(company.get('name'), str):
+                    allowed.add((company['name'].strip(), f'dir{number}'))
         records = []
         for item in raw:
             if not isinstance(item, dict):
-                continue
-            name = (item.get("name") or "").strip()
-            if not name:
-                continue
+                raise FullProviderError('score identity is absent from saved selections', 'quality')
+            name = item.get('name')
+            direction = item.get('direction')
+            if (not isinstance(name, str) or not isinstance(direction, str)
+                    or (name.strip(), direction) not in allowed):
+                raise FullProviderError('score identity is absent from saved selections', 'quality')
+            name = name.strip()
             dims = item.get("dimensions")
-            if not isinstance(dims, dict):
-                continue
-            dims = {d: dims.get(d, 0) for d in SCORE_DIMENSIONS}
+            try:
+                contract.compute_weighted_score(dims)
+            except (ValueError, TypeError):
+                raise FullProviderError('score dimensions require seven finite values within 0..10', 'quality') from None
             records.append({
                 "name": name,
-                "direction": item.get("direction") or "",
+                "direction": direction,
                 "dimensions": dims,
             })
         return rank_scores(records)
@@ -689,8 +775,34 @@ def _render_structured(metadata):
     return "\n".join(lines)
 
 
+def _full_system_prompt(now=None):
+    """Keep the transport's safety/date rules with an unambiguous JSON format."""
+    return providers._system_prompt(now).replace(
+        '你只输出本阶段的文本结论。',
+        '你只输出一个合法JSON对象，不输出Markdown代码块或对象外说明。'
+        'text字段只含当前子章节新增正文，其他数组只含当前子步骤的记录；'
+        '前序内容已由服务器保存，禁止复制前序正文或回传已保存的完整结构化数组。')
+
+
+_CANDIDATE_BATCH_TOPICS = (
+    ('上游原材料与基础供应', '原材料供应商'),
+    ('核心部件与关键技术', '核心技术专精特新企业'),
+    ('生产装备与制造设备', '装备制造企业'),
+    ('系统集成与配套服务', '系统集成服务企业'),
+    ('下游应用与终端产品', '终端应用龙头企业'),
+)
+
+
 # Which prior stages are relevant to each downstream stage (full sections only).
 _RELEVANT_PRIOR = {
+    'economy': set(),
+    'population': {'economy'},
+    'transport': {'economy', 'population'},
+    'life': {'population', 'transport'},
+    'industry': {'economy', 'transport', 'policy'},
+    'competition': {'economy', 'transport', 'industry'},
+    'policy': {'industry', 'economy'},
+    'chain': {'industry', 'transport', 'policy'},
     "fact_check": {"economy", "industry", "policy", "chain", "enterprises_1", "enterprises_2", "enterprises_3"},
     "scoring": {"industry", "chain", "enterprises_1", "enterprises_2", "enterprises_3", "fact_check", "policy"},
     "action": {"scoring", "chain", "enterprises_1", "enterprises_2", "enterprises_3", "policy"},
@@ -804,7 +916,8 @@ _OUTPUT_RULES = (
     "独立交叉来源。本阶段只做研究与如实描述，不承诺任何成本节省或订单金额。"
     "\n\n"
     "企业类阶段（enterprises_*）：对象还须包含 \"candidates\" 与 \"selected\" 两个数组（仅限证据中"
-    "出现的真实企业），每项含 name、url、landing_status（取值：已落地/区域已布局/布局中/拟落地/"
+    "出现的真实企业），只含当前子步骤新增或核查的记录。url必须是已给出的实际检索来源URL，"
+    "不是猜测的企业官网地址；不得把未检索到的官网作为企业身份来源。每项含 name、url、landing_status（取值：已落地/区域已布局/布局中/拟落地/"
     "未落地/待招引/待核实）、segment、reason，以及对 landing_status 做出事实断言（已落地/区域已布局/"
     "布局中/拟落地/未落地）时必须给出 evidence_ref（对应上述证据来源 URL）。无法核实的落地状态必须"
     "写“待核实”或“待招引”，严禁在证据缺失时写成“未落地”。selected 项还须含 expansion_evidence、"
