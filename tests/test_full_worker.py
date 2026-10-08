@@ -7,6 +7,7 @@ from pathlib import Path
 
 from report_service.full_store import FullStore
 from report_service.full_worker import run_once, run_loop
+from report_service.full_provider import FullProviderError
 
 STAGES = tuple({'id': f's{i}', 'filename': f'{i}.md', 'parts': ('body',)} for i in range(10))
 
@@ -59,6 +60,47 @@ class FailOneProvider:
     def run_part(self, stage, part, job, prior):
         if job['city'] == 'bad': raise PermissionError('do not expose secret123')
         return {'text': 'SYNTHETIC TEST ' + stage, 'metadata': {}}
+
+
+class ReportFaultProvider:
+    def run_part(self, stage, part, job, prior):
+        return {'text': 'A secret123 https://stats.gov.cn/report1\nB http://127.0.0.1/secret123',
+                'metadata': {'evidence': [
+                    {'url': 'http://stats.gov.cn/secret123', 'excerpt': ''},
+                    {'url': 'https://stats.gov.cn/report1', 'excerpt': 'retrieved facts'},
+                ]}}
+
+
+class RealValidationContract:
+    @staticmethod
+    def assemble(stage, parts):
+        return {'text': '\n'.join(p['text'] for p in parts), 'metadata': parts[0]['metadata']}
+    @staticmethod
+    def validate(*args, **kwargs):
+        from report_service.full_contract import validate
+        return validate(*args, **kwargs)
+
+
+class ProviderParseFault:
+    def run_part(self, *args):
+        raise FullProviderError('model JSON unparseable: secret123 https://private.example/key', 'quality')
+
+
+class ContextFaultContract(TinyContract):
+    @staticmethod
+    def assemble(*args):
+        raise ValueError('saved context contains secret123')
+
+
+class OutputFaultProvider:
+    def run_part(self, *args):
+        return {'text': 'SYNTHETIC TEST', 'metadata': {}, 'secret123': b'secret123'}
+
+
+class BundleFaultContract(TinyContract):
+    @staticmethod
+    def validate(*args, **kwargs):
+        return ['URL host is local/private: http://127.0.0.1/secret123']
 
 
 class FullWorkerTests(unittest.TestCase):
@@ -115,6 +157,77 @@ class FullWorkerTests(unittest.TestCase):
         self.assertEqual(b['failure_code'], 'configuration')
         self.assertNotIn('secret123', str(b))
         self.assertEqual(self.store.get('a', good['id'])['parts_done'], 1)
+
+    def test_stage_diagnostics_count_saved_and_current_parts_without_content(self):
+        stages = ({'id': 'economy', 'filename': 'economy.md', 'parts': ('first', 'last'), 'min_lines': 150},)
+        store = FullStore(self.path, stages=stages, backoff=(0, 0))
+        report = store.create('a', 'p', 'real', 'diagnostic', False)
+        first = run_once(store, ReportFaultProvider(), synthetic=False, contract=RealValidationContract)
+        self.assertEqual(first['status'], 'checkpoint')
+        result = run_once(store, ReportFaultProvider(), synthetic=False, contract=RealValidationContract)
+        self.assertEqual((result['status'], result['code']), ('retry_wait', 'quality'))
+        diagnostic = result['diagnostics']
+        self.assertEqual((diagnostic['phase'], diagnostic['stage'], diagnostic['part']),
+                         ('stage_validation', 'economy', 'last'))
+        self.assertEqual(diagnostic['exception_class'], 'ValueError')
+        self.assertEqual(diagnostic['issues'], ['evidence_floor', 'evidence_structure', 'line_floor', 'repeated_lines', 'url_policy'])
+        self.assertEqual((diagnostic['line_count'], diagnostic['min_lines'], diagnostic['evidence_count']), (4, 150, 2))
+        self.assertGreater(diagnostic['error_count'], 0)
+        self.assertEqual(diagnostic['parts'], [
+            {'part_index': index, 'line_count': 2, 'evidence_count': 2,
+             'non_https_evidence_count': 1, 'empty_excerpt_count': 1, 'unsafe_text_url_count': 1}
+            for index in (0, 1)])
+        self.assertTrue(all(isinstance(value, int) for item in diagnostic['parts'] for value in item.values()))
+        self.assertNotIn('secret123', str(result))
+        self.assertNotIn('http://', str(diagnostic))
+        self.assertNotIn('https://', str(diagnostic))
+        self.assertEqual(store.get('a', report['id'])['parts_done'], 1)
+        self.assertEqual(store.get('a', report['id'])['current']['attempts'], 1)
+
+    def test_provider_diagnostics_classify_parse_fault_without_raw_message(self):
+        self.store.create('a', 'p', 'parse', 'parse', False)
+        result = run_once(self.store, ProviderParseFault(), synthetic=False, contract=TinyContract)
+        self.assertEqual((result['status'], result['code']), ('retry_wait', 'quality'))
+        self.assertEqual(result['diagnostics']['phase'], 'provider')
+        self.assertEqual(result['diagnostics']['exception_class'], 'FullProviderError')
+        self.assertEqual(result['diagnostics']['issues'], ['json_parse'])
+        self.assertNotIn('secret123', str(result))
+        self.assertNotIn('http://', str(result))
+        self.assertNotIn('https://', str(result))
+
+    def test_context_and_output_faults_have_distinct_safe_phases(self):
+        stages = ({'id': 's0', 'filename': 'one.md', 'parts': ('first', 'last')},)
+        store = FullStore(self.path, stages=stages, backoff=(0, 0))
+        store.create('a', 'p', 'context', 'context', True)
+        run_once(store, GoodProvider(), contract=TinyContract)
+        result = run_once(store, GoodProvider(), contract=ContextFaultContract)
+        self.assertEqual(result['diagnostics']['phase'], 'context')
+        self.assertEqual(result['diagnostics']['issues'], ['context'])
+        self.assertNotIn('secret123', str(result))
+        output_store = FullStore(Path(self.tmp.name) / 'output.db', stages=STAGES, backoff=(0, 0))
+        output_store.create('a', 'p', 'output', 'output', True)
+        result = run_once(output_store, OutputFaultProvider(), contract=TinyContract)
+        self.assertEqual(result['diagnostics']['phase'], 'output')
+        self.assertEqual(result['diagnostics']['issues'], ['output_serialization'])
+        self.assertEqual(result['code'], 'quality')
+        self.assertNotIn('secret123', str(result))
+
+    def test_bundle_validation_reports_failing_stage_without_validator_message(self):
+        stages = ({'id': 's0', 'filename': 'one.md', 'parts': ('body',), 'min_lines': 5},)
+        store = FullStore(self.path, stages=stages, artifact_root=self.tmp.name, backoff=(0, 0))
+        report = store.create('a', 'p', 'bundle', 'bundle', True)
+        job = store.claim(synthetic=True)
+        self.assertTrue(store.finish_part(job['step_id'], job['token'], {'text': 'SYNTHETIC TEST', 'metadata': {}}))
+        result = run_once(store, GoodProvider(), contract=BundleFaultContract)
+        self.assertEqual((result['status'], result['code']), ('retry_wait', 'quality'))
+        self.assertEqual(result['diagnostics']['phase'], 'bundle_validation')
+        self.assertEqual(result['diagnostics']['stage'], 's0')
+        self.assertEqual(result['diagnostics']['issues'], ['url_policy'])
+        self.assertEqual(result['diagnostics']['min_lines'], 5)
+        self.assertNotIn('secret123', str(result))
+        self.assertNotIn('http://', str(result))
+        self.assertNotIn('https://', str(result))
+        self.assertEqual(store.get('a', report['id'])['parts_done'], 1)
 
     def test_synthetic_worker_cannot_execute_live_job(self):
         r = self.store.create('a', 'p', 'live', 'live', False)

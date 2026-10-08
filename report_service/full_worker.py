@@ -14,6 +14,117 @@ import time
 MAX_RESULT_BYTES = 2_000_000
 
 
+def _contract_issue(error):
+    """Reduce internal validator messages to static, non-content issue codes."""
+    message = error.lower() if isinstance(error, str) else ''
+    if 'line count' in message or 'min_lines' in message:
+        return 'line_floor'
+    if 'repeated filler' in message:
+        return 'repeated_lines'
+    if message.startswith(('invalid source url', 'url ')):
+        return 'url_policy'
+    if 'distinct source url' in message:
+        return 'evidence_floor'
+    if message.startswith('evidence[') or "'evidence'" in message:
+        return 'evidence_structure'
+    if 'direction' in message and not message.startswith('fact_check'):
+        return 'directions'
+    if 'candidate pool' in message or 'final companies' in message:
+        return 'company_floor'
+    if message.startswith('enterprises_'):
+        return 'company_grounding'
+    if message.startswith('fact_check'):
+        return 'check_floor' if (' < ' in message or 'coverage' in message) else 'check_grounding'
+    if 'duplicate fact check' in message:
+        return 'check_grounding'
+    if message.startswith('scoring'):
+        return 'scores'
+    return 'other_contract'
+
+
+def _provider_issue(error):
+    # No substring of the exception itself leaves this process. Even parse
+    # errors may include raw model text or upstream response material.
+    message = str(error).lower()
+    if message.startswith('prior context for stage'):
+        return 'prior_context_bound'
+    if message.startswith(('model output is not json', 'model json unparseable')) or 'non-object json' in message:
+        return 'json_parse'
+    if message.startswith(('upstream chat output incomplete', 'upstream chat response missing text content', 'model returned empty output')) or "missing non-empty 'text'" in message:
+        return 'incomplete_output'
+    if message.startswith(('direction', 'industry direction')):
+        return 'directions'
+    return 'other_provider'
+
+
+def _part_metrics(value):
+    """Count structural defects without returning any report/source content."""
+    from . import full_contract
+    value = value if isinstance(value, dict) else {}
+    text = value.get('text') if isinstance(value.get('text'), str) else ''
+    metadata = value.get('metadata') if isinstance(value.get('metadata'), dict) else {}
+    evidence = metadata.get('evidence') if isinstance(metadata.get('evidence'), list) else []
+    distinct, non_https, empty_excerpt = set(), 0, 0
+    for item in evidence:
+        if not isinstance(item, dict):
+            continue
+        url = item.get('url')
+        canonical = full_contract.canonical_url(url)
+        if canonical:
+            distinct.add(canonical)
+        normalized = full_contract.normalize_url(url)
+        if not normalized or normalized[0] != 'https':
+            non_https += 1
+        excerpt = item.get('excerpt')
+        if not isinstance(excerpt, str) or not excerpt.strip() or excerpt.strip() == (url.strip() if isinstance(url, str) else ''):
+            empty_excerpt += 1
+    unsafe = 0
+    for url in full_contract.extract_urls(text):
+        normalized = full_contract.normalize_url(url)
+        if normalized is None:
+            unsafe += 1
+            continue
+        scheme, host, path = normalized
+        if (scheme != 'https' or full_contract._is_private_or_local_host(host)
+                or full_contract._is_placeholder_host(host)
+                or ('gov.cn' in path and not full_contract.is_government_host(host))):
+            unsafe += 1
+    return {
+        'line_count': sum(bool(line.strip()) for line in text.splitlines()),
+        'evidence_count': len(distinct),
+        'non_https_evidence_count': non_https,
+        'empty_excerpt_count': empty_excerpt,
+        'unsafe_text_url_count': unsafe,
+    }
+
+
+def _failure_diagnostics(error, phase, stage, part, definition=None, value=None, errors=None, current=None):
+    # The stage and part come from the persisted static pipeline definition,
+    # not from report content or an exception message.
+    allowed_classes = {'ValueError', 'KeyError', 'TypeError', 'PermissionError', 'TimeoutError',
+                       'FullProviderError', 'ProviderError', 'HTTPError', 'URLError',
+                       'OSError', 'RuntimeError', 'JSONDecodeError'}
+    exception_class = type(error).__name__
+    diagnostic = {'phase': phase, 'stage': stage, 'part': part,
+                  'exception_class': exception_class if exception_class in allowed_classes else 'Exception'}
+    if phase in {'stage_validation', 'bundle_validation'}:
+        errors = errors if isinstance(errors, list) else []
+        diagnostic.update(_part_metrics(value))
+        diagnostic['min_lines'] = int((definition or {}).get('min_lines', 0))
+        diagnostic['error_count'] = len(errors)
+        diagnostic['issues'] = sorted({_contract_issue(item) for item in errors}) or ['other_contract']
+        if current is not None:
+            diagnostic['parts'] = [dict(part_index=index, **_part_metrics(item))
+                                   for index, item in enumerate(current)]
+    elif phase == 'provider':
+        diagnostic['issues'] = [_provider_issue(error)]
+    elif phase == 'output':
+        diagnostic['issues'] = ['output_bound'] if isinstance(error, ValueError) and str(error) == 'provider output exceeds bound' else ['output_serialization']
+    else:
+        diagnostic['issues'] = ['context']
+    return diagnostic
+
+
 def _error_code(error):
     code = getattr(error, 'failure_code', None)
     if code in {'configuration', 'quality', 'upstream', 'rate_limit', 'timeout'}:
@@ -45,6 +156,8 @@ def _child_guard(parent_pid, deadline, stop):
 def _child(provider, job, db_path, artifact_root, pipe, parent_pid, contract, prepared_parts=None):
     stop = threading.Event()
     threading.Thread(target=_child_guard, args=(parent_pid, job['deadline'], stop), daemon=True).start()
+    phase, stage, part = 'context', job['stage'], job['part']
+    definition = value = errors = current = None
     try:
         if contract is None:
             from . import full_contract as contract
@@ -66,29 +179,38 @@ def _child(provider, job, db_path, artifact_root, pipe, parent_pid, contract, pr
             if artifact_root is None:
                 raise PermissionError('artifact storage is not configured')
             for definition in job['definition']:
+                phase, stage = 'bundle_validation', definition['id']
                 value = outputs.get(definition['filename'])
-                if not value or contract.validate(definition['id'], value['text'], value['metadata'], **validation_options):
+                errors = (contract.validate(definition['id'], value['text'], value['metadata'], **validation_options)
+                          if value else ['text must be a non-empty string'])
+                if errors:
                     raise ValueError('full contract failed')
+            phase = 'output'
             from .full_artifacts import build_bundle
             result = {'manifest': build_bundle(artifact_root, job['report_id'], job['city'], outputs, job['synthetic'])}
         else:
             safe_job = {k: job[k] for k in ('city', 'province', 'synthetic')}
             safe_job['id'] = job['report_id']
             safe_job['mode'] = job.get('mode', 'standard')
+            phase = 'provider'
             result = provider.run_part(job['stage'], job['part'], safe_job, prior)
             definition = next(s for s in job['definition'] if s['id'] == job['stage'])
             current = parts.get(job['stage'], []) + [result]
             if len(current) == len(definition['parts']):
-                combined = contract.assemble(job['stage'], current)
-                if contract.validate(job['stage'], combined['text'], combined['metadata'], **validation_options):
+                phase = 'stage_validation'
+                value = contract.assemble(job['stage'], current)
+                errors = contract.validate(job['stage'], value['text'], value['metadata'], **validation_options)
+                if errors:
                     raise ValueError('stage contract failed')
+        phase = 'output'
         data = json.dumps({'ok': True, 'result': result}, ensure_ascii=False, allow_nan=False).encode()
         if len(data) > MAX_RESULT_BYTES:
             raise ValueError('provider output exceeds bound')
         pipe.send_bytes(data)
     except BaseException as error:
         try:
-            pipe.send_bytes(json.dumps({'ok': False, 'code': _error_code(error)}).encode())
+            diagnostic = _failure_diagnostics(error, phase, stage, part, definition, value, errors, current)
+            pipe.send_bytes(json.dumps({'ok': False, 'code': _error_code(error), 'diagnostics': diagnostic}).encode())
         except (OSError, BrokenPipeError):
             pass
     finally:
@@ -203,7 +325,10 @@ def run_once(store, provider, *, ttl=120, timeout=180, synthetic=True, contract=
     # An absolute timeout expires the lease before fail_part. get() recovers it
     # transactionally, charging elapsed work and scheduling the bounded retry.
     state = store.get(job['tenant'], rid)
-    return {'id': rid, 'status': state['status'], 'code': state['failure_code'] or code}
+    result = {'id': rid, 'status': state['status'], 'code': state['failure_code'] or code}
+    if envelope and not envelope.get('ok') and isinstance(envelope.get('diagnostics'), dict):
+        result['diagnostics'] = envelope['diagnostics']
+    return result
 
 
 def run_loop(store, provider, *, max_steps=None, stop=None, poll=.5, stop_when_idle=False, **kwargs):
