@@ -74,8 +74,9 @@ class FullProviderError(providers.ProviderError):
 
     VALID_CODES = frozenset({"configuration", "rate_limit", "timeout", "upstream", "quality"})
 
-    def __init__(self, message, failure_code):
+    def __init__(self, message, failure_code, *, safe_metrics=None):
         self.failure_code = failure_code
+        self.safe_metrics = dict(safe_metrics) if isinstance(safe_metrics, dict) else {}
         super().__init__(message)
 
 
@@ -301,7 +302,10 @@ class FullLiveProvider:
     def _validate_part_text(self, text, floor, previous_text=''):
         lines = self._content_lines(text)
         if len(lines) < floor:
-            raise FullProviderError('part line floor not met', 'quality')
+            raise FullProviderError('part line floor not met', 'quality', safe_metrics={
+                'line_count': len(lines), 'min_lines': floor, 'text_chars': len(text),
+                'literal_newline_count': text.count(r'\n'),
+            })
         repeated = sum(n - 1 for n in Counter(lines).values() if n > 1)
         if repeated > len(lines) * .2:
             raise FullProviderError('part contains repeated filler', 'quality')
@@ -427,6 +431,18 @@ class FullLiveProvider:
         targeted_check = company_check and bool(self._selected_companies(prior))
         if company_check:
             queries = self._company_check_queries(prior, place)
+        if stage_id == 'policy' and part == '国家产业政策':
+            from .full_directions import normalise_directions
+            metadata = (prior or {}).get('industry', {}).get('metadata', {}) if isinstance(prior, dict) else {}
+            if metadata.get('directions'):
+                try:
+                    directions = normalise_directions(metadata['directions'], metadata.get('evidence', []))
+                except ValueError as exc:
+                    raise FullProviderError(str(exc), 'quality') from None
+                # Stable IDs determine the three saved topics; opaque dir IDs
+                # are not external search terms. Names are preserved in full.
+                queries.extend(f"国家 {direction['name']} 产业政策 支持工具 申报条件 适用范围"
+                               for direction in directions)
         if stage_id.startswith('enterprises_'):
             from .full_directions import normalise_directions
             meta = (prior or {}).get('industry', {}).get('metadata', {})
@@ -517,6 +533,22 @@ class FullLiveProvider:
                            '只输出当前子章节新增正文和本批记录；前序正文及结构化数组已由服务器完整保存，禁止复制或重述整份前序正文、重复已有行或回传完整企业数组。'
                            '可引用前序事实来展开当前主题，写出不同的具体分析、缺口和核查动作。来源URL均须HTTPS且只能采用真实检索结果；'
                            '正文可使用来源编号，避免重复粘贴同一URL。')
+        user_blocks.append(f'提交前自检JSON解码后的text实际独立非空信息行数不少于{floor}行。'
+                           '不同要点必须用真实换行分开，不能依赖界面自动折行，也不能输出反斜线+n这两个普通字符代替换行。'
+                           '可使用连续编号核数；编号、空标题、空行或同一句重复未知不构成新的实质信息。'
+                           '不足时继续展开有证据的细节及具体核查动作；证据确实不足则如实不足，禁止补造或凑行。')
+        if stage_id == 'policy':
+            user_blocks.append('本子章节采用实证政策卡与落地分析，围绕已确定的dir1/dir2/dir3及其完整产业名称，'
+                               '只整理本层级来源中实际出现的政策。每个独立信息或有依据的分析单独一行，可按政策编号及卡内序号核数。'
+                               '每张政策卡展开：政策准确名称、发布机构、文号、发布日期和来源编号；'
+                               '摘录中确有的关键条款短摘及位置；适用产业链环节、支持对象和适用地区；'
+                               '支持工具、明确金额或计算方式及其条件；有效期、申报入口、主管单位和申报材料；'
+                               '资格门槛、限制条款、重复享受或叠加规则；目标地区的落地适配与必须另行核实的实施细则；'
+                               '招商时应询问企业的具体资格事实、下一步核查动作及所需文件。'
+                               '区分已由摘录证实的事实、基于事实的适配判断和待核实缺口，分别注明来源与依据。'
+                               '未提供文号、金额、期限、入口或完整原文时不得猜测，不宣称已读全文；'
+                               '缺口说明须包含具体缺失事项、核查渠道或材料及其对决策的影响，禁止反复写同一句“待核实”。'
+                               '国家政策不当作区级已落实补贴承诺，省市及区级部分只分析相应层级，不复制此前政策卡。')
         if stage_id.startswith('enterprises_'):
             selection = ('扩产信号各批精选5家，5批共至少25家'
                          if mode == 'deep' else '扩产信号各批精选5家，3批共至少15家')
@@ -555,7 +587,7 @@ class FullLiveProvider:
             {"role": "system", "content": _full_system_prompt()},
             {"role": "user", "content": "\n\n".join(user_blocks)},
         ]
-        token_floor = 8000 if stage_id in {'scoring', 'compact'} else 6000
+        token_floor = 8000 if stage_id in {'scoring', 'compact'} or floor >= 60 else 6000
         data = self._live._chat(messages, min(providers.MAX_OUTPUT_TOKENS, max(self._live.max_output_tokens, token_floor)))
         return self._extract_text(data)
 
@@ -568,12 +600,11 @@ class FullLiveProvider:
             if isinstance(choices, list) and choices:
                 first = choices[0]
                 if isinstance(first, dict):
-                    if first.get("finish_reason") not in (None, "stop"):
-                        raise FullProviderError(
-                            "upstream chat output incomplete (finish_reason=%r)"
-                            % (first.get("finish_reason"),),
-                            "quality",
-                        )
+                    finish_reason = first.get('finish_reason')
+                    if finish_reason == 'length':
+                        raise FullProviderError('upstream chat output token limit reached', 'quality')
+                    if finish_reason not in (None, 'stop'):
+                        raise FullProviderError('upstream chat output incomplete', 'quality')
                     message = first.get("message")
                     if isinstance(message, dict) and message.get("content") is not None:
                         return str(message["content"])

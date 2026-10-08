@@ -278,6 +278,67 @@ class LiveProviderRuntimeTests(unittest.TestCase):
         with self.assertRaises(fp.FullProviderError):
             p._validate_part_text('\n'.join(['重复分析'] * 30 + [f'独立分析{i}' for i in range(8)]), 38)
 
+    def test_line_floor_failure_carries_four_numeric_measurements_for_decoded_text(self):
+        p = self._provider(RecordingRouter({}))
+        text = r'第一条\n第二条'
+        with self.assertRaises(fp.FullProviderError) as caught:
+            p._validate_part_text(text, 2)
+        self.assertEqual(caught.exception.safe_metrics, {
+            'line_count': 1, 'min_lines': 2, 'text_chars': len(text),
+            'literal_newline_count': 1,
+        })
+        self.assertTrue(all(isinstance(value, int) for value in caught.exception.safe_metrics.values()))
+        with self.assertRaises(fp.FullProviderError) as actual_newline:
+            p._validate_part_text('第一条\n第二条\n\n---', 3)
+        self.assertEqual(actual_newline.exception.safe_metrics['line_count'], 2)
+        self.assertEqual(actual_newline.exception.safe_metrics['literal_newline_count'], 0)
+
+    def test_provider_error_optional_metrics_only_store_given_dictionary(self):
+        self.assertEqual(fp.FullProviderError('failure', 'quality').safe_metrics, {})
+        self.assertEqual(fp.FullProviderError('failure', 'quality', safe_metrics='untrusted text').safe_metrics, {})
+        supplied = {'line_count': 4}
+        error = fp.FullProviderError('failure', 'quality', safe_metrics=supplied)
+        supplied['line_count'] = 8
+        self.assertEqual(error.safe_metrics, {'line_count': 4})
+
+    def test_length_completion_uses_fixed_token_limit_message(self):
+        p = self._provider(RecordingRouter({}))
+        with self.assertRaises(fp.FullProviderError) as caught:
+            p._extract_text({'choices': [{'finish_reason': 'length',
+                'message': {'content': 'private partial model body'}}]})
+        self.assertEqual(caught.exception.failure_code, 'quality')
+        self.assertEqual(str(caught.exception), 'upstream chat output token limit reached')
+        self.assertNotIn('private partial', str(caught.exception))
+
+    def test_unknown_completion_reason_never_appears_in_failure_message(self):
+        p = self._provider(RecordingRouter({}))
+        for reason in ('secret123', 'length secret123', {'secret123': 'hidden'}, ['secret123'], 'LENGTH'):
+            with self.subTest(reason=reason), self.assertRaises(fp.FullProviderError) as caught:
+                p._extract_text({'choices': [{'finish_reason': reason,
+                    'message': {'content': 'private partial model body'}}]})
+            self.assertEqual(str(caught.exception), 'upstream chat output incomplete')
+            self.assertEqual(caught.exception.failure_code, 'quality')
+            self.assertNotIn('secret123', str(caught.exception))
+        for reason in (None, 'stop'):
+            self.assertEqual(p._extract_text({'choices': [{'finish_reason': reason,
+                'message': {'content': 'complete output'}}]}), 'complete output')
+
+    def test_output_budget_tracks_actual_line_floor_and_respects_global_cap(self):
+        for stage, floor, configured, expected in (
+                ('economy', 38, 3500, 6000), ('economy', 60, 3500, 8000),
+                ('economy', 59, 3500, 6000), ('policy', 67, 3500, 8000),
+                ('chain', 84, 3500, 8000), ('action', 75, 3500, 8000),
+                ('summary', 80, 3500, 8000), ('scoring', 50, 3500, 8000),
+                ('compact', 200, 3500, 8000), ('economy', 38, 100_000, 8000)):
+            with self.subTest(stage=stage, floor=floor, configured=configured):
+                router = RecordingRouter({'chat/completions': (200, json.dumps({
+                    'choices': [{'message': {'content': '{"text":"OFFLINE fixture"}'}}]}))})
+                p = self._provider(router)
+                p._live.max_output_tokens = configured
+                p._chat_part(stage, fc.get_stage(stage)['parts'][0], '测试城', '', [], min_lines=floor)
+                self.assertEqual(json.loads(router.calls[0].data)['max_tokens'], expected)
+                self.assertLessEqual(expected, providers.MAX_OUTPUT_TOKENS)
+
     def test_intermediate_and_deep_floors_preserve_original_stage_totals(self):
         p = self._provider(RecordingRouter({}))
         prior = {'economy': {'text': '\n'.join(f'已保存{i}' for i in range(20))}}
@@ -577,6 +638,118 @@ class ScoringIdentityGateTests(unittest.TestCase):
         score['dimensions']['unknown_dimension'] = 0
         with self.assertRaises(fp.FullProviderError):
             self._run([score])
+
+
+class DirectionSerializationTests(unittest.TestCase):
+    _provider = LiveProviderRuntimeTests._provider
+
+    @staticmethod
+    def _prior():
+        names = ('商业航天产业链', '具身智能与机器人', '脑机接口及医疗器械')
+        directions = [{'id': f'dir{number}', 'name': name,
+                       'evidence_ref': f'https://stats.gov.cn/offline/direction/{number}?year=2026#scope',
+                       'full_detail': {'basis': '完整已保存方向依据' * 500 + f'DIRECTION-TAIL-{number}'}}
+                      for number, name in enumerate(names, 1)]
+        prior = {'industry': {'text': 'OFFLINE已保存产业正文，后续章节须沿用其方向身份。',
+            'metadata': {'directions': directions, 'evidence': [
+                {'url': direction['evidence_ref'], 'title': 'OFFLINE saved direction',
+                 'excerpt': 'OFFLINE retrieved direction evidence', 'retrieval': 'exa_fulltext'}
+                for direction in directions]}}}
+        for number in (1, 2, 3):
+            prior[f'enterprises_{number}'] = {'text': 'OFFLINE已保存精选正文',
+                'metadata': {'selected': [{'name': f'方向{number}精选企业{index}',
+                    'expansion_evidence': f'OFFLINE完整保存信号{number}/{index}',
+                    'url': f'https://cninfo.com.cn/offline/{number}/{index}'} for index in range(4)]}}
+        return prior
+
+    def test_direction_records_are_serialized_complete_with_ids_exact_names_and_refs(self):
+        directions = self._prior()['industry']['metadata']['directions']
+        text = fp._render_structured({'directions': directions})
+        decoded = [json.loads(line.removeprefix('- 已确定产业方向: ')) for line in text.splitlines()]
+        self.assertEqual(decoded, directions)
+        for number in (1, 2, 3):
+            self.assertIn(f'DIRECTION-TAIL-{number}', text)
+
+    def test_saved_directions_reach_continuation_scoped_score_and_signal_prompts_intact(self):
+        prior = self._prior()
+        directions = prior['industry']['metadata']['directions']
+        scenarios = (('industry', '产业集群与园区'), ('scoring', '评分维度与权重'),
+                     ('scoring', '加权计算'), ('fact_check', '五星企业信号'))
+        for stage, part in scenarios:
+            with self.subTest(stage=stage, part=part):
+                payload = {'text': '\n'.join(f'OFFLINE {stage}/{part}独立分析{i}' for i in range(130)),
+                           'directions': directions, 'checks': [],
+                           'high_star_unavailable': True, 'high_star_note': 'OFFLINE fixture only',
+                           'scores': []}
+                router = RecordingRouter({
+                    'exa.ai/search': (200, json.dumps({'results': [
+                        {'url': f'https://stats.gov.cn/offline/new/{i}', 'text': f'OFFLINE search excerpt {i}'}
+                        for i in range(8)]})),
+                    'chat/completions': (200, json.dumps({'choices': [{'message': {'content': json.dumps(payload)}}]})),
+                })
+                self._provider(router).run_part(stage, part, {'city': '测试城'}, prior)
+                chat = next(call for call in router.calls if 'chat/completions' in call.full_url)
+                prompt = json.loads(chat.data)['messages'][-1]['content']
+                for direction in directions:
+                    self.assertIn('- 已确定产业方向: ' + json.dumps(direction, ensure_ascii=False), prompt)
+
+
+class PolicyEvidencePlanningTests(unittest.TestCase):
+    _provider = LiveProviderRuntimeTests._provider
+
+    def _router(self, chat=None):
+        routes = {'exa.ai/search': (200, json.dumps({'results': [
+            {'url': f'https://gov.cn/offline-policy/{i}', 'text': f'OFFLINE policy excerpt {i}'}
+            for i in range(8)]}))}
+        if chat is not None:
+            routes['chat/completions'] = (200, json.dumps({'choices': [{
+                'message': {'content': json.dumps(chat)}}]}))
+        return RecordingRouter(routes)
+
+    def test_national_policy_adds_exact_saved_direction_topics_to_existing_queries(self):
+        router = self._router()
+        p = self._provider(router)
+        prior = DirectionSerializationTests._prior()
+        p._gather_evidence('policy', '国家产业政策', '上海市松江区', prior)
+        queries = [json.loads(call.data)['query'] for call in router.calls]
+        baseline = fp._queries_for('policy', '国家产业政策', '上海市松江区')
+        self.assertEqual(queries[:len(baseline)], baseline)
+        self.assertEqual(queries[len(baseline):], [
+            f"国家 {direction['name']} 产业政策 支持工具 申报条件 适用范围"
+            for direction in prior['industry']['metadata']['directions']])
+
+    def test_missing_directions_only_use_original_query_and_local_policy_queries_stay_same(self):
+        for part, prior in (('国家产业政策', {}), ('国家产业政策', {'industry': {'metadata': {'directions': []}}}),
+                            ('省市政策', DirectionSerializationTests._prior()),
+                            ('区级政策', DirectionSerializationTests._prior())):
+            with self.subTest(part=part, has_directions=bool(prior)):
+                router = self._router()
+                self._provider(router)._gather_evidence('policy', part, '上海市松江区', prior)
+                self.assertEqual([json.loads(call.data)['query'] for call in router.calls],
+                                 fp._queries_for('policy', part, '上海市松江区'))
+
+    def test_policy_prompt_plans_supported_cards_real_newlines_and_keeps_token_budget(self):
+        payload = {'text': '\n'.join(f'OFFLINE政策卡独立信息{i}' for i in range(67))}
+        router = self._router(payload)
+        p = self._provider(router)
+        p.run_part('policy', '国家产业政策', {'city': '松江区', 'province': '上海市'},
+                   DirectionSerializationTests._prior())
+        chat = json.loads(next(call for call in router.calls if 'chat/completions' in call.full_url).data)
+        self.assertEqual(chat['max_tokens'], 8000)
+        prompt = chat['messages'][-1]['content']
+        for requirement in ('实证政策卡', '发布机构', '文号', '适用产业链环节', '支持工具', '有效期',
+                            '申报入口', '限制条款', '落地适配', '核查动作', '反复写同一句“待核实”',
+                            '实际独立非空信息行数不少于67行', '不能依赖界面自动折行'):
+            self.assertIn(requirement, prompt)
+
+    def test_other_stage_gets_actual_floor_self_check_without_extra_calls_or_token_change(self):
+        router = self._router({'text': '\n'.join(f'OFFLINE经济事实{i}' for i in range(38))})
+        self._provider(router).run_part('economy', '经济总量', {'city': '测试城'}, {})
+        searches = [call for call in router.calls if 'exa.ai/search' in call.full_url]
+        self.assertEqual(len(searches), len(fp._queries_for('economy', '经济总量', '测试城')))
+        chat = json.loads(next(call for call in router.calls if 'chat/completions' in call.full_url).data)
+        self.assertEqual(chat['max_tokens'], 6000)
+        self.assertIn('实际独立非空信息行数不少于38行', chat['messages'][-1]['content'])
 
 
 class SerializationTests(unittest.TestCase):

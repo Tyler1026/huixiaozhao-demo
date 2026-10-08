@@ -56,6 +56,8 @@ def _provider_issue(error):
         return 'prior_context_bound'
     if message.startswith(('model output is not json', 'model json unparseable')) or 'non-object json' in message:
         return 'json_parse'
+    if message == 'upstream chat output token limit reached':
+        return 'output_token_limit'
     if message.startswith(('upstream chat output incomplete', 'upstream chat response missing text content', 'model returned empty output')) or "missing non-empty 'text'" in message:
         return 'incomplete_output'
     if message.startswith(('direction', 'industry direction')):
@@ -104,6 +106,20 @@ def _part_metrics(value):
     }
 
 
+def _safe_provider_metrics(error):
+    """Accept only bounded primitive counts; reject content and custom types."""
+    try:
+        metrics = getattr(error, 'safe_metrics', None)
+    except Exception:
+        return {}
+    if type(metrics) is not dict:
+        return {}
+    limits = {'line_count': 10_000, 'min_lines': 10_000,
+              'text_chars': MAX_RESULT_BYTES, 'literal_newline_count': 10_000}
+    return {field: metrics[field] for field, limit in limits.items()
+            if field in metrics and type(metrics[field]) is int and 0 <= metrics[field] <= limit}
+
+
 def _failure_diagnostics(error, phase, stage, part, definition=None, value=None, errors=None, current=None):
     # The stage and part come from the persisted static pipeline definition,
     # not from report content or an exception message.
@@ -124,6 +140,7 @@ def _failure_diagnostics(error, phase, stage, part, definition=None, value=None,
                                    for index, item in enumerate(current)]
     elif phase == 'provider':
         diagnostic['issues'] = [_provider_issue(error)]
+        diagnostic.update(_safe_provider_metrics(error))
     elif phase == 'output':
         diagnostic['issues'] = ['output_bound'] if isinstance(error, ValueError) and str(error) == 'provider output exceeds bound' else ['output_serialization']
     else:
