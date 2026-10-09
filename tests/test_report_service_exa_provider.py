@@ -40,9 +40,11 @@ class RecordingRouter:
     def __init__(self, routes):
         self.routes = routes
         self.calls = []
+        self.timeouts = []
 
     def __call__(self, request, timeout):
         self.calls.append(request)
+        self.timeouts.append(timeout)
         url = request.get_full_url()
         for key, (status, body) in self.routes.items():
             if key in url:
@@ -154,6 +156,11 @@ class ExaProtocolTests(unittest.TestCase):
         self.assertEqual(payload["numResults"], 1)
         self.assertIn("contents", payload)
 
+    def test_exa_search_and_chat_use_separate_timeouts(self):
+        router = self._router({"results": [{"title": "t", "url": "https://a.example.com", "text": "d"}]})
+        make_exa_provider(transport=router).run("economy", {"city": "松江区"}, None)
+        self.assertEqual(router.timeouts, [30.0, 90.0])
+
     def test_exa_results_normalized_from_text_or_highlights(self):
         router = self._router({"results": [
             {"title": "T1", "url": "https://a.example.com", "text": "long body"},
@@ -193,6 +200,25 @@ class ExaProtocolTests(unittest.TestCase):
         }
         p = providers.OpenAIResearchProvider.from_env(env)
         self.assertEqual(p.max_output_tokens, 2200)
+
+    def test_from_env_accepts_doubled_token_budget_and_caps_larger_values(self):
+        for requested, expected in ((16000, 16000), (99999, 16000), (0, 1)):
+            with self.subTest(requested=requested):
+                provider = providers.OpenAIResearchProvider.from_env({
+                    "HXZ_MODEL_MAX_TOKENS": str(requested),
+                })
+                self.assertEqual(provider.max_output_tokens, expected)
+
+    def test_from_env_chat_timeout_override_is_bounded_and_search_unchanged(self):
+        cases = (("105", 105.0), ("99999", 120.0), ("0", 0.1), ("-2", 0.1),
+                 ("", 90.0), ("bad", 90.0), ("nan", 90.0), ("inf", 90.0), ("-inf", 90.0))
+        for configured, expected in cases:
+            with self.subTest(configured=configured):
+                provider = providers.OpenAIResearchProvider.from_env({
+                    "HXZ_MODEL_CHAT_TIMEOUT": configured,
+                })
+                self.assertEqual(provider.chat_timeout, expected)
+                self.assertEqual(provider.timeout, 30.0)
 
     def test_from_env_max_output_tokens_falls_back_to_default(self):
         env = {

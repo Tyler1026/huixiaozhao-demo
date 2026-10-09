@@ -162,7 +162,10 @@ def main(argv=None):
             phase = 'mirror'
             queue.mirror(continue_on_error=True)
             phase = 'worker'
-            result = run_once(store, provider, synthetic=False,
+            # Two bounded candidate-completion rounds can each include a
+            # 30-second parallel search wave and a 90-second chat. Leave
+            # room for that repair without changing the unlimited retry policy.
+            result = run_once(store, provider, synthetic=False, timeout=300,
                               stop_job=lambda job: not report_request_active(
                                   job['request_key'], ENGINE))
             if result:

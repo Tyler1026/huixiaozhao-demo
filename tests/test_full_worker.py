@@ -60,6 +60,15 @@ class DeepModeContract(TinyContract):
         return [] if mode == 'deep' and metadata.get('mode') == 'deep' else ['deep mode was lost']
 
 
+class ModeFloorContract(TinyContract):
+    @staticmethod
+    def get_stage(stage, *, mode='standard'):
+        return {'min_lines': 150 if mode == 'deep' else 80, 'parts': ('new-plan-part',)}
+    @staticmethod
+    def validate(stage, text, metadata, synthetic=False, mode='standard'):
+        return ['line count below min_lines']
+
+
 class HungProvider:
     def run_part(self, stage, part, job, prior):
         while True: time.sleep(1)
@@ -104,6 +113,9 @@ class ProviderMetricFault:
         error = FullProviderError('part line floor not met', 'quality')
         error.safe_metrics = {'line_count': 59, 'min_lines': 67, 'text_chars': 5500,
                               'literal_newline_count': 0, 'api_key': 'secret123',
+                              'elapsed_ms': 1200, 'query_count': 5,
+                              'successful_queries': 4, 'failed_queries': 1,
+                              'cached_source_count': 8, 'operation': 'search', 'http_status': 429,
                               'text': 'private model body https://private.example/key',
                               'upstream_response': {'Authorization': 'secret123'}}
         raise error
@@ -233,6 +245,32 @@ class FullWorkerTests(unittest.TestCase):
         self.assertNotIn('http://', str(result))
         self.assertNotIn('https://', str(result))
 
+    def test_mode_floor_diagnostics_keep_persisted_part_completion_plan(self):
+        for mode, expected_floor in (('standard', 80), ('deep', 150)):
+            with self.subTest(mode=mode):
+                stages = ({'id': 'economy', 'filename': 'economy.md',
+                           'parts': ('first', 'last'), 'min_lines': 150},)
+                store = FullStore(Path(self.tmp.name) / f'floor-{mode}.db', stages=stages, backoff=(0, 0))
+                report = store.create('a', 'p', 'city', 'floor', False, mode=mode)
+                first = run_once(store, GoodProvider(), synthetic=False, contract=ModeFloorContract)
+                self.assertEqual((first['status'], first['part']), ('checkpoint', 'first'))
+                last = run_once(store, GoodProvider(), synthetic=False, contract=ModeFloorContract)
+                self.assertEqual(last['diagnostics']['min_lines'], expected_floor)
+                self.assertEqual(last['diagnostics']['phase'], 'stage_validation')
+                self.assertEqual((store.get('a', report['id'])['parts_total'],
+                                  store.get('a', report['id'])['parts_done']), (2, 1))
+                self.assertEqual(store.get('a', report['id'])['current']['part'], 'last')
+
+    def test_diagnostic_floor_falls_back_for_legacy_contract(self):
+        diagnostic = _failure_diagnostics(ValueError(), 'stage_validation', 'economy', 'last',
+                                          {'min_lines': 150}, errors=['line count below min_lines'],
+                                          contract=TinyContract, mode='standard')
+        self.assertEqual(diagnostic['min_lines'], 150)
+        bundle = _failure_diagnostics(ValueError(), 'bundle_validation', 'economy', 'bundle',
+                                      {'min_lines': 150}, errors=['line count below min_lines'],
+                                      contract=ModeFloorContract, mode='standard')
+        self.assertEqual(bundle['min_lines'], 80)
+
     def test_spawned_provider_failure_reports_only_allowlisted_numeric_metrics(self):
         self.store.create('a', 'p', 'metrics', 'metrics', False)
         result = run_once(self.store, ProviderMetricFault(), synthetic=False, contract=TinyContract)
@@ -241,6 +279,9 @@ class FullWorkerTests(unittest.TestCase):
             'phase': 'provider', 'stage': 's0', 'part': 'body', 'exception_class': 'FullProviderError',
             'issues': ['line_floor'], 'line_count': 59, 'min_lines': 67,
             'text_chars': 5500, 'literal_newline_count': 0,
+            'elapsed_ms': 1200, 'query_count': 5, 'successful_queries': 4,
+            'failed_queries': 1, 'cached_source_count': 8,
+            'operation': 'search', 'http_status': 429,
         })
         self.assertNotIn('secret123', str(result))
         self.assertNotIn('private model body', str(result))
@@ -248,7 +289,10 @@ class FullWorkerTests(unittest.TestCase):
 
     def test_provider_metrics_reject_boolean_noninteger_negative_and_oversized_counts(self):
         limits = {'line_count': 10_000, 'min_lines': 10_000,
-                  'text_chars': 2_000_000, 'literal_newline_count': 10_000}
+                  'text_chars': 2_000_000, 'literal_newline_count': 10_000,
+                  'elapsed_ms': 7_200_000, 'query_count': 10_000,
+                  'successful_queries': 10_000, 'failed_queries': 10_000,
+                  'cached_source_count': 10_000}
         for field, limit in limits.items():
             for value in (True, False, -1, 1.0, '67 secret123', [67], {'secret123': 67}, limit + 1, 10 ** 100):
                 with self.subTest(field=field, value=value):
@@ -262,6 +306,28 @@ class FullWorkerTests(unittest.TestCase):
                     error.safe_metrics = {field: value}
                     diagnostic = _failure_diagnostics(error, 'provider', 'policy', '国家产业政策')
                     self.assertEqual(diagnostic[field], value)
+
+    def test_provider_metrics_only_accept_static_operation_and_bounded_http_status(self):
+        for field, valid, invalid in (
+            ('operation', ('search', 'chat'),
+             ('SEARCH', 'search secret123', 'https://private.example/key', '', None, True, 1,
+              ['search'], {'operation': 'search'})),
+            ('http_status', (100, 200, 429, 599),
+             (99, 600, -1, True, False, 200.0, '429 secret123', None, [200], {'status': 200})),
+        ):
+            for value in valid:
+                with self.subTest(field=field, value=value):
+                    error = FullProviderError('private upstream secret123', 'upstream')
+                    error.safe_metrics = {field: value, 'prompt': 'secret123'}
+                    diagnostic = _failure_diagnostics(error, 'provider', 'policy', '国家产业政策')
+                    self.assertEqual(diagnostic[field], value)
+                    self.assertNotIn('secret123', str(diagnostic))
+            for value in invalid:
+                with self.subTest(field=field, value=value):
+                    error.safe_metrics = {field: value, 'prompt': 'secret123'}
+                    diagnostic = _failure_diagnostics(error, 'provider', 'policy', '国家产业政策')
+                    self.assertNotIn(field, diagnostic)
+                    self.assertNotIn('secret123', str(diagnostic))
 
     def test_provider_metrics_reject_custom_containers_and_failing_attribute(self):
         for metrics in (None, 'secret123', [67], UnsafeMetricMapping(line_count=67)):
@@ -318,7 +384,10 @@ class FullWorkerTests(unittest.TestCase):
     def test_provider_metrics_do_not_escape_other_failure_phases(self):
         error = ValueError('saved context must remain private')
         error.safe_metrics = {'line_count': 59, 'min_lines': 67, 'text_chars': 5500,
-                              'literal_newline_count': 10, 'raw': 'secret123'}
+                              'literal_newline_count': 10, 'raw': 'secret123',
+                              'elapsed_ms': 100, 'query_count': 2, 'successful_queries': 1,
+                              'failed_queries': 1, 'cached_source_count': 8,
+                              'operation': 'chat', 'http_status': 429}
         diagnostic = _failure_diagnostics(error, 'context', 'policy', '国家产业政策')
         self.assertEqual(set(diagnostic), {'phase', 'stage', 'part', 'exception_class', 'issues'})
 

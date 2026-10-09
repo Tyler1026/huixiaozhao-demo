@@ -122,7 +122,7 @@ def _part_metrics(value):
 
 
 def _safe_provider_metrics(error):
-    """Accept only bounded primitive counts; reject content and custom types."""
+    """Accept bounded counts and static operation/status values, never content."""
     try:
         metrics = getattr(error, 'safe_metrics', None)
     except Exception:
@@ -130,12 +130,23 @@ def _safe_provider_metrics(error):
     if type(metrics) is not dict:
         return {}
     limits = {'line_count': 10_000, 'min_lines': 10_000,
-              'text_chars': MAX_RESULT_BYTES, 'literal_newline_count': 10_000}
-    return {field: metrics[field] for field, limit in limits.items()
+              'text_chars': MAX_RESULT_BYTES, 'literal_newline_count': 10_000,
+              'elapsed_ms': 7_200_000, 'query_count': 10_000,
+              'successful_queries': 10_000, 'failed_queries': 10_000,
+              'cached_source_count': 10_000}
+    safe = {field: metrics[field] for field, limit in limits.items()
             if field in metrics and type(metrics[field]) is int and 0 <= metrics[field] <= limit}
+    operation = metrics.get('operation')
+    if type(operation) is str and operation in {'search', 'chat'}:
+        safe['operation'] = operation
+    status = metrics.get('http_status')
+    if type(status) is int and 100 <= status <= 599:
+        safe['http_status'] = status
+    return safe
 
 
-def _failure_diagnostics(error, phase, stage, part, definition=None, value=None, errors=None, current=None):
+def _failure_diagnostics(error, phase, stage, part, definition=None, value=None, errors=None, current=None,
+                         *, contract=None, mode='standard'):
     # The stage and part come from the persisted static pipeline definition,
     # not from report content or an exception message.
     allowed_classes = {'ValueError', 'KeyError', 'TypeError', 'PermissionError', 'TimeoutError',
@@ -147,7 +158,19 @@ def _failure_diagnostics(error, phase, stage, part, definition=None, value=None,
     if phase in {'stage_validation', 'bundle_validation'}:
         errors = errors if isinstance(errors, list) else []
         diagnostic.update(_part_metrics(value))
-        diagnostic['min_lines'] = int((definition or {}).get('min_lines', 0))
+        floor = (definition or {}).get('min_lines', 0)
+        # Stored definitions still determine completion parts. Only this
+        # diagnostic floor follows the same mode-specific contract as validation.
+        get_stage = getattr(contract, 'get_stage', None)
+        if callable(get_stage):
+            try:
+                effective_floor = get_stage(stage, mode=mode).get('min_lines')
+                if type(effective_floor) is int and 0 <= effective_floor <= 10_000:
+                    floor = effective_floor
+            except Exception:
+                # Legacy/custom test contracts may not expose the real stage.
+                pass
+        diagnostic['min_lines'] = int(floor)
         diagnostic['error_count'] = len(errors)
         diagnostic['issues'] = sorted({_contract_issue(item) for item in errors}) or ['other_contract']
         if current is not None:
@@ -247,7 +270,8 @@ def _child(provider, job, db_path, artifact_root, pipe, parent_pid, contract, pr
         pipe.send_bytes(data)
     except BaseException as error:
         try:
-            diagnostic = _failure_diagnostics(error, phase, stage, part, definition, value, errors, current)
+            diagnostic = _failure_diagnostics(error, phase, stage, part, definition, value, errors, current,
+                                              contract=contract, mode=job.get('mode', 'standard'))
             pipe.send_bytes(json.dumps({'ok': False, 'code': _error_code(error), 'diagnostics': diagnostic}).encode())
         except (OSError, BrokenPipeError):
             pass

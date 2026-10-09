@@ -38,6 +38,7 @@ from __future__ import annotations
 import datetime
 import json
 import re
+import time
 import urllib.parse
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -90,8 +91,6 @@ def _classify_failure(exc):
     word "timeout", falling back to ``upstream``.
     """
     message = str(exc)
-    if isinstance(exc, TimeoutError) or "timed out" in message or "timeout" in message.lower():
-        return "timeout"
     match = re.search(r"HTTP\s+(\d{3})", message)
     if match:
         status = int(match.group(1))
@@ -101,6 +100,8 @@ def _classify_failure(exc):
             return "rate_limit"
         if 500 <= status < 600:
             return "upstream"
+    if isinstance(exc, TimeoutError) or "timed out" in message or "timeout" in message.lower():
+        return "timeout"
     if "invalid JSON" in message or "missing text" in message or "incomplete" in message:
         return "quality"
     return "upstream"
@@ -111,7 +112,9 @@ def _to_provider_error(exc):
     if isinstance(exc, FullProviderError):
         return exc
     code = _classify_failure(exc)
-    return FullProviderError('research provider failed: ' + code, code)
+    status = re.search(r"HTTP\s+(\d{3})", str(exc))
+    metrics = {'http_status': int(status.group(1))} if status else {}
+    return FullProviderError('research provider failed: ' + code, code, safe_metrics=metrics)
 
 
 def _evidence_by_index(evidence):
@@ -191,7 +194,7 @@ class FullLiveProvider:
         evidence = []
         if stage["research"]:
             try:
-                evidence = self._gather_evidence(stage_id, part, place, prior)
+                evidence = self._gather_evidence(stage_id, part, place, prior, mode=mode)
             except Exception as exc:
                 raise _to_provider_error(exc)
             if not evidence:
@@ -398,9 +401,20 @@ class FullLiveProvider:
                             and canonical_url(item.get('url')) in refs)
         return self._usable_evidence(evidence)
 
-    def _company_check_queries(self, prior, place):
+    def _company_check_queries(self, prior, place, *, mode='deep'):
         queries = []
-        for _, company, _ in self._selected_companies(prior):
+        companies = self._selected_companies(prior)
+        if mode == 'standard':
+            # The contract needs at most one supported signal per direction.
+            # Keep every selection in storage; retrieve two source types only
+            # for the first stable target in each direction on this substep.
+            seen, targets = set(), []
+            for item in companies:
+                if item[0] not in seen:
+                    seen.add(item[0])
+                    targets.append(item)
+            companies = targets
+        for _, company, _ in companies:
             name = str(company['name']).strip()
             claim = str(company.get('expansion_evidence') or '').strip()
             if claim in ('待核实', '待招引'):
@@ -509,7 +523,7 @@ class FullLiveProvider:
         try:
             extra_evidence = self._gather_evidence(
                 stage_id, part, place, prior,
-                candidate_missing=missing, excluded_names=excluded)
+                candidate_missing=missing, excluded_names=excluded, mode=mode)
             if not extra_evidence:
                 raise FullProviderError('candidate part needs five new grounded companies', 'quality')
             payload = self._chat_part(
@@ -566,7 +580,7 @@ class FullLiveProvider:
             if part.startswith('扩产信号') and {item['name'] for item in selected} != targets:
                 raise FullProviderError('expansion part needs five grounded target companies', 'quality')
 
-    def _gather_evidence(self, stage_id, part, place, prior=None, *, candidate_missing=None, excluded_names=None):
+    def _gather_evidence(self, stage_id, part, place, prior=None, *, candidate_missing=None, excluded_names=None, mode='deep'):
         out = []
         seen = set()
         retrieval = "exa_fulltext" if self.search_provider == "exa" else "brave_snippet"
@@ -574,7 +588,7 @@ class FullLiveProvider:
         company_check = stage_id == 'fact_check' and part == '五星企业信号'
         targeted_check = company_check and bool(self._selected_companies(prior))
         if company_check:
-            queries = self._company_check_queries(prior, place)
+            queries = self._company_check_queries(prior, place, mode=mode)
         if stage_id == 'policy' and part == '国家产业政策':
             from .full_directions import normalise_directions
             metadata = (prior or {}).get('industry', {}).get('metadata', {}) if isinstance(prior, dict) else {}
@@ -615,13 +629,42 @@ class FullLiveProvider:
                 queries = [f"{c['name']} {topic} {place} 项目 基地 工厂 扩产 公告" for c in chosen]
             else:
                 queries = [f'{topic} 全国 产业链 企业 竞争 风险', f'{topic} {place} 招商 产业链 匹配']
-        for query in queries:
-            try:
-                count = min(self._live.search_count, 2) if targeted_check else self._live.search_count
-                payload = self._live._search(query, self._live.search_count)
-            except providers.ProviderError:
-                raise
-            normalized = self._live._normalize_results(payload)
+        started = time.monotonic()
+        failures, successes = [], 0
+
+        def retrieve(query):
+            payload = self._live._search(query, self._live.search_count)
+            return self._live._normalize_results(payload)
+
+        # Three concurrent searches keep five enterprise lookups or six
+        # standard signal lookups within two transport-timeout windows.
+        # Futures are consumed in query order so source numbering is stable.
+        if mode == 'standard' and len(queries) > 1:
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                pending = [executor.submit(retrieve, query) for query in queries]
+                batches = []
+                for future in pending:
+                    try:
+                        batches.append(future.result())
+                        successes += 1
+                    except Exception as exc:
+                        failures.append(_to_provider_error(exc))
+                        batches.append([])
+        else:
+            batches = []
+            for query in queries:
+                try:
+                    batches.append(retrieve(query))
+                    successes += 1
+                except Exception as exc:
+                    failures.append(_to_provider_error(exc))
+                    batches.append([])
+                    if mode != 'standard':
+                        break
+        critical = next((error for error in failures
+                         if error.failure_code in {'configuration', 'rate_limit'}), None)
+        count = min(self._live.search_count, 2) if targeted_check else self._live.search_count
+        def keep_results(normalized):
             accepted = 0
             for item in normalized:
                 url = item.get("url", "")
@@ -648,7 +691,40 @@ class FullLiveProvider:
                     accepted += 1
                 if targeted_check and accepted == count:
                     break
-        return self._usable_evidence(out)
+        for normalized in batches:
+            keep_results(normalized)
+        usable = self._usable_evidence(out)
+        previous = prior.get(stage_id, {}) if isinstance(prior, dict) else {}
+        metadata = previous.get('metadata', {}) if isinstance(previous, dict) else {}
+        cached = metadata.get('evidence', []) if isinstance(metadata, dict) else []
+        cached = self._usable_evidence(cached)
+        if (mode == 'standard' and critical is None and candidate_missing is None
+                and part == get_stage(stage_id, mode=mode)['parts'][-1]
+                and len({canonical_url(item['url']) for item in cached + usable})
+                    < contract.minimum_evidence_urls(mode)):
+            # One complementary query before the immutable final checkpoint,
+            # instead of repeating the same sparse search across retries.
+            query = f'{place} {part} 补充资料 统计公报 官方发布 年度报告'
+            queries.append(query)
+            try:
+                keep_results(retrieve(query))
+                successes += 1
+            except Exception as exc:
+                error = _to_provider_error(exc)
+                failures.append(error)
+                if error.failure_code in {'configuration', 'rate_limit'}:
+                    critical = error
+            usable = self._usable_evidence(out)
+        may_reuse = mode == 'standard' and candidate_missing is None and not part.startswith('候选池')
+        if critical is not None or (failures and not usable and not (may_reuse and cached)):
+            error = critical or failures[0]
+            error.safe_metrics.update(operation='search', elapsed_ms=int((time.monotonic() - started) * 1000),
+                                      query_count=len(queries), successful_queries=successes,
+                                      failed_queries=len(failures), cached_source_count=len(cached))
+            raise error from None
+        # A failed optional lookup need not discard other real excerpts. All
+        # downstream identity, cross-source and stage validation still apply.
+        return usable or (cached if may_reuse else [])
 
     def _source_of(self, url):
         try:
@@ -699,7 +775,7 @@ class FullLiveProvider:
                            '不同要点必须用真实换行分开，不能依赖界面自动折行，也不能输出反斜线+n这两个普通字符代替换行。'
                            '可使用连续编号核数；编号、空标题、空行或同一句重复未知不构成新的实质信息。'
                            '不足时继续展开有证据的细节及具体核查动作；证据确实不足则如实不足，禁止补造或凑行。')
-        if stage_id == 'policy':
+        if stage_id == 'policy' and mode == 'deep':
             user_blocks.append('本子章节采用实证政策卡与落地分析，围绕已确定的dir1/dir2/dir3及其完整产业名称，'
                                '只整理本层级来源中实际出现的政策。每个独立信息或有依据的分析单独一行，可按政策编号及卡内序号核数。'
                                '每张政策卡展开：政策准确名称、发布机构、文号、发布日期和来源编号；'
@@ -711,6 +787,13 @@ class FullLiveProvider:
                                '未提供文号、金额、期限、入口或完整原文时不得猜测，不宣称已读全文；'
                                '缺口说明须包含具体缺失事项、核查渠道或材料及其对决策的影响，禁止反复写同一句“待核实”。'
                                '国家政策不当作区级已落实补贴承诺，省市及区级部分只分析相应层级，不复制此前政策卡。')
+        elif stage_id == 'policy':
+            user_blocks.append('standard模式采用实证政策卡，只展开当前层级最相关的2至3张卡，每张用简洁要点覆盖：'
+                               '政策名称与发布机构/日期、摘录明确的支持工具和条件、适用对象与地区、'
+                               '对dir1/dir2/dir3及其已确定产业名称的影响、企业资格核查动作。'
+                               '未提供的文号/金额/有效期/申报入口/限制条款集中列为具体待核实事项，避免逐项长篇重复。'
+                               '国家政策不当作本地已落实补贴，基于摘录的落地适配判断须标明依据；'
+                               '只有证据支持的政策才可入卡，禁止把所有卡写成泛化序言或反复写同一句“待核实”。')
         if stage_id.startswith('enterprises_'):
             selection = ('扩产信号各批精选5家，5批共至少25家'
                          if mode == 'deep' else '扩产信号各批精选5家，3批共至少15家')
@@ -807,11 +890,16 @@ class FullLiveProvider:
             {"role": "system", "content": _full_system_prompt()},
             {"role": "user", "content": "\n\n".join(user_blocks)},
         ]
-        token_floor = 8000 if (stage_id in {'scoring', 'compact'} or floor >= 60
-                               or (stage_id.startswith('enterprises_') and part.startswith('扩产信号'))
-                               or (stage_id == 'fact_check' and part == '五星企业信号')) else 6000
-        data = self._live._chat(messages, min(providers.MAX_OUTPUT_TOKENS, max(self._live.max_output_tokens, token_floor)))
-        return self._extract_text(data)
+        # The request budget must change with the hard cap; increasing only
+        # the environment ceiling would leave these calls at 6K/8K.
+        started = time.monotonic()
+        try:
+            data = self._live._chat(messages, providers.MAX_OUTPUT_TOKENS, json_mode=True)
+            return self._extract_text(data)
+        except Exception as exc:
+            error = _to_provider_error(exc)
+            error.safe_metrics.update(operation='chat', elapsed_ms=int((time.monotonic() - started) * 1000))
+            raise error from None
 
     def _extract_text(self, data):
         """Return the raw text, flagging truncation/incomplete completion."""
@@ -1034,7 +1122,9 @@ def _full_system_prompt(now=None):
         '你只输出本阶段的文本结论。',
         '你只输出一个合法JSON对象，不输出Markdown代码块或对象外说明。'
         'text字段只含当前子章节新增正文，其他数组只含当前子步骤的记录；'
-        '前序内容已由服务器保存，禁止复制前序正文或回传已保存的完整结构化数组。')
+        '前序内容已由服务器保存，禁止复制前序正文或回传已保存的完整结构化数组。'
+        'JSON形状示例：{"text":"有依据的要点一\\n有依据的要点二"}。'
+        '示例只说明JSON及换行编码，实际内容和其他必需字段按当前子章节任务提供，不照抄示例。')
 
 
 _CANDIDATE_BATCH_TOPICS = (
