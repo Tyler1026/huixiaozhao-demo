@@ -13,6 +13,17 @@ from report_service.full_provider import FullProviderError
 
 STAGES = tuple({'id': f's{i}', 'filename': f'{i}.md', 'parts': ('body',)} for i in range(10))
 
+ENTITY_PROVIDER_ERRORS = (
+    ('company identity needs a retrieved source URL', 'company_identity_source'),
+    ('candidate part needs five new grounded companies', 'candidate_batch_identity'),
+    ('company part contains a name absent from the saved candidate pool', 'company_absent_from_pool'),
+    ('company part contains a name outside its target batch', 'company_outside_target_batch'),
+    ('company target batch needs five saved candidates', 'company_target_batch_size'),
+    ('expansion part needs five grounded target companies', 'expansion_target_coverage'),
+    ('score identity is absent from saved selections', 'score_identity'),
+    ('score dimensions require seven finite values within 0..10', 'score_dimensions'),
+)
+
 
 class TinyContract:
     @staticmethod
@@ -275,6 +286,32 @@ class FullWorkerTests(unittest.TestCase):
                 diagnostic = _failure_diagnostics(FullProviderError(message, 'quality'),
                                                   'provider', 'policy', '区级政策')
                 self.assertEqual(diagnostic['issues'], [issue])
+                self.assertNotIn('secret123', str(diagnostic))
+                self.assertNotIn('https://', str(diagnostic))
+
+    def test_entity_provider_failures_have_distinct_static_diagnostics(self):
+        self.assertEqual(len({issue for _, issue in ENTITY_PROVIDER_ERRORS}), 8)
+        for message, issue in ENTITY_PROVIDER_ERRORS:
+            with self.subTest(issue=issue):
+                diagnostic = _failure_diagnostics(FullProviderError(message, 'quality'),
+                                                  'provider', 'enterprises_2', '候选池3')
+                self.assertEqual(diagnostic, {
+                    'phase': 'provider', 'stage': 'enterprises_2', 'part': '候选池3',
+                    'exception_class': 'FullProviderError', 'issues': [issue],
+                })
+                self.assertNotIn(message, str(diagnostic))
+
+    def test_entity_diagnostics_require_exact_messages_and_hide_dynamic_details(self):
+        private_detail = 'secret123 https://private.invalid/company'
+        messages = ['unknown entity failure ' + private_detail]
+        for message, _ in ENTITY_PROVIDER_ERRORS:
+            messages.extend((message + ' ' + private_detail,
+                             private_detail + ' ' + message, message.upper()))
+        for message in messages:
+            with self.subTest(message=message):
+                diagnostic = _failure_diagnostics(FullProviderError(message, 'quality'),
+                                                  'provider', 'enterprises_3', '候选池3')
+                self.assertEqual(diagnostic['issues'], ['other_provider'])
                 self.assertNotIn('secret123', str(diagnostic))
                 self.assertNotIn('https://', str(diagnostic))
 

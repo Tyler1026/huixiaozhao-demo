@@ -201,13 +201,16 @@ class FullLiveProvider:
 
         all_evidence = self._usable_evidence(old_evidence + saved_evidence + evidence)
         target_names = None
+        excluded_names = None
+        if stage_id.startswith('enterprises_') and part.startswith('候选池'):
+            excluded_names = [company['name'] for company in previous.get('metadata', {}).get('candidates', [])]
         if stage_id.startswith('enterprises_') and part.startswith(('落地情况', '扩产信号')):
             offset = self._company_batch(part) * 5
             target_names = [company['name'] for company in previous.get('metadata', {}).get('candidates', [])[offset:offset + 5]]
         try:
             payload = self._chat_part(stage_id, part, place, prior_text,
                                       self._usable_evidence(saved_evidence + evidence),
-                                      mode=mode, min_lines=floor, target_names=target_names)
+                                      mode=mode, min_lines=floor, target_names=target_names, excluded_names=excluded_names)
         except Exception as exc:
             raise _to_provider_error(exc)
 
@@ -460,6 +463,9 @@ class FullLiveProvider:
                 segment, kind = _CANDIDATE_BATCH_TOPICS[self._company_batch(part)]
                 queries = [f'{topic} 全国 {segment} {kind} 企业名录 上市公司',
                            f'{topic} {segment} 专精特新 企业 公司名单 扩产']
+                if candidates:
+                    queries[1] += (' 已研究企业不再重复：' + '、'.join(company['name'] for company in candidates)
+                                   + '；寻找其他真实企业及公司公告')
             elif part.startswith(('落地情况', '扩产信号')):
                 offset = self._company_batch(part) * 5
                 chosen = candidates[offset:offset + 5]
@@ -508,7 +514,7 @@ class FullLiveProvider:
             host = ""
         return host.lower() or "未知来源"
 
-    def _chat_part(self, stage_id, part, place, prior_text, evidence, *, mode='standard', min_lines=None, target_names=None):
+    def _chat_part(self, stage_id, part, place, prior_text, evidence, *, mode='standard', min_lines=None, target_names=None, excluded_names=None):
         instructions = _PART_INSTRUCTIONS.get(stage_id, _DEFAULT_PART_INSTRUCTION)
         user_blocks = [
             f"地区：{place}",
@@ -593,6 +599,10 @@ class FullLiveProvider:
                                '不复制原文摘录，不回传前批企业，不在两个数组重复同一份记录。')
             if target_names is not None:
                 user_blocks.append('本批唯一目标名单（必须保留精确名称）：' + json.dumps(target_names, ensure_ascii=False))
+            if excluded_names:
+                user_blocks.append('已有候选禁止重复名单：' + json.dumps(excluded_names, ensure_ascii=False)
+                                   + '。这些企业已完整保存，本批不得再次返回，也不得改用简称或别名算作新增。'
+                                   '本批每家企业必须是给定检索摘录实际支持的其他企业；不足如实说明，不能补造身份。')
             if part.startswith('扩产信号'):
                 user_blocks.append('本次candidates必须为空数组；selected仅包含本批5家目标的完整核查记录。'
                                    '正文概述新增信号、关键风险及下一步核查，不逐字段复述selected记录。')

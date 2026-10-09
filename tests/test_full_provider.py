@@ -467,6 +467,27 @@ class EnterprisePartGateTests(unittest.TestCase):
                        self._prior([self._company(i) for i in range(20)]))
         self.assertEqual(router.calls, [])
 
+    def test_candidate_search_and_prompt_exclude_complete_saved_name_list(self):
+        saved = [self._company(i) for i in range(10)]
+        chosen = [self._company(i) for i in range(10, 15)]
+        out, router = self._run('候选池3', {'candidates': chosen, 'selected': []}, saved)
+        self.assertEqual([item['name'] for item in out['metadata']['candidates']],
+                         [item['name'] for item in chosen])
+        queries = [json.loads(call.data)['query'] for call in router.calls if 'exa.ai/search' in call.full_url]
+        self.assertEqual(len(queries), 2)
+        for item in saved:
+            self.assertIn(item['name'], queries[1])
+        self.assertIn('寻找其他真实企业及公司公告', queries[1])
+        chat = json.loads(next(call for call in router.calls if 'chat/completions' in call.full_url).data)
+        prompt = chat['messages'][-1]['content']
+        self.assertIn('已有候选禁止重复名单：' + json.dumps([item['name'] for item in saved], ensure_ascii=False), prompt)
+        self.assertIn('不得改用简称或别名算作新增', prompt)
+        self.assertIn('不足如实说明，不能补造身份', prompt)
+        self.assertEqual(chat['max_tokens'], 6000)
+        with self.assertRaises(fp.FullProviderError) as caught:
+            self._run('候选池3', {'candidates': [self._company(i) for i in (0, 1, 10, 11, 12)]}, saved)
+        self.assertEqual(str(caught.exception), 'candidate part needs five new grounded companies')
+
     def test_expansion_batches_require_all_five_existing_targets_and_retrieved_urls(self):
         saved = [self._company(i) for i in range(25)]
         with self.assertRaises(fp.FullProviderError):
