@@ -2,7 +2,7 @@
 import copy
 import unittest
 
-from report_service.full_context import scoped_prior
+from report_service.full_context import scoped_prior, scoring_prior_batches
 from report_service.full_provider import FullLiveProvider, FullProviderError
 from report_service.full_contract import get_stage
 
@@ -136,6 +136,41 @@ class FullContextTests(unittest.TestCase):
         self.assertIn(('方向1精选企业0', 'dir1'), pairs)
         self.assertIn(('方向1精选企业0', 'dir2'), pairs)
 
+    def test_internal_scoring_batches_keep_all_complete_targets_without_scoping_twice(self):
+        prior = self._decision_prior()
+        prior['scoring']['text'] = '\n'.join(f'完整已有评分正文要点{i}' for i in range(50))
+        original = copy.deepcopy(prior)
+        groups = []
+        for part in ('评分维度与权重', '加权计算'):
+            views = scoring_prior_batches(prior, part)
+            self.assertEqual(len(views), 2)
+            for view in views:
+                targets = []
+                for number in (1, 2, 3):
+                    selected = view[f'enterprises_{number}']['metadata']['selected']
+                    for company in selected:
+                        targets.append((company['name'], f'dir{number}'))
+                        saved = next(item for item in prior[f'enterprises_{number}']['metadata']['selected']
+                                     if item['name'] == company['name'])
+                        self.assertEqual(company, saved)
+                    refs = {company[key] for company in selected for key in ('url', 'evidence_ref')}
+                    self.assertEqual({item['url'] for item in view[f'enterprises_{number}']['metadata']['evidence']}, refs)
+                groups.append(targets)
+                self.assertEqual(view['scoring']['text'], prior['scoring']['text'])
+                self.assertEqual(view['scoring']['metadata'], {
+                    key: value for key, value in prior['scoring']['metadata'].items() if key != 'scores'})
+                for dependency in ('chain', 'policy', 'fact_check'):
+                    self.assertEqual(view[dependency]['metadata'], prior[dependency]['metadata'])
+                rendered = FullLiveProvider(object())._render_prior(view, 'scoring')
+                for name, _ in targets:
+                    self.assertIn(name, rendered)
+        self.assertEqual(list(map(len, groups)), [19, 19, 19, 18])
+        self.assertEqual([pair for group in groups for pair in group], [
+            (company['name'], f'dir{number}') for number in (1, 2, 3)
+            for company in prior[f'enterprises_{number}']['metadata']['selected']])
+        views[-1]['enterprises_3']['metadata']['selected'][0]['rationale']['raw'][0] = 'edited group'
+        self.assertEqual(prior, original)
+
     def test_missing_sources_are_not_fabricated_and_views_are_independent(self):
         self.prior['enterprises_1']['metadata']['evidence'] = []
         view = scoped_prior(self.prior, 'fact_check', '五星企业信号')
@@ -230,7 +265,7 @@ class FullContextTests(unittest.TestCase):
                 prior = self._decision_prior()
                 normal = probe._render_prior(prior, stage, part)
                 self.assertIn('OFFLINE-ORIGINAL-SIGNAL-3-24', normal)
-                oversized = '完整必须保留的已精选企业事实' * 10_000 + 'REQUIRED-SIGNAL-TAIL'
+                oversized = '完整必须保留的已精选企业事实' * 15_000 + 'REQUIRED-SIGNAL-TAIL'
                 prior['enterprises_1']['metadata']['selected'][0]['expansion_evidence'] = oversized
                 view = scoped_prior(prior, stage, part)
                 self.assertEqual(view['enterprises_1']['metadata']['selected'][0]['expansion_evidence'], oversized)

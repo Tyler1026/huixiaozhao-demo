@@ -173,3 +173,28 @@ def scoped_prior(prior, stage_id, part):
         }
     _keep(view, prior, 'scoring')
     return view
+
+
+def scoring_prior_batches(prior, part):
+    """Split one persisted scoring part once into two complete target views.
+
+    These are already scoped views; rendering them must not call
+    ``scoped_prior`` again. Every target field and related source is retained.
+    Prior scoring prose stays available to avoid repetition, while unrelated
+    completed scores remain in the saved report instead of the target input.
+    """
+    view = scoped_prior(prior, 'scoring', part)
+    selected = _selected(view)
+    split = (len(selected) + 1) // 2
+    batches = []
+    for number, targets in enumerate((selected[:split], selected[split:]), 1):
+        batch_view = copy.deepcopy(view)
+        explanation = (f'当前评分持久子步骤{part}的内部批{number}/2，'
+                       f'只处理以下完整{len(targets)}家目标；两批合计{len(selected)}家。')
+        batch_view.update(_enterprise_views(view, targets, explanation))
+        if 'scoring' in batch_view:
+            progress = batch_view['scoring']
+            if isinstance(progress, dict):
+                _metadata(progress).pop('scores', None)
+        batches.append(batch_view)
+    return batches
