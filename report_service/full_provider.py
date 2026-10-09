@@ -60,6 +60,11 @@ from report_service.full_contract import (
 # Re-export the landing vocabulary / weights (single source of truth: the contract).
 LANDING_STATUSES = tuple(sorted(_LANDING_STATUSES))
 
+# These stages carry prose/evidence, rather than persistent entity batches.
+_REPETITION_CORRECTION_STAGES = frozenset({
+    'economy', 'population', 'transport', 'life', 'competition', 'policy', 'chain',
+})
+
 
 class FullProviderError(providers.ProviderError):
     """A typed provider failure whose ``failure_code`` the worker can act on.
@@ -236,7 +241,24 @@ class FullLiveProvider:
             feedback = self._high_star_gap(parsed, metadata)
             if feedback:
                 text, metadata = self._project_standard_high_star(prior, metadata, feedback)
-        self._validate_part_text(text, floor, previous_text)
+        try:
+            self._validate_part_text(text, floor, previous_text)
+        except FullProviderError as exc:
+            if (mode != 'standard' or stage_id not in _REPETITION_CORRECTION_STAGES
+                    or exc.failure_code != 'quality' or str(exc) != 'part contains repeated filler'):
+                raise
+            # Only the actual unchanged repetition gate permits one rewrite.
+            # Reuse all inputs; no search, checkpoint or automatic text cleanup.
+            feedback = self._repetition_feedback(text, previous_text)
+            try:
+                payload = self._chat_part(stage_id, part, place, prior_text,
+                                          self._usable_evidence(saved_evidence + evidence),
+                                          mode=mode, min_lines=floor, correction_feedback=feedback)
+            except Exception as correction_exc:
+                raise _to_provider_error(correction_exc)
+            parsed = self._parse_part(stage_id, part, payload, all_evidence, prior)
+            text = parsed['text']
+            self._validate_part_text(text, floor, previous_text)
         if metadata is None:
             metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior)
         if stage_id.startswith('enterprises_'):
@@ -447,6 +469,17 @@ class FullLiveProvider:
     def _content_lines(text):
         return [line.strip() for line in str(text or '').splitlines()
                 if line.strip() and line.strip() != '---']
+
+    @classmethod
+    def _repetition_feedback(cls, text, previous_text):
+        lines = cls._content_lines(text)
+        previous = [line.strip() for line in str(previous_text or '').splitlines() if line.strip()]
+        return {
+            'kind': 'research_repetition',
+            'current_line_count': len(lines),
+            'current_duplicate_excess': sum(n - 1 for n in Counter(lines).values() if n > 1),
+            'shared_prior_line_count': len(set(lines).intersection(previous)),
+        }
 
     def _validate_part_text(self, text, floor, previous_text=''):
         lines = self._content_lines(text)
@@ -1031,6 +1064,20 @@ class FullLiveProvider:
                 user_blocks.append('本次selected必须为空数组；candidates仅包含本批5家新增或核查的企业记录。')
             else:
                 user_blocks.append('本次candidates和selected都为空数组；已保存名单不重复输出，只写本子章节新增分析。')
+        if mode == 'standard' and stage_id in _REPETITION_CORRECTION_STAGES:
+            if correction_feedback is not None and correction_feedback.get('kind') == 'research_repetition':
+                user_blocks.append('本次是当前子章节唯一一次重复正文纠偏。上一版被原重复行校验拒绝，'
+                                   '以下只有数量反馈，不是新的事实证据：' +
+                                   json.dumps(correction_feedback, ensure_ascii=False, separators=(',', ':')))
+                user_blocks.append('重新生成当前子章节完整text，只使用同一份前序事实和检索证据，不新增事实。'
+                                   '不得原样回传前序或上一版正文，不得靠改编号、删除重复行或同义改写既有结论来凑数。'
+                                   '围绕当前子章节形成独立新增分析；证据不足时说明具体缺失事项、核查渠道及对判断的影响。'
+                                   '仍须满足原行数、重复率和来源要求；无法形成合格内容应如实说明不足，不编造。')
+            user_blocks.append(f'最终任务锚点：地区{place}；当前阶段{stage_id}；只撰写当前子章节“{part}”的新增正文。'
+                               '前序同阶段正文属于其他已保存子章节，只作事实参考，不能作为本次text返回。'
+                               '引用前序事实须展开当前主题的不同分析、具体影响或有意义核查缺口；'
+                               '不要重新列出前序章节或以同义改写、编号变化伪装新增结论。'
+                               f'只返回合法JSON，text须有至少{floor}行独立实质内容，所有未知和来源限制继续适用。')
         messages = [
             {"role": "system", "content": _full_system_prompt()},
             {"role": "user", "content": "\n\n".join(user_blocks)},
