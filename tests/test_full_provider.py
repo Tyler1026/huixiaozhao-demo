@@ -864,10 +864,15 @@ class SelectedCompanyFactCheckTests(unittest.TestCase):
             {'claim': '同一网页不能交叉核验', 'source': source, 'cross_source': source,
              'category': 'high_star', 'direction': 'dir1'},
         ]}
+        corrected = {'text': '\n'.join(f'核验纠偏后：dir2/dir3缺少企业独立原句，待核实事项{i}' for i in range(80)),
+                     'checks': payload['checks'][:1], 'high_star_unavailable': True,
+                     'high_star_note': 'dir2/dir3缺少企业独立原句，不能交叉核验。'}
+        chat_payloads = iter((payload, corrected, payload))
         router = RecordingRouter({
             'exa.ai/search': (200, json.dumps({'results': [{'url': cross, 'text':
                 'OFFLINE cross excerpt；方向1精选企业0扩产信号已于2026年披露。'}]})),
-            'chat/completions': (200, json.dumps({'choices': [{'message': {'content': json.dumps(payload)}}]})),
+            'chat/completions': (200, lambda request: json.dumps(
+                {'choices': [{'message': {'content': json.dumps(next(chat_payloads))}}]})),
         })
         p = self._provider(router)
         out = p.run_part('fact_check', '五星企业信号', {'city': '测试城'}, saved)
@@ -940,12 +945,15 @@ class SelectedCompanyFactCheckTests(unittest.TestCase):
                                    '五星企业信号': ('high_star', 0)}[part]
                 checks = FactCheckPartCommitGateTests._checks(category, count)
                 payload = {'text': '\n'.join(f'缺口核验简短要点{i}' for i in range(20)), 'checks': checks,
-                           'high_star_unavailable': True, 'high_star_note': 'dir2缺少2026年独立交叉来源'}
+                           'high_star_unavailable': True, 'high_star_note': 'dir1/dir2/dir3缺少2026年独立交叉来源'}
+                corrected = dict(payload, text='\n'.join(f'纠偏后各方向独立来源缺口待核实事项{i}' for i in range(20)))
+                chat_payloads = iter((payload, corrected))
                 router = RecordingRouter({
                     'exa.ai/search': (200, json.dumps({'results': [
                         {'url': url, 'text': 'OFFLINE核查摘录；' + '；'.join(c['claim'] for c in checks)}
                         for url in FactCheckPartCommitGateTests.URLS]})),
-                    'chat/completions': (200, json.dumps({'choices': [{'message': {'content': json.dumps(payload)}}]})),
+                    'chat/completions': (200, lambda request: json.dumps(
+                        {'choices': [{'message': {'content': json.dumps(next(chat_payloads))}}]})),
                 })
                 prior = self._prior()
                 prior['fact_check'] = {'text': '\n'.join(f'已完成核验要点{i}' for i in range(40)),
@@ -1153,6 +1161,181 @@ class HighStarEntityQuoteGateTests(unittest.TestCase):
         metadata = self._provider(RecordingRouter({}))._build_metadata(
             'fact_check', '经济关键数字', 'OFFLINE测试城', evidence, {'checks': checks}, {})
         self.assertEqual(metadata['checks'], checks)
+
+
+class HighStarCorrectionTests(unittest.TestCase):
+    _provider = LiveProviderRuntimeTests._provider
+
+    @staticmethod
+    def _case(economic_count=12, policy_count=8):
+        prior, evidence, checks = {}, [], []
+        for number in (1, 2, 3):
+            name = f'OFFLINE精选企业{number}'
+            source = f'https://cninfo.com.cn/offline-correction/disclosure/{number}'
+            cross = f'https://stats.gov.cn/offline-correction/project/{number}'
+            source_quote = f'{name}于2026年披露新项目。'
+            cross_quote = f'{name}的新项目实际投产时间待核实。'
+            sources = [{'url': source, 'excerpt': 'OFFLINE原披露：' + source_quote},
+                       {'url': cross, 'excerpt': 'OFFLINE交叉摘录：' + cross_quote}]
+            evidence.extend(sources)
+            checks.append({'claim': source_quote + '投产时间待核实', 'source': source,
+                           'cross_source': cross, 'year': '2026', 'verdict': '待核实',
+                           'category': 'high_star', 'direction': f'dir{number}',
+                           'company_name': name, 'source_quote': source_quote,
+                           'cross_source_quote': cross_quote})
+            prior[f'enterprises_{number}'] = {'text': f'OFFLINE方向{number}完整精选记录', 'metadata': {
+                'selected': [{'name': name, 'url': source, 'evidence_ref': cross}], 'evidence': sources}}
+        old_checks = [{'claim': f'OFFLINE已保存{category}主张{index}', 'source': evidence[0]['url'],
+                       'cross_source': evidence[1]['url'], 'year': '2026', 'verdict': '待核实',
+                       'category': category, 'direction': None}
+                      for category, count in (('economic', economic_count), ('policy', policy_count))
+                      for index in range(count)]
+        prior['fact_check'] = {'text': '\n'.join(f'OFFLINE已保存独立核验要点{index}' for index in range(40)),
+                               'metadata': {'checks': old_checks, 'evidence': evidence}}
+        return prior, evidence, checks
+
+    @staticmethod
+    def _payload(checks, *, unavailable=False, note='dir1/dir2/dir3缺少企业独立原句，待核实',
+                 label='OFFLINE初版核验要点', lines=20):
+        payload = {'text': '\n'.join(f'{label}{index}' for index in range(lines)), 'checks': checks}
+        if unavailable:
+            payload.update(high_star_unavailable=True, high_star_note=note)
+        return payload
+
+    def _setup(self, payloads, *, economic_count=12, policy_count=8):
+        prior, evidence, checks = self._case(economic_count, policy_count)
+        responses = iter(payloads)
+        router = RecordingRouter({
+            'exa.ai/search': (200, json.dumps({'results': [
+                {'url': entry['url'], 'text': entry['excerpt']} for entry in evidence]})),
+            'chat/completions': (200, lambda request: json.dumps({'choices': [{'finish_reason': 'stop',
+                'message': {'content': json.dumps(next(responses))}}]})),
+        })
+        timeouts = []
+        def transport(request, timeout):
+            timeouts.append((request.full_url, timeout))
+            return router(request, timeout)
+        return self._provider(transport), router, timeouts, prior, evidence, checks
+
+    def _run(self, provider, prior):
+        before = copy.deepcopy(prior)
+        try:
+            return provider.run_part('fact_check', '五星企业信号', {'city': 'OFFLINE测试城'}, prior)
+        finally:
+            self.assertEqual(prior, before)
+
+    def test_rejected_entity_quotes_get_one_same_evidence_correction_and_honest_unavailable(self):
+        _, _, checks = self._case()
+        invalid = [dict(check, cross_source_quote='OFFLINE_OTHER_ENTITY_NOT_INCLUDED') for check in checks]
+        first = self._payload(invalid, label='OFFLINE初版仍声称双源一致')
+        corrected = self._payload([], unavailable=True, label='OFFLINE纠偏后缺少企业原句，待核实要点')
+        p, router, timeouts, prior, _, _ = self._setup([first, corrected])
+        result = self._run(p, prior)
+        self.assertEqual(result['text'], corrected['text'])
+        self.assertEqual(result['metadata']['checks'], [])
+        self.assertIs(result['metadata']['high_star_unavailable'], True)
+        self.assertEqual(result['metadata']['high_star_note'], corrected['high_star_note'])
+        calls = [json.loads(call.data) for call in router.calls if 'chat/completions' in call.full_url]
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(sum('exa.ai/search' in call.full_url for call in router.calls), 6)
+        expected = {'submitted_high_star_count': 3, 'grounded_high_star_count': 0,
+                    'discarded_high_star_count': 3, 'covered_direction_count': 0,
+                    'missing_directions': ['dir1', 'dir2', 'dir3']}
+        feedback = json.dumps(expected, ensure_ascii=False, separators=(',', ':'))
+        prompt = calls[1]['messages'][-1]['content']
+        self.assertIn(feedback, prompt)
+        self.assertNotIn('OFFLINE_OTHER_ENTITY_NOT_INCLUDED', prompt)
+        self.assertIn('未通过身份或原句绑定的记录不能在正文继续声称已经双源印证', prompt)
+        self.assertIn('请重新生成完整text和本批checks', prompt)
+        for call in calls:
+            self.assertEqual(call['max_tokens'], 16000)
+            self.assertEqual(call['response_format'], {'type': 'json_object'})
+        self.assertEqual([timeout for url, timeout in timeouts if 'chat/completions' in url], [90, 90])
+        # Apart from the appended feedback, both prompts contain the exact
+        # same prior/excerpts, and no discarded model prose is replayed.
+        self.assertTrue(prompt.startswith(calls[0]['messages'][-1]['content']))
+        combined = fc.assemble('fact_check', [prior['fact_check'], result])
+        self.assertEqual(fc.validate('fact_check', combined['text'], combined['metadata']), [])
+        self.assertEqual(len(combined['metadata']['checks']), 20)
+
+    def test_initial_unavailable_cannot_skip_rewriting_false_double_source_prose(self):
+        _, _, checks = self._case()
+        invalid = [dict(checks[0], cross_source_quote='其他企业的报道，不支持精选企业')]
+        first = self._payload(invalid, unavailable=True, label='OFFLINE初版已flag但仍声称双源一致')
+        corrected = self._payload([], unavailable=True, label='OFFLINE改写后全部方向待核实缺口')
+        p, router, _, prior, _, _ = self._setup([first, corrected])
+        result = self._run(p, prior)
+        self.assertEqual(result['text'], corrected['text'])
+        self.assertNotIn('双源一致', result['text'])
+        self.assertEqual(len([call for call in router.calls if 'chat/completions' in call.full_url]), 2)
+        unchanged = dict(first, checks=[])
+        p, router, _, prior, _, _ = self._setup([first, unchanged])
+        with self.assertRaises(fp.FullProviderError) as failure:
+            self._run(p, prior)
+        self.assertEqual(failure.exception.failure_code, 'quality')
+        self.assertIn('did not rewrite current text', str(failure.exception))
+        self.assertEqual(sum('chat/completions' in call.full_url for call in router.calls), 2)
+
+    def test_full_grounded_coverage_skips_correction_but_dropped_extra_does_not(self):
+        _, _, checks = self._case()
+        valid = self._payload(checks)
+        p, router, _, prior, _, _ = self._setup([valid])
+        result = self._run(p, prior)
+        self.assertEqual(result['metadata']['checks'], checks)
+        self.assertNotIn('high_star_unavailable', result['metadata'])
+        self.assertEqual(len([call for call in router.calls if 'chat/completions' in call.full_url]), 1)
+        first = self._payload(checks + [dict(checks[0], claim=checks[0]['claim'] + '未证实金额',
+                                           cross_source_quote='其他企业的摘录')])
+        corrected = self._payload(checks, label='OFFLINE纠偏后仅保留原句支持的主张')
+        p, router, _, prior, _, _ = self._setup([first, corrected])
+        result = self._run(p, prior)
+        self.assertEqual(result['metadata']['checks'], checks)
+        self.assertNotIn('high_star_unavailable', result['metadata'])
+        self.assertEqual(len([call for call in router.calls if 'chat/completions' in call.full_url]), 2)
+        prompt = json.loads([call for call in router.calls if 'chat/completions' in call.full_url][-1].data)
+        self.assertIn('"missing_directions":[]', prompt['messages'][-1]['content'])
+
+    def test_one_correction_can_restore_real_three_direction_coverage(self):
+        _, _, checks = self._case()
+        first = self._payload(checks[:1])
+        corrected = self._payload(checks, label='OFFLINE纠偏后企业原句支持要点')
+        p, router, _, prior, _, _ = self._setup([first, corrected])
+        result = self._run(p, prior)
+        self.assertEqual(result['metadata']['checks'], checks)
+        self.assertNotIn('high_star_unavailable', result['metadata'])
+        combined = fc.assemble('fact_check', [prior['fact_check'], result])
+        self.assertEqual(fc.validate('fact_check', combined['text'], combined['metadata']), [])
+        self.assertEqual(len([call for call in router.calls if 'chat/completions' in call.full_url]), 2)
+
+    def test_second_failure_has_no_third_chat_or_new_search_and_never_infers_flag(self):
+        _, _, checks = self._case()
+        first = self._payload(checks[:1])
+        for corrected in (self._payload(checks[:1], label='OFFLINE仍只有方向1'),
+                          self._payload(checks[:1], unavailable=True, note='', label='OFFLINE缺少缺口说明'),
+                          self._payload([dict(checks[0], cross_source_quote='其他企业')], unavailable=True,
+                                        label='OFFLINE仍夹带未通过原句的记录')):
+            with self.subTest(corrected=corrected['text'].splitlines()[0]):
+                p, router, _, prior, _, _ = self._setup([first, corrected])
+                with self.assertRaises(fp.FullProviderError) as failure:
+                    self._run(p, prior)
+                self.assertEqual(failure.exception.failure_code, 'quality')
+                self.assertEqual(sum('chat/completions' in call.full_url for call in router.calls), 2)
+                self.assertEqual(sum('exa.ai/search' in call.full_url for call in router.calls), 6)
+
+    def test_corrected_unavailable_does_not_relax_text_or_whole_stage_policy_floor(self):
+        first = self._payload([])
+        too_short = self._payload([], unavailable=True, label='OFFLINE仍需核实', lines=1)
+        p, router, _, prior, _, _ = self._setup([first, too_short])
+        with self.assertRaises(fp.FullProviderError) as failure:
+            self._run(p, prior)
+        self.assertEqual(failure.exception.failure_code, 'quality')
+        self.assertEqual(sum('chat/completions' in call.full_url for call in router.calls), 2)
+        corrected = self._payload([], unavailable=True, label='OFFLINE企业全部缺乏双源，待核实')
+        p, _, _, prior, _, _ = self._setup([first, corrected], policy_count=0)
+        result = self._run(p, prior)
+        combined = fc.assemble('fact_check', [prior['fact_check'], result])
+        errors = fc.validate('fact_check', combined['text'], combined['metadata'])
+        self.assertTrue(any('policy checks 0 < 3' in error for error in errors), errors)
 
 
 class ScoringIdentityGateTests(unittest.TestCase):
@@ -1455,6 +1638,13 @@ class DirectionSerializationTests(unittest.TestCase):
                             text='\n'.join(f'{targets[0]["name"]}本批独立评分依据{i}' for i in range(50)))
                         return json.dumps({'choices': [{'message': {'content': json.dumps(body)}}]})
                     router.routes['chat/completions'] = (200, scoring_model)
+                elif stage == 'fact_check':
+                    corrected = dict(payload, text='\n'.join(f'OFFLINE纠偏后全部方向缺乏独立原句，待核实事项{i}'
+                                                             for i in range(130)),
+                                     high_star_note='OFFLINE dir1/dir2/dir3未提供企业独立原句')
+                    responses = iter((payload, corrected))
+                    router.routes['chat/completions'] = (200, lambda request: json.dumps(
+                        {'choices': [{'message': {'content': json.dumps(next(responses))}}]}))
                 self._provider(router).run_part(stage, part, {'city': '测试城'}, prior)
                 chat = next(call for call in router.calls if 'chat/completions' in call.full_url)
                 prompt = json.loads(chat.data)['messages'][-1]['content']

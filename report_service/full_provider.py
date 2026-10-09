@@ -237,6 +237,34 @@ class FullLiveProvider:
         if stage_id.startswith('enterprises_'):
             self._validate_company_part(part, metadata, previous)
         if stage_id == 'fact_check':
+            if part == '五星企业信号':
+                feedback = self._high_star_gap(parsed, metadata)
+                if feedback:
+                    # One correction uses the same prior and retrieved excerpts.
+                    # Replace only this uncommitted attempt; never infer the
+                    # unavailable flag or alter any saved checkpoint ourselves.
+                    first_text = text
+                    try:
+                        payload = self._chat_part(stage_id, part, place, prior_text,
+                                                  self._usable_evidence(saved_evidence + evidence),
+                                                  mode=mode, min_lines=floor, correction_feedback=feedback)
+                    except Exception as exc:
+                        raise _to_provider_error(exc)
+                    parsed = self._parse_part(stage_id, part, payload, all_evidence, prior)
+                    text = parsed['text']
+                    if text.strip() == first_text.strip():
+                        raise FullProviderError('high-star correction did not rewrite current text', 'quality')
+                    self._validate_part_text(text, floor, previous_text)
+                    metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior)
+                    remaining = self._high_star_gap(parsed, metadata)
+                    if remaining:
+                        if remaining['discarded_high_star_count']:
+                            raise FullProviderError('high-star correction still contains ungrounded checks', 'quality')
+                        if metadata.get('high_star_unavailable') is not True:
+                            raise FullProviderError('high-star correction still lacks direction coverage', 'quality')
+                        note = metadata.get('high_star_note')
+                        if not isinstance(note, str) or not note.strip():
+                            raise FullProviderError('high-star correction missing unavailable note', 'quality')
             errors = contract.fact_check_part_errors(part, metadata)
             if errors:
                 raise FullProviderError('; '.join(errors), 'quality')
@@ -247,6 +275,26 @@ class FullLiveProvider:
         return {"text": text, "metadata": metadata}
 
     # -- helpers (reuse composed provider transport/search/chat) ---------------
+
+    @staticmethod
+    def _high_star_gap(parsed, metadata):
+        """Return safe counts and static direction IDs after grounding."""
+        checks = [entry for entry in metadata.get('checks', [])
+                  if isinstance(entry, dict) and entry.get('category') == 'high_star'
+                  and isinstance(entry.get('claim'), str) and entry['claim'].strip()
+                  and entry.get('direction') in ('dir1', 'dir2', 'dir3')]
+        directions = {entry.get('direction') for entry in checks}
+        missing = [direction for direction in ('dir1', 'dir2', 'dir3') if direction not in directions]
+        identities = {(entry['claim'].strip(), entry['category'], entry.get('direction')) for entry in checks}
+        raw = parsed.get('checks', [])
+        submitted = sum(isinstance(entry, dict) and entry.get('category') == 'high_star'
+                        for entry in raw) if isinstance(raw, list) else 0
+        discarded = max(0, submitted - len(checks))
+        if not missing and not discarded:
+            return None
+        return {'submitted_high_star_count': submitted, 'grounded_high_star_count': len(identities),
+                'discarded_high_star_count': discarded, 'covered_direction_count': 3 - len(missing),
+                'missing_directions': missing}
 
     def _place(self, job):
         job = job or {}
@@ -738,7 +786,7 @@ class FullLiveProvider:
             host = ""
         return host.lower() or "未知来源"
 
-    def _chat_part(self, stage_id, part, place, prior_text, evidence, *, mode='standard', min_lines=None, target_names=None, excluded_names=None, candidate_count=5, scoring_targets=None, scoring_batch=None):
+    def _chat_part(self, stage_id, part, place, prior_text, evidence, *, mode='standard', min_lines=None, target_names=None, excluded_names=None, candidate_count=5, scoring_targets=None, scoring_batch=None, correction_feedback=None):
         instructions = _PART_INSTRUCTIONS.get(stage_id, _DEFAULT_PART_INSTRUCTION)
         user_blocks = [
             f"地区：{place}",
@@ -882,6 +930,17 @@ class FullLiveProvider:
                                    '包含company_name；只有名称末尾的股票代码括号可以不在引文中。'
                                    '其他企业的报道、仅行业背景或没有该企业完整名称的摘录不能作为第二来源。'
                                    '某方向无法交叉核验时如实设置high_star_unavailable=true，并在high_star_note简述缺口。')
+                if correction_feedback is not None:
+                    user_blocks.append('本次是当前子章节唯一一次内部纠偏。上一版经过精选身份、两源URL及企业原句绑定后，'
+                                       '实际合格数量与缺失方向如下（仅校验反馈，不是新的事实证据）：' +
+                                       json.dumps(correction_feedback, ensure_ascii=False, separators=(',', ':')))
+                    user_blocks.append('请重新生成完整text和本批checks，不复制上一版正文或未合格记录。'
+                                       '只保留给定原摘录实际支持的同一精选企业、同一主张的两源记录；'
+                                       '未通过身份或原句绑定的记录不能在正文继续声称已经双源印证。'
+                                       '若缺失方向确实无法交叉核验，必须如实设置high_star_unavailable=true，'
+                                       '并在high_star_note及正文说明哪些方向尚未核实、缺少什么独立来源或原句。'
+                                       '不得为覆盖方向编造企业、引句或证据，不回传前批经济及政策checks。'
+                                       '本次不会新增检索；仍只使用同一份已给出证据，其他数量、正文和来源要求不变。')
         if stage_id.startswith('enterprises_'):
             user_blocks.append('本次JSON只含text、candidates、selected三个字段；正文用独立简洁要点，'
                                '每个企业字段用一至两句保留本批有依据的结论或具体缺口，'
