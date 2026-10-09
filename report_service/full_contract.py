@@ -45,7 +45,10 @@ Metadata shapes (see docstrings of ``validate`` and ``make_synthetic_part``):
   search provider returned original page text, ``brave_snippet`` otherwise.
   ``source_type`` is ``government`` / ``official_media`` / ``disclosure`` /
   ``company`` — company-official URLs are permitted as evidence about *that
-  company* but are never elevated to government authority.
+  company* but are never elevated to government authority. When one complete
+  URL has multiple retrieval records, ``observations`` retains their original
+  metadata and each excerpt's character offset/length in the merged excerpt;
+  query variants stay separate while source floors still count canonical URLs.
 
 * ``companies`` (candidate pool): list of ``{"name", "url", "landing_status",
   "segment", "reason", "evidence_ref"}``.  ``evidence_ref`` binds the entity to
@@ -76,6 +79,7 @@ to satisfy a numeric floor.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import ipaddress
 import re
@@ -883,7 +887,9 @@ def assemble(stage_id, parts):
     text is concatenated with clear section separators; the metadata lists are
     merged preserving first-appearance order and deduplicated:
 
-    * ``evidence`` deduped by canonical ``url``;
+    * ``evidence`` merged by the complete retrieved ``url``, retaining each
+      original excerpt and retrieval observation; source floors still count
+      canonical URLs;
     * ``candidates`` / ``selected`` deduped by ``name``; later grounded
       research can improve existing fields without erasing known facts with
       unknown/empty placeholders;
@@ -986,6 +992,10 @@ def _merge_list(merged, key, value, company_sources=None):
     if not isinstance(value, list):
         merged[key] = value
         return
+    if key == 'evidence':
+        merged[key] = merge_evidence_records(
+            list(merged[key]) + value if isinstance(merged[key], list) else value)
+        return
     if key in ('candidates', 'selected'):
         out = list(merged[key]) if isinstance(merged[key], list) else []
         positions = {_dedupe_key(key, item): index for index, item in enumerate(out)
@@ -1013,6 +1023,83 @@ def _merge_list(merged, key, value, company_sources=None):
         if k is not None:
             seen.add(k)
     merged[key] = out
+
+
+def _evidence_observations(item):
+    """Recover original records from a merged excerpt without copying history."""
+    excerpt = item['excerpt']
+    observations = item.get('observations')
+    if isinstance(observations, list) and observations:
+        recovered = []
+        for observation in observations:
+            if not isinstance(observation, dict):
+                break
+            metadata = observation.get('metadata')
+            offset, length = observation.get('excerpt_offset'), observation.get('excerpt_length')
+            if (not isinstance(metadata, dict) or 'excerpt' in metadata
+                    or metadata.get('url') != item['url']
+                    or type(offset) is not int or type(length) is not int
+                    or offset < 0 or length <= 0 or offset + length > len(excerpt)):
+                break
+            recovered.append((copy.deepcopy(metadata), excerpt[offset:offset + length]))
+        else:
+            original_excerpts = list(dict.fromkeys(value for _, value in recovered))
+            if '\n\n'.join(original_excerpts) == excerpt:
+                return recovered
+    # An unrecognized observations field is original metadata, not generated
+    # history. Keep it just like any other unknown field.
+    return [(copy.deepcopy({key: value for key, value in item.items() if key != 'excerpt'}), excerpt)]
+
+
+def merge_evidence_records(items):
+    """Preserve excerpts and original metadata for each complete retrieved URL.
+
+    Query variants remain separate records. For one URL, each distinct excerpt
+    occurs once in the main ``excerpt``. ``observations`` stores the original
+    metadata and character offset/length needed to recover every original
+    excerpt, including different publication/retrieval fields. It never stores
+    another copy of the excerpt or nests previously generated observations.
+    Reassembling already merged evidence is idempotent and leaves inputs intact.
+    Invalid evidence remains visible to the existing contract validators.
+    """
+    groups, order = {}, []
+    for item in items:
+        url = item.get('url') if isinstance(item, dict) else None
+        excerpt = item.get('excerpt') if isinstance(item, dict) else None
+        if (not isinstance(url, str) or not isinstance(excerpt, str)
+                or not excerpt.strip() or excerpt.strip() == url.strip()
+                or normalize_url(url) is None or _validate_urls(url)):
+            order.append((False, copy.deepcopy(item)))
+            continue
+        if url not in groups:
+            groups[url] = []
+            order.append((True, url))
+        for observation in _evidence_observations(item):
+            if observation not in groups[url]:
+                groups[url].append(observation)
+
+    out = []
+    for is_group, entry in order:
+        if not is_group:
+            out.append(entry)
+            continue
+        records = groups[entry]
+        excerpts, offsets, length = [], {}, 0
+        for _, excerpt in records:
+            if excerpt not in offsets:
+                if excerpts:
+                    length += 2  # The separator is not part of either source excerpt.
+                offsets[excerpt] = length
+                excerpts.append(excerpt)
+                length += len(excerpt)
+        merged = copy.deepcopy(records[0][0])
+        merged['excerpt'] = '\n\n'.join(excerpts)
+        if len(records) > 1:
+            merged['observations'] = [
+                {'metadata': metadata, 'excerpt_offset': offsets[excerpt],
+                 'excerpt_length': len(excerpt)} for metadata, excerpt in records]
+        out.append(merged)
+    return out
 
 
 def _dedupe_key(key, item):
@@ -1050,6 +1137,7 @@ __all__ = [
     "validate",
     "make_synthetic_part",
     "assemble",
+    "merge_evidence_records",
     "extract_urls",
     "normalize_url",
     "canonical_url",

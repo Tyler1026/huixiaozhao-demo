@@ -15,6 +15,7 @@ Everything is offline: no network, no model, no store.
 """
 
 import copy
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -382,6 +383,92 @@ class SyntheticAndAssembleTests(unittest.TestCase):
         out = fc.assemble("summary", [p1, p2])
         urls = [x["url"] for x in out["metadata"]["evidence"]]
         self.assertEqual(urls, ["https://stats.gov.cn/t", "https://stats.gov.cn/t2"])
+
+
+class EvidenceObservationMergeTests(unittest.TestCase):
+    url = 'https://cninfo.com.cn/offline/source'
+
+    def record(self, excerpt, **metadata):
+        return {'url': self.url, 'title': 'OFFLINE source', 'excerpt': excerpt,
+                'published': '2026-01-01', 'retrieved_at': '2026-10-09T01:00:00Z',
+                'retrieval': 'exa_fulltext', 'source_type': 'disclosure', **metadata}
+
+    @staticmethod
+    def recover(record):
+        if 'observations' not in record:
+            return [record]
+        return [dict(observation['metadata'], excerpt=record['excerpt'][
+            observation['excerpt_offset']:observation['excerpt_offset'] + observation['excerpt_length']])
+                for observation in record['observations']]
+
+    def test_cross_part_same_url_keeps_each_excerpt_metadata_and_inputs(self):
+        old = self.record('首轮摘录仅含企业甲', custom={'original': ['字段保留']})
+        new = self.record('补轮摘录新增企业乙', title='补检标题', published='2026-09-01',
+                          retrieved_at='2026-10-09T02:00:00Z', retrieval='brave_snippet')
+        parts = [{'text': '首次完整正文', 'metadata': {'evidence': [old]}},
+                 {'text': '补齐完整正文', 'metadata': {'evidence': [new],
+                  'candidates': [{'name': '企业乙', 'url': self.url}]}}]
+        original = copy.deepcopy(parts)
+        out = fc.assemble('enterprises_1', parts)
+        self.assertEqual(parts, original)
+        self.assertEqual(len(out['metadata']['evidence']), 1)
+        record = out['metadata']['evidence'][0]
+        self.assertEqual(record['url'], self.url)
+        self.assertEqual(record['excerpt'], old['excerpt'] + '\n\n' + new['excerpt'])
+        self.assertEqual(self.recover(record), [old, new])
+        self.assertEqual(out['metadata']['candidates'][0]['url'], self.url)
+
+    def test_complete_query_urls_remain_recoverable_in_same_part(self):
+        first = self.record('实际查询一摘录', url=self.url + '?query=first')
+        second = self.record('实际查询二摘录', url=self.url + '?query=second')
+        result = fc.assemble('summary', [{'text': '正文', 'metadata': {
+            'evidence': [first, second, dict(first)]}}])
+        self.assertEqual(result['metadata']['evidence'], [first, second])
+        self.assertEqual(len({fc.canonical_url(item['url']) for item in result['metadata']['evidence']}), 1)
+
+    def test_same_excerpt_is_stored_once_with_all_original_observations(self):
+        first = self.record('一次存储的完整摘录' * 100)
+        second = self.record(first['excerpt'], title='不同标题', published='发布日期未知',
+                             retrieved_at='2026-10-09T02:00:00Z', retrieval='brave_snippet', extra='原未知字段')
+        result = fc.merge_evidence_records([first, second, first])[0]
+        self.assertEqual(result['excerpt'], first['excerpt'])
+        self.assertEqual(self.recover(result), [first, second])
+        self.assertEqual([observation['excerpt_offset'] for observation in result['observations']], [0, 0])
+        self.assertTrue(all('excerpt' not in observation['metadata'] for observation in result['observations']))
+
+    def test_repeated_assembly_is_idempotent_without_nested_or_growing_history(self):
+        first = self.record('首检原摘录' * 200)
+        second = self.record('补检原摘录' * 200, retrieved_at='2026-10-09T02:00:00Z')
+        part = {'text': '原正文', 'metadata': {'evidence': [first, second]}}
+        assembled = fc.assemble('summary', [part])
+        original = copy.deepcopy(assembled)
+        expected = json.dumps(assembled['metadata'], ensure_ascii=False, sort_keys=True)
+        for _ in range(20):
+            assembled = fc.assemble('summary', [assembled, part])
+            self.assertEqual(json.dumps(assembled['metadata'], ensure_ascii=False, sort_keys=True), expected)
+        self.assertEqual(fc.merge_evidence_records(original['metadata']['evidence']), original['metadata']['evidence'])
+        self.assertEqual(self.recover(assembled['metadata']['evidence'][0]), [first, second])
+        self.assertTrue(all('observations' not in item['metadata']
+                            for item in assembled['metadata']['evidence'][0]['observations']))
+
+    def test_query_variants_do_not_relax_distinct_source_or_two_source_gates(self):
+        records = fc.merge_evidence_records([
+            self.record('真实来源一摘录', url=self.url + '?query=first'),
+            self.record('同来源查询二摘录', url=self.url + '?query=second')])
+        metadata = {'evidence': records, 'checks': [{
+            'claim': 'OFFLINE核验主张', 'category': 'economic', 'year': '2026',
+            'source': records[0]['url'], 'cross_source': records[1]['url'], 'verdict': '待核实'}]}
+        self.assertTrue(any('distinct source URL' in error
+                            for error in fc._validate_evidence(True, metadata, False, 'economy')))
+        self.assertTrue(any('not independent' in error
+                            for error in fc._validate_checks('fact_check', metadata, False)))
+
+    def test_invalid_evidence_is_not_hidden_by_a_valid_same_url_record(self):
+        valid = self.record('有效原摘录')
+        invalid = self.record('')
+        records = fc.merge_evidence_records([valid, invalid])
+        self.assertEqual(records, [valid, invalid])
+        self.assertTrue(fc._validate_evidence(True, {'evidence': records}, True, 'economy'))
 
 
 class CompanyMetadataMergeTests(unittest.TestCase):
