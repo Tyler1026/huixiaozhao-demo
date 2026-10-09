@@ -273,6 +273,11 @@ class AdminInvitationTests(unittest.TestCase):
         self.assertEqual([[item['text'] for item in section['known']] for section in project['kb']],
                          [['public-base-' + str(i)] for i in range(4)])
         self.assertTrue(all(item['nature'] == 'base' for section in project['kb'] for item in section['known']))
+        for number, section in enumerate(project['kb']):
+            self.assertEqual(section['known'], [{
+                'text': 'public-base-' + str(number), 'nature': 'base', 'origin': 'ai',
+                'src': 'https://public.example.test/source-' + str(number),
+            }])
         self.assertNotIn('private-', json.dumps(project, ensure_ascii=False))
         self.assertEqual(self.store.state['PROJECTS'][result['invite']['projKey']], project)
         self.assertEqual(self.store.state['PROJECTS']['root-a'], original)
