@@ -798,7 +798,8 @@ class SelectedCompanyFactCheckTests(unittest.TestCase):
                 url = f'https://cninfo.com.cn/offline-company/{number}/{index}'
                 selected.append({'name': f'方向{number}精选企业{index}', 'evidence_ref': url,
                                  'expansion_evidence': f'已保存扩产信号{number}-{index}'})
-                evidence.append({'url': url, 'excerpt': f'OFFLINE saved disclosure {number}-{index}',
+                evidence.append({'url': url, 'excerpt': f'OFFLINE saved disclosure {number}-{index}；'
+                                 f'方向{number}精选企业{index}于2026年披露的具体扩产信号；已保存扩产信号{number}-{index}。',
                                  'source': 'cninfo.com.cn', 'retrieval': 'exa_fulltext'})
             prior[f'enterprises_{number}'] = {'text': f'方向{number}前序完整报告',
                 'metadata': {'selected': selected, 'evidence': evidence}}
@@ -856,12 +857,16 @@ class SelectedCompanyFactCheckTests(unittest.TestCase):
         text = '\n'.join(f'核验分析{i}' for i in range(80))
         payload = {'text': text, 'checks': [
             {'claim': '方向1精选企业0扩产信号', 'source': source, 'cross_source': cross,
-             'category': 'high_star', 'direction': 'dir1', 'verdict': '待核实'},
+             'category': 'high_star', 'direction': 'dir1', 'verdict': '待核实',
+             'company_name': '方向1精选企业0',
+             'source_quote': '方向1精选企业0于2026年披露的具体扩产信号',
+             'cross_source_quote': '方向1精选企业0扩产信号已于2026年披露。'},
             {'claim': '同一网页不能交叉核验', 'source': source, 'cross_source': source,
              'category': 'high_star', 'direction': 'dir1'},
         ]}
         router = RecordingRouter({
-            'exa.ai/search': (200, json.dumps({'results': [{'url': cross, 'text': 'OFFLINE cross excerpt'}]})),
+            'exa.ai/search': (200, json.dumps({'results': [{'url': cross, 'text':
+                'OFFLINE cross excerpt；方向1精选企业0扩产信号已于2026年披露。'}]})),
             'chat/completions': (200, json.dumps({'choices': [{'message': {'content': json.dumps(payload)}}]})),
         })
         p = self._provider(router)
@@ -904,11 +909,15 @@ class SelectedCompanyFactCheckTests(unittest.TestCase):
             'source': prior[f'enterprises_{number}']['metadata']['evidence'][0]['url'],
             'cross_source': cross, 'year': '2026', 'verdict': '两源口径不同，待核实',
             'category': 'high_star', 'direction': f'dir{number}',
+            'company_name': f'方向{number}精选企业0',
+            'source_quote': f'方向{number}精选企业0于2026年披露的具体扩产信号',
+            'cross_source_quote': f'方向{number}精选企业0于2026年披露的具体扩产信号',
         } for number in (1, 2, 3)]
         payload = {'text': '\n'.join(f'本批信号核验简短要点{i}' for i in range(20)),
                    'checks': checks}
         router = RecordingRouter({
-            'exa.ai/search': (200, json.dumps({'results': [{'url': cross, 'text': 'OFFLINE完整交叉核验摘录'}]})),
+            'exa.ai/search': (200, json.dumps({'results': [{'url': cross, 'text':
+                'OFFLINE完整交叉核验摘录\n' + '\n'.join(check['cross_source_quote'] for check in checks)}]})),
             'chat/completions': (200, json.dumps({'choices': [{'finish_reason': 'stop',
                 'message': {'content': json.dumps(payload)}}]})),
         })
@@ -925,13 +934,17 @@ class SelectedCompanyFactCheckTests(unittest.TestCase):
             self.assertIn(instruction, prompt)
 
     def test_check_prompt_compression_preserves_unavailable_flags_and_other_part_budgets(self):
-        payload = {'text': '\n'.join(f'缺口核验简短要点{i}' for i in range(20)), 'checks': [],
-                   'high_star_unavailable': True, 'high_star_note': 'dir2缺少2026年独立交叉来源'}
         for part, budget in (('五星企业信号', 16000), ('经济关键数字', 16000), ('政策金额', 16000)):
             with self.subTest(part=part):
+                category, count = {'经济关键数字': ('economic', 9), '政策金额': ('policy', 3),
+                                   '五星企业信号': ('high_star', 0)}[part]
+                checks = FactCheckPartCommitGateTests._checks(category, count)
+                payload = {'text': '\n'.join(f'缺口核验简短要点{i}' for i in range(20)), 'checks': checks,
+                           'high_star_unavailable': True, 'high_star_note': 'dir2缺少2026年独立交叉来源'}
                 router = RecordingRouter({
                     'exa.ai/search': (200, json.dumps({'results': [
-                        {'url': 'https://stats.gov.cn/offline-check', 'text': 'OFFLINE实际核查摘录'}]})),
+                        {'url': url, 'text': 'OFFLINE核查摘录；' + '；'.join(c['claim'] for c in checks)}
+                        for url in FactCheckPartCommitGateTests.URLS]})),
                     'chat/completions': (200, json.dumps({'choices': [{'message': {'content': json.dumps(payload)}}]})),
                 })
                 prior = self._prior()
@@ -943,6 +956,203 @@ class SelectedCompanyFactCheckTests(unittest.TestCase):
                 chat = json.loads(next(call for call in router.calls if 'chat/completions' in call.full_url).data)
                 self.assertEqual(chat['max_tokens'], budget)
                 self.assertIn('本次JSON只含text、checks', chat['messages'][-1]['content'])
+
+
+class FactCheckPartCommitGateTests(unittest.TestCase):
+    _provider = LiveProviderRuntimeTests._provider
+    URLS = ('https://stats.gov.cn/offline-check', 'https://www.gov.cn/offline-check')
+
+    @classmethod
+    def _checks(cls, category, count):
+        return [{'claim': f'OFFLINE不同核验主张{index}', 'category': category,
+                 'direction': None, 'source': cls.URLS[0], 'cross_source': cls.URLS[1],
+                 'year': '2026', 'verdict': '两源口径不同，待核实'} for index in range(count)]
+
+    def _run(self, part, checks):
+        payload = {'text': '\n'.join(f'OFFLINE本批具体核查事项{i}' for i in range(20)), 'checks': checks}
+        router = RecordingRouter({
+            'exa.ai/search': (200, json.dumps({'results': [
+                {'url': url, 'text': 'OFFLINE实际摘录；' + '；'.join(check['claim'] for check in checks)}
+                for url in self.URLS]})),
+            'chat/completions': (200, json.dumps({'choices': [{'message': {'content': json.dumps(payload)}}]})),
+        })
+        # A prior batch's records cannot fill the current batch's missing quota.
+        prior = {'fact_check': {'text': '\n'.join(f'OFFLINE已保存经济核查事项{i}' for i in range(40)),
+                                'metadata': {'checks': self._checks('economic', 12), 'evidence': []}}}
+        before = copy.deepcopy(prior)
+        try:
+            return self._provider(router).run_part('fact_check', part, {'city': 'OFFLINE测试城'}, prior)
+        finally:
+            self.assertEqual(prior, before)
+
+    def test_minimum_grounded_batches_return_all_original_checks(self):
+        for part, category, minimum in (('经济关键数字', 'economic', 9), ('政策金额', 'policy', 3)):
+            with self.subTest(part=part):
+                checks = self._checks(category, minimum)
+                result = self._run(part, checks)
+                self.assertEqual(result['metadata']['checks'], checks)
+                self.assertEqual(len(result['metadata']['evidence']), 2)
+
+    def test_below_floor_empty_and_wrong_categories_fail_before_return(self):
+        for part, category, minimum, wrong in (('经济关键数字', 'economic', 9, 'policy'),
+                                              ('政策金额', 'policy', 3, 'economic')):
+            for checks in ([], self._checks(category, minimum - 1), self._checks(wrong, 12)):
+                with self.subTest(part=part, count=len(checks)):
+                    with self.assertRaises(fp.FullProviderError) as failure:
+                        self._run(part, checks)
+                    self.assertEqual(failure.exception.failure_code, 'quality')
+                    self.assertIn(f'fact_check part {category} checks', str(failure.exception))
+
+    def test_duplicate_grounded_checks_cannot_fill_policy_or_economic_floor(self):
+        for part, category, minimum in (('经济关键数字', 'economic', 9), ('政策金额', 'policy', 3)):
+            with self.subTest(part=part):
+                checks = self._checks(category, minimum - 1)
+                checks.append(dict(checks[0], claim='  ' + checks[0]['claim'] + '  '))
+                with self.assertRaises(fp.FullProviderError) as failure:
+                    self._run(part, checks)
+                self.assertEqual(failure.exception.failure_code, 'quality')
+
+    def test_unbound_or_same_source_checks_do_not_count_after_grounding(self):
+        for part, category, minimum in (('经济关键数字', 'economic', 9), ('政策金额', 'policy', 3)):
+            for bad_url in ('https://stats.gov.cn/not-retrieved', self.URLS[0]):
+                with self.subTest(part=part, bad_url=bad_url):
+                    checks = self._checks(category, minimum)
+                    checks[-1]['cross_source'] = bad_url
+                    with self.assertRaises(fp.FullProviderError) as failure:
+                        self._run(part, checks)
+                    self.assertEqual(failure.exception.failure_code, 'quality')
+
+
+class HighStarEntityQuoteGateTests(unittest.TestCase):
+    _provider = LiveProviderRuntimeTests._provider
+
+    @staticmethod
+    def _case(name='已精选测试企业', subject=None):
+        subject = name if subject is None else subject
+        source = 'https://cninfo.com.cn/offline/company-disclosure?document=1'
+        cross = 'https://stats.gov.cn/offline/company-project'
+        source_quote = f'{subject}于2026年披露新建项目。'
+        cross_quote = f'{subject}的新建项目仍需核实实际投产时间。'
+        evidence = [{'url': source, 'excerpt': 'OFFLINE原披露：' + source_quote},
+                    {'url': cross, 'excerpt': 'OFFLINE独立来源：' + cross_quote}]
+        check = {'claim': f'{subject}于2026年披露新建项目，投产时间待核实',
+                 'source': source, 'cross_source': cross, 'category': 'high_star',
+                 'direction': 'dir1', 'year': '2026', 'verdict': '待核实',
+                 'company_name': name, 'source_quote': source_quote,
+                 'cross_source_quote': cross_quote}
+        prior = {'enterprises_1': {'metadata': {'selected': [{'name': name}]}}}
+        return prior, evidence, check
+
+    def _ground(self, prior, evidence, check):
+        return self._provider(RecordingRouter({}))._build_metadata(
+            'fact_check', '五星企业信号', 'OFFLINE测试城', evidence,
+            {'checks': [check]}, prior)['checks']
+
+    def test_exact_selected_entity_and_two_literal_quotes_preserve_support_without_mutation(self):
+        prior, evidence, check = self._case()
+        original = copy.deepcopy((prior, evidence, check))
+        self.assertEqual(self._ground(prior, evidence, check), [check])
+        self.assertEqual((prior, evidence, check), original)
+        # Literal subject/quote support does not certify the entire claim:
+        # the returned verdict deliberately remains honest and unresolved.
+        self.assertEqual(self._ground(prior, evidence, check)[0]['verdict'], '待核实')
+
+    def test_missing_or_nonliteral_support_does_not_ground_high_star(self):
+        prior, evidence, check = self._case()
+        for field in ('company_name', 'source_quote', 'cross_source_quote'):
+            with self.subTest(missing=field):
+                incomplete = dict(check)
+                incomplete.pop(field)
+                self.assertEqual(self._ground(prior, evidence, incomplete), [])
+        for field in ('source_quote', 'cross_source_quote'):
+            with self.subTest(nonliteral=field):
+                invented = dict(check, **{field: '已精选测试企业已投产，此句未出现在检索摘录。'})
+                self.assertEqual(self._ground(prior, evidence, invented), [])
+
+    def test_unselected_alias_and_wrong_direction_are_not_exact_target_pairs(self):
+        prior, evidence, check = self._case()
+        for changed in (dict(check, company_name='未精选测试企业'),
+                        dict(check, company_name='已精选测试企业简称'),
+                        dict(check, direction='dir2')):
+            with self.subTest(company=changed['company_name'], direction=changed['direction']):
+                self.assertEqual(self._ground(prior, evidence, changed), [])
+
+    def test_actual_aisen_xinhua_cross_entity_mismatch_is_not_grounded(self):
+        # Minimal verbatim snippets from the frozen real Suzhou bundle. Both
+        # URLs and quotes were retrieved, but the cross source concerns Xinhua.
+        name = '江苏艾森半导体材料股份有限公司'
+        source = 'https://paper.cnstock.com/html/2026-01/28/content_2174852.htm'
+        cross = 'https://www.news.cn/finance/20260227/8b2ca6965c1f4680b426cbdc4ecd9466/c.html'
+        source_quote = name + ' 第三届董事会第二十二次会议决议公告'
+        wrong_quote = '江苏鑫华半导体科技股份有限公司（简称：鑫华科技）科创板IPO获受理，公司拟募资13.2亿元。'
+        evidence = [{'url': source, 'excerpt': source_quote}, {'url': cross, 'excerpt': wrong_quote}]
+        check = {'claim': name + '拟在南通市经济技术开发区设立全资子公司投资建设艾森集成电路材料华东制造基地项目，预计项目总投资20亿元',
+                 'source': source, 'cross_source': cross, 'category': 'high_star',
+                 'direction': 'dir1', 'year': '2026', 'verdict': '待核实',
+                 'company_name': name, 'source_quote': source_quote,
+                 'cross_source_quote': wrong_quote}
+        prior = {'enterprises_1': {'metadata': {'selected': [{'name': name}]}}}
+        self.assertNotEqual(fc.canonical_url(source), fc.canonical_url(cross))
+        self.assertIn(source_quote, evidence[0]['excerpt'])
+        self.assertIn(wrong_quote, evidence[1]['excerpt'])
+        self.assertNotIn(name, wrong_quote)
+        self.assertEqual(self._ground(prior, evidence, check), [])
+
+    def test_only_trailing_numeric_stock_labels_may_be_omitted_in_quotes(self):
+        subject = '已精选测试企业'
+        for suffix in ('（688720.SH）', '(000001.SZ)', '(0700.HK)', '(600000)'):
+            with self.subTest(stock_label=suffix):
+                prior, evidence, check = self._case(subject + suffix, subject)
+                self.assertEqual(self._ground(prior, evidence, check), [check])
+        prior, evidence, check = self._case(subject + '(Suzhou)', subject)
+        self.assertEqual(self._ground(prior, evidence, check), [])
+        # A non-stock suffix remains part of the exact entity, and is supported
+        # when the claim and both original quotes actually include it.
+        prior, evidence, check = self._case(subject + '(Suzhou)')
+        self.assertEqual(self._ground(prior, evidence, check), [check])
+
+    def test_query_variant_does_not_displace_actual_source_quote(self):
+        prior, evidence, check = self._case()
+        variant = {'url': evidence[0]['url'].replace('document=1', 'document=2'),
+                   'excerpt': 'OFFLINE另一次查询只摘录其他企业，不能覆盖先前目标引句。'}
+        self.assertEqual(fc.canonical_url(variant['url']), fc.canonical_url(evidence[0]['url']))
+        evidence.insert(1, variant)
+        original = copy.deepcopy(evidence)
+        self.assertEqual(self._ground(prior, evidence, check), [check])
+        self.assertEqual(evidence, original)
+
+    def test_same_actual_url_merged_observations_preserve_original_quote(self):
+        prior, evidence, check = self._case()
+        evidence = fc.merge_evidence_records(evidence + [
+            {'url': evidence[0]['url'], 'excerpt': 'OFFLINE同实际URL另一次摘录，未重述目标项目。',
+             'published': '发布日期未知', 'retrieved_at': '2026-10-09T00:00:00Z'}])
+        original = copy.deepcopy(evidence)
+        self.assertEqual(self._ground(prior, evidence, check), [check])
+        self.assertEqual(evidence, original)
+
+    def test_quote_cannot_be_assembled_across_distinct_original_observations(self):
+        prior, evidence, check = self._case()
+        source = evidence[0]['url']
+        evidence = fc.merge_evidence_records([
+            {'url': source, 'excerpt': '已精选测试企业于2026年'},
+            {'url': source, 'excerpt': '披露新建项目。'},
+            evidence[1],
+        ])
+        # Whitespace normalization would join these two distinct original
+        # snippets into the model's quote, which never appeared in either one.
+        self.assertIn(check['source_quote'], evidence[0]['excerpt'].replace('\n', ''))
+        self.assertEqual(self._ground(prior, evidence, check), [])
+
+    def test_economic_policy_checks_keep_two_source_support_without_company_quote_fields(self):
+        _, evidence, signal = self._case()
+        checks = [{key: value for key, value in signal.items()
+                   if key not in {'company_name', 'source_quote', 'cross_source_quote'}}
+                  for _ in range(2)]
+        for check, category in zip(checks, ('economic', 'policy')):
+            check.update(category=category, direction=None)
+        metadata = self._provider(RecordingRouter({}))._build_metadata(
+            'fact_check', '经济关键数字', 'OFFLINE测试城', evidence, {'checks': checks}, {})
+        self.assertEqual(metadata['checks'], checks)
 
 
 class ScoringIdentityGateTests(unittest.TestCase):

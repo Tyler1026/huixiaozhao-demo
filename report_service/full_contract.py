@@ -689,6 +689,44 @@ def _validate_companies(stage_id, meta, synthetic, mode='standard'):
     return errors
 
 
+def fact_check_part_errors(part, meta):
+    """Check new economic/policy batches before their checkpoint is saved.
+
+    The economic batch must supply the checks needed when high-star evidence
+    is unavailable. Historical whole-stage validation keeps its existing
+    floors; callers repairing old checkpoints should only apply the policy
+    batch floor. Count the same claim/category/direction identity used by the
+    whole-stage contract, without changing or discarding any input records.
+    """
+    required = {
+        '经济关键数字': ('economic', MIN_CHECKS - MIN_POLICY_CHECKS),
+        '政策金额': ('policy', MIN_POLICY_CHECKS),
+    }.get(part)
+    if required is None:
+        return []
+    category, minimum = required
+    checks = meta.get('checks') if isinstance(meta, dict) else None
+    if not isinstance(checks, list):
+        return ["fact_check part metadata 'checks' must be a list"]
+    identities = set()
+    for entry in checks:
+        if not isinstance(entry, dict) or entry.get('category') != category:
+            continue
+        claim = str(entry.get('claim', '')).strip()
+        if not claim:
+            continue
+        identity = (claim, entry.get('category'), entry.get('direction'))
+        try:
+            identities.add(identity)
+        except TypeError:
+            # Invalid structured identities cannot satisfy the minimum.
+            continue
+    count = len(identities)
+    if count < minimum:
+        return [f'fact_check part {category} checks {count} < {minimum}']
+    return []
+
+
 def _validate_checks(stage_id, meta, synthetic):
     errors = []
     checks = meta.get("checks")
@@ -1140,7 +1178,7 @@ def _dedupe_key(key, item):
     if key in ("candidates", "selected", "scores"):
         return item.get("name")
     if key == "checks":
-        return item.get("claim")
+        return (str(item.get('claim', '')).strip(), item.get('category'), item.get('direction'))
     return None
 
 
@@ -1165,6 +1203,7 @@ __all__ = [
     "get_stage",
     "minimum_evidence_urls",
     "validate",
+    "fact_check_part_errors",
     "make_synthetic_part",
     "assemble",
     "merge_evidence_records",

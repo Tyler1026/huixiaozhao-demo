@@ -25,13 +25,18 @@ class StructuredTransport:
             results=[]
             for i in range(8):
                 source=f'https://stats.gov.cn/fixture/{digest}/{i}'
-                results.append({'url':source,'title':'OFFLINE FIXTURE','text':'OFFLINE FIXTURE '+ ' '.join(f'测试企业{n}' for n in range(25))+' 经济政策扩产资料；不是事实。','publishedDate':'2026-09-01'})
+                results.append({'url':source,'title':'OFFLINE FIXTURE','text':'OFFLINE FIXTURE '+ ' '.join(f'测试企业{n}' for n in range(25))+' 经济政策扩产资料；不是事实。\n'+
+                                '\n'.join(self.signal_quote(n) for n in range(5)), 'publishedDate':'2026-09-01'})
                 self.sources.append(source)
             return Response(url, {'results':results})
         text=payload['messages'][-1]['content']
         stage=re.search(r'当前阶段：([^\n]+)',text).group(1)
         part=re.search(r'当前子章节：([^\n]+)',text).group(1)
         refs=list(dict.fromkeys(self.sources))[-8:]
+        if stage=='fact_check':
+            # Targeted company searches retain only their accepted sources;
+            # the offline model must cite URLs actually present in its prompt.
+            refs=re.findall(r'^\[\d+\].*? — (https://[^\s（]+)（发布日期：',text,re.MULTILINE)
         data={'text':'\n'.join(f'OFFLINE FIXTURE {stage}/{part} 分析条目{i}，不是实际研究。' for i in range(100))+'\n'+'\n'.join(refs)}
         if stage.startswith('enterprises'):
             # Small entity batches exercise real parsing, accumulation and evidence references.
@@ -41,8 +46,13 @@ class StructuredTransport:
             if part.startswith('扩产信号'):
                 data['selected']=[self.company(n,refs[n%len(refs)]) for n in range(batch*5,min(batch*5+5,15))]
         elif stage=='fact_check':
-            count,category=(5,'economic') if part=='经济关键数字' else ((3,'policy') if part=='政策金额' else (9,'high_star'))
-            data['checks']=[{'claim':f'{category}离线测试{i}','source':refs[i%8],'cross_source':refs[(i+1)%8],'year':'2026','verdict':'待核实','category':category,'direction':f'dir{i//3+1}' if category=='high_star' else None} for i in range(count)]
+            count,category=(9,'economic') if part=='经济关键数字' else ((3,'policy') if part=='政策金额' else (5,'high_star'))
+            data['checks']=[{'claim':self.signal_quote(i) if category=='high_star' else f'{category}离线测试{i}',
+                            'source':refs[i%8],'cross_source':refs[(i+1)%8],'year':'2026','verdict':'待核实',
+                            'category':category,'direction':f'dir{i%3+1}' if category=='high_star' else None,
+                            **({'company_name':f'测试企业{i}','source_quote':self.signal_quote(i),
+                                'cross_source_quote':self.signal_quote(i)} if category=='high_star' else {})}
+                           for i in range(count)]
         elif stage=='scoring':
             prefix='本次评分唯一身份名单（name和direction须逐项精确保留）：'
             targets=json.loads(next(line[len(prefix):] for line in text.splitlines() if line.startswith(prefix)))
@@ -55,6 +65,9 @@ class StructuredTransport:
     @staticmethod
     def company(n,url):
         return {'name':f'测试企业{n}','url':url,'evidence_ref':url,'landing_status':'待核实','segment':'离线测试环节','reason':'测试理由','expansion_evidence':'待核实','expansion_date':'2026-09-01','rationale':'测试匹配','uncertainty':'OFFLINE FIXTURE'}
+    @staticmethod
+    def signal_quote(n):
+        return f'测试企业{n}在2026年披露OFFLINE扩产信号{n}；仅供协议测试，不是实际事实。'
 
 
 def provider(transport):
@@ -118,11 +131,22 @@ class LiveProtocolAcceptance(unittest.TestCase):
 
     def test_independent_check_parts_are_not_empty_metadata(self):
         router=StructuredTransport(); p=provider(router); parts=[]
+        prior={f'enterprises_{direction}': {'text': f'OFFLINE方向{direction}已保存精选记录', 'metadata': {
+            'selected': [{'name': f'测试企业{i}'} for i in range(5) if i%3+1==direction]}}
+            for direction in (1,2,3)}
         for part in get_stage('fact_check')['parts']:
-            parts.append(p.run_part('fact_check',part,{'city':'测试城'},{}))
+            result=p.run_part('fact_check',part,{'city':'测试城'},prior)
+            parts.append(result)
+            prior['fact_check']=assemble('fact_check',parts)
+            category,minimum={'经济关键数字': ('economic',9),'政策金额': ('policy',3),
+                              '五星企业信号': ('high_star',5)}[part]
+            self.assertEqual(len(result['metadata']['checks']),minimum)
+            self.assertTrue(all(check['category']==category for check in result['metadata']['checks']))
         out=assemble('fact_check',parts)
         self.assertEqual(validate('fact_check',out['text'],out['metadata']),[])
         self.assertEqual(len(out['metadata']['checks']),17)
+        self.assertEqual({check['direction'] for check in out['metadata']['checks']
+                          if check['category']=='high_star'}, {'dir1','dir2','dir3'})
 
     def test_full_dependency_text_is_not_truncated_at_six_thousand(self):
         p=provider(StructuredTransport())

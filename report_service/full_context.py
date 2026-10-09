@@ -98,9 +98,11 @@ def _decision_view(prior, stage_id, part):
                     '评分研究正文保留在原报告中。',
             'metadata': copy.deepcopy(_metadata(prior['scoring'])),
         }
+    # Summaries must see original eligibility conditions directly, rather than
+    # relying on an action/summary intermediary that may omit a policy threshold.
     dependencies = {'action': ('chain', 'policy'),
-                    'summary': ('economy', 'chain', 'action'),
-                    'compact': ('summary', 'chain', 'action')}
+                    'summary': ('economy', 'chain', 'action', 'policy'),
+                    'compact': ('summary', 'chain', 'action', 'policy')}
     _keep(view, prior, *dependencies[stage_id], stage_id)
     return view
 

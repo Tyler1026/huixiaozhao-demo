@@ -144,8 +144,9 @@ class FullLiveProvider:
     and bounds it in Python:
     """
 
-    # The worker may archive/rewind an existing checkpoint only after proving
-    # its saved source URLs or excerpts violate the unchanged live contract.
+    # Existing fenced recovery may archive/rewind checkpoints with invalid
+    # saved sources or a policy-check batch below the required quota. The
+    # whole-stage contract and other saved fact-check batches remain intact.
     repair_invalid_checkpoints = True
 
     def __init__(self, live_provider):
@@ -235,6 +236,10 @@ class FullLiveProvider:
             metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior)
         if stage_id.startswith('enterprises_'):
             self._validate_company_part(part, metadata, previous)
+        if stage_id == 'fact_check':
+            errors = contract.fact_check_part_errors(part, metadata)
+            if errors:
+                raise FullProviderError('; '.join(errors), 'quality')
         if stage_id == 'industry':
             saved = previous.get('metadata', {}).get('directions')
             if saved and [(d['id'], d['name']) for d in saved] != [(d['id'], d['name']) for d in metadata['directions']]:
@@ -834,6 +839,16 @@ class FullLiveProvider:
                                '前序结构化实体若使用fields和rows，fields是列名，rows每行按相同列顺序保留一条完整记录，所有字段值均未删减。'
                                '正文每行只写一个简短、具体的结论、行动或核查事项，避免逐字段复述企业档案和评分；'
                                '仍须保留任务所需章节、关键来源、年份及不确定性，未知信息不能写成事实。')
+            user_blocks.append('凡提到政策支持比例或金额，必须同时保留原政策适用对象、投资规模门槛、申报窗口和有效期；'
+                               '省略这些条件会改变政策含义，禁止把最高补贴写成普遍可获得的奖励。'
+                               '对具体企业或项目建议申报前，要逐项核对其是否满足原政策门槛，条件未知写待核实，'
+                               '金额低于门槛不得推荐该项政策。正文不出现dir1/dir2/dir3、selected等内部字段，'
+                               '用已确定产业方向的中文名称；标题和正文不描述模型流程或内部步骤。'
+                               '行政范围以目标城市为准；同省、都市圈或区域已布局不等于本市已落地，'
+                               '邻市企业只能标为周边协同或外地对标，不列入本市存量企业。'
+                               '行动分开列本市存量企业服务与外地潜在招引；企业已在外地扩产不等于不具备本市招引潜力，'
+                               '不得仅因外地布局就一概排除接触。外地企业的本市投资意愿、选址需求和适配条件未知时，'
+                               '列为待核验的对接假设，并说明具体核查事项，不能写成已经落地或确定投资。')
         if stage_id == 'scoring':
             user_blocks.append('本次JSON只含text和scores；不回传candidates、selected、checks、directions或完整企业档案。'
                                'scores完整保留当前本批全部企业的精确name和direction，禁止遗漏或复制前批身份。'
@@ -862,6 +877,10 @@ class FullLiveProvider:
             if part == '五星企业信号':
                 user_blocks.append('本次每方向优先只核验1条最有实际两源支持的已精选企业信号，最多3条high_star记录即可覆盖方向。'
                                    '保留企业精确名称、具体信号、年份和两源URL；不为覆盖数量追加没有双源支持的信号。'
+                                   '每条high_star还必须有company_name（完整已精选名称）、source_quote和cross_source_quote。'
+                                   '两个quote分别是对应来源中支持同一企业同一主张的简短原文，必须逐字出自给定摘录，'
+                                   '包含company_name；只有名称末尾的股票代码括号可以不在引文中。'
+                                   '其他企业的报道、仅行业背景或没有该企业完整名称的摘录不能作为第二来源。'
                                    '某方向无法交叉核验时如实设置high_star_unavailable=true，并在high_star_note简述缺口。')
         if stage_id.startswith('enterprises_'):
             user_blocks.append('本次JSON只含text、candidates、selected三个字段；正文用独立简洁要点，'
@@ -972,7 +991,7 @@ class FullLiveProvider:
             meta["candidates"] = self._ground_companies(stage_id, parsed.get("candidates"), evidence)
             meta["selected"] = self._ground_companies(stage_id, parsed.get("selected"), evidence)
         elif stage_id == "fact_check":
-            meta["checks"] = self._ground_checks(stage_id, parsed.get("checks"), evidence)
+            meta["checks"] = self._ground_checks(stage_id, parsed.get("checks"), evidence, prior=prior)
             if parsed.get("high_star_unavailable") is True:
                 meta["high_star_unavailable"] = True
                 meta["high_star_note"] = parsed.get("high_star_note", "")
@@ -1025,7 +1044,7 @@ class FullLiveProvider:
             out.append(entry)
         return out
 
-    def _ground_checks(self, stage_id, raw, evidence):
+    def _ground_checks(self, stage_id, raw, evidence, *, prior=None):
         """Bind checks to two independent evidence sources.
 
         ``source`` / ``cross_source`` must resolve to distinct retrieved evidence
@@ -1033,6 +1052,16 @@ class FullLiveProvider:
         dropped (insufficient evidence is reported by under-count, not invented).
         """
         assoc = self._assoc(evidence)
+        selected_pairs = set()
+        for number in (1, 2, 3):
+            previous = (prior or {}).get(f'enterprises_{number}', {}) if isinstance(prior, dict) else {}
+            metadata = previous.get('metadata', {}) if isinstance(previous, dict) else {}
+            if not isinstance(metadata, dict):
+                continue
+            selected = metadata.get('selected', [])
+            for company in selected if isinstance(selected, list) else []:
+                if isinstance(company, dict) and isinstance(company.get('name'), str):
+                    selected_pairs.add((company['name'], f'dir{number}'))
         out = []
         if not isinstance(raw, list):
             return out
@@ -1051,6 +1080,40 @@ class FullLiveProvider:
             category = item.get("category")
             if category not in ("economic", "policy", "high_star"):
                 continue
+            support = {}
+            if category == 'high_star' and prior is not None:
+                company_name = item.get('company_name')
+                direction = item.get('direction')
+                if (not isinstance(company_name, str) or not isinstance(direction, str)
+                        or (company_name, direction) not in selected_pairs):
+                    continue
+                # Only a trailing stock-market label may be omitted in source
+                # prose. Do not infer brand aliases or accept another entity.
+                subject = re.sub(r'[（(]\s*\d{4,6}(?:\.[A-Za-z]{2,4})?\s*[）)]$', '', company_name).strip()
+                normalize = lambda value: re.sub(r'\s+', '', value) if isinstance(value, str) else ''
+                subject = normalize(subject)
+                if not subject or subject not in normalize(claim):
+                    continue
+                quotes = [(key, url, item.get(key)) for key, url in
+                          (('source_quote', source), ('cross_source_quote', cross))]
+                def matches_quote(url, quote):
+                    value = normalize(quote)
+                    if not value or subject not in value:
+                        return False
+                    sources = [record for record in evidence if isinstance(record, dict)
+                               and canonical_url(record.get('url')) == canonical_url(url)]
+                    exact = [record for record in sources if record.get('url') == url]
+                    for record in exact or sources:
+                        if not isinstance(record.get('excerpt'), str):
+                            continue
+                        if any(value in normalize(excerpt)
+                               for _, excerpt in contract._evidence_observations(record)):
+                            return True
+                    return False
+                if any(not matches_quote(url, quote) for _, url, quote in quotes):
+                    continue
+                support = {'company_name': company_name,
+                           **{key: quote for key, _, quote in quotes}}
             out.append({
                 "claim": claim,
                 "source": source,
@@ -1059,6 +1122,7 @@ class FullLiveProvider:
                 "verdict": item.get("verdict") or "待核实",
                 "category": category,
                 "direction": item.get("direction") if category == "high_star" else None,
+                **support,
             })
         return out
 
@@ -1149,8 +1213,8 @@ _RELEVANT_PRIOR = {
     "fact_check": {"economy", "industry", "policy", "chain", "enterprises_1", "enterprises_2", "enterprises_3"},
     "scoring": {"industry", "chain", "enterprises_1", "enterprises_2", "enterprises_3", "fact_check", "policy"},
     "action": {"industry", "scoring", "chain", "enterprises_1", "enterprises_2", "enterprises_3", "policy"},
-    "summary": {'economy', 'industry', 'chain', 'scoring', 'action', 'enterprises_1', 'enterprises_2', 'enterprises_3'},
-    "compact": {'summary', 'industry', 'chain', 'scoring', 'action', 'enterprises_1', 'enterprises_2', 'enterprises_3'},
+    "summary": {'economy', 'industry', 'chain', 'policy', 'scoring', 'action', 'enterprises_1', 'enterprises_2', 'enterprises_3'},
+    "compact": {'summary', 'industry', 'chain', 'policy', 'scoring', 'action', 'enterprises_1', 'enterprises_2', 'enterprises_3'},
     "enterprises_1": {"industry", "chain", "policy"},
     "enterprises_2": {"industry", "chain", "policy"},
     "enterprises_3": {"industry", "chain", "policy"},

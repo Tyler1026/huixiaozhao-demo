@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from report_service.full_store import FullStore, Conflict
+from report_service.full_store import FullStore, Conflict, _checkpoint_issue
 
 STAGES = ({'id': 'one', 'filename': 'one.md', 'parts': ('a', 'b')},
           {'id': 'two', 'filename': 'two.md', 'parts': ('a',)})
@@ -257,6 +257,120 @@ class FullStoreTests(unittest.TestCase):
         with self.assertRaises(sqlite3.IntegrityError):
             self.store.repair_invalid_checkpoints(owned['step_id'], owned['token'])
         self.assertEqual(self._repair_snapshot(), before)
+
+
+class PolicyCheckpointRecoveryTests(unittest.TestCase):
+    STAGES = ({'id': 'fact_check', 'filename': 'checks.md',
+               'parts': ('经济关键数字', '政策金额', '五星企业信号')},)
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.clock = Clock()
+        self.store = FullStore(Path(self.tmp.name) / 'policy.db', stages=self.STAGES,
+                               clock=self.clock, backoff=(0, 0))
+        self.report = self.store.create('offline-test', '测试省', '测试区', 'policy-cache', False)
+
+    @staticmethod
+    def _output(category, count):
+        return {'text': 'OFFLINE FIXTURE — NOT REAL RESEARCH ' + category,
+                'metadata': {'evidence': [
+                    {'url': 'https://stats.gov.cn/offline-source', 'excerpt': 'OFFLINE first excerpt'},
+                    {'url': 'https://stats.gov.cn/offline-cross', 'excerpt': 'OFFLINE second excerpt'}],
+                    'checks': [{'claim': f'OFFLINE {category} claim {i}', 'category': category,
+                                'direction': f'dir{i + 1}' if category == 'high_star' else None,
+                                'source': 'https://stats.gov.cn/offline-source',
+                                'cross_source': 'https://stats.gov.cn/offline-cross',
+                                'year': '2026', 'verdict': 'OFFLINE fixture'} for i in range(count)]}}
+
+    def _commit(self, policy_count=0, economic_count=12):
+        for output in (self._output('economic', economic_count),
+                       self._output('policy', policy_count), self._output('high_star', 3)):
+            job = self.store.claim(synthetic=False)
+            self.clock.advance(1)
+            self.assertTrue(self.store.finish_part(job['step_id'], job['token'], output))
+        active = self.store.claim(synthetic=False)
+        self.clock.advance(2)
+        return active
+
+    def _snapshot(self):
+        with self.store.db() as c:
+            return {
+                'report': dict(c.execute('SELECT * FROM full_reports WHERE id=?', (self.report['id'],)).fetchone()),
+                'steps': [dict(row) for row in c.execute('SELECT * FROM full_steps WHERE report_id=? ORDER BY ordinal', (self.report['id'],)).fetchall()],
+                'archive': [dict(row) for row in c.execute('SELECT * FROM full_checkpoint_archive WHERE report_id=? ORDER BY ordinal', (self.report['id'],)).fetchall()],
+                'events': [dict(row) for row in c.execute('SELECT * FROM full_events WHERE report_id=? ORDER BY id', (self.report['id'],)).fetchall()],
+            }
+
+    def test_zero_policy_cache_rewinds_suffix_and_preserves_economic_checkpoint(self):
+        active = self._commit()
+        before = self._snapshot()
+        self.assertTrue(self.store.repair_invalid_checkpoints(active['step_id'], active['token']))
+        after = self._snapshot()
+        self.assertEqual(after['steps'][0], before['steps'][0])
+        self.assertEqual(after['report']['progress_at'], before['report']['progress_at'])
+        self.assertEqual(after['report']['definition'], before['report']['definition'])
+        self.assertEqual(after['report']['status'], 'queued')
+        self.assertEqual([row['ordinal'] for row in after['archive']], [1, 2])
+        for saved, original in zip(after['archive'], before['steps'][1:3]):
+            self.assertEqual(saved['output'], original['output'])
+            self.assertEqual(saved['output_sha256'], hashlib.sha256(original['output'].encode('utf-8')).hexdigest())
+            self.assertEqual((saved['attempts'], saved['consumed']), (original['attempts'], original['consumed']))
+            self.assertEqual(saved['reason'], 'checkpoint_policy_checks_missing')
+        for repaired, original in zip(after['steps'][1:], before['steps'][1:]):
+            self.assertEqual(repaired['status'], 'pending')
+            self.assertEqual(repaired['attempts'], original['attempts'])
+            for field in ('output', 'token', 'expires', 'deadline', 'started_at'):
+                self.assertIsNone(repaired[field])
+            self.assertEqual(repaired['next_at'], 0)
+        self.assertEqual([row['consumed'] for row in after['steps']], [1, 1, 1, 2])
+        self.assertFalse(self.store.finish_part(active['step_id'], active['token'], self._output('policy', 3)))
+        self.assertFalse(self.store.repair_invalid_checkpoints(active['step_id'], active['token']))
+        self.assertEqual(self._snapshot(), after)
+        replacement = self.store.claim(synthetic=False)
+        self.assertEqual(replacement['part'], '政策金额')
+        self.assertEqual(replacement['attempts'], 2)
+        self.assertNotEqual(replacement['token'], active['token'])
+
+    def test_three_policy_checks_and_legacy_five_economic_checks_do_not_rewind(self):
+        active = self._commit(policy_count=3, economic_count=5)
+        before = self._snapshot()
+        self.assertFalse(self.store.repair_invalid_checkpoints(active['step_id'], active['token']))
+        self.assertEqual(self._snapshot(), before)
+
+    def test_policy_predicate_requires_explicit_stage_and_part(self):
+        raw = json.dumps(self._output('policy', 0), ensure_ascii=False)
+        self.assertIsNone(_checkpoint_issue(raw))
+        self.assertIsNone(_checkpoint_issue(raw, 'fact_check'))
+        self.assertIsNone(_checkpoint_issue(raw, 'other', '政策金额'))
+        self.assertIsNone(_checkpoint_issue(raw, 'fact_check', '经济关键数字'))
+        for count in (0, 1, 2):
+            with self.subTest(policy_count=count):
+                raw = json.dumps(self._output('policy', count), ensure_ascii=False)
+                self.assertEqual(_checkpoint_issue(raw, 'fact_check', '政策金额'), 'checkpoint_policy_checks_missing')
+        raw = json.dumps(self._output('policy', 3), ensure_ascii=False)
+        self.assertIsNone(_checkpoint_issue(raw, 'fact_check', '政策金额'))
+
+    def test_policy_recovery_rejects_stale_and_expired_leases(self):
+        active = self._commit()
+        before = self._snapshot()
+        self.assertFalse(self.store.repair_invalid_checkpoints(active['step_id'], 'stale-token'))
+        self.assertEqual(self._snapshot(), before)
+        self.clock.advance(121)
+        expired = self._snapshot()
+        self.assertFalse(self.store.repair_invalid_checkpoints(active['step_id'], active['token']))
+        self.assertEqual(self._snapshot(), expired)
+
+    def test_policy_recovery_does_not_revive_terminal_reports(self):
+        active = self._commit()
+        for status in ('cancelled', 'completed', 'failed'):
+            with self.subTest(status=status):
+                # Retain the live step token to check the report-status guard.
+                with self.store.db() as c:
+                    c.execute('UPDATE full_reports SET status=? WHERE id=?', (status, self.report['id']))
+                before = self._snapshot()
+                self.assertFalse(self.store.repair_invalid_checkpoints(active['step_id'], active['token']))
+                self.assertEqual(self._snapshot(), before)
 
 
 if __name__ == '__main__': unittest.main()
