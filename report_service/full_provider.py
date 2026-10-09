@@ -200,10 +200,14 @@ class FullLiveProvider:
                 )
 
         all_evidence = self._usable_evidence(old_evidence + saved_evidence + evidence)
+        target_names = None
+        if stage_id.startswith('enterprises_') and part.startswith(('落地情况', '扩产信号')):
+            offset = self._company_batch(part) * 5
+            target_names = [company['name'] for company in previous.get('metadata', {}).get('candidates', [])[offset:offset + 5]]
         try:
             payload = self._chat_part(stage_id, part, place, prior_text,
                                       self._usable_evidence(saved_evidence + evidence),
-                                      mode=mode, min_lines=floor)
+                                      mode=mode, min_lines=floor, target_names=target_names)
         except Exception as exc:
             raise _to_provider_error(exc)
 
@@ -504,7 +508,7 @@ class FullLiveProvider:
             host = ""
         return host.lower() or "未知来源"
 
-    def _chat_part(self, stage_id, part, place, prior_text, evidence, *, mode='standard', min_lines=None):
+    def _chat_part(self, stage_id, part, place, prior_text, evidence, *, mode='standard', min_lines=None, target_names=None):
         instructions = _PART_INSTRUCTIONS.get(stage_id, _DEFAULT_PART_INSTRUCTION)
         user_blocks = [
             f"地区：{place}",
@@ -583,11 +587,24 @@ class FullLiveProvider:
                                '禁止对候选但未精选、未知或方向不匹配的企业评分。'
                                'dimensions必须完整包含七个键及0至10的有限数值，不得省略risk或任何其他维度。')
         user_blocks.append(_OUTPUT_RULES)
+        if stage_id.startswith('enterprises_'):
+            user_blocks.append('本次JSON只含text、candidates、selected三个字段；正文用独立简洁要点，'
+                               '每个企业字段用一至两句保留本批有依据的结论或具体缺口，'
+                               '不复制原文摘录，不回传前批企业，不在两个数组重复同一份记录。')
+            if target_names is not None:
+                user_blocks.append('本批唯一目标名单（必须保留精确名称）：' + json.dumps(target_names, ensure_ascii=False))
+            if part.startswith('扩产信号'):
+                user_blocks.append('本次candidates必须为空数组；selected仅包含本批5家目标的完整核查记录。'
+                                   '正文概述新增信号、关键风险及下一步核查，不逐字段复述selected记录。')
+            elif part.startswith(('候选池', '落地情况')):
+                user_blocks.append('本次selected必须为空数组；candidates仅包含本批5家新增或核查的企业记录。')
+            else:
+                user_blocks.append('本次candidates和selected都为空数组；已保存名单不重复输出，只写本子章节新增分析。')
         messages = [
             {"role": "system", "content": _full_system_prompt()},
             {"role": "user", "content": "\n\n".join(user_blocks)},
         ]
-        token_floor = 8000 if stage_id in {'scoring', 'compact'} or floor >= 60 else 6000
+        token_floor = 8000 if stage_id in {'scoring', 'compact'} or floor >= 60 or (stage_id.startswith('enterprises_') and part.startswith('扩产信号')) else 6000
         data = self._live._chat(messages, min(providers.MAX_OUTPUT_TOKENS, max(self._live.max_output_tokens, token_floor)))
         return self._extract_text(data)
 
