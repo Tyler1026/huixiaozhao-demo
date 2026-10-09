@@ -236,7 +236,7 @@ function _startProjectAnalysis(city, onboardingAns){
   // 构建项目骨架
   var key='p'+Date.now().toString(36);
   PROJECTS[key]={
-    id:key, city:city, org:city+'市招商局', who:'负责人', topic:city+'产业链招引', stage:1,
+    id:key, workspaceId:_projectWorkspaceId(cur), city:city, org:city+'市招商局', who:'负责人', topic:city+'产业链招引', stage:1,
     kb:[
       {icon:'🏭',t:'主导产业与产业链',sub:'分析中',tag:'公开信息',known:[],calls:['城市公开信息','产业链图谱']},
       {icon:'🏢',t:'园区与承载条件',sub:'分析中',tag:'公开信息',known:[],calls:['园区基础资料','政府官网']},

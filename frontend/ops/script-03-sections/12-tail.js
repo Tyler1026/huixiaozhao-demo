@@ -1378,7 +1378,7 @@ function selectTopic(val, isCustom){
   // If project already has report or submitted demand, create a new project for the new direction
   if(p.topic!==newTopic && (REPORTSTATE[cur] || DEMANDS.find(function(d){return d.projKey===cur;}))){
     var id='p'+Date.now().toString(36);
-    PROJECTS[id]={id:id,city:p.city,org:p.org,who:p.who,topic:newTopic,stage:1,
+    PROJECTS[id]={id:id,workspaceId:_projectWorkspaceId(cur),city:p.city,org:p.org,who:p.who,topic:newTopic,stage:1,
       kb:JSON.parse(JSON.stringify(p.kb)),report:null,clues:[]};
     // Reset kb confirmations for new project
     cur=id; persist(); render();
@@ -1857,7 +1857,7 @@ function importToProject(gap, city, topic){
   var key='proj_'+Date.now().toString(36);
   var p=P();
   PROJECTS[key]={
-    id:key, city:city||p.city, org:(city||p.city)+'市招商局', who:p?p.who:'负责人',
+    id:key, workspaceId:_projectWorkspaceId(cur), city:city||p.city, org:(city||p.city)+'市招商局', who:p?p.who:'负责人',
     topic:gap, stage:3,  // 立项即跳过研判，直接到「确认需求」
     kb: p ? JSON.parse(JSON.stringify(p.kb)) : [],
     report: REPORTSTATE[cur] ? {

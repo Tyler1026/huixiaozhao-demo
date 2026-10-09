@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../frontend/ops/script-03-sections/03.js'), 'utf8');
 function harness({confirm=true, reject=false}={}) {
   const calls=[], messages=[];
-  const context={setInterval(){}, confirm:()=>confirm, Date, RESET_GEN:'generation-test', toast:m=>messages.push(m), render(){}, fetch:async(url, options)=>{
+  const context={AUTH:{user:'test-admin',scope:'admin'},setInterval(){}, confirm:()=>confirm, Date, RESET_GEN:'generation-test', toast:m=>messages.push(m), render(){}, fetch:async(url, options)=>{
     const body=JSON.parse(options.body); calls.push({url,body});
     return {json:async()=>reject||body.RESET_GEN!=='generation-test'?{ok:false,rejected:'stale-generation'}:{ok:true}};
   }};

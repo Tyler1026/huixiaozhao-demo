@@ -7,7 +7,7 @@ function loadReportState(){try{var d=localStorage.getItem('hxz_reportstate');if(
 var LS_KEY='huixiaozhao_kb_v1';
 
 function persist(){
-  if(!window._opsDataReady){return;} // block persist until server data loaded
+  if(!AUTH||AUTH.scope!=='admin'||!window._opsDataReady){return;} // block persist until server data loaded
   try{
     var data={
       cur:cur, view:view,
@@ -34,9 +34,7 @@ function persist(){
         try{ var _p=JSON.parse(localStorage.getItem(LS_KEY)||'{}'); if(_p && _p.KB_CHAT) return _p.KB_CHAT; }catch(_){}
         return {};
       })(),
-      USER_PROFILES:USER_PROFILES,
-      CITY_ACCOUNTS:CITY_ACCOUNTS,
-      INVITE_CODES:INVITE_CODES,
+      clientUser:AUTH.user,
       CITY_BASE_PACKAGES:CITY_BASE_PACKAGES,
       RESET_GEN:(typeof RESET_GEN!=='undefined'?RESET_GEN:null),
       DELETED_CLUES:window.DELETED_CLUES||[],

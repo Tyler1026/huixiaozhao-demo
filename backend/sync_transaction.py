@@ -173,6 +173,7 @@ def file_session(path, snapshot):
 
 def handle_sync_serialized(handler, raw, deps, *, transaction=None, guard=None):
     from .sync_route import handle_sync
+    from .auth import AuthError
     # Explicit injection keeps isolated HTTP tests away from real credentials.
     if deps.use_database and transaction is None and guard is None:
         return handle_sync(handler, raw, deps)
@@ -186,6 +187,9 @@ def handle_sync_serialized(handler, raw, deps, *, transaction=None, guard=None):
         # A committed write survives a disconnected browser. Retrying its same
         # report request ID is safe; never roll back a confirmed database commit.
         return
+    except AuthError as error:
+        from .auth_routes import error_response
+        return error_response(handler, error)
     except SyncWriteConflict:
         body = json.dumps({'ok': False, 'rejected': 'server-owned-report',
                            'error': 'report execution is managed by the server'}).encode()

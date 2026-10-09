@@ -100,7 +100,7 @@ other sync fields continue through the existing merge policy unchanged.
             if not valid_request(r) or r.get('status') != 'pending':
                 raise ValueError('new report must be a valid pending request')
             # Never accept client progress, artifacts or a forged completion.
-            rows.append({k: r[k] for k in ('id', 'city', 'province', 'mode', 'by', 'ts') if k in r}
+            rows.append({k: r[k] for k in ('id', 'city', 'province', 'mode', 'by', 'ts', 'projectKey') if k in r}
                         | {'status': 'pending', 'engine': ENGINE})
         else:
             rows.append(r)

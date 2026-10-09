@@ -88,16 +88,10 @@ function _restoreScroll(prevKey, tops){
    role: 'owner'(组织创建者，可查看/移除本组织成员) | 'member'(普通成员)。
    注意：无论 owner 还是 member，政府端都不能生成邀请码——生成入口只在管理端(/ops)，
    见 canGenerateInviteCode()，此函数在政府端恒定返回 false。 */
-var AUTH=null;
-var ACCOUNTS={
-  'suizhou': {pwd:'suizhou', city:'随州', projKey:'sz', resident:true,  who:'张主任', org:'随州市招商局', role:'owner'},
-  'admin':   {pwd:'admin',   city:null,  projKey:null, resident:false, who:'招商干部', org:'招商局', role:'owner'}
-};
-var USER_PROFILES={};  // 注册用户资料库，按账号存 {name,phone,wechat,org,dept,title,city,pwd,ts,role,inviteCode}，跨端同步供管理端查看
-var CITY_ACCOUNTS={};  // 城市账号连接表（推送到RAG时自动建立）{slug:{city,who,org,pwd,resident,projKey}}
-/* 邀请码库：{code:{city,projKey,role,createdBy,createdAt,revoked,usedBy:[{user,ts}]}}
-   —— 仅管理端(/ops)可写入新码，政府端只读校验+记录使用。role 是该码开放注册的角色，
-   目前固定发 'member'（组织首个使用者可由管理端手工升级为 owner，见成员管理）。 */
+var AUTH=null, _authState='unknown', _authError='', _authPending=null, _authEpoch=0;
+var USER_PROFILES={};  // 服务端返回的脱敏成员资料，仅用于当前授权工作区展示
+var CITY_ACCOUNTS={};  // 不再从浏览器账号库验证密码
+/* 政府端不接收邀请码库，验证与使用记录都由服务端处理。 */
 var INVITE_CODES={};
 /* 政府端任何角色都不能生成邀请码：生成入口收在管理端(/ops)，这里恒定返回 false。
    之所以做成函数而不是直接删掉相关UI，是为了让"是否可生成"这条规则有唯一判断点，
@@ -105,18 +99,111 @@ var INVITE_CODES={};
 function canGenerateInviteCode(auth){ return false; }
 /* 组织成员管理权限：owner 可查看/移除同 projKey 下的其他账号，member 不可。 */
 function isOrgOwner(auth){ return !!(auth && auth.role==='owner'); }
-/* 校验邀请码：返回 {ok,city,projKey,role} 或 {ok:false,msg} */
-function validateInviteCode(code){
-  code=(code||'').trim().toUpperCase();
-  if(!code) return {ok:false,msg:'请输入邀请码'};
-  var inv=INVITE_CODES[code];
-  if(!inv) return {ok:false,msg:'邀请码不存在'};
-  if(inv.revoked) return {ok:false,msg:'该邀请码已失效，请联系招商团队重新获取'};
-  return {ok:true,code:code,city:inv.city,projKey:inv.projKey,role:inv.role||'member'};
+function _authEscape(value){return String(value==null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function _safeProfiles(profiles){
+  var result={}, fields=['name','phone','wechat','org','dept','title','city','ts','role','projKey','projectKeys','user','resident'];
+  Object.keys(profiles||{}).forEach(function(user){var p=profiles[user];if(!p||typeof p!=='object')return;var item={};fields.forEach(function(k){if(p[k]!==undefined)item[k]=p[k];});result[user]=item;});
+  return result;
 }
-function saveAuth(){ try{ AUTH?localStorage.setItem('hxz_auth',JSON.stringify(AUTH)):localStorage.removeItem('hxz_auth'); }catch(e){} }
-function loadAuth(){ try{ var d=localStorage.getItem('hxz_auth'); if(d)AUTH=JSON.parse(d); }catch(e){ AUTH=null; } }
-function logout(){ AUTH=null; saveAuth(); cur=null; view='setup'; render._restored=false; render._routed=false; render(); }
+function _safeSyncSnapshot(raw){
+  var data=Object.assign({},raw||{});
+  ['USER_PROFILES','CITY_ACCOUNTS','INVITE_CODES','ACCOUNTS','AUTH','auth','password','pwd','token'].forEach(function(k){delete data[k];});
+  if(data.huixiaozhao_kb_v1)data.huixiaozhao_kb_v1=_safeSyncSnapshot(data.huixiaozhao_kb_v1);
+  return data;
+}
+function saveAuth(){try{localStorage.removeItem('hxz_auth');}catch(_){} }
+function _purgeAuthCache(){
+  saveAuth();
+  try{var raw=localStorage.getItem('huixiaozhao_kb_v1');if(raw)localStorage.setItem('huixiaozhao_kb_v1',JSON.stringify(_safeSyncSnapshot(JSON.parse(raw))));}catch(_){}
+}
+function _authResetView(){
+  PROJECTS={};USER_PROFILES={};CITY_ACCOUNTS={};INVITE_CODES={};
+  ['REPORTSTATE','REPORT_HISTORY','UPLOADS','KB_FILE_CHUNKS','KB_CHAT','KB_CONFIRMS','KB_CONFIRM_TOMBS','KB_ITEM_TOMBS','KB_UNLOCKED','PENDING_CONFIRMS','DOCK_LOGS','SUBPROJ','UPLOAD_TOMBS','KB_CHAT_TOMBS','CITY_BASE_PACKAGES'].forEach(function(k){if(typeof window[k]!=='undefined')window[k]={};});
+  ['DEMANDS','REPORT_REQUESTS','OPS_ENT'].forEach(function(k){if(typeof window[k]!=='undefined')window[k]=[];});
+  if(window._syncTimer){clearTimeout(window._syncTimer);window._syncTimer=null;}
+  window._serverSyncLock=false;window._verifyInProgress=false;window._reportGenerating=false;
+  window.DELETED_PROJECTS=[];window.DELETED_CLUES=[];window.__lastSyncFp=null;
+  cur=null;view='login';
+  if(typeof render==='function'){render._restored=false;render._routed=false;render._serverSynced=false;}
+  try{['huixiaozhao_kb_v1','hxz_uploads','hxz_reportstate','hxz_report_history','hxz_rpt_history','hxz_auth','HXZ_UPLOAD_TOMBS','HXZ_KBCHAT_TOMBS','hxz_subproj'].forEach(function(k){localStorage.removeItem(k);});}catch(_){}
+}
+function _authAccept(auth){
+  if(!auth||typeof auth.user!=='string'||!Array.isArray(auth.projectKeys))throw new Error('登录响应不完整，请重试');
+  var keys=auth.projectKeys.filter(function(k){return typeof k==='string';});
+  if(auth.projKey&&keys.indexOf(auth.projKey)<0&&auth.scope!=='admin')throw new Error('工作区授权不一致，请重试');
+  _authEpoch++;_authResetView();
+  AUTH={user:auth.user,city:auth.city||'',projKey:auth.projKey||null,projectKeys:keys,role:auth.role||'member',scope:auth.scope||'user',who:auth.who||auth.user,org:auth.org||'',resident:!!auth.resident};
+  _authState='ready';_authError='';cur=AUTH.projKey;view='knowledge';saveAuth();
+  return AUTH;
+}
+function _authForget(){_authEpoch++;AUTH=null;_authState='anonymous';_authResetView();}
+function _authJson(path,body){
+  var controller=typeof AbortController!=='undefined'?new AbortController():null;
+  var timer;
+  var options={credentials:'same-origin',headers:{'Accept':'application/json'}};
+  if(body!==undefined){options.method='POST';options.headers['Content-Type']='application/json';options.body=JSON.stringify(body);}
+  if(controller)options.signal=controller.signal;
+  var request=fetch(path,options).then(function(response){
+    return response.json().catch(function(){throw new Error('服务响应异常，请重试');}).then(function(data){
+      if(response.ok===false||!data||data.ok!==true){
+        var error=new Error(data&&data.message||'服务暂时不可用，请稍后重试');error.status=response.status;error.code=data&&data.error;
+        if(response.status===401&&path!=='/api/auth/login'&&path!=='/api/auth/register'&&path!=='/api/auth/session'){_authForget();if(typeof render==='function')render();}
+        throw error;
+      }
+      return data;
+    });
+  });
+  var deadline=new Promise(function(_,reject){timer=setTimeout(function(){if(controller)controller.abort();reject(new Error('请求超时，请重试'));},20000);});
+  return Promise.race([request,deadline]).then(function(data){clearTimeout(timer);return data;},function(error){clearTimeout(timer);throw error;});
+}
+function loadAuth(){
+  if(_authPending)return _authPending;
+  _purgeAuthCache();_authState='checking';
+  _authPending=_authJson('/api/auth/session').then(function(data){
+    if(data.authenticated!==true)throw Object.assign(new Error('请登录'),{status:401});
+    _authAccept(data.auth);
+  }).catch(function(error){
+    if(error.status===401){_authForget();}else{AUTH=null;_authResetView();_authState='unavailable';_authError=error.message;}
+  }).then(function(){_authPending=null;if(typeof render==='function')render();});
+  return _authPending;
+}
+function logout(){
+  if(logout._pending)return logout._pending;
+  logout._pending=_authJson('/api/auth/logout',{}).then(function(){_authForget();render();}).catch(function(error){toast(error.message||'退出失败，请重试');}).then(function(){logout._pending=null;});
+  return logout._pending;
+}
+function _authProjectKeys(){return AUTH&&Array.isArray(AUTH.projectKeys)?AUTH.projectKeys:[];}
+function _authWorkspaceOf(key){
+  var keys=_authProjectKeys(),p=PROJECTS[key];
+  if(keys.indexOf(key)>=0)return key;
+  return p&&keys.indexOf(p.workspaceId)>=0?p.workspaceId:null;
+}
+function _authFilterProjects(projects){
+  var filtered={},keys=_authProjectKeys();
+  Object.keys(projects||{}).forEach(function(k){var p=projects[k];if(p&&(keys.indexOf(k)>=0||keys.indexOf(p.workspaceId)>=0))filtered[k]=p;});
+  return filtered;
+}
+/* A new direction inherits its selected parent's workspace, including in the admin UI. */
+function _projectWorkspaceId(parentKey){
+  parentKey=parentKey||cur;
+  var parent=PROJECTS[parentKey];
+  if(AUTH&&AUTH.scope==='admin')return parent&&parent.workspaceId||parentKey||AUTH.projKey||null;
+  var authorized=typeof _authWorkspaceOf==='function'?_authWorkspaceOf(parentKey):null;
+  return authorized||AUTH&&AUTH.projKey||null;
+}
+function _authReadSync(response){
+  if(response.status===401){_authForget();render();throw new Error('登录已过期，请重新登录');}
+  if(response.ok===false)throw new Error('工作区暂时不可用');
+  return response.json();
+}
+function _authWorkspaceChanged(auth){_authAccept(auth);var epoch=_authEpoch;return new Promise(function(resolve){restoreFromServer(function(ok){if(epoch!==_authEpoch){resolve(false);return;}render._routed=true;render._restored=true;render._serverSynced=!!ok;cur=AUTH&&AUTH.projKey;view='knowledge';render();resolve(ok);});});}
+function switchAuthWorkspace(key){
+  if(!AUTH||_authProjectKeys().indexOf(key)<0){toast('没有该工作区权限');return Promise.resolve(false);}
+  if(switchAuthWorkspace._pending)return switchAuthWorkspace._pending;
+  var switchEpoch=_authEpoch;
+  switchAuthWorkspace._pending=_authJson('/api/auth/workspace',{projKey:key}).then(function(data){if(switchEpoch!==_authEpoch)throw new Error('会话已变化，请重新登录');return _authWorkspaceChanged(data.auth);}).catch(function(error){toast(error.message);return false;}).then(function(ok){switchAuthWorkspace._pending=null;return ok;});
+  return switchAuthWorkspace._pending;
+}
 loadAuth();
 // 报告版本迭代状态（每项目一份）：{ver, finalized, patches:[补充意见], edits:{结论index:新文字}}
 var REPORTSTATE={};
@@ -124,6 +211,5 @@ function rs(){var k=cur;if(!REPORTSTATE[k])REPORTSTATE[k]={ver:1,finalized:false
 function P(){return cur&&PROJECTS[cur]||{}}
 /* 政府端账号按城市独立：返回当前登录城市（cur所在城市）的项目key列表 */
 function cityKeys(){
-  var mc=(cur&&PROJECTS[cur]&&PROJECTS[cur].city)?PROJECTS[cur].city:null;
-  return Object.keys(PROJECTS).filter(function(k){return !mc||(PROJECTS[k]&&PROJECTS[k].city===mc);});
+  return Object.keys(PROJECTS).filter(function(k){return AUTH&&_authWorkspaceOf(k)===AUTH.projKey;});
 }

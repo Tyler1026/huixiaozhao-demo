@@ -9,6 +9,7 @@ function harness({requests = [], health = {report_engine: {configured: true}}, h
   const intervals = [], calls = [];
   let renders = 0;
   const context = {
+    AUTH: {user: 'test-admin', scope: 'admin'},
     Date, Math, Promise, window: {}, setTimeout, clearTimeout,
     setInterval: (fn, delay) => intervals.push({fn, delay}),
     localStorage: {getItem: () => null, setItem() {}},

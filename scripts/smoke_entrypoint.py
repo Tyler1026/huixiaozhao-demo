@@ -1,5 +1,6 @@
 """Run the actual entrypoint with an empty environment and temporary file store."""
 import hashlib
+import http.cookiejar
 import json
 import os
 from pathlib import Path
@@ -16,10 +17,12 @@ def main():
     with tempfile.TemporaryDirectory(prefix='hxz-entrypoint-') as folder:
         with socket.socket() as sock:
             sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
-        env={'PATH':os.environ.get('PATH',''),'PORT':str(port),'SYNC_PATH':str(Path(folder)/'synthetic.json'),'PYTHONUNBUFFERED':'1','HOME':folder}
+        env={'PATH':os.environ.get('PATH',''),'PORT':str(port),'SYNC_PATH':str(Path(folder)/'synthetic.json'),'PYTHONUNBUFFERED':'1','HOME':folder,
+             'HXZ_ADMIN_USERNAME':'smoke-admin','HXZ_ADMIN_PASSWORD':'isolated-smoke-password-8'}
         with open(Path(folder)/'server.log','w+') as log:
             process=subprocess.Popen([sys.executable,str(ROOT/'server.py')],cwd=ROOT,env=env,stdout=log,stderr=log)
-            opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),
+                urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
             def request(path,body=None,headers=None):
                 data=None if body is None else json.dumps(body).encode()
                 with opener.open(urllib.request.Request(f'http://127.0.0.1:{port}'+path,data=data,headers=headers or {}),timeout=3) as response:
@@ -39,6 +42,13 @@ def main():
                 assert not engine['configured'] and not engine['worker_running']
                 for path,name in [('/','index.html'),('/ops','ops.html')]:
                     status,body=request(path);assert status==200 and body==(ROOT/name).read_bytes()
+                try:
+                    request('/api/sync')
+                    raise AssertionError('anonymous sync was accepted')
+                except urllib.error.HTTPError as error:
+                    assert error.code == 401
+                _,body=request('/api/auth/login', {'username':'smoke-admin','password':'isolated-smoke-password-8'})
+                assert json.loads(body)['auth']['scope'] == 'admin'
                 _,body=request('/api/sync',{'PROJECTS':{'synthetic':{'city':'smoke'}}})
                 assert json.loads(body)['ok'] is True
                 _,body=request('/api/sync');assert json.loads(body)['PROJECTS']['synthetic']['city']=='smoke'
@@ -56,7 +66,7 @@ def main():
                     assert error.code == 409 and json.loads(error.read())['rejected'] == 'server-owned-report'
                 _,body=request('/api/extract-text',{'filename':'smoke.txt','fileB64':'eA=='})
                 assert json.loads(body)['text']=='x'
-                print('Actual entrypoint smoke passed: default independent ownership, legacy claim rejection, configuration wait without research, both pages, file-store write/read and text extraction.')
+                print('Actual entrypoint smoke passed: anonymous access denied, server session login, default independent ownership, legacy claim rejection, configuration wait without research, both pages, file-store write/read and text extraction.')
             finally:
                 process.terminate()
                 try:process.wait(timeout=5)

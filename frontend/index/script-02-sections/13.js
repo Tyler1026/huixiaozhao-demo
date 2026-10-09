@@ -24,7 +24,7 @@ function detailNeeds(p){
     var slate = clues.filter(function(c){return c.tone==='slate';}).length;
     var sname = stageNameOf(x, x.stage);
     var sdesc = stageDescOf(x, x.stage);
-    return '<div class="detail-header"><div><span class="eyebrow">DIRECTION</span><h2>'+x.topic+'</h2><p>'+x.city+' · 当前方向进度</p></div></div>'+
+    return '<div class="detail-header"><div><span class="eyebrow">DIRECTION</span><h2>'+x.topic+'</h2><p>'+_authEscape(x.city)+' · 当前方向进度</p></div></div>'+
       '<div class="detail-scroll">'+
         '<div class="detail-block"><h3>当前阶段</h3>'+
           '<p class="detail-copy" style="font-size:18px;font-weight:700;color:#013582">'+sname+'</p>'+
@@ -46,7 +46,7 @@ function detailNeeds(p){
     return false; // 只认isDemand===true，不再用stage>=3兜底（防止产业分析项目误入招商对接）
   });
   var byStage={};ks.forEach(function(k){var s=PROJECTS[k].stage;byStage[s]=(byStage[s]||0)+1});
-  return '<div class="detail-header"><div><span class="eyebrow">OVERVIEW</span><h2>需求概览</h2><p>'+p.who+' 名下产业分析汇总</p></div></div>'+
+  return '<div class="detail-header"><div><span class="eyebrow">OVERVIEW</span><h2>需求概览</h2><p>'+_authEscape(p.who)+' 名下产业分析汇总</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>产业分析总数</h3><p class="detail-copy" style="font-size:22px;font-weight:700;color:#013582">'+ks.length+' 个产业方向</p></div>'+
       '<div class="detail-block"><h3>阶段分布</h3><ul class="check-list">'+
@@ -70,25 +70,30 @@ function detailNeeds(p){
 function detailSettings(p){
   return '<div class="detail-header"><div><span class="eyebrow">ACCOUNT</span><h2>账号概览</h2><p>由系统开通 · 不可自行修改</p></div></div>'+
     '<div class="detail-scroll">'+
-      '<div class="detail-block"><h3>身份</h3><ul class="check-list"><li><i class="i">✔</i>'+p.org+'</li><li><i class="i">✔</i>'+p.who+' · 招商干部'+(AUTH&&AUTH.role==='owner'?' · 组织管理员':'')+'</li></ul></div>'+
-      '<div class="detail-block"><h3>数据权限</h3><div class="info-callout" style="margin-top:0">仅可访问 <b>'+p.city+'</b> 城市智库；跨城市数据由运营端管理。</div></div>'+
+      '<div class="detail-block"><h3>身份</h3><ul class="check-list"><li><i class="i">✔</i>'+_authEscape(p.org)+'</li><li><i class="i">✔</i>'+_authEscape(p.who)+' · 招商干部'+(AUTH&&AUTH.role==='owner'?' · 组织管理员':'')+'</li></ul></div>'+
+      '<div class="detail-block"><h3>数据权限</h3><div class="info-callout" style="margin-top:0">仅可访问 <b>'+_authEscape(p.city)+'</b> 城市工作区；其他团队的数据需要单独授权。</div></div>'+
       orgMembersBlock()+
       '<div class="detail-block"><h3>安全边界</h3><div class="boundary-note" style="margin-top:0"><i class="i">🔒</i>确认关口、资源核验责任与企业触达边界，不因个人设置而跳过。</div></div>'+
     '</div>';
 }
 /* 组织成员区块：owner 可查看同工作区(projKey)其他账号并移除；member 完全不可见此区块。
    邀请码生成权限不在此处开放——政府端任何角色都不能生成邀请码，见 canGenerateInviteCode()。 */
+function authWorkspaceBlock(sectionClass){
+  if(!AUTH)return '';
+  var options=_authProjectKeys().map(function(key){var p=PROJECTS[key];return '<option value="'+_authEscape(key)+'"'+(AUTH.projKey===key?' selected':'')+'>'+_authEscape((p&&p.city||'工作区')+' · '+key)+'</option>';}).join('');
+  return '<div class="'+(sectionClass==='settings-section'?'settings-section':'detail-block')+'"><h3>我的工作区</h3><select aria-label="切换工作区" onchange="switchAuthWorkspace(this.value)" style="width:100%;min-height:40px">'+options+'</select><button class="ghost-button" style="margin-top:10px" onclick="openJoinWorkspace()">通过邀请码加入工作区</button><p style="color:#8492a6;font-size:12px">邀请码只在加入团队时使用，日常登录使用账号和密码。</p></div>';
+}
 function orgMembersBlock(){
   if(!isOrgOwner(AUTH)) return '';
   var myProjKey=AUTH&&AUTH.projKey;
   var members=Object.keys(USER_PROFILES).filter(function(u){
     var up=USER_PROFILES[u];
-    return up && (up.projKey===myProjKey) && u!==(AUTH&&AUTH.user);
+    return up && (up.projKey===myProjKey||(up.projectKeys||[]).indexOf(myProjKey)>=0) && u!==(AUTH&&AUTH.user);
   });
   var rows=members.map(function(u){
     var up=USER_PROFILES[u];
-    return '<li><i class="i">👤</i>'+(up.name||u)+' · '+u+' · '+(up.role==='owner'?'管理员':'成员')+
-      '<button class="ghost-button" style="min-height:24px;padding:1px 8px;font-size:11px;margin-left:8px" onclick="removeOrgMember(\''+u+'\')">移除</button></li>';
+    return '<li><i class="i">👤</i>'+_authEscape(up.name||u)+' · '+_authEscape(u)+' · '+(up.role==='owner'?'管理员':'成员')+
+      '<button class="ghost-button" style="min-height:24px;padding:1px 8px;font-size:11px;margin-left:8px" onclick="removeOrgMember('+_authEscape(JSON.stringify(u))+')">移除</button></li>';
   }).join('')||'<li style="color:#9aa5b5">暂无其他成员，邀请码可发给同事共同注册加入本工作区</li>';
   return '<div class="detail-block"><h3>组织成员<span style="font-size:11px;color:#9aa5b5;margin-left:6px">共 '+(members.length+1)+' 人</span></h3>'+
     '<ul class="check-list">'+rows+'</ul>'+
@@ -98,14 +103,15 @@ function removeOrgMember(u){
   if(!isOrgOwner(AUTH)) return; // 权限双重校验：即便按钮被绕过点击，非owner也不可执行
   if(!USER_PROFILES[u]) return;
   if(!confirm('确认移除成员「'+(USER_PROFILES[u].name||u)+'」？该账号将无法再登录本工作区。')) return;
-  delete USER_PROFILES[u];
-  persist();
-  render();
-  toast('已移除成员 '+u);
+  if(removeOrgMember._inFlight)return removeOrgMember._inFlight;
+  removeOrgMember._inFlight=_authJson('/api/auth/members',{action:'remove',user:u,projKey:AUTH.projKey}).then(function(){
+    return new Promise(function(resolve){restoreFromServer(function(){render();toast('已移除该工作区成员');resolve();});});
+  }).catch(function(error){toast(error.message||'移除失败，请重试');}).then(function(){removeOrgMember._inFlight=null;});
+  return removeOrgMember._inFlight;
 }
 // 城市智库页（未点类目时）→ 右侧：智库范围说明
 function detailKbIntro(p){
-  return '<div class="detail-header"><div><span class="eyebrow">KNOWLEDGE SCOPE</span><h2>智库范围</h2><p>'+p.city+'城市智库已连接</p></div></div>'+
+  return '<div class="detail-header"><div><span class="eyebrow">KNOWLEDGE SCOPE</span><h2>智库范围</h2><p>'+_authEscape(p.city)+'城市智库已连接</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>可查询范围</h3><ul class="check-list">'+p.kb.map(function(k){return '<li><i class="i">✔</i>'+k.t+'</li>'}).join('')+'</ul></div>'+
       '<div class="detail-block"><h3>如何使用</h3><div class="info-callout" style="margin-top:0">点击左侧任一主题查看已知信息与可调用材料，或在下方输入框直接提问。</div></div>'+
@@ -173,7 +179,7 @@ function detailDocking(p){
 function detailAnalysis(p){
   var rp=p.report;
   return '<div class="detail-header"><div><span class="eyebrow">CURRENT ANALYSIS</span><h2>本次分析</h2>'+
-    '<p>'+p.city+'城市智库已连接</p></div></div>'+
+    '<p>'+_authEscape(p.city)+'城市智库已连接</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>已掌握</h3>'+
         '<ul class="check-list">'+

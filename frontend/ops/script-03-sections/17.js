@@ -1,8 +1,121 @@
 /* ================= /整合联动层 ================= */
 
+var AUTH=null, _authState='unknown', _authError='', _authPending=null, _authEpoch=0;
+function _authEscape(value){return String(value==null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function _safeProfiles(profiles){
+  var result={}, fields=['name','phone','wechat','org','dept','title','city','ts','role','projKey','projectKeys','user','resident'];
+  Object.keys(profiles||{}).forEach(function(user){var p=profiles[user];if(!p||typeof p!=='object')return;var item={};fields.forEach(function(k){if(p[k]!==undefined)item[k]=p[k];});result[user]=item;});
+  return result;
+}
+function _safeSyncSnapshot(raw){
+  var data=Object.assign({},raw||{});
+  ['USER_PROFILES','CITY_ACCOUNTS','INVITE_CODES','ACCOUNTS','AUTH','auth','password','pwd','token'].forEach(function(k){delete data[k];});
+  if(data.huixiaozhao_kb_v1)data.huixiaozhao_kb_v1=_safeSyncSnapshot(data.huixiaozhao_kb_v1);
+  return data;
+}
+function saveAuth(){try{localStorage.removeItem('hxz_auth');}catch(_){} }
+function _purgeAuthCache(){
+  saveAuth();
+  try{var raw=localStorage.getItem('huixiaozhao_kb_v1');if(raw)localStorage.setItem('huixiaozhao_kb_v1',JSON.stringify(_safeSyncSnapshot(JSON.parse(raw))));}catch(_){}
+}
+function _authJson(path,body){
+  var controller=typeof AbortController!=='undefined'?new AbortController():null;
+  var timer;
+  var options={credentials:'same-origin',headers:{'Accept':'application/json'}};
+  if(body!==undefined){options.method='POST';options.headers['Content-Type']='application/json';options.body=JSON.stringify(body);}
+  if(controller)options.signal=controller.signal;
+  var request=fetch(path,options).then(function(response){
+    return response.json().catch(function(){throw new Error('服务响应异常，请重试');}).then(function(data){
+      if(response.ok===false||!data||data.ok!==true){
+        var error=new Error(data&&data.message||'服务暂时不可用，请稍后重试');error.status=response.status;error.code=data&&data.error;
+        if(response.status===401&&path!=='/api/auth/login'&&path!=='/api/auth/register'&&path!=='/api/auth/session'){_authForget();if(typeof render==='function')render();}
+        throw error;
+      }
+      return data;
+    });
+  });
+  var deadline=new Promise(function(_,reject){timer=setTimeout(function(){if(controller)controller.abort();reject(new Error('请求超时，请重试'));},20000);});
+  return Promise.race([request,deadline]).then(function(data){clearTimeout(timer);return data;},function(error){clearTimeout(timer);throw error;});
+}
+function loadAuth(){
+  if(_authPending)return _authPending;
+  _purgeAuthCache();_authState='checking';
+  _authPending=_authJson('/api/auth/session').then(function(data){
+    if(data.authenticated!==true)throw Object.assign(new Error('请登录'),{status:401});
+    _authAccept(data.auth);
+  }).catch(function(error){
+    if(error.status===401){_authForget();}else{AUTH=null;_authResetView();_authState='unavailable';_authError=error.message;}
+  }).then(function(){_authPending=null;if(typeof render==='function')render();});
+  return _authPending;
+}
+function logout(){
+  if(logout._pending)return logout._pending;
+  logout._pending=_authJson('/api/auth/logout',{}).then(function(){_authForget();render();}).catch(function(error){toast(error.message||'退出失败，请重试');}).then(function(){logout._pending=null;});
+  return logout._pending;
+}
+/* A new direction inherits its selected parent's workspace, including in the admin UI. */
+function _projectWorkspaceId(parentKey){
+  parentKey=parentKey||cur;
+  var parent=PROJECTS[parentKey];
+  if(AUTH&&AUTH.scope==='admin')return parent&&parent.workspaceId||parentKey||AUTH.projKey||null;
+  var authorized=typeof _authWorkspaceOf==='function'?_authWorkspaceOf(parentKey):null;
+  return authorized||AUTH&&AUTH.projKey||null;
+}
+function _authReadSync(response){
+  if(response.status===401){_authForget();render();throw new Error('登录已过期，请重新登录');}
+  if(response.ok===false)throw new Error('工作区暂时不可用');
+  return response.json();
+}
+function _authResetView(){
+  PROJECTS={};USER_PROFILES={};CITY_ACCOUNTS={};INVITE_CODES={};REPORT_REQUESTS=[];
+  ['REPORTSTATE','REPORT_HISTORY','UPLOADS','KB_FILE_CHUNKS','KB_CHAT','KB_CONFIRMS','KB_CONFIRM_TOMBS','KB_ITEM_TOMBS','KB_UNLOCKED','PENDING_CONFIRMS','DOCK_LOGS','SUBPROJ','UPLOAD_TOMBS','KB_CHAT_TOMBS','CITY_BASE_PACKAGES'].forEach(function(k){if(typeof window[k]!=='undefined')window[k]={};});
+  ['DEMANDS','REPORT_REQUESTS','OPS_ENT'].forEach(function(k){if(typeof window[k]!=='undefined')window[k]=[];});
+  if(window._syncTimer){clearTimeout(window._syncTimer);window._syncTimer=null;}
+  window._serverSyncLock=false;window._verifyInProgress=false;window._reportGenerating=false;
+  window.DELETED_PROJECTS=[];window.DELETED_CLUES=[];window.__lastSyncFp=null;
+  cur=null;view='login';window._opsDataReady=false;
+  render._opsRestored=false;render._opsLoadError='';
+  try{['huixiaozhao_kb_v1','hxz_auth','hxz_uploads','hxz_reportstate','hxz_rpt_history','hxz_report_history','HXZ_UPLOAD_TOMBS','HXZ_KBCHAT_TOMBS','hxz_subproj'].forEach(function(k){localStorage.removeItem(k);});}catch(_){}
+}
+function _authAccept(auth){
+  if(!auth||typeof auth.user!=='string'||!Array.isArray(auth.projectKeys))throw new Error('登录响应不完整，请重试');
+  _authEpoch++;_authResetView();
+  AUTH={user:auth.user,scope:auth.scope||'user',role:auth.role||'member',projectKeys:auth.projectKeys.slice(),projKey:auth.projKey||null};
+  _authState='ready';_authError='';return AUTH;
+}
+function _authForget(){_authEpoch++;AUTH=null;_authState='anonymous';_authResetView();}
+function opsLoginPage(){
+  return '<div style="min-height:100vh;display:grid;place-items:center;background:#f3f7fc"><div style="width:min(380px,90vw);padding:32px;background:white;border:1px solid #dbe4ef;border-radius:16px"><h1 style="font-size:22px">慧小招 · 管理端登录</h1><p style="color:#667590">使用管理员账号和密码登录</p><label>管理员账号<input id="opsLoginUser" autocomplete="username" style="display:block;width:100%;min-height:42px;margin:8px 0 16px"></label><label>密码<input id="opsLoginPwd" type="password" autocomplete="current-password" style="display:block;width:100%;min-height:42px;margin:8px 0 16px" onkeydown="if(event.key===&quot;Enter&quot;)opsLogin()"></label><p id="opsLoginError" style="color:#dc2626"></p><button class="primary-button" onclick="opsLogin()">登录管理端</button><p><a href="/">前往政府端</a></p></div></div>';
+}
+function opsLogin(){
+  if(opsLogin._pending)return opsLogin._pending;
+  var user=document.getElementById('opsLoginUser'),pwd=document.getElementById('opsLoginPwd'),errorEl=document.getElementById('opsLoginError');
+  var data={username:(user&&user.value||'').trim().toLowerCase(),password:pwd&&pwd.value||''};
+  if(!data.username||!data.password){if(errorEl)errorEl.textContent='请输入管理员账号和密码';return;}
+  opsLogin._pending=_authJson('/api/auth/login',data).then(function(data){_authAccept(data.auth);render();}).catch(function(error){if(errorEl)errorEl.textContent=error.message;}).then(function(){opsLogin._pending=null;});
+  return opsLogin._pending;
+}
+function render(){
+  if(typeof _authState==='undefined')return;
+  var root=document.getElementById('root');if(!root)return;
+  if(_authState==='unknown'){loadAuth();}
+  if(_authState==='unknown'||_authState==='checking'){root.innerHTML='<div style="padding:60px;text-align:center">正在验证管理端登录状态…</div>';return;}
+  if(_authState==='unavailable'){root.innerHTML='<div style="padding:60px;text-align:center">'+_authEscape(_authError||'认证服务暂时不可用')+'<p><button onclick="loadAuth()">重试</button></p></div>';return;}
+  if(!AUTH){root.innerHTML=opsLoginPage();return;}
+  if(AUTH.scope!=='admin'){root.innerHTML='<div style="padding:60px;text-align:center"><h2>当前账号无管理权限</h2><p><a href="/">前往政府端</a> <button onclick="logout()">退出并切换账号</button></p></div>';return;}
+  if(!window._opsDataReady){
+    if(render._opsLoadError){root.innerHTML='<div style="padding:60px;text-align:center">工作区加载失败<p><button onclick="render._opsLoadError=null;render._opsRestored=false;render()">重试</button> <button onclick="logout()">退出登录</button></p></div>';return;}
+    root.innerHTML='<div style="padding:60px;text-align:center">正在加载管理数据…</div>';
+    if(!render._opsRestored){render._opsRestored=true;restoreFromServer(function(ok){if(!ok)render._opsLoadError='unavailable';render();});}
+    return;
+  }
+  renderOpsV2();
+}
 render();
+if(!window._opsAuthPoll)window._opsAuthPoll=setInterval(function(){
+  if(AUTH&&AUTH.scope==='admin'&&window._opsDataReady)restoreFromServer(function(ok){if(ok)renderOpsV2();});
+},15000);
 
-render();
 
 
 /* ══════════════════════════════════════════════════════════════
@@ -16,6 +129,7 @@ var OPS_ENT = OPS_ENT || [];  // 企业库 [{id,name,realName,kind,gap,region,si
 
 /* ─ 主渲染入口 ─ */
 function renderOpsV2(){
+  if(!AUTH||AUTH.scope!=='admin'||!window._opsDataReady){render();return;}
   var root = $('#root');
   if(!root) return;
   var opsContent = document.getElementById('opsContent');
@@ -52,17 +166,17 @@ function opsTopbarV2(){
       '<span style="font-size:12px;color:#94a3b8">' + demandCount + ' 条需求</span>' +
       '<span style="font-size:12px;color:#94a3b8">' + OPS_ENT.length + ' 家企业</span>' +
     '</div>' +
-    '<div style="flex:1"></div>' +
+    '<div style="flex:1"></div><button onclick="logout()" style="border:1px solid #52637a;border-radius:7px;background:transparent;color:#fff;padding:5px 10px">退出登录</button>' +
     '<div style="display:flex;align-items:center;gap:6px" title="\u5f53\u524d\u64cd\u4f5c\u4eba\u540d\u5b57\uff0c\u5c06\u8ddf\u968f\u4f60\u4e0a\u4f20\u7684\u6bcf\u4e00\u6761\u667a\u5e93\u6750\u6599\uff0c\u65b9\u4fbf\u5176\u4ed6\u4eba\u5728\u4e2a\u6027\u5316\u6743\u91cd\u5220\u9664\u7248\u6837\u4e2d\u5e94\u7528\u5230\u9700\u8981\u7684\u5730\u65b9">' +
       '<span style="font-size:11px;color:#94a3b8">\u64cd\u4f5c\u4eba</span>' +
       '<input id="opsOperatorInput" value="' + ragEsc(getOpsOperator()) + '" placeholder="\u8bf7\u8f93\u5165\u4f60\u7684\u540d\u5b57" onchange="setOpsOperator(this.value)" style="width:96px;min-height:26px;padding:0 8px;border:1px solid #334155;border-radius:6px;background:#152238;color:#e2e8f0;font-size:12px;outline:0">' +
     '</div>' +
   '</div>';
 }
-/* 【2026-09-29】管理端无登录态，"当前操作人"是本地轻量设置（localStorage持久化），
+/* 当前操作人显示名独立于服务端认证，"当前操作人"是本地轻量设置（localStorage持久化），
    随每次上传/入库写进 chunk.account，供 ragOriginStyle() 展示具体是谁上传的材料。
    不是真正的账号鉴权，只是一个自报家门的标签——足够解决"避免误判材料来源"这个
-   展示层需求，不需要为管理端引入完整登录体系。 */
+   展示层需求；操作权限仍完全由服务端登录态决定。 */
 var OPS_OPERATOR_KEY='huixiaozhao_ops_operator';
 function getOpsOperator(){
   try{ return localStorage.getItem(OPS_OPERATOR_KEY)||''; }catch(e){ return ''; }
@@ -121,9 +235,9 @@ function ragWorkspaceOverview(activeKey){
       var isAuthority=(CITY_BASE_PACKAGES&&CITY_BASE_PACKAGES[city]===k);
       return '<div onclick="ragCity=\''+k+'\';ragTopic=0;ragHits=null;renderOpsV2()" style="display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;background:'+(isOn?'#eff6ff':'#fff')+';border-top:1px solid #eef2f7">'+
         '<span style="flex:0 0 auto;width:6px;height:6px;border-radius:50%;background:'+(n>0?'#0aa696':'#c7ced9')+'"></span>'+
-        '<code style="font-size:11px;color:#5a7398;flex:0 0 auto">'+k+'</code>'+
+        '<code style="font-size:11px;color:#5a7398;flex:0 0 auto">'+_authEscape(k)+'</code>'+
         (isAuthority?'<span class="invite-badge on" style="flex:0 0 auto">基础包来源</span>':'')+
-        (inv?'<span style="font-size:11px;color:#9aa5b5">邀请码 '+inv+'</span>':'<span style="font-size:11px;color:#c7ced9">非邀请码创建</span>')+
+        (inv?'<span style="font-size:11px;color:#9aa5b5">邀请码 '+_authEscape(inv)+'</span>':'<span style="font-size:11px;color:#c7ced9">非邀请码创建</span>')+
         '<span style="flex:1"></span>'+
         '<span style="font-size:12px;color:'+(isOn?'#1d4ed8':'#0b183b')+';font-weight:'+(isOn?'700':'500')+'">'+n+' 条材料</span>'+
       '</div>';
@@ -265,7 +379,7 @@ function ragDoAddCity(){
   var org=val('ragNewOrg')||(city+'招商局');
   var key='city'+Date.now().toString(36);
   PROJECTS[key]={
-    id:key, city:city, org:org, who:'待绑定', topic:city+'产业链招引', stage:1,
+    id:key, workspaceId:key, city:city, org:org, who:'待绑定', topic:city+'产业链招引', stage:1,
     kb:[
       {icon:'🏭',t:'主导产业与产业链',sub:'待上传材料',tag:'待补充',known:[],calls:['城市公开信息','产业链图谱']},
       {icon:'🏢',t:'园区与承载条件',sub:'待上传材料',tag:'待补充',known:[],calls:['园区基础资料','政府官网']},
@@ -1872,7 +1986,9 @@ function opsUsers(){
     return head + '<div style="text-align:center;padding:60px 20px;color:#9aa5b5;font-size:14px">暂无注册用户<div style="font-size:12px;margin-top:8px;color:#b8c0cc">政府端用户注册后，账号资料会自动同步到这里</div></div></div>';
   }
   var cards = keys.map(function(u){
-    var d = USER_PROFILES[u]||{};
+    var profile=USER_PROFILES[u]||{}, d={ts:profile.ts};
+    ['name','phone','wechat','org','dept','title','city'].forEach(function(k){d[k]=_authEscape(profile[k]||'');});
+    var displayUser=_authEscape(u);
     var dateStr = d.ts ? new Date(d.ts).toLocaleString('zh-CN') : '';
     function field(icon,label,val){
       return '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0">' +
@@ -1888,9 +2004,9 @@ function opsUsers(){
         '<div style="width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#1a56db,#6366f1);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:700;flex-shrink:0">' + (d.name?d.name.charAt(0):'?') + '</div>' +
         '<div style="flex:1;min-width:0">' +
           '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' +
-            '<span style="font-size:19px;font-weight:750;color:#0b183b">' + (d.name||u) + '</span>' +
+            '<span style="font-size:19px;font-weight:750;color:#0b183b">' + (d.name||displayUser) + '</span>' +
             (d.city?'<span style="display:inline-flex;align-items:center;gap:4px;font-size:15px;font-weight:700;color:#1a56db;background:#eef3ff;padding:4px 14px;border-radius:20px">' + '📍' + d.city + '</span>':'') +
-            '<span style="font-size:12px;font-weight:400;color:#9aa5b5">@' + u + '</span>' +
+            '<span style="font-size:12px;font-weight:400;color:#9aa5b5">@' + displayUser + '</span>' +
           '</div>' +
           '<div style="font-size:12.5px;color:#8492a6;margin-top:4px">' + (d.title||'') + (d.dept?' · '+d.dept:'') + (d.org?' · '+d.org:'') + '</div>' +
         '</div>' +
@@ -1917,47 +2033,18 @@ function opsUsers(){
    （若未来接入"AI采集的通用城市客观数据包"——产业链公开信息等只读参考资料——
    那应是独立于 PROJECTS 业务数据之外的只读层，可按城市名共享；但业务数据
    [智库问答/项目/报告/线索/对接进度] 必须严格按 projKey 隔离，不得因城市名相同而合并。） */
-function _inviteCodeGen(){
-  var chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 去掉容易混淆的 I/O/0/1
-  var s=''; for(var i=0;i<8;i++){ s+=chars[Math.floor(Math.random()*chars.length)]; }
-  return s;
-}
-/* 为一个新邀请码强制分配全新独立工作区，绝不按城市名查找/复用已有 PROJECTS。
-   即使城市名与已有工作区相同，也各自独立，避免不同团队/不同邀请码的数据串到一起。 */
-function _newCityProjKey(city){
-  var key='p'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
-  // 【2026-09-29】必须在这里当场用 generateKbConclusions(city) 填充 known/sub/tag，
-  // 不能只给空骨架——政府端邀请码注册流程(doRegister)不会调用 autoProvisionCity 或
-  // enterWorkspace，它直接复用邀请码自带的 projKey 进入已存在的 PROJECTS[key]。
-  // 如果这里的 kb 只是空骨架，账号进去后城市智库永远空白，没有任何环节会后补填充。
-  // （真实复现过：改成带骨架的 kb:[] 数组后，问题从"完全空白"变成"骨架有了但
-  // known 仍是[]"——根因是填充这一步本该发生在创建时，不是进入时。）
-  var _c=(typeof generateKbConclusions==='function')?generateKbConclusions(city):null;
-  PROJECTS[key]={id:key, city:city, org:city+'市招商局', who:'负责人', topic:city+'产业链招引', stage:1,
-    kb:_c?[
-      {icon:'🏭',t:'主导产业与产业链',sub:_c.industry.sub,tag:_c.industry.tag,known:_c.industry.known,calls:['城市公开信息','产业链图谱']},
-      {icon:'🏢',t:'园区与承载条件',sub:_c.park.sub,tag:_c.park.tag,known:_c.park.known,calls:['园区基础资料','政府官网']},
-      {icon:'🏗️',t:'链主与存量企业',sub:_c.firm.sub,tag:_c.firm.tag,known:_c.firm.known,calls:['企业名录','工商信息']},
-      {icon:'📜',t:'政策、规划与领导关注',sub:_c.policy.sub,tag:_c.policy.tag,known:_c.policy.known,calls:['政府工作报告','领导发言']}
-    ]:[
-      {icon:'🏭',t:'主导产业与产业链',sub:'分析中',tag:'公开信息',known:[],calls:['城市公开信息','产业链图谱']},
-      {icon:'🏢',t:'园区与承载条件',sub:'分析中',tag:'公开信息',known:[],calls:['园区基础资料','政府官网']},
-      {icon:'🏗️',t:'链主与存量企业',sub:'分析中',tag:'公开信息',known:[],calls:['企业名录','工商信息']},
-      {icon:'📜',t:'政策、规划与领导关注',sub:'分析中',tag:'公开信息',known:[],calls:['政府工作报告','领导发言']}
-    ], report:null, clues:[]};
-  return key;
-}
 function inviteCodeSection(){
   var codes=Object.keys(INVITE_CODES||{}).sort(function(a,b){return (INVITE_CODES[b].createdAt||0)-(INVITE_CODES[a].createdAt||0);});
   // 同城市名可能对应多个互不共享的独立工作区，用 projKey 帮管理员分辨"是不是同一个码/同一份数据"
   var cityCounts={};
   codes.forEach(function(c){ var ct=INVITE_CODES[c].city; cityCounts[ct]=(cityCounts[ct]||0)+1; });
   var rows=codes.map(function(c){
+    if(!/^[A-Z0-9_-]{1,64}$/.test(c))return '';
     var inv=INVITE_CODES[c];
     var used=(inv.usedBy||[]).length;
     var dupWarn=(cityCounts[inv.city]>1)?'<span class="ic-warn" title="同城市名有多个独立工作区，勿混淆">⚠</span>':'';
     var distCell=inv.distributed
-      ? '<div class="ic-dist"><span class="invite-badge on">已分发</span><span class="ic-dist-email">'+(inv.distributedEmail||'—')+'</span></div>'
+      ? '<div class="ic-dist"><span class="invite-badge on">已分发</span><span class="ic-dist-email">'+_authEscape(inv.distributedEmail||'—')+'</span></div>'
       : '<span class="invite-badge off">未分发</span>';
     var stTag=inv.revoked?'<span class="invite-badge revoked">已作废</span>':'<span class="invite-badge on">生效中</span>';
     var actions=inv.revoked?'':
@@ -1965,7 +2052,7 @@ function inviteCodeSection(){
       '<button class="ic-iconbtn danger" onclick="revokeInviteCode(\''+c+'\')" title="作废邀请码">⊘</button>';
     return '<tr>'+
       '<td><div class="ic-code-cell"><span class="ic-code">'+c+'</span><button class="ic-copy" data-code="'+c+'" onclick="copyInviteCode(this)" title="复制邀请码">⧉</button></div></td>'+
-      '<td><div class="ic-city">'+(inv.city||'—')+dupWarn+'</div><div class="ic-workspace" title="工作区 '+(inv.projKey||'—')+'（同城市名不同工作区，数据互不共享）">工作区 '+(inv.projKey||'—')+'</div></td>'+
+      '<td><div class="ic-city">'+_authEscape(inv.city||'—')+dupWarn+'</div><div class="ic-workspace" title="工作区 '+_authEscape(inv.projKey||'—')+'（同城市名不同工作区，数据互不共享）">工作区 '+_authEscape(inv.projKey||'—')+'</div></td>'+
       '<td class="ic-used"><strong>'+used+'</strong> 人已用</td>'+
       '<td>'+distCell+'</td>'+
       '<td class="ic-time">'+new Date(inv.createdAt||0).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})+'</td>'+
@@ -2017,27 +2104,32 @@ function _copyFallback(text, onOk){
 function openMarkDistributedModal(code){
   var inv=INVITE_CODES[code]; if(!inv) return;
   openModal('标记邀请码分发（'+code+'）',
-    '<label style="display:grid;gap:6px;font-size:13px;color:#52637a">已分发邮箱<input id="distEmailInput" type="text" value="'+(inv.distributedEmail||'')+'" placeholder="对方邮箱，方便核对是谁在用" style="min-height:40px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:8px;outline:0;font-size:14px"></label>'+
+    '<label style="display:grid;gap:6px;font-size:13px;color:#52637a">已分发邮箱<input id="distEmailInput" type="text" value="'+_authEscape(inv.distributedEmail||'')+'" placeholder="对方邮箱，方便核对是谁在用" style="min-height:40px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:8px;outline:0;font-size:14px"></label>'+
     '<p style="margin:10px 0 0;font-size:12px;color:#8492a6">标记为已分发后，本码在列表里会显示分发邮箱，方便核对"发给了谁、有没有重复发"。</p>',
     '<button class="ghost-button" onclick="closeModal()">取消</button>'+
     (inv.distributed?'<button class="ghost-button" onclick="clearInviteDistributed(\''+code+'\')">清除分发标记</button>':'')+
     '<button class="primary-button" onclick="doMarkDistributed(\''+code+'\')">保存</button>');
 }
+function _saveAdminInvite(payload){
+  if(!AUTH||AUTH.scope!=='admin'){toast('需要管理员登录');return Promise.resolve(false);}
+  if(_saveAdminInvite._pending)return _saveAdminInvite._pending;
+  var saveEpoch=_authEpoch;
+  _saveAdminInvite._pending=_authJson('/api/admin/invites',payload).then(function(data){
+    if(saveEpoch!==_authEpoch)throw new Error('会话已变化，请重新登录');
+    var invite=data.invite,code=invite&&invite.code||payload.code;
+    if(!code||(payload.action==='create'&&!invite))throw new Error('保存响应不完整，请刷新后检查');
+    INVITE_CODES[code]=Object.assign({},INVITE_CODES[code]||{},invite||{},payload.action==='distribution'?{distributed:payload.distributed,distributedEmail:payload.distributedEmail}:{},payload.action==='revoke'?{revoked:true}:{});
+    if(data.project){var key=INVITE_CODES[code].projKey||data.project.id;if(key)PROJECTS[key]=data.project;}
+    closeModal();render();toast(payload.action==='create'?'邀请码已生成':payload.action==='revoke'?'邀请码已作废':'分发标记已保存');return true;
+  }).catch(function(error){toast(error.message||'保存失败，请重试');return false;}).then(function(result){_saveAdminInvite._pending=null;return result;});
+  return _saveAdminInvite._pending;
+}
 function doMarkDistributed(code){
-  var inv=INVITE_CODES[code]; if(!inv) return;
-  var el=document.getElementById('distEmailInput');
-  var email=(el&&el.value||'').trim();
-  if(!email){ toast('请输入分发邮箱'); if(el)el.focus(); return; }
-  inv.distributed=true; inv.distributedEmail=email;
-  persist(); closeModal(); render();
-  toast('✓ 已标记 '+code+' 分发给 '+email);
+  var el=document.getElementById('distEmailInput'),email=(el&&el.value||'').trim();
+  if(!email){toast('请输入分发邮箱');if(el)el.focus();return;}
+  return _saveAdminInvite({action:'distribution',code:code,distributed:true,distributedEmail:email});
 }
-function clearInviteDistributed(code){
-  var inv=INVITE_CODES[code]; if(!inv) return;
-  inv.distributed=false; inv.distributedEmail='';
-  persist(); closeModal(); render();
-  toast('已清除 '+code+' 的分发标记');
-}
+function clearInviteDistributed(code){return _saveAdminInvite({action:'distribution',code:code,distributed:false,distributedEmail:''});}
 function openInviteCodeModal(){
   openModal('生成邀请码',
     '<label style="display:grid;gap:6px;font-size:13px;color:#52637a">目标城市<input id="invCityInput" type="text" placeholder="如 随州" style="min-height:40px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:8px;outline:0;font-size:14px"></label>'+
@@ -2046,32 +2138,12 @@ function openInviteCodeModal(){
     '<button class="ghost-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="doGenerateInviteCode()">生成</button>');
 }
 function doGenerateInviteCode(){
-  var el=document.getElementById('invCityInput');
-  var city=(el&&el.value||'').trim();
-  if(!city){ toast('请输入目标城市'); if(el)el.focus(); return; }
+  var el=document.getElementById('invCityInput'),city=(el&&el.value||'').trim();
+  if(!city){toast('请输入目标城市');if(el)el.focus();return;}
   var emailEl=document.getElementById('invEmailInput');
-  var email=(emailEl&&emailEl.value||'').trim();
-  var code=_inviteCodeGen();
-  while(INVITE_CODES[code]) code=_inviteCodeGen(); // 极小概率碰撞兜底
-  var projKey=_newCityProjKey(city); // 强制新建独立工作区，绝不因城市名重复而复用别的邀请码的数据
-  INVITE_CODES[code]={city:city, projKey:projKey, role:'member', createdBy:'ops', createdAt:Date.now(), revoked:false, usedBy:[], distributed:!!email, distributedEmail:email};
-  persist();
-  closeModal();
-  render();
-  // 若此前已给同一城市名生成过码，提醒管理员：新码是全新独立工作区，不会与旧码共享数据
-  var sameCityOlder=Object.keys(INVITE_CODES).filter(function(c){return c!==code && INVITE_CODES[c].city===city && !INVITE_CODES[c].revoked;});
-  var suffix=email?'（已标记分发给 '+email+'）':'，可复制发给对方';
-  toast(sameCityOlder.length
-    ? '✓ 已生成邀请码 '+code+'（'+city+'）—— 注意：该城市已有其他生效邀请码，此码是全新独立工作区，数据不互通'
-    : '✓ 已生成邀请码 '+code+'（'+city+'）'+suffix);
+  return _saveAdminInvite({action:'create',city:city,distributedEmail:(emailEl&&emailEl.value||'').trim()});
 }
-function revokeInviteCode(code){
-  if(!INVITE_CODES[code]) return;
-  INVITE_CODES[code].revoked=true;
-  persist();
-  render();
-  toast('已作废邀请码 '+code);
-}
+function revokeInviteCode(code){if(INVITE_CODES[code])return _saveAdminInvite({action:'revoke',code:code});}
 
 /* == Tab2: 企业资源库 == */
 function opsEnterprises(){
