@@ -45,7 +45,22 @@ def _contract_issue(error):
 def _provider_issue(error):
     # No substring of the exception itself leaves this process. Even parse
     # errors may include raw model text or upstream response material.
-    message = str(error).lower()
+    raw_message = str(error)
+    entity_issues = {
+        'company identity needs a retrieved source URL': 'company_identity_source',
+        'candidate part needs five new grounded companies': 'candidate_batch_identity',
+        'company part contains a name absent from the saved candidate pool': 'company_absent_from_pool',
+        'company part contains a name outside its target batch': 'company_outside_target_batch',
+        'company target batch needs five saved candidates': 'company_target_batch_size',
+        'expansion part needs five grounded target companies': 'expansion_target_coverage',
+        'score identity is absent from saved selections': 'score_identity',
+        'score dimensions require seven finite values within 0..10': 'score_dimensions',
+    }
+    # These providers emit fixed messages. Match the whole original message so
+    # appended company names, URLs or upstream details stay in the fallback.
+    if raw_message in entity_issues:
+        return entity_issues[raw_message]
+    message = raw_message.lower()
     if message == 'part line floor not met':
         return 'line_floor'
     if message == 'part contains repeated filler':
