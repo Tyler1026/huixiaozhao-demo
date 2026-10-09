@@ -1164,6 +1164,152 @@ class HighStarEntityQuoteGateTests(unittest.TestCase):
         self.assertEqual(metadata['checks'], checks)
 
 
+class ResearchRepetitionCorrectionTests(unittest.TestCase):
+    _provider = LiveProviderRuntimeTests._provider
+
+    @staticmethod
+    def _text(label, lines=52):
+        return '\n'.join(f'OFFLINE {label}: distinct protocol observation {index}' for index in range(lines))
+
+    def _setup(self, payloads, *, stage='competition', previous_lines=42):
+        evidence = [{'url': f'https://stats.gov.cn/offline-repetition/{index}',
+                     'excerpt': f'OFFLINE source {index}: protocol fixture, not actual regional facts.'}
+                    for index in range(6)]
+        previous = {'text': self._text('saved prior', previous_lines),
+                    'metadata': {'evidence': evidence, 'unknown_saved_field': {'keep': [None, 7]}}}
+        prior = {stage: previous}
+        responses = iter(payloads)
+        def chat(request):
+            value = next(responses)
+            if isinstance(value, Exception):
+                raise value
+            if isinstance(value, str):
+                content = value
+            else:
+                content = json.dumps(value)
+            return json.dumps({'choices': [{'finish_reason': 'stop', 'message': {'content': content}}]})
+        router = RecordingRouter({
+            'exa.ai/search': (200, json.dumps({'results': [
+                {'url': entry['url'], 'text': entry['excerpt']} for entry in evidence]})),
+            'chat/completions': (200, chat),
+        })
+        timeouts = []
+        def transport(request, timeout):
+            timeouts.append((request.full_url, timeout))
+            return router(request, timeout)
+        return self._provider(transport), router, timeouts, prior
+
+    @staticmethod
+    def _chats(router):
+        return [json.loads(call.data) for call in router.calls if 'chat/completions' in call.full_url]
+
+    def _run(self, provider, prior, *, stage='competition', part='比较优势', mode='standard'):
+        before = json.dumps(prior, ensure_ascii=False, separators=(',', ':'))
+        try:
+            return provider.run_part(stage, part, {'city': 'OFFLINE测试城', 'mode': mode}, prior)
+        finally:
+            self.assertEqual(json.dumps(prior, ensure_ascii=False, separators=(',', ':')), before)
+
+    def test_exact_prior_echo_gets_one_same_evidence_rewrite_and_original_whole_gates(self):
+        echoed = self._text('saved prior', 42)
+        corrected = self._text('current comparison')
+        p, router, timeouts, prior = self._setup([{'text': echoed}, {'text': corrected}])
+        result = self._run(p, prior)
+        self.assertEqual(result['text'], corrected)
+        self.assertEqual(len(result['metadata']['evidence']), 6)
+        self.assertEqual(sum('exa.ai/search' in call.full_url for call in router.calls), 1)
+        calls = self._chats(router)
+        self.assertEqual(len(calls), 2)
+        first, second = [call['messages'][-1]['content'] for call in calls]
+        self.assertIn('"kind":"research_repetition"', second)
+        self.assertIn('"shared_prior_line_count":42', second)
+        self.assertIn('不得靠改编号、删除重复行或同义改写既有结论来凑数', second)
+        self.assertTrue(first.endswith('所有未知和来源限制继续适用。'))
+        self.assertEqual(first.rsplit('\n\n最终任务锚点', 1)[0],
+                         second.split('\n\n本次是当前子章节唯一一次重复正文纠偏', 1)[0])
+        for call in calls:
+            self.assertEqual(call['max_tokens'], 16000)
+            self.assertEqual(call['response_format'], {'type': 'json_object'})
+        self.assertEqual([timeout for url, timeout in timeouts if 'chat/completions' in url], [90, 90])
+        combined = fc.assemble('competition', [prior['competition'], result])
+        self.assertEqual(fc.validate('competition', combined['text'], combined['metadata'], mode='standard'), [])
+        self.assertTrue(fc.validate('competition', combined['text'], {'evidence': result['metadata']['evidence'][:4]}, mode='standard'))
+        self.assertTrue(fc.validate('competition', self._text('short whole', 89), combined['metadata'], mode='standard'))
+        self.assertTrue(fc.validate('competition', combined['text'] + '\n' + echoed, combined['metadata'], mode='standard'))
+
+    def test_correction_that_echoes_repeats_is_short_or_has_bad_url_remains_rejected(self):
+        echoed = self._text('saved prior', 42)
+        repeated = '\n'.join(['OFFLINE identical filler'] * 30 + [f'OFFLINE unique tail {i}' for i in range(12)])
+        for second in ({'text': echoed}, {'text': repeated}, {'text': self._text('short', 29)},
+                       {'text': self._text('bad link') + '\nhttps://127.0.0.1/private'},
+                       'NOT_JSON', {'text': ''}, TimeoutError('OFFLINE timeout')):
+            with self.subTest(second=second):
+                p, router, _, prior = self._setup([{'text': echoed}, second])
+                with self.assertRaises(fp.FullProviderError) as failure:
+                    self._run(p, prior)
+                self.assertEqual(failure.exception.failure_code, 'timeout' if isinstance(second, TimeoutError) else 'quality')
+                self.assertEqual(len(self._chats(router)), 2)
+                self.assertEqual(sum('exa.ai/search' in call.full_url for call in router.calls), 1)
+
+    def test_current_part_internal_repetition_gets_one_rewrite_but_never_a_third_chat(self):
+        repeated = '\n'.join(['OFFLINE identical filler'] * 30 + [f'OFFLINE unique tail {i}' for i in range(12)])
+        corrected = self._text('new comparison')
+        for second, succeeds in ((corrected, True), (repeated, False)):
+            with self.subTest(succeeds=succeeds):
+                p, router, _, prior = self._setup([{'text': repeated}, {'text': second}])
+                if succeeds:
+                    self.assertEqual(self._run(p, prior)['text'], corrected)
+                else:
+                    with self.assertRaisesRegex(fp.FullProviderError, 'part contains repeated filler'):
+                        self._run(p, prior)
+                calls = self._chats(router)
+                self.assertEqual(len(calls), 2)
+                self.assertIn('"current_duplicate_excess":29', calls[1]['messages'][-1]['content'])
+                self.assertEqual(sum('exa.ai/search' in call.full_url for call in router.calls), 1)
+
+    def test_valid_first_part_is_kept_without_correction(self):
+        text = self._text('valid initial comparison')
+        p, router, _, prior = self._setup([{'text': text}])
+        result = self._run(p, prior)
+        self.assertEqual(result['text'], text)
+        self.assertEqual(len(self._chats(router)), 1)
+
+    def test_other_initial_quality_transport_and_json_failures_never_request_rewrite(self):
+        cases = [(200, {'text': self._text('short', 29)}, None),
+                 (200, {'text': self._text('bad link') + '\nhttps://127.0.0.1/private'}, None),
+                 (200, 'NOT_JSON', None), (200, '{"text":', None), (200, {'text': ''}, None),
+                 (200, TimeoutError('OFFLINE timeout'), None),
+                 (401, None, {'error': 'OFFLINE auth'}), (403, None, {'error': 'OFFLINE forbidden'}),
+                 (429, None, {'error': 'OFFLINE rate'}),
+                 (200, None, {'choices': [{'finish_reason': 'length', 'message': {'content': '{"text":"partial"}'}}]})]
+        for status, value, raw in cases:
+            with self.subTest(status=status, value=value, raw=raw):
+                p, router, _, prior = self._setup([value])
+                if raw is not None:
+                    router.routes['chat/completions'] = (status, json.dumps(raw))
+                with self.assertRaises(fp.FullProviderError):
+                    self._run(p, prior)
+                self.assertEqual(len(self._chats(router)), 1)
+
+    def test_deep_and_entity_stages_do_not_use_research_repetition_rewrite(self):
+        echoed = self._text('saved prior', 100)
+        p, router, _, prior = self._setup([{'text': echoed}], previous_lines=100)
+        with self.assertRaisesRegex(fp.FullProviderError, 'part contains repeated filler'):
+            self._run(p, prior, mode='deep')
+        self.assertEqual(len(self._chats(router)), 1)
+        repeated = '\n'.join(['OFFLINE identical filler'] * 110 + [f'OFFLINE unique row {i}' for i in range(40)])
+        for stage, part in (('industry', '主导产业'), ('fact_check', '经济关键数字'),
+                            ('enterprises_1', '匹配理由与风险')):
+            with self.subTest(stage=stage):
+                p, router, _, prior = self._setup([{'text': repeated}], stage=stage)
+                if stage.startswith('enterprises_'):
+                    industry, evidence, _ = HighStarCorrectionTests._case()
+                    prior['industry'] = industry['industry']
+                with self.assertRaisesRegex(fp.FullProviderError, 'part contains repeated filler'):
+                    self._run(p, prior, stage=stage, part=part)
+                self.assertEqual(len(self._chats(router)), 1)
+
+
 class HighStarCorrectionTests(unittest.TestCase):
     _provider = LiveProviderRuntimeTests._provider
 
