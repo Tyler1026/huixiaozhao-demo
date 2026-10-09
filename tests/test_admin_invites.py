@@ -221,16 +221,85 @@ class AdminInvitationTests(unittest.TestCase):
         token = self.login()
         state = self.store.state
         original = state['PROJECTS']['root-a']
-        original['kb'] = [{'known': ['material-' + str(i)]} for i in range(4)]
+        titles = ['主导产业与产业链', '园区与承载条件', '链主与存量企业', '政策、规划与领导关注']
+        original['kb'] = [{'t': title, 'known': [{'text': 'material-' + str(i), 'nature': 'base'}]}
+                          for i, title in enumerate(titles)]
         original.update(report='private-report', reportRequestId='private-request', clues=['private-clue'])
         state['CITY_BASE_PACKAGES'] = {'同名市': 'root-a'}
         self.store.replace(state)
         result = self.manage({'action': 'create', 'city': '同名市'}, token=token)
-        self.assertEqual(result['project']['kb'], original['kb'])
+        self.assertEqual([section['t'] for section in result['project']['kb']], titles)
+        self.assertEqual([[item['text'] for item in section['known']]
+                          for section in result['project']['kb']],
+                         [['material-' + str(i)] for i in range(4)])
         self.assertIsNone(result['project']['report'])
         self.assertNotIn('reportRequestId', result['project'])
         self.assertEqual(result['project']['clues'], [])
         self.assertEqual(self.store.state['PROJECTS']['root-a'], original)
+
+    def test_city_base_inheritance_keeps_only_explicit_public_items_in_standard_topics(self):
+        token = self.login()
+        state = self.store.state
+        titles = ['主导产业与产业链', '园区与承载条件', '链主与存量企业', '政策、规划与领导关注']
+        sections = []
+        for number, title in enumerate(titles):
+            sections.append({
+                't': title, 'icon': 'private-section-icon', 'sub': 'private-section-summary',
+                'tag': 'private-section-tag', 'calls': ['private-section-call'],
+                'known': [
+                    {'text': 'public-base-' + str(number), 'nature': 'base', 'origin': 'ai',
+                     'src': 'https://public.example.test/source-' + str(number),
+                     'account': 'private-account', 'uploadId': 'private-upload-id',
+                     'filePath': 'private-upload-path', 'annotations': ['private-annotation'],
+                     'internal': {'text': 'private-nested-note'}},
+                    {'text': 'private-item', 'nature': 'private'},
+                    {'text': 'private-interview', 'nature': 'interview', 'src': 'private-interview-source'},
+                    {'text': 'private-support', 'nature': 'support', 'src': 'private-support-upload'},
+                    {'text': 'private-unclassified'},
+                    'private-legacy-string',
+                ],
+            })
+        sections.append({'t': 'private-extra-topic', 'known': [
+            {'text': 'private-extra-base-text', 'nature': 'base'}]})
+        original = state['PROJECTS']['root-a']
+        original['kb'] = sections
+        original.update(report='private-report', reportRequestId='private-request',
+                        reportFiles=[{'filename': 'private-report-file'}], clues=['private-clue'])
+        state['CITY_BASE_PACKAGES'] = {'同名市': 'root-a'}
+        self.store.replace(state)
+        result = self.manage({'action': 'create', 'city': '同名市'}, token=token)
+        project = result['project']
+        self.assertEqual([section['t'] for section in project['kb']], titles)
+        self.assertEqual([[item['text'] for item in section['known']] for section in project['kb']],
+                         [['public-base-' + str(i)] for i in range(4)])
+        self.assertTrue(all(item['nature'] == 'base' for section in project['kb'] for item in section['known']))
+        self.assertNotIn('private-', json.dumps(project, ensure_ascii=False))
+        self.assertEqual(self.store.state['PROJECTS'][result['invite']['projKey']], project)
+        self.assertEqual(self.store.state['PROJECTS']['root-a'], original)
+        registered = self.call_auth('register', {'username': 'new-public-member', 'password': PASSWORD,
+                                                'inviteCode': result['invite']['code']})
+        view = scoped_sync_view(self.store.state, registered['auth'])
+        self.assertEqual(set(view['PROJECTS']), {result['invite']['projKey']})
+        self.assertNotIn('private-', json.dumps(view, ensure_ascii=False))
+
+    def test_exactly_four_source_sections_do_not_promote_an_extra_topic_into_public_base(self):
+        token = self.login()
+        state = self.store.state
+        titles = ['主导产业与产业链', '园区与承载条件', '链主与存量企业', '政策、规划与领导关注']
+        source = state['PROJECTS']['root-a']
+        source['kb'] = [
+            {'t': title, 'known': [{'nature': 'base', 'text': 'public-' + str(index)}]}
+            for index, title in enumerate(titles[:3])
+        ] + [{'t': 'private-extra-topic', 'known': [{'nature': 'base', 'text': 'private-extra-base'}]}]
+        state['CITY_BASE_PACKAGES'] = {'同名市': 'root-a'}
+        self.store.replace(state)
+        result = self.manage({'action': 'create', 'city': '同名市'}, token=token)
+        sections = result['project']['kb']
+        self.assertEqual([section['t'] for section in sections], titles)
+        self.assertEqual([[item['text'] for item in section['known']] for section in sections],
+                         [['public-0'], ['public-1'], ['public-2'], []])
+        self.assertNotIn('private-', json.dumps(result['project'], ensure_ascii=False))
+        self.assertEqual(self.store.state['PROJECTS']['root-a'], source)
 
     def test_every_failed_create_save_has_no_ack_or_partial_mutation(self):
         token = self.login()

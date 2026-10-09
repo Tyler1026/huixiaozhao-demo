@@ -40,19 +40,32 @@ def _save(session, state):
 
 
 def _project(state, city, key):
-    sections = []
+    sections = [dict(icon=icon, t=title, sub='待补充材料', tag='公开信息', known=[], calls=calls)
+                for icon, title, calls in (
+                    ('🏭', '主导产业与产业链', ['城市公开信息', '产业链图谱']),
+                    ('🏢', '园区与承载条件', ['园区基础资料', '政府官网']),
+                    ('🏗️', '链主与存量企业', ['企业名录', '工商信息']),
+                    ('📜', '政策、规划与领导关注', ['政府工作报告', '领导发言']))]
     packages = state.get('CITY_BASE_PACKAGES') or {}
     source_key = packages.get(city) if isinstance(packages, dict) else None
     source = (state.get('PROJECTS') or {}).get(source_key)
     if isinstance(source, dict) and isinstance(source.get('kb'), list):
-        sections = copy.deepcopy(source['kb'])
-    if len(sections) != 4:
-        sections = [dict(icon=icon, t=title, sub='待补充材料', tag='公开信息', known=[], calls=calls)
-                    for icon, title, calls in (
-                        ('🏭', '主导产业与产业链', ['城市公开信息', '产业链图谱']),
-                        ('🏢', '园区与承载条件', ['园区基础资料', '政府官网']),
-                        ('🏗️', '链主与存量企业', ['企业名录', '工商信息']),
-                        ('📜', '政策、规划与领导关注', ['政府工作报告', '领导发言']))]
+        # A city's shared base never includes another team's interviews,
+        # uploads, custom topics, section metadata or private supplements.
+        for section in sections:
+            for original in source['kb']:
+                if not isinstance(original, dict) or original.get('t') != section['t']:
+                    continue
+                for item in original.get('known', []):
+                    if not isinstance(item, dict) or item.get('nature') != 'base' or not isinstance(item.get('text'), str):
+                        continue
+                    public_item = {'text': item['text'], 'nature': 'base'}
+                    for field in ('src', 'origin'):
+                        if isinstance(item.get(field), str):
+                            public_item[field] = item[field]
+                    section['known'].append(public_item)
+            if section['known']:
+                section['sub'] = str(len(section['known'])) + ' 条公共基础资料'
     return dict(id=key, workspaceId=key, city=city, org=city + '招商局', who='负责人',
                 topic=city + '产业链招引', stage=1, kb=sections, report=None, clues=[])
 
