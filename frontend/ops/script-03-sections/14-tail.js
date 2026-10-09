@@ -41,10 +41,12 @@ function _applyKbItemTombs(projMap){
 var KB_CONFIRMS={};  // {projKey:{kbIdx:{itemIdx:{status,text,ts}}}}
 
 function restore(){
+  if(!AUTH||AUTH.scope!=='admin')return false;
   try{
     var raw=localStorage.getItem(LS_KEY);
     if(!raw) return false;
-    var data=JSON.parse(raw);
+    var data=_safeSyncSnapshot(JSON.parse(raw));
+    if(data.clientUser!==AUTH.user)return false;
     if(data.PROJECTS&&Object.keys(data.PROJECTS).length>0){
       PROJECTS=data.PROJECTS;
       cur=data.cur||null;
@@ -61,9 +63,9 @@ function restore(){
       DOCK_LOGS=data.DOCK_LOGS||{};
       OPS_ENT=data.OPS_ENT||[];
       if(data.REPORT_REQUESTS) REPORT_REQUESTS=data.REPORT_REQUESTS;
-      if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
-      if(data.CITY_ACCOUNTS) CITY_ACCOUNTS=data.CITY_ACCOUNTS;
-      if(data.INVITE_CODES) INVITE_CODES=data.INVITE_CODES;
+
+
+
       if(data.CITY_BASE_PACKAGES) CITY_BASE_PACKAGES=data.CITY_BASE_PACKAGES;
       if(data.RESET_GEN) RESET_GEN=data.RESET_GEN;
       console.log('[restore] loaded', Object.keys(PROJECTS).length,'projects, cur='+cur);
@@ -74,13 +76,16 @@ function restore(){
 }
 
 function restoreFromServer(callback){
+  if(!AUTH||AUTH.scope!=='admin'){if(callback)callback(false);return Promise.resolve(false);}
+  var authEpoch=_authEpoch;
   var localENT = OPS_ENT && OPS_ENT.length ? OPS_ENT.slice() : [];
-  fetch('/api/sync?raw=1',{headers:{'X-HXZ-Report-Client':'website'}}).then(function(r){return r.json();}).then(function(raw){
-    if(!raw){ window._opsDataReady=true; if(callback)callback(false); return; }
+  return fetch('/api/sync?raw=1',{credentials:'same-origin',headers:{'X-HXZ-Report-Client':'website'}}).then(function(response){if(authEpoch!==_authEpoch)throw new Error('会话已变化');return _authReadSync(response);}).then(function(raw){
+    if(authEpoch!==_authEpoch){if(callback)callback(false);return;}
+    if(!raw){ window._opsDataReady=false; if(callback)callback(false); return; }
     var srv = (raw.huixiaozhao_kb_v1 && raw.huixiaozhao_kb_v1.PROJECTS)
               ? raw.huixiaozhao_kb_v1 : raw;
-    if(!srv||!srv.PROJECTS||!Object.keys(srv.PROJECTS).length){
-      window._opsDataReady=true;
+    if(!srv||!srv.PROJECTS){
+      window._opsDataReady=false;
       if(localENT.length && !OPS_ENT.length) OPS_ENT = localENT;
       if(callback)callback(false); return;
     }
@@ -88,7 +93,7 @@ function restoreFromServer(callback){
     UPLOADS          = srv.UPLOADS          || {};
     _mergeKbItemTombs(srv.KB_ITEM_TOMBS);
     // 【2026-09-18】必须过滤 srv.PROJECTS 本体，而不是只过滤内存里的 PROJECTS。
-    // 本函数末尾会 `localStorage.setItem(LS_KEY, JSON.stringify(srv))` 回写原始 srv，
+    // 本函数末尾会 `localStorage.setItem(LS_KEY, JSON.stringify(Object.assign(_safeSyncSnapshot(srv),{clientUser:AUTH.user})))` 回写原始 srv，
     // 只过滤内存的话脏数据仍会落盘，下次 restore 又把已删条目读回来。
     _applyKbItemTombs(srv.PROJECTS);
     _applyKbItemTombs(PROJECTS);
@@ -107,9 +112,8 @@ function restoreFromServer(callback){
     } else if(localENT.length){
       OPS_ENT = localENT;
     }
-    if(srv.USER_PROFILES){ Object.keys(srv.USER_PROFILES).forEach(function(uk){ USER_PROFILES[uk]=srv.USER_PROFILES[uk]; }); }
-    if(srv.CITY_ACCOUNTS){ CITY_ACCOUNTS = srv.CITY_ACCOUNTS; }
-    if(srv.INVITE_CODES){ Object.keys(srv.INVITE_CODES).forEach(function(ck){ INVITE_CODES[ck]=srv.INVITE_CODES[ck]; }); }
+    USER_PROFILES=_safeProfiles(srv.USER_PROFILES);CITY_ACCOUNTS={};
+    INVITE_CODES=srv.INVITE_CODES||{};
     if(srv.RESET_GEN){ RESET_GEN = srv.RESET_GEN; }  // reset代际:persist时带回,否则被服务端拒绝
     // 政府端移除的企业线索墓碑：读回后既不重复推送，也从拉到的 clues 里剔除
     if(srv.DELETED_CLUES){
@@ -123,7 +127,7 @@ function restoreFromServer(callback){
       }
     }
     cur  = srv.cur  || Object.keys(PROJECTS)[0] || null;
-    try{ localStorage.setItem(LS_KEY, JSON.stringify(srv)); }catch(e){}
+    try{localStorage.setItem(LS_KEY,JSON.stringify(Object.assign(_safeSyncSnapshot(srv),{clientUser:AUTH.user})));}catch(e){}
     window._opsServerHadData=true;
     window._opsDataReady=true;
     // If server had no OPS_ENT but we have local data, push it up now
@@ -131,7 +135,7 @@ function restoreFromServer(callback){
       persist();
     }
     if(callback) callback(true);
-  }).catch(function(e){ console.warn('[restoreFromServer]',e); window._opsDataReady=true; if(callback)callback(false); });
+  }).catch(function(e){ console.warn('[restoreFromServer]',e); if(authEpoch===_authEpoch)window._opsDataReady=false; if(callback)callback(false); });
 }
 
 function clearPersist(){
@@ -1542,7 +1546,7 @@ function doCreateProj(){
   var inp=document.querySelector('#modalLayer input');
   var dir=(inp&&inp.value.trim())||'新产业方向';
   var id='p'+Date.now();
-  PROJECTS[id]={id:id,city:P().city,org:P().org,who:P().who,topic:dir+'补链',stage:1,
+  PROJECTS[id]={id:id,workspaceId:_projectWorkspaceId(cur),city:P().city,org:P().org,who:P().who,topic:dir+'补链',stage:1,
     kb:P().kb,report:null,clues:[]};
   closeModal();cur=id;view='home';detailData=null;render();
   toast('已创建研判：'+dir+'补链');

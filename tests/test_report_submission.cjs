@@ -7,6 +7,7 @@ const read = name => fs.readFileSync(path.join(__dirname, '../frontend/ops/scrip
 function harness({disk = new Map(), server = {REPORT_REQUESTS: []}, fail = null} = {}) {
   const calls = [], messages = [], intervals = [], timers = new Map(); let timerID = 0;
   const context = {
+    AUTH: {user: 'test-admin', scope: 'admin'},
     Date, Math, Promise, window: {addEventListener() {}}, LS_KEY: 'huixiaozhao_kb_v1',
     localStorage: {getItem: key => disk.get(key) || null, setItem: (key, value) => disk.set(key, value)},
     $: id => ({value: id === '#rrCity' ? 'city' : 'province'}),
@@ -123,4 +124,22 @@ test('download uses selected request ID and refuses unfinished reports', () => {
   h.context.REPORT_REQUESTS = [{id: 'old', city: 'same city', status: 'done', files: [{kind: 'full', name: 'old.docx'}]}];
   h.context.downloadReqFile('old', 'full'); assert.ok(links[0].href.includes('requestId=old&city=same%20city'));
   h.context.REPORT_REQUESTS[0].status = 'running'; h.context.downloadReqFile('old', 'full'); assert.equal(links.length, 1);
+});
+
+test('cached outbox and polling wait for an authenticated administrator', async () => {
+  const h = harness();
+  h.context._rrOutbox['rrfixture'] = {request: {id: 'rrfixture', city: 'city', province: 'province', status: 'pending'}, nextAt: 0};
+  h.context.REPORT_REQUESTS = [{id: 'running', status: 'running'}];
+  for (const session of [null, {user: 'member', scope: 'user'}]) {
+    h.context.AUTH = session;
+    await h.context._rrFlushOutbox();
+    await h.intervals[0]();
+    h.context.submitReportRequest();
+    assert.equal(h.calls.length, 0);
+    assert.ok(h.context._rrOutbox.rrfixture);
+  }
+  h.context.AUTH = {user: 'test-admin', scope: 'admin'};
+  await h.context._rrFlushOutbox();
+  assert.ok(h.calls.some(call => call.body));
+  assert.equal(h.context._rrOutbox.rrfixture, undefined);
 });

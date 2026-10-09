@@ -2375,14 +2375,16 @@ function _normalizeTopic(t){
 function _findExistingDemand(city, topic){
   if(!city || !topic) return null;
   var _nt=_normalizeTopic(topic);
+  var workspace=typeof _projectWorkspaceId==='function'?_projectWorkspaceId(cur):null;
+  function sameWorkspace(key){return !workspace||(typeof _authWorkspaceOf==='function'&&_authWorkspaceOf(key)===workspace);}
   // 精确匹配优先
   var exactKey=Object.keys(PROJECTS).find(function(k){
-    var x=PROJECTS[k]; return x&&x.isDemand&&x.city===city&&x.topic===topic;
+    var x=PROJECTS[k]; return x&&x.isDemand&&sameWorkspace(k)&&x.city===city&&x.topic===topic;
   });
   if(exactKey) return exactKey;
   // 规范化匹配（宽松）
   return Object.keys(PROJECTS).find(function(k){
-    var x=PROJECTS[k]; return x&&x.isDemand&&x.city===city&&_normalizeTopic(x.topic)===_nt;
+    var x=PROJECTS[k]; return x&&x.isDemand&&sameWorkspace(k)&&x.city===city&&_normalizeTopic(x.topic)===_nt;
   }) || null;
 }
 /* 清理已存在的同 city+topic 重复 isDemand 项目：保留最早创建的，删除后来者。
@@ -2393,7 +2395,9 @@ function _dedupeDemands(){
     var toDel=[];
     Object.keys(PROJECTS).forEach(function(k){
       var x=PROJECTS[k]; if(!x||!x.isDemand) return;
-      var _sig=(x.city||'')+'||'+_normalizeTopic(x.topic||'');
+      var workspace=typeof _authWorkspaceOf==='function'?_authWorkspaceOf(k):x.workspaceId||'';
+      if(typeof AUTH!=='undefined'&&AUTH&&!workspace)return;
+      var _sig=(workspace||'')+'||'+(x.city||'')+'||'+_normalizeTopic(x.topic||'');
       if(!seen[_sig]){ seen[_sig]=k; return; }
       // 有重复：比较创建时间戳（key 里的 base36 部分即 Date.now）
       var _a=parseInt(seen[_sig].replace('proj_',''),36);
@@ -2436,7 +2440,7 @@ function importToProject(gap, city, topic, btnEl){
   }
   var key='proj_'+Date.now().toString(36);
   PROJECTS[key]={
-    id:key, city:_city, org:_city+'市招商局', who:p?p.who:'负责人',
+    id:key, workspaceId:_projectWorkspaceId(cur), city:_city, org:_city+'市招商局', who:p?p.who:'负责人',
     topic:gap, stage:3,  // 立项即跳过研判，直接到「确认需求」
     isDemand:true,       // 标记为「已正式提交的招商需求项目」——只有它们才进招商对接列表
     kb: p ? JSON.parse(JSON.stringify(p.kb)) : [],
@@ -3270,7 +3274,7 @@ function submitDemand(){
   if(window._demandSyncPending[key]){toast('正在提交，请稍候'); return;}
   if(!dupKey){
   PROJECTS[key]={
-    id:key, city:p.city, org:p.org, who:p.who,
+    id:key, workspaceId:_projectWorkspaceId(cur), city:p.city, org:p.org, who:p.who,
     topic:topic, stage:3, isDemand:true,
     kb: JSON.parse(JSON.stringify(p.kb||[])),
     report:null, clues:[],
@@ -5004,13 +5008,13 @@ function settingsPage(p){
   return '<div class="page">'+
     '<div class="page-header"><div><span class="eyebrow">PERSONALIZATION</span><h1>个人与提醒设置</h1>'+
     '<p>调整个性化范围，但不改变确认关口与资源核验责任。</p></div></div>'+
-    '<div class="settings-scroll">'+
+    '<div class="settings-scroll">'+authWorkspaceBlock('settings-section')+
     '<div class="settings-section"><h2>账号身份（由系统开通，不可修改）</h2>'+
       '<div class="form-grid">'+
-      '<label>所属单位<input value="'+p.org+'" disabled></label>'+
-      '<label>姓名 / 角色<input value="'+p.who+' / 招商干部" disabled></label>'+
-      '<label>所属地区<input value="'+p.city+'" disabled></label>'+
-      '<label>数据权限<input value="仅限 '+p.city+' 城市智库" disabled></label></div>'+
+      '<label>所属单位<input value="'+_authEscape(p.org)+'" disabled></label>'+
+      '<label>姓名 / 角色<input value="'+_authEscape(p.who)+' / 招商干部" disabled></label>'+
+      '<label>所属地区<input value="'+_authEscape(p.city)+'" disabled></label>'+
+      '<label>数据权限<input value="仅限 '+_authEscape(p.city)+' 城市智库" disabled></label></div>'+
       '<div class="boundary-note" style="margin-top:14px"><i class="i">🔒</i>账号的地区与身份在开通时绑定，用户不可自行更改；如需变更请联系系统管理员。</div></div>'+
     onboardingSettingsSection(p)+
     '<div class="settings-section"><h2>提醒偏好（可自行调整）</h2>'+

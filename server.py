@@ -756,10 +756,38 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(200); self.cors(); self.end_headers()
 
+    def _account_session(self):
+        if _PG_AVAIL and DATABASE_URL:
+            return _sync_transaction()
+        from backend.sync_transaction import file_session
+        return file_session(SYNC_PATH, _file_snapshot)
+
+    def _account_config(self):
+        from backend.auth import admin_config_from_env
+        return admin_config_from_env(os.environ)
+
+    def _secure_cookie(self):
+        return bool(os.environ.get('RAILWAY_ENVIRONMENT_ID')) or self.headers.get('X-Forwarded-Proto') == 'https'
+
     def do_GET(self):
         # /ops 和 /ops.html 路径在两个端口都服务管理端
         # 5051 访问 / 也直接服务管理端（和 5050/ops 共享 origin→不行，但5050/ops 共享 origin 可以）
         path = self.path.split('?')[0]
+        from backend.auth import AuthError, require_session
+        from backend.auth_routes import dispatch_auth, error_response, load_state, require_admin
+        from backend.access_control import scoped_sync_view
+        if dispatch_auth(self, 'GET', path, b'', self._account_session,
+                         admin_config=self._account_config(), secure=self._secure_cookie()):
+            return
+        if path.startswith('/api/') or path == '/rag-log':
+            try:
+                state = load_state(bool(_PG_AVAIL and DATABASE_URL), _db_get, SYNC_PATH)
+                self._principal = require_session(self.headers, state, admin_config=self._account_config())
+                if path in ('/api/sync-history', '/rag-log'):
+                    require_admin(self._principal)
+                self._scoped_state = scoped_sync_view(state, self._principal)
+            except AuthError as error:
+                return error_response(self, error)
         # ── 写入前快照查询（防覆盖事故的后路）──
         # GET /api/sync-history            → 列出快照 ts 与大小
         # GET /api/sync-history?ts=<ts>    → 取该份快照完整内容
@@ -770,26 +798,17 @@ class Handler(BaseHTTPRequestHandler):
 
         # 云端数据同步：GET /api/sync 直接返回原始数据
         if path == '/api/sync':
-            from backend.sync_read import read_sync
             from report_service.website_queue import website_reads_queue, legacy_sync_view
-            vary = 'X-HXZ-Report-Client, Sec-Fetch-Site, Sec-Fetch-Dest, Sec-Fetch-Mode'
-            view = None if website_reads_queue(self.headers) else legacy_sync_view
-            return read_sync(self, bool(_PG_AVAIL and DATABASE_URL), _db_get, SYNC_PATH,
-                             _clean_sync_data, view=view, vary=vary)
+            from backend.auth_routes import respond
+            value = _clean_sync_data(self._scoped_state)
+            if not website_reads_queue(self.headers):
+                value = legacy_sync_view(value)
+            return respond(self, 200, value)
         # 政府端城市智库AI精选概括（只读，不修改数据库）
         if path == '/api/kb-summary':
             try:
                 # 读取原始数据
-                if _PG_AVAIL and DATABASE_URL:
-                    result = _db_get()
-                    raw_str = result or '{}'
-                else:
-                    try:
-                        with open(SYNC_PATH, encoding='utf-8') as f2:
-                            raw_str = f2.read()
-                    except FileNotFoundError:
-                        raw_str = '{}'
-                sync_obj = json.loads(raw_str)
+                sync_obj = self._scoped_state
                 projects = sync_obj.get('PROJECTS') or {}
                 cur_proj = sync_obj.get('cur', '')
                 proj = projects.get(cur_proj) or {}
@@ -856,7 +875,7 @@ class Handler(BaseHTTPRequestHandler):
         # 从云端存储的 base64 docx 里取出并回传，供管理端「下载原始报告」按钮使用。
         if path == '/api/report-file':
             from backend.report_route import report_file
-            return report_file(self, bool(_PG_AVAIL and DATABASE_URL), _db_get, SYNC_PATH)
+            return report_file(self, True, lambda: json.dumps(self._scoped_state), SYNC_PATH)
         port = self.server.server_address[1]
         if path in ("/", "/index.html"):
             # 本地 5051 端口访问 / → 重定向到同 origin 的 /ops（云端单端口不触发）
@@ -922,8 +941,6 @@ class Handler(BaseHTTPRequestHandler):
             port = self.server.server_address[1]
             role = "ops" if port == PORT_OPS else "gov"
             body = json.dumps({"ok": True, "model": MODEL, "key": bool(DS_KEY),
-                               "key_len": len(DS_KEY),
-                               "key_prefix": (DS_KEY[:5]+"…"+DS_KEY[-3:]) if DS_KEY else "",
                                "role": role, "port": port,
                                "report_engine": engine_status()}).encode()
             self.send_response(200)
@@ -934,8 +951,32 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
-        length = int(self.headers.get('Content-Length', 0))
+        from backend.auth import AuthError, require_session
+        from backend.auth_routes import (dispatch_auth, error_response, load_state,
+                                         require_admin, check_origin, sync_guard)
+        from backend.access_control import guard_sync, scoped_sync_view
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            if length < 0 or length > 50 * 1024 * 1024:
+                raise ValueError()
+        except ValueError:
+            return error_response(self, AuthError(413, 'request_too_large', '请求内容过大'))
         raw = self.rfile.read(length)
+        path = self.path.split('?', 1)[0]
+        if dispatch_auth(self, 'POST', path, raw, self._account_session,
+                         admin_config=self._account_config(), secure=self._secure_cookie()):
+            return
+        if path.startswith('/api/'):
+            try:
+                check_origin(self.headers)
+                state = load_state(bool(_PG_AVAIL and DATABASE_URL), _db_get, SYNC_PATH)
+                self._principal = require_session(self.headers, state, admin_config=self._account_config())
+                if path in ('/api/admin-reset', '/api/kb-clean', '/api/kb-upload',
+                            '/api/kb-version', '/api/report-push-request'):
+                    require_admin(self._principal)
+                self._scoped_state = scoped_sync_view(state, self._principal)
+            except AuthError as error:
+                return error_response(self, error)
         # 云端数据同步：POST /api/sync 合并保存（保护字段不被空值覆盖）
         if self.path == '/api/sync':
             from backend.sync_route import handle_sync, SyncDependencies
@@ -943,7 +984,7 @@ class Handler(BaseHTTPRequestHandler):
             deps = SyncDependencies(bool(_PG_AVAIL and DATABASE_URL), _db_get, _db_set,
                                     SYNC_PATH, _file_snapshot, _clean_sync_data)
             from report_service.website_queue import fence_updates
-            guard = fence_updates
+            guard = sync_guard(self.headers, self._account_config(), guard_sync, fence_updates)
             return handle_sync_serialized(self, raw, deps, transaction=globals().get('_sync_transaction'), guard=guard)
         # ── 接口：管理员全量覆写（绕过merge保护，用于重置数据） ──
         if self.path == '/api/admin-reset':

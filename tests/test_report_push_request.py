@@ -9,7 +9,9 @@ import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import MethodType, SimpleNamespace
 from unittest.mock import Mock
+from backend.auth import AdminConfig, handle_auth
 from report_service.website_queue import ENGINE
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,7 +21,8 @@ class ReportPushRequestTests(unittest.TestCase):
     def setUp(self):
         tree = ast.parse((ROOT / 'server.py').read_text())
         handler = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'Handler')
-        post = next(n for n in handler.body if isinstance(n, ast.FunctionDef) and n.name == 'do_POST')
+        method_names = {'do_POST', '_account_session', '_account_config', '_secure_cookie'}
+        methods = [n for n in handler.body if isinstance(n, ast.FunctionDef) and n.name in method_names]
         self.state = {
             'PROJECTS': {'keep': {'city': 'Other'}},
             'REPORT_REQUESTS': [
@@ -34,20 +37,35 @@ class ReportPushRequestTests(unittest.TestCase):
         session.__enter__ = Mock(return_value=session)
         session.__exit__ = Mock(return_value=False)
         session.read = self.read
-        session.write = self.write
+        def commit(raw):
+            committed = self.write(raw)
+            if committed is True:
+                self.state = json.loads(raw)
+            return committed
+        session.write = commit
         self.ns = dict(json=json, time=time, _PG_AVAIL=True, DATABASE_URL='synthetic',
+                       os=SimpleNamespace(environ={'HXZ_ADMIN_USERNAME':'offline-admin',
+                                                   'HXZ_ADMIN_PASSWORD':'offline-admin-password-7'}),
                        _db_get=self.read, _db_set=self.write, SYNC_PATH='unused',
                        _file_snapshot=Mock(), _sync_transaction=lambda: session)
-        unit = ast.Module(body=[post], type_ignores=[])
+        unit = ast.Module(body=methods, type_ignores=[])
         exec(compile(unit, 'isolated-report-push', 'exec'), self.ns)
+        # Run actual credential validation and session creation against this
+        # synthetic storage seam; later requests use the persisted cookie.
+        login = handle_auth('login', {'username':'offline-admin', 'password':'offline-admin-password-7'},
+                            lambda: session, admin_config=AdminConfig('offline-admin', 'offline-admin-password-7'))
+        self.cookie = 'hxz_session=' + login['session_token']
+        self.read.reset_mock(); self.write.reset_mock()
 
     def request(self, body=None, raw=None):
         payload = raw if raw is not None else json.dumps(body).encode()
         responder = Mock()
         responder.path = '/api/report-push-request'
-        responder.headers = {'Content-Length': str(len(payload))}
+        responder.headers = {'Content-Length': str(len(payload)), 'Cookie':self.cookie}
         responder.rfile = io.BytesIO(payload)
         responder.wfile = io.BytesIO()
+        for name in ('_account_session', '_account_config', '_secure_cookie'):
+            setattr(responder, name, MethodType(self.ns[name], responder))
         self.ns['do_POST'](responder)
         self.assertEqual(responder.send_response.call_count, 1)
         return responder.send_response.call_args.args[0], json.loads(responder.wfile.getvalue())
@@ -152,15 +170,18 @@ class ReportPushRequestTests(unittest.TestCase):
         self.assertTrue(body['pushed'])
         self.write.assert_not_called()
 
-    def test_invalid_input_is_rejected_before_reading_storage(self):
+    def test_invalid_input_is_rejected_after_only_the_authentication_read(self):
         for body in [[], {}, {'city': []}, {'city': ' '}, {'city': 'A', 'requestId': []},
                      {'city': 'A', 'requestId': ''}]:
             with self.subTest(body=body):
                 status, response = self.request(body)
                 self.assertEqual(status, 400)
                 self.assertFalse(response['ok'])
-                self.read.assert_not_called()
+                # The HTTP boundary must read current credentials before the
+                # domain route; invalid input still never reaches its storage.
+                self.read.assert_called_once()
                 self.write.assert_not_called()
+                self.read.reset_mock()
         status, body = self.request(raw=b'{invalid')
         self.assertEqual(status, 400)
         self.assertFalse(body['ok'])
@@ -193,6 +214,9 @@ class ReportPushRequestTests(unittest.TestCase):
     def test_push_route_status_and_body_over_real_http(self):
         handler = type('IsolatedHandler', (BaseHTTPRequestHandler,), {
             'do_POST': self.ns['do_POST'],
+            '_account_session': self.ns['_account_session'],
+            '_account_config': self.ns['_account_config'],
+            '_secure_cookie': self.ns['_secure_cookie'],
             'cors': lambda responder: None,
             'log_message': lambda responder, *args: None,
         })
@@ -204,7 +228,7 @@ class ReportPushRequestTests(unittest.TestCase):
             connection = http.client.HTTPConnection(*server.server_address, timeout=3)
             try:
                 connection.request('POST', '/api/report-push-request', json.dumps(body),
-                                   {'Content-Type': 'application/json'})
+                                   {'Content-Type': 'application/json', 'Cookie':self.cookie})
                 response = connection.getresponse()
                 return response.status, json.loads(response.read())
             finally:
@@ -219,7 +243,9 @@ class ReportPushRequestTests(unittest.TestCase):
             self.assertEqual(status, 404)
             self.assertFalse(body['ok'])
             self.write.return_value = False
-            status, body = request({'requestId': 'old', 'city': 'A'})
+            # The first write really persisted in this fixture. Use another
+            # unrequested report so idempotent retry does not skip the commit.
+            status, body = request({'requestId': 'new', 'city': 'A'})
             self.assertEqual(status, 503)
             self.assertFalse(body['ok'])
         finally:

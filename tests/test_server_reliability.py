@@ -2,6 +2,7 @@
 import ast
 import io
 import json
+from types import SimpleNamespace
 from pathlib import Path
 import unittest
 from http.server import BaseHTTPRequestHandler
@@ -14,7 +15,21 @@ def environment(raw, store='{}', write_ok=True, path='/api/sync'):
     names = {'Handler', '_keep_nonempty', '_kb_material_count', '_merge_map', '_is_noise_chunk', '_merge_kb_item_tombs', '_apply_kb_item_tombs', '_kb_item_fp', '_clean_sync_data'}
     nodes = [n for n in tree.body if isinstance(n, (ast.ClassDef, ast.FunctionDef)) and n.name in names]
     writes = []
-    ns = dict(BaseHTTPRequestHandler=BaseHTTPRequestHandler, json=json,
+    from backend import auth
+    config = {'HXZ_ADMIN_USERNAME':'reliability-admin', 'HXZ_ADMIN_PASSWORD':'isolated-reliability-password'}
+    auth_state = {}
+    setup = SimpleNamespace(read=lambda: json.dumps(auth_state),
+                            write=lambda raw: auth_state.update(json.loads(raw)) or True)
+    logged_in = auth.login({'username':config['HXZ_ADMIN_USERNAME'], 'password':config['HXZ_ADMIN_PASSWORD']},
+                           setup, admin_config=auth.admin_config_from_env(config))
+    try:
+        state = json.loads(store)
+        if isinstance(state, dict):
+            state.update(auth_state)
+            store = json.dumps(state)
+    except (TypeError, ValueError):
+        pass
+    ns = dict(BaseHTTPRequestHandler=BaseHTTPRequestHandler, json=json, os=SimpleNamespace(environ=config),
               _PG_AVAIL=True, DATABASE_URL='synthetic', _NOISE_RE=[],
               SYNC_PATH='unused', _file_snapshot=lambda:None,
               _db_get=lambda: store)
@@ -34,7 +49,7 @@ def environment(raw, store='{}', write_ok=True, path='/api/sync'):
     exec(compile(ast.Module(body=nodes, type_ignores=[]), 'server.py', 'exec'), ns)
     handler = object.__new__(ns['Handler'])
     handler.path = path
-    handler.headers = {'Content-Length': str(len(raw))}
+    handler.headers = {'Content-Length': str(len(raw)), 'Cookie':'hxz_session='+logged_in['session_token']}
     handler.rfile = io.BytesIO(raw)
     handler.wfile = io.BytesIO()
     handler.send_response = lambda code: None

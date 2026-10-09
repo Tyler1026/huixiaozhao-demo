@@ -13,6 +13,7 @@ import unittest
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from backend import sync_merge
@@ -130,7 +131,9 @@ class ActualQueueHTTPTests(unittest.TestCase):
         source = ast.parse((ROOT / 'server.py').read_text())
         names = {'Handler', '_clean_sync_data', '_is_noise_chunk'}
         nodes = [n for n in source.body if isinstance(n, (ast.FunctionDef, ast.ClassDef)) and n.name in names]
-        ns = dict(BaseHTTPRequestHandler=BaseHTTPRequestHandler, json=json, os=os,
+        ns = dict(BaseHTTPRequestHandler=BaseHTTPRequestHandler, json=json,
+            os=SimpleNamespace(environ={'HXZ_ADMIN_USERNAME':'offline-admin',
+                                        'HXZ_ADMIN_PASSWORD':'offline-admin-password-7'}),
             HTML_GOV=str(ROOT/'index.html'), HTML_OPS=str(ROOT/'ops.html'), PORT_OPS=-1,
             MODEL='offline-fixture', DS_KEY='', _PG_AVAIL=False, DATABASE_URL='', _NOISE_RE=[],
             SYNC_PATH=str(self.path), _file_snapshot=lambda: None, _db_get=lambda: None,
@@ -148,6 +151,15 @@ class ActualQueueHTTPTests(unittest.TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
         self.addCleanup(self.close_server)
+        self.cookie = None
+        status, body = self.request('POST', '/api/auth/login',
+            {'username':'offline-admin', 'password':'offline-admin-password-7'})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(json.loads(body)['auth']['scope'], 'admin')
+        self.cookie = self.response_headers['Set-Cookie'].split(';', 1)[0]
+        # Preserve real persisted sessions in before/after assertions. Queue
+        # payloads and ownership assertions remain identical to the old fixture.
+        self.original = json.loads(self.path.read_text())
 
     def close_server(self):
         self.server.shutdown(); self.server.server_close(); self.thread.join()
@@ -155,7 +167,10 @@ class ActualQueueHTTPTests(unittest.TestCase):
     def request(self, method, path, body=None, headers=None):
         connection = http.client.HTTPConnection(*self.server.server_address, timeout=3)
         try:
-            connection.request(method, path, json.dumps(body) if body is not None else None, headers or {})
+            outgoing = dict(headers or {})
+            if self.cookie:
+                outgoing['Cookie'] = self.cookie
+            connection.request(method, path, json.dumps(body) if body is not None else None, outgoing)
             response = connection.getresponse()
             self.response_headers = dict(response.getheaders())
             return response.status, response.read()

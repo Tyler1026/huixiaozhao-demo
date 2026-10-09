@@ -1,7 +1,7 @@
 /* ===== 报告生成申请队列（管理端发起 → 独立报告服务 → RAG发布）===== */
 var REPORT_REQUESTS=[];
 var _rrEngineHealth=null;
-/* 城市账号连接表：{slug:{city,who,org,pwd,resident,projKey}} —— 推送到RAG时自动建立 */
+/* 旧城市账号表仅保留空变量兼容；账号与工作区由服务端邀请流程维护。 */
 var CITY_ACCOUNTS={};
 /* Report submissions survive a lost response and a browser restart. Only the
    server-confirmed request enters the report queue; retries reuse its ID. */
@@ -16,7 +16,9 @@ try{
 function _rrSaveOutbox(){
   try{localStorage.setItem(_rrOutboxKey,JSON.stringify(_rrOutbox));return true;}catch(_){return false;}
 }
+function _rrAdminReady(){return typeof AUTH!=='undefined'&&AUTH&&AUTH.scope==='admin';}
 function _rrJson(url,options){
+  if(!_rrAdminReady())return Promise.reject(new Error('请先登录管理员账号'));
   return new Promise(function(resolve,reject){
     var controller=typeof AbortController!=='undefined'?new AbortController():null;
     var timer=setTimeout(function(){if(controller)controller.abort();reject(new Error('network-timeout'));},20000);
@@ -36,6 +38,7 @@ function _rrCacheRequests(){
   try{
     var key=typeof LS_KEY!=='undefined'?LS_KEY:'huixiaozhao_kb_v1';
     var cached=JSON.parse(localStorage.getItem(key)||'{}');
+    if(typeof _safeSyncSnapshot==='function')cached=_safeSyncSnapshot(cached);
     cached.REPORT_REQUESTS=REPORT_REQUESTS;
     localStorage.setItem(key,JSON.stringify(cached));
   }catch(_){}
@@ -66,6 +69,7 @@ function _rrOutboxRows(){
   });
 }
 function _rrFlushOutbox(){
+  if(!_rrAdminReady())return Promise.resolve([]);
   var work=[];
   Object.keys(_rrOutbox).forEach(function(id){
     var entry=_rrOutbox[id];
@@ -126,6 +130,7 @@ function _rrDiscardBlocked(id){
   delete _rrOutbox[id];_rrSaveOutbox();render();
 }
 function submitReportRequest(){
+  if(!_rrAdminReady()){toast('请先登录管理员账号');return;}
   var city=($('#rrCity')&&$('#rrCity').value||'').trim();
   var prov=($('#rrProv')&&$('#rrProv').value||'').trim();
   if(!city||!prov){toast('请填写省份和城市');return;}
@@ -143,6 +148,7 @@ function submitReportRequest(){
 /* 管理端「推送到 RAG」按钮：独立云端服务消费发布请求，
    在事务中保存智库材料、研判正文与发布回执。 */
 function pushReportToRag(reqId,btn){
+  if(!_rrAdminReady()){toast('请先登录管理员账号');return;}
   var request=REPORT_REQUESTS.find(function(r){return r.id===reqId;});
   if(!request||request.status!=='done'){toast('该报告申请尚未完成，请刷新页面后重试');return;}
   var city=request.city;
@@ -168,6 +174,7 @@ function pushReportToRag(reqId,btn){
    消费或流水线继续跑。写 cancelled 状态到服务端；_rr_rank 保证这个决定
    不会被稍后到达的旧调度回写（比如仍在跑的 orchestrator/claim）覆盖回去。 */
 function cancelReportRequest(id,btn){
+  if(!_rrAdminReady()){toast('请先登录管理员账号');return;}
   if(!confirm('确认取消这条申请？取消后不可恢复，需要重新发起。'))return;
   var loc=REPORT_REQUESTS.find(function(r){return r.id===id;});
   if(!loc)return;
@@ -193,6 +200,7 @@ function cancelReportRequest(id,btn){
 /* Refresh checkpoints even while status stays running. A polling error never
    changes a report's server status or discards a pending submission. */
 setInterval(function(){
+  if(!_rrAdminReady())return;
   _rrFlushOutbox();
   if(!REPORT_REQUESTS.length) return;
   var active=REPORT_REQUESTS.some(function(r){return r.status==='pending'||r.status==='running'||(r.engine==='full-v1'&&((r.status==='done'&&r.pushRequested&&!r.pushed)||(r.status==='failed'&&r.failureCode==='configuration')));});

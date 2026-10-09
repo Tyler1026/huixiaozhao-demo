@@ -2,6 +2,18 @@
 import json
 import os
 
+def _safe_snapshot(raw):
+    """Historical business records remain viewable without exposing credentials."""
+    try:
+        from .access_control import scoped_sync_view
+        value = json.loads(raw) if isinstance(raw, str) else raw
+        if isinstance(value, dict):
+            return json.dumps(scoped_sync_view(value, {'scope': 'admin'}), ensure_ascii=False)
+    except (ValueError, TypeError):
+        pass
+    # Legacy non-JSON backups have no usable state and must not be displayed.
+    return None
+
 def history(self,use_database,connect,file_path):
     try:
         from urllib.parse import urlparse, parse_qs
@@ -15,7 +27,7 @@ def history(self,use_database,connect,file_path):
                 row = cur.fetchone()
                 cur.close(); conn.close()
                 if row:
-                    resp = json.dumps({'ok': True, 'ts': row[0], 'data': row[1]}).encode()
+                    resp = json.dumps({'ok': True, 'ts': row[0], 'data': _safe_snapshot(row[1])}).encode()
                 else:
                     resp = json.dumps({'ok': False, 'error': 'snapshot not found'}).encode()
                 self.send_response(200); self.send_header('Content-Type', 'application/json')
@@ -36,7 +48,7 @@ def history(self,use_database,connect,file_path):
                     continue
                 if want_ts:
                     with open(f, 'r', encoding='utf-8') as fh:
-                        resp = json.dumps({'ok': True, 'ts': ts, 'data': fh.read()}).encode()
+                        resp = json.dumps({'ok': True, 'ts': ts, 'data': _safe_snapshot(fh.read())}).encode()
                     self.send_response(200); self.send_header('Content-Type', 'application/json')
                     self.send_header('Content-Length', str(len(resp)))
                     self.cors(); self.end_headers(); self.wfile.write(resp); return
@@ -48,8 +60,8 @@ def history(self,use_database,connect,file_path):
                 self.cors(); self.end_headers(); self.wfile.write(resp); return
         resp = json.dumps({'ok': True, 'count': len(items), 'snapshots': items},
                           ensure_ascii=False).encode()
-    except Exception as e:
-        resp = json.dumps({'ok': False, 'error': str(e)}).encode()
+    except Exception:
+        resp = json.dumps({'ok': False, 'error': 'history_unavailable'}).encode()
     self.send_response(200); self.send_header('Content-Type', 'application/json')
     self.send_header('Content-Length', str(len(resp)))
     self.cors(); self.end_headers(); self.wfile.write(resp); return

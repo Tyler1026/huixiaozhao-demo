@@ -109,6 +109,7 @@ function updateKbConvCount(){
 }
 
 function persist(){
+  if(!AUTH||_authState!=='ready')return;
   // 兜底：把当前项目的 stage 同步到方向级 stageByTopic，保证方向进度独立且不丢失
   try{ var _cp=cur&&PROJECTS[cur]; if(_cp&&_cp.topic!=null&&_cp.stage!=null){ if(!_cp.stageByTopic)_cp.stageByTopic={}; _cp.stageByTopic[_cp.topic]=_cp.stage; } }catch(e){}
   try{
@@ -141,8 +142,7 @@ function persist(){
       KB_CHAT_TOMBS:KB_CHAT_TOMBS,
       UPLOAD_TOMBS:UPLOAD_TOMBS,
       REPORT_HISTORY:REPORT_HISTORY,
-      USER_PROFILES:(Object.keys(USER_PROFILES||{}).length?USER_PROFILES:undefined),
-      INVITE_CODES:(Object.keys(INVITE_CODES||{}).length?INVITE_CODES:undefined),
+      clientUser:AUTH.user,
       CITY_BASE_PACKAGES:(Object.keys(CITY_BASE_PACKAGES||{}).length?CITY_BASE_PACKAGES:undefined),
       OPS_ENT:typeof OPS_ENT!=='undefined'?OPS_ENT:[],
       DELETED_PROJECTS:window.DELETED_PROJECTS||[],
@@ -156,10 +156,10 @@ function persist(){
     // 同步到服务器（静默，不影响主流程）
     // 防抖sync：最多5秒同步一次，避免堆积请求占满连接池影响AI问答
     if(window._serverSyncLock) return;
-    if(!window._syncTimer){ window._syncTimer=setTimeout(function(){ window._syncTimer=null;
-      if(window._serverSyncLock) return;
+    if(!window._syncTimer){var syncEpoch=_authEpoch;window._syncTimer=setTimeout(function(){ window._syncTimer=null;
+      if(window._serverSyncLock||!AUTH||_authState!=='ready'||syncEpoch!==_authEpoch) return;
       try{var _sd=JSON.parse(localStorage.getItem('huixiaozhao_kb_v1')||'{}');
-      fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:localStorage.getItem('huixiaozhao_kb_v1')||'{}'})
+      fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_safeSyncSnapshot(JSON.parse(localStorage.getItem('huixiaozhao_kb_v1')||'{}')))})
         .then(function(r){return r.json();}).then(function(resp){
           if(resp&&resp.rejected==='stale-generation'){
             // 本会话数据早于服务端reset：重新拉服务端数据自愈(取得新gen+干净数据)
@@ -172,12 +172,14 @@ function persist(){
 }
 
 function restore(){
+  if(!AUTH||_authState!=='ready')return false;
   try{
     var raw=localStorage.getItem(LS_KEY);
     if(!raw) return false;
-    var data=JSON.parse(raw);
+    var data=_safeSyncSnapshot(JSON.parse(raw));
+    if(data.clientUser!==AUTH.user)return false;
     if(data.PROJECTS&&Object.keys(data.PROJECTS).length){
-      PROJECTS=data.PROJECTS;
+      PROJECTS=_authFilterProjects(data.PROJECTS);
       cur=data.cur||null;
       view=data.view||'setup';
       UPLOADS=_mergeUploads(data.UPLOADS, UPLOADS);
@@ -198,7 +200,7 @@ function restore(){
       KB_CHAT=_mergeKbChat(data.KB_CHAT, KB_CHAT);
       _applyUploadTombs();
       if(data.REPORT_HISTORY) REPORT_HISTORY=data.REPORT_HISTORY;
-      if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
+
       if(data.OPS_ENT) OPS_ENT=data.OPS_ENT;
       if(data.RESET_GEN) RESET_GEN=data.RESET_GEN;
       if(data.DEMANDS) DEMANDS=data.DEMANDS;

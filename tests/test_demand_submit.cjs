@@ -30,7 +30,8 @@ const INDEX_HTML = path.join(__dirname, '..', 'index.html');
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. 从真实 index.html 提取函数源码（提取失败 => 测试自身报错，绝不静默通过）
 // ─────────────────────────────────────────────────────────────────────────────
-const html = fs.readFileSync(INDEX_HTML, 'utf8');
+const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '../frontend/manifest.json'), 'utf8'));
+const html = manifest['index.html'].parts.map(file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8')).join('');
 
 /** 从 startMarker 处起做花括号配平扫描，返回完整函数声明文本。 */
 function extractFunction(src, startMarker) {
@@ -75,6 +76,7 @@ const SRC_FIND_EXISTING = extractFunction(html, 'function _findExistingDemand(')
 const SRC_NORMALIZE_TOPIC = extractFunction(html, 'function _normalizeTopic(');
 // submitDemand 依赖的取当前项目函数（真实源码，避免测试自造产品逻辑）
 const SRC_P = extractFunction(html, 'function P()');
+const SRC_WORKSPACE = ['_authProjectKeys', '_authWorkspaceOf', '_projectWorkspaceId'].map(name => extractFunction(html, 'function ' + name + '(')).join('\n');
 // submitDemand reads native publication provenance and formats its check status.
 // Keep those product branches real; topicScore below remains the legacy fixture.
 const SRC_NATIVE_REPORT_HELPERS = [
@@ -171,6 +173,7 @@ function makeEnv(opts = {}) {
     REPORTSTATE: state.REPORTSTATE,
     DEMANDS: state.DEMANDS,
     cur: state.cur,
+    AUTH: {user: 'test-user', scope: 'user', projKey: 'proj_parent', projectKeys: ['proj_parent']},
     window: {},
     document: {
       getElementById(id) { return dom[id] || null; },
@@ -213,7 +216,7 @@ function makeEnv(opts = {}) {
   vm.createContext(sandbox);
   vm.runInContext(
     SRC_NORMALIZE_TOPIC + '\n' + SRC_FIND_EXISTING + '\n' + SRC_P + '\n' +
-      SRC_NATIVE_REPORT_HELPERS + '\n' + SRC_SUBMIT_DEMAND + '\n',
+      SRC_NATIVE_REPORT_HELPERS + '\n' + SRC_WORKSPACE + '\n' + SRC_SUBMIT_DEMAND + '\n',
     sandbox,
     { filename: 'index.html<extracted>' }
   );
@@ -384,6 +387,7 @@ test('D2 首次提交的数据语义：isDemand 项目字段、DEMANDS 记录、
   assert.strictEqual(newKeys.length, 1, '首次提交应恰好新建 1 个 isDemand 项目');
   const child = env.state.PROJECTS[newKeys[0]];
   assert.strictEqual(child.isDemand, true);
+  assert.strictEqual(child.workspaceId, 'proj_parent');
   assert.strictEqual(child.stage, 3);
   assert.strictEqual(child.city, '随州');
   assert.strictEqual(child.topic, '香菇精深加工补链');

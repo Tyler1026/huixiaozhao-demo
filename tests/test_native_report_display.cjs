@@ -33,7 +33,7 @@ finally: t.doCleanups()
 function harness(state) {
   const key = 'report_rrfixture', elements = {reportArea: {innerHTML: ''}, chainMapBlock: {}, reportHistoryArea: {innerHTML: ''}};
   const exports = {pdf: [], text: []}, local = {};
-  const context = {...state, cur: key, REPORT_HISTORY: {}, UPLOADS: {}, PENDING_CONFIRMS: {},
+  const context = {...state, AUTH: {user: 'test-user', scope: 'user', projKey: key, projectKeys: [key]}, cur: key, REPORT_HISTORY: {}, UPLOADS: {}, PENDING_CONFIRMS: {},
     kbReadiness: () => ({score: 60}), chainPriorityMarkdown: () => '',
     stageNameOf: () => '资料准备', stageDescOf: () => '上传与授权材料',
     setTimeout() {}, _histShowAll: false, window: {}, DEMANDS: [], LS_KEY: 'offline', console,
@@ -53,6 +53,7 @@ function harness(state) {
   context.persist = () => {local.offline = JSON.stringify({PROJECTS: context.PROJECTS, REPORTSTATE: context.REPORTSTATE, DEMANDS: context.DEMANDS});};
   vm.createContext(context);
   vm.runInContext([
+    ['03.js', '_authProjectKeys'], ['03.js', '_authWorkspaceOf'], ['03.js', '_projectWorkspaceId'],
     ['08.js', 'getEmbeddedReport'], ['08.js', 'getTopicReport'], ['08.js', 'reportTextForTopic'], ['08.js', 'topicHasFullReport'],
     ['09.js', '_normTopic'], ['09.js', '_frozenScoreIn'], ['09.js', 'nativeReportState'], ['09.js', 'nativeReportScore'], ['09.js', 'topicScoreLabel'],
     ['09.js', 'topicScoreDisplay'], ['09.js', 'topicScore'], ['09.js', 'hashTopic'],
@@ -144,6 +145,7 @@ test('native demand carries the exact publication identity and pending classific
   await c.submitDemand();
   const demand = c.DEMANDS[0], child = c.PROJECTS[demand.projKey];
   assert.equal(child.reportRequestId, p.reportRequestId);
+  assert.equal(child.workspaceId, 'report_rrfixture');
   assert.equal(child.clues.length, 0);
   assert.ok(demand.need.includes('核验分类待校核'));
   assert.ok(!demand.need.includes('置信度'));

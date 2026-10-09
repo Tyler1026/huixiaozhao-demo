@@ -1141,16 +1141,10 @@ function _restoreScroll(prevKey, tops){
    role: 'owner'(组织创建者，可查看/移除本组织成员) | 'member'(普通成员)。
    注意：无论 owner 还是 member，政府端都不能生成邀请码——生成入口只在管理端(/ops)，
    见 canGenerateInviteCode()，此函数在政府端恒定返回 false。 */
-var AUTH=null;
-var ACCOUNTS={
-  'suizhou': {pwd:'suizhou', city:'随州', projKey:'sz', resident:true,  who:'张主任', org:'随州市招商局', role:'owner'},
-  'admin':   {pwd:'admin',   city:null,  projKey:null, resident:false, who:'招商干部', org:'招商局', role:'owner'}
-};
-var USER_PROFILES={};  // 注册用户资料库，按账号存 {name,phone,wechat,org,dept,title,city,pwd,ts,role,inviteCode}，跨端同步供管理端查看
-var CITY_ACCOUNTS={};  // 城市账号连接表（推送到RAG时自动建立）{slug:{city,who,org,pwd,resident,projKey}}
-/* 邀请码库：{code:{city,projKey,role,createdBy,createdAt,revoked,usedBy:[{user,ts}]}}
-   —— 仅管理端(/ops)可写入新码，政府端只读校验+记录使用。role 是该码开放注册的角色，
-   目前固定发 'member'（组织首个使用者可由管理端手工升级为 owner，见成员管理）。 */
+var AUTH=null, _authState='unknown', _authError='', _authPending=null, _authEpoch=0;
+var USER_PROFILES={};  // 服务端返回的脱敏成员资料，仅用于当前授权工作区展示
+var CITY_ACCOUNTS={};  // 不再从浏览器账号库验证密码
+/* 政府端不接收邀请码库，验证与使用记录都由服务端处理。 */
 var INVITE_CODES={};
 /* 政府端任何角色都不能生成邀请码：生成入口收在管理端(/ops)，这里恒定返回 false。
    之所以做成函数而不是直接删掉相关UI，是为了让"是否可生成"这条规则有唯一判断点，
@@ -1158,18 +1152,111 @@ var INVITE_CODES={};
 function canGenerateInviteCode(auth){ return false; }
 /* 组织成员管理权限：owner 可查看/移除同 projKey 下的其他账号，member 不可。 */
 function isOrgOwner(auth){ return !!(auth && auth.role==='owner'); }
-/* 校验邀请码：返回 {ok,city,projKey,role} 或 {ok:false,msg} */
-function validateInviteCode(code){
-  code=(code||'').trim().toUpperCase();
-  if(!code) return {ok:false,msg:'请输入邀请码'};
-  var inv=INVITE_CODES[code];
-  if(!inv) return {ok:false,msg:'邀请码不存在'};
-  if(inv.revoked) return {ok:false,msg:'该邀请码已失效，请联系招商团队重新获取'};
-  return {ok:true,code:code,city:inv.city,projKey:inv.projKey,role:inv.role||'member'};
+function _authEscape(value){return String(value==null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function _safeProfiles(profiles){
+  var result={}, fields=['name','phone','wechat','org','dept','title','city','ts','role','projKey','projectKeys','user','resident'];
+  Object.keys(profiles||{}).forEach(function(user){var p=profiles[user];if(!p||typeof p!=='object')return;var item={};fields.forEach(function(k){if(p[k]!==undefined)item[k]=p[k];});result[user]=item;});
+  return result;
 }
-function saveAuth(){ try{ AUTH?localStorage.setItem('hxz_auth',JSON.stringify(AUTH)):localStorage.removeItem('hxz_auth'); }catch(e){} }
-function loadAuth(){ try{ var d=localStorage.getItem('hxz_auth'); if(d)AUTH=JSON.parse(d); }catch(e){ AUTH=null; } }
-function logout(){ AUTH=null; saveAuth(); cur=null; view='setup'; render._restored=false; render._routed=false; render(); }
+function _safeSyncSnapshot(raw){
+  var data=Object.assign({},raw||{});
+  ['USER_PROFILES','CITY_ACCOUNTS','INVITE_CODES','ACCOUNTS','AUTH','auth','password','pwd','token'].forEach(function(k){delete data[k];});
+  if(data.huixiaozhao_kb_v1)data.huixiaozhao_kb_v1=_safeSyncSnapshot(data.huixiaozhao_kb_v1);
+  return data;
+}
+function saveAuth(){try{localStorage.removeItem('hxz_auth');}catch(_){} }
+function _purgeAuthCache(){
+  saveAuth();
+  try{var raw=localStorage.getItem('huixiaozhao_kb_v1');if(raw)localStorage.setItem('huixiaozhao_kb_v1',JSON.stringify(_safeSyncSnapshot(JSON.parse(raw))));}catch(_){}
+}
+function _authResetView(){
+  PROJECTS={};USER_PROFILES={};CITY_ACCOUNTS={};INVITE_CODES={};
+  ['REPORTSTATE','REPORT_HISTORY','UPLOADS','KB_FILE_CHUNKS','KB_CHAT','KB_CONFIRMS','KB_CONFIRM_TOMBS','KB_ITEM_TOMBS','KB_UNLOCKED','PENDING_CONFIRMS','DOCK_LOGS','SUBPROJ','UPLOAD_TOMBS','KB_CHAT_TOMBS','CITY_BASE_PACKAGES'].forEach(function(k){if(typeof window[k]!=='undefined')window[k]={};});
+  ['DEMANDS','REPORT_REQUESTS','OPS_ENT'].forEach(function(k){if(typeof window[k]!=='undefined')window[k]=[];});
+  if(window._syncTimer){clearTimeout(window._syncTimer);window._syncTimer=null;}
+  window._serverSyncLock=false;window._verifyInProgress=false;window._reportGenerating=false;
+  window.DELETED_PROJECTS=[];window.DELETED_CLUES=[];window.__lastSyncFp=null;
+  cur=null;view='login';
+  if(typeof render==='function'){render._restored=false;render._routed=false;render._serverSynced=false;}
+  try{['huixiaozhao_kb_v1','hxz_uploads','hxz_reportstate','hxz_report_history','hxz_rpt_history','hxz_auth','HXZ_UPLOAD_TOMBS','HXZ_KBCHAT_TOMBS','hxz_subproj'].forEach(function(k){localStorage.removeItem(k);});}catch(_){}
+}
+function _authAccept(auth){
+  if(!auth||typeof auth.user!=='string'||!Array.isArray(auth.projectKeys))throw new Error('登录响应不完整，请重试');
+  var keys=auth.projectKeys.filter(function(k){return typeof k==='string';});
+  if(auth.projKey&&keys.indexOf(auth.projKey)<0&&auth.scope!=='admin')throw new Error('工作区授权不一致，请重试');
+  _authEpoch++;_authResetView();
+  AUTH={user:auth.user,city:auth.city||'',projKey:auth.projKey||null,projectKeys:keys,role:auth.role||'member',scope:auth.scope||'user',who:auth.who||auth.user,org:auth.org||'',resident:!!auth.resident};
+  _authState='ready';_authError='';cur=AUTH.projKey;view='knowledge';saveAuth();
+  return AUTH;
+}
+function _authForget(){_authEpoch++;AUTH=null;_authState='anonymous';_authResetView();}
+function _authJson(path,body){
+  var controller=typeof AbortController!=='undefined'?new AbortController():null;
+  var timer;
+  var options={credentials:'same-origin',headers:{'Accept':'application/json'}};
+  if(body!==undefined){options.method='POST';options.headers['Content-Type']='application/json';options.body=JSON.stringify(body);}
+  if(controller)options.signal=controller.signal;
+  var request=fetch(path,options).then(function(response){
+    return response.json().catch(function(){throw new Error('服务响应异常，请重试');}).then(function(data){
+      if(response.ok===false||!data||data.ok!==true){
+        var error=new Error(data&&data.message||'服务暂时不可用，请稍后重试');error.status=response.status;error.code=data&&data.error;
+        if(response.status===401&&path!=='/api/auth/login'&&path!=='/api/auth/register'&&path!=='/api/auth/session'){_authForget();if(typeof render==='function')render();}
+        throw error;
+      }
+      return data;
+    });
+  });
+  var deadline=new Promise(function(_,reject){timer=setTimeout(function(){if(controller)controller.abort();reject(new Error('请求超时，请重试'));},20000);});
+  return Promise.race([request,deadline]).then(function(data){clearTimeout(timer);return data;},function(error){clearTimeout(timer);throw error;});
+}
+function loadAuth(){
+  if(_authPending)return _authPending;
+  _purgeAuthCache();_authState='checking';
+  _authPending=_authJson('/api/auth/session').then(function(data){
+    if(data.authenticated!==true)throw Object.assign(new Error('请登录'),{status:401});
+    _authAccept(data.auth);
+  }).catch(function(error){
+    if(error.status===401){_authForget();}else{AUTH=null;_authResetView();_authState='unavailable';_authError=error.message;}
+  }).then(function(){_authPending=null;if(typeof render==='function')render();});
+  return _authPending;
+}
+function logout(){
+  if(logout._pending)return logout._pending;
+  logout._pending=_authJson('/api/auth/logout',{}).then(function(){_authForget();render();}).catch(function(error){toast(error.message||'退出失败，请重试');}).then(function(){logout._pending=null;});
+  return logout._pending;
+}
+function _authProjectKeys(){return AUTH&&Array.isArray(AUTH.projectKeys)?AUTH.projectKeys:[];}
+function _authWorkspaceOf(key){
+  var keys=_authProjectKeys(),p=PROJECTS[key];
+  if(keys.indexOf(key)>=0)return key;
+  return p&&keys.indexOf(p.workspaceId)>=0?p.workspaceId:null;
+}
+function _authFilterProjects(projects){
+  var filtered={},keys=_authProjectKeys();
+  Object.keys(projects||{}).forEach(function(k){var p=projects[k];if(p&&(keys.indexOf(k)>=0||keys.indexOf(p.workspaceId)>=0))filtered[k]=p;});
+  return filtered;
+}
+/* A new direction inherits its selected parent's workspace, including in the admin UI. */
+function _projectWorkspaceId(parentKey){
+  parentKey=parentKey||cur;
+  var parent=PROJECTS[parentKey];
+  if(AUTH&&AUTH.scope==='admin')return parent&&parent.workspaceId||parentKey||AUTH.projKey||null;
+  var authorized=typeof _authWorkspaceOf==='function'?_authWorkspaceOf(parentKey):null;
+  return authorized||AUTH&&AUTH.projKey||null;
+}
+function _authReadSync(response){
+  if(response.status===401){_authForget();render();throw new Error('登录已过期，请重新登录');}
+  if(response.ok===false)throw new Error('工作区暂时不可用');
+  return response.json();
+}
+function _authWorkspaceChanged(auth){_authAccept(auth);var epoch=_authEpoch;return new Promise(function(resolve){restoreFromServer(function(ok){if(epoch!==_authEpoch){resolve(false);return;}render._routed=true;render._restored=true;render._serverSynced=!!ok;cur=AUTH&&AUTH.projKey;view='knowledge';render();resolve(ok);});});}
+function switchAuthWorkspace(key){
+  if(!AUTH||_authProjectKeys().indexOf(key)<0){toast('没有该工作区权限');return Promise.resolve(false);}
+  if(switchAuthWorkspace._pending)return switchAuthWorkspace._pending;
+  var switchEpoch=_authEpoch;
+  switchAuthWorkspace._pending=_authJson('/api/auth/workspace',{projKey:key}).then(function(data){if(switchEpoch!==_authEpoch)throw new Error('会话已变化，请重新登录');return _authWorkspaceChanged(data.auth);}).catch(function(error){toast(error.message);return false;}).then(function(ok){switchAuthWorkspace._pending=null;return ok;});
+  return switchAuthWorkspace._pending;
+}
 loadAuth();
 // 报告版本迭代状态（每项目一份）：{ver, finalized, patches:[补充意见], edits:{结论index:新文字}}
 var REPORTSTATE={};
@@ -1177,8 +1264,7 @@ function rs(){var k=cur;if(!REPORTSTATE[k])REPORTSTATE[k]={ver:1,finalized:false
 function P(){return cur&&PROJECTS[cur]||{}}
 /* 政府端账号按城市独立：返回当前登录城市（cur所在城市）的项目key列表 */
 function cityKeys(){
-  var mc=(cur&&PROJECTS[cur]&&PROJECTS[cur].city)?PROJECTS[cur].city:null;
-  return Object.keys(PROJECTS).filter(function(k){return !mc||(PROJECTS[k]&&PROJECTS[k].city===mc);});
+  return Object.keys(PROJECTS).filter(function(k){return AUTH&&_authWorkspaceOf(k)===AUTH.projKey;});
 }
 /* ===== 渲染骨架：用雷总真实DOM结构 ===== */
 var $=function(s){return document.querySelector(s)};
@@ -1197,170 +1283,36 @@ var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/
 
 function render(){
   // 跳过重渲染：用户正在查看校验结果或冲突面板时不重建DOM
-  if(window._verifyInProgress || document.getElementById('conflictModal')) return;
+  if(AUTH&&_authState==='ready'&&(window._verifyInProgress || document.getElementById('conflictModal'))) return;
   // 报告生成中且当前在report view时不重建DOM（保护流式输出的reportContent）
   // 切到其他view不阻塞；revealReport完成后会主动调render()
-  if(window._reportGenerating && view==='report') return;
-  // ── 登录门禁：未登录 → 登录页 ──
-  if(location.search.indexOf('demo')<0 && !AUTH){
-    var _r=document.getElementById('root');
-    if(_r){ _r.innerHTML=(view==='register')?registerPage():loginPage(); }
+  if(AUTH&&_authState==='ready'&&window._reportGenerating && view==='report') return;
+  // Only a server-confirmed cookie session authorizes workspace rendering.
+  var authRoot=document.getElementById('root');
+  if(_authState==='unknown'||_authState==='checking'){
+    if(authRoot)authRoot.innerHTML='<div style="padding:60px;text-align:center;color:#667590">正在验证登录状态…</div>';
     return;
   }
-  // ── 登录后按账号权威定城市（只执行一次，之后允许自由切换）──
-  if(AUTH && !render._routed){
-    render._routed=true;
-    if(!render._restored){ render._restored=true; try{restore();}catch(e){} }
-    // 必须先从服务器拉取数据，阻止本地seed覆盖
-    if(!render._serverSynced){
-      render._serverSynced=true;
-      // 显示加载状态
-      var _r=document.getElementById('root');
-      if(_r) _r.innerHTML='<div style="height:100vh;display:flex;align-items:center;justify-content:center;font-size:15px;color:#667590">正在同步数据…</div>';
-      restoreFromServer(function(ok){
-        if(ok){
-          // 服务器有数据，直接使用
-          if(AUTH.resident){
-            // 常驻=随州账号：强制落到随州项目，忽略服务器残留的其他城市 cur（如上海）
-            var _isSz=function(k){return PROJECTS[k]&&PROJECTS[k].city&&PROJECTS[k].city.indexOf('随州')>=0;};
-            // 常驻账号始终落到数据最全的 sz 主项目(避免落到空白随州派生项目导致'信息丢失'错觉)
-            // 常驻账号：选数据最多的随州项目（避免落到空白项目）
-            var _szKeys=Object.keys(PROJECTS).filter(_isSz);
-            if(_szKeys.length){
-              _szKeys.sort(function(a,b){
-                var ka=PROJECTS[a].kb||[], kb2=PROJECTS[b].kb||[];
-                var ca=0,cb=0; ka.forEach(function(t){ca+=(t.known||[]).length;}); kb2.forEach(function(t){cb+=(t.known||[]).length;});
-                return cb-ca; // 数据多的排前面
-              });
-              cur=_szKeys[0];
-            } else { cur=null; }
-            // 随州数据被清空(无任何随州项目)时，走空白 onboarding，让常驻账号也从零重跑，不自动重建预置数据
-            if(!cur){ view='setup'; }
-            else { view=view||'knowledge'; /* 不再默认解锁随州：产业分析/招商对接保持上锁，待智库达标或手动解锁 */ }
-          } else {
-            // 非常驻账号：优先落到账号绑定的 projKey（推送RAG时写入，权威口径，避免账号city与项目city措辞不一致导致串城/建空项目）
-            var _ac=AUTH.city||'';
-            if(AUTH.projKey && PROJECTS[AUTH.projKey]){
-              cur=AUTH.projKey; view='knowledge';
-            } else if(AUTH.projKey && reviveProjectShell(AUTH.projKey,_ac)){
-              // 【2026-09-17】绑定的项目壳丢了但报告数据还在 -> 自愈重建，绝不建空壳覆盖
-              cur=AUTH.projKey; view='knowledge'; persist();
-            } else {
-              // 无绑定项目时才按城市匹配；城市匹配同时兼容"账号city含项目city或项目city含账号city"（如账号=上海市、项目=松江区）
-              var _mine=Object.keys(PROJECTS).filter(function(k){
-                var pc=PROJECTS[k]&&PROJECTS[k].city||'';
-                return pc && _ac && (pc===_ac || pc.indexOf(_ac)>=0 || _ac.indexOf(pc)>=0);
-              });
-              if(_mine.length){ if(!cur || _mine.indexOf(cur)<0){ cur=_mine[0]; } view='knowledge'; }
-              else if(_ac){ cur=autoProvisionCity(_ac); view='knowledge'; /* 新城市不预解锁：产业分析/招商对接保持上锁，待智库完成度达80%或手动强制解锁 */ persist(); }
-              else { cur=null; view='setup'; }
-            }
-          }
-        } else {
-          // 服务器无数据，本地初始化
-          if(AUTH.resident){ cur=null; view='setup'; /* 随州清空后不再自动重建预置，走空白 onboarding 从零重跑 */ }
-          else { if(AUTH.projKey&&PROJECTS[AUTH.projKey]){cur=AUTH.projKey;view='knowledge';}else if(AUTH.projKey&&reviveProjectShell(AUTH.projKey,AUTH.city)){cur=AUTH.projKey;view='knowledge';persist();}else{cur=null;view='setup';} }
-        }
-        render();
-      });
-      return; // 等待服务器响应，不继续渲染
-    }
+  if(_authState==='unavailable'){
+    if(authRoot)authRoot.innerHTML='<div style="padding:60px;text-align:center;color:#667590">'+_authEscape(_authError||'登录服务暂时不可用')+'<p><button onclick="loadAuth()">重试登录状态验证</button></p></div>';
+    return;
   }
-
-  // 尝试从 localStorage 恢复（非 ?demo 模式）
-  if(location.search.indexOf('demo')<0&&!render._restored){
-    render._restored=true;
-    var _hasLocal = restore();
-    // 防止 cur 指向空项目：如果当前项目无 kb 数据但有其他有数据的项目，切过去
-    if(cur && PROJECTS[cur]){
-      var _curKbCount=(PROJECTS[cur].kb||[]).reduce(function(s,t){return s+(t.known||[]).length;},0);
-      if(_curKbCount===0){
-        var _allKeys=Object.keys(PROJECTS);
-        var _best=null,_bestC=0;
-        _allKeys.forEach(function(k){var c=0;(PROJECTS[k].kb||[]).forEach(function(t){c+=(t.known||[]).length;});if(c>_bestC){_bestC=c;_best=k;}});
-        if(_best&&_bestC>0) cur=_best;
-      }
-    }
-    // 无论本地是否有数据，都从服务器拉取最新状态（保证多端同步）
-    if(!render._serverSynced){
-      render._serverSynced=true;
-      restoreFromServer(function(ok){
-        if(ok){
-          // 服务器数据覆盖本地后，确保cur指向数据最多的随州项目（防落空项目）
-          var _szK2=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k]&&PROJECTS[k].city&&PROJECTS[k].city.indexOf('随州')>=0;});
-          if(_szK2.length){
-            _szK2.sort(function(a,b){var ca=0,cb=0;(PROJECTS[a].kb||[]).forEach(function(t){ca+=(t.known||[]).length;});(PROJECTS[b].kb||[]).forEach(function(t){cb+=(t.known||[]).length;});return cb-ca;});
-            if(!cur||!PROJECTS[cur]||(PROJECTS[cur].kb||[]).reduce(function(s,t){return s+(t.known||[]).length;},0)===0) cur=_szK2[0];
-          }
-          render();
-        }
-      });
-    }
-    if(_hasLocal){ render(); return; }
+  if(!AUTH){if(authRoot)authRoot.innerHTML=view==='register'?registerPage():loginPage();return;}
+  if(!render._routed){
+    render._routed=true;render._restored=true;render._serverSynced=false;
+    if(authRoot)authRoot.innerHTML='<div style="padding:60px;text-align:center;color:#667590">正在加载工作区…</div>';
+    restoreFromServer(function(ok){
+      if(!AUTH){render();return;}
+      render._serverSynced=!!ok;cur=AUTH.projKey||null;view='knowledge';render();
+    });
+    return;
   }
-  // ?demo 模式：先尝试从 localStorage 恢复已有数据（管理端可能已写入）
-  if(location.search.indexOf('demo')>=0&&!cur){
-    // 如果 localStorage 已有项目数据，直接 restore 而不新建 demo
-    if(!render._restored){
-      render._restored=true;
-      var _raw=localStorage.getItem(LS_KEY);
-      if(_raw){
-        try{
-          var _data=JSON.parse(_raw);
-          if(_data.PROJECTS&&Object.keys(_data.PROJECTS).length>0){
-            restore();
-            /* 不再默认解锁：与正式流程一致，产业分析/招商对接默认上锁 */
-            return render();
-          }
-        }catch(e){}
-      }
-    }
-  if(location.search.indexOf('demo')>=0&&!cur){
-    var _dk='demo_'+Date.now().toString(36);
-    var _dc=generateKbConclusions('随州');
-    var _dk_proj=PROJECTS[_dk]={id:_dk,city:'随州',org:'随州市招商局',who:'张主任',topic:'随州主导产业补链招引',stage:1,
-      kb:[
-        {icon:'🏭',t:'主导产业与产业链',sub:_dc.industry.sub,tag:_dc.industry.tag,known:_dc.industry.known,calls:['产业链缺口测绘报告']},
-        {icon:'🏢',t:'园区与承载条件',sub:_dc.park.sub,tag:_dc.park.tag,known:_dc.park.known,calls:['产业链缺口测绘报告']},
-        {icon:'🏗️',t:'链主与存量企业',sub:_dc.firm.sub,tag:_dc.firm.tag,known:_dc.firm.known,calls:['产业链缺口测绘报告']},
-        {icon:'📜',t:'政策、规划与领导关注',sub:_dc.policy.sub,tag:_dc.policy.tag,known:_dc.policy.known,calls:['政策规划研究']}
-      ],report:null,clues:[]};
-    cur=_dk; view='knowledge'; detailOpen=false;
-  // 给 demo 项目注入示例报告状态，以便测试线索派生
-  if(!REPORTSTATE[_dk]){
-    REPORTSTATE[_dk]={
-      text:'',
-      topic:'',
-      ts: Date.now(),
-      score: 0,
-      phase: 1
-    };
-    _dk_proj.stage=1;  // 推进到「确认需求」阶段
-  }}
-  }
-  // ── 城市隔离护栏（每次渲染都生效）──────────────────────────────
-  // 全局 /api/sync 是单块存储，服务端返回的顶层 cur/view 恒为主账号(随州)的值。
-  // 非随州账号绝不信任该 cur：强制把 cur 钉回本账号城市的项目，杜绝串到随州。
-  if(AUTH && !AUTH.resident && (AUTH.city||AUTH.projKey) && role!=='ops'){
-    var _gc=AUTH.city||'';
-    // 城市匹配兼容"账号city与项目city措辞不一致"（如账号=上海市、项目=松江区）
-    var _cityMatch=function(k){
-      var pc=PROJECTS[k]&&PROJECTS[k].city||'';
-      return pc && _gc && (pc===_gc || pc.indexOf(_gc)>=0 || _gc.indexOf(pc)>=0);
-    };
-    var _mineKeys=Object.keys(PROJECTS).filter(_cityMatch);
-    // 账号绑定的 projKey 优先视为合法；否则按（兼容）城市匹配判断 cur 是否属于本账号
-    var _boundOk=AUTH.projKey && cur===AUTH.projKey && PROJECTS[cur];
-    var _curOk=_boundOk || (cur&&PROJECTS[cur]&&_cityMatch(cur));
-    if(!_curOk){
-      if(AUTH.projKey && PROJECTS[AUTH.projKey]){ cur=AUTH.projKey; }
-      else if(AUTH.projKey && reviveProjectShell(AUTH.projKey,_gc)){ cur=AUTH.projKey; }
-      else if(_mineKeys.length){ cur=_mineKeys[0]; }
-      else if(_gc){ cur=autoProvisionCity(_gc); }
-      // 串城时 view 也可能停在随州的 report；本项目无报告则回落到智库，避免展示随州报告空壳
-      if(view==='report' && !(cur&&REPORTSTATE[cur]&&REPORTSTATE[cur].text)) view='knowledge';
-      persist();
-    }
+  var workspace=cur&&_authWorkspaceOf(cur);
+  if(workspace&&workspace!==AUTH.projKey){switchAuthWorkspace(workspace);return;}
+  if(!workspace)cur=AUTH.projKey||null;
+  if(!cur||!PROJECTS[cur]){
+    if(authRoot)authRoot.innerHTML='<div style="padding:60px;text-align:center;color:#667590">'+(render._serverSynced?'当前账号尚无可用工作区，请通过邀请码加入团队或联系管理员。':'工作区暂未加载，请重试。')+'<p><button onclick="openJoinWorkspace()">通过邀请码加入工作区</button> <button onclick="render._routed=false;render()">重新加载</button> <button onclick="logout()">退出登录</button></p></div>';
+    return;
   }
   if(view==='setup'||!cur||!PROJECTS[cur]){var _root=$('#root');if(_root){_root.innerHTML='<div style="height:100vh;background:#f5f7fb">'+setupPage()+'</div>';bind();} return;}
   if(role==='ops')return renderOps();
@@ -1418,7 +1370,6 @@ function render(){
   }
 }
 /* 顶栏角色切换按钮（政府端 ⇄ 运营端）*/
-
 /* ===== 空白引导页（用户首次进入 / 无项目时） ===== */
 function opsTopbarEmpty(){
   return '<div class="top-bar"><div class="top-brand"><div class="brand-icon">慧</div><span style="font-weight:700;font-size:15px;color:#0b183b">慧小招</span></div>'+
@@ -1432,7 +1383,7 @@ function loginPage(){
       '<div style="text-align:center;margin-bottom:24px">'+
         '<div style="width:56px;height:56px;margin:0 auto 12px;border-radius:15px;background:linear-gradient(135deg,#1a56db,#6366f1);display:grid;place-items:center;font-size:28px;color:#fff;font-weight:700">慧</div>'+
         '<h1 style="margin:0;font-size:21px;color:#0b183b;letter-spacing:-.01em">慧小招 · 城市智库</h1>'+
-        '<p style="margin:6px 0 0;font-size:12.5px;color:#8492a6">AI 招商智能体 · 请登录进入你的城市工作区</p>'+
+        '<p style="margin:6px 0 0;font-size:12.5px;color:#8492a6">使用账号和密码登录你的城市工作区，无需重复填写邀请码</p>'+
       '</div>'+
       '<div style="display:grid;gap:13px">'+
         '<label style="display:grid;gap:6px;font-size:12px;color:#52637a">账号'+
@@ -1444,20 +1395,13 @@ function loginPage(){
           '</span></label>'+
         '<div id="loginErr" style="display:none;font-size:12px;color:#dc2626;margin-top:-4px"></div>'+
         '<button onclick="doLogin()" style="min-height:46px;margin-top:4px;border:none;border-radius:10px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;font-size:15px;font-weight:650;cursor:pointer;letter-spacing:.3px">登录</button>'+
-        '<button onclick="gotoRegister()" style="min-height:44px;border:1.5px solid #d8e0ed;border-radius:10px;background:#fff;color:#1a56db;font-size:14px;font-weight:600;cursor:pointer">注册新账号</button>'+
-      '</div>'+
-      '<div style="margin-top:20px;padding-top:16px;border-top:1px solid #f0f4ff;font-size:11.5px;color:#9aa5b5;line-height:1.7">'+
-        '<div style="font-weight:650;color:#6b7688;margin-bottom:4px">演示账号</div>'+
-        '· <b>suizhou</b> / suizhou —— 随州常驻工作区（含完整数据）<br>'+
-        '· <b>admin</b> / admin —— 通用账号，可新建任意城市'+
+        '<button onclick="gotoRegister()" style="min-height:44px;border:1.5px solid #d8e0ed;border-radius:10px;background:#fff;color:#1a56db;font-size:14px;font-weight:600;cursor:pointer">有邀请码，注册加入团队</button>'+
       '</div>'+
     '</div></div>';
 }
 function gotoRegister(){
   view='register'; render._routed=true; render();
-  // 登录门禁下 INVITE_CODES 尚未从服务器拉取，此时直接校验会误报「邀请码不存在」。
-  // 进入注册页立即拉一次最新邀请码库，若用户已输入内容则拉完自动重新校验一遍。
-  restoreFromServer(function(){ if(typeof onInviteCodeInput==='function') onInviteCodeInput(); });
+  _regInviteSequence++;
 }
 function regBack(){ view='login'; render._routed=true; render(); }
 function regErr(msg){ var e=document.getElementById('regErr'); if(e){ e.textContent=msg; e.style.display=msg?'block':'none'; } }
@@ -1482,8 +1426,8 @@ function registerPage(){
     '<div style="width:min(440px,92vw);background:#fff;border-radius:18px;box-shadow:0 24px 70px rgba(11,31,65,.13);padding:34px 32px 26px">'+
       '<div style="text-align:center;margin-bottom:20px">'+
         '<div style="width:52px;height:52px;margin:0 auto 10px;border-radius:14px;background:linear-gradient(135deg,#1a56db,#6366f1);display:grid;place-items:center;font-size:26px;color:#fff;font-weight:700">慧</div>'+
-        '<h1 style="margin:0;font-size:19px;color:#0b183b">注册政府端账号</h1>'+
-        '<p style="margin:6px 0 0;font-size:12px;color:#8492a6">凭邀请码加入你的城市工作区，完善资料便于招商团队电话/微信联系</p>'+
+        '<h1 style="margin:0;font-size:19px;color:#0b183b">注册并加入团队</h1>'+
+        '<p style="margin:6px 0 0;font-size:12px;color:#8492a6">首次注册时使用邀请码加入团队；以后直接用账号和密码登录</p>'+
       '</div>'+
       '<div style="display:grid;gap:11px">'+
         '<label style="display:grid;gap:5px;font-size:12px;color:#52637a">'+reqLabel('邀请码 *')+
@@ -1512,101 +1456,44 @@ function registerPage(){
         '</div>'+
         '<div id="regErr" style="display:none;font-size:12px;color:#dc2626;margin-top:-2px"></div>'+
         '<button onclick="doRegister()" style="min-height:46px;margin-top:4px;border:none;border-radius:10px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;font-size:15px;font-weight:650;cursor:pointer">提交注册并登录</button>'+
-        '<button onclick="regBack()" style="min-height:40px;border:none;background:none;color:#8492a6;font-size:13px;cursor:pointer">← 返回登录</button>'+
+        '<button onclick="regBack()" style="min-height:40px;border:none;background:none;color:#8492a6;font-size:13px;cursor:pointer">已有账号？返回登录</button>'+
       '</div>'+
     '</div></div>';
 }
 
-/* 邀请码输入实时校验：合法则锁定展示城市，非法则清空城市并提示 */
+var _regInviteSequence=0, _regInviteTimer=null;
+/* Server validation provides only the city, never the invitation registry. */
 function onInviteCodeInput(){
-  var el=document.getElementById('regInviteCode'); if(!el) return;
-  var cityEl=document.getElementById('regCity'); var hintEl=document.getElementById('regInviteHint');
-  var code=el.value.trim();
-  if(!code){ if(cityEl)cityEl.value=''; if(hintEl){hintEl.textContent='输入邀请码后自动识别所在城市';hintEl.style.color='#8492a6';} return; }
-  var v=validateInviteCode(code);
-  if(v.ok){
-    if(cityEl)cityEl.value=v.city||'';
-    if(hintEl){hintEl.textContent='✓ 邀请码有效，将加入「'+(v.city||'')+'」工作区';hintEl.style.color='#0a8f5c';}
-  }else{
-    if(cityEl)cityEl.value='';
-    if(hintEl){hintEl.textContent=v.msg;hintEl.style.color='#dc2626';}
-  }
+  var input=document.getElementById('regInviteCode'),city=document.getElementById('regCity'),hint=document.getElementById('regInviteHint');
+  if(!input)return;
+  var code=input.value.trim().toUpperCase(),sequence=++_regInviteSequence;
+  if(_regInviteTimer)clearTimeout(_regInviteTimer);
+  if(city)city.value='';
+  if(!code){if(hint)hint.textContent='输入邀请码后自动识别所在城市';return;}
+  if(hint){hint.textContent='正在验证邀请码…';hint.style.color='#8492a6';}
+  _regInviteTimer=setTimeout(function(){
+    _authJson('/api/auth/invite/validate',{inviteCode:code}).then(function(data){
+      if(sequence!==_regInviteSequence||!document.getElementById('regInviteCode')||input.value.trim().toUpperCase()!==code)return;
+      if(city)city.value=data.city||'';
+      if(hint){hint.textContent='邀请码有效，将加入「'+(data.city||'')+'」工作区';hint.style.color='#0a8f5c';}
+    }).catch(function(error){if(sequence!==_regInviteSequence)return;if(hint){hint.textContent=error.message||'验证失败，请重试';hint.style.color='#dc2626';}});
+  },300);
 }
-
-function regMarkInvalid(id){ var el=document.getElementById(id); if(el){ el.style.borderColor='#dc2626'; el.style.boxShadow='0 0 0 3px rgba(220,38,38,.12)'; } }
-function regClearInvalid(el){ if(el){ el.style.borderColor='#d8e0ed'; el.style.boxShadow='none'; } var e=document.getElementById('regErr'); if(e){ e.style.display='none'; } }
+function regMarkInvalid(id){var el=document.getElementById(id);if(el)el.style.borderColor='#dc2626';}
+function regClearInvalid(el){if(el)el.style.borderColor='#d8e0ed';regErr('');}
 function doRegister(){
-  // 【2026-09-29】防重复提交：doRegister 之前完全没有并发保护，双击/网络慢导致的
-  // 二次点击会在第一次的 restoreFromServer 异步回调完成前再触发一次 proceed()，
-  // 此时 USER_PROFILES[u] 已经被第一次写入，第二次直接命中"该账号已被注册"报错——
-  // 表现正是"跳转正常（第一次成功）+ 提示账号已存在（第二次误判）"，账号本身没有
-  // 真的重复，是提示时序错了。加锁后第二次点击直接忽略，不再进入判断分支。
-  if(doRegister._inFlight) return;
-  doRegister._inFlight = true;
-  doRegister._registered = false; // 每次新调用重置，避免上一轮注册成功的标记挡住下一轮
-  var _releaseLock=function(){ doRegister._inFlight=false; };
-  function v(id){ var el=document.getElementById(id); return el?el.value.trim():''; }
-  var inviteCode=v('regInviteCode'), u=v('regUser').toLowerCase(), pw=v('regPwd'), name=v('regName'), phone=v('regPhone'),
-      wechat=v('regWechat'), org=v('regOrg'), dept=v('regDept'), title=v('regTitle');
-  var fields=[['regInviteCode',inviteCode,'邀请码'],['regUser',u,'登录账号名'],['regPwd',pw,'登录密码'],['regName',name,'姓名'],['regPhone',phone,'手机号码'],['regWechat',wechat,'微信号'],['regOrg',org,'所在单位'],['regDept',dept,'部门'],['regTitle',title,'职务']];
-  var missing=fields.filter(function(f){return !f[1];});
-  if(missing.length){
-    missing.forEach(function(f){ regMarkInvalid(f[0]); });
-    var first=document.getElementById(missing[0][0]);
-    if(first){ first.focus(); first.scrollIntoView({behavior:'smooth',block:'center'}); }
-    regErr('还有 '+missing.length+' 项未填：'+missing.map(function(f){return f[2];}).join('、'));
-    if(typeof toast==='function') toast('请填写：'+missing.map(function(f){return f[2];}).join('、'));
-    _releaseLock(); return;
-  }
-  if(!/^1[3-9]\d{9}$/.test(phone)){ regMarkInvalid('regPhone'); var pe=document.getElementById('regPhone'); if(pe){pe.focus();} regErr('手机号码格式不正确（应为11位手机号）'); if(typeof toast==='function') toast('手机号码格式不正确'); _releaseLock(); return; }
-  if(ACCOUNTS[u]){ regErr('该账号为系统保留账号，请换一个'); _releaseLock(); return; }
-  // 先从服务器拉最新邀请码库+用户库再校验，避免用本地过期数据误判
-  var proceed=function(){
-    // 【2026-09-29】proceed 会被两条异步路径分别调用（restoreFromServer 正常回调 +
-    // 1.5s 兜底 setTimeout）。若正常回调较慢，兜底先跑完一次成功注册后，正常回调
-    // 才到达，此时 USER_PROFILES[u] 已经是刚才自己写的，会误判"该账号已被注册"。
-    // 用 _registered 标志短路：只要本次 doRegister 已经成功注册过，后续到达的
-    // 第二条路径直接跳过，不再重新判断。
-    if(doRegister._registered){ return; }
-    if(USER_PROFILES[u]){ regErr('该账号已被注册'); _releaseLock(); return; }
-    var inv=validateInviteCode(inviteCode);
-    if(!inv.ok){ regMarkInvalid('regInviteCode'); regErr(inv.msg); _releaseLock(); return; }
-    var city=inv.city, role=inv.role||'member';
-    // 邀请码可重复使用：用同一个码注册的多个账号加入同一工作区（团队协作）；
-    // 不同邀请码即使城市名相同也是完全独立的工作区，隔离边界是 projKey 不是城市名。
-    // 不再限制"一城市一账号"。
-    USER_PROFILES[u]={name:name,phone:phone,wechat:wechat,org:org,dept:dept,title:title,city:city,pwd:pw,ts:Date.now(),role:role,inviteCode:inv.code,projKey:inv.projKey||null};
-    // 记录邀请码使用历史，供管理端追踪谁用了这个码
-    if(!INVITE_CODES[inv.code].usedBy) INVITE_CODES[inv.code].usedBy=[];
-    INVITE_CODES[inv.code].usedBy.push({user:u,ts:Date.now()});
-    persist();
-    AUTH={user:u, city:city, projKey:inv.projKey||null, resident:false, who:name, org:org, role:role};
-    saveAuth();
-    cur=null; view='setup'; render._restored=false; render._routed=false; render._serverSynced=false;
-    // 立即强制同步注册用户到服务端(绕过5秒防抖):必须在restoreFromServer之前完成POST,
-    // 否则5秒内页面已多次restore/render,本地USER_PROFILES可能被服务端旧数据覆盖前尚未推送,
-    // 表现为"注册用户没同步到管理端"。
-    // 关键安全:未登录状态PROJECTS/OPS_ENT可能是空,若直接推整个localStorage会清空服务端全库。
-    // 改为只推 USER_PROFILES + INVITE_CODES 增量,避免空快照灾难。
-    try{
-      var _incBody={USER_PROFILES:USER_PROFILES, INVITE_CODES:INVITE_CODES};
-      if(typeof RESET_GEN!=='undefined'&&RESET_GEN) _incBody.RESET_GEN=RESET_GEN;
-      _incBody.syncTs=Date.now();
-      var _xhr=new XMLHttpRequest();
-      _xhr.open('POST','/api/sync',false);  // 同步XHR:确保注册数据先到服务端
-      _xhr.setRequestHeader('Content-Type','application/json');
-      _xhr.send(JSON.stringify(_incBody));
-      console.log('[register] sync POST status:', _xhr.status, 'body keys:USER_PROFILES,INVITE_CODES');
-    }catch(e){ console.warn('[register] sync POST failed:',e&&e.message); }
-    var done=false; var fb=setTimeout(function(){ if(!done){done=true;render();} },2000);
-    restoreFromServer(function(){ if(!done){done=true;clearTimeout(fb);render();} });
-    toast('✓ 注册成功，欢迎 '+name);
-    doRegister._registered = true;
-    _releaseLock();
-  };
-  restoreFromServer(function(){ proceed(); });
-  // 服务器无数据时 restoreFromServer 回调可能不触发，兜底
-  setTimeout(function(){ if(!AUTH){ proceed(); } }, 1500);
+  if(doRegister._inFlight)return doRegister._inFlight;
+  function value(id){var el=document.getElementById(id);return el?el.value.trim():'';}
+  var body={username:value('regUser').toLowerCase(),password:(document.getElementById('regPwd')||{}).value||'',inviteCode:value('regInviteCode').toUpperCase(),name:value('regName'),phone:value('regPhone'),wechat:value('regWechat'),org:value('regOrg'),dept:value('regDept'),title:value('regTitle')};
+  var required=[['inviteCode','邀请码'],['username','登录账号名'],['password','登录密码'],['name','姓名'],['phone','手机号码'],['wechat','微信号'],['org','所在单位'],['dept','部门'],['title','职务']];
+  var missing=required.filter(function(item){return !body[item[0]];});
+  if(missing.length){regErr('请填写：'+missing.map(function(item){return item[1];}).join('、'));return;}
+  if(!/^1[3-9]\d{9}$/.test(body.phone)){regErr('手机号码格式不正确（应为11位手机号）');return;}
+  regErr('正在保存注册信息…');
+  doRegister._inFlight=_authJson('/api/auth/register',body).then(function(data){
+    _authAccept(data.auth);render();toast('注册成功，已加入团队');
+  }).catch(function(error){regErr(error.message||'注册未完成，请重试');}).then(function(){doRegister._inFlight=null;});
+  return doRegister._inFlight;
 }
 
 function eyeSvg(open){
@@ -1622,26 +1509,29 @@ function togglePwd(id,el){
 }
 function loginErr(msg){ var e=document.getElementById('loginErr'); if(e){ e.textContent=msg; e.style.display='block'; } }
 function doLogin(){
-  var u=(document.getElementById('loginUser')||{}).value||'';
-  var pw=(document.getElementById('loginPwd')||{}).value||'';
-  u=u.trim().toLowerCase();
-  var _verify=function(){
-    var acc=ACCOUNTS[u];
-    // 城市账号连接表（推送RAG时自动建立，resident账号直接进工作区）
-    if(!acc && CITY_ACCOUNTS[u]){ var ca=CITY_ACCOUNTS[u]; acc={pwd:ca.pwd, city:ca.city||null, projKey:ca.projKey||null, resident:true, who:ca.who||u, org:ca.org||'', role:ca.role||'owner'}; }
-    // 内置账号不存在时，查注册用户库
-    if(!acc && USER_PROFILES[u]){ var up=USER_PROFILES[u]; acc={pwd:up.pwd, city:up.city||null, projKey:up.projKey||null, resident:!!up.resident, who:up.name||u, org:up.org||'', role:up.role||'member'}; }
-    if(!acc){ loginErr('账号不存在'); return; }
-    if(acc.pwd!==pw){ loginErr('密码错误'); return; }
-    AUTH={user:u, city:acc.city, projKey:acc.projKey, resident:!!acc.resident, who:acc.who, org:acc.org, role:acc.role||'member'};
-    saveAuth();
-    cur=null; view='setup'; render._restored=false; render._routed=false; render._serverSynced=false;
-    render();
-  };
-  // 先从服务器拉取注册用户库再校验（登录门禁下 USER_PROFILES 尚未加载，否则真实账号会报「账号不存在」）
-  var _done=false;
-  var _fb=setTimeout(function(){ if(!_done){_done=true;_verify();} },2500);
-  restoreFromServer(function(){ if(!_done){_done=true;clearTimeout(_fb);_verify();} });
+  if(doLogin._inFlight)return doLogin._inFlight;
+  var user=document.getElementById('loginUser'),pwd=document.getElementById('loginPwd');
+  var body={username:(user&&user.value||'').trim().toLowerCase(),password:pwd&&pwd.value||''};
+  if(!body.username||!body.password){loginErr('请输入账号和密码');return;}
+  loginErr('正在登录…');
+  doLogin._inFlight=_authJson('/api/auth/login',body).then(function(data){_authAccept(data.auth);render();}).catch(function(error){loginErr(error.message||'登录失败，请重试');}).then(function(){doLogin._inFlight=null;});
+  return doLogin._inFlight;
+}
+function openJoinWorkspace(){
+  if(!AUTH)return;
+  openModal('通过邀请码加入工作区','<p>加入新团队后，原工作区会保留，可随时切换。</p><input id="joinInviteCode" placeholder="请输入新团队邀请码" autocomplete="off" style="width:100%;min-height:42px"><p id="joinInviteError" style="color:#dc2626"></p>','<button class="ghost-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="joinWorkspace()">加入工作区</button>');
+}
+function joinWorkspace(){
+  if(joinWorkspace._inFlight)return joinWorkspace._inFlight;
+  var input=document.getElementById('joinInviteCode'),errorEl=document.getElementById('joinInviteError'),code=(input&&input.value||'').trim().toUpperCase();
+  if(!code){if(errorEl)errorEl.textContent='请输入邀请码';return;}
+  var previousKeys=_authProjectKeys().slice(),joinEpoch=_authEpoch;
+  joinWorkspace._inFlight=_authJson('/api/auth/join',{inviteCode:code}).then(function(data){
+    if(joinEpoch!==_authEpoch)throw new Error('会话已变化，请重新登录');
+    if(!data.auth||!Array.isArray(data.auth.projectKeys)||previousKeys.some(function(k){return data.auth.projectKeys.indexOf(k)<0;}))throw new Error('工作区授权响应不完整，请重新登录确认');
+    closeModal();return _authWorkspaceChanged(data.auth).then(function(){toast('已加入新工作区，原工作区已保留');});
+  }).catch(function(error){if(errorEl)errorEl.textContent=error.message||'加入失败，请重试';}).then(function(){joinWorkspace._inFlight=null;});
+  return joinWorkspace._inFlight;
 }
 
 /* 随州常驻：首次即预置完整数据，key 固定 sz，永不 onboarding */
@@ -1672,7 +1562,7 @@ function reviveProjectShell(projKey, city){
   var _stageByTopic={};
   _topics.forEach(function(t){ _stageByTopic[t]=4; });
   PROJECTS[projKey]={
-    id:projKey, city:_city,
+    id:projKey, workspaceId:_projectWorkspaceId(projKey), city:_city,
     org:(rs&&rs.org)||_city, who:(AUTH&&AUTH.who)||'负责人',
     topic:(rs&&rs.topic)||_topics[0]||(_city+'产业链招引'),
     stage:_topics.length?4:1,
@@ -1704,7 +1594,7 @@ function autoProvisionCity(city){
   if(exist.length) return exist[0];
   var key='p'+Date.now().toString(36);
   var _c=generateKbConclusions(city);
-  PROJECTS[key]={id:key, city:city, org:city+'市招商局', who:(AUTH&&AUTH.who)||'负责人', topic:city+'产业链招引', stage:1,
+  PROJECTS[key]={id:key, workspaceId:_projectWorkspaceId(cur), city:city, org:city+'市招商局', who:(AUTH&&AUTH.who)||'负责人', topic:city+'产业链招引', stage:1,
     kb:[
       {icon:'🏭',t:'主导产业与产业链',sub:_c.industry.sub,tag:_c.industry.tag,known:_c.industry.known,calls:['城市公开信息','产业链图谱']},
       {icon:'🏢',t:'园区与承载条件',sub:_c.park.sub,tag:_c.park.tag,known:_c.park.known,calls:['园区基础资料','政府官网']},
@@ -1717,7 +1607,7 @@ function autoProvisionCity(city){
 function provisionSuizhou(){
   if(!PROJECTS.sz){
     var _c=generateKbConclusions('随州');
-    PROJECTS.sz={id:'sz',city:'随州',org:'随州市招商局',who:'张主任',topic:'随州主导产业补链招引',stage:5,
+    PROJECTS.sz={id:'sz',workspaceId:'sz',city:'随州',org:'随州市招商局',who:'张主任',topic:'随州主导产业补链招引',stage:5,
       kb:[
         {icon:'\ud83c\udfed',t:'主导产业与产业链',sub:_c.industry.sub,tag:_c.industry.tag,known:_c.industry.known,calls:['产业链缺口测绘报告']},
         {icon:'\ud83c\udfe2',t:'园区与承载条件',sub:_c.park.sub,tag:_c.park.tag,known:_c.park.known,calls:['产业链缺口测绘报告']},
@@ -2192,7 +2082,7 @@ function _startProjectAnalysis(city, onboardingAns){
   // 构建项目骨架
   var key='p'+Date.now().toString(36);
   PROJECTS[key]={
-    id:key, city:city, org:city+'市招商局', who:'负责人', topic:city+'产业链招引', stage:1,
+    id:key, workspaceId:_projectWorkspaceId(cur), city:city, org:city+'市招商局', who:'负责人', topic:city+'产业链招引', stage:1,
     kb:[
       {icon:'🏭',t:'主导产业与产业链',sub:'分析中',tag:'公开信息',known:[],calls:['城市公开信息','产业链图谱']},
       {icon:'🏢',t:'园区与承载条件',sub:'分析中',tag:'公开信息',known:[],calls:['园区基础资料','政府官网']},
@@ -2754,11 +2644,11 @@ function topbar(p){
     '<div class="brand-block"><img src="data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"50\"><rect width=\"50\" height=\"50\" rx=\"25\" fill=\"%230757ad\"/><text x=\"25\" y=\"33\" font-size=\"22\" fill=\"white\" text-anchor=\"middle\" font-family=\"sans-serif\">慧</text></svg>')+'"><div><strong>慧小招</strong><span>AI 招商智能体</span></div></div>'+
     // 机构与身份固定（账号绑定，不可切换）；当前方向只读展示，切换在「招商对接」进行
     '<div class="org-block"><i class="i">🏛️</i>'+
-      '<strong style="font-weight:650">'+p.org+' · '+(p&&p.who||'—')+'</strong>'+
+      '<strong style="font-weight:650">'+_authEscape(p.org)+' · '+_authEscape(p&&p.who||'—')+'</strong>'+
       '<span style="margin:0 10px;color:#cbd7e6">/</span>'+
-      '<strong id="topbarTopic" style="color:var(--blue-dark)">'+p.topic+'</strong>'+
+      '<strong id="topbarTopic" style="color:var(--blue-dark)">'+_authEscape(p.topic)+'</strong>'+
     '</div>'+
-    '<div class="top-meta"><span><i class="i">🛰️</i>'+p.city+'城市智库已连接</span><span><i class="i">🕒</i>'+nowLabel()+'产业信息更新至 '+nowLabel()+'</span>'+
+    '<div class="top-meta"><span><i class="i">🛰️</i>'+_authEscape(p.city)+'城市智库已连接</span><span><i class="i">🕒</i>'+nowLabel()+'产业信息更新至 '+nowLabel()+'</span>'+
       '<span style="position:relative;cursor:pointer" onclick="toggleNotif(event)"><i class="i">🔔</i>'+
         (unreadCount()>0?'<b style="position:absolute;top:-4px;right:-6px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:#c85b09;color:#fff;font-size:9px;line-height:15px;text-align:center;font-weight:700">'+unreadCount()+'</b>':'')+
         '<div id="notifPanel" style="display:none;position:absolute;top:30px;right:0;width:380px;max-height:520px;overflow-y:auto;background:#fff;border:1px solid #d8e0ed;border-radius:12px;box-shadow:0 12px 32px rgba(11,24,59,.16);z-index:70;text-align:left;cursor:default" onclick="event.stopPropagation()">'+notifList()+'</div>'+
@@ -5771,14 +5661,16 @@ function _normalizeTopic(t){
 function _findExistingDemand(city, topic){
   if(!city || !topic) return null;
   var _nt=_normalizeTopic(topic);
+  var workspace=typeof _projectWorkspaceId==='function'?_projectWorkspaceId(cur):null;
+  function sameWorkspace(key){return !workspace||(typeof _authWorkspaceOf==='function'&&_authWorkspaceOf(key)===workspace);}
   // 精确匹配优先
   var exactKey=Object.keys(PROJECTS).find(function(k){
-    var x=PROJECTS[k]; return x&&x.isDemand&&x.city===city&&x.topic===topic;
+    var x=PROJECTS[k]; return x&&x.isDemand&&sameWorkspace(k)&&x.city===city&&x.topic===topic;
   });
   if(exactKey) return exactKey;
   // 规范化匹配（宽松）
   return Object.keys(PROJECTS).find(function(k){
-    var x=PROJECTS[k]; return x&&x.isDemand&&x.city===city&&_normalizeTopic(x.topic)===_nt;
+    var x=PROJECTS[k]; return x&&x.isDemand&&sameWorkspace(k)&&x.city===city&&_normalizeTopic(x.topic)===_nt;
   }) || null;
 }
 /* 清理已存在的同 city+topic 重复 isDemand 项目：保留最早创建的，删除后来者。
@@ -5789,7 +5681,9 @@ function _dedupeDemands(){
     var toDel=[];
     Object.keys(PROJECTS).forEach(function(k){
       var x=PROJECTS[k]; if(!x||!x.isDemand) return;
-      var _sig=(x.city||'')+'||'+_normalizeTopic(x.topic||'');
+      var workspace=typeof _authWorkspaceOf==='function'?_authWorkspaceOf(k):x.workspaceId||'';
+      if(typeof AUTH!=='undefined'&&AUTH&&!workspace)return;
+      var _sig=(workspace||'')+'||'+(x.city||'')+'||'+_normalizeTopic(x.topic||'');
       if(!seen[_sig]){ seen[_sig]=k; return; }
       // 有重复：比较创建时间戳（key 里的 base36 部分即 Date.now）
       var _a=parseInt(seen[_sig].replace('proj_',''),36);
@@ -5832,7 +5726,7 @@ function importToProject(gap, city, topic, btnEl){
   }
   var key='proj_'+Date.now().toString(36);
   PROJECTS[key]={
-    id:key, city:_city, org:_city+'市招商局', who:p?p.who:'负责人',
+    id:key, workspaceId:_projectWorkspaceId(cur), city:_city, org:_city+'市招商局', who:p?p.who:'负责人',
     topic:gap, stage:3,  // 立项即跳过研判，直接到「确认需求」
     isDemand:true,       // 标记为「已正式提交的招商需求项目」——只有它们才进招商对接列表
     kb: p ? JSON.parse(JSON.stringify(p.kb)) : [],
@@ -6666,7 +6560,7 @@ function submitDemand(){
   if(window._demandSyncPending[key]){toast('正在提交，请稍候'); return;}
   if(!dupKey){
   PROJECTS[key]={
-    id:key, city:p.city, org:p.org, who:p.who,
+    id:key, workspaceId:_projectWorkspaceId(cur), city:p.city, org:p.org, who:p.who,
     topic:topic, stage:3, isDemand:true,
     kb: JSON.parse(JSON.stringify(p.kb||[])),
     report:null, clues:[],
@@ -8400,13 +8294,13 @@ function settingsPage(p){
   return '<div class="page">'+
     '<div class="page-header"><div><span class="eyebrow">PERSONALIZATION</span><h1>个人与提醒设置</h1>'+
     '<p>调整个性化范围，但不改变确认关口与资源核验责任。</p></div></div>'+
-    '<div class="settings-scroll">'+
+    '<div class="settings-scroll">'+authWorkspaceBlock('settings-section')+
     '<div class="settings-section"><h2>账号身份（由系统开通，不可修改）</h2>'+
       '<div class="form-grid">'+
-      '<label>所属单位<input value="'+p.org+'" disabled></label>'+
-      '<label>姓名 / 角色<input value="'+p.who+' / 招商干部" disabled></label>'+
-      '<label>所属地区<input value="'+p.city+'" disabled></label>'+
-      '<label>数据权限<input value="仅限 '+p.city+' 城市智库" disabled></label></div>'+
+      '<label>所属单位<input value="'+_authEscape(p.org)+'" disabled></label>'+
+      '<label>姓名 / 角色<input value="'+_authEscape(p.who)+' / 招商干部" disabled></label>'+
+      '<label>所属地区<input value="'+_authEscape(p.city)+'" disabled></label>'+
+      '<label>数据权限<input value="仅限 '+_authEscape(p.city)+' 城市智库" disabled></label></div>'+
       '<div class="boundary-note" style="margin-top:14px"><i class="i">🔒</i>账号的地区与身份在开通时绑定，用户不可自行更改；如需变更请联系系统管理员。</div></div>'+
     onboardingSettingsSection(p)+
     '<div class="settings-section"><h2>提醒偏好（可自行调整）</h2>'+
@@ -8470,7 +8364,7 @@ function detailNeeds(p){
     var slate = clues.filter(function(c){return c.tone==='slate';}).length;
     var sname = stageNameOf(x, x.stage);
     var sdesc = stageDescOf(x, x.stage);
-    return '<div class="detail-header"><div><span class="eyebrow">DIRECTION</span><h2>'+x.topic+'</h2><p>'+x.city+' · 当前方向进度</p></div></div>'+
+    return '<div class="detail-header"><div><span class="eyebrow">DIRECTION</span><h2>'+x.topic+'</h2><p>'+_authEscape(x.city)+' · 当前方向进度</p></div></div>'+
       '<div class="detail-scroll">'+
         '<div class="detail-block"><h3>当前阶段</h3>'+
           '<p class="detail-copy" style="font-size:18px;font-weight:700;color:#013582">'+sname+'</p>'+
@@ -8492,7 +8386,7 @@ function detailNeeds(p){
     return false; // 只认isDemand===true，不再用stage>=3兜底（防止产业分析项目误入招商对接）
   });
   var byStage={};ks.forEach(function(k){var s=PROJECTS[k].stage;byStage[s]=(byStage[s]||0)+1});
-  return '<div class="detail-header"><div><span class="eyebrow">OVERVIEW</span><h2>需求概览</h2><p>'+p.who+' 名下产业分析汇总</p></div></div>'+
+  return '<div class="detail-header"><div><span class="eyebrow">OVERVIEW</span><h2>需求概览</h2><p>'+_authEscape(p.who)+' 名下产业分析汇总</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>产业分析总数</h3><p class="detail-copy" style="font-size:22px;font-weight:700;color:#013582">'+ks.length+' 个产业方向</p></div>'+
       '<div class="detail-block"><h3>阶段分布</h3><ul class="check-list">'+
@@ -8516,25 +8410,30 @@ function detailNeeds(p){
 function detailSettings(p){
   return '<div class="detail-header"><div><span class="eyebrow">ACCOUNT</span><h2>账号概览</h2><p>由系统开通 · 不可自行修改</p></div></div>'+
     '<div class="detail-scroll">'+
-      '<div class="detail-block"><h3>身份</h3><ul class="check-list"><li><i class="i">✔</i>'+p.org+'</li><li><i class="i">✔</i>'+p.who+' · 招商干部'+(AUTH&&AUTH.role==='owner'?' · 组织管理员':'')+'</li></ul></div>'+
-      '<div class="detail-block"><h3>数据权限</h3><div class="info-callout" style="margin-top:0">仅可访问 <b>'+p.city+'</b> 城市智库；跨城市数据由运营端管理。</div></div>'+
+      '<div class="detail-block"><h3>身份</h3><ul class="check-list"><li><i class="i">✔</i>'+_authEscape(p.org)+'</li><li><i class="i">✔</i>'+_authEscape(p.who)+' · 招商干部'+(AUTH&&AUTH.role==='owner'?' · 组织管理员':'')+'</li></ul></div>'+
+      '<div class="detail-block"><h3>数据权限</h3><div class="info-callout" style="margin-top:0">仅可访问 <b>'+_authEscape(p.city)+'</b> 城市工作区；其他团队的数据需要单独授权。</div></div>'+
       orgMembersBlock()+
       '<div class="detail-block"><h3>安全边界</h3><div class="boundary-note" style="margin-top:0"><i class="i">🔒</i>确认关口、资源核验责任与企业触达边界，不因个人设置而跳过。</div></div>'+
     '</div>';
 }
 /* 组织成员区块：owner 可查看同工作区(projKey)其他账号并移除；member 完全不可见此区块。
    邀请码生成权限不在此处开放——政府端任何角色都不能生成邀请码，见 canGenerateInviteCode()。 */
+function authWorkspaceBlock(sectionClass){
+  if(!AUTH)return '';
+  var options=_authProjectKeys().map(function(key){var p=PROJECTS[key];return '<option value="'+_authEscape(key)+'"'+(AUTH.projKey===key?' selected':'')+'>'+_authEscape((p&&p.city||'工作区')+' · '+key)+'</option>';}).join('');
+  return '<div class="'+(sectionClass==='settings-section'?'settings-section':'detail-block')+'"><h3>我的工作区</h3><select aria-label="切换工作区" onchange="switchAuthWorkspace(this.value)" style="width:100%;min-height:40px">'+options+'</select><button class="ghost-button" style="margin-top:10px" onclick="openJoinWorkspace()">通过邀请码加入工作区</button><p style="color:#8492a6;font-size:12px">邀请码只在加入团队时使用，日常登录使用账号和密码。</p></div>';
+}
 function orgMembersBlock(){
   if(!isOrgOwner(AUTH)) return '';
   var myProjKey=AUTH&&AUTH.projKey;
   var members=Object.keys(USER_PROFILES).filter(function(u){
     var up=USER_PROFILES[u];
-    return up && (up.projKey===myProjKey) && u!==(AUTH&&AUTH.user);
+    return up && (up.projKey===myProjKey||(up.projectKeys||[]).indexOf(myProjKey)>=0) && u!==(AUTH&&AUTH.user);
   });
   var rows=members.map(function(u){
     var up=USER_PROFILES[u];
-    return '<li><i class="i">👤</i>'+(up.name||u)+' · '+u+' · '+(up.role==='owner'?'管理员':'成员')+
-      '<button class="ghost-button" style="min-height:24px;padding:1px 8px;font-size:11px;margin-left:8px" onclick="removeOrgMember(\''+u+'\')">移除</button></li>';
+    return '<li><i class="i">👤</i>'+_authEscape(up.name||u)+' · '+_authEscape(u)+' · '+(up.role==='owner'?'管理员':'成员')+
+      '<button class="ghost-button" style="min-height:24px;padding:1px 8px;font-size:11px;margin-left:8px" onclick="removeOrgMember('+_authEscape(JSON.stringify(u))+')">移除</button></li>';
   }).join('')||'<li style="color:#9aa5b5">暂无其他成员，邀请码可发给同事共同注册加入本工作区</li>';
   return '<div class="detail-block"><h3>组织成员<span style="font-size:11px;color:#9aa5b5;margin-left:6px">共 '+(members.length+1)+' 人</span></h3>'+
     '<ul class="check-list">'+rows+'</ul>'+
@@ -8544,14 +8443,15 @@ function removeOrgMember(u){
   if(!isOrgOwner(AUTH)) return; // 权限双重校验：即便按钮被绕过点击，非owner也不可执行
   if(!USER_PROFILES[u]) return;
   if(!confirm('确认移除成员「'+(USER_PROFILES[u].name||u)+'」？该账号将无法再登录本工作区。')) return;
-  delete USER_PROFILES[u];
-  persist();
-  render();
-  toast('已移除成员 '+u);
+  if(removeOrgMember._inFlight)return removeOrgMember._inFlight;
+  removeOrgMember._inFlight=_authJson('/api/auth/members',{action:'remove',user:u,projKey:AUTH.projKey}).then(function(){
+    return new Promise(function(resolve){restoreFromServer(function(){render();toast('已移除该工作区成员');resolve();});});
+  }).catch(function(error){toast(error.message||'移除失败，请重试');}).then(function(){removeOrgMember._inFlight=null;});
+  return removeOrgMember._inFlight;
 }
 // 城市智库页（未点类目时）→ 右侧：智库范围说明
 function detailKbIntro(p){
-  return '<div class="detail-header"><div><span class="eyebrow">KNOWLEDGE SCOPE</span><h2>智库范围</h2><p>'+p.city+'城市智库已连接</p></div></div>'+
+  return '<div class="detail-header"><div><span class="eyebrow">KNOWLEDGE SCOPE</span><h2>智库范围</h2><p>'+_authEscape(p.city)+'城市智库已连接</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>可查询范围</h3><ul class="check-list">'+p.kb.map(function(k){return '<li><i class="i">✔</i>'+k.t+'</li>'}).join('')+'</ul></div>'+
       '<div class="detail-block"><h3>如何使用</h3><div class="info-callout" style="margin-top:0">点击左侧任一主题查看已知信息与可调用材料，或在下方输入框直接提问。</div></div>'+
@@ -8619,7 +8519,7 @@ function detailDocking(p){
 function detailAnalysis(p){
   var rp=p.report;
   return '<div class="detail-header"><div><span class="eyebrow">CURRENT ANALYSIS</span><h2>本次分析</h2>'+
-    '<p>'+p.city+'城市智库已连接</p></div></div>'+
+    '<p>'+_authEscape(p.city)+'城市智库已连接</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>已掌握</h3>'+
         '<ul class="check-list">'+
@@ -8780,6 +8680,7 @@ function updateKbConvCount(){
 }
 
 function persist(){
+  if(!AUTH||_authState!=='ready')return;
   // 兜底：把当前项目的 stage 同步到方向级 stageByTopic，保证方向进度独立且不丢失
   try{ var _cp=cur&&PROJECTS[cur]; if(_cp&&_cp.topic!=null&&_cp.stage!=null){ if(!_cp.stageByTopic)_cp.stageByTopic={}; _cp.stageByTopic[_cp.topic]=_cp.stage; } }catch(e){}
   try{
@@ -8812,8 +8713,7 @@ function persist(){
       KB_CHAT_TOMBS:KB_CHAT_TOMBS,
       UPLOAD_TOMBS:UPLOAD_TOMBS,
       REPORT_HISTORY:REPORT_HISTORY,
-      USER_PROFILES:(Object.keys(USER_PROFILES||{}).length?USER_PROFILES:undefined),
-      INVITE_CODES:(Object.keys(INVITE_CODES||{}).length?INVITE_CODES:undefined),
+      clientUser:AUTH.user,
       CITY_BASE_PACKAGES:(Object.keys(CITY_BASE_PACKAGES||{}).length?CITY_BASE_PACKAGES:undefined),
       OPS_ENT:typeof OPS_ENT!=='undefined'?OPS_ENT:[],
       DELETED_PROJECTS:window.DELETED_PROJECTS||[],
@@ -8827,10 +8727,10 @@ function persist(){
     // 同步到服务器（静默，不影响主流程）
     // 防抖sync：最多5秒同步一次，避免堆积请求占满连接池影响AI问答
     if(window._serverSyncLock) return;
-    if(!window._syncTimer){ window._syncTimer=setTimeout(function(){ window._syncTimer=null;
-      if(window._serverSyncLock) return;
+    if(!window._syncTimer){var syncEpoch=_authEpoch;window._syncTimer=setTimeout(function(){ window._syncTimer=null;
+      if(window._serverSyncLock||!AUTH||_authState!=='ready'||syncEpoch!==_authEpoch) return;
       try{var _sd=JSON.parse(localStorage.getItem('huixiaozhao_kb_v1')||'{}');
-      fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:localStorage.getItem('huixiaozhao_kb_v1')||'{}'})
+      fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_safeSyncSnapshot(JSON.parse(localStorage.getItem('huixiaozhao_kb_v1')||'{}')))})
         .then(function(r){return r.json();}).then(function(resp){
           if(resp&&resp.rejected==='stale-generation'){
             // 本会话数据早于服务端reset：重新拉服务端数据自愈(取得新gen+干净数据)
@@ -8843,12 +8743,14 @@ function persist(){
 }
 
 function restore(){
+  if(!AUTH||_authState!=='ready')return false;
   try{
     var raw=localStorage.getItem(LS_KEY);
     if(!raw) return false;
-    var data=JSON.parse(raw);
+    var data=_safeSyncSnapshot(JSON.parse(raw));
+    if(data.clientUser!==AUTH.user)return false;
     if(data.PROJECTS&&Object.keys(data.PROJECTS).length){
-      PROJECTS=data.PROJECTS;
+      PROJECTS=_authFilterProjects(data.PROJECTS);
       cur=data.cur||null;
       view=data.view||'setup';
       UPLOADS=_mergeUploads(data.UPLOADS, UPLOADS);
@@ -8869,7 +8771,7 @@ function restore(){
       KB_CHAT=_mergeKbChat(data.KB_CHAT, KB_CHAT);
       _applyUploadTombs();
       if(data.REPORT_HISTORY) REPORT_HISTORY=data.REPORT_HISTORY;
-      if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
+
       if(data.OPS_ENT) OPS_ENT=data.OPS_ENT;
       if(data.RESET_GEN) RESET_GEN=data.RESET_GEN;
       if(data.DEMANDS) DEMANDS=data.DEMANDS;
@@ -8935,6 +8837,8 @@ function _applyKbItemTombs(projMap){
 var KB_CONFIRMS={};  // {projKey:{kbIdx:{itemIdx:{status,text,ts}}}}
 
 function restoreFromServer(callback){
+  if(!AUTH||_authState!=='ready'){if(callback)callback(false);return Promise.resolve(false);}
+  var authEpoch=_authEpoch;
   // 生成/访谈进行中不做全量覆盖同步——否则刚生成的REPORTSTATE/访谈状态被服务端旧数据冲掉，
   // 表现为"报告跑一半自己跳走/进行不下去"。完成后调用方会再触发同步。
   if(window._reportGenerating || (window._interviewState && _interviewState.active)){
@@ -8946,23 +8850,22 @@ function restoreFromServer(callback){
   var _userCur = cur;
   var _userTopic = (cur && PROJECTS[cur]) ? PROJECTS[cur].topic : null;
   var _userView = view;
-  fetch('/api/sync',{headers:{'X-HXZ-Report-Client':'website'}}).then(function(r){return r.json();}).then(function(raw){
-    if(!raw){ if(callback)callback(false); return; }
+  return fetch('/api/sync',{credentials:'same-origin',headers:{'X-HXZ-Report-Client':'website'}}).then(function(response){if(authEpoch!==_authEpoch)throw new Error('会话已变化');return _authReadSync(response);}).then(function(raw){
+    if(authEpoch!==_authEpoch){window._serverSyncLock=false;if(callback)callback(false);return;}
+    if(!raw){window._serverSyncLock=false;if(callback)callback(false);return;}
     // 兼容两种存储格式：
     //   扁平格式（persist()写入）: {PROJECTS:{...}, UPLOADS:{...}, ...}
     //   包装格式（历史遗留）:      {huixiaozhao_kb_v1:{PROJECTS:{...},...}, hxz_uploads:{...}}
     var srv = (raw.huixiaozhao_kb_v1 && raw.huixiaozhao_kb_v1.PROJECTS)
               ? raw.huixiaozhao_kb_v1
               : raw;
-    if(!srv||!srv.PROJECTS||!Object.keys(srv.PROJECTS).length){
-      if(callback)callback(false); return;
-    }
+    if(!srv||!srv.PROJECTS){window._serverSyncLock=false;if(callback)callback(false);return;}
     // 服务器直接覆盖本地，不做合并——保证所有人看到同一份数据
     // 但保护本地刚提交的 isDemand 项目：5秒防抖内刷新时服务器尚无这些数据，直接覆盖会丢
     var _localDemandProj={}, _localDemandRS={}, _localDemands=(typeof DEMANDS!=='undefined')?DEMANDS.slice():[];
     Object.keys(PROJECTS).forEach(function(k){ if(PROJECTS[k]&&PROJECTS[k].isDemand) _localDemandProj[k]=PROJECTS[k]; });
     Object.keys(REPORTSTATE||{}).forEach(function(k){ if(_localDemandProj[k]&&REPORTSTATE[k]) _localDemandRS[k]=REPORTSTATE[k]; });
-    PROJECTS         = srv.PROJECTS         || {};
+    PROJECTS         = _authFilterProjects(srv.PROJECTS);
     UPLOADS          = _mergeUploads(srv.UPLOADS, UPLOADS);
     _mergeKbItemTombs(srv.KB_ITEM_TOMBS);
     // 【2026-09-18】过滤 srv 本体：部分路径会把 srv 原文回写 localStorage，
@@ -9000,10 +8903,10 @@ function restoreFromServer(callback){
     // 历史报告：服务器有则用服务器，否则保留本地已加载的（避免旧记录被空值冲掉）
     if(srv.REPORT_HISTORY && Object.keys(srv.REPORT_HISTORY).length) REPORT_HISTORY = srv.REPORT_HISTORY;
     // 注册用户资料：合并服务器与本地(不丢本地新注册未同步的)
-    if(srv.USER_PROFILES){ Object.keys(srv.USER_PROFILES).forEach(function(uk){ USER_PROFILES[uk]=srv.USER_PROFILES[uk]; }); }
-    if(srv.CITY_ACCOUNTS){ CITY_ACCOUNTS = srv.CITY_ACCOUNTS; }
+    USER_PROFILES=_safeProfiles(srv.USER_PROFILES);
+    CITY_ACCOUNTS={};
     // 邀请码库：合并服务器与本地，不用裸覆盖（管理端可能同时在生成新码）
-    if(srv.INVITE_CODES){ Object.keys(srv.INVITE_CODES).forEach(function(ck){ INVITE_CODES[ck]=srv.INVITE_CODES[ck]; }); }
+    INVITE_CODES={};
     // 城市基础包指针表：同理合并，不裸覆盖
     if(srv.CITY_BASE_PACKAGES){ Object.keys(srv.CITY_BASE_PACKAGES).forEach(function(ck){ CITY_BASE_PACKAGES[ck]=srv.CITY_BASE_PACKAGES[ck]; }); }
     if(srv.RESET_GEN){ RESET_GEN = srv.RESET_GEN; }  // 记住服务端代际,persist时带回
@@ -9143,14 +9046,14 @@ function restoreFromServer(callback){
       KB_CHAT:KB_CHAT,
       KB_CHAT_TOMBS:KB_CHAT_TOMBS,
       UPLOAD_TOMBS:UPLOAD_TOMBS,OPS_ENT:OPS_ENT,RESET_GEN:RESET_GEN,
-      USER_PROFILES:USER_PROFILES,REPORT_HISTORY:typeof REPORT_HISTORY!=='undefined'?REPORT_HISTORY:{},
+      clientUser:AUTH.user,REPORT_HISTORY:typeof REPORT_HISTORY!=='undefined'?REPORT_HISTORY:{},
       syncTs:Date.now()};
-    try{localStorage.setItem(LS_KEY,JSON.stringify(flat));}catch(_){}
+    try{localStorage.setItem(LS_KEY,JSON.stringify(_safeSyncSnapshot(flat)));}catch(_){}
     try{localStorage.setItem('hxz_uploads',JSON.stringify(_slimUploads()));}catch(_){}
     // 若 Postgres 是旧包装格式，顺手更新成扁平格式
     if(raw.huixiaozhao_kb_v1){
       try{fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(flat)}).catch(function(){});}catch(_){}
+        body:JSON.stringify(_safeSyncSnapshot(flat))}).catch(function(){});}catch(_){}
     }
     // 恢复用户当前操作状态：服务器数据不覆盖用户刚切换的方向
     if(_userCur && PROJECTS[_userCur]){
@@ -9162,7 +9065,7 @@ function restoreFromServer(callback){
     console.log('[sync] restored from server, projects:',Object.keys(PROJECTS).length,', preserved topic:', _userTopic);
     try{ migrateKbChatToCity(); }catch(_){}
     if(callback)callback(true);
-  }).catch(function(){ window._serverSyncLock=false; if(callback)callback(false); });
+  }).catch(function(){ if(authEpoch===_authEpoch)window._serverSyncLock=false; if(callback)callback(false); });
 }
 function clearPersist(){
   localStorage.removeItem(LS_KEY);
@@ -9174,7 +9077,8 @@ function clearPersist(){
 (function(){
   var flush=function(){
     try{
-      var body=localStorage.getItem(LS_KEY)||'{}';
+      if(!AUTH||_authState!=='ready')return;
+      var body=JSON.stringify(_safeSyncSnapshot(JSON.parse(localStorage.getItem(LS_KEY)||'{}')));
       if(navigator.sendBeacon){
         var blob=new Blob([body],{type:'application/json'});
         navigator.sendBeacon('/api/sync', blob);
@@ -9189,7 +9093,7 @@ function clearPersist(){
 
 /* 管理端写入时，政府端自动同步内存状态 */
 window.addEventListener('storage', function(e){
-  if(e.key !== LS_KEY || !e.newValue) return;
+  if(e.key !== LS_KEY || !e.newValue||!AUTH||_authState!=='ready') return;
   try{
     // 关键修复(乱跳根因)：报告生成中/访谈中收到其他标签页(管理端)的storage事件，
     // 旧逻辑整体覆盖PROJECTS(topic被打回旧方向)并强制render()，导致
@@ -9199,7 +9103,8 @@ window.addEventListener('storage', function(e){
       console.log('[sync] skip storage sync: generation/interview in progress');
       return;
     }
-    var data=JSON.parse(e.newValue);
+    var data=_safeSyncSnapshot(JSON.parse(e.newValue));
+    if(data.clientUser!==AUTH.user)return;
     if(!data.PROJECTS) return;
     // 关键修复(周期性闪烁根因)：多开政府端+管理端时，另一标签每次 persist(哪怕只是 5 秒防抖空转、
     // 仅 syncTs 变化、业务数据未变)都会派发 storage 事件，旧逻辑无条件整体覆盖内存 + render() 全量重绘
@@ -9216,7 +9121,7 @@ window.addEventListener('storage', function(e){
     // 关键修复：整体覆盖 PROJECTS 会把本地刚定义、尚未同步出去的 customTopics 冲掉，
     // 表现为"自定义方向自己消失，重新定义才回来"。这里合并保护本地的 customTopics（并集）。
     (function(){
-      var incoming=data.PROJECTS||{};
+      var incoming=_authFilterProjects(data.PROJECTS);
       Object.keys(PROJECTS).forEach(function(k){
         var localP=PROJECTS[k], inP=incoming[k];
         if(localP && inP && localP.customTopics && localP.customTopics.length){
@@ -9298,8 +9203,8 @@ window.addEventListener('storage', function(e){
     PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
     DOCK_LOGS=data.DOCK_LOGS||{};
     KB_UNLOCKED=data.KB_UNLOCKED||{};
-    if(data.CITY_ACCOUNTS) CITY_ACCOUNTS=data.CITY_ACCOUNTS;
-    if(data.INVITE_CODES) Object.keys(data.INVITE_CODES).forEach(function(ck){ INVITE_CODES[ck]=data.INVITE_CODES[ck]; });
+
+
     if(data.CITY_BASE_PACKAGES) Object.keys(data.CITY_BASE_PACKAGES).forEach(function(ck){ CITY_BASE_PACKAGES[ck]=data.CITY_BASE_PACKAGES[ck]; });
     // KB_CHAT：跨标签同步也必须按会话择优合并，绝不让另一个 tab 的旧内存 persist 回来
     // 冲掉本 tab 刚写入的问答。合并规则见 _mergeKbChat。
@@ -9307,7 +9212,7 @@ window.addEventListener('storage', function(e){
     _mergeUploadTombs(data.UPLOAD_TOMBS);
     KB_CHAT=_mergeKbChat(data.KB_CHAT, KB_CHAT);
     _applyUploadTombs();
-    if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
+
     // 重渲染（仅影响当前视图）
     // report 视图下若用户 1.5s 内有过滚动，延迟执行避免打断阅读
     if(view==='report' && Date.now()-_lastUserScrollMs < 1500){
@@ -9459,6 +9364,7 @@ function _tombUploadFile(pk, name){
 function _mergeUploadTombs(incoming){
   if(!incoming || typeof incoming!=='object') return;
   Object.keys(incoming).forEach(function(k){
+    if(!_isAuthorizedChatKey(k.split('::')[0]))return;
     var t=Number(incoming[k])||0;
     if(!UPLOAD_TOMBS[k] || t>UPLOAD_TOMBS[k]) UPLOAD_TOMBS[k]=t;
   });
@@ -9495,6 +9401,7 @@ function _tombKbChatSession(ck, sid){
 function _mergeKbChatTombs(incoming){
   if(!incoming || typeof incoming!=='object') return;
   Object.keys(incoming).forEach(function(k){
+    if(!_isAuthorizedChatKey(k.split('::')[0]))return;
     var t=Number(incoming[k])||0;
     if(!KB_CHAT_TOMBS[k] || t>KB_CHAT_TOMBS[k]) KB_CHAT_TOMBS[k]=t;
   });
@@ -9512,6 +9419,7 @@ function _mergeKbChat(incoming, local){
   Object.keys(_inc).forEach(function(k){allKeys[k]=1;});
   Object.keys(_loc).forEach(function(k){allKeys[k]=1;});
   Object.keys(allKeys).forEach(function(k){
+    if(!_isAuthorizedChatKey(k))return;
     var A=norm(_inc[k],k), B=norm(_loc[k],k);
     var byId={}, order=[];
     var take=function(se){
@@ -9539,37 +9447,30 @@ function _mergeKbChat(incoming, local){
  * 新结构：KB_CHAT[cur] = { sessions:[{id,title,ts,messages:[msg,...]}], activeId }
  * kbSessionStore() 负责把旧数组就地迁移为新结构（旧记录包成一个"历史对话"会话，不丢数据）。 */
 var KB_SESSION_IDLE_MS = 6*60*60*1000; // 闲置超过6小时自动开新会话
-/* 问答记忆按【城市】聚合，而非按方向(project key)。
- * 同一城市下的多个招商方向(sz / pmsslgvs0 / proj_msr6nug8 ...)共享同一份问答记忆，
- * 否则切换方向后记忆库问答数会显示为 0（历史问答被隔离在别的方向 key 下）。 */
-function kbChatKey(key){
-  key = key || cur;
-  if(key && PROJECTS[key] && PROJECTS[key].city) return 'city:'+PROJECTS[key].city;
-  return key;
+/* Chat memory is shared only inside the server-authorized workspace. */
+function _isAuthorizedChatKey(key){
+  if(!AUTH||!key||key.indexOf('city:')===0)return false;
+  if(key.indexOf('workspace:')===0)return _authProjectKeys().indexOf(key.slice(10))>=0;
+  return !!_authWorkspaceOf(key);
 }
-/* 一次性迁移：把历史上按方向(project key)存的问答会话归并到对应城市 key 下。
- * 在 restore / restoreFromServer 之后调用（此时 PROJECTS 已就位，才能查到城市）。 */
+function kbChatKey(key){
+  key=key||cur;
+  if(key&&key.indexOf('workspace:')===0)return _isAuthorizedChatKey(key)?key:null;
+  var workspace=key?_authWorkspaceOf(key):AUTH&&AUTH.projKey;
+  return workspace?'workspace:'+workspace:null;
+}
+/* Only legacy project-keyed history with an explicit authorized owner can migrate.
+   Ambiguous city-keyed history stays on the server and is never copied to members. */
 function migrateKbChatToCity(){
-  if(!KB_CHAT || typeof KB_CHAT!=='object') return;
-  var moved=false;
-  Object.keys(KB_CHAT).forEach(function(k){
-    if(k.indexOf('city:')===0) return;
-    var proj=PROJECTS[k]; var city=proj&&proj.city;
-    if(!city) return;
-    var ck='city:'+city;
-    var src=KB_CHAT[k];
-    var srcSt = Array.isArray(src)
-      ? {sessions:[{id:'s'+Date.now()+Math.floor(Math.random()*1000),title:kbDeriveTitle(src),ts:(src[0]&&src[0].ts)||Date.now(),messages:src}],activeId:null}
-      : (src&&src.sessions?src:{sessions:[],activeId:null});
-    if(!KB_CHAT[ck]||!KB_CHAT[ck].sessions) KB_CHAT[ck]={sessions:[],activeId:null};
-    var existIds={}; KB_CHAT[ck].sessions.forEach(function(s){existIds[s.id]=true;});
-    srcSt.sessions.forEach(function(s){ if(s&&!existIds[s.id]){ KB_CHAT[ck].sessions.push(s); existIds[s.id]=true; } });
-    if(!KB_CHAT[ck].activeId && srcSt.activeId) KB_CHAT[ck].activeId=srcSt.activeId;
-    delete KB_CHAT[k];
-    moved=true;
+  if(!KB_CHAT||typeof KB_CHAT!=='object')return;
+  Object.keys(KB_CHAT).forEach(function(key){
+    if(key.indexOf('workspace:')===0)return;
+    if(key.indexOf('city:')===0){delete KB_CHAT[key];return;}
+    var target=kbChatKey(key);
+    if(!target){delete KB_CHAT[key];return;}
+    var source={};source[target]=KB_CHAT[key];
+    KB_CHAT=_mergeKbChat(source,KB_CHAT);delete KB_CHAT[key];
   });
-  Object.keys(KB_CHAT).forEach(function(ck){ if(KB_CHAT[ck]&&KB_CHAT[ck].sessions) KB_CHAT[ck].sessions.sort(function(a,b){return (a.ts||0)-(b.ts||0);}); });
-  if(moved){ try{persist();}catch(_){} }
 }
 function kbSessionStore(key){
   key = kbChatKey(key || cur); if(!key) return null;
@@ -9719,7 +9620,8 @@ function kbChatPush(role, html){
   // 问答记忆:绕过5秒防抖立即 fetch 同步一次（不用 sendBeacon，因为它对 >64KB payload 会静默 return false;
   // 本项目 localStorage 整体 body 已 2MB，必须走 fetch 才能确保推上去）。
   try{
-    var _kbBody=localStorage.getItem(LS_KEY)||'{}';
+    if(!AUTH||_authState!=='ready')return;
+    var _kbBody=JSON.stringify(_safeSyncSnapshot(JSON.parse(localStorage.getItem(LS_KEY)||'{}')));
     fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:_kbBody}).catch(function(){});
   }catch(_){}
   try{updateKbConvCount();}catch(_){}
@@ -12259,7 +12161,7 @@ function doCreateProj(){
   var inp=document.querySelector('#modalLayer input');
   var dir=(inp&&inp.value.trim())||'新产业方向';
   var id='p'+Date.now();
-  PROJECTS[id]={id:id,city:P().city,org:P().org,who:P().who,topic:dir+'补链',stage:1,
+  PROJECTS[id]={id:id,workspaceId:_projectWorkspaceId(cur),city:P().city,org:P().org,who:P().who,topic:dir+'补链',stage:1,
     kb:P().kb,report:null,clues:[]};
   closeModal();cur=id;view='home';detailData=null;render();
   toast('已创建研判：'+dir+'补链');

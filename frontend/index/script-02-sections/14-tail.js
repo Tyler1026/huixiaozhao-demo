@@ -41,6 +41,8 @@ function _applyKbItemTombs(projMap){
 var KB_CONFIRMS={};  // {projKey:{kbIdx:{itemIdx:{status,text,ts}}}}
 
 function restoreFromServer(callback){
+  if(!AUTH||_authState!=='ready'){if(callback)callback(false);return Promise.resolve(false);}
+  var authEpoch=_authEpoch;
   // 生成/访谈进行中不做全量覆盖同步——否则刚生成的REPORTSTATE/访谈状态被服务端旧数据冲掉，
   // 表现为"报告跑一半自己跳走/进行不下去"。完成后调用方会再触发同步。
   if(window._reportGenerating || (window._interviewState && _interviewState.active)){
@@ -52,23 +54,22 @@ function restoreFromServer(callback){
   var _userCur = cur;
   var _userTopic = (cur && PROJECTS[cur]) ? PROJECTS[cur].topic : null;
   var _userView = view;
-  fetch('/api/sync',{headers:{'X-HXZ-Report-Client':'website'}}).then(function(r){return r.json();}).then(function(raw){
-    if(!raw){ if(callback)callback(false); return; }
+  return fetch('/api/sync',{credentials:'same-origin',headers:{'X-HXZ-Report-Client':'website'}}).then(function(response){if(authEpoch!==_authEpoch)throw new Error('会话已变化');return _authReadSync(response);}).then(function(raw){
+    if(authEpoch!==_authEpoch){window._serverSyncLock=false;if(callback)callback(false);return;}
+    if(!raw){window._serverSyncLock=false;if(callback)callback(false);return;}
     // 兼容两种存储格式：
     //   扁平格式（persist()写入）: {PROJECTS:{...}, UPLOADS:{...}, ...}
     //   包装格式（历史遗留）:      {huixiaozhao_kb_v1:{PROJECTS:{...},...}, hxz_uploads:{...}}
     var srv = (raw.huixiaozhao_kb_v1 && raw.huixiaozhao_kb_v1.PROJECTS)
               ? raw.huixiaozhao_kb_v1
               : raw;
-    if(!srv||!srv.PROJECTS||!Object.keys(srv.PROJECTS).length){
-      if(callback)callback(false); return;
-    }
+    if(!srv||!srv.PROJECTS){window._serverSyncLock=false;if(callback)callback(false);return;}
     // 服务器直接覆盖本地，不做合并——保证所有人看到同一份数据
     // 但保护本地刚提交的 isDemand 项目：5秒防抖内刷新时服务器尚无这些数据，直接覆盖会丢
     var _localDemandProj={}, _localDemandRS={}, _localDemands=(typeof DEMANDS!=='undefined')?DEMANDS.slice():[];
     Object.keys(PROJECTS).forEach(function(k){ if(PROJECTS[k]&&PROJECTS[k].isDemand) _localDemandProj[k]=PROJECTS[k]; });
     Object.keys(REPORTSTATE||{}).forEach(function(k){ if(_localDemandProj[k]&&REPORTSTATE[k]) _localDemandRS[k]=REPORTSTATE[k]; });
-    PROJECTS         = srv.PROJECTS         || {};
+    PROJECTS         = _authFilterProjects(srv.PROJECTS);
     UPLOADS          = _mergeUploads(srv.UPLOADS, UPLOADS);
     _mergeKbItemTombs(srv.KB_ITEM_TOMBS);
     // 【2026-09-18】过滤 srv 本体：部分路径会把 srv 原文回写 localStorage，
@@ -106,10 +107,10 @@ function restoreFromServer(callback){
     // 历史报告：服务器有则用服务器，否则保留本地已加载的（避免旧记录被空值冲掉）
     if(srv.REPORT_HISTORY && Object.keys(srv.REPORT_HISTORY).length) REPORT_HISTORY = srv.REPORT_HISTORY;
     // 注册用户资料：合并服务器与本地(不丢本地新注册未同步的)
-    if(srv.USER_PROFILES){ Object.keys(srv.USER_PROFILES).forEach(function(uk){ USER_PROFILES[uk]=srv.USER_PROFILES[uk]; }); }
-    if(srv.CITY_ACCOUNTS){ CITY_ACCOUNTS = srv.CITY_ACCOUNTS; }
+    USER_PROFILES=_safeProfiles(srv.USER_PROFILES);
+    CITY_ACCOUNTS={};
     // 邀请码库：合并服务器与本地，不用裸覆盖（管理端可能同时在生成新码）
-    if(srv.INVITE_CODES){ Object.keys(srv.INVITE_CODES).forEach(function(ck){ INVITE_CODES[ck]=srv.INVITE_CODES[ck]; }); }
+    INVITE_CODES={};
     // 城市基础包指针表：同理合并，不裸覆盖
     if(srv.CITY_BASE_PACKAGES){ Object.keys(srv.CITY_BASE_PACKAGES).forEach(function(ck){ CITY_BASE_PACKAGES[ck]=srv.CITY_BASE_PACKAGES[ck]; }); }
     if(srv.RESET_GEN){ RESET_GEN = srv.RESET_GEN; }  // 记住服务端代际,persist时带回
@@ -249,14 +250,14 @@ function restoreFromServer(callback){
       KB_CHAT:KB_CHAT,
       KB_CHAT_TOMBS:KB_CHAT_TOMBS,
       UPLOAD_TOMBS:UPLOAD_TOMBS,OPS_ENT:OPS_ENT,RESET_GEN:RESET_GEN,
-      USER_PROFILES:USER_PROFILES,REPORT_HISTORY:typeof REPORT_HISTORY!=='undefined'?REPORT_HISTORY:{},
+      clientUser:AUTH.user,REPORT_HISTORY:typeof REPORT_HISTORY!=='undefined'?REPORT_HISTORY:{},
       syncTs:Date.now()};
-    try{localStorage.setItem(LS_KEY,JSON.stringify(flat));}catch(_){}
+    try{localStorage.setItem(LS_KEY,JSON.stringify(_safeSyncSnapshot(flat)));}catch(_){}
     try{localStorage.setItem('hxz_uploads',JSON.stringify(_slimUploads()));}catch(_){}
     // 若 Postgres 是旧包装格式，顺手更新成扁平格式
     if(raw.huixiaozhao_kb_v1){
       try{fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(flat)}).catch(function(){});}catch(_){}
+        body:JSON.stringify(_safeSyncSnapshot(flat))}).catch(function(){});}catch(_){}
     }
     // 恢复用户当前操作状态：服务器数据不覆盖用户刚切换的方向
     if(_userCur && PROJECTS[_userCur]){
@@ -268,7 +269,7 @@ function restoreFromServer(callback){
     console.log('[sync] restored from server, projects:',Object.keys(PROJECTS).length,', preserved topic:', _userTopic);
     try{ migrateKbChatToCity(); }catch(_){}
     if(callback)callback(true);
-  }).catch(function(){ window._serverSyncLock=false; if(callback)callback(false); });
+  }).catch(function(){ if(authEpoch===_authEpoch)window._serverSyncLock=false; if(callback)callback(false); });
 }
 function clearPersist(){
   localStorage.removeItem(LS_KEY);
@@ -280,7 +281,8 @@ function clearPersist(){
 (function(){
   var flush=function(){
     try{
-      var body=localStorage.getItem(LS_KEY)||'{}';
+      if(!AUTH||_authState!=='ready')return;
+      var body=JSON.stringify(_safeSyncSnapshot(JSON.parse(localStorage.getItem(LS_KEY)||'{}')));
       if(navigator.sendBeacon){
         var blob=new Blob([body],{type:'application/json'});
         navigator.sendBeacon('/api/sync', blob);
@@ -295,7 +297,7 @@ function clearPersist(){
 
 /* 管理端写入时，政府端自动同步内存状态 */
 window.addEventListener('storage', function(e){
-  if(e.key !== LS_KEY || !e.newValue) return;
+  if(e.key !== LS_KEY || !e.newValue||!AUTH||_authState!=='ready') return;
   try{
     // 关键修复(乱跳根因)：报告生成中/访谈中收到其他标签页(管理端)的storage事件，
     // 旧逻辑整体覆盖PROJECTS(topic被打回旧方向)并强制render()，导致
@@ -305,7 +307,8 @@ window.addEventListener('storage', function(e){
       console.log('[sync] skip storage sync: generation/interview in progress');
       return;
     }
-    var data=JSON.parse(e.newValue);
+    var data=_safeSyncSnapshot(JSON.parse(e.newValue));
+    if(data.clientUser!==AUTH.user)return;
     if(!data.PROJECTS) return;
     // 关键修复(周期性闪烁根因)：多开政府端+管理端时，另一标签每次 persist(哪怕只是 5 秒防抖空转、
     // 仅 syncTs 变化、业务数据未变)都会派发 storage 事件，旧逻辑无条件整体覆盖内存 + render() 全量重绘
@@ -322,7 +325,7 @@ window.addEventListener('storage', function(e){
     // 关键修复：整体覆盖 PROJECTS 会把本地刚定义、尚未同步出去的 customTopics 冲掉，
     // 表现为"自定义方向自己消失，重新定义才回来"。这里合并保护本地的 customTopics（并集）。
     (function(){
-      var incoming=data.PROJECTS||{};
+      var incoming=_authFilterProjects(data.PROJECTS);
       Object.keys(PROJECTS).forEach(function(k){
         var localP=PROJECTS[k], inP=incoming[k];
         if(localP && inP && localP.customTopics && localP.customTopics.length){
@@ -404,8 +407,8 @@ window.addEventListener('storage', function(e){
     PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
     DOCK_LOGS=data.DOCK_LOGS||{};
     KB_UNLOCKED=data.KB_UNLOCKED||{};
-    if(data.CITY_ACCOUNTS) CITY_ACCOUNTS=data.CITY_ACCOUNTS;
-    if(data.INVITE_CODES) Object.keys(data.INVITE_CODES).forEach(function(ck){ INVITE_CODES[ck]=data.INVITE_CODES[ck]; });
+
+
     if(data.CITY_BASE_PACKAGES) Object.keys(data.CITY_BASE_PACKAGES).forEach(function(ck){ CITY_BASE_PACKAGES[ck]=data.CITY_BASE_PACKAGES[ck]; });
     // KB_CHAT：跨标签同步也必须按会话择优合并，绝不让另一个 tab 的旧内存 persist 回来
     // 冲掉本 tab 刚写入的问答。合并规则见 _mergeKbChat。
@@ -413,7 +416,7 @@ window.addEventListener('storage', function(e){
     _mergeUploadTombs(data.UPLOAD_TOMBS);
     KB_CHAT=_mergeKbChat(data.KB_CHAT, KB_CHAT);
     _applyUploadTombs();
-    if(data.USER_PROFILES) USER_PROFILES=data.USER_PROFILES;
+
     // 重渲染（仅影响当前视图）
     // report 视图下若用户 1.5s 内有过滚动，延迟执行避免打断阅读
     if(view==='report' && Date.now()-_lastUserScrollMs < 1500){
@@ -565,6 +568,7 @@ function _tombUploadFile(pk, name){
 function _mergeUploadTombs(incoming){
   if(!incoming || typeof incoming!=='object') return;
   Object.keys(incoming).forEach(function(k){
+    if(!_isAuthorizedChatKey(k.split('::')[0]))return;
     var t=Number(incoming[k])||0;
     if(!UPLOAD_TOMBS[k] || t>UPLOAD_TOMBS[k]) UPLOAD_TOMBS[k]=t;
   });
@@ -601,6 +605,7 @@ function _tombKbChatSession(ck, sid){
 function _mergeKbChatTombs(incoming){
   if(!incoming || typeof incoming!=='object') return;
   Object.keys(incoming).forEach(function(k){
+    if(!_isAuthorizedChatKey(k.split('::')[0]))return;
     var t=Number(incoming[k])||0;
     if(!KB_CHAT_TOMBS[k] || t>KB_CHAT_TOMBS[k]) KB_CHAT_TOMBS[k]=t;
   });
@@ -618,6 +623,7 @@ function _mergeKbChat(incoming, local){
   Object.keys(_inc).forEach(function(k){allKeys[k]=1;});
   Object.keys(_loc).forEach(function(k){allKeys[k]=1;});
   Object.keys(allKeys).forEach(function(k){
+    if(!_isAuthorizedChatKey(k))return;
     var A=norm(_inc[k],k), B=norm(_loc[k],k);
     var byId={}, order=[];
     var take=function(se){
@@ -645,37 +651,30 @@ function _mergeKbChat(incoming, local){
  * 新结构：KB_CHAT[cur] = { sessions:[{id,title,ts,messages:[msg,...]}], activeId }
  * kbSessionStore() 负责把旧数组就地迁移为新结构（旧记录包成一个"历史对话"会话，不丢数据）。 */
 var KB_SESSION_IDLE_MS = 6*60*60*1000; // 闲置超过6小时自动开新会话
-/* 问答记忆按【城市】聚合，而非按方向(project key)。
- * 同一城市下的多个招商方向(sz / pmsslgvs0 / proj_msr6nug8 ...)共享同一份问答记忆，
- * 否则切换方向后记忆库问答数会显示为 0（历史问答被隔离在别的方向 key 下）。 */
-function kbChatKey(key){
-  key = key || cur;
-  if(key && PROJECTS[key] && PROJECTS[key].city) return 'city:'+PROJECTS[key].city;
-  return key;
+/* Chat memory is shared only inside the server-authorized workspace. */
+function _isAuthorizedChatKey(key){
+  if(!AUTH||!key||key.indexOf('city:')===0)return false;
+  if(key.indexOf('workspace:')===0)return _authProjectKeys().indexOf(key.slice(10))>=0;
+  return !!_authWorkspaceOf(key);
 }
-/* 一次性迁移：把历史上按方向(project key)存的问答会话归并到对应城市 key 下。
- * 在 restore / restoreFromServer 之后调用（此时 PROJECTS 已就位，才能查到城市）。 */
+function kbChatKey(key){
+  key=key||cur;
+  if(key&&key.indexOf('workspace:')===0)return _isAuthorizedChatKey(key)?key:null;
+  var workspace=key?_authWorkspaceOf(key):AUTH&&AUTH.projKey;
+  return workspace?'workspace:'+workspace:null;
+}
+/* Only legacy project-keyed history with an explicit authorized owner can migrate.
+   Ambiguous city-keyed history stays on the server and is never copied to members. */
 function migrateKbChatToCity(){
-  if(!KB_CHAT || typeof KB_CHAT!=='object') return;
-  var moved=false;
-  Object.keys(KB_CHAT).forEach(function(k){
-    if(k.indexOf('city:')===0) return;
-    var proj=PROJECTS[k]; var city=proj&&proj.city;
-    if(!city) return;
-    var ck='city:'+city;
-    var src=KB_CHAT[k];
-    var srcSt = Array.isArray(src)
-      ? {sessions:[{id:'s'+Date.now()+Math.floor(Math.random()*1000),title:kbDeriveTitle(src),ts:(src[0]&&src[0].ts)||Date.now(),messages:src}],activeId:null}
-      : (src&&src.sessions?src:{sessions:[],activeId:null});
-    if(!KB_CHAT[ck]||!KB_CHAT[ck].sessions) KB_CHAT[ck]={sessions:[],activeId:null};
-    var existIds={}; KB_CHAT[ck].sessions.forEach(function(s){existIds[s.id]=true;});
-    srcSt.sessions.forEach(function(s){ if(s&&!existIds[s.id]){ KB_CHAT[ck].sessions.push(s); existIds[s.id]=true; } });
-    if(!KB_CHAT[ck].activeId && srcSt.activeId) KB_CHAT[ck].activeId=srcSt.activeId;
-    delete KB_CHAT[k];
-    moved=true;
+  if(!KB_CHAT||typeof KB_CHAT!=='object')return;
+  Object.keys(KB_CHAT).forEach(function(key){
+    if(key.indexOf('workspace:')===0)return;
+    if(key.indexOf('city:')===0){delete KB_CHAT[key];return;}
+    var target=kbChatKey(key);
+    if(!target){delete KB_CHAT[key];return;}
+    var source={};source[target]=KB_CHAT[key];
+    KB_CHAT=_mergeKbChat(source,KB_CHAT);delete KB_CHAT[key];
   });
-  Object.keys(KB_CHAT).forEach(function(ck){ if(KB_CHAT[ck]&&KB_CHAT[ck].sessions) KB_CHAT[ck].sessions.sort(function(a,b){return (a.ts||0)-(b.ts||0);}); });
-  if(moved){ try{persist();}catch(_){} }
 }
 function kbSessionStore(key){
   key = kbChatKey(key || cur); if(!key) return null;
@@ -825,7 +824,8 @@ function kbChatPush(role, html){
   // 问答记忆:绕过5秒防抖立即 fetch 同步一次（不用 sendBeacon，因为它对 >64KB payload 会静默 return false;
   // 本项目 localStorage 整体 body 已 2MB，必须走 fetch 才能确保推上去）。
   try{
-    var _kbBody=localStorage.getItem(LS_KEY)||'{}';
+    if(!AUTH||_authState!=='ready')return;
+    var _kbBody=JSON.stringify(_safeSyncSnapshot(JSON.parse(localStorage.getItem(LS_KEY)||'{}')));
     fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:_kbBody}).catch(function(){});
   }catch(_){}
   try{updateKbConvCount();}catch(_){}
@@ -3365,7 +3365,7 @@ function doCreateProj(){
   var inp=document.querySelector('#modalLayer input');
   var dir=(inp&&inp.value.trim())||'新产业方向';
   var id='p'+Date.now();
-  PROJECTS[id]={id:id,city:P().city,org:P().org,who:P().who,topic:dir+'补链',stage:1,
+  PROJECTS[id]={id:id,workspaceId:_projectWorkspaceId(cur),city:P().city,org:P().org,who:P().who,topic:dir+'补链',stage:1,
     kb:P().kb,report:null,clues:[]};
   closeModal();cur=id;view='home';detailData=null;render();
   toast('已创建研判：'+dir+'补链');

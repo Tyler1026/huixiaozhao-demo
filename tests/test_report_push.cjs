@@ -8,6 +8,7 @@ const read = name => fs.readFileSync(path.join(__dirname, '../frontend/ops/scrip
 function harness({response, reject = false} = {}) {
   const calls = [], messages = [];
   const context = {
+    AUTH: {user: 'test-admin', scope: 'admin'},
     setInterval() {}, Date, toast: message => messages.push(message), render() {},
     fetch: async (url, options) => {
       calls.push({url, body: JSON.parse(options.body)});
