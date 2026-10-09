@@ -16,6 +16,7 @@ must fail closed when disabled and must be picklable (multiprocessing "spawn"
 compatible) so the worker can run it in a child process.
 """
 
+import copy
 import json
 import pickle
 import sys
@@ -426,6 +427,181 @@ class EnterprisePartGateTests(unittest.TestCase):
             {'city': '测试城', 'mode': mode}, self._prior(saved))
         return out, router
 
+    def _completion_fixture(self, initial, supplemental, saved=(), *,
+                            first_text=None, extra_text=None, search_failure=False,
+                            chat_failure=False):
+        first_text = first_text if first_text is not None else '\n'.join(
+            f'首次完整候选正文要点{i}' for i in range(16))
+        extra_text = extra_text if extra_text is not None else '\n'.join(
+            f'补齐新增企业正文要点{i}' for i in range(16))
+        extra_refs = [f'https://cninfo.com.cn/offline-extra/{i}' for i in range(8)]
+        search_calls, chat_calls = [], []
+
+        def search(request):
+            search_calls.append(request)
+            if len(search_calls) == 3 and search_failure:
+                raise providers.ProviderError('upstream search HTTP 503')
+            refs = self.refs if len(search_calls) <= 2 else extra_refs
+            return json.dumps({'results': [
+                {'url': ref, 'text': ('首次身份来源' if len(search_calls) <= 2 else '补齐身份来源')
+                 + ' '.join(f'OFFLINE测试企业{i}' for i in range(30))}
+                for ref in refs]})
+
+        def chat(request):
+            chat_calls.append(request)
+            if len(chat_calls) == 2 and chat_failure:
+                raise providers.ProviderError('upstream chat HTTP 503')
+            if len(chat_calls) > 2:
+                raise AssertionError('candidate completion must not call chat a third time')
+            data = {'text': first_text if len(chat_calls) == 1 else extra_text,
+                    'candidates': initial if len(chat_calls) == 1 else supplemental,
+                    'selected': []}
+            return json.dumps({'choices': [{'finish_reason': 'stop',
+                                           'message': {'content': json.dumps(data)}}]})
+
+        router = RecordingRouter({'exa.ai/search': (200, search),
+                                  'chat/completions': (200, chat)})
+        return self._provider(router), router, self._prior(saved), first_text, extra_text
+
+    @staticmethod
+    def _completion_calls(router):
+        return ([call for call in router.calls if 'exa.ai/search' in call.full_url],
+                [call for call in router.calls if 'chat/completions' in call.full_url])
+
+    def test_one_candidate_completion_keeps_first_grounded_fields_text_sources_and_prior(self):
+        saved = [self._company(i) for i in range(10)]
+        initial = [self._company(i) for i in (0, 1, 10, 11, 12)]
+        initial[2].update(reason='首次完整理由', rationale={'raw': ['首次完整匹配字段']},
+                          uncertainty='首次风险保留', expansion_date='2026-09-01',
+                          landing_status='已落地', evidence_ref='https://cninfo.com.cn/offline-extra/0')
+        extra = [dict(self._company(i), url=f'https://cninfo.com.cn/offline-extra/{i - 13}')
+                 for i in (13, 14)]
+        p, router, prior, first_text, extra_text = self._completion_fixture(initial, extra, saved)
+        original = copy.deepcopy(prior)
+        out = p.run_part('enterprises_1', '候选池3', {'city': '测试城', 'mode': 'deep'}, prior)
+        self.assertEqual(prior, original)
+        self.assertEqual(out['text'], first_text + '\n\n' + extra_text)
+        self.assertEqual([item['name'] for item in out['metadata']['candidates']],
+                         [self._company(i)['name'] for i in range(10, 15)])
+        first = out['metadata']['candidates'][0]
+        for field in ('name', 'url', 'reason', 'rationale', 'uncertainty', 'expansion_date'):
+            self.assertEqual(first[field], initial[2][field])
+        # A source first retrieved during completion cannot upgrade round one's
+        # grounded status or overwrite its original source decision.
+        self.assertEqual(first['landing_status'], '待核实')
+        self.assertEqual(first['evidence_ref'], '')
+        self.assertEqual(out['metadata']['selected'], [])
+        refs = {item['url'] for item in out['metadata']['evidence']}
+        self.assertEqual(refs, set(self.refs) | {
+            f'https://cninfo.com.cn/offline-extra/{i}' for i in range(8)})
+        searches, chats = self._completion_calls(router)
+        self.assertEqual((len(searches), len(chats)), (3, 2))
+        query = json.loads(searches[-1].data)['query']
+        prompt = json.loads(chats[-1].data)['messages'][-1]['content']
+        for company in saved + initial[2:]:
+            self.assertIn(company['name'], query)
+            self.assertIn(company['name'], prompt)
+        self.assertIn('恰好2家新增企业记录', prompt)
+        self.assertIn('至少7行实质内容', prompt)
+        self.assertIn('不重写、不回传首次合格企业的任何字段', prompt)
+        self.assertIn(first_text, prompt)
+        self.assertIn('OFFLINE产业1', query)
+        self.assertIn('生产装备与制造设备', query)
+
+    def test_candidate_completion_handles_one_to_four_unique_new_identities(self):
+        saved = [self._company(i) for i in range(5)]
+        for count in (1, 2, 3, 4):
+            with self.subTest(new_count=count):
+                accepted = [self._company(i) for i in range(10, 10 + count)]
+                initial = accepted + [self._company(0)] * (5 - count)
+                extra = [self._company(i) for i in range(10 + count, 15)]
+                p, router, prior, _, _ = self._completion_fixture(initial, extra, saved)
+                out = p.run_part('enterprises_1', '候选池2', {'city': '测试城', 'mode': 'deep'}, prior)
+                self.assertEqual([item['name'] for item in out['metadata']['candidates']],
+                                 [self._company(i)['name'] for i in range(10, 15)])
+                self.assertEqual(tuple(map(len, self._completion_calls(router))), (3, 2))
+        # Repetition within this unsaved batch is the same bounded identity gap.
+        initial = [self._company(i) for i in (10, 10, 11, 11, 12)]
+        p, router, prior, _, _ = self._completion_fixture(
+            initial, [self._company(i) for i in (13, 14)], saved)
+        out = p.run_part('enterprises_1', '候选池2', {'city': '测试城', 'mode': 'deep'}, prior)
+        self.assertEqual(len({item['name'] for item in out['metadata']['candidates']}), 5)
+        self.assertEqual(tuple(map(len, self._completion_calls(router))), (3, 2))
+
+    def test_candidate_completion_is_not_used_for_wrong_count_zero_new_or_unbound_source(self):
+        saved = [self._company(i) for i in range(5)]
+        invalid_source = [self._company(i) for i in (0, 1, 10, 11, 12)]
+        invalid_source[-1]['url'] = 'https://unretrieved-company.cn/'
+        cases = [([self._company(i) for i in range(count)], 'candidate part needs five new grounded companies')
+                 for count in (0, 4, 6)]
+        cases.append(([self._company(i) for i in range(5)], 'candidate part needs five new grounded companies'))
+        cases.append((invalid_source, 'company identity needs a retrieved source URL'))
+        for initial, message in cases:
+            with self.subTest(count=len(initial), message=message):
+                p, router, prior, _, _ = self._completion_fixture(initial, [], saved)
+                with self.assertRaises(fp.FullProviderError) as caught:
+                    p.run_part('enterprises_1', '候选池2', {'city': '测试城', 'mode': 'deep'}, prior)
+                self.assertEqual(str(caught.exception), message)
+                self.assertEqual(tuple(map(len, self._completion_calls(router))), (2, 1))
+        p, router, prior, _, _ = self._completion_fixture(
+            [self._company(i) for i in range(10, 15)], [], saved)
+        self.assertEqual(len(p.run_part('enterprises_1', '候选池2', {'city': '测试城', 'mode': 'deep'}, prior)
+                             ['metadata']['candidates']), 5)
+        self.assertEqual(tuple(map(len, self._completion_calls(router))), (2, 1))
+
+    def test_candidate_completion_rejects_insufficient_excess_duplicate_and_unbound_supplements(self):
+        saved = [self._company(i) for i in range(5)]
+        initial = [self._company(i) for i in (0, 1, 10, 11, 12)]
+        supplements = ([self._company(13)], [self._company(i) for i in (13, 14, 15)],
+                       [self._company(i) for i in (13, 13)], [self._company(i) for i in (0, 14)],
+                       [dict(self._company(10), reason='attempted overwrite'), self._company(14)],
+                       [dict(self._company(13), url='https://unretrieved-company.cn/'), self._company(14)])
+        for extra in supplements:
+            with self.subTest(names=[item['name'] for item in extra]):
+                p, router, prior, _, _ = self._completion_fixture(initial, extra, saved)
+                original = copy.deepcopy(prior)
+                with self.assertRaises(fp.FullProviderError):
+                    p.run_part('enterprises_1', '候选池2', {'city': '测试城', 'mode': 'deep'}, prior)
+                self.assertEqual(prior, original)
+                self.assertEqual(tuple(map(len, self._completion_calls(router))), (3, 2))
+
+    def test_candidate_completion_transport_failures_do_not_retry_internally(self):
+        saved = [self._company(i) for i in range(5)]
+        initial = [self._company(i) for i in (0, 1, 10, 11, 12)]
+        for search_failure, chat_failure, counts in ((True, False, (3, 1)), (False, True, (3, 2))):
+            with self.subTest(search_failure=search_failure):
+                p, router, prior, _, _ = self._completion_fixture(
+                    initial, [self._company(i) for i in (13, 14)], saved,
+                    search_failure=search_failure, chat_failure=chat_failure)
+                with self.assertRaises(fp.FullProviderError) as caught:
+                    p.run_part('enterprises_1', '候选池2', {'city': '测试城', 'mode': 'deep'}, prior)
+                self.assertEqual(caught.exception.failure_code, 'upstream')
+                self.assertEqual(tuple(map(len, self._completion_calls(router))), counts)
+
+    def test_candidate_completion_preserves_final_text_line_repetition_and_url_gates(self):
+        saved = [self._company(i) for i in range(5)]
+        initial = [self._company(i) for i in (0, 1, 10, 11, 12)]
+        extra = [self._company(i) for i in (13, 14)]
+        cases = [('首次一行正文', '补齐一行正文', 'part line floor not met'),
+                 ('\n'.join('首次重复正文' for _ in range(16)), '独立补齐正文', 'part contains repeated filler'),
+                 ('\n'.join(f'首次安全正文{i}' for i in range(16)),
+                  '不安全补齐来源 http://127.0.0.1/private', 'part source URL policy failed')]
+        for first_text, extra_text, message in cases:
+            with self.subTest(message=message):
+                p, router, prior, _, _ = self._completion_fixture(
+                    initial, extra, saved, first_text=first_text, extra_text=extra_text)
+                with self.assertRaises(fp.FullProviderError) as caught:
+                    p.run_part('enterprises_1', '候选池2', {'city': '测试城', 'mode': 'deep'}, prior)
+                self.assertEqual(str(caught.exception), message)
+                self.assertEqual(tuple(map(len, self._completion_calls(router))), (3, 2))
+        # The final floor applies to the complete merged body, without throwing
+        # away a short but substantive first response.
+        p, _, prior, first_text, extra_text = self._completion_fixture(
+            initial, extra, saved, first_text='\n'.join(f'首次要点{i}' for i in range(9)),
+            extra_text='\n'.join(f'补齐要点{i}' for i in range(7)))
+        out = p.run_part('enterprises_1', '候选池2', {'city': '测试城', 'mode': 'deep'}, prior)
+        self.assertEqual(out['text'], first_text + '\n\n' + extra_text)
+
     def test_candidate_batches_require_five_new_grounded_identities_before_saving(self):
         for count in (0, 4, 6):
             with self.subTest(count=count), self.assertRaises(fp.FullProviderError) as caught:
@@ -458,6 +634,51 @@ class EnterprisePartGateTests(unittest.TestCase):
             self.assertIn(segment, queries[number * 2])
             self.assertIn(kind, queries[number * 2])
             self.assertIn('OFFLINE产业1', queries[number * 2])
+
+    def test_candidate_retrieval_preserves_same_url_observations_and_query_variants(self):
+        common = 'https://cninfo.com.cn/offline/same-source'
+        variant = 'https://cninfo.com.cn/offline/query-source'
+        queries = []
+
+        def search(request):
+            queries.append(json.loads(request.data)['query'])
+            number = len(queries)
+            return json.dumps({'results': [
+                {'url': common, 'title': f'第{number}次原检索标题',
+                 'text': f'第{number}次不同企业原摘录', 'publishedDate': f'202{number + 4}-09-01'},
+                {'url': variant + f'?document={number}', 'title': f'实际URL变体{number}',
+                 'text': f'实际文档{number}完整原摘录', 'publishedDate': f'202{number + 4}-09-02'},
+            ]})
+
+        router = RecordingRouter({'exa.ai/search': (200, search),
+                                  'chat/completions': (200, json.dumps({'content': '{"text":"OFFLINE"}'}))})
+        p = self._provider(router)
+        evidence = p._gather_evidence('enterprises_1', '候选池', '测试城', self._prior())
+        self.assertEqual(len(queries), 2)
+        self.assertEqual([item['url'] for item in evidence],
+                         [common, variant + '?document=1', variant + '?document=2'])
+        self.assertEqual(len({fc.canonical_url(item['url']) for item in evidence}), 2)
+        combined = evidence[0]
+        original_excerpts = [combined['excerpt'][item['excerpt_offset']:
+                            item['excerpt_offset'] + item['excerpt_length']]
+                            for item in combined['observations']]
+        self.assertEqual(original_excerpts, ['第1次不同企业原摘录', '第2次不同企业原摘录'])
+        self.assertEqual([item['metadata']['title'] for item in combined['observations']],
+                         ['第1次原检索标题', '第2次原检索标题'])
+        self.assertEqual(p._usable_evidence(evidence + evidence), evidence)
+        # Query variants are preserved facts, never two independent sources.
+        self.assertEqual(p._ground_checks('fact_check', [{
+            'claim': '同canonical不可双源', 'source': variant + '?document=1',
+            'cross_source': variant + '?document=2', 'category': 'economic',
+        }], evidence), [])
+        p._chat_part('enterprises_1', '候选池', '测试城', '', evidence, min_lines=16)
+        chat = json.loads(router.calls[-1].data)
+        prompt = chat['messages'][-1]['content']
+        for excerpt in original_excerpts + ['实际文档1完整原摘录', '实际文档2完整原摘录']:
+            self.assertIn(excerpt, prompt)
+        self.assertIn('第2次原检索标题', prompt)
+        self.assertIn('2026-09-01', prompt)
+        self.assertIn('不构成多个独立来源', prompt)
 
     def test_missing_saved_target_batch_fails_before_search_or_chat(self):
         router = RecordingRouter({})
@@ -586,6 +807,27 @@ class SelectedCompanyFactCheckTests(unittest.TestCase):
         self.assertTrue(all('五星级' not in query and '认定 名单' not in query for query in queries))
         self.assertEqual(len(out), 36)
 
+    def test_signal_retrieval_query_variants_do_not_consume_independent_source_quota(self):
+        query_count = []
+
+        def search(request):
+            query_count.append(request)
+            root = f'https://cninfo.com.cn/offline-check/{len(query_count)}'
+            return json.dumps({'results': [
+                {'url': root + '/source?document=1', 'text': '第一个实际查询文档'},
+                {'url': root + '/source?document=2', 'text': '第二个实际查询文档，同canonical'},
+                {'url': root + '/independent', 'text': '第二条独立canonical来源'},
+                {'url': root + '/after-quota', 'text': '原有两来源额度后的额外结果'},
+            ]})
+
+        router = RecordingRouter({'exa.ai/search': (200, search)})
+        evidence = self._provider(router)._gather_evidence(
+            'fact_check', '五星企业信号', '测试城', self._prior())
+        self.assertEqual(len(query_count), 18)
+        self.assertEqual(len(evidence), 54)
+        self.assertEqual(len({fc.canonical_url(item['url']) for item in evidence}), 36)
+        self.assertFalse(any('/after-quota' in item['url'] for item in evidence))
+
     def test_saved_selection_grounding_remains_available_only_for_fact_check(self):
         saved = self._prior()
         source = saved['enterprises_1']['metadata']['evidence'][0]['url']
@@ -631,6 +873,56 @@ class SelectedCompanyFactCheckTests(unittest.TestCase):
         self.assertIn(signal, p._company_check_queries(saved, '测试城')[0])
         self.assertIn(signal, p._render_prior(saved, 'fact_check'))
 
+    def test_signal_check_prompt_bounds_schema_and_keeps_three_complete_two_source_records(self):
+        prior = self._prior()
+        prior['fact_check'] = {'text': '\n'.join(f'已完成前两批核验要点{i}' for i in range(40)),
+                               'metadata': {'checks': [], 'evidence': []}}
+        cross = 'https://stats.gov.cn/offline-signal/cross?year=2026&release=annual'
+        checks = [{
+            'claim': f'方向{number}精选企业0于2026年披露的具体扩产信号',
+            'source': prior[f'enterprises_{number}']['metadata']['evidence'][0]['url'],
+            'cross_source': cross, 'year': '2026', 'verdict': '两源口径不同，待核实',
+            'category': 'high_star', 'direction': f'dir{number}',
+        } for number in (1, 2, 3)]
+        payload = {'text': '\n'.join(f'本批信号核验简短要点{i}' for i in range(20)),
+                   'checks': checks}
+        router = RecordingRouter({
+            'exa.ai/search': (200, json.dumps({'results': [{'url': cross, 'text': 'OFFLINE完整交叉核验摘录'}]})),
+            'chat/completions': (200, json.dumps({'choices': [{'finish_reason': 'stop',
+                'message': {'content': json.dumps(payload)}}]})),
+        })
+        out = self._provider(router).run_part('fact_check', '五星企业信号', {'city': '测试城'}, prior)
+        self.assertEqual(out['metadata']['checks'], checks)
+        self.assertEqual(out['text'], payload['text'])
+        chat = json.loads(next(call for call in router.calls if 'chat/completions' in call.full_url).data)
+        self.assertEqual(chat['max_tokens'], 8000)
+        prompt = chat['messages'][-1]['content']
+        for instruction in ('本次JSON只含text、checks', '不回传candidates、selected、directions、scores或完整公司档案',
+                            'checks每条只核验一项精确主张', 'year缺失写年份未知',
+                            'source和cross_source必须保留两条完整的实际检索URL',
+                            '每方向优先只核验1条', '最多3条high_star记录', '不逐字段重复checks'):
+            self.assertIn(instruction, prompt)
+
+    def test_check_prompt_compression_preserves_unavailable_flags_and_other_part_budgets(self):
+        payload = {'text': '\n'.join(f'缺口核验简短要点{i}' for i in range(20)), 'checks': [],
+                   'high_star_unavailable': True, 'high_star_note': 'dir2缺少2026年独立交叉来源'}
+        for part, budget in (('五星企业信号', 8000), ('经济关键数字', 6000), ('政策金额', 6000)):
+            with self.subTest(part=part):
+                router = RecordingRouter({
+                    'exa.ai/search': (200, json.dumps({'results': [
+                        {'url': 'https://stats.gov.cn/offline-check', 'text': 'OFFLINE实际核查摘录'}]})),
+                    'chat/completions': (200, json.dumps({'choices': [{'message': {'content': json.dumps(payload)}}]})),
+                })
+                prior = self._prior()
+                prior['fact_check'] = {'text': '\n'.join(f'已完成核验要点{i}' for i in range(40)),
+                                       'metadata': {'checks': [], 'evidence': []}}
+                out = self._provider(router).run_part('fact_check', part, {'city': '测试城'}, prior)
+                self.assertIs(out['metadata']['high_star_unavailable'], True)
+                self.assertEqual(out['metadata']['high_star_note'], payload['high_star_note'])
+                chat = json.loads(next(call for call in router.calls if 'chat/completions' in call.full_url).data)
+                self.assertEqual(chat['max_tokens'], budget)
+                self.assertIn('本次JSON只含text、checks', chat['messages'][-1]['content'])
+
 
 class ScoringIdentityGateTests(unittest.TestCase):
     _provider = LiveProviderRuntimeTests._provider
@@ -664,6 +956,38 @@ class ScoringIdentityGateTests(unittest.TestCase):
         self.assertEqual([entry['rank'] for entry in out['metadata']['scores']], [1, 2, 3])
         prompt = json.loads(router.calls[0].data)['messages'][-1]['content']
         self.assertIn('评分身份允许名单仅来自前序enterprises_1/2/3的selected', prompt)
+
+    def test_compact_scoring_schema_preserves_all_thirty_eight_and_thirty_seven_identities_and_dimensions(self):
+        all_scores = [{key: value for key, value in self._score(number, index).items()
+                       if key in {'name', 'direction', 'dimensions'}}
+                      for number in (1, 2, 3) for index in range(25)]
+        prior = self._prior()
+        parts = []
+        for part, chosen, count in (('评分维度与权重', all_scores[:38], 38), ('加权计算', all_scores[38:], 37)):
+            with self.subTest(part=part):
+                payload = {'text': '\n'.join(f'{part}本批简短评分依据与风险{i}' for i in range(50)),
+                           'scores': chosen}
+                router = RecordingRouter({'chat/completions': (200, json.dumps({
+                    'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(payload)}}]}))})
+                out = self._provider(router).run_part('scoring', part, {'city': '测试城', 'mode': 'deep'}, prior)
+                self.assertEqual(len(out['metadata']['scores']), count)
+                for actual, expected in zip(out['metadata']['scores'], chosen):
+                    for field in ('name', 'direction', 'dimensions'):
+                        self.assertEqual(actual[field], expected[field])
+                    self.assertEqual(set(actual['dimensions']), fc.SCORE_DIMENSIONS)
+                    self.assertEqual(actual['weighted_score'], 10)
+                chat = json.loads(router.calls[0].data)
+                self.assertEqual(chat['max_tokens'], 8000)
+                prompt = chat['messages'][-1]['content']
+                for instruction in ('本次JSON只含text和scores', '完整保留当前本批全部企业的精确name和direction',
+                                    '七个键及0到10的有限数值', '正文每行只写一个简短的评分依据或风险',
+                                    '不逐字段复述scores', '不能通过减少企业、少报维度或把未知风险写成零'):
+                    self.assertIn(instruction, prompt)
+                parts.append(out)
+                prior['scoring'] = fc.assemble('scoring', parts)
+        final = prior['scoring']
+        self.assertEqual(len(final['metadata']['scores']), 75)
+        self.assertEqual(fc.validate('scoring', final['text'], final['metadata'], mode='deep'), [])
 
     def test_unknown_company_wrong_direction_and_missing_selections_fail_closed(self):
         for changes in ({'name': '未知企业'}, {'direction': 'dir2'}, {'direction': ['dir1']}):
