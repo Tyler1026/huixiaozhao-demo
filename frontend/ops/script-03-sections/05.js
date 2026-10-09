@@ -231,6 +231,7 @@ function rrPanel(){
   return '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:18px 20px;margin:0 0 16px">'+
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><strong style="font-size:15px">发起城市报告生成</strong>'+
     '<span style="color:#8492a6;font-size:12px">独立报告服务 · 生成 Word 后可发布到城市智库</span></div>'+
+    '<div style="color:#667590;font-size:12px;line-height:1.6;margin-bottom:12px">标准研判：每个方向15家目标企业；证据不足标待核实</div>'+
     '<div style="display:flex;gap:10px;margin-bottom:14px">'+
       '<input id="rrProv" placeholder="省份，如 湖北" style="flex:0 0 150px;min-height:40px;padding:8px 11px;border:1px solid var(--line);border-radius:8px">'+
       '<input id="rrCity" placeholder="城市，如 随州" style="flex:0 0 150px;min-height:40px;padding:8px 11px;border:1px solid var(--line);border-radius:8px">'+

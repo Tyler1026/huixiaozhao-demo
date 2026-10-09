@@ -134,7 +134,7 @@ function submitReportRequest(){
   }
   var id='rr'+Date.now().toString(36)+Math.random().toString(36).slice(2,10);
   _rrOutbox[id]={request:{id:id,city:city,province:prov,
-    mode:'deep',status:'pending',by:'管理端·周总',ts:Date.now(),doneTs:null,projectKey:null,chunks:0},
+    mode:'standard',status:'pending',by:'管理端·周总',ts:Date.now(),doneTs:null,projectKey:null,chunks:0},
     generation:typeof RESET_GEN!=='undefined'?RESET_GEN:null,attempts:0,nextAt:0};
   if(!_rrSaveOutbox()){delete _rrOutbox[id];toast('浏览器无法保留申请，请检查本地存储后重试');return;}
   toast('正在确认「'+city+'」申请；网络中断时会保留申请并自动重试');render();
