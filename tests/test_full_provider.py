@@ -875,7 +875,7 @@ class SelectedCompanyFactCheckTests(unittest.TestCase):
                 {'choices': [{'message': {'content': json.dumps(next(chat_payloads))}}]})),
         })
         p = self._provider(router)
-        out = p.run_part('fact_check', '五星企业信号', {'city': '测试城'}, saved)
+        out = p.run_part('fact_check', '五星企业信号', {'city': '测试城', 'mode': 'deep'}, saved)
         self.assertEqual(len(out['metadata']['checks']), 1)
         self.assertEqual(out['metadata']['checks'][0]['direction'], 'dir1')
         self.assertEqual(out['metadata']['checks'][0]['source'], source)
@@ -958,7 +958,8 @@ class SelectedCompanyFactCheckTests(unittest.TestCase):
                 prior = self._prior()
                 prior['fact_check'] = {'text': '\n'.join(f'已完成核验要点{i}' for i in range(40)),
                                        'metadata': {'checks': [], 'evidence': []}}
-                out = self._provider(router).run_part('fact_check', part, {'city': '测试城'}, prior)
+                job = {'city': '测试城', **({'mode': 'deep'} if part == '五星企业信号' else {})}
+                out = self._provider(router).run_part('fact_check', part, job, prior)
                 self.assertIs(out['metadata']['high_star_unavailable'], True)
                 self.assertEqual(out['metadata']['high_star_note'], payload['high_star_note'])
                 chat = json.loads(next(call for call in router.calls if 'chat/completions' in call.full_url).data)
@@ -1192,6 +1193,10 @@ class HighStarCorrectionTests(unittest.TestCase):
                       for index in range(count)]
         prior['fact_check'] = {'text': '\n'.join(f'OFFLINE已保存独立核验要点{index}' for index in range(40)),
                                'metadata': {'checks': old_checks, 'evidence': evidence}}
+        prior['industry'] = {'text': 'OFFLINE已保存完整产业方向', 'metadata': {
+            'directions': [{'id': f'dir{number}', 'name': f'OFFLINE产业方向{number}',
+                            'evidence_ref': evidence[(number - 1) * 2]['url']} for number in (1, 2, 3)],
+            'evidence': evidence}}
         return prior, evidence, checks
 
     @staticmethod
@@ -1220,7 +1225,7 @@ class HighStarCorrectionTests(unittest.TestCase):
     def _run(self, provider, prior):
         before = copy.deepcopy(prior)
         try:
-            return provider.run_part('fact_check', '五星企业信号', {'city': 'OFFLINE测试城'}, prior)
+            return provider.run_part('fact_check', '五星企业信号', {'city': 'OFFLINE测试城', 'mode': 'deep'}, prior)
         finally:
             self.assertEqual(prior, before)
 
@@ -1336,6 +1341,121 @@ class HighStarCorrectionTests(unittest.TestCase):
         combined = fc.assemble('fact_check', [prior['fact_check'], result])
         errors = fc.validate('fact_check', combined['text'], combined['metadata'])
         self.assertTrue(any('policy checks 0 < 3' in error for error in errors), errors)
+
+
+class StandardHighStarProjectionTests(unittest.TestCase):
+    _provider = LiveProviderRuntimeTests._provider
+    _case = staticmethod(HighStarCorrectionTests._case)
+    _payload = staticmethod(HighStarCorrectionTests._payload)
+    _setup = HighStarCorrectionTests._setup
+
+    def _run(self, provider, prior):
+        before = copy.deepcopy(prior)
+        try:
+            return provider.run_part('fact_check', '五星企业信号', {'city': 'OFFLINE测试城'}, prior)
+        finally:
+            self.assertEqual(prior, before)
+
+    def test_actual_zero_and_partial_grounding_project_truthful_pending_work_in_one_chat(self):
+        _, _, checks = self._case()
+        for retained in (0, 1):
+            with self.subTest(grounded=retained):
+                raw = [dict(check, claim=check['claim'] + 'UNSUPPORTED777亿元',
+                            verdict='UNSUPPORTED双源完全印证',
+                            **({'cross_source_quote': 'OTHER_ENTITY_NOT_IN_EXCERPT'} if index >= retained else {}))
+                       for index, check in enumerate(checks)]
+                payload = self._payload(raw, unavailable=True, label='UNSUPPORTED原模型仍称双源一致', lines=1)
+                p, router, timeouts, prior, _, _ = self._setup([payload])
+                result = self._run(p, prior)
+                self.assertEqual(result['metadata']['checks'], [])
+                self.assertIs(result['metadata']['high_star_unavailable'], True)
+                self.assertTrue(result['metadata']['high_star_note'])
+                self.assertNotIn('UNSUPPORTED', json.dumps(result, ensure_ascii=False))
+                self.assertNotIn('OTHER_ENTITY_NOT_IN_EXCERPT', json.dumps(result, ensure_ascii=False))
+                self.assertGreaterEqual(len([line for line in result['text'].splitlines() if line.strip()]), 20)
+                for number in (1, 2, 3):
+                    self.assertIn(f'OFFLINE产业方向{number}', result['text'])
+                    self.assertIn(f'OFFLINE精选企业{number}', result['text'])
+                    self.assertNotIn(f'dir{number}', result['text'])
+                self.assertEqual(sum('chat/completions' in call.full_url for call in router.calls), 1)
+                self.assertEqual(sum('exa.ai/search' in call.full_url for call in router.calls), 6)
+                self.assertEqual([timeout for url, timeout in timeouts if 'chat/completions' in url], [90])
+                chat = json.loads(next(call for call in router.calls if 'chat/completions' in call.full_url).data)
+                self.assertEqual(chat['max_tokens'], 16000)
+                self.assertEqual(chat['response_format'], {'type': 'json_object'})
+                self.assertEqual({entry['url'] for entry in result['metadata']['evidence']},
+                                 {entry['url'] for entry in prior['fact_check']['metadata']['evidence']})
+                self.assertEqual(set(fc.extract_urls(result['text'])),
+                                 {entry['url'] for entry in result['metadata']['evidence']})
+                for entry in result['metadata']['evidence']:
+                    original = next(old for old in prior['fact_check']['metadata']['evidence']
+                                    if old['url'] == entry['url'])
+                    self.assertEqual(entry['excerpt'], original['excerpt'])
+                combined = fc.assemble('fact_check', [prior['fact_check'], result])
+                self.assertEqual(fc.validate('fact_check', combined['text'], combined['metadata']), [])
+                self.assertEqual(combined['metadata']['checks'], prior['fact_check']['metadata']['checks'])
+
+    def test_complete_grounded_coverage_stays_intact_but_extra_bad_claim_projects(self):
+        _, _, checks = self._case()
+        valid = self._payload(checks)
+        p, router, _, prior, _, _ = self._setup([valid])
+        result = self._run(p, prior)
+        self.assertEqual(result['text'], valid['text'])
+        self.assertEqual(result['metadata']['checks'], checks)
+        self.assertNotIn('high_star_unavailable', result['metadata'])
+        invalid = dict(checks[0], claim=checks[0]['claim'] + 'UNSUPPORTED777亿元',
+                       cross_source_quote='OTHER_ENTITY_NOT_IN_EXCERPT')
+        p, router, _, prior, _, _ = self._setup([self._payload(checks + [invalid], label='UNSUPPORTED额外假印证')])
+        result = self._run(p, prior)
+        self.assertEqual(result['metadata']['checks'], [])
+        self.assertNotIn('UNSUPPORTED', json.dumps(result, ensure_ascii=False))
+        self.assertEqual(sum('chat/completions' in call.full_url for call in router.calls), 1)
+
+    def test_projection_does_not_fill_missing_cached_checks_sources_or_direction_names(self):
+        for economic_count, policy_count in ((12, 0), (5, 3), (0, 8)):
+            with self.subTest(economic=economic_count, policy=policy_count):
+                p, _, _, prior, _, _ = self._setup([self._payload([])], economic_count=economic_count,
+                                                  policy_count=policy_count)
+                result = self._run(p, prior)
+                combined = fc.assemble('fact_check', [prior['fact_check'], result])
+                self.assertTrue(fc.validate('fact_check', combined['text'], combined['metadata']))
+        prior, evidence, _ = self._case()
+        limited = {'evidence': evidence[:4], 'checks': []}
+        feedback = fp.FullLiveProvider._high_star_gap({'checks': []}, limited)
+        text, metadata = fp.FullLiveProvider._project_standard_high_star(prior, limited, feedback)
+        combined = fc.assemble('fact_check', [dict(prior['fact_check'],
+                                 metadata=dict(prior['fact_check']['metadata'], evidence=evidence[:4])),
+                                 {'text': text, 'metadata': metadata}])
+        self.assertTrue(fc.validate('fact_check', combined['text'], combined['metadata']))
+        prior.pop('industry')
+        with self.assertRaises(fp.FullProviderError) as failure:
+            fp.FullLiveProvider._project_standard_high_star(prior, limited, feedback)
+        self.assertEqual(failure.exception.failure_code, 'quality')
+
+    def test_transport_and_malformed_or_truncated_model_output_never_project(self):
+        prior, _, _ = self._case()
+        for status, payload, code in ((401, {'error': 'secret fixture'}, 'configuration'),
+                                     (429, {'error': 'secret fixture'}, 'rate_limit'),
+                                     (200, {'choices': [{'finish_reason': 'length', 'message': {'content': '{}'}}]}, 'quality'),
+                                     (200, {'choices': [{'message': {'content': 'NOT_JSON'}}]}, 'quality'),
+                                     (200, {'choices': [{'message': {'content': '{"text":""}'}}]}, 'quality')):
+            with self.subTest(status=status, payload=payload):
+                router = RecordingRouter({'exa.ai/search': (200, json.dumps({'results': [
+                    {'url': entry['url'], 'text': entry['excerpt']} for entry in prior['fact_check']['metadata']['evidence']]})),
+                    'chat/completions': (status, json.dumps(payload))})
+                with self.assertRaises(fp.FullProviderError) as failure:
+                    self._run(self._provider(router), prior)
+                self.assertEqual(failure.exception.failure_code, code)
+                self.assertEqual(sum('chat/completions' in call.full_url for call in router.calls), 1)
+        def timed_out(request):
+            raise TimeoutError('OFFLINE timeout, no response to project')
+        router = RecordingRouter({'exa.ai/search': (200, json.dumps({'results': [
+            {'url': entry['url'], 'text': entry['excerpt']} for entry in prior['fact_check']['metadata']['evidence']]})),
+            'chat/completions': (200, timed_out)})
+        with self.assertRaises(fp.FullProviderError) as failure:
+            self._run(self._provider(router), prior)
+        self.assertEqual(failure.exception.failure_code, 'timeout')
+        self.assertEqual(sum('chat/completions' in call.full_url for call in router.calls), 1)
 
 
 class ScoringIdentityGateTests(unittest.TestCase):
@@ -1645,7 +1765,8 @@ class DirectionSerializationTests(unittest.TestCase):
                     responses = iter((payload, corrected))
                     router.routes['chat/completions'] = (200, lambda request: json.dumps(
                         {'choices': [{'message': {'content': json.dumps(next(responses))}}]}))
-                self._provider(router).run_part(stage, part, {'city': '测试城'}, prior)
+                job = {'city': '测试城', **({'mode': 'deep'} if stage == 'fact_check' else {})}
+                self._provider(router).run_part(stage, part, job, prior)
                 chat = next(call for call in router.calls if 'chat/completions' in call.full_url)
                 prompt = json.loads(chat.data)['messages'][-1]['content']
                 for direction in directions:
