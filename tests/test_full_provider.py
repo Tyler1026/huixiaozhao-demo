@@ -489,6 +489,40 @@ class EnterprisePartGateTests(unittest.TestCase):
             with self.subTest(part=part), self.assertRaises(fp.FullProviderError):
                 self._run(part, {'candidates': [self._company(29)]}, saved)
 
+    def test_expansion_emits_one_complete_five_company_array_with_full_budget(self):
+        saved = [self._company(i) for i in range(25)]
+        chosen = [dict(self._company(i), rationale=f'完整核查理由{i}',
+                       expansion_date='2026-09-01', evidence_ref=self.refs[i % 8])
+                  for i in range(10, 15)]
+        out, router = self._run('扩产信号3', {'candidates': [], 'selected': chosen}, saved)
+        self.assertEqual(out['metadata']['candidates'], [])
+        self.assertEqual([item['name'] for item in out['metadata']['selected']],
+                         [item['name'] for item in chosen])
+        for actual, expected in zip(out['metadata']['selected'], chosen):
+            for key in ('name', 'url', 'evidence_ref', 'rationale', 'expansion_date', 'uncertainty'):
+                self.assertEqual(actual[key], expected[key])
+        chat = json.loads(next(call for call in router.calls if 'chat/completions' in call.full_url).data)
+        self.assertEqual(chat['max_tokens'], 8000)
+        prompt = chat['messages'][-1]['content']
+        self.assertIn('本次candidates必须为空数组', prompt)
+        self.assertIn('不逐字段复述selected记录', prompt)
+        self.assertIn('本批唯一目标名单（必须保留精确名称）：' +
+                      json.dumps([item['name'] for item in chosen], ensure_ascii=False), prompt)
+
+    def test_landing_and_final_analysis_do_not_repeat_saved_selections(self):
+        saved = [self._company(i) for i in range(25)]
+        for part, fields, instruction in (
+                ('落地情况3', {'candidates': [self._company(i) for i in range(10, 15)], 'selected': []},
+                 '本次selected必须为空数组'),
+                ('匹配理由与风险', {'candidates': [], 'selected': []},
+                 '本次candidates和selected都为空数组')):
+            with self.subTest(part=part):
+                out, router = self._run(part, fields, saved)
+                self.assertEqual(out['metadata']['selected'], [])
+                chat = json.loads(next(call for call in router.calls if 'chat/completions' in call.full_url).data)
+                self.assertEqual(chat['max_tokens'], 6000)
+                self.assertIn(instruction, chat['messages'][-1]['content'])
+
 
 class SelectedCompanyFactCheckTests(unittest.TestCase):
     _provider = LiveProviderRuntimeTests._provider
