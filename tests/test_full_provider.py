@@ -249,8 +249,8 @@ class LiveProviderRuntimeTests(unittest.TestCase):
             'chat/completions': (200, json.dumps({'choices': [{'message': {'content': json.dumps({'text': text})}}]})),
         })
         p = self._provider(router)
-        self.assertEqual(p._part_floor('economy', '区域定位', prior), 68)
-        p.run_part('economy', '区域定位', {'city': '测试城'}, prior)
+        self.assertEqual(p._part_floor('economy', '区域定位', prior, 'deep'), 68)
+        p.run_part('economy', '区域定位', {'city': '测试城', 'mode': 'deep'}, prior)
         chat = next(call for call in router.calls if 'chat/completions' in call.full_url)
         prompt = json.loads(chat.data)['messages'][-1]['content']
         self.assertIn('至少68行', prompt)
@@ -267,7 +267,7 @@ class LiveProviderRuntimeTests(unittest.TestCase):
         }))
         prior = {'economy': {'text': '\n'.join(f'已保存分析{i}' for i in range(81)), 'metadata': {}}}
         with self.assertRaises(fp.FullProviderError) as caught:
-            p.run_part('economy', '区域定位', {'city': '测试城'}, prior)
+            p.run_part('economy', '区域定位', {'city': '测试城', 'mode': 'deep'}, prior)
         self.assertEqual(caught.exception.failure_code, 'quality')
         self.assertEqual(str(caught.exception), 'part line floor not met')
 
@@ -325,27 +325,29 @@ class LiveProviderRuntimeTests(unittest.TestCase):
             self.assertEqual(p._extract_text({'choices': [{'finish_reason': reason,
                 'message': {'content': 'complete output'}}]}), 'complete output')
 
-    def test_output_budget_tracks_actual_line_floor_and_respects_global_cap(self):
+    def test_all_chat_parts_use_doubled_output_budget_and_respect_global_cap(self):
         for stage, floor, configured, expected in (
-                ('economy', 38, 3500, 6000), ('economy', 60, 3500, 8000),
-                ('economy', 59, 3500, 6000), ('policy', 67, 3500, 8000),
-                ('chain', 84, 3500, 8000), ('action', 75, 3500, 8000),
-                ('summary', 80, 3500, 8000), ('scoring', 50, 3500, 8000),
-                ('compact', 200, 3500, 8000), ('economy', 38, 100_000, 8000)):
+                ('economy', 38, 3500, 16000), ('economy', 60, 3500, 16000),
+                ('economy', 59, 3500, 16000), ('policy', 67, 3500, 16000),
+                ('chain', 84, 3500, 16000), ('action', 75, 3500, 16000),
+                ('summary', 80, 3500, 16000), ('scoring', 50, 3500, 16000),
+                ('compact', 200, 3500, 16000), ('economy', 38, 100_000, 16000)):
             with self.subTest(stage=stage, floor=floor, configured=configured):
                 router = RecordingRouter({'chat/completions': (200, json.dumps({
                     'choices': [{'message': {'content': '{"text":"OFFLINE fixture"}'}}]}))})
                 p = self._provider(router)
                 p._live.max_output_tokens = configured
                 p._chat_part(stage, fc.get_stage(stage)['parts'][0], '测试城', '', [], min_lines=floor)
-                self.assertEqual(json.loads(router.calls[0].data)['max_tokens'], expected)
+                request = json.loads(router.calls[0].data)
+                self.assertEqual(request['max_tokens'], expected)
+                self.assertEqual(request['response_format'], {'type': 'json_object'})
                 self.assertLessEqual(expected, providers.MAX_OUTPUT_TOKENS)
 
     def test_intermediate_and_deep_floors_preserve_original_stage_totals(self):
         p = self._provider(RecordingRouter({}))
         prior = {'economy': {'text': '\n'.join(f'已保存{i}' for i in range(20))}}
-        self.assertEqual(p._part_floor('economy', '增长态势', prior), 54)
-        self.assertEqual(p._part_floor('economy', '经济总量', {}), 38)
+        self.assertEqual(p._part_floor('economy', '增长态势', prior, 'deep'), 54)
+        self.assertEqual(p._part_floor('economy', '经济总量', {}, 'deep'), 38)
         self.assertEqual(p._part_floor('enterprises_1', '候选池', {}, 'deep'), 16)
 
     def test_cross_part_repetition_is_rejected_without_silently_deduplicating(self):
@@ -723,7 +725,7 @@ class EnterprisePartGateTests(unittest.TestCase):
         self.assertIn('已有候选禁止重复名单：' + json.dumps([item['name'] for item in saved], ensure_ascii=False), prompt)
         self.assertIn('不得改用简称或别名算作新增', prompt)
         self.assertIn('不足如实说明，不能补造身份', prompt)
-        self.assertEqual(chat['max_tokens'], 6000)
+        self.assertEqual(chat['max_tokens'], 16000)
         with self.assertRaises(fp.FullProviderError) as caught:
             self._run('候选池3', {'candidates': [self._company(i) for i in (0, 1, 10, 11, 12)]}, saved)
         self.assertEqual(str(caught.exception), 'candidate part needs five new grounded companies')
@@ -763,7 +765,7 @@ class EnterprisePartGateTests(unittest.TestCase):
             for key in ('name', 'url', 'evidence_ref', 'rationale', 'expansion_date', 'uncertainty'):
                 self.assertEqual(actual[key], expected[key])
         chat = json.loads(next(call for call in router.calls if 'chat/completions' in call.full_url).data)
-        self.assertEqual(chat['max_tokens'], 8000)
+        self.assertEqual(chat['max_tokens'], 16000)
         prompt = chat['messages'][-1]['content']
         self.assertIn('本次candidates必须为空数组', prompt)
         self.assertIn('不逐字段复述selected记录', prompt)
@@ -781,7 +783,7 @@ class EnterprisePartGateTests(unittest.TestCase):
                 out, router = self._run(part, fields, saved)
                 self.assertEqual(out['metadata']['selected'], [])
                 chat = json.loads(next(call for call in router.calls if 'chat/completions' in call.full_url).data)
-                self.assertEqual(chat['max_tokens'], 6000)
+                self.assertEqual(chat['max_tokens'], 16000)
                 self.assertIn(instruction, chat['messages'][-1]['content'])
 
 
@@ -914,7 +916,7 @@ class SelectedCompanyFactCheckTests(unittest.TestCase):
         self.assertEqual(out['metadata']['checks'], checks)
         self.assertEqual(out['text'], payload['text'])
         chat = json.loads(next(call for call in router.calls if 'chat/completions' in call.full_url).data)
-        self.assertEqual(chat['max_tokens'], 8000)
+        self.assertEqual(chat['max_tokens'], 16000)
         prompt = chat['messages'][-1]['content']
         for instruction in ('本次JSON只含text、checks', '不回传candidates、selected、directions、scores或完整公司档案',
                             'checks每条只核验一项精确主张', 'year缺失写年份未知',
@@ -925,7 +927,7 @@ class SelectedCompanyFactCheckTests(unittest.TestCase):
     def test_check_prompt_compression_preserves_unavailable_flags_and_other_part_budgets(self):
         payload = {'text': '\n'.join(f'缺口核验简短要点{i}' for i in range(20)), 'checks': [],
                    'high_star_unavailable': True, 'high_star_note': 'dir2缺少2026年独立交叉来源'}
-        for part, budget in (('五星企业信号', 8000), ('经济关键数字', 6000), ('政策金额', 6000)):
+        for part, budget in (('五星企业信号', 16000), ('经济关键数字', 16000), ('政策金额', 16000)):
             with self.subTest(part=part):
                 router = RecordingRouter({
                     'exa.ai/search': (200, json.dumps({'results': [
@@ -971,7 +973,9 @@ class ScoringIdentityGateTests(unittest.TestCase):
         allowed = {(target['name'], target['direction']) for target in targets}
         records = [record for record in scores if (record['name'], record['direction']) in allowed]
         group = targets[0]['name']
-        payload = {'text': '\n'.join(f'{text_prefix}/{group}具体事实与风险{i}' for i in range(25)), 'scores': records}
+        deep_stage = fc.get_stage('scoring', mode='deep')
+        group_floor = (deep_stage['min_lines'] + len(deep_stage['parts']) * 2 - 1) // (len(deep_stage['parts']) * 2)
+        payload = {'text': '\n'.join(f'{text_prefix}/{group}具体事实与风险{i}' for i in range(group_floor)), 'scores': records}
         return json.dumps({'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(payload)}}]})
 
     def _run(self, scores, prior=None):
@@ -1015,7 +1019,7 @@ class ScoringIdentityGateTests(unittest.TestCase):
                     self.assertEqual(set(actual['dimensions']), fc.SCORE_DIMENSIONS)
                     self.assertEqual(actual['weighted_score'], 10)
                 chat = json.loads(router.calls[0].data)
-                self.assertEqual(chat['max_tokens'], 8000)
+                self.assertEqual(chat['max_tokens'], 16000)
                 self.assertEqual(len(router.calls), 2)
                 target_groups = [self._request_targets(call)[1] for call in router.calls]
                 self.assertEqual(sorted(map(len, target_groups)), [19, 19] if count == 38 else [18, 19])
@@ -1286,10 +1290,10 @@ class PolicyEvidencePlanningTests(unittest.TestCase):
         payload = {'text': '\n'.join(f'OFFLINE政策卡独立信息{i}' for i in range(67))}
         router = self._router(payload)
         p = self._provider(router)
-        p.run_part('policy', '国家产业政策', {'city': '松江区', 'province': '上海市'},
+        p.run_part('policy', '国家产业政策', {'city': '松江区', 'province': '上海市', 'mode': 'deep'},
                    DirectionSerializationTests._prior())
         chat = json.loads(next(call for call in router.calls if 'chat/completions' in call.full_url).data)
-        self.assertEqual(chat['max_tokens'], 8000)
+        self.assertEqual(chat['max_tokens'], 16000)
         prompt = chat['messages'][-1]['content']
         for requirement in ('实证政策卡', '发布机构', '文号', '适用产业链环节', '支持工具', '有效期',
                             '申报入口', '限制条款', '落地适配', '核查动作', '反复写同一句“待核实”',
@@ -1298,11 +1302,11 @@ class PolicyEvidencePlanningTests(unittest.TestCase):
 
     def test_other_stage_gets_actual_floor_self_check_without_extra_calls_or_token_change(self):
         router = self._router({'text': '\n'.join(f'OFFLINE经济事实{i}' for i in range(38))})
-        self._provider(router).run_part('economy', '经济总量', {'city': '测试城'}, {})
+        self._provider(router).run_part('economy', '经济总量', {'city': '测试城', 'mode': 'deep'}, {})
         searches = [call for call in router.calls if 'exa.ai/search' in call.full_url]
         self.assertEqual(len(searches), len(fp._queries_for('economy', '经济总量', '测试城')))
         chat = json.loads(next(call for call in router.calls if 'chat/completions' in call.full_url).data)
-        self.assertEqual(chat['max_tokens'], 6000)
+        self.assertEqual(chat['max_tokens'], 16000)
         self.assertIn('实际独立非空信息行数不少于38行', chat['messages'][-1]['content'])
 
 

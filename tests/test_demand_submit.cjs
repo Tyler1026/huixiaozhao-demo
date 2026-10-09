@@ -10,7 +10,8 @@
  * 方法:
  *   不 mock 整个文件，而是用 Node 内置 vm 从真实 index.html 里提取
  *   submitDemand() 函数源码（以及它依赖的最小辅助函数 _findExistingDemand /
- *   _normalizeTopic），在受控沙箱里以真实 DOM 存根（#toast / #toastMsg）执行，
+ *   _normalizeTopic / nativeReportState / topicScoreDisplay 及其依赖），
+ *   在受控沙箱里以真实 DOM 存根（#toast / #toastMsg）执行，
  *   再用可编程的 fetch 存根驱动 pending / HTTP 失败 / ok:false / 网络失败 / ok:true
  *   五条路径，断言用户可见提示与数据语义。
  *
@@ -74,6 +75,11 @@ const SRC_FIND_EXISTING = extractFunction(html, 'function _findExistingDemand(')
 const SRC_NORMALIZE_TOPIC = extractFunction(html, 'function _normalizeTopic(');
 // submitDemand 依赖的取当前项目函数（真实源码，避免测试自造产品逻辑）
 const SRC_P = extractFunction(html, 'function P()');
+// submitDemand reads native publication provenance and formats its check status.
+// Keep those product branches real; topicScore below remains the legacy fixture.
+const SRC_NATIVE_REPORT_HELPERS = [
+  'nativeReportState', 'nativeReportScore', 'topicScoreLabel', 'topicScoreDisplay',
+].map(name => extractFunction(html, 'function ' + name + '(')).join('\n');
 
 // 真实源码自检：确认我们测的确实是待修复的旧行为（旧代码里成功提示是无条件的）
 assert.ok(/toast\(/.test(SRC_SUBMIT_DEMAND), 'submitDemand 应包含 toast 调用');
@@ -206,7 +212,8 @@ function makeEnv(opts = {}) {
 
   vm.createContext(sandbox);
   vm.runInContext(
-    SRC_NORMALIZE_TOPIC + '\n' + SRC_FIND_EXISTING + '\n' + SRC_P + '\n' + SRC_SUBMIT_DEMAND + '\n',
+    SRC_NORMALIZE_TOPIC + '\n' + SRC_FIND_EXISTING + '\n' + SRC_P + '\n' +
+      SRC_NATIVE_REPORT_HELPERS + '\n' + SRC_SUBMIT_DEMAND + '\n',
     sandbox,
     { filename: 'index.html<extracted>' }
   );

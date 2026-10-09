@@ -46,9 +46,11 @@ class RecordingRouter:
         # routes: {substring: (status, body_or_str)}
         self.routes = routes
         self.calls = []
+        self.timeouts = []
 
     def __call__(self, request, timeout):
         self.calls.append(request)
+        self.timeouts.append(timeout)
         url = request.get_full_url()
         for key, (status, body) in self.routes.items():
             if key in url:
@@ -188,6 +190,7 @@ class PayloadTests(unittest.TestCase):
         payload = json.loads(chat_req.data.decode("utf-8"))
         self.assertEqual(payload["model"], "test-model")
         self.assertIsInstance(payload["messages"], list)
+        self.assertNotIn("response_format", payload)
         self.assertLessEqual(payload.get("max_tokens", 0), providers.MAX_OUTPUT_TOKENS)
         user_content = payload["messages"][-1]["content"]
         self.assertIn("杭州", user_content)
@@ -201,6 +204,36 @@ class PayloadTests(unittest.TestCase):
         search_req = next(r for r in router.calls if "search" in r.get_full_url())
         self.assertEqual(dict((k.lower(), v) for k, v in search_req.header_items()).get("x-subscription-token"), "SEARCH_SECRET_456")
         self.assertIn("q=", search_req.get_full_url())
+
+    def test_brave_search_and_chat_use_separate_default_timeouts(self):
+        router = self._router()
+        make_provider(transport=router).run("economy", {"city": "杭州"}, None)
+        requests = dict(zip((r.get_method() for r in router.calls), router.timeouts))
+        self.assertEqual(requests["GET"], 30.0)
+        self.assertEqual(requests["POST"], 90.0)
+
+    def test_chat_timeout_override_does_not_change_search_timeout(self):
+        router = self._router()
+        make_provider(transport=router, chat_timeout=110).run("economy", {"city": "杭州"}, None)
+        self.assertEqual(router.timeouts, [30.0, 110.0])
+
+    def test_chat_request_tokens_are_capped_at_doubled_limit(self):
+        router = self._router()
+        provider = make_provider(transport=router, max_output_tokens=99999)
+        self.assertEqual(provider.max_output_tokens, 16000)
+        provider._chat([{"role": "user", "content": "offline fixture"}], 99999)
+        self.assertEqual(json.loads(router.calls[0].data)["max_tokens"], 16000)
+
+    def test_json_chat_mode_explicitly_requests_json_object(self):
+        router = self._router()
+        provider = make_provider(transport=router)
+        messages = [{"role": "user", "content": 'Return JSON only, e.g. {"ok": true}.'}]
+        provider._chat(messages, 16000, json_mode=True)
+        payload = json.loads(router.calls[0].data)
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+        self.assertEqual(payload["messages"], messages)
+        self.assertEqual(payload["max_tokens"], 16000)
+        self.assertEqual(router.timeouts, [90.0])
 
     def test_report_stage_does_not_require_search(self):
         chat = {"choices": [{"message": {"content": "报告内容"}}]}

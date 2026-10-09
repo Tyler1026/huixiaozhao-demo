@@ -125,6 +125,34 @@ def _chunks(text, request_id, filename):
              'cite': filename, 'ts': int(time.time() * 1000)} for value in chunks]
 
 
+def _balanced_chunks(groups, limit=60):
+    """Bound a topic without dropping every chunk of its later source files.
+
+    Allocate available slots evenly, redistribute short files' unused slots,
+    sample whole original chunks across each file, then interleave source order.
+    Selection depends only on position/count, never generated timestamps/text.
+    """
+    nonempty = [group for group in groups if group]
+    if limit < len(nonempty):
+        raise ValueError('knowledge cap cannot cover every source file')
+    quotas = [0] * len(nonempty)
+    remaining = min(limit, sum(len(group) for group in nonempty))
+    while remaining:
+        for i, group in enumerate(nonempty):
+            if not remaining:
+                break
+            if quotas[i] < len(group):
+                quotas[i] += 1
+                remaining -= 1
+    sampled = []
+    for group, quota in zip(nonempty, quotas):
+        indices = ([0] if quota == 1 else
+                   [i * (len(group) - 1) // (quota - 1) for i in range(quota)])
+        sampled.append([group[i] for i in indices])
+    return [group[i] for i in range(max(quotas, default=0))
+            for group in sampled if i < len(group)]
+
+
 def request_publication(handler, raw, session_factory):
     """Same push-request contract, serialized with engine publication writes."""
     def reply(status, body):
@@ -283,13 +311,14 @@ class WebsiteQueue:
         rid, reqid = job['id'], request['id']
         topics = []
         for icon, title, names in TOPICS:
-            known = []
+            source_chunks = []
             for name in names:
                 text = self.store.artifact(TENANT, rid, name).decode('utf-8')
                 if 'SYNTHETIC TEST' in text:
                     raise ValueError('synthetic publication refused')
-                known.extend(_chunks(text, reqid, name))
-            topics.append({'icon': icon, 't': title, 'sub': '报告来源', 'tag': '报告基础包', 'known': known[:60], 'calls': []})
+                source_chunks.append(_chunks(text, reqid, name))
+            topics.append({'icon': icon, 't': title, 'sub': '报告来源', 'tag': '报告基础包',
+                           'known': _balanced_chunks(source_chunks), 'calls': []})
         total = sum(len(t['known']) for t in topics)
         if total < 40:
             raise ValueError('incomplete knowledge package')
@@ -297,7 +326,20 @@ class WebsiteQueue:
         evidence = json.loads(self.store.artifact(TENANT, rid, 'evidence.json'))
         checks = evidence['stages']['06b_fact_check.md'].get('checks', [])
         score = round(100 * sum(c.get('verdict') in ('一致', '✅一致') for c in checks) / len(checks)) if checks else None
+        verdict_counts = {'consistent': 0, 'inconsistent': 0, 'pending': 0, 'unclassified': 0}
+        for check in checks:
+            verdict = check.get('verdict')
+            bucket = ('consistent' if verdict in ('一致', '✅一致') else
+                      'inconsistent' if verdict in ('不一致', '❌不一致') else
+                      'pending' if verdict in ('待核实', '⚠️待核实', '不可用', '待校核') else 'unclassified')
+            verdict_counts[bucket] += 1
+        # Free-form verdicts are not automatically reinterpreted as agreement.
+        # Preserve the old numeric field, but prevent displaying it as quality.
+        score_status = ('unavailable' if not checks else
+                        'unclassified' if verdict_counts['unclassified'] else 'classified')
         key = 'report_' + reqid
+        topic = request['city'] + '产业链招引'
+        published_at = int(time.time() * 1000)
         with self.session() as session:
             state = json.loads(session.read())
             target = next((r for r in state.get('REPORT_REQUESTS') or []
@@ -311,12 +353,20 @@ class WebsiteQueue:
             if key in projects:
                 raise ValueError('project publication conflict')
             projects[key] = {'id': key, 'city': request['city'], 'province': request['province'],
-                             'org': '', 'who': '', 'topic': request['city'] + '产业链招引',
+                             'org': '', 'who': '', 'topic': topic,
                              'stage': 1, 'kb': topics, 'clues': [], 'report': None,
                              'reportRequestId': reqid, 'reportFiles': target['files']}
             state.setdefault('CITY_BASE_PACKAGES', {})[request['city']] = key
-            state.setdefault('REPORTSTATE', {})[key] = {'text': compact, 'topic': request['city'] + '产业招商报告',
-                'ts': int(time.time() * 1000), 'score': score, 'scoreBasis': '核验一致项比例', 'sourceReportId': reqid}
+            # The browser deliberately reads by exact topic to avoid showing a
+            # different direction's report. Publish the saved compact verbatim
+            # under this project's topic as well as the legacy text field.
+            state.setdefault('REPORTSTATE', {})[key] = {
+                'text': compact, 'topic': topic, 'ts': published_at, 'phase': 2,
+                'aiReportByTopic': {topic: compact}, 'phaseByTopic': {topic: 2},
+                'tsByTopic': {topic: published_at},
+                'score': score, 'scoreBasis': '核验一致项比例',
+                'scoreStatus': score_status, 'checkVerdictCounts': verdict_counts,
+                'sourceReportId': reqid}
             target.update(pushed=True, pushRequested=False, projectKey=key, chunks=total)
             receipts[reqid] = {'engineReportId': rid, 'projectKey': key,
                               'publishedAt': int(time.time() * 1000), 'manifest': job['manifest']}

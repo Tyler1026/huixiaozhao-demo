@@ -38,6 +38,7 @@ Environment variables::
     HXZ_MODEL_URL          exact https chat/completions endpoint URL
     HXZ_MODEL_KEY          bearer key for the model endpoint
     HXZ_MODEL_NAME         model identifier sent in the request body
+    HXZ_MODEL_CHAT_TIMEOUT optional chat timeout in seconds (default 90)
     HXZ_SEARCH_URL         (optional) https search endpoint (Brave-compatible)
     HXZ_SEARCH_KEY         subscription token for the search endpoint
 """
@@ -47,6 +48,7 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import json
+import math
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -73,8 +75,9 @@ DEFAULT_MODEL_NAME = "gpt-4o-mini"
 DEFAULT_SEARCH_COUNT = 5
 MAX_SEARCH_COUNT = 8
 DEFAULT_OUTPUT_TOKENS = 3500
-MAX_OUTPUT_TOKENS = 8000
+MAX_OUTPUT_TOKENS = 16000
 DEFAULT_TIMEOUT = 30.0
+DEFAULT_CHAT_TIMEOUT = 90.0
 MAX_TIMEOUT = 120.0
 MAX_PRIOR_CHARS = 6000
 MAX_EVIDENCE_CHARS = 3000
@@ -285,6 +288,7 @@ class OpenAIResearchProvider:
         transport=None,
         max_output_tokens=DEFAULT_OUTPUT_TOKENS,
         timeout=DEFAULT_TIMEOUT,
+        chat_timeout=DEFAULT_CHAT_TIMEOUT,
         allow_private=False,
         search_count=DEFAULT_SEARCH_COUNT,
     ):
@@ -303,6 +307,13 @@ class OpenAIResearchProvider:
 
         self.max_output_tokens = max(1, min(int(max_output_tokens), MAX_OUTPUT_TOKENS))
         self.timeout = max(0.1, min(float(timeout), MAX_TIMEOUT))
+        try:
+            chat_timeout = float(chat_timeout)
+        except (TypeError, ValueError):
+            chat_timeout = DEFAULT_CHAT_TIMEOUT
+        if not math.isfinite(chat_timeout):
+            chat_timeout = DEFAULT_CHAT_TIMEOUT
+        self.chat_timeout = max(0.1, min(chat_timeout, MAX_TIMEOUT))
         self.search_count = max(1, min(int(search_count), MAX_SEARCH_COUNT))
 
         self._transport = transport if transport is not None else _default_transport
@@ -336,6 +347,7 @@ class OpenAIResearchProvider:
             search_key=env.get("HXZ_SEARCH_KEY", ""),
             enabled=env.get("HXZ_ENABLE_LIVE", "") == "1",
             max_output_tokens=max_tokens,
+            chat_timeout=env.get("HXZ_MODEL_CHAT_TIMEOUT") or DEFAULT_CHAT_TIMEOUT,
         )
 
     # -- validation / plumbing ---------------------------------------------
@@ -355,10 +367,10 @@ class OpenAIResearchProvider:
 
     # -- HTTP ---------------------------------------------------------------
 
-    def _request(self, request):
+    def _request(self, request, *, timeout=None):
         """Return ``(status, body_bytes, final_url)`` via the transport seam."""
         try:
-            response = self._transport(request, self.timeout)
+            response = self._transport(request, self.timeout if timeout is None else timeout)
         except urllib.error.HTTPError as exc:  # 4xx/5xx still carries a body
             try:
                 body = exc.read(MAX_RESPONSE_BYTES + 1)
@@ -389,7 +401,7 @@ class OpenAIResearchProvider:
         request = urllib.request.Request(url, data=data, method="POST")
         request.add_header("Content-Type", "application/json")
         request.add_header("Authorization", f"Bearer {self.api_key}")
-        return self._request(request)
+        return self._request(request, timeout=self.chat_timeout)
 
     def _get_json(self, url):
         request = urllib.request.Request(url, method="GET")
@@ -500,13 +512,15 @@ class OpenAIResearchProvider:
             {"role": "user", "content": "\n\n".join(user_blocks)},
         ]
 
-    def _chat(self, messages, max_tokens):
+    def _chat(self, messages, max_tokens, *, json_mode=False):
         payload = {
             "model": self.model_name,
             "messages": messages,
-            "max_tokens": max_tokens,
+            "max_tokens": max(1, min(int(max_tokens), MAX_OUTPUT_TOKENS)),
             "temperature": 0.2,
         }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
         status, body, _ = self._post_json(self.model_url, payload)
         return self._require_ok(status, body, "chat")
 
@@ -570,6 +584,7 @@ __all__ = [
     "DEFAULT_OUTPUT_TOKENS",
     "MAX_OUTPUT_TOKENS",
     "DEFAULT_TIMEOUT",
+    "DEFAULT_CHAT_TIMEOUT",
     "MAX_TIMEOUT",
     "MAX_PRIOR_CHARS",
     "ProviderError",

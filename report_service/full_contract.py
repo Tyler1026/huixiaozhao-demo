@@ -15,7 +15,7 @@ produced:
   structural line floor), ``research`` (bool, whether the stage requires
   retrieved source evidence rather than pure synthesis), and ``parts`` (a
   non-empty tuple of structural sub-section ids that split a long stage across
-  multiple bounded model calls so a single 8000-token budget never silently
+  multiple bounded model calls so a single model budget never silently
   truncates a required artifact).
 
 * :func:`get_stage` — look up a stage descriptor by id.
@@ -100,9 +100,11 @@ MIN_ECONOMIC_CHECKS = 5
 MIN_POLICY_CHECKS = 3
 EXPECTED_HIGH_STAR_DIRECTIONS = 3
 
-# Live research stages must cite at least this many distinct canonical source
-# URLs; a single trusted URL repeated is not independent research.
+# Keep the original deep-mode source floor and repeated-URL filler protection.
+# Standard mode uses a smaller coverage floor, without relaxing source validity
+# or claiming that a URL count proves factual support or independence.
 MIN_DISTINCT_EVIDENCE_URLS = 8
+MIN_STANDARD_DISTINCT_EVIDENCE_URLS = 5
 
 # Official press / statistics domains.  Company-official domains are *not* in
 # this set intentionally: a company's own site is evidence about that company,
@@ -208,13 +210,23 @@ _STAGE_FILENAMES = {
     "summary": "00_executive_summary.md",
     "compact": "09_compact_report.md",
 }
-_STAGE_MIN_LINES = {
+_DEEP_STAGE_MIN_LINES = {
     "economy": 150, "population": 150, "transport": 180, "life": 150,
     "industry": 180, "competition": 180, "policy": 200, "chain": 250,
     "enterprises_1": 250, "enterprises_2": 250, "enterprises_3": 250,
     "fact_check": 60, "scoring": 100, "action": 150, "summary": 80,
     # A concise final presentation reuses the full saved research and scores;
     # research, source/year, company-count and scoring gates remain separate.
+    "compact": 80,
+}
+
+# Medium standard reports keep the complete research structure and structured
+# company/check/score records, with less compulsory prose in each checkpoint.
+_STAGE_MIN_LINES = {
+    "economy": 80, "population": 80, "transport": 90, "life": 80,
+    "industry": 100, "competition": 90, "policy": 100, "chain": 120,
+    "enterprises_1": 150, "enterprises_2": 150, "enterprises_3": 150,
+    "fact_check": 60, "scoring": 60, "action": 80, "summary": 40,
     "compact": 80,
 }
 
@@ -243,15 +255,26 @@ _URL_RE = re.compile(r"https?://[^\s\"'<>()\[\]{}\uFF0C\uFF01\uFF1F\uFF1B\uFF1A\
 def get_stage(stage_id: str, *, mode='standard') -> dict:
     """Return the immutable mode-specific plan (raises ``KeyError`` on unknown ID).
 
-    Deep mode keeps calls bounded to five companies and adds two expansion
-    parts per direction, instead of enlarging a single provider completion.
+    Standard mode uses medium prose floors. Deep mode retains its original
+    floors, keeps calls bounded to five companies and adds two expansion parts
+    per direction, instead of enlarging a single provider completion.
     """
     stage = _STAGE_INDEX[stage_id]
     if mode not in ('standard', 'deep'):
         raise ValueError('invalid report mode')
-    if mode == 'deep' and stage_id.startswith('enterprises_'):
-        return dict(stage, parts=stage['parts'][:-1] + ('扩产信号4', '扩产信号5', stage['parts'][-1]))
+    if mode == 'deep':
+        stage = dict(stage, min_lines=_DEEP_STAGE_MIN_LINES[stage_id])
+        if stage_id.startswith('enterprises_'):
+            stage['parts'] = stage['parts'][:-1] + ('扩产信号4', '扩产信号5', stage['parts'][-1])
     return stage
+
+
+def minimum_evidence_urls(mode='standard') -> int:
+    """Return the mode's structural source coverage floor, never a truth score."""
+    if mode not in ('standard', 'deep'):
+        raise ValueError('invalid report mode')
+    return (MIN_STANDARD_DISTINCT_EVIDENCE_URLS if mode == 'standard'
+            else MIN_DISTINCT_EVIDENCE_URLS)
 
 
 def _stage_ids() -> tuple:
@@ -435,7 +458,7 @@ def validate(stage_id, text, metadata=None, synthetic=False, *, mode='standard')
        non-gov.cn host is rejected as impersonation; URLs are canonicalized and
        deduplicated; a single URL repeated as filler is rejected.
     6. live research stages require a metadata ``evidence`` list with at least
-       :data:`MIN_DISTINCT_EVIDENCE_URLS` distinct canonical source URLs, each
+       five standard / eight deep distinct canonical source URLs, each
        with a non-link-only excerpt.  Synthetic stages relax this.
     7. company stages: candidate pool >= 25 (unique names) and >= 15 standard /
        25 deep unique final
@@ -463,7 +486,7 @@ def validate(stage_id, text, metadata=None, synthetic=False, *, mode='standard')
         errors.append("text must be a non-empty string")
         text = text or ""
 
-    stage = _STAGE_INDEX[stage_id]
+    stage = get_stage(stage_id, mode=mode)
     content_lines = [line.strip() for line in text.splitlines() if line.strip()]
     nlines = len(content_lines)
     if not synthetic and content_lines:
@@ -481,7 +504,7 @@ def validate(stage_id, text, metadata=None, synthetic=False, *, mode='standard')
     errors.extend(_validate_urls(text))
 
     meta = metadata if isinstance(metadata, dict) else {}
-    errors.extend(_validate_evidence(stage["research"], meta, synthetic, stage_id))
+    errors.extend(_validate_evidence(stage["research"], meta, synthetic, stage_id, mode=mode))
 
     if stage_id == 'industry':
         from .full_directions import normalise_directions
@@ -527,7 +550,9 @@ def _validate_urls(text):
     return errors
 
 
-def _validate_evidence(research, meta, synthetic, stage_id):
+def _validate_evidence(research, meta, synthetic, stage_id, *, mode='deep'):
+    # Preserve the original private helper's default for legacy callers;
+    # report validation supplies its requested mode explicitly.
     errors = []
     evidence = meta.get("evidence")
     if not research:
@@ -570,10 +595,11 @@ def _validate_evidence(research, meta, synthetic, stage_id):
             errors.append(f"evidence[{i}] excerpt is just the link")
         canonical_seen.add(canonical_url(url))
 
-    if not synthetic and len(canonical_seen) < MIN_DISTINCT_EVIDENCE_URLS:
+    required_sources = minimum_evidence_urls(mode)
+    if not synthetic and len(canonical_seen) < required_sources:
         errors.append(
             f"live research stage {stage_id!r} cites only {len(canonical_seen)} "
-            f"distinct source URL(s) < {MIN_DISTINCT_EVIDENCE_URLS}"
+            f"distinct source URL(s) < {required_sources}"
         )
     return errors
 
@@ -1128,6 +1154,7 @@ __all__ = [
     "MIN_POLICY_CHECKS",
     "EXPECTED_HIGH_STAR_DIRECTIONS",
     "MIN_DISTINCT_EVIDENCE_URLS",
+    "MIN_STANDARD_DISTINCT_EVIDENCE_URLS",
     "LANDING_STATUSES",
     "FACTUAL_LANDING_STATUSES",
     "TRUSTED_DOMAINS",
@@ -1136,6 +1163,7 @@ __all__ = [
     "SCORE_DIMENSIONS",
     "SCORE_MAX",
     "get_stage",
+    "minimum_evidence_urls",
     "validate",
     "make_synthetic_part",
     "assemble",

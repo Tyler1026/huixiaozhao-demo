@@ -86,7 +86,19 @@ class StageTableTests(unittest.TestCase):
         for s in fc.STAGES:
             self.assertEqual(s["filename"], expected[s["id"]], s["id"])
 
-    def test_min_lines_preserve_research_and_allow_concise_presentation(self):
+    def test_standard_min_lines_use_medium_profile(self):
+        expected = {
+            "economy": 80, "population": 80, "transport": 90, "life": 80,
+            "industry": 100, "competition": 90, "policy": 100, "chain": 120,
+            "enterprises_1": 150, "enterprises_2": 150, "enterprises_3": 150,
+            "fact_check": 60, "scoring": 60, "action": 80, "summary": 40,
+            "compact": 80,
+        }
+        for s in fc.STAGES:
+            self.assertEqual(s["min_lines"], expected[s["id"]], s["id"])
+            self.assertEqual(fc.get_stage(s['id'], mode='standard'), s)
+
+    def test_deep_mode_keeps_original_floors_and_structure(self):
         expected = {
             "economy": 150, "population": 150, "transport": 180, "life": 150,
             "industry": 180, "competition": 180, "policy": 200, "chain": 250,
@@ -95,7 +107,14 @@ class StageTableTests(unittest.TestCase):
             "compact": 80,
         }
         for s in fc.STAGES:
-            self.assertEqual(s["min_lines"], expected[s["id"]], s["id"])
+            deep = fc.get_stage(s['id'], mode='deep')
+            self.assertEqual(deep["min_lines"], expected[s["id"]], s["id"])
+            self.assertEqual(deep['filename'], s['filename'])
+            self.assertEqual(deep['research'], s['research'])
+            parts = s['parts']
+            if s['id'].startswith('enterprises_'):
+                parts = parts[:-1] + ('扩产信号4', '扩产信号5', parts[-1])
+            self.assertEqual(deep['parts'], parts)
 
     def test_research_flag_coverage(self):
         research = {s["id"] for s in fc.STAGES if s["research"]}
@@ -139,6 +158,86 @@ class ValidateBasicsTests(unittest.TestCase):
         text, meta = _good_evidence()
         text = fc.SYNTHETIC_MARK + "\n" + text + "\n" + "占位\n" * 200
         self.assertEqual(fc.validate("economy", text, meta, synthetic=True), [])
+
+
+class MediumProfileBoundaryTests(unittest.TestCase):
+    def test_each_general_chapter_exact_floor_and_one_line_below_in_both_modes(self):
+        _, metadata = _good_evidence()
+        for stage in ('economy', 'population', 'transport', 'life',
+                      'competition', 'policy', 'chain', 'action', 'summary'):
+            for mode in ('standard', 'deep'):
+                with self.subTest(stage=stage, mode=mode):
+                    floor = fc.get_stage(stage, mode=mode)['min_lines']
+                    text = '\n'.join(f'OFFLINE {stage} source-backed analysis fixture {i}'
+                                     for i in range(floor))
+                    self.assertEqual(fc.validate(stage, text, metadata, mode=mode), [])
+                    errors = fc.validate(stage, '\n'.join(text.splitlines()[:-1]), metadata, mode=mode)
+                    self.assertEqual(errors, [f"stage {stage!r} line count {floor - 1} < min_lines {floor}"])
+
+    def test_standard_policy_length_does_not_satisfy_deep_mode(self):
+        _, metadata = _good_evidence()
+        text = '\n'.join(f'OFFLINE current policy clause analysis {i}' for i in range(100))
+        self.assertEqual(fc.validate('policy', text, metadata), [])
+        self.assertEqual(fc.validate('policy', text, metadata, mode='deep'), [
+            "stage 'policy' line count 100 < min_lines 200"])
+
+    def test_source_floor_exact_boundary_for_each_mode(self):
+        _, metadata = _good_evidence()
+        for mode, floor in (('standard', 5), ('deep', 8)):
+            with self.subTest(mode=mode):
+                self.assertEqual(fc.minimum_evidence_urls(mode), floor)
+                enough = {'evidence': metadata['evidence'][:floor]}
+                self.assertEqual(fc.validate('population', _fixture_text(enough['evidence']), enough, mode=mode), [])
+                short = {'evidence': metadata['evidence'][:floor - 1]}
+                errors = fc.validate('population', _fixture_text(short['evidence']), short, mode=mode)
+                self.assertEqual(errors, [f"live research stage 'population' cites only {floor - 1} distinct source URL(s) < {floor}"])
+        self.assertEqual(fc.minimum_evidence_urls(), 5)
+        with self.assertRaises(ValueError):
+            fc.minimum_evidence_urls('unknown')
+
+    def test_private_evidence_helper_retains_legacy_deep_default(self):
+        _, metadata = _good_evidence()
+        metadata['evidence'] = metadata['evidence'][:5]
+        self.assertEqual(fc._validate_evidence(True, metadata, False, 'economy'), [
+            "live research stage 'economy' cites only 5 distinct source URL(s) < 8"])
+        self.assertEqual(fc._validate_evidence(True, metadata, False, 'economy', mode='standard'), [])
+
+    def test_query_variants_still_cannot_fill_standard_source_floor(self):
+        evidence = [{'url': f'https://stats.gov.cn/offline-one-source?query={i}',
+                     'excerpt': f'OFFLINE retrieval excerpt {i}'} for i in range(5)]
+        errors = fc.validate('economy', _fixture_text(evidence), {'evidence': evidence})
+        self.assertIn("live research stage 'economy' cites only 1 distinct source URL(s) < 5", errors)
+
+    def test_smaller_source_floor_preserves_validity_excerpt_and_url_filler_guards(self):
+        _, metadata = _good_evidence()
+        for mode in ('standard', 'deep'):
+            for defect in ('http', 'empty_excerpt', 'link_only_excerpt'):
+                with self.subTest(mode=mode, defect=defect):
+                    evidence = copy.deepcopy(metadata['evidence'][:fc.minimum_evidence_urls(mode)])
+                    if defect == 'http':
+                        evidence[0]['url'] = evidence[0]['url'].replace('https:', 'http:')
+                    else:
+                        evidence[0]['excerpt'] = '' if defect == 'empty_excerpt' else evidence[0]['url']
+                    errors = fc.validate('economy', _fixture_text(evidence), {'evidence': evidence}, mode=mode)
+                    self.assertTrue(any(('https' if defect == 'http' else 'excerpt') in e.lower()
+                                        for e in errors), errors)
+        evidence = metadata['evidence'][:5]
+        repeated_url = '\n'.join(f'OFFLINE distinct statement {i} cites {evidence[0]["url"]}' for i in range(5))
+        errors = fc.validate('economy', _fixture_text(evidence) + '\n' + repeated_url, {'evidence': evidence})
+        self.assertTrue(any('URL repeated' in e for e in errors), errors)
+
+    def test_medium_scoring_keeps_all_dimensions_and_computed_score_checks(self):
+        scores = fc.rank_scores([{'name': f'OFFLINE company {i}', 'direction': 'dir1',
+                                 'dimensions': {key: 6 for key in fc.SCORE_DIMENSIONS}}
+                                for i in range(15)])
+        text = '\n'.join(f'OFFLINE score justification {i}' for i in range(60))
+        self.assertEqual(fc.validate('scoring', text, {'scores': scores}), [])
+        missing_dimension = copy.deepcopy(scores)
+        del missing_dimension[0]['dimensions']['risk']
+        self.assertTrue(fc.validate('scoring', text, {'scores': missing_dimension}))
+        incorrect_total = copy.deepcopy(scores)
+        incorrect_total[0]['weighted_score'] = 0
+        self.assertTrue(fc.validate('scoring', text, {'scores': incorrect_total}))
 
 
 class ConciseCompactTests(unittest.TestCase):
@@ -266,6 +365,27 @@ class ValidateCompanyTests(unittest.TestCase):
         cands, sel = self._companies()
         text, meta = self._fixture(cands, sel)
         self.assertEqual(fc.validate("enterprises_1", text, meta), [])
+
+    def test_medium_enterprise_body_preserves_selection_identity_and_factual_binding(self):
+        cands, selected = self._companies()
+        text, metadata = self._fixture(cands, selected)
+        text = '\n'.join(text.splitlines()[:150])
+        self.assertEqual(fc.validate('enterprises_1', text, metadata), [])
+        for defect in ('unretrieved_identity', 'absent_from_pool', 'unbound_landing'):
+            with self.subTest(defect=defect):
+                invalid = copy.deepcopy(metadata)
+                item = invalid['selected'][0]
+                if defect == 'unretrieved_identity':
+                    item['url'] = 'https://company.cn/offline-unretrieved'
+                    expected = 'company identity needs a retrieved source URL'
+                elif defect == 'absent_from_pool':
+                    item['name'] = 'OFFLINE absent company'
+                    expected = 'selected company is absent from candidate pool'
+                else:
+                    del item['evidence_ref']
+                    expected = 'requires an'
+                errors = fc.validate('enterprises_1', text, invalid)
+                self.assertTrue(any(expected in e for e in errors), errors)
 
     def test_deep_mode_requires_twenty_five_distinct_final_companies(self):
         for count in (15, 24):
