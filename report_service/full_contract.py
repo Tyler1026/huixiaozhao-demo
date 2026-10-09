@@ -212,7 +212,10 @@ _STAGE_MIN_LINES = {
     "economy": 150, "population": 150, "transport": 180, "life": 150,
     "industry": 180, "competition": 180, "policy": 200, "chain": 250,
     "enterprises_1": 250, "enterprises_2": 250, "enterprises_3": 250,
-    "fact_check": 60, "scoring": 100, "action": 150, "summary": 80, "compact": 200,
+    "fact_check": 60, "scoring": 100, "action": 150, "summary": 80,
+    # A concise final presentation reuses the full saved research and scores;
+    # research, source/year, company-count and scoring gates remain separate.
+    "compact": 80,
 }
 
 _STAGE_ORDER = (
@@ -793,9 +796,8 @@ def make_synthetic_part(stage_id, part, job, prior):
         f"地区：{place}",
         f"追踪标识：{digest}",
     ]
-    # Pad so a single part can clear the largest structural line floor (compact
-    # = 200 lines), guaranteeing an assembled synthetic stage always passes the
-    # structural gate and a synthetic full task yields all 16 valid artifacts.
+    # This fixed synthetic padding is independent of live presentation floors;
+    # multi-part assembly clears the retained research-stage line requirements.
     body = [f"{part} 占位段落 {i}。此处无真实结论，仅用于流程与持久化验证。" for i in range(220)]
     text = "\n".join(lines + ["", ""] + body) + "\n"
 

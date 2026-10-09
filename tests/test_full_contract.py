@@ -86,13 +86,13 @@ class StageTableTests(unittest.TestCase):
         for s in fc.STAGES:
             self.assertEqual(s["filename"], expected[s["id"]], s["id"])
 
-    def test_min_lines_match_design(self):
+    def test_min_lines_preserve_research_and_allow_concise_presentation(self):
         expected = {
             "economy": 150, "population": 150, "transport": 180, "life": 150,
             "industry": 180, "competition": 180, "policy": 200, "chain": 250,
             "enterprises_1": 250, "enterprises_2": 250, "enterprises_3": 250,
             "fact_check": 60, "scoring": 100, "action": 150, "summary": 80,
-            "compact": 200,
+            "compact": 80,
         }
         for s in fc.STAGES:
             self.assertEqual(s["min_lines"], expected[s["id"]], s["id"])
@@ -139,6 +139,30 @@ class ValidateBasicsTests(unittest.TestCase):
         text, meta = _good_evidence()
         text = fc.SYNTHETIC_MARK + "\n" + text + "\n" + "占位\n" * 200
         self.assertEqual(fc.validate("economy", text, meta, synthetic=True), [])
+
+
+class ConciseCompactTests(unittest.TestCase):
+    def test_compact_exact_floor_and_one_line_below_in_both_modes(self):
+        for mode in ('standard', 'deep'):
+            with self.subTest(mode=mode):
+                metadata = {'presentation_note': '原始研究和全部评分保留在前序产物'}
+                text = '\n'.join(f'OFFLINE精简版具体依据、风险及行动{index}' for index in range(80))
+                original = copy.deepcopy(metadata)
+                self.assertEqual(fc.validate('compact', text, metadata, mode=mode), [])
+                short = '\n'.join(text.splitlines()[:-1])
+                self.assertEqual(fc.validate('compact', short, metadata, mode=mode), [
+                    "stage 'compact' line count 79 < min_lines 80"])
+                self.assertEqual(metadata, original)
+
+    def test_concise_output_still_rejects_repeated_filler_and_unsafe_urls(self):
+        for mode in ('standard', 'deep'):
+            with self.subTest(mode=mode):
+                repeated = '\n'.join(['重复通用说明'] * 80)
+                self.assertIn('repeated filler exceeds 20 percent of substantive lines',
+                              fc.validate('compact', repeated, {}, mode=mode))
+                text = '\n'.join(f'OFFLINE精简版具体行动{index}' for index in range(79))
+                self.assertTrue(any('https' in error.lower() for error in
+                                    fc.validate('compact', text + '\nhttp://stats.gov.cn/offline', {}, mode=mode)))
 
 
 class ValidateUrlTests(unittest.TestCase):
