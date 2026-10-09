@@ -231,13 +231,18 @@ class FullLiveProvider:
                 stage_id, part, place, prior, prior_text, floor, mode,
                 parsed, metadata, previous, evidence)
         previous_text = previous.get('text', '') if isinstance(previous, dict) else previous
+        if mode == 'standard' and stage_id == 'fact_check' and part == '五星企业信号':
+            metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior)
+            feedback = self._high_star_gap(parsed, metadata)
+            if feedback:
+                text, metadata = self._project_standard_high_star(prior, metadata, feedback)
         self._validate_part_text(text, floor, previous_text)
         if metadata is None:
             metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior)
         if stage_id.startswith('enterprises_'):
             self._validate_company_part(part, metadata, previous)
         if stage_id == 'fact_check':
-            if part == '五星企业信号':
+            if part == '五星企业信号' and mode == 'deep':
                 feedback = self._high_star_gap(parsed, metadata)
                 if feedback:
                     # One correction uses the same prior and retrieved excerpts.
@@ -275,6 +280,68 @@ class FullLiveProvider:
         return {"text": text, "metadata": metadata}
 
     # -- helpers (reuse composed provider transport/search/chat) ---------------
+
+    @staticmethod
+    def _project_standard_high_star(prior, metadata, feedback):
+        """Replace an ungrounded signal narrative with explicit pending work.
+
+        No model claim, verdict or body survives this projection. Existing
+        economic/policy checkpoints stay in prior; this part contributes no
+        high-star factual checks. Names and links come only from saved records
+        and usable evidence, and the unchanged part/stage gates still apply.
+        """
+        industry = (prior or {}).get('industry', {}) if isinstance(prior, dict) else {}
+        records = industry.get('metadata', {}).get('directions', []) if isinstance(industry, dict) else []
+        directions = {item.get('id'): item.get('name') for item in records
+                      if isinstance(item, dict) and item.get('id') in ('dir1', 'dir2', 'dir3')
+                      and isinstance(item.get('name'), str) and item['name'].strip()}
+        if len(directions) != 3:
+            raise FullProviderError('high-star projection needs three saved direction names', 'quality')
+        source_urls = {canonical_url(item.get('url')) for item in metadata['evidence']}
+        listed_urls = set()
+        lines = ['投资与扩产信号核验：本批具体投资主张统一列为待核实，不作双源一致的事实确认。',
+                 '检索摘录涉及企业不等于投资金额、产能、项目落点或投产时间已相互印证。']
+        for number in (1, 2, 3):
+            direction = directions[f'dir{number}']
+            saved = (prior or {}).get(f'enterprises_{number}', {}).get('metadata', {}).get('selected', [])
+            companies, seen = [], set()
+            for item in saved:
+                name = item.get('name') if isinstance(item, dict) else None
+                if isinstance(name, str) and name.strip() and name not in seen:
+                    seen.add(name)
+                    companies.append(item)
+            if not companies:
+                raise FullProviderError('high-star projection needs saved selected companies', 'quality')
+            targets = companies[:3]
+            names = '、'.join(item['name'] for item in targets)
+            refs = []
+            for company in targets:
+                for key in ('url', 'evidence_ref'):
+                    url = company.get(key)
+                    canonical = canonical_url(url)
+                    if isinstance(url, str) and canonical in source_urls and canonical not in listed_urls:
+                        refs.append(url)
+                        listed_urls.add(canonical)
+            lines.extend([
+                f'产业方向：{direction}。',
+                f'{direction}已保存精选名单共{len(companies)}家，本批优先核查：{names}。',
+                f'{direction}核验状态：本次尚未形成可复核的完整投资信号，相关主张待核实。',
+                f'请与{targets[0]["name"]}核对项目投资主体、关联公司及公告原件，避免不同企业的报道串用。',
+                f'请对{names}逐项核对投资金额、币种及总投资和募集资金的口径，不将拟募资直接视为已投资。',
+                f'请对{names}核实项目所在地和行政范围，区分外地扩产与目标地区实际落地。',
+                f'请向{targets[-1]["name"]}核对规划产能、实际投产状态与公告日期，不能仅凭企业名称确认项目。',
+                f'{direction}后续应取得同一企业、同一项目的两份可核对原文；缺少对应原句时保留待核实。',
+            ])
+            if refs:
+                lines.append(f'{direction}已保存的核查入口： ' + ' '.join(refs)
+                             + ' （入口只供回查，不证明本批主张已获印证。）')
+        missing = '、'.join(directions[item] for item in feedback['missing_directions'])
+        limitation = (f'缺少完整可复核投资信号的方向：{missing}。' if missing
+                      else '另有投资主张未获得对应的可复核原句。')
+        note = (limitation + '本批不提交高星事实确认；精选企业身份或来源链接本身不能证明投资主张一致，'
+                '项目主体、金额口径、所在地、产能及日期仍须取得对应原文核实。')
+        return '\n'.join(lines), {'evidence': metadata['evidence'], 'checks': [],
+                                  'high_star_unavailable': True, 'high_star_note': note}
 
     @staticmethod
     def _high_star_gap(parsed, metadata):
