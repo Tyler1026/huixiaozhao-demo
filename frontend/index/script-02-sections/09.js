@@ -276,8 +276,31 @@ function _frozenScoreIn(pk, topic){
    REPORTSTATE[子项目].scoreByTopic）永远查不到，一律落到现场重算，同一份报告
    在报告页显示存储值、在对接页显示重算值（实测 60 vs 56、83 vs 60、80 vs 55）。
    现在允许传入 projKey：按该项目取自己的冻结值与自己的上传/确认数据。 */
+// Native publications store a fact-check ratio, a different measure from the
+// legacy text-density estimate. Keep the exact topic boundary and preserve 0.
+function nativeReportState(topic, projKey){
+  var pk=projKey||cur, p=PROJECTS[pk], st=REPORTSTATE[pk];
+  if(!p||!st||!st.sourceReportId||st.sourceReportId!==p.reportRequestId
+      ||topic!==p.topic||topic!==st.topic||st.scoreBasis!=='核验一致项比例') return null;
+  return st;
+}
+function nativeReportScore(topic, projKey){
+  var st=nativeReportState(topic,projKey);
+  return st&&typeof st.score==='number'&&isFinite(st.score)&&st.score>=0&&st.score<=100 ? st.score : null;
+}
+function topicScoreLabel(topic, projKey){
+  return nativeReportScore(topic,projKey)!==null ? '核验一致项比例' : '置信度';
+}
+function topicScoreDisplay(topic, projKey){
+  var pk=projKey||cur, st=nativeReportState(topic,pk);
+  if(st && st.scoreStatus==='unclassified') return '核验分类待校核';
+  if(st && (st.scoreStatus==='unavailable'||nativeReportScore(topic,pk)===null)) return '暂无核验结论';
+  return topicScoreLabel(topic,pk)+' '+topicScore(topic,pk)+'%';
+}
 function topicScore(topic, projKey){
   var _pk = projKey || cur;
+  var nativeScore=nativeReportScore(topic,_pk);
+  if(nativeScore!==null) return nativeScore;
   var cityBase = kbReadiness().score;   // 城市智库整体就绪度（所有方向共享的背书，占小头）
   if(!topic) return Math.min(96, Math.max(42, cityBase));
 

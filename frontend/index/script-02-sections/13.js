@@ -135,7 +135,7 @@ function detailReport(p){
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>报告状态</h3>'+(_topicHasReport
         ? '<ul class="check-list">'+
-            '<li><i class="i">'+(_topicFull?'✅':'✎')+'</i>'+(_topicFull?'完整报告已生成':'初步草稿')+' · 置信度 '+topicScore(p.topic)+'%</li>'+
+            '<li><i class="i">'+(_topicFull?'✅':'✎')+'</i>'+(_topicFull?'完整报告已生成':'初步草稿')+' · '+topicScoreDisplay(p.topic)+'</li>'+
             '<li><i class="i"></i>产业分析方向：'+p.topic+'</li>'+
             '<li><i class="i"></i>生成时间：'+(st&&st.ts?new Date(st.ts).toLocaleDateString('zh-CN'):'未知')+'</li>'+
           '</ul>'

@@ -309,7 +309,7 @@ function viewCurrentReport(){
       '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
         '<span style="font-size:13px;font-weight:700;color:#1d4ed8">📊 产业分析报告（完整版）</span>'+
         '<span style="font-size:11.5px;color:#8492a6">'+rs.topic+'</span>'+
-        '<span style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f0fdf4;color:#166534">置信度 '+topicScore(rs.topic)+'%</span>'+
+        '<span style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f0fdf4;color:#166534">'+topicScoreDisplay(rs.topic)+'</span>'+
         '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
       '</div>'+
       '<div style="padding:18px 20px;font-size:13px;line-height:1.85;color:#1e293b">'+
@@ -317,7 +317,7 @@ function viewCurrentReport(){
       '</div>'+
       '<div style="padding:10px 16px;background:#f9fafb;border-top:1px solid #f0f4ff;font-size:11px;color:#9aa5b5">'+
         '生成时间：'+new Date(rs.ts).toLocaleDateString('zh-CN')+' · '+
-        '数据来源：慧小招实测报告+DeepSeek分析 · 置信度'+topicScore(rs.topic)+'%'+
+        '数据来源：慧小招实测报告+DeepSeek分析 · '+topicScoreDisplay(rs.topic)+
       '</div>'+
     '</div>');
 
@@ -419,6 +419,9 @@ function downloadReportPDF(mode){
   var city=p?p.city:''; var topic=rs.topic||'';
   var date=new Date(rs.ts).toLocaleDateString('zh-CN',{year:'numeric',month:'long',day:'numeric'});
   var score=rs.score||'—';
+  var scoreMeta=nativeReportState(topic)
+    ? '<span>'+topicScoreDisplay(topic)+'</span>'
+    : '<span>研判置信度<b>'+score+'%</b></span>';
   // 上传材料来源清单（证明基于真实数据）
   var srcs=(UPLOADS[cur]||[]).map(function(u){return u.name;});
   var bodyMd=rs.text;
@@ -465,7 +468,7 @@ function downloadReportPDF(mode){
       '<div class="brand"><div class="logo">慧</div><div><div class="bname">慧小招 · AI 招商智能体</div><div class="bsub">HUIXIAOZHAO INVESTMENT INTELLIGENCE</div></div></div>'+
       '<h1>'+city+'市招商研判报告</h1>'+
       '<div class="subtitle">'+topic+(mode==='short'?' · 精简版':' · 完整版')+'</div>'+
-      '<div class="meta"><span>生成日期<b>'+date+'</b></span><span>研判置信度<b>'+score+'%</b></span><span>分析引擎<b>DeepSeek + 慧小招智库</b></span></div>'+
+      '<div class="meta"><span>生成日期<b>'+date+'</b></span>'+scoreMeta+'<span>分析引擎<b>DeepSeek + 慧小招智库</b></span></div>'+
     '</div>'+
     srcHtml+
     '<div class="report-body">'+bodyHtml+'</div>'+
@@ -503,12 +506,13 @@ function downloadReportTxt(mode){
   var city=p?p.city:'';
   var topic=rs.topic||'';
   var date=new Date(rs.ts).toLocaleDateString('zh-CN');
+  var scoreText=nativeReportState(topic) ? topicScoreDisplay(topic) : '置信度：'+rs.score+'%';
 
   var content, filename;
   if(mode==='full'){
     content=[
       city+' · '+topic+' 招商研判报告（完整版）',
-      '生成时间：'+date+'  |  置信度：'+rs.score+'%',
+      '生成时间：'+date+'  |  '+scoreText,
       '数据来源：慧小招实测报告 + DeepSeek AI分析',
       '════════════════════════════════',
       '',
@@ -527,7 +531,7 @@ function downloadReportTxt(mode){
     });
     content=[
       city+' · '+topic+' 招商研判报告（精简版）',
-      '生成时间：'+date+'  |  置信度：'+rs.score+'%',
+      '生成时间：'+date+'  |  '+scoreText,
       '────────────────────',
       '',
     ].concat(sections.map(function(s,i){return '['+(i+1)+'] '+s;})).concat([
@@ -545,9 +549,6 @@ function downloadReportTxt(mode){
   setTimeout(function(){URL.revokeObjectURL(url);a.remove();},300);
   toast('✓ 报告已下载：'+filename);
 }
-
-
-
 /* ===== 数据层：多项目（优化点：解决写死随州）===== */
 var PROJECTS={};
 
@@ -2926,8 +2927,31 @@ function _frozenScoreIn(pk, topic){
    REPORTSTATE[子项目].scoreByTopic）永远查不到，一律落到现场重算，同一份报告
    在报告页显示存储值、在对接页显示重算值（实测 60 vs 56、83 vs 60、80 vs 55）。
    现在允许传入 projKey：按该项目取自己的冻结值与自己的上传/确认数据。 */
+// Native publications store a fact-check ratio, a different measure from the
+// legacy text-density estimate. Keep the exact topic boundary and preserve 0.
+function nativeReportState(topic, projKey){
+  var pk=projKey||cur, p=PROJECTS[pk], st=REPORTSTATE[pk];
+  if(!p||!st||!st.sourceReportId||st.sourceReportId!==p.reportRequestId
+      ||topic!==p.topic||topic!==st.topic||st.scoreBasis!=='核验一致项比例') return null;
+  return st;
+}
+function nativeReportScore(topic, projKey){
+  var st=nativeReportState(topic,projKey);
+  return st&&typeof st.score==='number'&&isFinite(st.score)&&st.score>=0&&st.score<=100 ? st.score : null;
+}
+function topicScoreLabel(topic, projKey){
+  return nativeReportScore(topic,projKey)!==null ? '核验一致项比例' : '置信度';
+}
+function topicScoreDisplay(topic, projKey){
+  var pk=projKey||cur, st=nativeReportState(topic,pk);
+  if(st && st.scoreStatus==='unclassified') return '核验分类待校核';
+  if(st && (st.scoreStatus==='unavailable'||nativeReportScore(topic,pk)===null)) return '暂无核验结论';
+  return topicScoreLabel(topic,pk)+' '+topicScore(topic,pk)+'%';
+}
 function topicScore(topic, projKey){
   var _pk = projKey || cur;
+  var nativeScore=nativeReportScore(topic,_pk);
+  if(nativeScore!==null) return nativeScore;
   var cityBase = kbReadiness().score;   // 城市智库整体就绪度（所有方向共享的背书，占小头）
   if(!topic) return Math.min(96, Math.max(42, cityBase));
 
@@ -3972,7 +3996,7 @@ function projMgmtPage(p){
             '<span style="font-size:14px">📋</span>'+
             '<div style="flex:1">'+
               '<div style="font-size:13px;font-weight:650;color:#0b183b">产业分析报告</div>'+
-              '<div style="font-size:11.5px;color:#8492a6">置信度 '+topicScore(rs.topic, k)+'% · '+new Date(rs.ts).toLocaleDateString('zh-CN')+'</div>'+
+              '<div style="font-size:11.5px;color:#8492a6">'+topicScoreDisplay(rs.topic, k)+' · '+new Date(rs.ts).toLocaleDateString('zh-CN')+'</div>'+
             '</div>'+
             '<button onclick="cur=\''+k+'\';viewCurrentReport()" style="padding:5px 12px;background:#fff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer">查看报告</button>'+
           '</div>'+
@@ -5165,7 +5189,10 @@ function renderHistoryReports(key, topicFilter){
     h+='<span style="font-size:11px;padding:1px 7px;border-radius:10px;background:'+phaseBg+';color:'+phaseColor+';font-weight:700">'+phaseLabel+'</span>';
     h+='<span style="font-size:12px;font-weight:600;color:#374151;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+rep.topic+'</span>';
     h+='<span style="font-size:11px;color:#94a3b8;flex-shrink:0">'+dt+'</span>';
-    if(rep.score!=null) h+='<span style="font-size:11px;color:#64748b;flex-shrink:0;margin-left:4px">'+rep.score+'%</span>';
+    var nativeHistory=nativeReportState(rep.topic,key);
+    var currentNative=nativeHistory && (nativeHistory.aiReportByTopic||{})[rep.topic]===rep.text
+      && rep.ts===((nativeHistory.tsByTopic||{})[rep.topic]||nativeHistory.ts);
+    if(rep.score!=null || currentNative) h+='<span style="font-size:11px;color:#64748b;flex-shrink:0;margin-left:4px">'+(currentNative?topicScoreDisplay(rep.topic,key):rep.score+'%')+'</span>';
     // 全部方向模式下，点报告可一键切回该方向
     h+='<button onclick="event.stopPropagation();selectTopic(\''+String(rep.topic).replace(/'/g,"\\'")+'\')" title="切到该方向" style="flex-shrink:0;margin-left:6px;padding:2px 8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:11px;color:#1d4ed8;cursor:pointer;font-weight:600">切到此方向</button>';
     h+='<button onclick="event.stopPropagation();deleteHistoryReport(\''+key+'\','+oi+')" style="flex-shrink:0;margin-left:4px;padding:2px 8px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;font-size:11px;color:#ef4444;cursor:pointer;font-weight:600">删除</button>';
@@ -6246,7 +6273,7 @@ function triggerReport(phase){
           '<div style="font-size:11.5px;color:'+(phase===1?'#b45309':'#3b82f6')+';margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+p.topic+'</div>'+
         '</div>'+
         '<div style="display:flex;align-items:center;gap:8px">'+
-          '<span style="padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:'+(topicScore(p.topic)>=80?'#dcfce7':'#fef9c3')+';color:'+(topicScore(p.topic)>=80?'#166534':'#92400e')+';border:1px solid '+(topicScore(p.topic)>=80?'#86efac':'#fde68a')+'">置信度 '+topicScore(p.topic)+'%</span>'+
+          '<span style="padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:'+(topicScore(p.topic)>=80?'#dcfce7':'#fef9c3')+';color:'+(topicScore(p.topic)>=80?'#166534':'#92400e')+';border:1px solid '+(topicScore(p.topic)>=80?'#86efac':'#fde68a')+'">'+topicScoreDisplay(p.topic)+'</span>'+
           '<div id="reportSpinner" style="width:18px;height:18px;border:2.5px solid #e2e8f0;border-top-color:'+(phase===1?'#f59e0b':'#1a56db')+';border-radius:50%;animation:spin 1s linear infinite;flex-shrink:0"></div>'+
         '</div>'+
       '</div>'+
@@ -6649,13 +6676,14 @@ function submitDemand(){
   REPORTSTATE[key]=JSON.parse(JSON.stringify(rs));
   REPORTSTATE[key].topic=topic;
   REPORTSTATE[key].phase=2;
+  if(nativeReportState(topic)) PROJECTS[key].reportRequestId=p.reportRequestId;
 
   DEMANDS.push({
     id:'d'+Date.now().toString(36),
     projKey:key,
     city:p.city, gov:p.org+'·'+p.who,
     topic:topic, domain:topic.replace('补链','').replace('升级',''),
-    need:'基于研判报告（置信度'+topicScore(topic)+'%），见报告全文',
+    need:'基于研判报告（'+(nativeReportState(topic)?topicScoreDisplay(topic):'置信度'+topicScore(topic)+'%')+'），见报告全文',
     submit:'刚刚', res:'none', resLabel:'待研判', clues:0,
     note:rs.text?rs.text.slice(0,120)+'…':'', ai:''
   });
@@ -7635,7 +7663,7 @@ function reportHtml(p){
     '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
       '<span style="font-size:12px;font-weight:650;color:#1a56db">📋 产业分析报告</span>'+
       '<span style="font-size:11.5px;color:#4a5568">'+p.topic+'</span>'+
-      '<span style="margin-left:auto;font-size:11px;color:'+(topicScore(p.topic)>=80?'#22c55e':'#f59e0b')+'">置信度 '+topicScore(p.topic)+'%</span>'+
+      '<span style="margin-left:auto;font-size:11px;color:'+(topicScore(p.topic)>=80?'#22c55e':'#f59e0b')+'">'+topicScoreDisplay(p.topic)+'</span>'+
       '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
     '</div>'+
     '<div style="padding:16px 18px;font-size:13px;color:#1e293b;line-height:1.8">'+
@@ -8553,7 +8581,7 @@ function detailReport(p){
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>报告状态</h3>'+(_topicHasReport
         ? '<ul class="check-list">'+
-            '<li><i class="i">'+(_topicFull?'✅':'✎')+'</i>'+(_topicFull?'完整报告已生成':'初步草稿')+' · 置信度 '+topicScore(p.topic)+'%</li>'+
+            '<li><i class="i">'+(_topicFull?'✅':'✎')+'</i>'+(_topicFull?'完整报告已生成':'初步草稿')+' · '+topicScoreDisplay(p.topic)+'</li>'+
             '<li><i class="i"></i>产业分析方向：'+p.topic+'</li>'+
             '<li><i class="i"></i>生成时间：'+(st&&st.ts?new Date(st.ts).toLocaleDateString('zh-CN'):'未知')+'</li>'+
           '</ul>'

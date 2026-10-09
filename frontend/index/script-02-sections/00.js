@@ -56,7 +56,7 @@ function viewCurrentReport(){
       '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
         '<span style="font-size:13px;font-weight:700;color:#1d4ed8">📊 产业分析报告（完整版）</span>'+
         '<span style="font-size:11.5px;color:#8492a6">'+rs.topic+'</span>'+
-        '<span style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f0fdf4;color:#166534">置信度 '+topicScore(rs.topic)+'%</span>'+
+        '<span style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f0fdf4;color:#166534">'+topicScoreDisplay(rs.topic)+'</span>'+
         '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
       '</div>'+
       '<div style="padding:18px 20px;font-size:13px;line-height:1.85;color:#1e293b">'+
@@ -64,7 +64,7 @@ function viewCurrentReport(){
       '</div>'+
       '<div style="padding:10px 16px;background:#f9fafb;border-top:1px solid #f0f4ff;font-size:11px;color:#9aa5b5">'+
         '生成时间：'+new Date(rs.ts).toLocaleDateString('zh-CN')+' · '+
-        '数据来源：慧小招实测报告+DeepSeek分析 · 置信度'+topicScore(rs.topic)+'%'+
+        '数据来源：慧小招实测报告+DeepSeek分析 · '+topicScoreDisplay(rs.topic)+
       '</div>'+
     '</div>');
 
@@ -166,6 +166,9 @@ function downloadReportPDF(mode){
   var city=p?p.city:''; var topic=rs.topic||'';
   var date=new Date(rs.ts).toLocaleDateString('zh-CN',{year:'numeric',month:'long',day:'numeric'});
   var score=rs.score||'—';
+  var scoreMeta=nativeReportState(topic)
+    ? '<span>'+topicScoreDisplay(topic)+'</span>'
+    : '<span>研判置信度<b>'+score+'%</b></span>';
   // 上传材料来源清单（证明基于真实数据）
   var srcs=(UPLOADS[cur]||[]).map(function(u){return u.name;});
   var bodyMd=rs.text;
@@ -212,7 +215,7 @@ function downloadReportPDF(mode){
       '<div class="brand"><div class="logo">慧</div><div><div class="bname">慧小招 · AI 招商智能体</div><div class="bsub">HUIXIAOZHAO INVESTMENT INTELLIGENCE</div></div></div>'+
       '<h1>'+city+'市招商研判报告</h1>'+
       '<div class="subtitle">'+topic+(mode==='short'?' · 精简版':' · 完整版')+'</div>'+
-      '<div class="meta"><span>生成日期<b>'+date+'</b></span><span>研判置信度<b>'+score+'%</b></span><span>分析引擎<b>DeepSeek + 慧小招智库</b></span></div>'+
+      '<div class="meta"><span>生成日期<b>'+date+'</b></span>'+scoreMeta+'<span>分析引擎<b>DeepSeek + 慧小招智库</b></span></div>'+
     '</div>'+
     srcHtml+
     '<div class="report-body">'+bodyHtml+'</div>'+
@@ -250,12 +253,13 @@ function downloadReportTxt(mode){
   var city=p?p.city:'';
   var topic=rs.topic||'';
   var date=new Date(rs.ts).toLocaleDateString('zh-CN');
+  var scoreText=nativeReportState(topic) ? topicScoreDisplay(topic) : '置信度：'+rs.score+'%';
 
   var content, filename;
   if(mode==='full'){
     content=[
       city+' · '+topic+' 招商研判报告（完整版）',
-      '生成时间：'+date+'  |  置信度：'+rs.score+'%',
+      '生成时间：'+date+'  |  '+scoreText,
       '数据来源：慧小招实测报告 + DeepSeek AI分析',
       '════════════════════════════════',
       '',
@@ -274,7 +278,7 @@ function downloadReportTxt(mode){
     });
     content=[
       city+' · '+topic+' 招商研判报告（精简版）',
-      '生成时间：'+date+'  |  置信度：'+rs.score+'%',
+      '生成时间：'+date+'  |  '+scoreText,
       '────────────────────',
       '',
     ].concat(sections.map(function(s,i){return '['+(i+1)+'] '+s;})).concat([
@@ -292,6 +296,3 @@ function downloadReportTxt(mode){
   setTimeout(function(){URL.revokeObjectURL(url);a.remove();},300);
   toast('✓ 报告已下载：'+filename);
 }
-
-
-

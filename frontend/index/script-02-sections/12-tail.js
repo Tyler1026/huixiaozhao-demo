@@ -600,7 +600,7 @@ function projMgmtPage(p){
             '<span style="font-size:14px">📋</span>'+
             '<div style="flex:1">'+
               '<div style="font-size:13px;font-weight:650;color:#0b183b">产业分析报告</div>'+
-              '<div style="font-size:11.5px;color:#8492a6">置信度 '+topicScore(rs.topic, k)+'% · '+new Date(rs.ts).toLocaleDateString('zh-CN')+'</div>'+
+              '<div style="font-size:11.5px;color:#8492a6">'+topicScoreDisplay(rs.topic, k)+' · '+new Date(rs.ts).toLocaleDateString('zh-CN')+'</div>'+
             '</div>'+
             '<button onclick="cur=\''+k+'\';viewCurrentReport()" style="padding:5px 12px;background:#fff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer">查看报告</button>'+
           '</div>'+
@@ -1793,7 +1793,10 @@ function renderHistoryReports(key, topicFilter){
     h+='<span style="font-size:11px;padding:1px 7px;border-radius:10px;background:'+phaseBg+';color:'+phaseColor+';font-weight:700">'+phaseLabel+'</span>';
     h+='<span style="font-size:12px;font-weight:600;color:#374151;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+rep.topic+'</span>';
     h+='<span style="font-size:11px;color:#94a3b8;flex-shrink:0">'+dt+'</span>';
-    if(rep.score!=null) h+='<span style="font-size:11px;color:#64748b;flex-shrink:0;margin-left:4px">'+rep.score+'%</span>';
+    var nativeHistory=nativeReportState(rep.topic,key);
+    var currentNative=nativeHistory && (nativeHistory.aiReportByTopic||{})[rep.topic]===rep.text
+      && rep.ts===((nativeHistory.tsByTopic||{})[rep.topic]||nativeHistory.ts);
+    if(rep.score!=null || currentNative) h+='<span style="font-size:11px;color:#64748b;flex-shrink:0;margin-left:4px">'+(currentNative?topicScoreDisplay(rep.topic,key):rep.score+'%')+'</span>';
     // 全部方向模式下，点报告可一键切回该方向
     h+='<button onclick="event.stopPropagation();selectTopic(\''+String(rep.topic).replace(/'/g,"\\'")+'\')" title="切到该方向" style="flex-shrink:0;margin-left:6px;padding:2px 8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:11px;color:#1d4ed8;cursor:pointer;font-weight:600">切到此方向</button>';
     h+='<button onclick="event.stopPropagation();deleteHistoryReport(\''+key+'\','+oi+')" style="flex-shrink:0;margin-left:4px;padding:2px 8px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;font-size:11px;color:#ef4444;cursor:pointer;font-weight:600">删除</button>';
@@ -2874,7 +2877,7 @@ function triggerReport(phase){
           '<div style="font-size:11.5px;color:'+(phase===1?'#b45309':'#3b82f6')+';margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+p.topic+'</div>'+
         '</div>'+
         '<div style="display:flex;align-items:center;gap:8px">'+
-          '<span style="padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:'+(topicScore(p.topic)>=80?'#dcfce7':'#fef9c3')+';color:'+(topicScore(p.topic)>=80?'#166534':'#92400e')+';border:1px solid '+(topicScore(p.topic)>=80?'#86efac':'#fde68a')+'">置信度 '+topicScore(p.topic)+'%</span>'+
+          '<span style="padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:'+(topicScore(p.topic)>=80?'#dcfce7':'#fef9c3')+';color:'+(topicScore(p.topic)>=80?'#166534':'#92400e')+';border:1px solid '+(topicScore(p.topic)>=80?'#86efac':'#fde68a')+'">'+topicScoreDisplay(p.topic)+'</span>'+
           '<div id="reportSpinner" style="width:18px;height:18px;border:2.5px solid #e2e8f0;border-top-color:'+(phase===1?'#f59e0b':'#1a56db')+';border-radius:50%;animation:spin 1s linear infinite;flex-shrink:0"></div>'+
         '</div>'+
       '</div>'+
@@ -3277,13 +3280,14 @@ function submitDemand(){
   REPORTSTATE[key]=JSON.parse(JSON.stringify(rs));
   REPORTSTATE[key].topic=topic;
   REPORTSTATE[key].phase=2;
+  if(nativeReportState(topic)) PROJECTS[key].reportRequestId=p.reportRequestId;
 
   DEMANDS.push({
     id:'d'+Date.now().toString(36),
     projKey:key,
     city:p.city, gov:p.org+'·'+p.who,
     topic:topic, domain:topic.replace('补链','').replace('升级',''),
-    need:'基于研判报告（置信度'+topicScore(topic)+'%），见报告全文',
+    need:'基于研判报告（'+(nativeReportState(topic)?topicScoreDisplay(topic):'置信度'+topicScore(topic)+'%')+'），见报告全文',
     submit:'刚刚', res:'none', resLabel:'待研判', clues:0,
     note:rs.text?rs.text.slice(0,120)+'…':'', ai:''
   });
@@ -4263,7 +4267,7 @@ function reportHtml(p){
     '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
       '<span style="font-size:12px;font-weight:650;color:#1a56db">📋 产业分析报告</span>'+
       '<span style="font-size:11.5px;color:#4a5568">'+p.topic+'</span>'+
-      '<span style="margin-left:auto;font-size:11px;color:'+(topicScore(p.topic)>=80?'#22c55e':'#f59e0b')+'">置信度 '+topicScore(p.topic)+'%</span>'+
+      '<span style="margin-left:auto;font-size:11px;color:'+(topicScore(p.topic)>=80?'#22c55e':'#f59e0b')+'">'+topicScoreDisplay(p.topic)+'</span>'+
       '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
     '</div>'+
     '<div style="padding:16px 18px;font-size:13px;color:#1e293b;line-height:1.8">'+

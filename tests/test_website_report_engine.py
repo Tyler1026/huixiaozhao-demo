@@ -18,7 +18,7 @@ from backend.sync_transaction import file_session, handle_sync_serialized
 from backend.sync_route import SyncDependencies
 from report_service import hosted
 from report_service.hosted import configured_environment, readiness, start_supervisor
-from report_service.website_queue import ENGINE, TENANT, TOPICS, WebsiteQueue, fence_updates, report_id, request_publication
+from report_service.website_queue import ENGINE, TENANT, TOPICS, WebsiteQueue, _balanced_chunks, _chunks, fence_updates, report_id, request_publication
 
 
 class MemoryStore:
@@ -160,6 +160,97 @@ class WebsiteEngineTests(unittest.TestCase):
                 report_file(handler, False, None, str(self.path))
                 handler.send_response.assert_called_once_with(200)
                 self.assertEqual(handler.wfile.getvalue(), self.store.payloads[artifact])
+
+    def test_native_publication_binds_saved_body_to_exact_frontend_topic(self):
+        self.completed()
+        state = self.read(); state['REPORT_REQUESTS'][0]['pushRequested'] = True; self.write(state)
+        self.queue.mirror()
+        final = self.read(); key = 'report_rrfixture'
+        project, report = final['PROJECTS'][key], final['REPORTSTATE'][key]
+        topic = project['topic']
+        body = self.store.payloads['09_compact_report.md'].decode()
+        self.assertEqual(report['topic'], topic)
+        self.assertEqual(report['text'], body)
+        self.assertEqual(report['aiReportByTopic'], {topic: body})
+        self.assertEqual(report['phase'], 2)
+        self.assertEqual(report['phaseByTopic'], {topic: 2})
+        self.assertEqual(report['tsByTopic'], {topic: report['ts']})
+        self.assertEqual(report['scoreBasis'], '核验一致项比例')
+        self.assertEqual(report['sourceReportId'], project['reportRequestId'])
+        self.assertEqual(project['clues'], [])
+
+    def test_native_publication_keeps_true_zero_check_ratio(self):
+        self.completed()
+        state = self.read(); state['REPORT_REQUESTS'][0]['pushRequested'] = True; self.write(state)
+        self.store.payloads['evidence.json'] = json.dumps({'stages': {
+            '06b_fact_check.md': {'checks': [{'verdict': '不可用'}, {'verdict': '不一致'}]}}}).encode()
+        self.queue.mirror()
+        report = self.read()['REPORTSTATE']['report_rrfixture']
+        self.assertEqual(report['score'], 0)
+        self.assertEqual(report['scoreStatus'], 'classified')
+        self.assertEqual(report['checkVerdictCounts'], {'consistent': 0, 'inconsistent': 1, 'pending': 1, 'unclassified': 0})
+
+    def test_free_form_check_verdict_is_unclassified_without_inflating_agreement(self):
+        self.completed()
+        state = self.read(); state['REPORT_REQUESTS'][0]['pushRequested'] = True; self.write(state)
+        self.store.payloads['evidence.json'] = json.dumps({'stages': {
+            '06b_fact_check.md': {'checks': [{'verdict': '多来源印证但松江落地待核实'}, {'verdict': '一致'}]}}}).encode()
+        self.queue.mirror()
+        report = self.read()['REPORTSTATE']['report_rrfixture']
+        self.assertEqual(report['score'], 50)
+        self.assertEqual(report['scoreStatus'], 'unclassified')
+        self.assertEqual(report['checkVerdictCounts']['unclassified'], 1)
+        self.assertEqual(report['checkVerdictCounts']['consistent'], 1)
+
+    def test_topic_cap_balances_original_chunks_and_keeps_each_file_boundaries(self):
+        groups = [[{'text': f'OFFLINE file{f} chunk{i}', 'sourceFile': f'file{f}.md', 'ts': i}
+                   for i in range(n)] for f, n in enumerate((74, 78, 84, 30))]
+        original = copy.deepcopy(groups)
+        selected = _balanced_chunks(groups)
+        self.assertEqual(len(selected), 60)
+        self.assertEqual(groups, original)
+        for group in groups:
+            picked = [row for row in selected if row['sourceFile'] == group[0]['sourceFile']]
+            self.assertEqual(len(picked), 15)
+            self.assertIs(picked[0], group[0])
+            self.assertIs(picked[-1], group[-1])
+            self.assertIs(picked[7], group[(len(group) - 1) // 2])
+            for row in picked:
+                self.assertTrue(any(row is original_row for original_row in group))
+        self.assertEqual([row['sourceFile'] for row in selected[:4]], [group[0]['sourceFile'] for group in groups])
+        altered = copy.deepcopy(groups)
+        for group in altered:
+            for row in group: row['ts'] += 90000
+        self.assertEqual([row['text'] for row in selected], [row['text'] for row in _balanced_chunks(altered)])
+
+    def test_topic_cap_redistributes_short_files_without_duplicates_or_fabrication(self):
+        groups = [[], [{'text': 'only short source'}], [{'text': f'long source {i}'} for i in range(100)]]
+        selected = _balanced_chunks(groups)
+        self.assertEqual(len(selected), 60)
+        self.assertIs(selected[0], groups[1][0])
+        self.assertIs(selected[1], groups[2][0])
+        self.assertIs(selected[-1], groups[2][-1])
+        self.assertEqual(len({id(row) for row in selected}), 60)
+        self.assertEqual(_balanced_chunks([[], []]), [])
+        small = [[{'text': 'a'}, {'text': 'b'}], [{'text': 'c'}]]
+        self.assertEqual(_balanced_chunks(small), [small[0][0], small[1][0], small[0][1]])
+
+    def test_native_publication_topic_cap_keeps_all_source_files_and_only_whole_original_text(self):
+        self.completed()
+        state = self.read(); state['REPORT_REQUESTS'][0]['pushRequested'] = True; self.write(state)
+        self.queue.mirror()
+        topics = self.read()['PROJECTS']['report_rrfixture']['kb']
+        for topic, (_, _, names) in zip(topics, TOPICS):
+            known = topic['known']
+            self.assertLessEqual(len(known), 60)
+            self.assertEqual({row['sourceFile'] for row in known}, set(names))
+            for name in names:
+                originals = _chunks(self.store.payloads[name].decode(), 'rrfixture', name)
+                source = [row for row in known if row['sourceFile'] == name]
+                self.assertEqual(source[0]['text'], originals[0]['text'])
+                self.assertEqual(source[-1]['text'], originals[-1]['text'])
+                self.assertTrue(all(row['text'] in {chunk['text'] for chunk in originals} for row in source))
+        self.assertGreaterEqual(sum(len(topic['known']) for topic in topics), 40)
 
     def test_incomplete_or_synthetic_package_never_enters_rag(self):
         self.completed(); state=self.read(); state['REPORT_REQUESTS'][0]['pushRequested']=True; self.write(state)
