@@ -217,8 +217,8 @@ class FullContextTests(unittest.TestCase):
         prior = self._decision_prior()
         original = copy.deepcopy(prior)
         dependencies = {'action': ('chain', 'policy'),
-                        'summary': ('economy', 'chain', 'action'),
-                        'compact': ('summary', 'chain', 'action')}
+                        'summary': ('economy', 'chain', 'action', 'policy'),
+                        'compact': ('summary', 'chain', 'action', 'policy')}
         parts = {'action': '行动清单', 'summary': '执行摘要', 'compact': '精简报告'}
         for stage, part in parts.items():
             with self.subTest(stage=stage):
@@ -246,6 +246,36 @@ class FullContextTests(unittest.TestCase):
                 view['scoring']['metadata']['scores'][0]['dimensions']['risk']['original'][1]['uncertainty'] = 'changed view'
                 view['enterprises_1']['metadata']['selected'][0]['rationale']['raw'][0] = 'changed company'
                 view[stage]['metadata']['original_progress']['nested'][0] = 'changed progress'
+                self.assertEqual(prior, original)
+
+    def test_decisions_keep_original_policy_eligibility_when_intermediaries_omit_it(self):
+        prior = self._decision_prior()
+        # Reproduce the complete condition retained in the real Suzhou policy
+        # chapter; the action and summary intermediaries omitted its threshold.
+        condition = ('新增制造业企业固定资产投资达30亿元以上（含）的项目，'
+                     '按项目设备投资的10%，最高给予1亿元支持')
+        prior['policy'] = {
+            'text': '完整政策前文\n' + condition + '\n完整政策后文及适用期：2027年12月31日。',
+            'metadata': {
+                'evidence': [_evidence('https://gov.cn/offline/manufacturing', condition)],
+                'original_policy_details': {'raw': [condition, {'publication': None}]},
+            },
+        }
+        prior['action']['text'] = '设备投资10%，最高1亿元。'
+        prior['summary']['text'] = '支持重大制造业项目。'
+        original = copy.deepcopy(prior)
+        for stage, part in (('action', '行动清单'), ('summary', '执行摘要'), ('compact', '精简报告')):
+            with self.subTest(stage=stage):
+                view = scoped_prior(prior, stage, part)
+                self.assertEqual(view['policy'], prior['policy'])
+                self.assertIn(condition, view['policy']['text'])
+                self.assertIsNot(view['policy'], prior['policy'])
+                for number in (1, 2, 3):
+                    key = f'enterprises_{number}'
+                    self.assertEqual(view[key]['metadata']['selected'], prior[key]['metadata']['selected'])
+                self.assertEqual(view['scoring']['metadata'], prior['scoring']['metadata'])
+                view['policy']['metadata']['original_policy_details']['raw'][1]['publication'] = 'changed view'
+                view['policy']['text'] = 'changed view'
                 self.assertEqual(prior, original)
 
     def test_decision_views_do_not_deduplicate_or_reorder_supplied_records(self):

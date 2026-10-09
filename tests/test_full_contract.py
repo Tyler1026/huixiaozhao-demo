@@ -480,6 +480,89 @@ class ValidateFactCheckTests(unittest.TestCase):
         self.assertEqual(fc.validate("fact_check", text, meta), [])
 
 
+class FactCheckPartGateTests(unittest.TestCase):
+    @staticmethod
+    def _checks(category, count):
+        return [{'claim': f'OFFLINE不同核验主张{index}', 'category': category,
+                 'direction': None, 'source': 'https://stats.gov.cn/offline',
+                 'cross_source': 'https://www.gov.cn/offline',
+                 'year': '2026', 'verdict': '待核实'} for index in range(count)]
+
+    def test_new_batch_floors_and_input_preservation(self):
+        for part, category, minimum in (('经济关键数字', 'economic', 9), ('政策金额', 'policy', 3)):
+            with self.subTest(part=part):
+                metadata = {'checks': self._checks(category, minimum), 'extra': {'retained': [None]}}
+                before = copy.deepcopy(metadata)
+                self.assertEqual(fc.fact_check_part_errors(part, metadata), [])
+                self.assertEqual(metadata, before)
+                below = {'checks': metadata['checks'][:-1]}
+                self.assertTrue(any(f'{category} checks {minimum - 1} < {minimum}' in error
+                                    for error in fc.fact_check_part_errors(part, below)))
+
+    def test_wrong_category_and_unavailable_cannot_fill_required_batch(self):
+        for part, wrong in (('经济关键数字', 'policy'), ('政策金额', 'economic')):
+            with self.subTest(part=part):
+                metadata = {'checks': self._checks(wrong, 12), 'high_star_unavailable': True}
+                self.assertTrue(fc.fact_check_part_errors(part, metadata))
+
+    def test_duplicate_claim_category_direction_identity_cannot_fill_floor(self):
+        for part, category, minimum in (('经济关键数字', 'economic', 9), ('政策金额', 'policy', 3)):
+            with self.subTest(part=part):
+                records = self._checks(category, minimum - 1)
+                duplicate = dict(records[0], claim=' ' + records[0]['claim'] + ' ')
+                metadata = {'checks': records + [duplicate]}
+                self.assertTrue(fc.fact_check_part_errors(part, metadata))
+                # The existing whole-stage identity includes the direction.
+                duplicate['direction'] = 'dir1'
+                self.assertEqual(fc.fact_check_part_errors(part, metadata), [])
+
+    def test_invalid_records_do_not_satisfy_floor(self):
+        for metadata in (None, {}, {'checks': None}, {'checks': {}},
+                         {'checks': [None, [], {'claim': '', 'category': 'policy'},
+                                     {'claim': 'OFFLINE', 'category': 'policy', 'direction': []}]}):
+            with self.subTest(metadata=metadata):
+                self.assertTrue(fc.fact_check_part_errors('政策金额', metadata))
+
+    def test_high_star_unavailable_stays_a_whole_stage_decision(self):
+        self.assertEqual(fc.fact_check_part_errors('五星企业信号',
+                         {'checks': [], 'high_star_unavailable': True}), [])
+        text, metadata = ValidateFactCheckTests()._fixture(
+            ValidateFactCheckTests()._build(n_econ=9, n_policy=3, n_star=0))
+        metadata.update(high_star_unavailable=True, high_star_note='OFFLINE缺少两源信号')
+        self.assertEqual(fc.validate('fact_check', text, metadata), [])
+        # Existing complete-stage economic coverage remains backward compatible.
+        text, metadata = ValidateFactCheckTests()._fixture(ValidateFactCheckTests()._build())
+        self.assertEqual(fc.validate('fact_check', text, metadata), [])
+        self.assertTrue(fc.fact_check_part_errors('经济关键数字', metadata))
+
+    def test_assembly_keeps_same_claim_in_different_categories_and_directions(self):
+        checks = ValidateFactCheckTests()._build(n_econ=9, n_policy=3, n_star=3)
+        for index, check in enumerate(checks[9:12]):
+            check['claim'] = checks[index]['claim']
+        for check in checks[12:]:
+            check['claim'] = 'OFFLINE same signal checked in three distinct directions'
+        text, metadata = ValidateFactCheckTests()._fixture(checks)
+        parts = [{'text': text, 'metadata': {'checks': checks[:9], 'evidence': metadata['evidence']}},
+                 {'text': 'OFFLINE policy batch', 'metadata': {'checks': checks[9:12]}},
+                 {'text': 'OFFLINE company signal batch', 'metadata': {'checks': checks[12:]}}]
+        before = copy.deepcopy(parts)
+        self.assertEqual(fc.fact_check_part_errors('经济关键数字', parts[0]['metadata']), [])
+        self.assertEqual(fc.fact_check_part_errors('政策金额', parts[1]['metadata']), [])
+        assembled = fc.assemble('fact_check', parts)
+        self.assertEqual(assembled['metadata']['checks'], checks)
+        self.assertEqual(fc.validate('fact_check', assembled['text'], assembled['metadata']), [])
+        self.assertEqual(parts, before)
+
+    def test_assembly_dedupes_same_full_identity_with_claim_whitespace(self):
+        check = self._checks('policy', 1)[0]
+        duplicate = dict(check, claim='  ' + check['claim'] + '  ')
+        parts = [{'text': 'OFFLINE first batch', 'metadata': {'checks': [check]}},
+                 {'text': 'OFFLINE retry batch', 'metadata': {'checks': [duplicate]}}]
+        before = copy.deepcopy(parts)
+        self.assertEqual(fc.assemble('fact_check', parts)['metadata']['checks'], [check])
+        self.assertEqual(parts, before)
+
+
 class SyntheticAndAssembleTests(unittest.TestCase):
     def test_make_synthetic_part_returns_dict_and_marker(self):
         out = fc.make_synthetic_part("economy", "经济总量", {"city": "杭州", "province": "浙江"}, None)

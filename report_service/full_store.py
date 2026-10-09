@@ -73,8 +73,8 @@ def _effective_limit(*values):
     return min(finite) if finite else math.inf
 
 
-def _checkpoint_issue(raw):
-    """Identify retained URL/excerpt defects, never an aggregate content floor.
+def _checkpoint_issue(raw, stage=None, part=None):
+    """Identify source defects or a deficient committed policy-check part.
 
     This deliberately does not run the whole stage contract: a partial stage
     may legitimately have too few sources or lines. Original checkpoint bytes
@@ -112,6 +112,13 @@ def _checkpoint_issue(raw):
         excerpt = item.get('excerpt')
         if not isinstance(excerpt, str) or not excerpt.strip():
             return 'empty_excerpt'
+    # A saved policy part with no valid policy checks cannot be repaired by
+    # repeatedly generating the later high-star part. Rewind only that known
+    # deficient part; old economic checkpoints keep their original contract.
+    if stage == 'fact_check' and part == '政策金额':
+        from .full_contract import fact_check_part_errors
+        if fact_check_part_errors(part, metadata if isinstance(metadata, dict) else {}):
+            return 'checkpoint_policy_checks_missing'
     return None
 
 
@@ -325,7 +332,7 @@ class FullStore:
                                   (rid,)).fetchall()
             invalid = None
             for checkpoint in committed:
-                reason = _checkpoint_issue(checkpoint['output'])
+                reason = _checkpoint_issue(checkpoint['output'], checkpoint['stage'], checkpoint['part'])
                 if reason:
                     invalid = checkpoint, reason
                     break

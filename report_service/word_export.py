@@ -80,6 +80,12 @@ COMPACT_SECTION_LABELS = {
 # 通用工具函数
 # ──────────────────────────────────────────────
 
+def _region_label(city_name):
+    """Keep an existing administrative suffix; add 市 for a bare city name."""
+    name = city_name.strip()
+    return name if name.endswith(('市', '区', '县')) else f'{name}市'
+
+
 def set_run_font(run, size_pt, bold=False):
     """Set font to FangSong with given size."""
     run.font.name = FONT_NAME
@@ -136,6 +142,7 @@ def add_heading_styled(doc, text, level):
     pf = p.paragraph_format
     pf.space_before = Pt(12 if level >= 2 else 18)
     pf.space_after = Pt(6)
+    pf.keep_with_next = True
     return p
 
 
@@ -256,6 +263,9 @@ def _render_md_lines(doc, lines, highlight_top_tables=False, score_col_idx=None)
             add_heading_styled(doc, line[4:].strip(), level=3)
         elif line.startswith('#### '):
             add_heading_styled(doc, line[5:].strip(), level=4)
+        elif re.match(r'^[一二三四五六七八九十百零〇]+[、.．]\s*\S', line.strip()):
+            # Native reports may use plain Chinese-numbered section titles.
+            add_heading_styled(doc, line.strip(), level=2)
         # Table detection
         elif line.strip().startswith('|'):
             table_lines = []
@@ -335,7 +345,7 @@ def md_to_docx(input_dir, output_path, city_name, synthetic=False):
     doc.add_paragraph()  # spacing
     title_p = doc.add_paragraph()
     title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = title_p.add_run(f'{city_name}市精准招商作战报告')
+    run = title_p.add_run(f'{_region_label(city_name)}精准招商作战报告')
     set_run_font(run, 22, bold=True)
 
     subtitle_p = doc.add_paragraph()
@@ -434,7 +444,7 @@ def build_compact_docx(city, input_dir, output_path, synthetic=False):
     """读取 09_compact_report.md 生成精简版 Word 报告。
 
     格式与完整版相同，额外特性：
-    - 文档页眉右上角：「{city}市精准招商作战报告（精简版）」
+    - 文档页眉右上角：「{地区名称}精准招商作战报告（精简版）」
     - TOP5/TOP15 等重要表格表头行底色浅灰 RGB(242,242,242)
     - 评分 >= 8.5 的企业行底色浅绿 RGB(226,239,218)
     - 字数目标：完整版的 30%-40%，不超过 60 页
@@ -453,13 +463,14 @@ def build_compact_docx(city, input_dir, output_path, synthetic=False):
         add_styled_paragraph(doc, 'SYNTHETIC TEST — 合成测试，非真实研究', bold=True)
 
     # ── 页眉（右上角） ──
-    _add_header_right(doc, f'{city}市精准招商作战报告（精简版）')
+    region = _region_label(city)
+    _add_header_right(doc, f'{region}精准招商作战报告（精简版）')
 
     # ── 封面 ──
     doc.add_paragraph()
     title_p = doc.add_paragraph()
     title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = title_p.add_run(f'{city}市精准招商作战报告')
+    run = title_p.add_run(f'{region}精准招商作战报告')
     set_run_font(run, 22, bold=True)
 
     subtitle_p = doc.add_paragraph()
