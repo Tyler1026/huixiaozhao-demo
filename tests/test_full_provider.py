@@ -22,6 +22,7 @@ import pickle
 import sys
 import unittest
 import datetime
+import threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -390,6 +391,24 @@ class LiveProviderRuntimeTests(unittest.TestCase):
         self.assertEqual(p._render_prior(huge, 'population'), '【economy】\n经济完整保留TAIL')
         with self.assertRaises(fp.FullProviderError):
             p._render_prior({'economy': {'text': 'x' * 120_001}}, 'population')
+
+
+class DecisionContextBoundTests(unittest.TestCase):
+    _provider = LiveProviderRuntimeTests._provider
+
+    def test_complete_decision_context_has_explicit_bound_without_clipping(self):
+        provider = self._provider(RecordingRouter({}))
+        complete = '完整事实' * 32_500 + 'TAIL-FACT-MUST-REMAIN'
+        for stage in ('action', 'summary', 'compact'):
+            with self.subTest(stage=stage):
+                rendered = provider._render_prior({'chain': {'text': complete}}, stage)
+                self.assertIn(complete, rendered)
+                with self.assertRaises(fp.FullProviderError) as caught:
+                    provider._render_prior({'chain': {'text': '实' * 180_001}}, stage)
+                self.assertIn('exceeds 180000 characters', str(caught.exception))
+        with self.assertRaises(fp.FullProviderError) as caught:
+            provider._render_prior({'policy': {'text': complete}}, 'scoring')
+        self.assertIn('exceeds 120000 characters', str(caught.exception))
 
 
 class EnterprisePartGateTests(unittest.TestCase):
@@ -940,20 +959,39 @@ class ScoringIdentityGateTests(unittest.TestCase):
                 'dimensions': {key: (0 if key == 'risk' else 10) for key in fc.SCORE_DIMENSIONS},
                 'weighted_score': -999, 'rank': 999}
 
+    @staticmethod
+    def _request_targets(request):
+        prompt = json.loads(request.data)['messages'][-1]['content']
+        prefix = '本次评分唯一身份名单（name和direction须逐项精确保留）：'
+        targets = json.loads(next(line[len(prefix):] for line in prompt.splitlines() if line.startswith(prefix)))
+        return prompt, targets
+
+    def _reply_for_targets(self, request, scores, *, text_prefix='本批评分依据'):
+        prompt, targets = self._request_targets(request)
+        allowed = {(target['name'], target['direction']) for target in targets}
+        records = [record for record in scores if (record['name'], record['direction']) in allowed]
+        group = targets[0]['name']
+        payload = {'text': '\n'.join(f'{text_prefix}/{group}具体事实与风险{i}' for i in range(25)), 'scores': records}
+        return json.dumps({'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(payload)}}]})
+
     def _run(self, scores, prior=None):
         payload = {'text': '\n'.join(f'OFFLINE当前评分分析{i}' for i in range(100)), 'scores': scores}
         router = RecordingRouter({'chat/completions': (200, json.dumps({
             'choices': [{'message': {'content': json.dumps(payload)}}]}))})
+        if len(scores) == 38:
+            router.routes['chat/completions'] = (200, lambda request: self._reply_for_targets(request, scores))
         out = self._provider(router).run_part('scoring', '评分维度与权重',
             {'city': '测试城', 'mode': 'deep'}, self._prior() if prior is None else prior)
         return out, router
 
-    def test_scoring_accepts_saved_identities_from_all_directions_without_full_pool_quota(self):
-        out, router = self._run([self._score(number, 24) for number in (1, 2, 3)])
-        self.assertEqual(len(out['metadata']['scores']), 3)
-        self.assertEqual([entry['direction'] for entry in out['metadata']['scores']], ['dir1', 'dir2', 'dir3'])
-        self.assertEqual([entry['weighted_score'] for entry in out['metadata']['scores']], [10, 10, 10])
-        self.assertEqual([entry['rank'] for entry in out['metadata']['scores']], [1, 2, 3])
+    def test_scoring_accepts_complete_saved_identities_for_the_current_part(self):
+        scores = [self._score(number, index) for number in (1, 2, 3) for index in range(25)][:38]
+        out, router = self._run(scores)
+        self.assertEqual(len(out['metadata']['scores']), 38)
+        self.assertEqual([entry['direction'] for entry in out['metadata']['scores']],
+                         [entry['direction'] for entry in scores])
+        self.assertEqual([entry['weighted_score'] for entry in out['metadata']['scores']], [10] * 38)
+        self.assertEqual([entry['rank'] for entry in out['metadata']['scores']], list(range(1, 39)))
         prompt = json.loads(router.calls[0].data)['messages'][-1]['content']
         self.assertIn('评分身份允许名单仅来自前序enterprises_1/2/3的selected', prompt)
 
@@ -967,8 +1005,8 @@ class ScoringIdentityGateTests(unittest.TestCase):
             with self.subTest(part=part):
                 payload = {'text': '\n'.join(f'{part}本批简短评分依据与风险{i}' for i in range(50)),
                            'scores': chosen}
-                router = RecordingRouter({'chat/completions': (200, json.dumps({
-                    'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(payload)}}]}))})
+                router = RecordingRouter({'chat/completions': (200, lambda request: self._reply_for_targets(
+                    request, chosen, text_prefix=part))})
                 out = self._provider(router).run_part('scoring', part, {'city': '测试城', 'mode': 'deep'}, prior)
                 self.assertEqual(len(out['metadata']['scores']), count)
                 for actual, expected in zip(out['metadata']['scores'], chosen):
@@ -978,6 +1016,10 @@ class ScoringIdentityGateTests(unittest.TestCase):
                     self.assertEqual(actual['weighted_score'], 10)
                 chat = json.loads(router.calls[0].data)
                 self.assertEqual(chat['max_tokens'], 8000)
+                self.assertEqual(len(router.calls), 2)
+                target_groups = [self._request_targets(call)[1] for call in router.calls]
+                self.assertEqual(sorted(map(len, target_groups)), [19, 19] if count == 38 else [18, 19])
+                self.assertTrue(all('至少25行实质内容' in self._request_targets(call)[0] for call in router.calls))
                 prompt = chat['messages'][-1]['content']
                 for instruction in ('本次JSON只含text和scores', '完整保留当前本批全部企业的精确name和direction',
                                     '七个键及0到10的有限数值', '正文每行只写一个简短的评分依据或风险',
@@ -988,6 +1030,131 @@ class ScoringIdentityGateTests(unittest.TestCase):
         final = prior['scoring']
         self.assertEqual(len(final['metadata']['scores']), 75)
         self.assertEqual(fc.validate('scoring', final['text'], final['metadata'], mode='deep'), [])
+
+    def test_scoring_requests_overlap_and_reverse_completion_preserves_original_tie_order(self):
+        scores = [self._score(number, index) for number in (1, 2, 3) for index in range(25)][:38]
+        barrier = threading.Barrier(2)
+        second_done = threading.Event()
+        finished = []
+
+        def model(request):
+            prompt, targets = self._request_targets(request)
+            barrier.wait(timeout=3)
+            reply = json.loads(self._reply_for_targets(request, scores))
+            body = json.loads(reply['choices'][0]['message']['content'])
+            body['scores'].reverse()
+            reply['choices'][0]['message']['content'] = json.dumps(body)
+            if '本次内部评分批：1/2' in prompt:
+                self.assertTrue(second_done.wait(timeout=3))
+                finished.append(1)
+            else:
+                finished.append(2)
+                second_done.set()
+            return json.dumps(reply)
+
+        router = RecordingRouter({'chat/completions': (200, model)})
+        prior = self._prior()
+        original = copy.deepcopy(prior)
+        out = self._provider(router).run_part('scoring', '评分维度与权重', {'city': '测试城', 'mode': 'deep'}, prior)
+        self.assertEqual(finished, [2, 1])
+        self.assertEqual(prior, original)
+        self.assertEqual([record['name'] for record in out['metadata']['scores']], [record['name'] for record in scores])
+        self.assertEqual([record['rank'] for record in out['metadata']['scores']], list(range(1, 39)))
+        self.assertEqual(len(router.calls), 2)
+
+    def test_scoring_prompts_include_complete_target_source_excerpts_only(self):
+        prior = self._prior()
+        for number in (1, 2, 3):
+            metadata = prior[f'enterprises_{number}']['metadata']
+            metadata['evidence'] = []
+            for index, company in enumerate(metadata['selected']):
+                company['url'] = f'https://cninfo.com.cn/offline-score/{number}/{index}?year=2026'
+                metadata['evidence'].append({'url': company['url'], 'title': company['name'],
+                    'excerpt': f'EXACT-EXCERPT:{company["name"]}:完整2026年事实及原始风险',
+                    'retrieval': 'exa_fulltext', 'published': '2026-09-30'})
+            metadata['evidence'].append({'url': f'https://cninfo.com.cn/unrelated/{number}',
+                'excerpt': 'UNRELATED-ENTERPRISE-SOURCE', 'retrieval': 'exa_fulltext'})
+        prior['policy'] = {'text': 'COMPLETE-POLICY-TEXT', 'metadata': {'evidence': [
+            {'url': 'https://gov.cn/offline-policy', 'excerpt': 'UNRELATED-POLICY-EXCERPT',
+             'retrieval': 'exa_fulltext'}]}}
+        prior['chain'] = {'text': 'COMPLETE-CHAIN-TEXT', 'metadata': {'evidence': [
+            {'url': 'https://gov.cn/offline-chain', 'excerpt': 'UNRELATED-CHAIN-EXCERPT',
+             'retrieval': 'exa_fulltext'}]}}
+        prior['fact_check'] = {'text': '核验正文', 'metadata': {'checks': [
+            {'claim': 'COMPLETE-CHECK-CLAIM', 'year': '2026', 'source': 'https://gov.cn/check/a',
+             'cross_source': 'https://gov.cn/check/b', 'verdict': '待核实'}]}}
+        original = copy.deepcopy(prior)
+        scores = [self._score(number, index) for number in (1, 2, 3) for index in range(25)][:38]
+        router = RecordingRouter({'chat/completions': (200, lambda request: self._reply_for_targets(request, scores))})
+        out = self._provider(router).run_part('scoring', '评分维度与权重', {'city': '测试城', 'mode': 'deep'}, prior)
+        self.assertEqual(len(out['metadata']['scores']), 38)
+        self.assertEqual(prior, original)
+        for request in router.calls:
+            prompt, targets = self._request_targets(request)
+            names = {target['name'] for target in targets}
+            for number in (1, 2, 3):
+                for company in prior[f'enterprises_{number}']['metadata']['selected']:
+                    excerpt = f'EXACT-EXCERPT:{company["name"]}:完整2026年事实及原始风险'
+                    if company['name'] in names:
+                        self.assertIn(excerpt, prompt)
+                        self.assertIn(company['url'], prompt)
+                    else:
+                        self.assertNotIn(excerpt, prompt)
+            for marker in ('UNRELATED-ENTERPRISE-SOURCE', 'UNRELATED-POLICY-EXCERPT', 'UNRELATED-CHAIN-EXCERPT'):
+                self.assertNotIn(marker, prompt)
+            for marker in ('COMPLETE-POLICY-TEXT', 'COMPLETE-CHAIN-TEXT', 'COMPLETE-CHECK-CLAIM'):
+                self.assertIn(marker, prompt)
+            self.assertIn('正文引用来源时使用实际给出的完整URL，不用裸来源编号', prompt)
+
+    def test_scoring_subrequest_rejects_missing_duplicate_foreign_extra_and_invalid_dimensions(self):
+        scores = [self._score(number, index) for number in (1, 2, 3) for index in range(25)][:38]
+        for defect in ('missing', 'duplicate', 'foreign', 'extra', 'dimensions', 'length', 'short', 'unsafe'):
+            with self.subTest(defect=defect):
+                def model(request):
+                    prompt, targets = self._request_targets(request)
+                    reply = json.loads(self._reply_for_targets(request, scores))
+                    if '本次内部评分批：2/2' not in prompt:
+                        return json.dumps(reply)
+                    body = json.loads(reply['choices'][0]['message']['content'])
+                    if defect == 'missing':
+                        body['scores'].pop()
+                    elif defect == 'duplicate':
+                        body['scores'][-1] = copy.deepcopy(body['scores'][0])
+                    elif defect == 'foreign':
+                        body['scores'][0] = scores[0]  # Valid saved company in the other group.
+                    elif defect == 'extra':
+                        body['scores'].append(scores[0])
+                    elif defect == 'dimensions':
+                        del body['scores'][0]['dimensions']['risk']
+                    elif defect == 'length':
+                        reply['choices'][0]['finish_reason'] = 'length'
+                    elif defect == 'short':
+                        body['text'] = '一行不足'
+                    elif defect == 'unsafe':
+                        body['text'] += '\nhttp://127.0.0.1/private'
+                    reply['choices'][0]['message']['content'] = json.dumps(body)
+                    return json.dumps(reply)
+                router = RecordingRouter({'chat/completions': (200, model)})
+                prior = self._prior()
+                original = copy.deepcopy(prior)
+                with self.assertRaises(fp.FullProviderError) as caught:
+                    self._provider(router).run_part('scoring', '评分维度与权重', {'city': '测试城', 'mode': 'deep'}, prior)
+                self.assertEqual(caught.exception.failure_code, 'quality')
+                self.assertEqual(prior, original)
+                self.assertEqual(len(router.calls), 2)
+
+    def test_scoring_merged_prose_still_rejects_cross_group_repetition(self):
+        scores = [self._score(number, index) for number in (1, 2, 3) for index in range(25)][:38]
+        def model(request):
+            reply = json.loads(self._reply_for_targets(request, scores))
+            body = json.loads(reply['choices'][0]['message']['content'])
+            body['text'] = '\n'.join(f'两组完全相同通用说明{i}' for i in range(25))
+            reply['choices'][0]['message']['content'] = json.dumps(body)
+            return json.dumps(reply)
+        router = RecordingRouter({'chat/completions': (200, model)})
+        with self.assertRaises(fp.FullProviderError) as caught:
+            self._provider(router).run_part('scoring', '评分维度与权重', {'city': '测试城', 'mode': 'deep'}, self._prior())
+        self.assertEqual(str(caught.exception), 'part contains repeated filler')
 
     def test_unknown_company_wrong_direction_and_missing_selections_fail_closed(self):
         for changes in ({'name': '未知企业'}, {'direction': 'dir2'}, {'direction': ['dir1']}):
@@ -1066,6 +1233,14 @@ class DirectionSerializationTests(unittest.TestCase):
                         for i in range(8)]})),
                     'chat/completions': (200, json.dumps({'choices': [{'message': {'content': json.dumps(payload)}}]})),
                 })
+                if stage == 'scoring':
+                    def scoring_model(request):
+                        _, targets = ScoringIdentityGateTests._request_targets(request)
+                        body = dict(payload, scores=[dict(target, dimensions={
+                            key: (0 if key == 'risk' else 10) for key in fc.SCORE_DIMENSIONS}) for target in targets],
+                            text='\n'.join(f'{targets[0]["name"]}本批独立评分依据{i}' for i in range(50)))
+                        return json.dumps({'choices': [{'message': {'content': json.dumps(body)}}]})
+                    router.routes['chat/completions'] = (200, scoring_model)
                 self._provider(router).run_part(stage, part, {'city': '测试城'}, prior)
                 chat = next(call for call in router.calls if 'chat/completions' in call.full_url)
                 prompt = json.loads(chat.data)['messages'][-1]['content']

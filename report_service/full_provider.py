@@ -40,6 +40,7 @@ import json
 import re
 import urllib.parse
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 
 from report_service import providers
 from report_service import full_contract as contract
@@ -177,7 +178,7 @@ class FullLiveProvider:
             raise _to_provider_error(exc)
 
         place = self._place(job)
-        prior_text = self._render_prior(prior, stage_id, part)
+        prior_text = '' if stage_id == 'scoring' else self._render_prior(prior, stage_id, part)
         floor = self._part_floor(stage_id, part, prior, mode)
 
         # Only previously retrieved, usable excerpts can back new claims. A
@@ -208,9 +209,12 @@ class FullLiveProvider:
             offset = self._company_batch(part) * 5
             target_names = [company['name'] for company in previous.get('metadata', {}).get('candidates', [])[offset:offset + 5]]
         try:
-            payload = self._chat_part(stage_id, part, place, prior_text,
-                                      self._usable_evidence(saved_evidence + evidence),
-                                      mode=mode, min_lines=floor, target_names=target_names, excluded_names=excluded_names)
+            if stage_id == 'scoring':
+                payload = self._chat_scoring_batches(part, place, prior, floor, mode)
+            else:
+                payload = self._chat_part(stage_id, part, place, prior_text,
+                                          self._usable_evidence(saved_evidence + evidence),
+                                          mode=mode, min_lines=floor, target_names=target_names, excluded_names=excluded_names)
         except Exception as exc:
             raise _to_provider_error(exc)
 
@@ -269,7 +273,11 @@ class FullLiveProvider:
                 entities = ""
                 if isinstance(value, dict):
                     text = value.get("text") or ""
-                    entities = _render_structured(value.get("metadata"))
+                    if stage_id in {'action', 'summary', 'compact'}:
+                        from .full_wire import render_structured
+                        entities = render_structured(value.get("metadata"))
+                    else:
+                        entities = _render_structured(value.get("metadata"))
                 block = text
                 if entities:
                     block = (block + "\n" if block else "") + "【结构化实体】\n" + entities
@@ -282,9 +290,13 @@ class FullLiveProvider:
         for key, block in entries:
             chunks.append(f"【{key}】\n{block}")
         text = "\n\n".join(chunks)
-        if len(text) > 120_000:
+        # Complete decision views carry all selected companies and all scores,
+        # whereas scoring requests are scoped to an internal target batch.
+        # Keep an explicit bound for both; never clip values to make them fit.
+        bound = 180_000 if stage_id in {'action', 'summary', 'compact'} else 120_000
+        if len(text) > bound:
             raise FullProviderError(
-                f"prior context for stage {stage_id!r} exceeds 120000 characters; "
+                f"prior context for stage {stage_id!r} exceeds {bound} characters; "
                 "refusing to silently truncate facts",
                 "quality",
             )
@@ -402,6 +414,65 @@ class FullLiveProvider:
     def _company_batch(part):
         match = re.search(r'(\d+)$', part)
         return int(match.group(1)) - 1 if match else 0
+
+    def _chat_scoring_batches(self, part, place, prior, floor, mode):
+        """Run two bounded scoring requests, then join only complete results."""
+        from .full_context import scoring_prior_batches
+        batches = []
+        for view in scoring_prior_batches(prior, part):
+            targets = [(company['name'], f'dir{number}')
+                       for number in (1, 2, 3)
+                       for company in view[f'enterprises_{number}']['metadata']['selected']]
+            if targets:
+                # No part argument: this view has already been scoped exactly
+                # once and must not silently lose another half of its targets.
+                related_evidence = self._usable_evidence([
+                    item for number in (1, 2, 3)
+                    for item in view[f'enterprises_{number}']['metadata'].get('evidence', [])])
+                batches.append((targets, self._render_prior(view, 'scoring'), related_evidence))
+        if not batches:
+            raise FullProviderError('score identity is absent from saved selections', 'quality')
+        floors = []
+        assigned = 0
+        for index, (targets, _, _) in enumerate(batches):
+            share = floor - assigned if index == len(batches) - 1 else (floor + len(batches) - 1) // len(batches)
+            floors.append(share)
+            assigned += share
+
+        def run_batch(number, targets, rendered, related_evidence, min_lines):
+            payload = self._chat_part('scoring', part, place, rendered, related_evidence,
+                                      mode=mode, min_lines=min_lines,
+                                      scoring_targets=targets, scoring_batch=(number, len(batches)))
+            parsed = self._parse_part('scoring', part, payload, related_evidence, prior)
+            self._validate_part_text(parsed['text'], min_lines)
+            records = parsed.get('scores')
+            if not isinstance(records, list):
+                raise FullProviderError('score identity is absent from saved selections', 'quality')
+            by_identity = {}
+            expected = set(targets)
+            for record in records:
+                name = record.get('name') if isinstance(record, dict) else None
+                direction = record.get('direction') if isinstance(record, dict) else None
+                if (not isinstance(name, str) or not isinstance(direction, str)
+                        or (name, direction) not in expected or (name, direction) in by_identity):
+                    raise FullProviderError('score identity is absent from saved selections', 'quality')
+                try:
+                    contract.compute_weighted_score(record.get('dimensions'))
+                except (ValueError, TypeError):
+                    raise FullProviderError('score dimensions require seven finite values within 0..10', 'quality') from None
+                by_identity[(name, direction)] = record
+            if len(records) != len(targets) or set(by_identity) != expected:
+                raise FullProviderError('score identity is absent from saved selections', 'quality')
+            return {'text': parsed['text'], 'scores': [by_identity[target] for target in targets]}
+
+        # Default HTTP transport uses per-call requests/responses and readonly
+        # provider configuration. No executor is kept on the pickled provider.
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            pending = [executor.submit(run_batch, index + 1, targets, rendered, related_evidence, floors[index])
+                       for index, (targets, rendered, related_evidence) in enumerate(batches)]
+            results = [future.result() for future in pending]
+        return json.dumps({'text': '\n\n'.join(result['text'] for result in results),
+                           'scores': [score for result in results for score in result['scores']]}, ensure_ascii=False)
 
     def _complete_candidate_batch(self, stage_id, part, place, prior, prior_text,
                                   floor, mode, parsed, metadata, previous, evidence):
@@ -586,7 +657,7 @@ class FullLiveProvider:
             host = ""
         return host.lower() or "未知来源"
 
-    def _chat_part(self, stage_id, part, place, prior_text, evidence, *, mode='standard', min_lines=None, target_names=None, excluded_names=None, candidate_count=5):
+    def _chat_part(self, stage_id, part, place, prior_text, evidence, *, mode='standard', min_lines=None, target_names=None, excluded_names=None, candidate_count=5, scoring_targets=None, scoring_batch=None):
         instructions = _PART_INSTRUCTIONS.get(stage_id, _DEFAULT_PART_INSTRUCTION)
         user_blocks = [
             f"地区：{place}",
@@ -675,13 +746,28 @@ class FullLiveProvider:
                                '禁止对候选但未精选、未知或方向不匹配的企业评分。'
                                'dimensions必须完整包含七个键及0至10的有限数值，不得省略risk或任何其他维度。')
         user_blocks.append(_OUTPUT_RULES)
+        if stage_id in {'action', 'summary', 'compact'}:
+            user_blocks.append('本次JSON只含text；企业档案、核验记录和评分已完整保存，不再回传任何结构化数组。'
+                               '前序结构化实体若使用fields和rows，fields是列名，rows每行按相同列顺序保留一条完整记录，所有字段值均未删减。'
+                               '正文每行只写一个简短、具体的结论、行动或核查事项，避免逐字段复述企业档案和评分；'
+                               '仍须保留任务所需章节、关键来源、年份及不确定性，未知信息不能写成事实。')
         if stage_id == 'scoring':
             user_blocks.append('本次JSON只含text和scores；不回传candidates、selected、checks、directions或完整企业档案。'
                                'scores完整保留当前本批全部企业的精确name和direction，禁止遗漏或复制前批身份。'
                                '每项dimensions只含规定的七个键及0到10的有限数值，不加长篇解释、加权结果或排名。'
                                '正文每行只写一个简短的评分依据或风险，说明事实、年份及具体缺口；'
                                '不逐字段复述scores，不为每家逐个维度重写公司档案或复制来源摘录。'
+                               '正文引用来源时使用实际给出的完整URL，不用裸来源编号，以便两批合并后仍能追溯原始证据。'
                                '保持本批完整评分，不能通过减少企业、少报维度或把未知风险写成零来缩短输出。')
+            if scoring_targets is not None:
+                user_blocks.append('本次评分唯一身份名单（name和direction须逐项精确保留）：' +
+                                   json.dumps([{'name': name, 'direction': direction}
+                                               for name, direction in scoring_targets], ensure_ascii=False))
+                user_blocks.append(f'本次scores必须恰好{len(scoring_targets)}项，完整覆盖上述名单且不重复、不遗漏，不返回其他身份。')
+            if scoring_batch is not None:
+                user_blocks.append(f'本次内部评分批：{scoring_batch[0]}/{scoring_batch[1]}。'
+                                   '这是同一持久评分子步骤中的独立目标批，仅写这些企业的具体依据与风险；'
+                                   '正文每行带目标企业名称或方向及具体事实，避免与另一批重复通用说明。')
         if stage_id == 'fact_check':
             user_blocks.append('本次JSON只含text、checks，以及确有信号无法交叉核验时必要的high_star_unavailable和high_star_note。'
                                '不回传candidates、selected、directions、scores或完整公司档案，不复制前序核验数组。'

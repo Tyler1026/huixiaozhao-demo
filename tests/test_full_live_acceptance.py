@@ -44,7 +44,13 @@ class StructuredTransport:
             count,category=(5,'economic') if part=='经济关键数字' else ((3,'policy') if part=='政策金额' else (9,'high_star'))
             data['checks']=[{'claim':f'{category}离线测试{i}','source':refs[i%8],'cross_source':refs[(i+1)%8],'year':'2026','verdict':'待核实','category':category,'direction':f'dir{i//3+1}' if category=='high_star' else None} for i in range(count)]
         elif stage=='scoring':
-            data['scores']=[{'name':f'测试企业{i}','direction':'dir1','dimensions':{d: (10 if d!='risk' else i%10) for d in SCORE_DIMENSIONS}} for i in range(15)]
+            prefix='本次评分唯一身份名单（name和direction须逐项精确保留）：'
+            targets=json.loads(next(line[len(prefix):] for line in text.splitlines() if line.startswith(prefix)))
+            batch=re.search(r'本次内部评分批：(\d+)/',text).group(1)
+            data['text']='\n'.join(f'OFFLINE评分批{batch}独立依据与风险{i}' for i in range(25))
+            data['scores']=[{'name':target['name'],'direction':target['direction'],
+                            'dimensions':{d: (10 if d!='risk' else int(target['name'].removeprefix('测试企业'))%10)
+                                          for d in SCORE_DIMENSIONS}} for target in targets]
         return Response(url, {'choices':[{'finish_reason':'stop','message':{'content':json.dumps(data,ensure_ascii=False)}}]})
     @staticmethod
     def company(n,url):
