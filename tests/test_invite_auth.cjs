@@ -35,7 +35,11 @@ function harness(app = 'index') {
   } else {
     const preamble = ops17.slice(0, ops17.indexOf('\nrender();\nif(!window._opsAuthPoll)'));
     vm.runInContext(preamble, ctx);
-    vm.runInContext(ops17.slice(ops17.indexOf('function inviteCodeSection()'), ops17.indexOf('/* == Tab2: 企业资源库 == */')), ctx);
+    // Invitation rendering now shares the real workspace UI/filter helpers;
+    // load those functions too instead of making the legacy alias self-contained.
+    vm.runInContext(ops17.slice(ops17.indexOf('var opsTab ='), ops17.indexOf('/* ══ Tab: 城市智库 RAG')), ctx);
+    vm.runInContext(ops17.slice(ops17.indexOf('var ragChatMsgs='), ops17.indexOf('/* 工作区总览与下拉框')), ctx);
+    vm.runInContext(ops17.slice(ops17.indexOf('/* == 客户管理：'), ops17.indexOf('/* == Tab2: 企业资源库 == */')), ctx);
   }
   return {ctx, calls, queue, nodes, storage, timers, toasts,
     input(id, value = '') {return nodes[id] = {value, textContent: '', innerHTML: '', style: {}, focus() {}};},
