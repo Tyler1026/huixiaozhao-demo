@@ -16,6 +16,8 @@ setInterval(function(){
     up.textContent=(sec<60?sec+' 秒前更新':Math.floor(sec/60)+' 分钟前更新');
   }
 },1000);
+function rrHtml(value){return String(value==null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function rrInlineString(value){return rrHtml(String(value==null?'':value).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\r/g,'\\r').replace(/\n/g,'\\n').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029'));}
 function rrElapsed(ms){
   var m=Math.floor(ms/60000);
   return m<1?'刚刚':m<60?m+' 分钟':Math.floor(m/60)+' 小时 '+(m%60)+' 分';
@@ -53,7 +55,7 @@ function rrSpecialistCard(f){
         '<div style="font-size:10px;color:#8492a6;margin-bottom:6px">按数据可靠度从高到低</div>'+
         srcs.map(rrSrcRow).join('')+'</div>'):'';
     srcTab='<div style="margin-top:6px;border-top:1px dashed #edf1f6;padding-top:5px"><div style="position:relative">'+
-      '<button onclick="event.stopPropagation();rrToggleSrc(\''+f.id+'\')" '+
+      '<button onclick="event.stopPropagation();rrToggleSrc(\''+rrInlineString(f.id)+'\')" '+
         'style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;'+
         'border:1px solid '+(isOpen?'#91b7e2':'#dce4ef')+';background:'+(isOpen?'#f3f8ff':'#fff')+';'+
         'border-radius:7px;color:#0757ad;font-size:10.5px;cursor:pointer;padding:5px 9px">'+
@@ -62,10 +64,10 @@ function rrSpecialistCard(f){
   }
   return '<div style="padding:7px 9px;border:1px solid #eef2f7;border-radius:8px;background:'+(st==='working'?'#f6faff':'#fff')+'">'+
     '<div style="display:flex;align-items:center;gap:7px">'+
-      '<span style="font-size:15px;position:relative">'+f.avatar+'<span class="'+(st==='working'?'rr-dot-live':'')+'" style="position:absolute;right:-2px;bottom:-1px;width:6px;height:6px;border-radius:50%;background:'+dot+';border:1.5px solid #fff"></span></span>'+
-      '<b style="font-size:12px;color:#0b183b">'+f.name+'</b>'+
+      '<span style="font-size:15px;position:relative">'+rrHtml(f.avatar)+'<span class="'+(st==='working'?'rr-dot-live':'')+'" style="position:absolute;right:-2px;bottom:-1px;width:6px;height:6px;border-radius:50%;background:'+dot+';border:1.5px solid #fff"></span></span>'+
+      '<b style="font-size:12px;color:#0b183b">'+rrHtml(f.name)+'</b>'+
       '<span style="font-size:10.5px;margin-left:auto">'+badge+'</span></div>'+
-    '<div style="font-size:11px;color:#667590;margin-top:3px;line-height:1.5">'+String(f.action||'').replace(/</g,'&lt;')+'</div>'+mini+srcTab+'</div>';
+    '<div style="font-size:11px;color:#667590;margin-top:3px;line-height:1.5">'+rrHtml(f.action)+'</div>'+mini+srcTab+'</div>';
 }
 function rrToggleSrc(id){
   var key='__rrSrc_'+id;
@@ -77,11 +79,12 @@ function rrToggleSrc(id){
 function rrSrcRow(s){
   var tierMap={1:['#0aa696','权威'],2:['#0757ad','官方'],3:['#c07a12','媒体'],4:['#8492a6','行业'],5:['#9aa5b5','其他']};
   var tm=tierMap[s.tier]||tierMap[5];
-  var name=s.url?('<a href="'+s.url+'" target="_blank" style="color:#0757ad;text-decoration:none">'+String(s.name)+' ↗</a>'):String(s.name);
+  var url=/^https?:\/\//i.test(String(s.url||''))?String(s.url):'';
+  var name=url?('<a href="'+rrHtml(url)+'" target="_blank" rel="noopener noreferrer" style="color:#0757ad;text-decoration:none">'+rrHtml(s.name)+' ↗</a>'):rrHtml(s.name);
   return '<div style="display:flex;align-items:center;gap:8px;font-size:11px;padding:7px 8px;border-radius:7px;border-bottom:1px solid #f2f5f9" '+
     'onmouseover="this.style.background=\'#f6faff\'" onmouseout="this.style.background=\'transparent\'">'+
     '<span style="flex:0 0 auto;min-width:34px;text-align:center;padding:2px 7px;border-radius:9px;color:#fff;background:'+tm[0]+';font-size:9.5px;font-weight:600">'+tm[1]+'</span>'+
-    '<span style="color:#7a8798;flex:0 0 auto;min-width:56px">'+s.type+'</span>'+
+    '<span style="color:#7a8798;flex:0 0 auto;min-width:56px">'+rrHtml(s.type)+'</span>'+
     '<span style="color:#40506a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">'+name+'</span></div>';
 }
 function rrWaveRows(r){
@@ -108,14 +111,14 @@ function rrWaveRows(r){
           if(fs==='done'){sty='background:#e4f5f3;color:#006d70';mark='✓ ';}
           else if(fs==='partial'){sty='background:#fdeef0;color:#b0364a;cursor:help';mark='⚠ ';}
           else {sty='background:#eef1f5;color:#8492a6';mark='· ';}
-          var tip=f.detail?' title="'+String(f.detail).replace(/"/g,'&quot;')+'"':'';
-          return '<span'+tip+' style="font-size:10.5px;padding:2px 8px;border-radius:9px;'+sty+'">'+mark+f.n+'</span>';
+          var tip=f.detail?' title="'+rrHtml(f.detail)+'"':'';
+          return '<span'+tip+' style="font-size:10.5px;padding:2px 8px;border-radius:9px;'+sty+'">'+mark+rrHtml(f.n)+'</span>';
         }).join('')+'</div>';
     }
     return '<div style="padding:6px 0;border-bottom:1px dashed #e9eef5">'+
       '<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:'+col+'">'+
-      '<span style="display:inline-flex;align-items:center">'+ic+'</span><b>'+w.label+'</b>'+
-      '<span style="color:#8492a6;font-weight:400">'+w.done+'/'+w.total+'</span>'+
+      '<span style="display:inline-flex;align-items:center">'+ic+'</span><b>'+rrHtml(w.label)+'</b>'+
+      '<span style="color:#8492a6;font-weight:400">'+rrHtml(w.done)+'/'+rrHtml(w.total)+'</span>'+
       (w.state==='running'?'<span style="color:#0757ad;font-size:11px">· 进行中<span class="rr-runner"></span></span>':w.state==='waiting'?'<span style="font-size:11px;color:#b0bac7">· 等待前序完成</span>':'')+'</div>'+body+'</div>';
   }).join('');
   var liveN=act.filter(function(f){return f.state==='working';}).length;
@@ -131,10 +134,10 @@ function rrWaveRows(r){
         var st=i<sDone?'#0aa696':(i===sCur-1?'#0757ad':'#e0e7f0');
         return '<div style="flex:1;height:5px;border-radius:3px;background:'+st+'"></div>';
       }).join('')+'</div>'+
-      '<div style="font-size:11px;color:#667590;margin-top:4px">第 '+sCur+' / '+sTot+' 阶段 · '+(r.stageName||STLABEL[Math.min(sCur-1,STLABEL.length-1)]||'')+'</div></div>';
+      '<div style="font-size:11px;color:#667590;margin-top:4px">第 '+rrHtml(sCur)+' / '+rrHtml(sTot)+' 阶段 · '+rrHtml(r.stageName||STLABEL[Math.min(sCur-1,STLABEL.length-1)]||'')+'</div></div>';
   }
   return '<div style="margin-top:8px">'+stageBar+
-    '<button onclick="window.__rrWaveOpen=window.__rrWaveOpen||{};window.__rrWaveOpen[\''+r.id+'\']=!'+(open?'true':'false')+';render()" '+
+    '<button onclick="window.__rrWaveOpen=window.__rrWaveOpen||{};window.__rrWaveOpen[\''+rrInlineString(r.id)+'\']=!'+(open?'true':'false')+';render()" '+
       'style="border:0;background:transparent;color:#0757ad;font-size:11.5px;cursor:pointer;padding:0">'+
       (open?'▾ 收起 AI 团队工作台':'▸ 展开 AI 团队工作台（'+r.waves.length+' 阶段）')+'</button>'+summary+
     (open?'<div style="margin-top:6px;padding:8px 12px;background:#fafcff;border:1px solid #eaf0f7;border-radius:8px">'+rows+'</div>':'')+
@@ -158,13 +161,13 @@ function rrProgress(r){
   return '<div style="margin-top:8px;padding:10px 12px;border:1px solid #e3ebf6;border-radius:8px;background:#f8fbff">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#3d5471;margin-bottom:7px">'+
       '<span><span class="'+(stale?'':'rr-dot-live')+'" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+(stale?'#c85b09':'#0aa696')+';margin-right:6px"></span>'+
-      '<b style="color:#0757ad" class="rr-step-glow">'+step+'</b>'+(stale?' <span style="color:#c85b09">（'+staleMin+' 分钟未更新，等待执行器恢复）</span>':'')+'</span>'+
+      '<b style="color:#0757ad" class="rr-step-glow">'+rrHtml(step)+'</b>'+(stale?' <span style="color:#c85b09">（'+staleMin+' 分钟未更新，等待执行器恢复）</span>':'')+'</span>'+
       '<span style="display:inline-flex;align-items:center"><span id="rrElapsed" style="font-variant-numeric:tabular-nums">'+(r.engine==='full-v1'?'报告耗时 ':'有效运行 ')+ts.active+'</span>'+gapBadge+'</span></div>'+
     '<div style="height:8px;border-radius:4px;background:#e6edf6;overflow:hidden;margin-bottom:7px">'+
       '<div class="'+(stale?'':'rr-bar-live')+'" style="height:100%;width:'+pct+'%;border-radius:4px;background:linear-gradient(90deg,#0757ad,#007f82);transition:width .6s"></div></div>'+
     '<div style="display:flex;justify-content:space-between;font-size:11.5px;color:#667590">'+
       '<span>已产出章节 '+fd+' / '+ft+' · '+pct+'%</span>'+
-      '<span><span id="rrLastUpd">'+(lastUpd||'')+'</span>'+(lastUpd?' · ':'')+eta+'</span></div>'+
+      '<span><span id="rrLastUpd">'+(lastUpd||'')+'</span>'+(lastUpd?' · ':'')+rrHtml(eta)+'</span></div>'+
     rrIssuesBanner(r)+
     rrWaveRows(r)+'</div>';
 }
@@ -179,11 +182,21 @@ function rrIssuesBanner(r){
       iss.map(function(s){
         var parts=String(s).split('：');
         return '<div style="font-size:11.5px;color:#7a2836;line-height:1.5">'+
-          '<b style="color:#b0364a">'+(parts[0]||'')+'</b>'+(parts[1]?' — '+parts[1]:'')+'</div>';
+          '<b style="color:#b0364a">'+rrHtml(parts[0]||'')+'</b>'+(parts[1]?' — '+rrHtml(parts[1]):'')+'</div>';
       }).join('')+'</div></div>';
 }
-function rrPanel(){
-  var rows=REPORT_REQUESTS.concat(_rrOutboxRows()).slice().reverse().map(function(r){
+function rrPanel(options){
+  options=options||{};
+  var query=String(options.query||'').trim().toLowerCase(),status=options.status||'all';
+  var escape=rrHtml;
+  var requests=REPORT_REQUESTS.concat(_rrOutboxRows()).slice().reverse().filter(function(r){
+    var matches=!query||[r.province,r.city,r.id,r.by].join(' ').toLowerCase().indexOf(query)!==-1;
+    if(status==='active')matches=matches&&!r.submissionBlocked&&(r.status==='pending'||r.status==='running');
+    else if(status==='done')matches=matches&&r.status==='done';
+    else if(status==='attention')matches=matches&&(r.submissionBlocked||['failed','cancelled','blocked'].indexOf(r.status)!==-1);
+    return matches;
+  });
+  var rows=requests.map(function(r){
     var t=new Date(r.ts);var tm=(t.getMonth()+1)+'/'+t.getDate()+' '+t.getHours()+':'+('0'+t.getMinutes()).slice(-2);
     var doneInfo='';
     if(r.status==='done'){
@@ -200,42 +213,43 @@ function rrPanel(){
     }
     var dlBtn='';
     if(r.status==='done' && r.files && r.files.length){
-      dlBtn='<button onclick="downloadReqFile(\''+r.id+'\',\'full\')" style="flex-shrink:0;padding:6px 12px;background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:8px;font-size:12px;color:#4338ca;cursor:pointer;font-weight:600;white-space:nowrap">⬇ 原始报告(docx)</button>';
+      dlBtn='<button onclick="downloadReqFile(\''+rrInlineString(r.id)+'\',\'full\')" style="flex-shrink:0;padding:6px 12px;background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:8px;font-size:12px;color:#4338ca;cursor:pointer;font-weight:600;white-space:nowrap">⬇ 原始报告(docx)</button>';
     }
     var pushCtrl='';
     if(r.status==='done'){
       if(r.pushed){
-        pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#166534;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:5px 11px;white-space:nowrap">✓ 已推送 · 账号 '+(r.account||'—')+'</span>';
+        pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#166534;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:5px 11px;white-space:nowrap">✓ 已推送 · 账号 '+escape(r.account||'—')+'</span>';
       } else if(r.engine!=='full-v1'){
         pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:5px 11px;white-space:nowrap">需重新生成后发布</span>';
       } else if(r.pushRequested){
         pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:5px 11px;white-space:nowrap">⏳ 推送中…</span>';
       } else {
-        pushCtrl='<button onclick="pushReportToRag(\''+r.id+'\',this)" style="flex-shrink:0;padding:6px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap">🚀 推送到 RAG</button>';
+        pushCtrl='<button onclick="pushReportToRag(\''+rrInlineString(r.id)+'\',this)" style="flex-shrink:0;padding:6px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap">🚀 推送到 RAG</button>';
       }
     }
     var cancelBtn='';
     if(r.submissionBlocked){
-      cancelBtn='<button onclick="_rrDiscardBlocked(\''+r.id+'\')" style="flex-shrink:0;padding:6px 12px;border:1px solid #fca5a5;border-radius:8px;background:#fff;color:#dc2626;cursor:pointer">移除未提交项</button>';
+      cancelBtn='<button onclick="_rrDiscardBlocked(\''+rrInlineString(r.id)+'\')" style="flex-shrink:0;padding:6px 12px;border:1px solid #fca5a5;border-radius:8px;background:#fff;color:#dc2626;cursor:pointer">移除未提交项</button>';
     }
     if(!r.submissionPending&&(r.status==='pending'||r.status==='running')){
-      cancelBtn='<button onclick="cancelReportRequest(\''+r.id+'\',this)" style="flex-shrink:0;padding:6px 12px;background:#fff;border:1.5px solid #fca5a5;border-radius:8px;font-size:12px;color:#dc2626;cursor:pointer;font-weight:600;white-space:nowrap">✕ 取消</button>';
+      cancelBtn='<button onclick="cancelReportRequest(\''+rrInlineString(r.id)+'\',this)" style="flex-shrink:0;padding:6px 12px;background:#fff;border:1.5px solid #fca5a5;border-radius:8px;font-size:12px;color:#dc2626;cursor:pointer;font-weight:600;white-space:nowrap">✕ 取消</button>';
     }
-    return '<div class="ops-row" style="align-items:flex-start;flex-direction:column"><div style="display:flex;align-items:center;gap:10px;width:100%">'+
+    return '<div class="ops-row ops-ui-report-row" style="align-items:flex-start;flex-direction:column"><div class="ops-ui-report-row-head" style="display:flex;align-items:center;gap:10px;width:100%">'+
       '<div class="r-ic"></div>'+
-      '<div class="r-main"><div style="display:flex;align-items:center;gap:8px"><strong>'+r.province+' · '+r.city+'</strong>'+(r.submissionPending?'<span class="ops-badge orange">等待保存确认</span>':rrStatusBadge(r.status,r))+'</div>'+
-      '<small>'+r.by+' · '+tm+' 发起'+doneInfo+serviceInfo+(r.submissionPending?' · '+(r.submissionError||'正在确认，暂未进入生成队列'):'')+(r.status==='failed'&&r.failReason&&!serviceInfo?' · '+r.failReason:'')+'</small></div>'+
-      '<div style="margin-left:auto;display:flex;align-items:center;gap:8px">'+dlBtn+pushCtrl+cancelBtn+'</div></div>'+
+      '<div class="r-main"><div class="ops-ui-report-title" style="display:flex;align-items:center;gap:8px"><strong>'+escape(r.province)+' · '+escape(r.city)+'</strong>'+(r.submissionPending?'<span class="ops-badge orange">等待保存确认</span>':rrStatusBadge(r.status,r))+'</div>'+
+      '<small>'+escape(r.by)+' · '+tm+' 发起'+escape(doneInfo+serviceInfo)+(r.submissionPending?' · '+escape(r.submissionError||'正在确认，暂未进入生成队列'):'')+(r.status==='failed'&&r.failReason&&!serviceInfo?' · '+escape(r.failReason):'')+'</small></div>'+
+      '<div class="ops-ui-report-actions" style="margin-left:auto;display:flex;align-items:center;gap:8px">'+dlBtn+pushCtrl+cancelBtn+'</div></div>'+
       rrProgress(r)+'</div>';
-  }).join('')||'<div style="color:#8492a6;font-size:13px;padding:8px 2px">暂无申请记录</div>';
-  return '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:18px 20px;margin:0 0 16px">'+
+  }).join('')||'<div class="ops-ui-empty">'+(query||status!=='all'?'没有符合筛选条件的报告':'暂无申请记录')+'</div>';
+  return '<div class="ops-ui-report-panel" style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:18px 20px;margin:0 0 16px">'+
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><strong style="font-size:15px">发起城市报告生成</strong>'+
     '<span style="color:#8492a6;font-size:12px">独立报告服务 · 生成 Word 后可发布到城市智库</span></div>'+
     '<div style="color:#667590;font-size:12px;line-height:1.6;margin-bottom:12px">标准研判：每个方向15家目标企业；证据不足标待核实</div>'+
-    '<div style="display:flex;gap:10px;margin-bottom:14px">'+
-      '<input id="rrProv" placeholder="省份，如 湖北" style="flex:0 0 150px;min-height:40px;padding:8px 11px;border:1px solid var(--line);border-radius:8px">'+
-      '<input id="rrCity" placeholder="城市，如 随州" style="flex:0 0 150px;min-height:40px;padding:8px 11px;border:1px solid var(--line);border-radius:8px">'+
+    '<div class="ops-ui-report-create" style="display:flex;gap:10px;margin-bottom:14px">'+
+      '<input id="rrProv" aria-label="报告省份" placeholder="省份，如 湖北" style="flex:0 0 150px;min-height:40px;padding:8px 11px;border:1px solid var(--line);border-radius:8px">'+
+      '<input id="rrCity" aria-label="报告城市" placeholder="城市，如 随州" style="flex:0 0 150px;min-height:40px;padding:8px 11px;border:1px solid var(--line);border-radius:8px">'+
       '<button class="primary-button" style="min-height:40px" onclick="submitReportRequest()">发起申请</button></div>'+
+    '<div class="ops-ui-report-count">'+requests.length+' 条报告记录</div>'+
     rows+'</div>';
 }
 

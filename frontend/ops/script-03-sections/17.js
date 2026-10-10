@@ -74,6 +74,8 @@ function _authResetView(){
   window._serverSyncLock=false;window._verifyInProgress=false;window._reportGenerating=false;
   window.DELETED_PROJECTS=[];window.DELETED_CLUES=[];window.__lastSyncFp=null;
   cur=null;view='login';window._opsDataReady=false;
+  if(document.body&&document.body.classList&&typeof document.body.classList.remove==='function')document.body.classList.remove('ops-mode');
+  _opsRenderedTab=null;_opsRenderedScope=null;if(typeof ragResetChat==='function')ragResetChat(null,false);
   render._opsRestored=false;render._opsLoadError='';
   try{['huixiaozhao_kb_v1','hxz_auth','hxz_uploads','hxz_reportstate','hxz_rpt_history','hxz_report_history','HXZ_UPLOAD_TOMBS','HXZ_KBCHAT_TOMBS','hxz_subproj'].forEach(function(k){localStorage.removeItem(k);});}catch(_){}
 }
@@ -119,59 +121,62 @@ if(!window._opsAuthPoll)window._opsAuthPoll=setInterval(function(){
 
 
 /* ══════════════════════════════════════════════════════════════
-   管理端 v2 — 精简为两个模块
-   Tab1: 城市需求概览  Tab2: 企业资源库
+   管理端 v3 — 工作台、业务、客户、资源分组导航
    ══════════════════════════════════════════════════════════════ */
 
-/* ─ 全局状态 ─ */
-var opsTab = 'overview';  // 'overview' | 'enterprises'
-var OPS_ENT = OPS_ENT || [];  // 企业库 [{id,name,realName,kind,gap,region,signal,signalSrc,reason,scale,matchScore,status}]
-
-/* ─ 主渲染入口 ─ */
+/* ─ 管理端展示状态：筛选条件只在浏览器中保存，不写业务数据 ─ */
+var opsTab = 'overview';
+var OPS_ENT = OPS_ENT || [];
+var OPS_UI = {invitations:{query:'',status:'all',distribution:'all'},users:{query:'',city:''},reports:{query:'',status:'all'},demands:{query:'',city:''},rag:{tab:'materials'}};
+var _opsRenderedTab = null, _opsRenderedScope = null;
+var OPS_NAV = [
+  {label:'工作台',items:[{id:'overview',icon:'◫',label:'运营总览'}]},
+  {label:'业务管理',items:[{id:'reports',icon:'▤',label:'报告任务'},{id:'demands',icon:'◎',label:'招商项目'},{id:'profile',icon:'⌖',label:'城市画像'},{id:'rag',icon:'▥',label:'城市智库'}]},
+  {label:'客户管理',items:[{id:'invitations',icon:'◇',label:'邀请码'},{id:'users',icon:'♙',label:'注册用户'}]},
+  {label:'资源管理',items:[{id:'enterprises',icon:'▦',label:'企业资源库'}]}
+];
+function opsNavItem(id){var found=null;OPS_NAV.forEach(function(g){g.items.forEach(function(t){if(t.id===id)found=t;});});return found;}
+function opsGo(tab){if(!opsNavItem(tab))return;opsTab=tab;renderOpsV2();}
+function opsHandler(name,value){return _authEscape(name+'('+JSON.stringify(String(value))+')');}
+function opsPageHead(title,description,actions){return '<div class="ops-ui-pagehead"><div><div class="ops-ui-eyebrow">管理工作台</div><h1>'+_authEscape(title)+'</h1><p class="ops-ui-subtitle">'+_authEscape(description||'')+'</p></div><div class="ops-ui-actions">'+(actions||'')+'</div></div>';}
+function opsDate(value){if(!value)return '—';var date=new Date(value);return isNaN(date.getTime())?'—':date.toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});}
+function opsEmpty(title,note){return '<div class="ops-ui-empty"><strong>'+_authEscape(title)+'</strong><p>'+_authEscape(note||'')+'</p></div>';}
+function opsFilterChange(section,key,value){if(!OPS_UI[section])return;OPS_UI[section][key]=value;opsRefreshList(section);}
+function opsRefreshList(section){
+  var targets={invitations:['opsInviteResults',opsInviteResults],users:['opsUserResults',opsUserResults],reports:['opsReportResults',function(){return rrPanel(OPS_UI.reports);}],demands:['opsDemandResults',opsDemandResults]};
+  var target=targets[section],el=target&&document.getElementById(target[0]);if(el){var saved=section==='reports'?opsCaptureView():null;el.innerHTML=target[1]();if(saved)opsRestoreView(saved);}
+}
+/* Keep the active field and unfinished report form intact during the read-only poll. */
+function opsCaptureView(){
+  var active=document.activeElement,state={focus:null,drafts:[]};
+  if(active&&active.id&&/^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)&&active.type!=='password'&&active.type!=='file')state.focus={id:active.id,value:active.value,start:active.selectionStart,end:active.selectionEnd};
+  var content=document.getElementById('opsContent');
+  if(content&&content.querySelectorAll)Array.prototype.forEach.call(content.querySelectorAll('input[id],textarea[id],select[id]'),function(el){if(el.type!=='password'&&el.type!=='file'&&el.id.indexOf('ops')!==0)state.drafts.push({id:el.id,value:el.value,checked:el.checked});});
+  return state;
+}
+function opsRestoreView(state){
+  state.drafts.forEach(function(item){var el=document.getElementById(item.id);if(el&&!el.disabled){el.value=item.value;if(el.type==='checkbox'||el.type==='radio')el.checked=item.checked;}});
+  if(state.focus){var el=document.getElementById(state.focus.id);if(el&&!el.disabled){el.value=state.focus.value;if(el.focus)el.focus({preventScroll:true});if(el.setSelectionRange&&typeof state.focus.start==='number')try{el.setSelectionRange(state.focus.start,state.focus.end);}catch(_){}}}
+}
 function renderOpsV2(){
   if(!AUTH||AUTH.scope!=='admin'||!window._opsDataReady){render();return;}
-  var root = $('#root');
-  if(!root) return;
-  var opsContent = document.getElementById('opsContent');
-  var scrollTop = opsContent ? opsContent.scrollTop : 0;
-  root.innerHTML = opsShell();
-  bind();
-  var newContent = document.getElementById('opsContent');
-  if(newContent) newContent.scrollTop = scrollTop;
+  var root=$('#root');if(!root)return;
+  if(document.body&&document.body.classList&&typeof document.body.classList.add==='function')document.body.classList.add('ops-mode');
+  if(!opsNavItem(opsTab))opsTab='overview';
+  var scope=opsTab==='rag'?'rag:'+String(ragProjKey()||''):opsTab;
+  var samePage=_opsRenderedTab===opsTab&&_opsRenderedScope===scope,content=document.getElementById('opsContent');
+  var scrollTop=samePage&&content?content.scrollTop:0;
+  var saved=samePage?opsCaptureView():null;
+  root.innerHTML=opsShell();bind();_opsRenderedTab=opsTab;_opsRenderedScope=scope;
+  if(saved)opsRestoreView(saved);
+  var next=document.getElementById('opsContent');if(next)next.scrollTop=scrollTop;
 }
-
 function opsShell(){
-  return '<div class="app-shell ops-v2">' +
-    opsTopbarV2() +
-    '<div style="display:flex;height:calc(100vh - 52px);overflow:hidden">' +
-      opsTabBar() +
-      '<div id="opsContent" style="flex:1;overflow-y:auto">' +
-        (opsTab==='overview' ? opsOverview() : opsTab==='profile' ? opsCityProfile() : opsTab==='rag' ? opsRag() : opsTab==='users' ? opsUsers() : opsEnterprises()) +
-      '</div>' +
-    '</div>' +
-  '</div>';
+  var pages={overview:opsOverview,reports:opsReports,demands:opsDemands,profile:opsCityProfile,rag:opsRag,invitations:opsInvitations,users:opsUsers,enterprises:opsEnterprises};
+  return '<div class="app-shell ops-v3">'+opsTopbarV2()+'<div class="ops-ui-layout">'+opsTabBar()+'<main id="opsContent" class="ops-ui-content" aria-label="'+_authEscape(opsNavItem(opsTab).label)+'">'+pages[opsTab]()+'</main></div></div>';
 }
-
 function opsTopbarV2(){
-  var projectCount = Object.keys(PROJECTS).length;
-  var cityCount = (function(){var s={};Object.keys(PROJECTS).forEach(function(k){var c=PROJECTS[k]&&PROJECTS[k].city;if(c)s[c]=1;});return Object.keys(s).length;})();
-  var demandCount  = DEMANDS.length;
-  return '<div style="height:52px;background:#0b183b;display:flex;align-items:center;padding:0 20px;gap:16px;flex-shrink:0">' +
-    '<div style="display:flex;align-items:center;gap:8px">' +
-      '<div style="width:28px;height:28px;background:linear-gradient(135deg,#1a56db,#6366f1);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff">慧</div>' +
-      '<span style="color:#fff;font-weight:700;font-size:14px">慧小招 · 管理端</span>' +
-    '</div>' +
-    '<div style="display:flex;gap:12px;margin-left:8px">' +
-      '<span style="font-size:12px;color:#94a3b8">' + cityCount + ' 个城市</span>' +
-      '<span style="font-size:12px;color:#94a3b8">' + demandCount + ' 条需求</span>' +
-      '<span style="font-size:12px;color:#94a3b8">' + OPS_ENT.length + ' 家企业</span>' +
-    '</div>' +
-    '<div style="flex:1"></div><button onclick="logout()" style="border:1px solid #52637a;border-radius:7px;background:transparent;color:#fff;padding:5px 10px">退出登录</button>' +
-    '<div style="display:flex;align-items:center;gap:6px" title="\u5f53\u524d\u64cd\u4f5c\u4eba\u540d\u5b57\uff0c\u5c06\u8ddf\u968f\u4f60\u4e0a\u4f20\u7684\u6bcf\u4e00\u6761\u667a\u5e93\u6750\u6599\uff0c\u65b9\u4fbf\u5176\u4ed6\u4eba\u5728\u4e2a\u6027\u5316\u6743\u91cd\u5220\u9664\u7248\u6837\u4e2d\u5e94\u7528\u5230\u9700\u8981\u7684\u5730\u65b9">' +
-      '<span style="font-size:11px;color:#94a3b8">\u64cd\u4f5c\u4eba</span>' +
-      '<input id="opsOperatorInput" value="' + ragEsc(getOpsOperator()) + '" placeholder="\u8bf7\u8f93\u5165\u4f60\u7684\u540d\u5b57" onchange="setOpsOperator(this.value)" style="width:96px;min-height:26px;padding:0 8px;border:1px solid #334155;border-radius:6px;background:#152238;color:#e2e8f0;font-size:12px;outline:0">' +
-    '</div>' +
-  '</div>';
+  return '<header class="ops-ui-topbar"><div class="ops-ui-brand"><span class="ops-ui-brand-mark">慧</span><span>慧小招<span class="ops-ui-brand-caption">管理端</span></span></div><div class="ops-ui-breadcrumb">管理工作台 <span>/</span> <strong>'+_authEscape(opsNavItem(opsTab).label)+'</strong></div><div class="ops-ui-topbar-actions"><label class="ops-ui-operator" title="材料上传时的署名，登录权限由当前管理员账号决定">操作人<input id="opsOperatorInput" value="'+_authEscape(getOpsOperator())+'" placeholder="填写署名" onchange="setOpsOperator(this.value)"></label><button class="ops-ui-button" onclick="logout()">退出登录</button></div></header>';
 }
 /* 当前操作人显示名独立于服务端认证，"当前操作人"是本地轻量设置（localStorage持久化），
    随每次上传/入库写进 chunk.account，供 ragOriginStyle() 展示具体是谁上传的材料。
@@ -187,41 +192,28 @@ function setOpsOperator(name){
 }
 
 function opsTabBar(){
-  var tabs=[
-    {id:'overview', icon:'🏙️', label:'城市需求概览', sub:'用户·进度·需求'},
-    {id:'profile', icon:'🧭', label:'城市画像', sub:'客观条件·招商偏好'},
-    {id:'rag', icon:'📚', label:'城市智库 RAG', sub:'材料·检索·推送日志'},
-    {id:'enterprises', icon:'🏭', label:'企业资源库', sub:'录入·扫描·推送'},
-    {id:'users', icon:'👤', label:'注册用户', sub:'政府端账号资料'},
-  ];
-  return '<div style="width:200px;flex-shrink:0;background:#f8faff;border-right:1px solid #e8edf5;padding:16px 12px;display:flex;flex-direction:column;gap:4px">' +
-    tabs.map(function(t){
-      var isOn=(opsTab===t.id);
-      return '<button onclick="opsTab=\'' + t.id + '\';renderOpsV2()" style="display:flex;align-items:center;gap:10px;padding:11px 12px;border:none;border-radius:10px;cursor:pointer;text-align:left;background:' + (isOn?'#eff6ff':'transparent') + ';border:1.5px solid ' + (isOn?'#bfdbfe':'transparent') + '">' +
-        '<span style="font-size:18px">' + t.icon + '</span>' +
-        '<div>' +
-          '<div style="font-size:13px;font-weight:' + (isOn?'700':'500') + ';color:' + (isOn?'#1d4ed8':'#0b183b') + '">' + t.label + '</div>' +
-          '<div style="font-size:11px;color:#9aa5b5;margin-top:1px">' + t.sub + '</div>' +
-        '</div>' +
-      '</button>';
-    }).join('') +
-  '</div>';
+  return '<nav class="ops-ui-sidebar" aria-label="管理端导航">'+OPS_NAV.map(function(group){return '<div class="ops-ui-nav-group"><div class="ops-ui-nav-label">'+group.label+'</div>'+group.items.map(function(item){var active=opsTab===item.id;return '<button class="ops-ui-nav-button'+(active?' is-active':'')+'"'+(active?' aria-current="page"':'')+' onclick="'+opsHandler('opsGo',item.id)+'"><span class="ops-ui-nav-icon" aria-hidden="true">'+item.icon+'</span><span>'+item.label+'</span></button>';}).join('')+'</div>';}).join('')+'</nav>';
 }
 
 
 /* ══ Tab: 城市智库 RAG（材料·检索·推送日志）══ */
 var ragCity=null, ragTopic=0, ragQuery='', ragHits=null, ragLog=null, ragFilter='';
-var ragOverviewOpen=true; // 工作区总览面板默认展开
+var ragOverviewOpen=false; // 默认聚焦当前工作区，可展开查看所有独立工作区
 // 对话更新 RAG：多轮消息 [{role,content}]；ragChatPending=可入库的最近一条 AI 结论草稿
-var ragChatMsgs=[], ragChatBusy=false, ragChatPending=null;
-/* 【2026-09-29】工作区总览：ragCityOptions() 的下拉框按城市名去重折叠，同城市名的
-   多个独立projKey(邀请码各自新建)只露出材料量最大的那个，管理员完全看不到、也管不
-   到其他实例——这是"数据没有串，但管理端UI层面把它们藏起来了"的隔离盲点。
-   本面板不折叠，按城市分组列出全部projKey，点击任意一项直接切到该工作区。 */
+var ragChatMsgs=[],ragChatBusy=false,ragChatPending=null,ragChatWorkspace=null,ragChatEpoch=0,ragChatHint='';
+function ragResetChat(key,notice){
+  ragChatEpoch=(ragChatEpoch||0)+1;ragChatWorkspace=key||null;ragChatMsgs=[];ragChatBusy=false;ragChatPending=null;
+  ragChatHint=notice?'已切换工作区，上一个工作区的对话已清空。':'';
+}
+function ragEnsureChatWorkspace(key){if(ragChatWorkspace!==key)ragResetChat(key,!!ragChatWorkspace);}
+function ragClearChat(){ragResetChat(ragChatWorkspace,false);renderOpsV2();}
+function ragCanCommitMessage(message,key){return !!message&&message.role==='assistant'&&!message.streaming&&!!message.content&&message.workspaceKey===key&&ragChatWorkspace===key&&ragProjKey()===key&&ragChatMsgs.indexOf(message)>=0;}
+
+/* 工作区总览与下拉框均按准确 projKey 展示，同城市的独立工作区不会被折叠隐藏。 */
 function ragWorkspaceOverview(activeKey){
   var keys=Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&Array.isArray(p.kb);});
   if(keys.length<=1) return ''; // 只有一个工作区时不需要总览，避免空占位打扰
-  var byCity={};
+  var byCity=Object.create(null);
   keys.forEach(function(k){ var c=PROJECTS[k].city||k; (byCity[c]=byCity[c]||[]).push(k); });
   var multiCityCount=Object.keys(byCity).filter(function(c){return byCity[c].length>1;}).length;
   var rows=Object.keys(byCity).sort().map(function(city){
@@ -283,61 +275,21 @@ function ragProjKey(){
   return keys.indexOf(ragCity)>=0?ragCity:keys[0];
 }
 function ragCityOptions(){
-  // 按城市去重：同一城市可能有多个项目(主账号+各招商方向子项目)，下拉只展示一个城市一项，
-  // 代表项 = 该城市材料量最大的项目(优先 kbInitTs)，避免出现多个"随州"。
-  // 【2026-09-18】原过滤要求 kb 里已有材料，导致管理端「＋新增城市」建的空城市进不了下拉、
-  // 也就没法给它上传材料。改为「有 kb 数组结构」即可，零材料的城市在选项里标注待上传。
-  var keys=Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&Array.isArray(p.kb);});
-  var byCity={};
-  keys.forEach(function(k){
-    var c=PROJECTS[k].city||k;
-    if(!byCity[c]){ byCity[c]=k; return; }
-    // 取代表项：kbInitTs 优先，其次 known 材料量更大者
-    var cur=byCity[c], pc=PROJECTS[cur], pk=PROJECTS[k];
-    var ic=pc.kbInitTs?1:0, ik=pk.kbInitTs?1:0;
-    if(ik!==ic){ if(ik>ic) byCity[c]=k; return; }
-    var nc=pc.kb.reduce(function(s,t){return s+(t.known||[]).length;},0);
-    var nk=pk.kb.reduce(function(s,t){return s+(t.known||[]).length;},0);
-    if(nk>nc) byCity[c]=k;
-  });
-  var activeCity = (PROJECTS[ragProjKey()]||{}).city;
-  return Object.keys(byCity).map(function(c){
-    var k=byCity[c];
-    var _n=(PROJECTS[k].kb||[]).reduce(function(s,t){return s+((t.known||[]).length);},0);
-    return '<option value="'+k+'"'+(c===activeCity?' selected':'')+'>'+c+(_n?'':' · 待上传材料')+'</option>';
-  }).join('');
+  var activeKey=ragProjKey();
+  return Object.keys(PROJECTS).filter(function(key){return PROJECTS[key]&&Array.isArray(PROJECTS[key].kb);}).sort(function(a,b){var x=PROJECTS[a].city||a,y=PROJECTS[b].city||b;return x.localeCompare(y)||a.localeCompare(b);}).map(function(key){var p=PROJECTS[key],count=p.kb.reduce(function(n,t){return n+(t.known||[]).length;},0);return '<option value="'+_authEscape(key)+'"'+(key===activeKey?' selected':'')+'>'+_authEscape((p.city||key)+' · '+key+' · '+count+' 条材料')+'</option>';}).join('');
 }
+function opsRagSelectTab(tab){if(['materials','upload','query','history'].indexOf(tab)<0)return;OPS_UI.rag.tab=tab;renderOpsV2();}
 function opsRag(){
-  var key=ragProjKey();
-  if(!key) return '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:#9aa5b5;padding:60px">'+
-    '<div style="font-size:36px">📚</div><div style="font-size:14px;font-weight:700;color:#0b183b">暂无已初始化的城市智库</div>'+
-    '<div style="font-size:13px;text-align:center;line-height:1.7">可直接新增城市并上传材料建库，<br>或在「城市需求概览」发起报告生成由流水线自动入库</div>'+
-    '<button class="ghost-button" onclick="ragAddCityModal()" style="margin-top:4px;border-color:#c7d2fe;color:#4f46e5">＋ 新增城市</button></div>';
-  var p=PROJECTS[key];
-  var total=p.kb.reduce(function(s,t){return s+(t.known||[]).length;},0);
-  var rs=REPORTSTATE[key]||{};
-  var initT=p.kbInitTs?new Date(p.kbInitTs):null;
-  var initStr=initT?(initT.getMonth()+1)+'/'+initT.getDate()+' '+initT.getHours()+':'+('0'+initT.getMinutes()).slice(-2):'—';
-  return '<div style="padding:24px">'+
-    ragWorkspaceOverview(key)+
-    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'+
-      '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">城市智库 RAG</h1>'+
-      '<select onchange="ragCity=this.value;ragTopic=0;ragHits=null;renderOpsV2()" style="min-height:34px;padding:4px 10px;border:1px solid #d8e0ed;border-radius:8px;font-size:13px">'+ragCityOptions()+'</select>'+
-      '<button onclick="ragAddCityModal()" title="新增一个城市智库，建好后可直接上传材料" '+
-        'style="min-height:34px;padding:4px 12px;border:1px solid #c7d2fe;border-radius:8px;background:#f5f3ff;color:#4f46e5;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap">＋ 新增城市</button>'+
-      '<span style="font-size:12px;color:#9aa5b5">'+(p.org||'—')+' · 初始化于 '+initStr+'</span></div>'+
-    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">'+
-      ragStatCard('📦','智库材料总量',total+' 条','来自 AI 招商智能体研判')+
-      ragStatCard('🗂️','主题分区',p.kb.length+' 个','产业链/园区/企业/政策')+
-      ragStatCard('📄','研判报告',(rs.text?Math.round(rs.text.length/100)/10+'k 字':'未生成'),rs.finalized?'已定稿·政府端可见':'')+
-      ragStatCard('🕐','版本历史',((p.kbVersions||[]).length||1)+' 版','支持时间线回溯')+
-    '</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">'+ragUploadPanel(p,key)+ragVersionPanel(p,key)+'</div>'+
-    ragSearchBox()+
-    ragChatBox(p,key)+
-    ragBaseVsSupportLayout(p,key)+
-    ragPushLog()+
-  '</div>';
+  var key=ragProjKey();ragEnsureChatWorkspace(key);
+  var actions='<button class="ops-ui-button is-primary" onclick="ragAddCityModal()">＋ 新增城市</button>';
+  var head=opsPageHead('城市智库','按工作区维护材料、补充事实和核对检索结果。',actions);
+  if(!key)return '<div class="ops-ui-page">'+head+opsEmpty('暂无已初始化的城市智库','可新增城市并上传材料，或在「报告任务」生成报告后发布入库。')+'</div>';
+  var p=PROJECTS[key],total=p.kb.reduce(function(n,t){return n+(t.known||[]).length;},0),rs=REPORTSTATE[key]||{};
+  var current=OPS_UI.rag.tab;
+  var tabs=[['materials','材料浏览'],['upload','上传补充'],['query','检索问答'],['history','版本与日志']];
+  var tabbar='<div class="ops-ui-subnav" role="group" aria-label="智库功能">'+tabs.map(function(tab){return '<button class="ops-ui-subnav-button'+(current===tab[0]?' is-active':'')+'" aria-pressed="'+(current===tab[0]?'true':'false')+'" onclick="'+opsHandler('opsRagSelectTab',tab[0])+'">'+tab[1]+'</button>';}).join('')+'</div>';
+  var body=current==='materials'?ragBaseVsSupportLayout(p,key):current==='upload'?ragUploadPanel(p,key):current==='query'?ragSearchBox()+ragChatBox(p,key):ragVersionPanel(p,key)+ragPushLog();
+  return '<div class="ops-ui-page">'+head+'<div class="ops-ui-workspacebar"><label class="ops-ui-filter">当前工作区<select id="opsRagWorkspace" onchange="ragCity=this.value;ragTopic=0;ragHits=null;renderOpsV2()">'+ragCityOptions()+'</select></label><span class="ops-ui-muted">'+_authEscape(p.org||'未填写单位')+' · 初始化于 '+opsDate(p.kbInitTs)+'</span></div>'+ragWorkspaceOverview(key)+'<div class="ops-ui-metric-grid">'+ragStatCard('📦','智库材料',total+' 条','当前工作区')+ragStatCard('🗂','主题分区',p.kb.length+' 个','材料按主题整理')+ragStatCard('📄','研判报告',rs.text?Math.round(rs.text.length/100)/10+'k 字':'未生成',rs.finalized?'已定稿 · 政府端可见':'')+ragStatCard('🕐','历史版本',(p.kbVersions||[]).length+' 版','可在版本与日志中查看')+'</div>'+tabbar+'<section class="ops-ui-section">'+body+'</section></div>';
 }
 /* ══ 新增城市智库（管理端 RAG 页）══
    建一个带标准四大主题骨架的空项目，建好后直接切到该城市，
@@ -570,11 +522,12 @@ function ragHitsView(){
 /* ── 对话更新 RAG：与 AI 就该城市智库对话，认可某条结论后「加入智库」显式落库 ── */
 function ragChatBox(p,key){
   var msgs=ragChatMsgs.map(function(m,i){
+    if(m.workspaceKey!==key)return '';
     if(m.role==='user'){
       return '<div style="display:flex;justify-content:flex-end;margin:6px 0"><div style="max-width:78%;background:#0757ad;color:#fff;border-radius:12px 12px 2px 12px;padding:8px 12px;font-size:12.5px;line-height:1.6;white-space:pre-wrap">'+ragEsc(m.content)+'</div></div>';
     }
-    var canAdd=(m.role==='assistant'&&m.content&&!m.streaming);
-    var addBtn=canAdd?('<div style="margin-top:6px"><button onclick="ragChatCommit('+i+',\''+key+'\')" style="border:1px solid #bfe5e0;background:#e4f5f3;color:#006d70;border-radius:6px;font-size:11px;cursor:pointer;padding:4px 11px">＋ 把这条结论加入智库</button></div>'):'';
+    var canAdd=ragCanCommitMessage(m,key);
+    var addBtn=canAdd?('<div style="margin-top:6px"><button onclick="ragChatCommit('+i+','+_authEscape(JSON.stringify(key))+')" style="border:1px solid #bfe5e0;background:#e4f5f3;color:#006d70;border-radius:6px;font-size:11px;cursor:pointer;padding:4px 11px">＋ 把这条结论加入智库</button></div>'):'';
     return '<div style="display:flex;justify-content:flex-start;margin:6px 0"><div style="max-width:82%;background:#f4f7fc;color:#1e2a44;border-radius:12px 12px 12px 2px;padding:8px 12px;font-size:12.5px;line-height:1.7;white-space:pre-wrap">'+ragEsc(m.content||(m.streaming?'…':''))+addBtn+'</div></div>';
   }).join('');
   var body=ragChatMsgs.length?msgs:'<div style="color:#9aa5b5;font-size:12px;text-align:center;padding:22px 8px;line-height:1.7">与 AI 讨论该城市智库，补充或修正事实。<br>认可某条结论后，点「加入智库」即可显式落库（可控、留痕）。</div>';
@@ -582,57 +535,63 @@ function ragChatBox(p,key){
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
       '<div style="font-size:13px;font-weight:700;color:#0b183b">💬 对话更新智库</div>'+
       '<span style="font-size:11px;color:#8492a6">基于当前智库对话，确认结论后入库</span>'+
-      (ragChatMsgs.length?'<button onclick="ragChatMsgs=[];ragChatPending=null;renderOpsV2()" style="margin-left:auto;border:1px solid #d8e0ed;background:#fff;color:#5a7398;border-radius:6px;font-size:11px;cursor:pointer;padding:3px 10px">清空对话</button>':'')+
+      (ragChatMsgs.length?'<button onclick="ragClearChat()" style="margin-left:auto;border:1px solid #d8e0ed;background:#fff;color:#5a7398;border-radius:6px;font-size:11px;cursor:pointer;padding:3px 10px">清空对话</button>':'')+
     '</div>'+
+    (ragChatHint?'<p class="ops-ui-muted" role="status">'+_authEscape(ragChatHint)+'</p>':'')+
     '<div id="ragChatScroll" style="max-height:280px;overflow:auto;padding:2px 2px 6px">'+body+'</div>'+
     '<div style="display:flex;gap:8px;margin-top:8px">'+
       '<input id="ragChatIn" placeholder="例：产业链缺口有哪些？该市规上工业企业最新数是多少？" '+
-        'onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();ragChatSend(\''+key+'\');}" '+
+        'onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();ragChatSend('+_authEscape(JSON.stringify(key))+');}" '+
         (ragChatBusy?'disabled ':'')+'style="flex:1;min-height:40px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:8px;font-size:13px'+(ragChatBusy?';background:#f4f6f9':'')+'">'+
-      '<button class="primary-button" style="min-height:40px" '+(ragChatBusy?'disabled':'')+' onclick="ragChatSend(\''+key+'\')">'+(ragChatBusy?'生成中…':'发送')+'</button>'+
+      '<button class="primary-button" style="min-height:40px" '+(ragChatBusy?'disabled':'')+' onclick="ragChatSend('+_authEscape(JSON.stringify(key))+')">'+(ragChatBusy?'生成中…':'发送')+'</button>'+
     '</div></div>';
 }
 function ragChatScrollBottom(){ var el=document.getElementById('ragChatScroll'); if(el)el.scrollTop=el.scrollHeight; }
 function ragChatSend(key){
+  if(key!==ragProjKey()||!PROJECTS[key])return;
+  ragEnsureChatWorkspace(key);
   if(ragChatBusy)return;
-  var inp=document.getElementById('ragChatIn'); var q=inp?(inp.value||'').trim():'';
+  var inp=document.getElementById('ragChatIn');var q=inp?(inp.value||'').trim():'';
   if(!q)return;
-  var p=PROJECTS[key];
-  // 组装当前智库语料作为 RAG 上下文
+  var p=PROJECTS[key],requestEpoch=++ragChatEpoch;
+  function current(){return requestEpoch===ragChatEpoch&&ragChatWorkspace===key&&ragProjKey()===key;}
   var corpus=[];
-  (p.kb||[]).forEach(function(t){(t.known||[]).forEach(function(txt,i){
-    var s=(txt&&typeof txt==='object')?(txt.text||''):txt;
-    corpus.push({id:t.t+':'+i,topic:t.t,text:s,cite:t.t});
-  });});
-  ragChatMsgs.push({role:'user',content:q});
-  var aiMsg={role:'assistant',content:'',streaming:true};
-  ragChatMsgs.push(aiMsg);
-  ragChatBusy=true; renderOpsV2(); ragChatScrollBottom();
-  var hist=ragChatMsgs.filter(function(m){return m.content&&!m.streaming;}).slice(-8).map(function(m){return {role:m.role,content:m.content};});
-  fetch('/api/kb-chat',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:q,chunks:corpus,city:p.city,mode:'chat',stream:true,history:hist})})
+  (p.kb||[]).forEach(function(t){(t.known||[]).forEach(function(txt,i){var s=(txt&&typeof txt==='object')?(txt.text||''):txt;corpus.push({id:t.t+':'+i,topic:t.t,text:s,cite:t.t});});});
+  ragChatMsgs.push({role:'user',content:q,workspaceKey:key});
+  var aiMsg={role:'assistant',content:'',streaming:true,workspaceKey:key};ragChatMsgs.push(aiMsg);
+  ragChatBusy=true;ragChatHint='';renderOpsV2();ragChatScrollBottom();
+  var hist=ragChatMsgs.filter(function(m){return m.workspaceKey===key&&m.content&&!m.streaming;}).slice(-8).map(function(m){return {role:m.role,content:m.content};});
+  return fetch('/api/kb-chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,chunks:corpus,city:p.city,mode:'chat',stream:true,history:hist})})
     .then(function(resp){
-      if(!resp.ok||!resp.body){ throw new Error('HTTP '+resp.status); }
-      var reader=resp.body.getReader(), dec=new TextDecoder(), buf='';
+      if(!current())return;
+      if(!resp.ok||!resp.body)throw new Error('HTTP '+resp.status);
+      var reader=resp.body.getReader(),dec=new TextDecoder(),buf='';
+      function stale(){
+        if(current())return false;
+        try{var cancelled=reader.cancel&&reader.cancel();if(cancelled&&cancelled.catch)cancelled.catch(function(){});}catch(_){}
+        return true;
+      }
       function pump(){
+        if(stale())return;
         return reader.read().then(function(r){
-          if(r.done){ aiMsg.streaming=false; ragChatBusy=false; renderOpsV2(); ragChatScrollBottom(); return; }
+          if(stale())return;
+          if(r.done){aiMsg.streaming=false;ragChatBusy=false;renderOpsV2();ragChatScrollBottom();return;}
           buf+=dec.decode(r.value,{stream:true});
-          var lines=buf.split('\n'); buf=lines.pop();
+          var lines=buf.split('\n');buf=lines.pop();
           lines.forEach(function(line){
-            line=line.trim(); if(line.indexOf('data:')!==0)return;
-            var d=line.slice(5).trim(); if(!d||d==='[DONE]')return;
-            try{ var j=JSON.parse(d); var delta=((j.choices||[{}])[0].delta||{}).content||''; if(delta){aiMsg.content+=delta; renderOpsV2(); ragChatScrollBottom();} }catch(e){}
+            if(!current())return;
+            line=line.trim();if(line.indexOf('data:')!==0)return;
+            var d=line.slice(5).trim();if(!d||d==='[DONE]')return;
+            try{var j=JSON.parse(d),delta=((j.choices||[{}])[0].delta||{}).content||'';if(delta&&current()){aiMsg.content+=delta;renderOpsV2();ragChatScrollBottom();}}catch(_){}
           });
           return pump();
         });
       }
       return pump();
-    })
-    .catch(function(e){ aiMsg.streaming=false; aiMsg.content=(aiMsg.content||'')+'\n[生成失败：'+e.message+']'; ragChatBusy=false; renderOpsV2(); });
+    }).catch(function(e){if(!current())return;aiMsg.streaming=false;aiMsg.content=(aiMsg.content||'')+'\n[生成失败：'+e.message+']';ragChatBusy=false;renderOpsV2();});
 }
 function ragChatCommit(msgIdx, key){
-  var m=ragChatMsgs[msgIdx]; if(!m||m.role!=='assistant'||!m.content)return;
+  var m=ragChatMsgs[msgIdx];if(!ragCanCommitMessage(m,key)){if(typeof toast==='function')toast('工作区已变化，请在当前工作区重新确认结论。');return;}
   var p=PROJECTS[key];
   // 用页面内 modal 替代 prompt/confirm（嵌入式浏览器不支持原生弹窗）
   ragCommitModal({
@@ -640,6 +599,7 @@ function ragChatCommit(msgIdx, key){
     defaultTopic:((p.kb||[])[ragTopic]||{}).t||'对话补充',
     preview:m.content,
     onConfirm:function(topic,nature){
+      if(!ragCanCommitMessage(m,key)){if(typeof toast==='function')toast('工作区已变化，原结论未写入，请重新确认。');return;}
       var mode=nature==='fix'?'replace':'append';
       fetch('/api/kb-upload',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({projectKey:key,city:p.city,topic:topic,text:m.content,
@@ -706,7 +666,7 @@ function ragCmSubmit(){
   var cb=window.__ragCmOnConfirm; ragCmClose();
   if(typeof cb==='function')cb(topic,nature);
 }
-/* 【2026-09-29】管理端左右结构布局：左=城市基础包(nature=base，只读，14-Agent流水线
+/* 【2026-09-29】管理端左右结构布局：左=城市基础包(nature=base，只读，独立报告流程
    产出)，右=按账号分组的补充材料(support/interview/fix)。取代原来"主题导航+材料列表"
    混合展示——那种视图分不清一条材料是流水线基础研判还是某个账号自己补的，也看不出
    到底是谁补的。左侧完全只读；右侧脱离主题概念，平铺该工作区全部补充材料按账号分组。*/
@@ -714,7 +674,7 @@ function ragBaseVsSupportLayout(p,key){
   var base=getCityBasePackage(p.city);
   var baseHtml=!base?
     '<div style="padding:24px 16px;text-align:center;color:#9aa5b5;font-size:12.5px">'+
-      '该城市还没有基础包<br>请在「城市需求概览」发起报告生成申请，由14-Agent流水线产出后自动接入'+
+      '该城市还没有基础包<br>请先在「报告任务」生成并发布报告，再为城市配置基础包。'+
     '</div>':
     base.map(function(t){
       return '<div style="padding:10px 14px;border-bottom:1px solid #eef2f7">'+
@@ -730,11 +690,11 @@ function ragBaseVsSupportLayout(p,key){
   var left='<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;overflow:hidden;align-self:start">'+
     '<div style="padding:12px 14px;background:#fafbfd;border-bottom:1px solid #eef2f7">'+
       '<div style="font-size:12.5px;font-weight:700;color:#0b183b">📦 基础包（只读）</div>'+
-      '<div style="font-size:10.5px;color:#9aa5b5;margin-top:2px">14-Agent流水线首轮产出 · 共 '+baseTotal+' 条 · 全部工作区共享同一份</div>'+
+      '<div style="font-size:10.5px;color:#9aa5b5;margin-top:2px">城市研判基础材料 · 共 '+baseTotal+' 条 · 全部工作区共享同一份</div>'+
     '</div>'+
     '<div style="max-height:420px;overflow-y:auto">'+baseHtml+'</div>'+
     '<div style="padding:10px 14px;border-top:1px solid #eef2f7">'+
-      '<button onclick="opsTab=\'overview\';renderOpsV2()" style="width:100%;min-height:32px;border:1px solid #d8e0ed;border-radius:7px;background:#fff;color:#3d5471;font-size:11.5px;cursor:pointer">↻ 需要更新？去「城市需求概览」发起报告重跑</button>'+
+      '<button onclick="opsTab=\'reports\';renderOpsV2()" style="width:100%;min-height:32px;border:1px solid #d8e0ed;border-radius:7px;background:#fff;color:#3d5471;font-size:11.5px;cursor:pointer">↻ 需要更新？去「报告任务」发起报告重跑</button>'+
     '</div>'+
   '</div>';
   // 收集该工作区全部主题下的补充材料(base之外)，按account分组
@@ -925,7 +885,7 @@ var cpCity=null, cpBusy=false, cpErr='', cpRaw='';
 
 /* 有材料的城市：按城市去重，代表项取材料最多者（与 ragCityOptions 同口径）*/
 function cpCityMap(){
-  var byCity={};
+  var byCity=Object.create(null);
   Object.keys(PROJECTS).forEach(function(k){
     var p=PROJECTS[k];
     if(!p||!p.kb||!p.kb.some(function(t){return (t.known||[]).length;})) return;
@@ -1401,9 +1361,7 @@ function cpChartsPremise(prof, ch, nCards){
 /* ── 主视图 ── */
 function opsCityProfile(){
   var key=cpProjKey();
-  if(!key) return '<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:#9aa5b5;padding:60px">'+
-    '<div style="font-size:36px">🏙️</div><div style="font-size:14px;font-weight:700;color:#0b183b">暂无可画像的城市</div>'+
-    '<div style="font-size:13px;text-align:center;line-height:1.7">城市画像基于智库材料生成，<br>请先在「城市需求概览」发起报告生成并推送到 RAG</div></div>';
+  if(!key)return '<div class="ops-ui-page">'+opsPageHead('城市画像','查看城市客观条件、招商偏好及其依据。')+opsEmpty('暂无可画像的城市','请先在「报告任务」生成报告并发布到城市智库。')+'</div>';
   var p=PROJECTS[key], city=p.city||key;
   var prof=p.profile||null;
   var nChunks=cpCorpus(city).length;
@@ -1413,17 +1371,11 @@ function opsCityProfile(){
   var tsStr=ts?((ts.getMonth()+1)+'/'+ts.getDate()+' '+ts.getHours()+':'+('0'+ts.getMinutes()).slice(-2)):'—';
   var stale=(prof&&prof.__chunks&&nChunks>prof.__chunks);
 
-  var head='<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap">'+
-    '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">城市画像</h1>'+
-    '<select onchange="cpCity=this.value;cpErr=\'\';renderOpsV2()" style="min-height:34px;padding:4px 10px;border:1px solid #d8e0ed;border-radius:8px;font-size:13px">'+cpCityOptions()+'</select>'+
-    '<span style="font-size:12px;color:#9aa5b5">'+cpEsc(p.org||'')+(prof?' · 生成于 '+tsStr:'')+'</span>'+
-    '<div style="flex:1"></div>'+
-    '<button onclick="cpGenerate(1)"'+(cpBusy?' disabled':'')+' style="min-height:34px;padding:0 14px;border-radius:8px;border:none;cursor:'+(cpBusy?'wait':'pointer')+';font-size:13px;font-weight:650;color:#fff;background:'+(cpBusy?'#9aa5b5':'linear-gradient(135deg,#1a56db,#6366f1)')+'">'+
-      (cpBusy?'生成中…':(prof?'重新生成':'生成城市画像'))+'</button>'+
-  '</div>';
+  var action='<button class="ops-ui-button is-primary" onclick="cpGenerate(1)"'+(cpBusy?' disabled':'')+'>'+(cpBusy?'生成中…':prof?'重新生成':'生成城市画像')+'</button>';
+  var head=opsPageHead('城市画像','查看城市客观条件、招商偏好及其依据。',action)+'<div class="ops-ui-workspacebar"><label class="ops-ui-filter">当前城市<select id="opsProfileCity" onchange="cpCity=this.value;cpErr=\'\';renderOpsV2()">'+cpCityOptions()+'</select></label><span class="ops-ui-muted">'+cpEsc(p.org||'')+(prof?' · 生成于 '+tsStr:'')+'</span></div>';
 
   // 数据源条：明确告诉运营方这份画像吃了什么
-  var srcBar='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">'+
+  var srcBar='<div class="ops-ui-metric-grid">'+
     cpStat('📦','智库材料', nChunks+' 条', '画像事实底座')+
     cpStat('📋','招商偏好问卷', ob?'已填写':'未填写', ob?'作为 stated 证据校准':'偏好只能反推')+
     cpStat('📇','干部访谈', nItv+' 条', nItv?'偏好与信息完备度参考':'暂无访谈记录')+
@@ -1432,13 +1384,13 @@ function opsCityProfile(){
 
   if(cpErr) head+='<div style="padding:11px 14px;border:1px solid #fecaca;background:#fef2f2;border-radius:9px;color:#b91c1c;font-size:12.5px;margin-bottom:12px">'+cpEsc(cpErr)+'</div>';
 
-  if(cpBusy) return '<div style="padding:24px">'+head+srcBar+
+  if(cpBusy) return '<div class="ops-ui-page">'+head+srcBar+
     '<div style="border:1px solid #e8edf5;border-radius:10px;background:#fff;padding:34px;text-align:center">'+
       '<div style="font-size:13px;font-weight:700;color:#0b183b">正在读取 '+cpEsc(city)+' 全量智库材料并刻画画像…</div>'+
       '<div style="font-size:12px;color:#9aa5b5;margin-top:6px;line-height:1.7">跨全部同城项目合并 '+nChunks+' 条材料，检索取 Top40 片段<br>结构化画像约需 40-90 秒，请勿切换页面</div>'+
     '</div></div>';
 
-  if(!prof) return '<div style="padding:24px">'+head+srcBar+
+  if(!prof) return '<div class="ops-ui-page">'+head+srcBar+
     '<div style="border:1px dashed #cbd7e6;border-radius:10px;background:#fbfcfe;padding:34px;text-align:center">'+
       '<div style="font-size:30px;margin-bottom:8px">🧭</div>'+
       '<div style="font-size:14px;font-weight:700;color:#0b183b">尚未生成 '+cpEsc(city)+' 的城市画像</div>'+
@@ -1504,46 +1456,55 @@ function opsCityProfile(){
         return '<div style="font-size:12px;color:#5a7398;line-height:1.7;padding:3px 0">· '+cpEsc(s)+'</div>';
       }).join('')+'</div>';
   }
-  return '<div style="padding:24px">'+head+srcBar+body+'</div>';
+  return '<div class="ops-ui-page">'+head+srcBar+body+'</div>';
 }
 
-/* ══ Tab1: 城市需求概览 ══ */
+function opsReportRows(){return (REPORT_REQUESTS||[]).concat(typeof _rrOutboxRows==='function'?_rrOutboxRows():[]);}
+function opsReportLabel(row){if(row.submissionBlocked||['failed','cancelled','blocked'].indexOf(row.status)>=0)return '需处理';return {done:'已完成',pending:'排队中',running:'运行中'}[row.status]||'待处理';}
 function opsOverview(){
+  var projects=Object.keys(PROJECTS||{}),cities=Object.create(null);projects.forEach(function(k){var p=PROJECTS[k];if(p&&p.city)cities[p.city]=true;});
+  var users=Object.keys(USER_PROFILES||{}),codes=Object.keys(INVITE_CODES||{}),reports=opsReportRows();
+  var demandCount=projects.filter(function(k){return PROJECTS[k]&&PROJECTS[k].isDemand===true;}).length;
+  var activeReports=reports.filter(function(r){return !r.submissionBlocked&&(r.status==='pending'||r.status==='running');}).length;
+  var attention=reports.filter(function(r){return r.submissionBlocked||['failed','cancelled','blocked'].indexOf(r.status)>=0;}).length;
+  var activeCodes=codes.filter(function(c){return !INVITE_CODES[c].revoked;}).length;
+  var metrics=[['报告任务',reports.length,activeReports+' 进行中 · '+attention+' 需处理','reports'],['招商项目',demandCount,Object.keys(cities).length+' 个城市工作数据','demands'],['生效邀请码',activeCodes,codes.length+' 个邀请码总计','invitations'],['注册用户',users.length,'查看联系人与所属工作区','users']];
+  var stats='<div class="ops-ui-stats">'+metrics.map(function(m){return '<button class="ops-ui-stat" onclick="'+opsHandler('opsGo',m[3])+'"><span>'+m[0]+'</span><strong class="ops-ui-stat-value">'+m[1]+'</strong><span class="ops-ui-muted">'+m[2]+'</span></button>';}).join('')+'</div>';
+  var recentReports=reports.slice().sort(function(a,b){return (b.ts||0)-(a.ts||0);}).slice(0,5);
+  var reportBody=recentReports.length?'<div class="ops-ui-recent">'+recentReports.map(function(r){return '<button class="ops-ui-recent-row" onclick="'+opsHandler('opsGo','reports')+'"><span><strong>'+_authEscape(r.city||'未填写城市')+'</strong><small>'+_authEscape(r.id||'报告申请')+' · '+opsDate(r.ts)+'</small></span><span class="ops-ui-badge '+(opsReportLabel(r)==='需处理'?'is-danger':r.status==='done'?'is-on':'is-muted')+'">'+opsReportLabel(r)+'</span></button>';}).join('')+'</div>':opsEmpty('暂无报告任务','在报告任务中选择城市并提交申请。');
+  var recentInvites=codes.slice().sort(function(a,b){return (INVITE_CODES[b].createdAt||0)-(INVITE_CODES[a].createdAt||0);}).slice(0,5);
+  var inviteBody=recentInvites.length?'<div class="ops-ui-recent">'+recentInvites.map(function(code){var inv=INVITE_CODES[code];return '<button class="ops-ui-recent-row" onclick="'+opsHandler('opsGo','invitations')+'"><span><strong>'+_authEscape(inv.city||'未填写城市')+'</strong><small>工作区 '+_authEscape(inv.projKey||'—')+' · '+(inv.usedBy||[]).length+' 人使用</small></span><span class="ops-ui-badge '+(inv.revoked?'is-danger':inv.distributed?'is-on':'is-muted')+'">'+(inv.revoked?'已作废':inv.distributed?'已分发':'待分发')+'</span></button>';}).join('')+'</div>':opsEmpty('暂无邀请码','生成邀请码后，可邀请城市团队注册加入。');
+  return '<div class="ops-ui-page">'+opsPageHead('运营总览','从这里查看待处理事项，进入具体页面开展工作。','<button class="ops-ui-button is-primary" onclick="opsGo(\'reports\')">进入报告任务</button>')+stats+'<div class="ops-ui-dashboard"><section class="ops-ui-card"><div class="ops-ui-card-head"><h2>最近报告任务</h2><button class="ops-ui-button" onclick="opsGo(\'reports\')">查看全部</button></div>'+reportBody+'</section><section class="ops-ui-card"><div class="ops-ui-card-head"><h2>最近邀请码</h2><button class="ops-ui-button" onclick="opsGo(\'invitations\')">管理邀请码</button></div>'+inviteBody+'</section></div></div>';
+}
+function opsReports(){
+  var state=OPS_UI.reports;
+  return '<div class="ops-ui-page">'+opsPageHead('报告任务','发起城市报告、查看实时进度，以及下载和发布已完成的报告。')+'<div class="ops-ui-toolbar"><label class="ops-ui-search">搜索任务<input id="opsReportSearch" value="'+_authEscape(state.query)+'" placeholder="搜索城市 / 省份 / 任务编号" oninput="opsFilterChange(\'reports\',\'query\',this.value)"></label><label class="ops-ui-filter">任务状态<select id="opsReportStatus" onchange="opsFilterChange(\'reports\',\'status\',this.value)">'+[['all','全部状态'],['active','进行中'],['done','已完成'],['attention','需处理']].map(function(item){return '<option value="'+item[0]+'"'+(state.status===item[0]?' selected':'')+'>'+item[1]+'</option>';}).join('')+'</select></label></div><div id="opsReportResults">'+rrPanel(state)+'</div></div>';
+}
+function opsDemands(){
+  var state=OPS_UI.demands,cities=Object.create(null);Object.keys(PROJECTS||{}).forEach(function(k){var p=PROJECTS[k];if(p&&p.isDemand===true&&p.city)cities[p.city]=true;});
+  return '<div class="ops-ui-page">'+opsPageHead('招商项目','集中查看已提交的招商需求、阶段进展、材料和企业匹配。')+'<div class="ops-ui-toolbar"><label class="ops-ui-search">搜索项目<input id="opsDemandSearch" value="'+_authEscape(state.query)+'" placeholder="搜索城市 / 产业方向 / 单位 / 项目编号" oninput="opsFilterChange(\'demands\',\'query\',this.value)"></label><label class="ops-ui-filter">城市<select id="opsDemandCity" onchange="opsFilterChange(\'demands\',\'city\',this.value)"><option value="">全部城市</option>'+Object.keys(cities).sort().map(function(city){return '<option value="'+_authEscape(city)+'"'+(state.city===city?' selected':'')+'>'+_authEscape(city)+'</option>';}).join('')+'</select></label></div><div id="opsDemandResults">'+opsDemandResults()+'</div></div>';
+}
+
+/* ══ 招商项目：保留既有项目操作 ══ */
+function opsDemandResults(){
   // 管理端（运营方）跨城市查看所有项目
   // 关键修复：只显示「已正式提交招商需求」的子项目。父项目/城市产业分析工作区
   // (如 sz、id==城市名、topic 形如「XX产业链招引」的占位项目) 的 topic 会随政府端
   // 选中的产业方向实时变化，绝不能当招商项目展示——否则政府端点氢气，管理端就跟着变。
-  function _isParentProj(k){
-    var x=PROJECTS[k]; if(!x) return true;
-    if(k==='sz') return true;
-    if(x.id && x.city && x.id===x.city) return true;
-    if(typeof x.topic==='string' && /产业链招引$/.test(x.topic)) return true;
-    return false;
-  }
   var projKeys = Object.keys(PROJECTS).filter(function(k){
     var x=PROJECTS[k]; if(!x) return false;
     // 只显示政府端正式提交的招商需求（isDemand=true），与政府端保持一致
-    return x.isDemand===true;
+    if(x.isDemand!==true)return false;
+    var state=OPS_UI.demands,q=state.query.trim().toLowerCase();
+    return (!state.city||x.city===state.city)&&(!q||[k,x.city,x.topic,x.org].join(' ').toLowerCase().indexOf(q)>=0);
   });
 
-  if(!projKeys.length){
-    return '<div style="padding:24px">' + rrPanel() + '</div>' +
-      '<div style="display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:#9aa5b5;padding:60px">' +
-      '<div style="font-size:36px">🏙️</div>' +
-      '<div style="font-size:14px;font-weight:700;color:#0b183b">暂无城市数据</div>' +
-      '<div style="font-size:13px;text-align:center;line-height:1.7">政府端完成城市智库分析并提交招引需求后，<br>城市用户信息会出现在这里</div>' +
-    '</div>';
-  }
+  if(!projKeys.length)return opsEmpty('暂无符合条件的招商项目','政府端正式提交的招商需求会出现在这里；可调整筛选后再查看。');
 
   function opsProjCard(k){
     var p  = PROJECTS[k];
     var rs = REPORTSTATE[k];
-    // 自动触发真实 AI 企业漏斗（每个项目首次进入静默后台跑）
-    if(!window.__funnelAuto) window.__funnelAuto={};
-    if(!window.__funnelAuto[k] && p && !p.funnel && (p.topic||'').trim()){
-      window.__funnelAuto[k]=true;
-      runAIFunnel(k, function(err){ if(!err){ try{ render(); }catch(e){} } });
-    }
+    // 渲染只展示现有数据；企业分析由明确的操作按钮触发。
     var ups = (UPLOADS[k]||[]);
     var clues = (p.clues||[]);
     // 已确认结论：按该项目「当前产业方向」自己确认的待确认事项数统计
@@ -1581,11 +1542,11 @@ function opsOverview(){
     var _pOpen = !!(window.__opsProjOpen && window.__opsProjOpen[k]);
     return '<div style="background:#fff;border:1.5px solid #e8edf5;border-radius:16px;overflow:hidden;margin-bottom:16px">' +
       // 头部
-      '<div onclick="toggleOpsProj(\'' + k + '\')" style="padding:16px 20px;background:#f8faff;border-bottom:1px solid ' + (_pOpen?'#e8edf5':'transparent') + ';display:flex;align-items:center;gap:12px;cursor:pointer">' +
+      '<div onclick="toggleOpsProj(' + _authEscape(JSON.stringify(k)) + ')" style="padding:16px 20px;background:#f8faff;border-bottom:1px solid ' + (_pOpen?'#e8edf5':'transparent') + ';display:flex;align-items:center;gap:12px;cursor:pointer">' +
         '<span style="font-size:12px;color:#1a56db;display:inline-block;transform:rotate(' + (_pOpen?'90':'0') + 'deg);transition:transform .15s">&#9654;</span>' +
-        '<div style="font-size:14px;color:#0b183b;font-weight:700">' + p.topic + '</div>' +
+        '<div style="font-size:14px;color:#0b183b;font-weight:700">' + _authEscape(p.topic) + '</div>' +
         '<div style="margin-left:auto;text-align:right">' +
-          '<div style="padding:4px 12px;background:' + stageColor + ';color:#fff;border-radius:20px;font-size:12px;font-weight:650;display:inline-block">' + stageName + '</div>' +
+          '<div style="padding:4px 12px;background:' + stageColor + ';color:#fff;border-radius:20px;font-size:12px;font-weight:650;display:inline-block">' + _authEscape(stageName) + '</div>' +
         '</div>' +
       '</div>' +
       (_pOpen ? (
@@ -1598,18 +1559,18 @@ function opsOverview(){
           var color=isDone?'#fff':isCur?'#1a56db':'#9aa5b5';
           var fw=isCur?'700':'400';
           return '<div style="flex:1;padding:6px 4px;text-align:center;background:'+bg+';font-size:10.5px;font-weight:'+fw+';color:'+color+';border-right:1px solid #e8edf5">' +
-            (isDone?'✓ ':'')+s[0]+'</div>';
+            (isDone?'✓ ':'')+_authEscape(s[0])+'</div>';
         }).join('') +
       '</div>' +
       // 阶段推进面板：回复说明 + 选下一阶段 + 新增自定义阶段 + 留痕列表
       '<div style="padding:12px 20px;border-bottom:1px solid #e0e7ff;background:#fafbff">' +
         '<div style="font-size:12px;font-weight:700;color:#1a56db;margin-bottom:8px">🔄 阶段推进与回复</div>' +
-        '<textarea id="stage-note-' + k + '" placeholder="填写回复说明（如：材料已初审通过，建议约下周三第一次会议）…" ' +
+        '<textarea id="stage-note-' + _authEscape(k) + '" placeholder="填写回复说明（如：材料已初审通过，建议约下周三第一次会议）…" ' +
           'style="width:100%;box-sizing:border-box;padding:8px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;resize:vertical;min-height:50px;outline:none;line-height:1.6"></textarea>' +
         '<div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">' +
-          '<select id="stage-target-' + k + '" style="flex:1;min-width:140px;padding:8px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;background:#fff;color:#0b183b;outline:none">' + stageOptions(p) + '</select>' +
-          '<button onclick="saveStageAdvance(\'' + k + '\')" style="padding:8px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap">保存并推进</button>' +
-          '<button onclick="addCustomStage(\'' + k + '\')" style="padding:8px 12px;background:#fff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12.5px;color:#6d28d9;cursor:pointer;font-weight:600;white-space:nowrap">＋ 新增阶段</button>' +
+          '<select id="stage-target-' + _authEscape(k) + '" style="flex:1;min-width:140px;padding:8px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;background:#fff;color:#0b183b;outline:none">' + stageOptions(p) + '</select>' +
+          '<button onclick="saveStageAdvance(' + _authEscape(JSON.stringify(k)) + ')" style="padding:8px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap">保存并推进</button>' +
+          '<button onclick="addCustomStage(' + _authEscape(JSON.stringify(k)) + ')" style="padding:8px 12px;background:#fff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12.5px;color:#6d28d9;cursor:pointer;font-weight:600;white-space:nowrap">＋ 新增阶段</button>' +
         '</div>' +
         renderStageLog(p) +
       '</div>' +
@@ -1633,8 +1594,8 @@ function opsOverview(){
       (demand ?
         '<div style="padding:14px 20px;background:#fffbeb;border-bottom:1px solid #fde68a">' +
           '<div style="font-size:11.5px;font-weight:650;color:#92400e;margin-bottom:6px">📤 招引需求</div>' +
-          '<div style="font-size:13px;color:#1e293b;line-height:1.65"><strong>' + (demand.topic||p.topic||'') + '</strong>' + (demand.domain?' · ' + demand.domain:'') + '</div>' +
-          '<div style="font-size:12px;color:#8492a6;margin-top:3px">' + (demand.need||'需求详情见研判报告') + '</div>' +
+          '<div style="font-size:13px;color:#1e293b;line-height:1.65"><strong>' + _authEscape(demand.topic||p.topic||'') + '</strong>' + (demand.domain?' · ' + _authEscape(demand.domain):'') + '</div>' +
+          '<div style="font-size:12px;color:#8492a6;margin-top:3px">' + _authEscape(demand.need||'需求详情见研判报告') + '</div>' +
         '</div>'
       : rs ?
         '<div style="padding:12px 20px;background:#f9fafb;border-bottom:1px solid #f0f4ff">' +
@@ -1648,7 +1609,7 @@ function opsOverview(){
       funnelBlock(k) +
       // 操作
       '<div style="padding:12px 20px;display:flex;gap:8px;flex-wrap:wrap">' +
-        (rs ? '<button onclick="opsViewCityReport(\'' + k + '\')" style="padding:7px 14px;background:#f8faff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer">📋 查看报告</button>' : '') +
+        (rs ? '<button onclick="opsViewCityReport(' + _authEscape(JSON.stringify(k)) + ')" style="padding:7px 14px;background:#f8faff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer">📋 查看报告</button>' : '') +
       '</div>'
       ) : '') +
     '</div>';
@@ -1661,11 +1622,11 @@ function opsOverview(){
     if(!window.__funnelCollapse) window.__funnelCollapse={};
     var collapsed=window.__funnelCollapse[k]===true;
     var head='<div style="padding:12px 20px 4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
-      '<span onclick="toggleFunnelBlock(\''+k+'\')" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none">'+'<span style="font-size:11px;color:#6d28d9;display:inline-block;transform:rotate('+(collapsed?'-90':'0')+'deg)">▼</span>'+'<span style="font-size:12.5px;font-weight:750;color:#0b183b">AI 企业漏斗</span>'+'</span>'+
+      '<span onclick="toggleFunnelBlock('+_authEscape(JSON.stringify(k))+')" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none">'+'<span style="font-size:11px;color:#6d28d9;display:inline-block;transform:rotate('+(collapsed?'-90':'0')+'deg)">▼</span>'+'<span style="font-size:12.5px;font-weight:750;color:#0b183b">AI 企业漏斗</span>'+'</span>'+
       (fn?'<span style="font-size:11px;padding:2px 8px;background:#f5f3ff;color:#6d28d9;border-radius:10px">扫描'+(fn.total||fn.companies.length)+'家 · 精筛'+fn.companies.length+'家</span>':'')+
       '<div style="flex:1"></div>'+
-      (fn&&fn.companies&&fn.companies.length?'<button onclick="showFunnelPyramid(\''+k+'\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:11.5px;color:#1a56db;cursor:pointer;font-weight:600;margin-right:8px">📊 分级图谱</button>':'')+
-      (running?'<span style="font-size:11.5px;color:#6d28d9">⏳ 分析中…</span>':'<button onclick="loadAIScanClues(\''+k+'\')" style="padding:4px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:11.5px;color:#6d28d9;cursor:pointer;font-weight:600">🔄 重新分析</button>')+
+      (fn&&fn.companies&&fn.companies.length?'<button onclick="showFunnelPyramid('+_authEscape(JSON.stringify(k))+')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:11.5px;color:#1a56db;cursor:pointer;font-weight:600;margin-right:8px">📊 分级图谱</button>':'')+
+      (running?'<span style="font-size:11.5px;color:#6d28d9">⏳ 分析中…</span>':'<button onclick="loadAIScanClues('+_authEscape(JSON.stringify(k))+')" style="padding:4px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:11.5px;color:#6d28d9;cursor:pointer;font-weight:600">🔄 重新分析</button>')+
     '</div>';
     if(collapsed) return head;
     var body;
@@ -1674,11 +1635,11 @@ function opsOverview(){
     } else if(!fn){
       body='<div style="margin:6px 20px 14px;text-align:center;padding:18px;background:#f9fafb;border-radius:10px;border:1px solid #e8edf5">'+
         '<div style="font-size:12.5px;color:#9aa5b5;margin-bottom:8px">尚未生成企业漏斗</div>'+
-        '<button onclick="loadAIScanClues(\''+k+'\')" style="padding:6px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600">🔍 立即 AI 分析</button>'+
+        '<button onclick="loadAIScanClues('+_authEscape(JSON.stringify(k))+')" style="padding:6px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600">🔍 立即 AI 分析</button>'+
       '</div>';
     } else {
       var pushedTip=fn.pushed?'<span style="font-size:11px;color:#166534;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:3px 9px">✓ 已推送 '+(fn.pushedNames?fn.pushedNames.length:0)+' 家到政府端</span>':'';
-      var pushBtn='<button onclick="pushFunnelTopToGov(\''+k+'\',8)" style="padding:7px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer">🚀 推送 Top8 精准企业到政府端</button>';
+      var pushBtn='<button onclick="pushFunnelTopToGov('+_authEscape(JSON.stringify(k))+',8)" style="padding:7px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer">🚀 推送 Top8 精准企业到政府端</button>';
       if(!window.__funnelExpand) window.__funnelExpand={};
       var expandAll=window.__funnelExpand[k]===true;
       var COLLAPSE_N=8;
@@ -1689,29 +1650,29 @@ function opsOverview(){
           '<span style="flex-shrink:0;width:22px;height:22px;background:'+(isTop?'#eef2ff':'#f5f7fb')+';color:'+(isTop?'#4338ca':'#9aa5b5')+';border-radius:50%;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">'+(i+1)+'</span>'+
           '<div style="flex:1;min-width:0">'+
             '<div style="font-size:12.5px;font-weight:650;color:#0b183b;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
-              '<span>'+c.name+'</span>'+
-              (c.listed?'<span style="font-size:10px;color:#6d28d9;background:#f5f3ff;border-radius:6px;padding:1px 6px">'+c.listed+'</span>':'')+
+              '<span>'+_authEscape(c.name)+'</span>'+
+              (c.listed?'<span style="font-size:10px;color:#6d28d9;background:#f5f3ff;border-radius:6px;padding:1px 6px">'+_authEscape(c.listed)+'</span>':'')+
               (isTop?'<span style="font-size:10px;color:#1a56db;background:#eff6ff;border-radius:6px;padding:1px 6px">Top8</span>':'')+
             '</div>'+
-            '<div style="font-size:11px;color:#8492a6;margin-top:2px">'+(c.region||'')+(c.kind?' \u00b7 '+c.kind:'')+'</div>'+
-            (c.fit?'<div style="font-size:11px;color:#4a5568;margin-top:3px;line-height:1.5">'+c.fit+'</div>':'')+
+            '<div style="font-size:11px;color:#8492a6;margin-top:2px">'+_authEscape(c.region||'')+(c.kind?' \u00b7 '+_authEscape(c.kind):'')+'</div>'+
+            (c.fit?'<div style="font-size:11px;color:#4a5568;margin-top:3px;line-height:1.5">'+_authEscape(c.fit)+'</div>':'')+
             (c.signal
-              ? '<div style="font-size:10.5px;color:#b45309;margin-top:3px;line-height:1.5">📡 '+c.signal+'</div>'
-              : '<div style="font-size:10.5px;color:#b45309;margin-top:3px;line-height:1.5">📝 '+(c.score_reason||c.fit||'AI 按该方向缺口精筛，建议资源团队核验投资意向')+'</div>')+
+              ? '<div style="font-size:10.5px;color:#b45309;margin-top:3px;line-height:1.5">📡 '+_authEscape(c.signal)+'</div>'
+              : '<div style="font-size:10.5px;color:#b45309;margin-top:3px;line-height:1.5">📝 '+_authEscape(c.score_reason||c.fit||'AI 按该方向缺口精筛，建议资源团队核验投资意向')+'</div>')+
             // 优质标注：有扩张需求 / 派系关联（无则不显示）
-            (c.expansion?'<div style="font-size:10.5px;color:#166534;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:2px 7px;margin-top:4px;display:inline-block;line-height:1.5">🚀 有扩张需求：'+c.expansion+'</div>':'')+
-            (c.faction?'<div style="font-size:10.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:2px 7px;margin-top:4px;margin-left:4px;display:inline-block;line-height:1.5">🤝 派系关联：'+c.faction+'</div>':'')+
+            (c.expansion?'<div style="font-size:10.5px;color:#166534;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:2px 7px;margin-top:4px;display:inline-block;line-height:1.5">🚀 有扩张需求：'+_authEscape(c.expansion)+'</div>':'')+
+            (c.faction?'<div style="font-size:10.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:2px 7px;margin-top:4px;margin-left:4px;display:inline-block;line-height:1.5">🤝 派系关联：'+_authEscape(c.faction)+'</div>':'')+
             // 评分卡分项构成
-            '<div style="font-size:10px;color:#9aa5b5;margin-top:4px">匹配 '+(c.score_match||0)+' + 可招引 '+(c.score_relocate||0)+' + 实力 '+(c.score_strength||0)+'</div>'+
+            '<div style="font-size:10px;color:#9aa5b5;margin-top:4px">匹配 '+_authEscape(c.score_match||0)+' + 可招引 '+_authEscape(c.score_relocate||0)+' + 实力 '+_authEscape(c.score_strength||0)+'</div>'+
           '</div>'+
-          '<span style="flex-shrink:0;font-size:13px;font-weight:800;color:'+(c.fit_score>=80?'#16a34a':c.fit_score>=60?'#d97706':'#6b7280')+'">'+(c.fit_score||0)+'<span style="font-size:10px;font-weight:600">\u5206</span></span>'+
+          '<span style="flex-shrink:0;font-size:13px;font-weight:800;color:'+(c.fit_score>=80?'#16a34a':c.fit_score>=60?'#d97706':'#6b7280')+'">'+_authEscape(c.fit_score||0)+'<span style="font-size:10px;font-weight:600">\u5206</span></span>'+
         '</div>';
       }).join('');
       var toggle='';
       if(fn.companies.length>COLLAPSE_N){
         toggle=expandAll
-          ? '<div onclick="toggleFunnelExpand(\'' +k+ '\')" style="text-align:center;font-size:12px;color:#6d28d9;padding:10px 0 2px;cursor:pointer;font-weight:600">\u6536\u8d77 \u25b2</div>'
-          : '<div onclick="toggleFunnelExpand(\'' +k+ '\')" style="text-align:center;font-size:12px;color:#6d28d9;padding:10px 0 2px;cursor:pointer;font-weight:600">\u5c55\u5f00\u5168\u90e8 '+fn.companies.length+' \u5bb6 \u25bc</div>';
+          ? '<div onclick="toggleFunnelExpand(' +_authEscape(JSON.stringify(k))+ ')" style="text-align:center;font-size:12px;color:#6d28d9;padding:10px 0 2px;cursor:pointer;font-weight:600">\u6536\u8d77 \u25b2</div>'
+          : '<div onclick="toggleFunnelExpand(' +_authEscape(JSON.stringify(k))+ ')" style="text-align:center;font-size:12px;color:#6d28d9;padding:10px 0 2px;cursor:pointer;font-weight:600">\u5c55\u5f00\u5168\u90e8 '+fn.companies.length+' \u5bb6 \u25bc</div>';
       }
       body='<div style="margin:6px 20px 14px;padding:12px 14px;background:#fbfcff;border:1px solid #e8edf5;border-radius:10px">'+
         '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">'+pushBtn+pushedTip+'</div>'+
@@ -1723,14 +1684,14 @@ function opsOverview(){
   }
 
   // 按城市分组
-  var cityGroups = {}; var cityOrder = [];
+  var cityGroups = Object.create(null); var cityOrder = [];
   projKeys.forEach(function(k){
     var c = (PROJECTS[k]||{}).city || '未分类';
     if(!cityGroups[c]){ cityGroups[c]=[]; cityOrder.push(c); }
     cityGroups[c].push(k);
   });
   if(window.__opsCityOpen == null){
-    window.__opsCityOpen = {};
+    window.__opsCityOpen = Object.create(null);
     cityOrder.forEach(function(c){ window.__opsCityOpen[c] = true; });
   }
   var _stgN = ['资料准备','AI研判','确认需求','资源匹配','招商对接'];
@@ -1748,14 +1709,14 @@ function opsOverview(){
       return n + Object.keys(cf).reduce(function(m,ki){return m+Object.keys(cf[ki]).length;},0);
     }, 0);
     var org = (PROJECTS[keys[0]]||{}).org || '';
-    var header = '<div onclick="toggleOpsCity(\'' + city.replace(/'/g,"\\'") + '\')" style="display:flex;align-items:center;gap:12px;padding:16px 20px;background:#eef4ff;border:1.5px solid #d6e4ff;border-radius:14px;cursor:pointer;margin-bottom:' + (isOpen?'14px':'0') + '">' +
+    var header = '<div onclick="toggleOpsCity(' + _authEscape(JSON.stringify(city)) + ')" style="display:flex;align-items:center;gap:12px;padding:16px 20px;background:#eef4ff;border:1.5px solid #d6e4ff;border-radius:14px;cursor:pointer;margin-bottom:' + (isOpen?'14px':'0') + '">' +
       '<span style="font-size:13px;color:#1a56db;display:inline-block;transform:rotate(' + (isOpen?'90':'0') + 'deg)">&#9654;</span>' +
-      '<span style="font-size:16px;font-weight:750;color:#0b183b">' + city + '</span>' +
-      '<span style="font-size:12px;color:#8492a6">' + org + '</span>' +
+      '<span style="font-size:16px;font-weight:750;color:#0b183b">' + _authEscape(city) + '</span>' +
+      '<span style="font-size:12px;color:#8492a6">' + _authEscape(org) + '</span>' +
       '<span style="margin-left:auto;display:flex;align-items:center;gap:10px">' +
         '<span style="font-size:12px;color:#4a5568">' + keys.length + ' 个项目</span>' +
         (cityKbConfirms>0 ? '<span style="font-size:12px;color:#1d4ed8;font-weight:600">✅ 城市智库已确认 ' + cityKbConfirms + ' 条</span>' : '') +
-        (totalUps>0 ? '<button onclick="event.stopPropagation();opsViewCityUploads(\'' + encodeURIComponent(city) + '\')" style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600">📎 上传材料 ' + totalUps + ' 份 · 查看</button>' : '<span style="font-size:12px;color:#9aa5b5">暂无材料</span>') +
+        (totalUps>0 ? '<button onclick="event.stopPropagation();opsViewCityUploads(' + _authEscape(JSON.stringify(encodeURIComponent(city))) + ')" style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600">📎 上传材料 ' + totalUps + ' 份 · 查看</button>' : '<span style="font-size:12px;color:#9aa5b5">暂无材料</span>') +
         '<span style="padding:3px 10px;background:#1a56db;color:#fff;border-radius:20px;font-size:11px;font-weight:650">' + (_stgN[maxStage-1]||'进行中') + '</span>' +
       '</span>' +
     '</div>';
@@ -1763,14 +1724,7 @@ function opsOverview(){
     return '<div style="margin-bottom:18px">' + header + body + '</div>';
   }).join('');
 
-  return '<div style="padding:24px">' +
-    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">' +
-      '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">城市需求概览</h1>' +
-      '<span style="font-size:12px;color:#9aa5b5">共 ' + cityOrder.length + ' 个城市 · ' + projKeys.length + ' 个项目</span>' +
-    '</div>' +
-    rrPanel() +
-    groups +
-  '</div>';
+  return '<div class="ops-ui-results-meta">'+cityOrder.length+' 个城市 · '+projKeys.length+' 个项目</div>'+groups;
 }
 
 function toggleFunnelBlock(k){
@@ -1781,14 +1735,14 @@ function toggleFunnelBlock(k){
 
 /* 折叠/展开某个城市分组 */
 function toggleOpsCity(city){
-  if(window.__opsCityOpen == null) window.__opsCityOpen = {};
+  if(window.__opsCityOpen == null) window.__opsCityOpen = Object.create(null);
   window.__opsCityOpen[city] = (window.__opsCityOpen[city] === false);
   renderOpsV2();
 }
 
 /* 折叠/展开单个项目卡片（默认收起，点击头部展开） */
 function toggleOpsProj(k){
-  if(window.__opsProjOpen == null) window.__opsProjOpen = {};
+  if(window.__opsProjOpen == null) window.__opsProjOpen = Object.create(null);
   window.__opsProjOpen[k] = !window.__opsProjOpen[k];
   try{ renderOpsV2&&renderOpsV2(); }catch(e){ try{render();}catch(_){} }
 }
@@ -1972,109 +1926,53 @@ function opsViewCityReport(projKey){
 }
 
 
-/* == Tab: 注册用户（政府端账号资料，供电话/微信联系） == */
+/* == 客户管理：用户与邀请码各自拥有独立入口 == */
 function opsUsers(){
-  var keys = Object.keys(USER_PROFILES||{});
-  keys.sort(function(a,b){ return (USER_PROFILES[b].ts||0)-(USER_PROFILES[a].ts||0); });
-  var head = '<div style="padding:24px;max-width:1100px;margin:0 auto">' +
-    '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:20px">' +
-      '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">注册用户</h1>' +
-      '<span style="font-size:12px;color:#9aa5b5">共 ' + keys.length + ' 位政府端注册用户 · 可电话/微信联系</span>' +
-    '</div>';
-  head += inviteCodeSection();
-  if(!keys.length){
-    return head + '<div style="text-align:center;padding:60px 20px;color:#9aa5b5;font-size:14px">暂无注册用户<div style="font-size:12px;margin-top:8px;color:#b8c0cc">政府端用户注册后，账号资料会自动同步到这里</div></div></div>';
-  }
-  var cards = keys.map(function(u){
-    var profile=USER_PROFILES[u]||{}, d={ts:profile.ts};
-    ['name','phone','wechat','org','dept','title','city'].forEach(function(k){d[k]=_authEscape(profile[k]||'');});
-    var displayUser=_authEscape(u);
-    var dateStr = d.ts ? new Date(d.ts).toLocaleString('zh-CN') : '';
-    function field(icon,label,val){
-      return '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0">' +
-        '<span style="font-size:16px;flex-shrink:0;line-height:1.4">' + icon + '</span>' +
-        '<div style="min-width:0">' +
-          '<div style="font-size:11px;color:#9aa5b5;margin-bottom:2px">' + label + '</div>' +
-          '<div style="font-size:13.5px;color:#1e293b;font-weight:550;word-break:break-all">' + (val||'—') + '</div>' +
-        '</div>' +
-      '</div>';
-    }
-    return '<div style="background:#fff;border:1px solid #e8edf5;border-radius:16px;padding:22px 24px;margin-bottom:16px;box-shadow:0 1px 4px rgba(11,24,59,.05)">' +
-      '<div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #f2f5f9">' +
-        '<div style="width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#1a56db,#6366f1);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:700;flex-shrink:0">' + (d.name?d.name.charAt(0):'?') + '</div>' +
-        '<div style="flex:1;min-width:0">' +
-          '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' +
-            '<span style="font-size:19px;font-weight:750;color:#0b183b">' + (d.name||displayUser) + '</span>' +
-            (d.city?'<span style="display:inline-flex;align-items:center;gap:4px;font-size:15px;font-weight:700;color:#1a56db;background:#eef3ff;padding:4px 14px;border-radius:20px">' + '📍' + d.city + '</span>':'') +
-            '<span style="font-size:12px;font-weight:400;color:#9aa5b5">@' + displayUser + '</span>' +
-          '</div>' +
-          '<div style="font-size:12.5px;color:#8492a6;margin-top:4px">' + (d.title||'') + (d.dept?' · '+d.dept:'') + (d.org?' · '+d.org:'') + '</div>' +
-        '</div>' +
-        '<span style="font-size:11px;color:#94a3b8;flex-shrink:0">' + dateStr + '</span>' +
-      '</div>' +
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 32px">' +
-        field('📱','手机', d.phone) +
-        field('💬','微信', d.wechat) +
-        field('🏢','单位', d.org) +
-        field('📍','城市', d.city) +
-        field('🗂','部门', d.dept) +
-        field('💼','职务', d.title) +
-      '</div>' +
-    '</div>';
-  }).join('');
-  return head + cards + '</div>';
+  var state=OPS_UI.users,cities=Object.create(null);Object.keys(USER_PROFILES||{}).forEach(function(user){var city=USER_PROFILES[user]&&USER_PROFILES[user].city;if(city)cities[city]=true;});
+  return '<div class="ops-ui-page">'+opsPageHead('注册用户','查找政府端联系人及其所属工作区。详细联系资料集中在详情中查看。')+'<div class="ops-ui-toolbar"><label class="ops-ui-search">搜索用户<input id="opsUserSearch" value="'+_authEscape(state.query)+'" placeholder="搜索账号 / 姓名 / 单位 / 手机 / 微信" oninput="opsFilterChange(\'users\',\'query\',this.value)"></label><label class="ops-ui-filter">城市<select id="opsUserCity" onchange="opsFilterChange(\'users\',\'city\',this.value)"><option value="">全部城市</option>'+Object.keys(cities).sort().map(function(city){return '<option value="'+_authEscape(city)+'"'+(state.city===city?' selected':'')+'>'+_authEscape(city)+'</option>';}).join('')+'</select></label></div><div id="opsUserResults">'+opsUserResults()+'</div></div>';
+}
+function opsUserResults(){
+  var state=OPS_UI.users,q=state.query.trim().toLowerCase(),all=Object.keys(USER_PROFILES||{});
+  var keys=all.filter(function(user){var p=USER_PROFILES[user]||{};return (!state.city||p.city===state.city)&&(!q||[user,p.name,p.city,p.org,p.phone,p.wechat,p.dept,p.title].join(' ').toLowerCase().indexOf(q)>=0);}).sort(function(a,b){return (USER_PROFILES[b].ts||0)-(USER_PROFILES[a].ts||0);});
+  var meta='<div class="ops-ui-results-meta">显示 '+keys.length+' / '+all.length+' 位注册用户</div>';
+  if(!keys.length)return meta+opsEmpty(all.length?'未找到匹配的用户':'暂无注册用户',all.length?'尝试其他关键词或清除城市筛选。':'用户使用邀请码完成注册后，会显示在这里。');
+  var rows=keys.map(function(user){var p=USER_PROFILES[user]||{};return '<tr><td><div class="ops-ui-cell-title">'+_authEscape(p.name||user)+'</div><div class="ops-ui-cell-meta">@'+_authEscape(user)+'</div></td><td>'+_authEscape(p.city||'—')+'</td><td><div class="ops-ui-cell-title">'+_authEscape(p.org||'—')+'</div><div class="ops-ui-cell-meta">'+_authEscape([p.dept,p.title].filter(Boolean).join(' · ')||'—')+'</div></td><td><div>'+_authEscape(p.phone||'—')+'</div><div class="ops-ui-cell-meta">微信 '+_authEscape(p.wechat||'—')+'</div></td><td>'+opsDate(p.ts)+'</td><td><button class="ops-ui-button" onclick="'+opsHandler('opsViewUser',user)+'">查看详情</button></td></tr>';}).join('');
+  return meta+'<div class="ops-ui-table-wrap"><table class="ops-ui-table ops-ui-user-table"><thead><tr><th scope="col">姓名 / 账号</th><th scope="col">城市</th><th scope="col">单位 / 部门职务</th><th scope="col">联系方式</th><th scope="col">注册时间</th><th scope="col">操作</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+function opsViewUser(user){
+  var profile=USER_PROFILES[user];if(!profile)return;
+  var fields=[['账号',user],['姓名',profile.name],['城市',profile.city],['手机',profile.phone],['微信',profile.wechat],['所在单位',profile.org],['部门',profile.dept],['职务',profile.title],['注册时间',opsDate(profile.ts)]];
+  var keys=Array.isArray(profile.projectKeys)?profile.projectKeys.slice():profile.projKey?[profile.projKey]:[];
+  if(profile.projKey&&keys.indexOf(profile.projKey)<0)keys.unshift(profile.projKey);
+  var workspaces=keys.map(function(key){var p=PROJECTS[key]||{};return (p.city?p.city+' · ':'')+String(key);}).join('\n');
+  fields.push(['所属工作区',workspaces||'—']);
+  var body='<div class="ops-ui-detail-grid">'+fields.map(function(field){return '<div class="ops-ui-detail-item"><div class="ops-ui-detail-label">'+field[0]+'</div><div style="white-space:pre-wrap;overflow-wrap:anywhere">'+_authEscape(field[1]||'—')+'</div></div>';}).join('')+'</div>';
+  openModal('用户详情 · '+_authEscape(profile.name||user),body,'<button class="ghost-button" onclick="closeModal()">关闭</button>');
 }
 
-/* ═══════════ 邀请码管理（唯一可生成入口，政府端任何角色均无此能力）═══════════
-   一个邀请码 = 一个独立账户体系 = 一个独立工作区(projKey)。即使两个码填的城市名字
-   完全相同（如都是"随州"），也绝不共享同一份 PROJECTS 数据——城市名只是展示标签，
-   不是隔离边界，隔离边界永远是 projKey。多人共用同一个邀请码时看到同一份数据，
-   是因为他们用的是同一个码、同一个 projKey，不是因为城市名相同。
-   （若未来接入"AI采集的通用城市客观数据包"——产业链公开信息等只读参考资料——
-   那应是独立于 PROJECTS 业务数据之外的只读层，可按城市名共享；但业务数据
-   [智库问答/项目/报告/线索/对接进度] 必须严格按 projKey 隔离，不得因城市名相同而合并。） */
-function inviteCodeSection(){
-  var codes=Object.keys(INVITE_CODES||{}).sort(function(a,b){return (INVITE_CODES[b].createdAt||0)-(INVITE_CODES[a].createdAt||0);});
-  // 同城市名可能对应多个互不共享的独立工作区，用 projKey 帮管理员分辨"是不是同一个码/同一份数据"
-  var cityCounts={};
-  codes.forEach(function(c){ var ct=INVITE_CODES[c].city; cityCounts[ct]=(cityCounts[ct]||0)+1; });
-  var rows=codes.map(function(c){
-    if(!/^[A-Z0-9_-]{1,64}$/.test(c))return '';
-    var inv=INVITE_CODES[c];
-    var used=(inv.usedBy||[]).length;
-    var dupWarn=(cityCounts[inv.city]>1)?'<span class="ic-warn" title="同城市名有多个独立工作区，勿混淆">⚠</span>':'';
-    var distCell=inv.distributed
-      ? '<div class="ic-dist"><span class="invite-badge on">已分发</span><span class="ic-dist-email">'+_authEscape(inv.distributedEmail||'—')+'</span></div>'
-      : '<span class="invite-badge off">未分发</span>';
-    var stTag=inv.revoked?'<span class="invite-badge revoked">已作废</span>':'<span class="invite-badge on">生效中</span>';
-    var actions=inv.revoked?'':
-      '<button class="ic-iconbtn" onclick="openMarkDistributedModal(\''+c+'\')" title="'+(inv.distributed?'修改分发邮箱':'标记为已分发')+'">'+(inv.distributed?'✎':'✉')+'</button>'+
-      '<button class="ic-iconbtn danger" onclick="revokeInviteCode(\''+c+'\')" title="作废邀请码">⊘</button>';
-    return '<tr>'+
-      '<td><div class="ic-code-cell"><span class="ic-code">'+c+'</span><button class="ic-copy" data-code="'+c+'" onclick="copyInviteCode(this)" title="复制邀请码">⧉</button></div></td>'+
-      '<td><div class="ic-city">'+_authEscape(inv.city||'—')+dupWarn+'</div><div class="ic-workspace" title="工作区 '+_authEscape(inv.projKey||'—')+'（同城市名不同工作区，数据互不共享）">工作区 '+_authEscape(inv.projKey||'—')+'</div></td>'+
-      '<td class="ic-used"><strong>'+used+'</strong> 人已用</td>'+
-      '<td>'+distCell+'</td>'+
-      '<td class="ic-time">'+new Date(inv.createdAt||0).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})+'</td>'+
-      '<td>'+stTag+'</td>'+
-      '<td><div class="ic-actions">'+actions+'</div></td>'+
-    '</tr>';
-  }).join('');
-  var body=rows?('<table class="invite-table"><colgroup>'+
-      '<col class="c-code"><col class="c-city"><col class="c-used"><col class="c-dist"><col class="c-time"><col class="c-status"><col class="c-actions">'+
-    '</colgroup><thead><tr>'+
-      '<th>邀请码</th><th>绑定城市</th><th>使用情况</th><th>分发状态</th><th>生成时间</th><th>状态</th><th></th>'+
-    '</tr></thead><tbody>'+rows+'</tbody></table>')
-    : '<div class="invite-empty"><strong>还没有邀请码</strong>点击右上「生成邀请码」，为对接城市创建第一个专属工作区</div>';
-  return '<div class="invite-panel">'+
-    '<div class="invite-panel__head">'+
-      '<div class="ihd-icon">🔑</div>'+
-      '<div><h3>邀请码管理</h3><p>凭邀请码提前知道对方要哪个城市，可提前准备城市数据包；同一码可被多人重复注册，不同码即使城市名相同也各自独立</p></div>'+
-      '<button class="invite-panel__new" onclick="openInviteCodeModal()">+ 生成邀请码</button>'+
-    '</div>'+
-    body+
-  '</div>';
+/* 一个邀请码绑定一个独立工作区；同城不同工作区不合并。 */
+function opsInvitations(){
+  var state=OPS_UI.invitations;
+  return '<div class="ops-ui-page">'+opsPageHead('邀请码','生成、分发和管理团队入口；同一码可供多人注册，加入同一工作区。','<button class="ops-ui-button is-primary" onclick="openInviteCodeModal()">＋ 生成邀请码</button>')+'<div class="ops-ui-toolbar"><label class="ops-ui-search">搜索邀请码<input id="opsInviteSearch" value="'+_authEscape(state.query)+'" placeholder="搜索邀请码 / 城市 / 工作区 / 分发邮箱" oninput="opsFilterChange(\'invitations\',\'query\',this.value)"></label><label class="ops-ui-filter">有效状态<select id="opsInviteStatus" onchange="opsFilterChange(\'invitations\',\'status\',this.value)">'+[['all','全部状态'],['active','生效中'],['revoked','已作废']].map(function(item){return '<option value="'+item[0]+'"'+(state.status===item[0]?' selected':'')+'>'+item[1]+'</option>';}).join('')+'</select></label><label class="ops-ui-filter">分发状态<select id="opsInviteDistribution" onchange="opsFilterChange(\'invitations\',\'distribution\',this.value)">'+[['all','全部分发状态'],['pending','未分发'],['distributed','已分发']].map(function(item){return '<option value="'+item[0]+'"'+(state.distribution===item[0]?' selected':'')+'>'+item[1]+'</option>';}).join('')+'</select></label></div><div id="opsInviteResults">'+opsInviteResults()+'</div></div>';
 }
+function opsInviteResults(){
+  var all=Object.keys(INVITE_CODES||{}).filter(function(code){return /^[A-Z0-9_-]{1,64}$/.test(code);});
+  var state=OPS_UI.invitations,q=state.query.trim().toLowerCase(),cityWorkspaces=Object.create(null);
+  all.forEach(function(code){var inv=INVITE_CODES[code],city=inv.city||'';if(!cityWorkspaces[city])cityWorkspaces[city]=Object.create(null);cityWorkspaces[city][inv.projKey||code]=true;});
+  var codes=all.filter(function(code){var inv=INVITE_CODES[code];return (state.status==='all'||(state.status==='active'?!inv.revoked:!!inv.revoked))&&(state.distribution==='all'||(state.distribution==='distributed'?!!inv.distributed:!inv.distributed))&&(!q||[code,inv.city,inv.projKey,inv.distributedEmail].join(' ').toLowerCase().indexOf(q)>=0);}).sort(function(a,b){return (INVITE_CODES[b].createdAt||0)-(INVITE_CODES[a].createdAt||0);});
+  var active=all.filter(function(code){return !INVITE_CODES[code].revoked;}).length;
+  var unissued=all.filter(function(code){return !INVITE_CODES[code].revoked&&!INVITE_CODES[code].distributed;}).length;
+  var meta='<div class="ops-ui-results-meta">显示 '+codes.length+' / '+all.length+' 个邀请码 <span>生效 '+active+' · 待分发 '+unissued+'</span></div>';
+  if(!codes.length)return meta+opsEmpty(all.length?'未找到匹配的邀请码':'还没有邀请码',all.length?'尝试其他关键词或调整状态筛选。':'点击「生成邀请码」，为城市团队建立工作区。');
+  var rows=codes.map(function(code){
+    var inv=INVITE_CODES[code],used=(inv.usedBy||[]).length,multi=Object.keys(cityWorkspaces[inv.city||'']).length>1;
+    var copy='<button class="ops-ui-button ic-copy" data-code="'+code+'" onclick="copyInviteCode(this)" title="复制邀请码 '+code+'">复制</button>';
+    var actions=inv.revoked?'<span class="ops-ui-muted">已停用</span>':'<button class="ops-ui-button" onclick="openMarkDistributedModal(\''+code+'\')">'+(inv.distributed?'修改分发':'标记分发')+'</button><button class="ops-ui-button is-danger" onclick="revokeInviteCode(\''+code+'\')">作废</button>';
+    return '<tr><td><div class="ic-code-cell"><code class="ic-code">'+code+'</code>'+copy+'</div></td><td><div class="ops-ui-cell-title">'+_authEscape(inv.city||'—')+'</div><div class="ops-ui-cell-meta">工作区 '+_authEscape(inv.projKey||'—')+'</div>'+(multi?'<div class="ops-ui-cell-meta ops-ui-workspace-note">同城存在独立工作区，请核对编号</div>':'')+'</td><td>'+used+' 人</td><td><span class="ops-ui-badge '+(inv.distributed?'is-on':'is-muted')+'">'+(inv.distributed?'已分发':'未分发')+'</span>'+(inv.distributed?'<div class="ops-ui-cell-meta">'+_authEscape(inv.distributedEmail||'未记录邮箱')+'</div>':'')+'</td><td>'+opsDate(inv.createdAt)+'</td><td><span class="ops-ui-badge '+(inv.revoked?'is-danger':'is-on')+'">'+(inv.revoked?'已作废':'生效中')+'</span></td><td><div class="ops-ui-row-actions">'+actions+'</div></td></tr>';
+  }).join('');
+  return meta+'<div class="ops-ui-table-wrap"><table class="ops-ui-table ops-ui-invite-table"><thead><tr><th scope="col">邀请码</th><th scope="col">城市 / 工作区</th><th scope="col">使用人数</th><th scope="col">分发情况</th><th scope="col">生成时间</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+function inviteCodeSection(){return opsInvitations();}
 /* 复制邀请码到剪贴板：优先用 Clipboard API，非安全上下文(如内网http)降级用
    textarea+execCommand，避免管理员在本地/内网环境用不了这个按钮。 */
 function copyInviteCode(btn){
@@ -2147,21 +2045,12 @@ function revokeInviteCode(code){if(INVITE_CODES[code])return _saveAdminInvite({a
 
 /* == Tab2: 企业资源库 == */
 function opsEnterprises(){
-  var filtered = opsEntFilter(OPS_ENT);
-  return '<div style="padding:24px">' +
-    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">' +
-      '<h1 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">企业资源库</h1>' +
-      '<span style="font-size:12px;color:#9aa5b5">共 ' + OPS_ENT.length + ' 家' + (filtered.length!==OPS_ENT.length?' · 筛选 '+filtered.length+' 家':'') + '</span>' +
-      '<div style="flex:1"></div>' +
-      '<button onclick="opsEntAdd()" style="padding:8px 16px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer">+ 手动录入</button>' +
-      '<button onclick="opsEntImport()" style="padding:8px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer;margin-left:6px"> 文件导入</button>' +
-      '<button onclick="opsEntScanAll()" style="padding:8px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:10px;font-size:13px;color:#6d28d9;cursor:pointer;margin-left:6px" id="scanAllBtn"> 全局扫描</button>' +
-    '</div>' +
-    '<div style="margin:12px 0 16px">' +
-      '<input id="opsEntSearch" type="text" placeholder="搜索企业名称 / 标签 / 派系 / 方向…" value="'+(window._opsEntQ||'')+'" oninput="window._opsEntQ=this.value;opsEntRefreshList()" style="width:100%;padding:10px 14px;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;outline:none;transition:border .15s" onfocus="this.style.borderColor=\'#1a56db\'" onblur="this.style.borderColor=\'#e8edf5\'" />' +
-    '</div>' +
-    (filtered.length===0&&OPS_ENT.length>0 ? '<div style="text-align:center;padding:40px;color:#9aa5b5;font-size:13px">无匹配结果</div>' : filtered.length===0 ? opsEntEmpty() : opsEntListV2(filtered)) +
-  '</div>';
+  var actions='<button class="ops-ui-button is-primary" onclick="opsEntAdd()">＋ 手动录入</button><button class="ops-ui-button" onclick="opsEntImport()">文件导入</button><button id="scanAllBtn" class="ops-ui-button" onclick="opsEntScanAll()">全局扫描</button>';
+  return '<div class="ops-ui-page">'+opsPageHead('企业资源库','维护企业资料，筛选匹配资源并推送给目标城市。',actions)+'<div class="ops-ui-toolbar"><label class="ops-ui-search">搜索企业<input id="opsEntSearch" placeholder="搜索企业名称 / 标签 / 派系 / 方向" value="'+_authEscape(window._opsEntQ||'')+'" oninput="window._opsEntQ=this.value;opsEntRefreshList()"></label></div><div id="opsEnterpriseResults">'+opsEnterpriseResults()+'</div></div>';
+}
+function opsEnterpriseResults(){
+  var filtered=opsEntFilter(OPS_ENT);
+  return '<div class="ops-ui-results-meta">显示 '+filtered.length+' / '+OPS_ENT.length+' 家企业</div>'+(filtered.length?opsEntListV2(filtered):OPS_ENT.length?opsEmpty('未找到匹配的企业','尝试其他关键词。'):opsEntEmpty());
 }
 
 function opsEntFilter(list){
@@ -2173,23 +2062,7 @@ function opsEntFilter(list){
   });
 }
 
-function opsEntRefreshList(){
-  var filtered = opsEntFilter(OPS_ENT);
-  var container = document.getElementById('opsContent');
-  if(!container) return;
-  // Find the grid container and replace its content
-  var grid = container.querySelector('[style*="grid-template-columns"]');
-  if(!grid) { renderOpsV2(); return; }
-  var countEl = container.querySelector('span[style*="color:#9aa5b5"]');
-  if(countEl) countEl.textContent = '共 ' + OPS_ENT.length + ' 家' + (filtered.length!==OPS_ENT.length?' · 筛选 '+filtered.length+' 家':'');
-  if(filtered.length===0 && OPS_ENT.length>0){
-    grid.innerHTML='<div style="text-align:center;padding:40px;color:#9aa5b5;font-size:13px;grid-column:1/-1">无匹配结果</div>';
-  } else if(filtered.length===0){
-    grid.innerHTML=opsEntEmpty();
-  } else {
-    grid.innerHTML=opsEntListV2(filtered).replace(/^<div[^>]*>|<\/div>$/g,'');
-  }
-}
+function opsEntRefreshList(){var el=document.getElementById('opsEnterpriseResults');if(el)el.innerHTML=opsEnterpriseResults();}
 
 function opsEntListV2(list){
   return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
@@ -2200,24 +2073,24 @@ function opsEntListV2(list){
       var statusBg=e.status==='scanned'?'#f5f3ff':e.status==='pushed'?'#f0fdf4':'#f5f7fb';
       var statusLabel=e.status==='scanned'?'已扫描'+matchCount+'匹配':e.status==='pushed'?'已推送':'待扫描';
 
-      var tagsHtml=(e.tags||[]).length?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px">'+(e.tags||[]).map(function(t){return '<span style="padding:2px 7px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;font-size:10.5px;color:#1a56db">'+t+'</span>';}).join('')+'</div>':'';
+      var tagsHtml=(e.tags||[]).length?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px">'+(e.tags||[]).map(function(t){return '<span style="padding:2px 7px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;font-size:10.5px;color:#1a56db">'+_authEscape(t)+'</span>';}).join('')+'</div>':'';
 
-      var factionHtml=(e.faction||[]).length?'<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">'+(e.faction||[]).map(function(f){var lbl=f.person?(f.person+' · '+f.label+(f.type==='校友会'?'毕业':'')):''+f.label;return '<span style="padding:2px 7px;background:#fef9e7;border:1px solid #fde68a;border-radius:10px;font-size:10.5px;color:#78350f">'+lbl+'</span>';}).join('')+'</div>':'';
+      var factionHtml=(e.faction||[]).length?'<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">'+(e.faction||[]).map(function(f){var lbl=f.person?(f.person+' · '+f.label+(f.type==='校友会'?'毕业':'')):''+f.label;return '<span style="padding:2px 7px;background:#fef9e7;border:1px solid #fde68a;border-radius:10px;font-size:10.5px;color:#78350f">'+_authEscape(lbl)+'</span>';}).join('')+'</div>':'';
 
-      var matchHtml=matchCount>0?'<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">'+(e.matches||[]).map(function(m){return '<span style="padding:2px 7px;background:'+(m.pushed?'#f0fdf4':'#f5f3ff')+';border:1px solid '+(m.pushed?'#86efac':'#c4b5fd')+';border-radius:10px;font-size:10.5px;color:'+(m.pushed?'#166534':'#6d28d9')+'">'+m.city+'·'+m.gap+(m.pushed?' ✓':'')+'</span>';}).join('')+'</div>':'';
+      var matchHtml=matchCount>0?'<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">'+(e.matches||[]).map(function(m){return '<span style="padding:2px 7px;background:'+(m.pushed?'#f0fdf4':'#f5f3ff')+';border:1px solid '+(m.pushed?'#86efac':'#c4b5fd')+';border-radius:10px;font-size:10.5px;color:'+(m.pushed?'#166534':'#6d28d9')+'">'+_authEscape(m.city)+'·'+_authEscape(m.gap)+(m.pushed?' ✓':'')+'</span>';}).join('')+'</div>':'';
 
       return '<div style="background:#fff;border:1.5px solid #e8edf5;border-radius:12px;padding:14px 16px;display:flex;flex-direction:column">' +
         '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
-          '<span style="font-size:14px;font-weight:750;color:#0b183b">'+e.name+'</span>' +
+          '<span style="font-size:14px;font-weight:750;color:#0b183b">'+_authEscape(e.name)+'</span>' +
           (e.hasMoveSignal?'<span style="padding:1px 6px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:10px;border:1px solid #bbf7d0">扩张</span>':'') +
           '<span style="padding:1px 7px;background:'+statusBg+';color:'+statusColor+';border-radius:10px;font-size:10px;font-weight:600">'+statusLabel+'</span>' +
         '</div>' +
-        '<div style="font-size:12px;color:#4a5568">'+e.kind+' · '+e.region+(e.revenue?' · '+e.revenue:'')+'</div>' +
-        (e.gap?'<div style="font-size:11.5px;color:#667590;margin-top:2px">'+e.gap+'</div>':'') +
-        (e.signal&&e.signal!=='（无扩张信号）'?'<div style="font-size:11px;color:#b45309;margin-top:5px;line-height:1.5;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:6px 9px">📡 '+e.signal+'</div>':'') +
+        '<div style="font-size:12px;color:#4a5568">'+_authEscape(e.kind)+' · '+_authEscape(e.region)+(e.revenue?' · '+_authEscape(e.revenue):'')+'</div>' +
+        (e.gap?'<div style="font-size:11.5px;color:#667590;margin-top:2px">'+_authEscape(e.gap)+'</div>':'') +
+        (e.signal&&e.signal!=='（无扩张信号）'?'<div style="font-size:11px;color:#b45309;margin-top:5px;line-height:1.5;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:6px 9px">📡 '+_authEscape(e.signal)+'</div>':'') +
         tagsHtml +
         factionHtml +
-        (e.contact?'<div style="margin-top:6px;font-size:11.5px;color:#4a5568"><b>'+e.contact+'</b>'+(e.note?' · '+e.note:'')+'</div>':'') +
+        (e.contact?'<div style="margin-top:6px;font-size:11.5px;color:#4a5568"><b>'+_authEscape(e.contact)+'</b>'+(e.note?' · '+_authEscape(e.note):'')+'</div>':'') +
         matchHtml +
         '<div style="margin-top:auto;padding-top:8px;display:flex;gap:6px">' +
           '<button onclick="opsEntAiFillExisting('+idx+')" style="padding:6px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);border:none;border-radius:8px;font-size:12px;color:#fff;cursor:pointer;font-weight:600">AI补全</button>'+
