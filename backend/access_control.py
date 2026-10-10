@@ -116,11 +116,7 @@ def _known_roots(state, principal):
 
 def _project_roots(state, principal):
     projects = _projects(state)
-    known, cities = _known_roots(state, principal)
-    city_roots = {}
-    for root, names in cities.items():
-        for city in names:
-            city_roots.setdefault(city, set()).add(root)
+    known, _ = _known_roots(state, principal)
     resolved = {}
 
     def resolve(key, visiting=frozenset()):
@@ -146,9 +142,10 @@ def _project_roots(state, principal):
                                 for parent in parents}
                 result = next(iter(parent_roots)) if len(parent_roots) == 1 and None not in parent_roots else None
             else:
-                city = project.get('city')
-                candidates = city_roots.get(city.strip(), set()) if isinstance(city, str) else set()
-                result = next(iter(candidates)) if len(candidates) == 1 else None
+                # A city label is not ownership evidence, even if only one
+                # invitation currently names that city. New invitations must
+                # never adopt pre-existing, unassigned projects or their data.
+                result = None
         resolved[key] = result
         return result
 
