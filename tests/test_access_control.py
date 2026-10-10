@@ -95,9 +95,11 @@ class AccessControlTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(AuthError):
                 authorize_project(key, self.state, self.actor)
 
-    def test_unique_city_legacy_child_and_explicit_parent_chain_remain_compatible(self):
+    def test_explicit_legacy_root_and_parent_chain_remain_compatible_without_city_adoption(self):
         actor = principal('c', user='carol')
-        self.assertEqual(allowed_project_keys(self.state, actor), {'c', 'c_legacy'})
+        self.assertEqual(allowed_project_keys(self.state, actor), {'c'})
+        self.assertNotIn('c_legacy', scoped_sync_view(self.state, actor)['PROJECTS'])
+        self.assertIn('c_legacy', scoped_sync_view(self.state, ADMIN)['PROJECTS'])
         self.state['PROJECTS']['grandchild'] = {'parentProjectKey': 'a_parented'}
         self.assertIn('grandchild', allowed_project_keys(self.state, self.actor))
         self.state['PROJECTS']['conflict'] = {'parentKey': 'a', 'parentProjKey': 'b'}
@@ -114,7 +116,7 @@ class AccessControlTests(unittest.TestCase):
         self.assertEqual(parent_view['PROJECTS']['grandchild']['topic'], 'child topic')
         unique_view = scoped_sync_view(self.state, principal('c', user='carol'))
         self.assertEqual(unique_view['PROJECTS']['c']['workspaceId'], 'c')
-        self.assertEqual(unique_view['PROJECTS']['c_legacy']['workspaceId'], 'c')
+        self.assertNotIn('c_legacy', unique_view['PROJECTS'])
         self.assertEqual(self.state, original)
         admin_view = scoped_sync_view(self.state, ADMIN)
         self.assertNotIn('workspaceId', admin_view['PROJECTS']['a_parented'])
