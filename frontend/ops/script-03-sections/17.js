@@ -87,7 +87,21 @@ function _authAccept(auth){
 }
 function _authForget(){_authEpoch++;AUTH=null;_authState='anonymous';_authResetView();}
 function opsLoginPage(){
-  return '<div style="min-height:100vh;display:grid;place-items:center;background:#f3f7fc"><div style="width:min(380px,90vw);padding:32px;background:white;border:1px solid #dbe4ef;border-radius:16px"><h1 style="font-size:22px">慧小招 · 管理端登录</h1><p style="color:#667590">使用管理员账号和密码登录</p><label>管理员账号<input id="opsLoginUser" autocomplete="username" style="display:block;width:100%;min-height:42px;margin:8px 0 16px"></label><label>密码<input id="opsLoginPwd" type="password" autocomplete="current-password" style="display:block;width:100%;min-height:42px;margin:8px 0 16px" onkeydown="if(event.key===&quot;Enter&quot;)opsLogin()"></label><p id="opsLoginError" style="color:#dc2626"></p><button class="primary-button" onclick="opsLogin()">登录管理端</button><p><a href="/">前往政府端</a></p></div></div>';
+  return '<main class="ops-login-shell"><div class="ops-login-layout">'+
+    '<aside class="ops-login-brand" aria-label="慧小招管理工作台">'+
+      '<div class="ops-login-brandline"><span class="ops-login-mark" aria-hidden="true">慧</span><div><strong>慧小招</strong><span>城市研判与招商协作</span></div></div>'+
+      '<div class="ops-login-intro"><p class="ops-login-eyebrow">MANAGEMENT WORKSPACE</p><p class="ops-login-title">城市研判，<br>从这里继续。</p><p class="ops-login-description">连接报告、资料与工作区，<br>让每一项工作井然有序。</p></div>'+
+      '<div class="ops-login-city" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><i></i></div>'+
+      '<div class="ops-login-brandfoot"><span class="ops-login-brandrule"></span><span>报告任务<span class="ops-login-dot">·</span>城市智库<span class="ops-login-dot">·</span>客户管理</span></div>'+
+    '</aside>'+
+    '<section class="ops-login-panel" aria-labelledby="opsLoginTitle"><div class="ops-login-form">'+
+      '<span class="ops-login-badge"><i aria-hidden="true"></i>管理员入口</span><h1 id="opsLoginTitle">管理端登录</h1><p class="ops-login-subtitle">欢迎回来，请使用管理员账号和密码登录。</p>'+
+      '<div class="ops-login-fields"><label class="ops-login-field" for="opsLoginUser"><span>管理员账号</span><input id="opsLoginUser" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="输入管理员账号" aria-describedby="opsLoginError"></label>'+
+      '<label class="ops-login-field" for="opsLoginPwd"><span>登录密码</span><input id="opsLoginPwd" type="password" autocomplete="current-password" placeholder="输入密码" aria-describedby="opsLoginError" onkeydown="if(event.key===&quot;Enter&quot;)opsLogin()"></label></div>'+
+      '<p id="opsLoginError" class="ops-login-error" role="alert" aria-live="polite"></p><button type="button" class="ops-login-submit" onclick="opsLogin()"><span>登录管理端</span><span aria-hidden="true">→</span></button>'+
+      '<div class="ops-login-switch"><span>需要进入政府工作区？</span><a href="/">前往政府端<span aria-hidden="true">↗</span></a></div>'+
+      '<p class="ops-login-footnote">本入口仅面向已授权的管理员开放</p>'+
+    '</div></section></div></main>';
 }
 function opsLogin(){
   if(opsLogin._pending)return opsLogin._pending;

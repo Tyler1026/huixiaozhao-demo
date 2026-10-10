@@ -398,6 +398,61 @@ body.ops-mode .ops-v3 .ops-ui-report-row .r-main small{white-space:normal;overfl
 @media(max-width:600px){body.ops-mode .ops-ui-detail-grid{grid-template-columns:1fr}.ops-v3 .ops-ui-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:1100px){.ops-v3 .ops-ui-sidebar{flex-basis:184px;padding:20px 10px}.ops-v3 .ops-ui-content{padding:26px 24px}.ops-v3 .ops-ui-topbar{padding:0 22px;gap:16px}.ops-v3 .ops-ui-brand{min-width:146px}.ops-v3 .ops-ui-dashboard{grid-template-columns:1fr}.ops-v3 .ops-ui-stats{gap:12px}.ops-v3 .ops-ui-stat{padding:18px}}
 @media(max-width:760px){.ops-v3 .ops-ui-topbar{flex-basis:62px;padding:0 15px}.ops-v3 .ops-ui-brand{min-width:0;font-size:16px}.ops-v3 .ops-ui-breadcrumb,.ops-v3 .ops-ui-operator{display:none}.ops-v3 .ops-ui-topbar-actions{gap:8px}.ops-v3 .ops-ui-layout{flex-direction:column}.ops-v3 .ops-ui-sidebar{flex:0 0 auto;padding:7px 10px;display:flex;gap:0;overflow-x:auto;overflow-y:hidden;border-right:0;border-bottom:1px solid #e2e8f1}.ops-v3 .ops-ui-nav-group{display:flex;flex:0 0 auto;margin:0}.ops-v3 .ops-ui-nav-label{display:none}.ops-v3 .ops-ui-nav-button{width:auto;white-space:nowrap;padding:9px 11px;font-size:12px;margin:0 2px}.ops-v3 .ops-ui-nav-icon{font-size:15px;width:15px}.ops-v3 .ops-ui-content{padding:23px 16px 32px}.ops-v3 .ops-ui-pagehead{align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:20px}.ops-v3 .ops-ui-pagehead h1{font-size:23px}.ops-v3 .ops-ui-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.ops-v3 .ops-ui-stat{padding:16px}.ops-v3 .ops-ui-stat-value{font-size:27px}.ops-v3 .ops-ui-toolbar{padding:13px;gap:8px}.ops-v3 .ops-ui-search{max-width:none;min-width:180px;flex-basis:100%}.ops-v3 .ops-ui-results-meta{padding:10px 13px}.ops-v3 .ops-ui-report-panel{padding:15px!important}.ops-v3 .ops-ui-report-actions{margin-left:0!important}.ops-v3 .ops-ui-report-row .r-ic{display:none!important}.ops-v3 .ops-ui-detail-grid{grid-template-columns:1fr}}
+
+/* 管理端登录：独立样式，不影响登录后的工作台。 */
+.ops-login-shell{width:100%;height:100vh;height:100dvh;overflow:auto;display:grid;place-items:center;padding:48px 32px;background:#f2f1ed;color:#162d41}
+.ops-login-layout{display:grid;grid-template-columns:minmax(0,.94fr) minmax(0,1fr);width:min(1080px,100%);min-height:650px;border:1px solid #e1e3df;border-radius:20px;overflow:hidden;background:#fffefd;box-shadow:0 20px 70px #18304412,0 3px 10px #18304405}
+.ops-login-brand{position:relative;isolation:isolate;display:flex;flex-direction:column;overflow:hidden;padding:42px 44px 35px;background:#142f43;color:#edf1ee}
+.ops-login-brandline{display:flex;align-items:center;gap:12px;position:relative;z-index:1}
+.ops-login-mark{width:43px;height:43px;display:grid;place-items:center;border:1px solid #d8c5a46b;border-radius:11px;color:#e6d4b4;font-size:24px;font-weight:600}
+.ops-login-brandline strong{display:block;font-size:21px;letter-spacing:2px;line-height:1.3;font-weight:650}
+.ops-login-brandline>div>span{display:block;margin-top:5px;color:#a7b6be;font-size:10px;letter-spacing:1.5px}
+.ops-login-intro{position:relative;z-index:1;margin:68px 0 130px}
+.ops-login-eyebrow{margin:0 0 20px;font-size:9px;font-weight:550;letter-spacing:2.8px;color:#b6c2c7}
+.ops-login-title{font-size:38px;font-weight:550;line-height:1.48;letter-spacing:1px;margin:0 0 22px;color:#f4f3ed}
+.ops-login-description{font-size:13px;line-height:1.9;letter-spacing:.4px;color:#a7bac4;margin:0}
+.ops-login-city{position:absolute;z-index:0;left:0;right:0;bottom:64px;height:188px;pointer-events:none;opacity:.72}
+.ops-login-city:before{content:"";position:absolute;width:248px;height:248px;border:1px solid #a7bac417;border-radius:50%;left:28px;top:-55px}
+.ops-login-city:after{content:"";position:absolute;left:0;right:0;bottom:0;border-bottom:1px solid #a7bac437}
+.ops-login-city>span{position:absolute;bottom:0;border:1px solid #acbdc439;border-bottom:0;background:#1a3649}
+.ops-login-city>span:after{content:"";position:absolute;left:10px;right:10px;top:15px;bottom:0;border-left:1px solid #b8c8cf17;border-right:1px solid #b8c8cf17}
+.ops-login-city>span:nth-child(1){left:-10px;width:75px;height:62px}
+.ops-login-city>span:nth-child(2){left:65px;width:69px;height:112px}
+.ops-login-city>span:nth-child(3){left:146px;width:80px;height:153px;border-radius:3px 3px 0 0}
+.ops-login-city>span:nth-child(4){left:240px;width:62px;height:95px}
+.ops-login-city>span:nth-child(5){left:314px;width:77px;height:125px}
+.ops-login-city>span:nth-child(6){left:405px;width:91px;height:77px}
+.ops-login-city>i{position:absolute;left:226px;bottom:0;width:14px;height:180px;border-left:1px solid #b8c8cf36;transform:skewY(-35deg)}
+.ops-login-brandfoot{position:relative;z-index:1;display:flex;align-items:center;gap:12px;margin-top:auto;font-size:10px;color:#a8bbc5;letter-spacing:.6px;white-space:nowrap}
+.ops-login-brandrule{width:22px;height:1px;background:#b4c2c55c}
+.ops-login-dot{margin:0 10px;color:#657f8f}
+.ops-login-panel{display:flex;align-items:center;justify-content:center;padding:48px 62px;background:#fffefd}
+.ops-login-form{width:100%;max-width:350px}
+.ops-login-badge{display:inline-flex;align-items:center;gap:7px;padding:5px 9px;border:1px solid #e4e8e5;border-radius:5px;background:#f8faf7;color:#58705f;font-size:10px;font-weight:550;letter-spacing:.5px}
+.ops-login-badge>i{width:5px;height:5px;border-radius:50%;background:#82968a}
+.ops-login-form h1{margin:19px 0 11px;font-size:27px;line-height:1.4;font-weight:650;letter-spacing:.3px;color:#1c3447}
+.ops-login-subtitle{margin:0;color:#65757c;font-size:12px;line-height:1.8}
+.ops-login-fields{display:grid;gap:21px;margin-top:35px}
+.ops-login-field{display:grid;gap:9px;color:#465a69;font-size:12px;font-weight:550;letter-spacing:.2px}
+.ops-login-field input{width:100%;min-width:0;height:49px;border:1px solid #dce1df;border-radius:7px;padding:0 14px;outline:0;background:#fffefd;box-shadow:0 1px 2px #172c3e03;color:#233e52;font-size:13px;font-weight:400;letter-spacing:0;transition:border-color .15s,box-shadow .15s}
+.ops-login-field input::placeholder{color:#667676;font-size:12px}
+.ops-login-field input:hover{border-color:#b6c3c3}
+.ops-login-field input:focus,.ops-login-field input:focus-visible{border-color:#607f91;outline:2px solid #607f91;outline-offset:2px;box-shadow:0 0 0 4px #779caf0c}
+.ops-login-error{min-height:21px;margin:13px 0 8px;color:#b5453c;font-size:11px;line-height:1.7;overflow-wrap:anywhere}
+.ops-login-submit{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:49px;padding:12px 18px;border:1px solid #18374c;border-radius:7px;background:#18374c;color:#fff;font-size:13px;font-weight:550;letter-spacing:.5px;cursor:pointer;box-shadow:0 3px 8px #18374c14;transition:background .15s,box-shadow .15s}
+.ops-login-submit>span:last-child{font-size:18px;font-weight:400;color:#b7c9d3}
+.ops-login-submit:hover{background:#21465d;box-shadow:0 5px 12px #18374c20}
+.ops-login-submit:focus-visible,.ops-login-switch a:focus-visible{outline:3px solid #607f91;outline-offset:4px}
+.ops-login-switch{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:31px;padding-top:24px;border-top:1px solid #e9ece6;color:#647670;font-size:11px;line-height:1.8}
+.ops-login-switch a{display:inline-flex;align-items:center;gap:6px;color:#4f6e80;text-decoration:none;font-size:11px;font-weight:550;white-space:nowrap}
+.ops-login-switch a:hover{color:#203e52;text-decoration:underline;text-underline-offset:4px}
+.ops-login-switch a>span{font-size:13px}
+.ops-login-footnote{margin:35px 0 0;color:#68796f;font-size:10px;letter-spacing:.3px;line-height:1.8}
+@media(min-width:1500px){.ops-login-layout{min-height:680px}.ops-login-brand{padding:45px 48px 38px}.ops-login-panel{padding:55px 70px}}
+@media(max-width:900px){.ops-login-shell{padding:32px 22px}.ops-login-brand{padding:35px 32px}.ops-login-title{font-size:32px}.ops-login-panel{padding:40px 36px}}
+@media(max-width:700px){.ops-login-shell{display:block;padding:20px 16px}.ops-login-layout{grid-template-columns:1fr;min-height:0;max-width:480px;margin:0 auto;border-radius:15px}.ops-login-brand{padding:27px 28px 25px;min-height:218px}.ops-login-brandline{gap:10px}.ops-login-mark{width:36px;height:36px;font-size:21px;border-radius:9px}.ops-login-brandline strong{font-size:19px}.ops-login-brandline>div>span{font-size:9px;margin-top:4px}.ops-login-intro{margin:28px 0 0}.ops-login-eyebrow,.ops-login-description,.ops-login-brandfoot{display:none}.ops-login-title{font-size:27px;line-height:1.4;letter-spacing:.5px;margin:0;position:relative;z-index:1}.ops-login-city{height:120px;width:220px;left:auto;right:-23px;bottom:0;opacity:.32}.ops-login-city:before{width:140px;height:140px;left:45px;top:-35px}.ops-login-city>span:nth-child(1){height:34px}.ops-login-city>span:nth-child(2){height:60px}.ops-login-city>span:nth-child(3){height:88px}.ops-login-panel{padding:32px 28px 30px}.ops-login-form{max-width:380px}.ops-login-form h1{font-size:25px;margin-top:14px}.ops-login-fields{margin-top:27px;gap:18px}.ops-login-switch{margin-top:25px;padding-top:22px}.ops-login-footnote{margin-top:27px}}
+@media(max-width:380px){.ops-login-shell{padding:12px}.ops-login-brand{padding:23px 23px;min-height:203px}.ops-login-title{font-size:24px}.ops-login-panel{padding:28px 23px}.ops-login-switch{gap:8px;flex-wrap:wrap}.ops-login-dot{margin:0 7px}}
+@media(prefers-reduced-motion:reduce){.ops-login-field input,.ops-login-submit{transition:none}}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>if(typeof pdfjsLib!=='undefined')pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
@@ -7341,7 +7396,21 @@ function _authAccept(auth){
 }
 function _authForget(){_authEpoch++;AUTH=null;_authState='anonymous';_authResetView();}
 function opsLoginPage(){
-  return '<div style="min-height:100vh;display:grid;place-items:center;background:#f3f7fc"><div style="width:min(380px,90vw);padding:32px;background:white;border:1px solid #dbe4ef;border-radius:16px"><h1 style="font-size:22px">慧小招 · 管理端登录</h1><p style="color:#667590">使用管理员账号和密码登录</p><label>管理员账号<input id="opsLoginUser" autocomplete="username" style="display:block;width:100%;min-height:42px;margin:8px 0 16px"></label><label>密码<input id="opsLoginPwd" type="password" autocomplete="current-password" style="display:block;width:100%;min-height:42px;margin:8px 0 16px" onkeydown="if(event.key===&quot;Enter&quot;)opsLogin()"></label><p id="opsLoginError" style="color:#dc2626"></p><button class="primary-button" onclick="opsLogin()">登录管理端</button><p><a href="/">前往政府端</a></p></div></div>';
+  return '<main class="ops-login-shell"><div class="ops-login-layout">'+
+    '<aside class="ops-login-brand" aria-label="慧小招管理工作台">'+
+      '<div class="ops-login-brandline"><span class="ops-login-mark" aria-hidden="true">慧</span><div><strong>慧小招</strong><span>城市研判与招商协作</span></div></div>'+
+      '<div class="ops-login-intro"><p class="ops-login-eyebrow">MANAGEMENT WORKSPACE</p><p class="ops-login-title">城市研判，<br>从这里继续。</p><p class="ops-login-description">连接报告、资料与工作区，<br>让每一项工作井然有序。</p></div>'+
+      '<div class="ops-login-city" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><i></i></div>'+
+      '<div class="ops-login-brandfoot"><span class="ops-login-brandrule"></span><span>报告任务<span class="ops-login-dot">·</span>城市智库<span class="ops-login-dot">·</span>客户管理</span></div>'+
+    '</aside>'+
+    '<section class="ops-login-panel" aria-labelledby="opsLoginTitle"><div class="ops-login-form">'+
+      '<span class="ops-login-badge"><i aria-hidden="true"></i>管理员入口</span><h1 id="opsLoginTitle">管理端登录</h1><p class="ops-login-subtitle">欢迎回来，请使用管理员账号和密码登录。</p>'+
+      '<div class="ops-login-fields"><label class="ops-login-field" for="opsLoginUser"><span>管理员账号</span><input id="opsLoginUser" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="输入管理员账号" aria-describedby="opsLoginError"></label>'+
+      '<label class="ops-login-field" for="opsLoginPwd"><span>登录密码</span><input id="opsLoginPwd" type="password" autocomplete="current-password" placeholder="输入密码" aria-describedby="opsLoginError" onkeydown="if(event.key===&quot;Enter&quot;)opsLogin()"></label></div>'+
+      '<p id="opsLoginError" class="ops-login-error" role="alert" aria-live="polite"></p><button type="button" class="ops-login-submit" onclick="opsLogin()"><span>登录管理端</span><span aria-hidden="true">→</span></button>'+
+      '<div class="ops-login-switch"><span>需要进入政府工作区？</span><a href="/">前往政府端<span aria-hidden="true">↗</span></a></div>'+
+      '<p class="ops-login-footnote">本入口仅面向已授权的管理员开放</p>'+
+    '</div></section></div></main>';
 }
 function opsLogin(){
   if(opsLogin._pending)return opsLogin._pending;
