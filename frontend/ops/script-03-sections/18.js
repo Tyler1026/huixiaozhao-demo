@@ -40,6 +40,7 @@ function opsEntDoManualPush(){
   var projKey=tSel&&tSel.value;
   var p=projKey&&PROJECTS[projKey];
   if(!p){ toast('请选择产业方向'); return; }
+  opsEntEnsureId(e);
   if(!p.clues) p.clues=[];
   var clueId=e.id+'_manual_'+projKey;
   if(p.clues.find(function(c){return c.id===clueId;})){ toast('该企业已推送到此产业方向，无需重复推送'); return; }

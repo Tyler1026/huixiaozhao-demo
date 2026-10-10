@@ -7742,13 +7742,26 @@ function ragSearchBox(){
       (ragHits?'<button class="ghost-button" style="min-height:40px" onclick="ragHits=null;ragQuery=\'\';renderOpsV2()">清除</button>':'')+
     '</div>'+(ragHits?ragHitsView():'')+'</div>';
 }
+/* Keep original items for source/annotation rendering; index only plain text. */
+function ragItemText(item){
+  var value=item&&typeof item==='object'?item.text:item;
+  return typeof value==='string'?value:(typeof value==='number'||typeof value==='boolean'?String(value):'');
+}
 function ragDoSearch(){
   var q=(document.getElementById('ragQ')||{}).value||'';
   if(!q.trim())return;
   ragQuery=q;
   var key=ragProjKey(), p=PROJECTS[key];
   var corpus=[];
-  p.kb.forEach(function(t){(t.known||[]).forEach(function(txt,i){corpus.push({id:t.t+':'+i,topic:t.t,tags:[],text:txt,cite:t.t});});});
+  (p&&Array.isArray(p.kb)?p.kb:[]).forEach(function(t){
+    if(!t)return;
+    var topic=ragItemText(t.t);
+    (Array.isArray(t.known)?t.known:[]).forEach(function(item,i){
+      var annotations=item&&Array.isArray(item.annotations)?item.annotations:[];
+      var text=[ragItemText(item)].concat(annotations.map(ragItemText)).filter(Boolean).join('\n');
+      corpus.push({id:topic+':'+i,topic:topic,tags:[],text:text,cite:topic,item:item});
+    });
+  });
   var hits=[];
   try{ hits=(typeof kbSearch==='function')?(kbSearch(q,corpus,8)||[]):[]; }catch(e){ hits=[]; }
   if(!hits.length){
@@ -7765,11 +7778,11 @@ function ragHitsView(){
   return '<div style="margin-top:12px">'+
     '<div style="font-size:12px;color:#667590;margin-bottom:8px">「'+ragEsc(ragQuery)+'」召回 <b style="color:#0757ad">'+ragHits.length+'</b> 条材料（按相关度排序，即政府端提问时喂给 AI 的上下文）：</div>'+
     ragHits.map(function(h,i){
-      var card=ragRenderChunk(h.text,i+1,qTerms);
+      var card=ragRenderChunk(Object.prototype.hasOwnProperty.call(h,'item')?h.item:h.text,i+1,qTerms);
       // 前3名加蓝框+主题标；其余灰
       var head='<div style="display:flex;gap:8px;align-items:center;margin:0 0 4px 24px">'+
         '<span style="font-size:10px;font-weight:700;color:#fff;background:'+(i<3?'#0757ad':'#9aa5b5')+';border-radius:8px;padding:1px 7px">TOP '+(i+1)+'</span>'+
-        '<span style="font-size:11px;color:#0757ad">'+h.topic+'</span></div>';
+        '<span style="font-size:11px;color:#0757ad">'+ragEsc(h.topic)+'</span></div>';
       return '<div style="'+(i<3?'border-left:3px solid #0757ad;padding-left:8px;margin-bottom:2px':'padding-left:11px')+'">'+head+card+'</div>';
     }).join('')+'</div>';
 }
@@ -8028,8 +8041,8 @@ function ragMdTables(s){
 function ragRenderChunk(raw, idx, hl){
   // 兼容结构化 chunk（对象）与旧字符串
   var origin='ai', nature='base', srcName='', annots=[], account='';
-  if(raw && typeof raw==='object'){ origin=raw.origin||'ai'; nature=raw.nature||'base'; srcName=raw.src||''; annots=raw.annotations||[]; account=raw.account||''; raw=raw.text||''; }
-  var text=String(raw);
+  if(raw && typeof raw==='object'){ origin=raw.origin||'ai'; nature=raw.nature||'base'; srcName=raw.src||''; annots=Array.isArray(raw.annotations)?raw.annotations.filter(function(a){return a&&typeof a==='object';}):[]; account=raw.account||''; }
+  var text=ragItemText(raw);
   // 1) 抽取【标题】前缀
   var title=null; var m=text.match(/^【([^】]{2,40})】\s*/);
   if(m){ title=m[1]; text=text.slice(m[0].length); }
@@ -8087,7 +8100,7 @@ function ragAnnots(annots){
       var act=a.nature==='fix'?'修正':(a.nature==='confirm'?'确认':'佐证');
       return '<div style="font-size:11px;color:'+os.bt+';background:'+os.bg+';border:1px solid '+os.bc+';border-radius:7px;padding:5px 9px">'+
         '<b>'+(a.nature==='fix'?(a.origin==='user'?'🔴':'🟡'):'🟢')+' '+who+act+'</b>'+(a.src?' · '+ragEsc(a.src):'')+
-        '：'+ragEsc(String(a.text||'').slice(0,140))+'</div>';
+        '：'+ragEsc(ragItemText(a).slice(0,140))+'</div>';
     }).join('')+'</div>';
 }
 function ragPushLog(){
@@ -9590,6 +9603,7 @@ function opsEntManualEdit(idx){
 
 function applyManualEdit(){
   var idx=window._manualEditIdx; var e=OPS_ENT[idx]; if(!e) return;
+  opsEntEnsureId(e);
   e.kind=((document.getElementById('me-kind')||{}).value||'').trim();
   e.region=((document.getElementById('me-region')||{}).value||'').trim()||'待填写';
   e.revenue=((document.getElementById('me-revenue')||{}).value||'').trim();
@@ -9692,6 +9706,18 @@ function opsEntAiFill(){
   });
 }
 
+/* Backfill only the explicitly selected entity; never rewrite existing IDs. */
+function opsEntEnsureId(entity){
+  if((typeof entity.id==='string'||typeof entity.id==='number'&&isFinite(entity.id))&&String(entity.id).trim()&&!/^(undefined|null)$/.test(String(entity.id)))return entity.id;
+  var token='';
+  try{if(typeof crypto!=='undefined'&&typeof crypto.randomUUID==='function')token=crypto.randomUUID();}catch(_){}
+  if(!token)token=Date.now().toString(36)+'_'+Math.random().toString(36).slice(2)+'_'+(++opsEntEnsureId.sequence).toString(36);
+  var base='ent_'+token,id=base,suffix=0;
+  while(OPS_ENT.some(function(other){return other!==entity&&String(other.id)===id;}))id=base+'_'+(++suffix);
+  entity.id=id;
+  return id;
+}
+opsEntEnsureId.sequence=0;
 /* 保存企业（新版表单） */
 function opsEntSaveV2(){
   var name=((document.getElementById('oe-name')||{}).value||'').trim();
@@ -9722,6 +9748,7 @@ function opsEntSaveV2(){
     gap:gap,tags:tags,faction:faction,contact:contact,note:note,
     hasMoveSignal:!!signal,signal:signal,status:'manual',matches:[]
   };
+  opsEntEnsureId(ent);
   OPS_ENT.push(ent);
   persist();
   closeModal();
@@ -10001,6 +10028,7 @@ function opsEntDoPush(entIdx, miArr){
     if(chk&&!chk.checked) return;
     var m=(e.matches||[])[mi]; if(!m||m.pushed) return;
     var p=PROJECTS[m.projKey]; if(!p) return;
+    opsEntEnsureId(e);
     if(!p.clues) p.clues=[];
     // 避免重复推送
     var exists=p.clues.find(function(c){return c.id===e.id+'_to_'+m.projKey;});
@@ -10069,6 +10097,7 @@ function opsDoPushToCity(projKey, count){
     if(chk&&!chk.checked) return;
     var m=(e.matches||[]).find(function(m){return m.projKey===projKey;});
     if(!m||m.pushed) return;
+    opsEntEnsureId(e);
     var exists=p.clues.find(function(c){return c.id===e.id+'_to_'+projKey;});
     if(exists) return;
     p.clues.push({
@@ -10253,6 +10282,7 @@ function opsEntDoPush(entIdx, miArr){
     if(chk&&!chk.checked) return;
     var m=(e.matches||[])[mi]; if(!m||m.pushed) return;
     var p=PROJECTS[m.projKey]; if(!p) return;
+    opsEntEnsureId(e);
     if(!p.clues) p.clues=[];
     // 避免重复推送
     var exists=p.clues.find(function(c){return c.id===e.id+'_to_'+m.projKey;});
@@ -10321,6 +10351,7 @@ function opsDoPushToCity(projKey, count){
     if(chk&&!chk.checked) return;
     var m=(e.matches||[]).find(function(m){return m.projKey===projKey;});
     if(!m||m.pushed) return;
+    opsEntEnsureId(e);
     var exists=p.clues.find(function(c){return c.id===e.id+'_to_'+projKey;});
     if(exists) return;
     p.clues.push({
@@ -10382,6 +10413,7 @@ function opsEntDoManualPush(){
   var projKey=tSel&&tSel.value;
   var p=projKey&&PROJECTS[projKey];
   if(!p){ toast('请选择产业方向'); return; }
+  opsEntEnsureId(e);
   if(!p.clues) p.clues=[];
   var clueId=e.id+'_manual_'+projKey;
   if(p.clues.find(function(c){return c.id===clueId;})){ toast('该企业已推送到此产业方向，无需重复推送'); return; }
