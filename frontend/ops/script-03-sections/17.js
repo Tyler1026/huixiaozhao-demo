@@ -2907,8 +2907,8 @@ function opsEntScanOne(idx, silent){
       });
     }
     kb.forEach(function(card){
-      (card&&card.known||[]).forEach(function(item){
-        var c=item.replace(/[✅⚠️]/g,'').replace(/\s+/g,' ').trim();
+      (card&&Array.isArray(card.known)?card.known:[]).forEach(function(item){
+        var c=ragItemText(item).replace(/[✅⚠️]/g,'').replace(/\s+/g,' ').trim();
         if((c.indexOf('缺')>=0||c.indexOf('薄弱')>=0||c.indexOf('补链')>=0||c.indexOf('引进')>=0)&&c.length>4&&c.length<80) gaps.push(c);
       });
     });
