@@ -81,11 +81,15 @@ function runAIFunnel(projKey, done, onProgress){
   var q='针对当前方向 '+topic+'，从服务端提供的完整证据目录提取有来源的企业候选。每家必须给出 evidence_ids。只列材料中存在的企业，不为凑数量补入常识名单。业务匹配是待核推断；没有直接投资意向证据时 score_relocate=null。';
   fetch(KB_API_OPS,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,projectKey:projKey,topic:topic,reportRequestId:requestId,stream:true,mode:'funnel'})})
   .then(async function(resp){
-    if(!resp.ok)throw new Error('服务繁忙或来源已变更（'+resp.status+'），请重试');
+    if(!resp.ok){
+      var failure=await resp.json().catch(function(){return {};});
+      var reasons={evidence_changed:'材料已更新',topic_changed:'当前方向已切换',topic_mismatch:'当前方向已切换',report_changed:'报告版本已更新',evidence_missing:'当前方向缺少可核查材料'};
+      throw new Error(reasons[failure.error]?reasons[failure.error]+'，原候选清单已保留；请刷新后重新分析。':'分析暂未完成（'+resp.status+'），原候选清单已保留；请稍后重试。');
+    }
     var result=await readTopicReportStream(resp,function(acc){if(onProgress&&current())onProgress(Math.min(90,5+Math.round(acc.length/15000*85)),acc);});
     if(!current())throw new Error('工作区、方向或报告版本已变化；旧响应未写入');
     var obj=_parseFunnelJson(result.text);
-    if(!obj||!obj.companies||!obj.companies.length)throw new Error('没有通过来源校验的候选，请补充材料');
+    if(!obj||!Array.isArray(obj.companies))throw new Error('返回结果不完整，原候选清单已保留');
     if(obj.evidence_contract!=='saved-excerpts-v1'||obj.projectKey!==projKey||obj.topic!==topic||(obj.reportRequestId||null)!==requestId)throw new Error('来源校验未通过，原候选清单已保留');
     var seen={};
     var companies=obj.companies.filter(function(c){
@@ -93,7 +97,7 @@ function runAIFunnel(projKey, done, onProgress){
       if(!name||seen[name]||!Array.isArray(c.evidence)||!c.evidence.length)return false;
       seen[name]=true;return true;
     }).map(function(c,i){return Object.assign({},c,{id:c.id||_funnelClueId(projKey,c.name,i)});});
-    if(!companies.length)throw new Error('没有通过来源校验的候选，请补充材料');
+    if(obj.companies.length&&!companies.length)throw new Error('没有通过来源校验的候选，请补充材料');
     PROJECTS[projKey].funnel=Object.assign({},obj,{ts:Date.now(),total:companies.length,companies:companies,pushed:false});
     persist();release();done&&done(null,PROJECTS[projKey].funnel);
   }).catch(function(e){release();done&&done(e&&e.message||'network');});

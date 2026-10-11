@@ -219,12 +219,14 @@ def ground_funnel(obj, catalog, context):
         if signal and any(signal in r['quote'] for r in refs):
             item['signal'] = signal+'（材料线索，非已核实本地投资意向）'
         companies.append(item)
-    if not companies:
+    if not companies and obj['companies']:
         raise ValueError('没有企业通过来源核对；请补充该方向企业名录或原始链接')
     return {'topic': context['topic'], 'projectKey': context['projectKey'],
             'reportRequestId': context['reportRequestId'], 'total_scanned': len(companies),
             'source_records': len(catalog), 'rejected_count': dropped, 'companies': companies,
-            'evidence_contract': 'saved-excerpts-v1', 'notice': '当前为材料候选清单，逐条保留来源；业务适配和投资意向未核验，不可直接批量推送。'}
+            'evidence_contract': 'saved-excerpts-v1',
+            'notice': ('当前材料不足以形成有来源的企业候选；不代表现实中不存在相关企业。' if not companies else
+                       '当前为材料候选清单，逐条保留来源；业务适配和投资意向未核验，不可直接批量推送。')}
 
 
 def ground_profile(obj, catalog, context):
@@ -271,6 +273,71 @@ def ground_profile(obj, catalog, context):
     return result
 
 
+def funnel_demand_anchors(context):
+    """Exact current-topic material a human may use for a match review.
+
+    These anchors establish what was reviewed, not whether a product is
+    technically suitable. A base-workspace excerpt or another topic is not a
+    substitute for the current demand. IDs retain source positions so stale
+    dialogs cannot silently bind the same index to changed text.
+    """
+    rs, topic = context['reportState'], context['topic']
+    anchors = []
+    for index, item in enumerate((rs.get('pendingByTopic') or {}).get(topic) or []):
+        if not isinstance(item, dict) or item.get('status') not in ('confirmed', 'edited'):
+            continue
+        quote = item.get('editedText') if item.get('status') == 'edited' else item.get('text')
+        if isinstance(quote, str) and 12 <= len(quote.strip()) <= 3500:
+            anchors.append({'id': 'confirmation:'+str(index), 'kind': 'confirmation', 'quote': quote.strip()})
+    phase = (rs.get('phaseByTopic') or {}).get(topic)
+    if phase is None and rs.get('topic') == topic:
+        phase = rs.get('phase')
+    if phase == 2:
+        report = (rs.get('aiReportByTopic') or {}).get(topic)
+        if not report and rs.get('topic') == topic:
+            report = rs.get('text')
+        if isinstance(report, str):
+            for index, line in enumerate(report.split('\n')):
+                quote = line.strip()
+                if 12 <= len(quote) <= 3500:
+                    anchors.append({'id': 'report:'+str(index), 'kind': 'report', 'quote': quote})
+    return anchors
+
+
+def resource_review_preview(body, state):
+    """Read-only projection of saved resource identities into this workspace."""
+    context = project_context(body, state)
+    if body.get('topic') != context['topic'] or body.get('reportRequestId') != context['reportRequestId']:
+        raise AuthError(409, 'report_changed', '请刷新当前方向和报告版本后重试')
+    if state['PROJECTS'][context['projectKey']].get('topic') != context['topic']:
+        raise AuthError(409, 'topic_changed', '当前方向已切换，请重新选择')
+    ids = body.get('resourceIds')
+    if not isinstance(ids, list) or not 1 <= len(ids) <= 8 or not all(isinstance(i, str) and i for i in ids) or len(set(ids)) != len(ids):
+        raise AuthError(400, 'invalid_selection', '请选择 1 至 8 家有保存编号的资源企业')
+    catalog = evidence_catalog(context['chunks'])
+    companies, unavailable = [], []
+    selected_names = set()
+    for rid in ids:
+        resources = [r for r in state.get('OPS_ENT', []) if isinstance(r, dict) and str(r.get('id', '')) == rid]
+        if len(resources) != 1 or not isinstance(resources[0].get('name'), str) or not resources[0]['name'].strip():
+            raise AuthError(409, 'resource_changed', '资源企业编号已变化，请刷新后重新选择')
+        name = resources[0]['name'].strip()
+        if _key(name) in selected_names:
+            raise AuthError(409, 'resource_changed', '所选资源包含同名企业，请选择一个明确的资源编号')
+        selected_names.add(_key(name))
+        refs = [r for r in catalog if name in r['quote'] and r['urls']]
+        if not refs:
+            unavailable.append({'resourceId': rid, 'name': name, 'reason': '当前工作区缺少该企业带来源链接的产品原文，请先补充材料'})
+            continue
+        candidate = ground_funnel({'companies': [{'name': name, 'evidence_ids': [r['id'] for r in refs]}]}, catalog, context)['companies'][0]
+        candidate['resourceId'] = rid
+        companies.append(candidate)
+    return {'projectKey': context['projectKey'], 'topic': context['topic'], 'reportRequestId': context['reportRequestId'],
+            'evidence_contract': 'saved-excerpts-v1', 'source': 'resource', 'resourceIds': ids,
+            'companies': companies, 'unavailable': unavailable, 'demandAnchors': funnel_demand_anchors(context),
+            'notice': '仅按当前工作区原文整理资源企业。请逐家核对产品和需求；未发现来源的企业不能推送。'}
+
+
 def review_and_push(body, state, actor):
     """Admin attests business fit; committed source-backed clues remain pending.
 
@@ -278,17 +345,30 @@ def review_and_push(body, state, actor):
     company body is never sufficient to address or write a workspace.
     """
     context = project_context(body, state)
+    if not isinstance(body.get('reportRequestId'), str) or body['reportRequestId'] != context['reportRequestId'] or body.get('topic') != context['topic']:
+        raise AuthError(409, 'report_changed', '请明确选择当前方向和报告版本后重新核对')
     key = context['projectKey']
     project = state['PROJECTS'][key]
-    funnel = project.get('funnel') or {}
+    if project.get('topic') != context['topic']:
+        raise AuthError(409, 'topic_changed', '当前方向已切换，请重新核对')
+    resource_mode = body.get('source') == 'resource'
+    if body.get('source') not in (None, 'funnel', 'resource'):
+        raise AuthError(400, 'invalid_selection', '企业来源不正确')
+    funnel = resource_review_preview(body, state) if resource_mode else project.get('funnel') or {}
     if funnel.get('evidence_contract') != 'saved-excerpts-v1' or funnel.get('reportRequestId', '') != context['reportRequestId'] or funnel.get('topic') != context['topic']:
         raise AuthError(409, 'funnel_stale', '候选来源或报告版本已更新，请重新分析')
     names = body.get('names')
-    note = body.get('reviewNote')
     if not isinstance(names, list) or not 1 <= len(names) <= 8 or not all(isinstance(n, str) and n.strip() for n in names) or len(set(names)) != len(names):
         raise AuthError(400, 'invalid_selection', '每次请选择 1 至 8 家不同企业')
-    if not isinstance(note, str) or len(note.strip()) < 12 or len(note) > 1200:
-        raise AuthError(400, 'review_required', '请填写已核对的业务适配依据（至少 12 字），投资意向仍保持待核验')
+    if resource_mode and (len(funnel['companies']) != len(body['resourceIds']) or set(names) != {c['name'] for c in funnel['companies']}):
+        raise AuthError(409, 'evidence_missing', '所选资源企业缺少当前工作区的产品原文，不能推送')
+    reviews = body.get('reviews')
+    if not isinstance(reviews, list) or len(reviews) != len(names) or any(not isinstance(r, dict) for r in reviews):
+        raise AuthError(400, 'review_required', '请逐家选择产品来源、当前需求原句并填写适配理由')
+    review_by_name = {r.get('name'): r for r in reviews if isinstance(r.get('name'), str)}
+    if len(review_by_name) != len(names) or set(review_by_name) != set(names):
+        raise AuthError(400, 'review_required', '每家所选企业必须有独立的核对记录')
+    demand_anchors = {a['id']: a for a in funnel_demand_anchors(context)}
     candidates = {c.get('name'): c for c in funnel.get('companies', []) if isinstance(c, dict)}
     catalog = {c['id']: c for c in evidence_catalog(context['chunks'])}
     checked = []
@@ -298,16 +378,39 @@ def review_and_push(body, state, actor):
         if not isinstance(evidence, list) or not evidence:
             raise AuthError(409, 'evidence_missing', '所选候选缺少可核查来源')
         for ref in evidence:
-            if not isinstance(ref, dict):
+            if not isinstance(ref, dict) or not isinstance(ref.get('id'), str):
                 raise AuthError(409, 'evidence_changed', '候选来源已变化，请重新分析并核查')
-            current = catalog.get(ref.get('id'))
+            current = catalog.get(ref['id'])
             if not current or ref.get('quote') != current['quote'] or ref.get('urls') != current['urls'] or name not in current['quote'] or not current['urls']:
                 raise AuthError(409, 'evidence_changed', '候选来源已变化，请重新分析并核查')
+        review = review_by_name[name]
+        note = review.get('reason')
+        if review.get('confirmed') is not True or not isinstance(note, str) or not 12 <= len(note.strip()) <= 1200:
+            raise AuthError(400, 'review_required', '请逐家确认两份原句并填写至少 12 字的人工适配理由')
+        product, demand = review.get('product'), review.get('demand')
+        if not isinstance(product, dict) or not isinstance(demand, dict):
+            raise AuthError(400, 'review_required', '产品来源与需求原句缺一不可')
+        product_id, demand_id = product.get('evidenceId'), demand.get('anchorId')
+        if not isinstance(product_id, str) or not isinstance(demand_id, str):
+            raise AuthError(400, 'review_required', '请选择有效的产品来源与需求原句')
+        source = catalog.get(product_id)
+        if (not source or source['id'] not in {r['id'] for r in evidence}
+                or product.get('quote') != source['quote'] or name not in source['quote'] or not source['urls']):
+            raise AuthError(409, 'evidence_changed', '产品来源原句已变化或不属于该企业，请重新核对')
+        anchor = demand_anchors.get(demand_id)
+        if not anchor or demand.get('quote') != anchor['quote']:
+            raise AuthError(409, 'demand_changed', '当前方向的需求原句已变化或尚未确认，请重新核对')
         # /api/sync can update stored candidates. Their derived description,
         # category, source and scores are not trusted even when evidence is
         # unchanged. Re-project only the verified identity and current refs.
         fresh = ground_funnel({'companies': [{'name': name, 'evidence_ids': [r['id'] for r in evidence]}]}, list(catalog.values()), context)
-        checked.append(fresh['companies'][0])
+        item = fresh['companies'][0]
+        if resource_mode:
+            item['resourceId'] = c['resourceId']
+        item['match_review'] = {'reason': note.strip(),
+            'product': {'evidenceId': source['id'], 'quote': source['quote'], 'urls': list(source['urls'])},
+            'demand': {'anchorId': anchor['id'], 'kind': anchor['kind'], 'quote': anchor['quote']}}
+        checked.append(item)
     now = __import__('time').time_ns() // 1_000_000
     clues = project.setdefault('clues', [])
     existing = {_key(c.get('name', '')) for c in clues if isinstance(c, dict)}
@@ -319,19 +422,42 @@ def review_and_push(body, state, actor):
         if nk in existing or _clue_tombstoned(key, c, tombs):
             skipped.append(c['name']); continue
         cid = 'f_review_'+hashlib.sha256((key+'\0'+nk).encode()).hexdigest()[:20]
+        review = c['match_review']
         clues.append({'id': cid, 'name': c['name'], 'kind': c.get('kind', ''), 'region': c.get('region', ''),
             'gap': context['topic'], 'status': 'ops_rec', 'tone': 'amber',
-            'reason': '业务适配人工核对：'+note.strip(), 'fit': c.get('fit', ''),
+            'reason': '人工适配意见（待核验）：'+review['reason'], 'fit': c.get('fit', ''),
             'signal': '投资意向未知，待资源团队核验', 'hasMoveSignal': False,
             'source': c.get('source', ''), 'signalSrc': c.get('source', ''),
             'evidence': copy.deepcopy(c['evidence']), 'investment_intent': 'unknown',
             'questions': ['核实是否有本地区投资意向', '核实业务适配和可供产品', '核实落地条件'],
-            'review': {'actor': actor, 'at': now, 'note': note.strip(), 'scope': 'business_fit_only'},
+            'review': {'actor': actor, 'at': now, 'note': review['reason'], 'scope': 'human_match_review_pending',
+                       'product': review['product'], 'demand': review['demand']},
+            'sourceResourceId': c.get('resourceId'),
             'reportRequestId': context['reportRequestId']})
         existing.add(nk); added.append(c['name'])
-    funnel['pushed'] = bool(added or skipped)
-    funnel['pushedAt'] = now
-    funnel['pushedNames'] = list(dict.fromkeys((funnel.get('pushedNames') or [])+added))
+    if not resource_mode:
+        funnel['pushed'] = bool(added or skipped)
+        funnel['pushedAt'] = now
+        funnel['pushedNames'] = list(dict.fromkeys((funnel.get('pushedNames') or [])+added))
+    else:
+        # Record only an actual current-resource delivery (or its exact
+        # idempotent predecessor). Name-only duplicates and tombstones cannot
+        # upgrade a different resource's delivery status.
+        for c in checked:
+            delivered = any(_key(clue.get('name', '')) == _key(c['name'])
+                            and clue.get('sourceResourceId') == c['resourceId']
+                            and clue.get('reportRequestId') == context['reportRequestId']
+                            for clue in clues if isinstance(clue, dict))
+            if not delivered:
+                continue
+            resource = next(r for r in state['OPS_ENT'] if isinstance(r, dict) and str(r.get('id', '')) == c['resourceId'])
+            matches = resource.setdefault('matches', [])
+            exact = [m for m in matches if isinstance(m, dict) and m.get('projKey') == key and (not m.get('city') or m['city'] == context['city'])]
+            if exact:
+                for match in exact:
+                    match['pushed'] = True
+            else:
+                matches.append({'projKey': key, 'city': context['city'], 'pushed': True, 'evidenceStatus': 'pending'})
     return {'ok': True, 'added': added, 'skipped': skipped, 'projectKey': key, 'status': 'pending_investment_verification'}
 
 

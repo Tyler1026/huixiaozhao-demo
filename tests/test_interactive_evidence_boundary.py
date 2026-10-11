@@ -25,7 +25,13 @@ def sample():
             {'text': '未见航空航天专项资金条款，不代表不存在。来源 https://official.example/policy'}]}]},
         'b': {'id': 'b', 'workspaceId': 'b', 'city': '同城区', 'topic': '液体火箭', 'kb': [{'t': '机密', 'known': ['OTHER_WORKSPACE_SECRET']}]},
         'child': {'id': 'child', 'workspaceId': 'a', 'city': '同城区', 'topic': '液体火箭', 'reportRequestId': 'r1'}},
-        'REPORTSTATE': {'a': {'topic': '液体火箭', 'text': '当前版本报告独有内容', 'phaseByTopic': {'液体火箭': 1}, 'pendingByTopic': {'液体火箭': [{'text': '核实投资门槛', 'status': 'confirmed'}]}}}}
+        'REPORTSTATE': {'a': {'topic': '液体火箭', 'text': '当前版本报告独有内容：重点引入液氧煤油发动机研发和生产企业。', 'phaseByTopic': {'液体火箭': 1}, 'pendingByTopic': {'液体火箭': [{'text': '核实投资门槛', 'status': 'confirmed'}]}}}}
+
+
+def review_fixture(ref):
+    return {'name': '星河动力公司', 'product': {'evidenceId': ref['id'], 'quote': ref['quote']},
+            'demand': {'anchorId': 'report:0', 'quote': '当前版本报告独有内容：重点引入液氧煤油发动机研发和生产企业。'},
+            'reason': '已核查官方产品记录与液体火箭业务适配', 'confirmed': True}
 
 
 def context():
@@ -127,10 +133,11 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(node['local_leaders'],['甲企业'])
 
     def test_review_rechecks_current_evidence_and_deduplicates_pending_clue(self):
-        s=sample();c=context();cat=evidence_catalog(c['chunks']);ref=next(x for x in cat if '星河' in x['quote'])
+        s=sample();s['REPORTSTATE']['a']['phaseByTopic']['液体火箭']=2
+        c=context();cat=evidence_catalog(c['chunks']);ref=next(x for x in cat if '星河' in x['quote'])
         fn=ground_funnel({'companies':[{'name':'星河动力公司','evidence_ids':[ref['id']]}]},cat,c)
         s['PROJECTS']['a']['funnel']=fn
-        body={'projectKey':'a','topic':'液体火箭','reportRequestId':'r1','names':['星河动力公司'],'reviewNote':'已核查官方产品记录与液体火箭业务适配'}
+        body={'projectKey':'a','topic':'液体火箭','reportRequestId':'r1','names':['星河动力公司'],'reviews':[review_fixture(ref)]}
         first=review_and_push(body,s,'authenticated-admin')
         self.assertEqual(first['added'],['星河动力公司'])
         self.assertEqual(review_and_push(body,s,'authenticated-admin')['added'],[])
@@ -140,15 +147,16 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(clue['review']['actor'],'authenticated-admin')
         changed=copy.deepcopy(s);changed['PROJECTS']['a']['kb'][0]['known'][0]['text']='不同资料'
         with self.assertRaises(AuthError): review_and_push(body,changed,'admin')
-        with self.assertRaises(AuthError): review_and_push(dict(body,reviewNote=''),s,'admin')
+        with self.assertRaises(AuthError): review_and_push(dict(body,reviews=[]),s,'admin')
 
     def test_push_reprojects_all_mutable_candidate_fields_from_current_sources(self):
-        s=sample();c=context();cat=evidence_catalog(c['chunks']);ref=next(x for x in cat if '星河' in x['quote'])
+        s=sample();s['REPORTSTATE']['a']['phaseByTopic']['液体火箭']=2
+        c=context();cat=evidence_catalog(c['chunks']);ref=next(x for x in cat if '星河' in x['quote'])
         fn=ground_funnel({'companies':[{'name':'星河动力公司','kind':'液氧煤油发动机','evidence_ids':[ref['id']]}]},cat,c)
         forged=fn['companies'][0]
         forged.update(kind='液氧甲烷发动机',region='甲区',fit='星河动力公司已承诺在甲区投资10亿元',source='https://unrelated.example/forged',signal='已签约',hasMoveSignal=True,score_relocate=100)
         s['PROJECTS']['a']['funnel']=fn
-        result=review_and_push({'projectKey':'a','topic':'液体火箭','reportRequestId':'r1','names':['星河动力公司'],'reviewNote':'已核查官方产品记录与液体火箭业务适配'},s,'admin')
+        result=review_and_push({'projectKey':'a','topic':'液体火箭','reportRequestId':'r1','names':['星河动力公司'],'reviews':[review_fixture(ref)]},s,'admin')
         self.assertEqual(result['added'],['星河动力公司'])
         clue=s['PROJECTS']['a']['clues'][0]
         self.assertEqual(clue['kind'],'')
@@ -233,6 +241,21 @@ class StreamBoundaryTests(unittest.TestCase):
         self.assertEqual(status,200);self.assertIn('saved-excerpts-v1',data);self.assertNotIn('液氧甲烷',data)
         sent=json.loads(self.h.ns['DS_OPENER'].open.call_args.args[0].data)
         self.assertFalse(sent['stream']);self.assertIn('液氧煤油',sent['messages'][-1]['content']);self.assertNotIn('OTHER_WORKSPACE_SECRET',sent['messages'][-1]['content'])
+
+    def test_funnel_allows_authoritative_empty_result_without_padding(self):
+        raw=json.dumps({'choices':[{'message':{'content':'{"companies": []}'},'finish_reason':'stop'}]}).encode()
+        status,data=self.request(raw,'funnel',{'projectKey':'a','topic':'液体火箭','reportRequestId':'r1'})
+        self.assertEqual(status,200)
+        event=json.loads(next(line[6:] for line in data.splitlines() if line.startswith('data: {')))
+        value=json.loads(event['choices'][0]['delta']['content'])
+        self.assertEqual(value['companies'], [])
+        self.assertEqual(value['total_scanned'], 0)
+        self.assertIn('[DONE]',data)
+        sent=json.loads(self.h.ns['DS_OPENER'].open.call_args.args[0].data)
+        prompt=sent['messages'][0]['content']
+        self.assertIn('不设最低企业数量',prompt)
+        self.assertNotIn('至少 30 家',prompt)
+        self.assertIn('有直接业务关联',prompt)
 
     def test_full_gate_rejects_unconfirmed_before_upstream_call(self):
         status,data=self.request(b'',extra={'purpose':'topic_full','projectKey':'a','topic':'液体火箭','confirmations':[]})

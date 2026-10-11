@@ -62,6 +62,7 @@ function harness(state) {
     ['00.js', 'reportMdToHtml'], ['00.js', 'reportExportContext'], ['00.js', 'buildReportBrief'],
     ['00.js', 'reportExportSourceRecords'], ['00.js', 'printReportDocument'],
     ['00.js', 'downloadReportPDF'], ['00.js', 'downloadReportTxt'],
+    ['12-tail.js', 'reportHistoryRecord'], ['12-tail.js', 'reportHistoryScoreDisplay'],
     ['12-tail.js', 'getReportHistoryForProject'], ['12-tail.js', 'renderHistoryReports'],
     ['12-tail.js', 'nextStepGuide'], ['12-tail.js', 'projMgmtPage'], ['12-tail.js', 'submitDemand'],
   ].map(([file, name]) => declaration(file, name)).join('\n'), context);

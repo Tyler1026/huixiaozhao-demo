@@ -4,7 +4,7 @@ function saveReportState(){try{localStorage.setItem('hxz_reportstate',JSON.strin
 /* 清扫 REPORTSTATE 陈旧数据：
    1) chainByTopic 里的 'loading' 字符串（上次会话未完成的图谱生成任务，不会跨会话续跑）
    2) 孤儿 topic：chainByTopic / aiReportByTopic / phaseByTopic 等里存在，但 userGeneratedTopics 里已删除的方向。
-   3) phaseByTopic 有值但 scoreByTopic 缺失的补默认分（保守估计，避免历史卡片显示 0%）。
+   3) 未核验方向保留 null；缺失的评分不补造百分比，已有真实评分（含 0）保留。
    在 loadReportState 与 switchProj 入口都会跑，覆盖所有项目而不仅当前项目。 */
 function _sanitizeReportState(){
   try{
@@ -27,11 +27,14 @@ function _sanitizeReportState(){
           });
         });
       }
-      // 3) phase 有分数缺失的补一个默认值（避免历史卡片 0%）
-      if(_r.phaseByTopic && !_r.scoreByTopic) _r.scoreByTopic={};
-      if(_r.phaseByTopic && _r.scoreByTopic){
-        Object.keys(_r.phaseByTopic).forEach(function(_t){
-          if(_r.phaseByTopic[_t]>=2 && _r.scoreByTopic[_t]==null) _r.scoreByTopic[_t]=60;
+      // 3) 未核验内容不能因刷新变成默认 60%，也不能继承基础报告的分数。
+      if(_r.evidenceStatusByTopic){
+        Object.keys(_r.evidenceStatusByTopic).forEach(function(_t){
+          if(_valid && Object.keys(_valid).length && !_valid[_t] && _t!==_baseTopic) return;
+          if(_r.evidenceStatusByTopic[_t]==='unreviewed'){
+            if(!_r.scoreByTopic) _r.scoreByTopic={};
+            _r.scoreByTopic[_t]=null;
+          }
         });
       }
     });
