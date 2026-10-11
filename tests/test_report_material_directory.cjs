@@ -46,6 +46,15 @@ for(const app of ['index','ops']){
     c.cur='root';c.PROJECTS.root.topic='核电换热';c.REPORTSTATE.root=state;
     assert.equal(c.reportExportSourceRecords(c.reportExportContext()).length,0,'a custom workspace without a frozen directory cannot substitute its newest KB');
   });
+  test(app+' legacy custom text in a canonical workspace uses only that workspace current directory',()=>{
+    const {c,project,state}=env(app);project.isDemand=false;state.userGeneratedTopics={[project.topic]:true};
+    c.PROJECTS.sibling={isDemand:true,kb:[{known:[{sourceFile:'sibling-private.md'}]}]};
+    state.materialDirectoryByTopic={other:{records:[{kind:'保存材料',value:'other-topic.md'}]}};
+    assert.equal(c.reportExportSourceHeading(c.reportExportContext()),'当前工作区保存的材料目录（非逐句引用）');
+    assert.deepEqual(Array.from(c.reportExportSourceRecords(c.reportExportContext()),x=>x.value),['old.md']);
+    state.userGeneratedTopics={other:true};assert.equal(c.reportExportSourceRecords(c.reportExportContext()).length,0);
+    assert.equal(c.reportExportSourceHeading(c.reportExportContext()),'正文链接（未核验）');
+  });
   test(app+' frozen directory binds exact topic, text and owner; mismatches do not use live materials',()=>{
     const {c,state}=env(app),snapshot=c.captureReportMaterialDirectory('child','核电换热');snapshot.reportText=full;
     state.materialDirectoryByTopic={'核电换热':snapshot};

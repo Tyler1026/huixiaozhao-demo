@@ -768,8 +768,9 @@ function reportExportSourceHeading(context){
   var key=context.key||cur;
   if(typeof nativeReportState==='function'&&nativeReportState(context.topic,key))return '来源索引';
   if(typeof reportMaterialDirectoryForContext==='function'&&reportMaterialDirectoryForContext(context))return '生成时材料快照（非逐句引用）';
-  return context.project&&context.project.isDemand===true
-    ?'该需求当前保存的材料目录（非逐句引用）':'正文链接（未核验）';
+  if(context.project&&context.project.isDemand===true)return '该需求当前保存的材料目录（非逐句引用）';
+  if((((context.state||{}).userGeneratedTopics||{})[context.topic])===true)return '当前工作区保存的材料目录（非逐句引用）';
+  return '正文链接（未核验）';
 }
 
 function reportExportSourceRecords(context){
@@ -790,9 +791,10 @@ function reportExportSourceRecords(context){
     ((typeof UPLOADS!=='undefined'&&UPLOADS[key])||[]).forEach(function(item){if(item&&!item.pending&&!item.parseFailed)add('上传材料',item.name);});
   }else{
     var snapshot=typeof reportMaterialDirectoryForContext==='function'?reportMaterialDirectoryForContext(context):null;
-    // A submitted demand owns a deep-copied KB. Legacy demands can expose that
-    // saved directory, never the parent's newer report or an inferred citation.
-    if(!snapshot&&!((context.state||{}).materialDirectoryByTopic||{})[context.topic]&&p.isDemand===true&&typeof captureReportMaterialDirectory==='function')snapshot=captureReportMaterialDirectory(key,context.topic);
+    // Legacy custom text can expose only its own current directory, not an
+    // inferred generation snapshot or another project's material directory.
+    var custom=p.isDemand===true||(((context.state||{}).userGeneratedTopics||{})[context.topic])===true;
+    if(!snapshot&&!((context.state||{}).materialDirectoryByTopic||{})[context.topic]&&custom&&typeof captureReportMaterialDirectory==='function')snapshot=captureReportMaterialDirectory(key,context.topic);
     (snapshot&&snapshot.records||[]).forEach(function(item){
       if(item&&typeof item==='object'&&(item.kind==='保存材料'||item.kind==='上传材料'))add(item.kind,item.value);
     });
@@ -5177,7 +5179,7 @@ function currentEvidenceChain(topic,key){
   var p=PROJECTS[key],rs=REPORTSTATE[key];if(!p||!rs)return null;
   var meta=(rs.chainEvidenceByTopic||{})[topic],chain=(rs.chainByTopic||{})[topic];
   var text=(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'');
-  return meta&&meta.contract==='saved-excerpts-v1'&&meta.scope==='current-topic-v1'&&meta.requestId===(p.reportRequestId||'')&&meta.reportText===text&&meta.sourceIdentity===savedEvidenceIdentity(key,topic)&&Array.isArray(chain)?chain:null;
+  return meta&&meta.contract==='saved-excerpts-v1'&&meta.scope==='current-topic-v1'&&meta.requestId===(p.reportRequestId||'')&&meta.reportText===text&&chainSourceIdentity(meta.sourceIdentity)!==null&&chainSourceIdentity(meta.sourceIdentity)===chainSourceIdentity(savedEvidenceIdentity(key,topic))&&Array.isArray(chain)?chain:null;
 }
 
 
@@ -5187,15 +5189,26 @@ function chainSnapshotIdentity(value){
   return JSON.stringify(value);
 }
 
+function chainSourceIdentity(value){
+  if(typeof value!=='string')return null;
+  try{var parsed=JSON.parse(value);return parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?chainSnapshotIdentity(parsed):null;}catch(error){return null;}
+}
+
+function chainEvidenceIdentity(value){
+  if(!value||typeof value!=='object')return null;
+  var copy=Object.assign({},value);copy.sourceIdentity=chainSourceIdentity(copy.sourceIdentity);
+  return copy.sourceIdentity===null?null:chainSnapshotIdentity(copy);
+}
+
 function chainSavedSourceMatches(saved,key,topic,evidence){
   var p=(saved&&saved.PROJECTS||{})[key],rs=(saved&&saved.REPORTSTATE||{})[key];
-  return !!(p&&rs&&evidence.requestId===(p.reportRequestId||'')&&evidence.reportText===((rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:''))&&evidence.sourceIdentity===savedEvidenceIdentity(key,topic,saved));
+  return !!(p&&rs&&evidence.requestId===(p.reportRequestId||'')&&evidence.reportText===((rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:''))&&chainSourceIdentity(evidence.sourceIdentity)!==null&&chainSourceIdentity(evidence.sourceIdentity)===chainSourceIdentity(savedEvidenceIdentity(key,topic,saved)));
 }
 
 function chainSaveCurrent(key,topic,evidence,epoch){
   var p=PROJECTS[key],rs=REPORTSTATE[key];
   return !!(p&&rs&&evidence&&evidence.contract==='saved-excerpts-v1'&&evidence.scope==='current-topic-v1'&&evidence.topic===topic&&
-    (p.reportRequestId||'')===evidence.requestId&&savedEvidenceIdentity(key,topic)===evidence.sourceIdentity&&
+    (p.reportRequestId||'')===evidence.requestId&&chainSourceIdentity(evidence.sourceIdentity)!==null&&chainSourceIdentity(savedEvidenceIdentity(key,topic))===chainSourceIdentity(evidence.sourceIdentity)&&
     ((rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:''))===evidence.reportText&&
     (epoch===null||epoch===_authEpoch));
 }
@@ -5209,23 +5222,18 @@ function savePendingChain(key,topic,epoch){
   function show(){if(cur===key&&P().topic===topic&&view==='report')render();}
   var snapshot;
   try{
-    persist();
-    // Capture synchronously after persist. A restore or another tab cannot
-    // replace this payload between capture and the awaited server write.
-    snapshot=JSON.parse(localStorage.getItem(LS_KEY)||'{}');
-    var target=(snapshot.REPORTSTATE||{})[key];
-    if(!target||JSON.stringify((target.pendingChainSaves||{})[topic])!==JSON.stringify(pending))throw new Error('图谱尚未写入本地快照');
-    target.chainByTopic=target.chainByTopic||{};target.chainByTopic[topic]=JSON.parse(JSON.stringify(pending.chain));
-    target.chainEvidenceByTopic=target.chainEvidenceByTopic||{};target.chainEvidenceByTopic[topic]=JSON.parse(JSON.stringify(pending.evidence));
-    target.chainStatusByTopic=target.chainStatusByTopic||{};target.chainStatusByTopic[topic]='ready';
-    delete target.pendingChainSaves[topic];
-    // A graph save cannot replay another tab's old base package or customer data.
-    var project=(snapshot.PROJECTS||{})[key];if(!project)throw new Error('项目身份尚未保存');
+    // Capture this graph directly from memory. A full localStorage snapshot can
+    // exceed browser quota; it must not be a prerequisite for a scoped save.
+    pending=JSON.parse(JSON.stringify(pending));
+    var project=PROJECTS[key];if(!project)throw new Error('项目身份尚未保存');
     var identity={};['id','workspaceId','parentKey','city','isDemand'].forEach(function(field){if(project[field]!==undefined)identity[field]=project[field];});
-    var delta={PROJECTS:{},REPORTSTATE:{},syncTs:Date.now()};delta.PROJECTS[key]=identity;delta.REPORTSTATE[key]={};
-    ['chainByTopic','chainEvidenceByTopic','chainStatusByTopic'].forEach(function(field){delta.REPORTSTATE[key][field]={};delta.REPORTSTATE[key][field][topic]=target[field][topic];});
-    ['RESET_GEN','clientUser'].forEach(function(field){if(snapshot[field]!==undefined)delta[field]=snapshot[field];});
-    snapshot=delta;
+    var delta={PROJECTS:{},REPORTSTATE:{},syncTs:Date.now()};delta.PROJECTS[key]=identity;
+    var target={chainByTopic:{},chainEvidenceByTopic:{},chainStatusByTopic:{}};
+    target.chainByTopic[topic]=pending.chain;target.chainEvidenceByTopic[topic]=pending.evidence;target.chainStatusByTopic[topic]='ready';
+    delta.REPORTSTATE[key]=target;
+    if(typeof RESET_GEN!=='undefined')delta.RESET_GEN=RESET_GEN;
+    if(typeof AUTH!=='undefined'&&AUTH&&AUTH.user)delta.clientUser=AUTH.user;
+    snapshot=JSON.parse(JSON.stringify(delta));
   }catch(error){snapshot=null;}
   show();
   var work=snapshot?syncTopicReportInputs(snapshot):Promise.reject(new Error('图谱本地保存未确认'));
@@ -5239,21 +5247,21 @@ function savePendingChain(key,topic,epoch){
       var state=((saved||{}).REPORTSTATE||{})[key]||{};
       if(!current())return false;
       if(!chainSavedSourceMatches(saved,key,topic,pending.evidence))throw new Error('材料或报告已更新，请刷新后重新生成图谱');
-      if(chainSnapshotIdentity((state.chainEvidenceByTopic||{})[topic])!==chainSnapshotIdentity(pending.evidence)||chainSnapshotIdentity((state.chainByTopic||{})[topic])!==chainSnapshotIdentity(pending.chain)||((state.chainStatusByTopic||{})[topic])!=='ready')throw new Error('图谱版本尚未保存');
+      if(chainEvidenceIdentity((state.chainEvidenceByTopic||{})[topic])!==chainEvidenceIdentity(pending.evidence)||chainSnapshotIdentity((state.chainByTopic||{})[topic])!==chainSnapshotIdentity(pending.chain)||((state.chainStatusByTopic||{})[topic])!=='ready')throw new Error('图谱版本尚未保存');
     rs=REPORTSTATE[key];
     rs.chainByTopic=rs.chainByTopic||{};rs.chainByTopic[topic]=pending.chain;
     rs.chainEvidenceByTopic=rs.chainEvidenceByTopic||{};rs.chainEvidenceByTopic[topic]=pending.evidence;
     rs.chainStatusByTopic=rs.chainStatusByTopic||{};rs.chainStatusByTopic[topic]='ready';
     if(rs.chainSaveErrorByTopic)delete rs.chainSaveErrorByTopic[topic];
     if(rs.pendingChainSaves)delete rs.pendingChainSaves[topic];
-    persist();return true;
+    try{persist();}catch(ignore){}return true;
     });
   }).catch(function(error){
     if(!current())return false;
     rs=REPORTSTATE[key];rs.pendingChainSaves=rs.pendingChainSaves||{};rs.pendingChainSaves[topic]=pending;
     rs.chainStatusByTopic=rs.chainStatusByTopic||{};rs.chainStatusByTopic[topic]='save_failed';
     rs.chainSaveErrorByTopic=rs.chainSaveErrorByTopic||{};rs.chainSaveErrorByTopic[topic]=error&&error.message==='报告基础版本已更新，请刷新后重试保存'?error.message:error&&error.message==='材料或报告已更新，请刷新后重新生成图谱'?error.message:'图谱已生成，但保存未确认。请重试保存。';
-    persist();return false;
+    try{persist();}catch(ignore){}return false;
   }).finally(function(){delete _chainGenInFlight[inflight];show();});
 }
 

@@ -14,8 +14,9 @@ function setup(app){
   async fetch(url,init){if(url!=='/api/sync'){events.model++;return {ok:true};}if(init&&init.method==='POST'){const payload=JSON.parse(init.body);events.posts.push(payload);if(postGate)await postGate.promise;if(failure instanceof Error)throw failure;if(failure)return {ok:failure.http!==false,status:failure.status,json:async()=>({ok:false})};server=Object.assign({},clone({PROJECTS:c.PROJECTS,REPORTSTATE:c.REPORTSTATE}),{PROJECTS:clone(c.PROJECTS),REPORTSTATE:clone(c.REPORTSTATE)});Object.assign(server.REPORTSTATE.p,payload.REPORTSTATE.p);return {ok:true,json:async()=>({ok:true})};}events.reads++;return {ok:true,json:async()=>readTransform(clone(server))};},
   readTopicReportStream:async()=>({text:'[]'})};
  vm.createContext(c);
+ const authSource=fs.readFileSync(path.join(root,'frontend',app,app==='index'?'script-02-sections':'script-03-sections',app==='index'?'03.js':'17.js'),'utf8');vm.runInContext(fn(authSource,'_safeSyncSnapshot'),c);
  const shared=fs.readFileSync(path.join(root,'frontend',app,app==='index'?'script-02-sections':'script-03-sections','12-part-00.js'),'utf8');vm.runInContext(fn(shared,'savedEvidenceIdentity'),c);
- for(const n of ['_correctChainLevel','_normalizeChain','currentEvidenceChain','chainSnapshotIdentity','chainSavedSourceMatches','chainSaveCurrent','savePendingChain','syncTopicReportInputs','generateChainFromReport','requestChainGeneration','_renderRichChain','chainMapHtml'])vm.runInContext(fn(source,n),c);
+ for(const n of ['_correctChainLevel','_normalizeChain','currentEvidenceChain','chainSnapshotIdentity','chainSourceIdentity','chainEvidenceIdentity','chainSavedSourceMatches','chainSaveCurrent','savePendingChain','syncTopicReportInputs','generateChainFromReport','requestChainGeneration','_renderRichChain','chainMapHtml'])vm.runInContext(fn(source,n),c);
  return {c,events,storage,setGate:g=>postGate=g,setFailure:x=>failure=x,setRead:f=>readTransform=f,setStorage:x=>storageWorks=x,server:()=>server};
 }
 function pending(c){return c.REPORTSTATE.p.pendingChainSaves[topic];}
@@ -51,14 +52,32 @@ for(const app of ['index','ops']){
   const e=setup(app),{c,events}=e;e.setFailure(new Error('offline'));await c.generateChainFromReport(topic);e.setFailure(null);
   const valid=clone(pending(c));for(const field of ['topic','reportText','scope','sourceIdentity','requestId','contract']){c.REPORTSTATE.p.pendingChainSaves[topic]=clone(valid);c.REPORTSTATE.p.pendingChainSaves[topic].evidence[field]='wrong';const count=events.posts.length;assert.equal(await c.savePendingChain('p',topic,1),false);assert.equal(events.posts.length,count);}
  });
- test(app+' local snapshot failure does not claim saved or send an empty sync payload',async()=>{
-  const e=setup(app),{c,events}=e;e.setStorage(false);await c.generateChainFromReport(topic);assert.equal(events.posts.length,0);assert.equal(c.REPORTSTATE.p.chainStatusByTopic[topic],'save_failed');e.setStorage(true);await c.requestChainGeneration();assert.equal(events.model,1);assert.equal(c.REPORTSTATE.p.chainStatusByTopic[topic],'ready');
+ test(app+' local snapshot failure cannot block a scoped server save',async()=>{
+  const e=setup(app),{c,events}=e;e.setStorage(false);await c.generateChainFromReport(topic);assert.equal(events.posts.length,1);assert.equal(c.REPORTSTATE.p.chainStatusByTopic[topic],'ready');assert.equal(events.model,1);assert.ok(events.posts[0].REPORTSTATE.p.chainByTopic);assert.equal(events.posts[0].PROJECTS.p.kb,undefined);
  });
  test(app+' forbidden base write keeps the generated graph and gives a refresh message, not a model error',async()=>{
   const e=setup(app),{c,events}=e;e.setFailure({http:false,status:403});await c.generateChainFromReport(topic);assert.ok(pending(c));assert.equal(events.model,1);assert.match(c.chainMapHtml(c.P()),/报告基础版本已更新，请刷新后重试保存/);assert.doesNotMatch(c.chainMapHtml(c.P()),/图谱生成未完成/);
  });
  test(app+' authoritative source change is never overwritten by a local stale base package',async()=>{
   const e=setup(app),{c,events}=e;e.setRead(x=>{x.PROJECTS.p.kb=[{known:['server latest source']}];return x;});await c.generateChainFromReport(topic);assert.equal(c.currentEvidenceChain(topic),null);assert.match(c.chainMapHtml(c.P()),/材料或报告已更新/);assert.equal(events.posts[0].PROJECTS.p.kb,undefined);assert.deepEqual(Object.keys(events.posts[0].REPORTSTATE.p).sort(),['chainByTopic','chainEvidenceByTopic','chainStatusByTopic']);
+ });
+ test(app+' JSON source reserialization on readback preserves save success and refreshed cache reuse',async()=>{
+  const e=setup(app),{c}=e;const reformat=x=>{const m=x.REPORTSTATE.p.chainEvidenceByTopic[topic];m.sourceIdentity=JSON.stringify(JSON.parse(m.sourceIdentity),null,2).replace(/[\u0080-\uffff]/g,ch=>'\\u'+ch.charCodeAt(0).toString(16).padStart(4,'0'));return x;};
+  e.setRead(reformat);await c.generateChainFromReport(topic);assert.equal(c.REPORTSTATE.p.chainStatusByTopic[topic],'ready');const fresh=reformat(clone(e.server()));c.REPORTSTATE=fresh.REPORTSTATE;assert.equal(c.currentEvidenceChain(topic).length,3);
+ });
+ test(app+' changing parsed source content still fails readback even when formatting is valid JSON',async()=>{
+  const e=setup(app),{c}=e;e.setRead(x=>{const m=x.REPORTSTATE.p.chainEvidenceByTopic[topic],identity=JSON.parse(m.sourceIdentity);identity.kb=[['wrong material']];m.sourceIdentity=JSON.stringify(identity);return x;});await c.generateChainFromReport(topic);assert.equal(c.REPORTSTATE.p.chainStatusByTopic[topic],'save_failed');assert.equal(c.currentEvidenceChain(topic),null);
+ });
+ test(app+' actual page persist quota failure does not block the bounded graph write',async()=>{
+  const e=setup(app),{c,events,storage}=e;let quotaFailures=0,safeSnapshotCalls=0;
+  const actualSafeSnapshot=c._safeSyncSnapshot;c._safeSyncSnapshot=raw=>{safeSnapshotCalls++;return actualSafeSnapshot(raw);};
+  Object.assign(c,{AUTH:{user:'alice',scope:'admin'},_authState:'ready',RESET_GEN:'g1',KB_CONFIRMS:{},KB_CONFIRM_TOMBS:{},KB_ITEM_TOMBS:{},KB_FILE_CHUNKS:{},KB_UNLOCKED:{},PENDING_CONFIRMS:{},DOCK_LOGS:{},KB_CHAT:{},KB_CHAT_TOMBS:{},UPLOAD_TOMBS:{},UPLOADS:{},REPORT_HISTORY:{},CITY_BASE_PACKAGES:{},OPS_ENT:[],DEMANDS:[],REPORT_REQUESTS:[],_slimUploads:()=>({}),console:{warn(){}}});
+  c.window._opsDataReady=true;c.window._serverSyncLock=true;
+  c.localStorage.setItem=(key,value)=>{if(value.length*2>1024){quotaFailures++;const err=new Error('quota');err.name='QuotaExceededError';throw err;}storage[key]=value;};
+  const actual=fs.readFileSync(path.join(root,'frontend',app,app==='index'?'script-02-sections':'script-03-sections','14-part-00.js'),'utf8');vm.runInContext(fn(actual,'persist'),c);
+  await c.generateChainFromReport(topic);assert.ok(quotaFailures>0);assert.ok(safeSnapshotCalls>0);assert.equal(c.REPORTSTATE.p.chainStatusByTopic[topic],'ready');assert.equal(c.currentEvidenceChain(topic).length,3);assert.equal(events.model,1);
+  const bounded=events.posts.find(p=>p.REPORTSTATE&&Object.keys(p.REPORTSTATE.p).length===3);assert.ok(bounded);assert.equal(bounded.PROJECTS.p.kb,undefined);assert.equal(bounded.RESET_GEN,'g1');assert.equal(bounded.clientUser,'alice');assert.equal(bounded.AUTH,undefined);
+  const resetSource=fs.readFileSync(path.join(root,'frontend',app,app==='index'?'script-02-sections':'script-03-sections',app==='index'?'14-part-00.js':'14-tail.js'),'utf8');assert.match(resetSource,/var RESET_GEN=null/);
  });
  test(app+' no-argument input sync still reads current local storage for full generation',async()=>{
   const e=setup(app),{c,events}=e;c.persist();await c.syncTopicReportInputs();assert.equal(events.posts.length,1);assert.equal(events.posts[0].REPORTSTATE.p.text,body);

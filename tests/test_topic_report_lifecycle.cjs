@@ -187,7 +187,7 @@ test('native identity cannot promote a newly generated unreviewed draft to a ful
 
 test('graph cache requires exact report and request provenance, and never rewrites the report text', () => {
   const {c} = environment();
-  vm.runInContext(['currentEvidenceChain', 'alignChainToReport'].map(n=>declaration(n)).join('\n'), c);
+  vm.runInContext(['currentEvidenceChain', 'chainSourceIdentity', 'chainSnapshotIdentity', 'alignChainToReport'].map(n=>declaration(n)).join('\n'), c);
   const rs = c.REPORTSTATE.p;
   rs.aiReportByTopic['核电配套'] = fullText;
   rs.chainByTopic = {'核电配套':[{seg:'上游',nodes:[]}]};

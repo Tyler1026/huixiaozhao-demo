@@ -268,18 +268,17 @@ class FullLiveProvider:
                 parsed = self._parse_part(stage_id, part, payload, all_evidence, prior)
                 text = parsed['text']
                 remaining_issues = synthesis_issues(text, prior)
-                if remaining_issues:
-                    raise FullProviderError('decision prose changed source facts or omitted qualifications', 'quality',
-                                            safe_metrics=_synthesis_safe_metrics(remaining_issues))
+                # Semantic gaps are projected below rather than retried forever.
+                # Parse, length, URL and structural failures still fail closed.
         metadata = None
         if stage_id.startswith('enterprises_') and part.startswith('候选池'):
-            metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior)
+            metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior, mode=mode)
             text, metadata = self._complete_candidate_batch(
                 stage_id, part, place, prior, prior_text, floor, mode,
                 parsed, metadata, previous, evidence)
         previous_text = previous.get('text', '') if isinstance(previous, dict) else previous
         if mode == 'standard' and stage_id == 'fact_check' and part == '五星企业信号':
-            metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior)
+            metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior, mode=mode)
             feedback = self._high_star_gap(parsed, metadata)
             if feedback:
                 text, metadata = self._project_standard_high_star(prior, metadata, feedback)
@@ -301,11 +300,37 @@ class FullLiveProvider:
             parsed = self._parse_part(stage_id, part, payload, all_evidence, prior)
             text = parsed['text']
             self._validate_part_text(text, floor, previous_text)
+        projection_audit = []
+        if mode == 'standard' and stage_id in {'action', 'summary', 'compact'}:
+            from .full_synthesis import project_decision_text, project_location_prose
+            text, projection_audit = project_decision_text(text, prior, place=place, previous_text=previous_text)
+            companies = [company for number in (1, 2, 3)
+                         for company in (prior or {}).get(f'enterprises_{number}', {}).get('metadata', {}).get('selected', [])]
+            source_evidence = [item for value in (prior or {}).values() if isinstance(value, dict)
+                               for item in value.get('metadata', {}).get('evidence', [])]
+            text, location_audit = project_location_prose(text, companies, source_evidence, place=place)
+            projection_audit.extend(location_audit)
+            self._validate_part_text(text, floor, previous_text)
         if metadata is None:
-            metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior)
+            metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior, mode=mode)
+        if stage_id.startswith('enterprises_'):
+            from .full_synthesis import project_location_prose
+            text, location_audit = project_location_prose(text, metadata.get('candidates', []) + metadata.get('selected', []), all_evidence, place=place)
+            projection_audit.extend(location_audit)
+            self._validate_part_text(text, floor, previous_text)
+        if projection_audit:
+            metadata['factual_projection'] = projection_audit
         if stage_id.startswith('enterprises_'):
             self._validate_company_part(part, metadata, previous)
         if stage_id == 'fact_check':
+            if mode == 'standard' and part in {'经济关键数字', '政策金额'}:
+                from .full_synthesis import project_decision_text
+                current_prior = dict(prior or {})
+                current_prior['__current_audit__'] = {'metadata': metadata}
+                text, audit = project_decision_text(text, current_prior, place=place, previous_text=previous_text)
+                if audit:
+                    metadata.setdefault('factual_projection', []).extend(audit)
+                self._validate_part_text(text, floor, previous_text)
             if part == '五星企业信号' and mode == 'deep':
                 feedback = self._high_star_gap(parsed, metadata)
                 if feedback:
@@ -324,7 +349,7 @@ class FullLiveProvider:
                     if text.strip() == first_text.strip():
                         raise FullProviderError('high-star correction did not rewrite current text', 'quality')
                     self._validate_part_text(text, floor, previous_text)
-                    metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior)
+                    metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior, mode=mode)
                     remaining = self._high_star_gap(parsed, metadata)
                     if remaining:
                         if remaining['discarded_high_star_count']:
@@ -1052,12 +1077,18 @@ class FullLiveProvider:
                                '不是地方“五星级企业”评定名单。对应方向依次为dir1/dir2/dir3。'
                                '每条high_star必须针对已精选企业，明确企业名称与被核验的信号，引用两条不同的已检索来源。'
                                '缺少已精选企业或不足以交叉核验时，设置high_star_unavailable=true并用high_star_note如实说明，禁止补造企业或证据。')
+        if mode == 'standard' and stage_id == 'fact_check' and part != '五星企业信号':
+            user_blocks.append('经济和政策每条检查必须给出source_quote及cross_source_quote原文、metric、region、统计year；'
+                               '两段分别逐字来自对应URL并支持同一对象、指标、年份、地区及数值。只有一个来源则保留该来源，'
+                               'cross_source留空、verdict明确单源待交叉核验；无法支持则写具体待核缺口，禁止编造第二来源。')
         if stage_id == 'fact_check':
             quota = {'经济关键数字': '至少9条economic核验，分别针对不同的已研究经济主张',
                      '政策金额': '至少3条policy核验，针对已研究政策中的金额、条件或有效期',
                      '五星企业信号': 'high_star核验覆盖dir1、dir2、dir3，每方向至少1条已选企业信号'}
-            user_blocks.append('结构化checks要求：' + quota[part] +
-                               '。每条必须有两条实际检索、互不相同且支持同一主张的来源；证据不足必须如实少报，严禁为满足数量补造主张。')
+            source_rule = ('。每条必须有两条实际检索、互不相同且支持同一主张的来源；证据不足如实报告不可核验，不补造主张。'
+                           if mode == 'deep' or part == '五星企业信号' else
+                           '。每条需记录已有真实来源与具体核验缺口；双源须分别支持同一主张，只有主源时如实保留单源，严禁补造第二来源。')
+            user_blocks.append('结构化checks要求：' + quota[part] + source_rule)
         if stage_id == 'scoring':
             user_blocks.append('当前子步骤只为前序中明确标为本批的已精选企业评分。完整处理本批所有记录，'
                                '不得复制前一批scores或引入其他企业；每项准确保留企业名称和dir1/dir2/dir3方向。'
@@ -1109,12 +1140,14 @@ class FullLiveProvider:
                 user_blocks.append(f'本次内部评分批：{scoring_batch[0]}/{scoring_batch[1]}。'
                                    '这是同一持久评分子步骤中的独立目标批，仅写这些企业的具体依据与风险；'
                                    '正文每行带目标企业名称或方向及具体事实，避免与另一批重复通用说明。')
+        if stage_id == 'fact_check' and (mode == 'deep' or part == '五星企业信号'):
+            user_blocks.append('source和cross_source必须保留两条完整的实际检索URL；high_star仍须两条不同来源均支持同一精确企业主张，不适用单源投影。')
         if stage_id == 'fact_check':
             user_blocks.append('本次JSON只含text、checks，以及确有信号无法交叉核验时必要的high_star_unavailable和high_star_note。'
                                '不回传candidates、selected、directions、scores或完整公司档案，不复制前序核验数组。'
                                'checks每条只核验一项精确主张，保留企业或指标对象、统计/发布年份或信号日期；'
                                'year缺失写年份未知，verdict用简短结论如实区分印证、冲突或待核实。'
-                               'source和cross_source必须保留两条完整的实际检索URL，且支持同一主张、互不相同。'
+                               'source和cross_source只保留实际检索URL；完整双源需支持同一主张、互不相同。单源时cross_source留空并明确待核。'
                                '正文用独立短要点概述依据、冲突、影响和具体核查动作，来源用编号引用，'
                                '不逐字段重复checks，不用整段来源摘录凑行。')
             if part == '五星企业信号':
@@ -1247,7 +1280,7 @@ class FullLiveProvider:
             raise FullProviderError(f"model JSON unparseable: {exc}", "quality") from exc
         return obj
 
-    def _build_metadata(self, stage_id, part, place, evidence, parsed, prior=None):
+    def _build_metadata(self, stage_id, part, place, evidence, parsed, prior=None, *, mode='standard'):
         meta = {"evidence": evidence}
         if stage_id == 'industry':
             from .full_directions import normalise_directions
@@ -1256,10 +1289,10 @@ class FullLiveProvider:
             except ValueError as exc:
                 raise FullProviderError(str(exc), 'quality') from None
         if stage_id in ("enterprises_1", "enterprises_2", "enterprises_3"):
-            meta["candidates"] = self._ground_companies(stage_id, parsed.get("candidates"), evidence)
-            meta["selected"] = self._ground_companies(stage_id, parsed.get("selected"), evidence)
+            meta["candidates"] = self._ground_companies(stage_id, parsed.get("candidates"), evidence, place=place)
+            meta["selected"] = self._ground_companies(stage_id, parsed.get("selected"), evidence, place=place)
         elif stage_id == "fact_check":
-            meta["checks"] = self._ground_checks(stage_id, parsed.get("checks"), evidence, prior=prior)
+            meta["checks"] = self._ground_checks(stage_id, parsed.get("checks"), evidence, prior=prior, place=place, mode=mode)
             if parsed.get("high_star_unavailable") is True:
                 meta["high_star_unavailable"] = True
                 meta["high_star_note"] = parsed.get("high_star_note", "")
@@ -1270,7 +1303,7 @@ class FullLiveProvider:
     def _assoc(self, evidence):
         return {canonical_url(e["url"]): e for e in evidence if isinstance(e, dict) and e.get("url")}
 
-    def _ground_companies(self, stage_id, raw, evidence):
+    def _ground_companies(self, stage_id, raw, evidence, *, place=""):
         """Bind model-returned companies to retrieved evidence and coerce statuses.
 
         A factual landing status without a resolvable ``evidence_ref`` is
@@ -1309,15 +1342,16 @@ class FullLiveProvider:
             entry.setdefault("expansion_date", "发布日期未知")
             entry.setdefault("rationale", "待核实")
             entry.setdefault("uncertainty", "待核实")
-            out.append(entry)
+            from .full_synthesis import project_company_record
+            out.append(project_company_record(entry, evidence, place=place))
         return out
 
-    def _ground_checks(self, stage_id, raw, evidence, *, prior=None):
-        """Bind checks to two independent evidence sources.
+    def _ground_checks(self, stage_id, raw, evidence, *, prior=None, place="", mode="standard"):
+        """Bind each side of a fact claim to an actual saved observation.
 
-        ``source`` / ``cross_source`` must resolve to distinct retrieved evidence
-        canonical URLs; a check that cannot cite two independent sources is
-        dropped (insufficient evidence is reported by under-count, not invented).
+        Standard economic/policy entries retain explicit single-source/pending
+        audits. Deep and high-star checks still require two grounded sources.
+        No missing cross reference is manufactured to satisfy a count.
         """
         assoc = self._assoc(evidence)
         selected_pairs = set()
@@ -1341,13 +1375,25 @@ class FullLiveProvider:
                 continue
             source = item.get("source") or ""
             cross = item.get("cross_source") or ""
+            category = item.get("category")
+            if category in ("economic", "policy"):
+                from .full_synthesis import ground_audit_check
+                grounded = ground_audit_check(item, evidence, place=place)
+                # At least one actual retrieved reference remains required;
+                # an entirely invented citation cannot manufacture an audit.
+                if mode == 'deep' and grounded['support_status'] != 'corroborated':
+                    continue
+                if grounded['source'] or grounded['cross_source']:
+                    if not grounded['source']:
+                        grounded['source'], grounded['cross_source'] = grounded['cross_source'], ''
+                    out.append(grounded)
+                continue
+            if category != "high_star":
+                continue
             if not (canonical_url(source) in assoc and canonical_url(cross) in assoc):
                 continue
             if canonical_url(source) == canonical_url(cross):
                 continue  # not independent
-            category = item.get("category")
-            if category not in ("economic", "policy", "high_star"):
-                continue
             support = {}
             if category == 'high_star' and prior is not None:
                 company_name = item.get('company_name')
@@ -1599,7 +1645,7 @@ _OUTPUT_RULES = (
     "expansion_date、rationale、uncertainty。"
     "\n\n"
     "事实核验阶段（fact_check）：对象还须包含 \"checks\" 数组，每项含 claim、source、cross_source"
-    "（两个互不相同的证据来源 URL，用于独立交叉核验）、year、verdict、category（economic/policy/"
+    "（两个真实来源；经济/政策缺第二来源时如实留空，高星必须两源）、year、verdict、category（economic/policy/"
     "high_star）、direction（仅 high_star 需要，dir1/dir2/dir3）。"
     "\n\n"
     "评分阶段（scoring）：对象还须包含 \"scores\" 数组，每项含 name、direction，以及 dimensions 对象"

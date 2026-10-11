@@ -688,10 +688,13 @@ class EnterprisePartGateTests(unittest.TestCase):
                          ['第1次原检索标题', '第2次原检索标题'])
         self.assertEqual(p._usable_evidence(evidence + evidence), evidence)
         # Query variants are preserved facts, never two independent sources.
-        self.assertEqual(p._ground_checks('fact_check', [{
+        same_source = p._ground_checks('fact_check', [{
             'claim': '同canonical不可双源', 'source': variant + '?document=1',
             'cross_source': variant + '?document=2', 'category': 'economic',
-        }], evidence), [])
+        }], evidence)
+        self.assertEqual(len(same_source), 1)
+        self.assertEqual(same_source[0]['support_status'], 'pending')
+        self.assertEqual(same_source[0]['cross_source'], '')
         p._chat_part('enterprises_1', '候选池', '测试城', '', evidence, min_lines=16)
         chat = json.loads(router.calls[-1].data)
         prompt = chat['messages'][-1]['content']
@@ -999,7 +1002,13 @@ class FactCheckPartCommitGateTests(unittest.TestCase):
             with self.subTest(part=part):
                 checks = self._checks(category, minimum)
                 result = self._run(part, checks)
-                self.assertEqual(result['metadata']['checks'], checks)
+                actual = result['metadata']['checks']
+                self.assertEqual(len(actual), minimum)
+                for saved, original in zip(actual, checks):
+                    for key in ('claim', 'category', 'direction', 'source', 'cross_source', 'year'):
+                        self.assertEqual(saved[key], original[key])
+                    self.assertEqual(saved['support_status'], 'pending')
+                    self.assertIn('待核实', saved['verdict'])
                 self.assertEqual(len(result['metadata']['evidence']), 2)
 
     def test_below_floor_empty_and_wrong_categories_fail_before_return(self):
@@ -1021,15 +1030,18 @@ class FactCheckPartCommitGateTests(unittest.TestCase):
                     self._run(part, checks)
                 self.assertEqual(failure.exception.failure_code, 'quality')
 
-    def test_unbound_or_same_source_checks_do_not_count_after_grounding(self):
+    def test_unbound_or_same_secondary_source_stays_pending_without_fabricating_confirmation(self):
         for part, category, minimum in (('经济关键数字', 'economic', 9), ('政策金额', 'policy', 3)):
             for bad_url in ('https://stats.gov.cn/not-retrieved', self.URLS[0]):
                 with self.subTest(part=part, bad_url=bad_url):
                     checks = self._checks(category, minimum)
                     checks[-1]['cross_source'] = bad_url
-                    with self.assertRaises(fp.FullProviderError) as failure:
-                        self._run(part, checks)
-                    self.assertEqual(failure.exception.failure_code, 'quality')
+                    result = self._run(part, checks)
+                    last = result['metadata']['checks'][-1]
+                    self.assertEqual(last['support_status'], 'pending')
+                    self.assertEqual(last['cross_source'], '')
+                    self.assertIn('待核实', last['verdict'])
+                    self.assertFalse(last['source_support']['supported'])
 
 
 class HighStarEntityQuoteGateTests(unittest.TestCase):
@@ -1152,7 +1164,7 @@ class HighStarEntityQuoteGateTests(unittest.TestCase):
         self.assertIn(check['source_quote'], evidence[0]['excerpt'].replace('\n', ''))
         self.assertEqual(self._ground(prior, evidence, check), [])
 
-    def test_economic_policy_checks_keep_two_source_support_without_company_quote_fields(self):
+    def test_economic_policy_checks_without_metric_support_are_audited_as_pending(self):
         _, evidence, signal = self._case()
         checks = [{key: value for key, value in signal.items()
                    if key not in {'company_name', 'source_quote', 'cross_source_quote'}}
@@ -1161,7 +1173,9 @@ class HighStarEntityQuoteGateTests(unittest.TestCase):
             check.update(category=category, direction=None)
         metadata = self._provider(RecordingRouter({}))._build_metadata(
             'fact_check', '经济关键数字', 'OFFLINE测试城', evidence, {'checks': checks}, {})
-        self.assertEqual(metadata['checks'], checks)
+        self.assertEqual([item['claim'] for item in metadata['checks']], [item['claim'] for item in checks])
+        self.assertTrue(all(item['support_status'] == 'pending' for item in metadata['checks']))
+        self.assertTrue(all('待核实' in item['verdict'] for item in metadata['checks']))
 
 
 class ResearchRepetitionCorrectionTests(unittest.TestCase):

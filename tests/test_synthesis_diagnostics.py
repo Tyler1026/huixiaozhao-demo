@@ -36,20 +36,22 @@ class SynthesisDiagnosticsTests(unittest.TestCase):
             'sources': ['https://secret.example'], 'required_condition': 'secret', 'raw': 'secret'})
         self.assertEqual(_safe_provider_metrics(error), {'synthesis_issue_count': 4, 'synthesis_first_issue_line': 2})
 
-    def test_actual_second_failed_correction_retains_quality_guard_and_sanitized_diagnostics(self):
+    def test_second_failed_correction_has_local_projection_without_new_retry(self):
         provider = FullLiveProvider(SimpleNamespace(enabled=True, _validate_endpoints=lambda: None))
         text = '经济总量居全市第二。\n' + '\n'.join(f'独立核查事项{i}。' for i in range(79))
         provider._chat_part = Mock(return_value=json.dumps({'text': text}))
         provider._gather_evidence = Mock(side_effect=AssertionError('no additional search'))
         prior = {'economy': {'text': '全市第二来自自媒体，待核实。', 'metadata': {}}}
-        with self.assertRaises(FullProviderError) as caught:
-            provider.run_part('compact', '精简报告', {'city': '测试区'}, prior)
-        self.assertEqual(caught.exception.failure_code, 'quality')
+        result = provider.run_part('compact', '精简报告', {'city': '测试区'}, prior)
         self.assertEqual(provider._chat_part.call_count, 2)
-        diagnostics = _failure_diagnostics(caught.exception, 'provider', 'compact', '精简报告')
-        self.assertEqual(diagnostics['issues'], ['synthesis_grounding'])
+        provider._gather_evidence.assert_not_called()
+        self.assertIn('尚未获得原文核验', result['text'])
+        self.assertEqual(result['metadata']['factual_projection'][0]['original'], text.splitlines()[0])
+        # Safe worker diagnostics remain content-free for genuine structural failures.
+        error = FullProviderError('decision prose changed source facts or omitted qualifications', 'quality',
+                                  safe_metrics=_synthesis_safe_metrics([{'kind': 'rank_uncertainty_lost', 'line': 1}]))
+        diagnostics = _failure_diagnostics(error, 'provider', 'compact', '精简报告')
         self.assertEqual(diagnostics['synthesis_rank_uncertainty_lost_count'], 1)
-        self.assertEqual(diagnostics['synthesis_first_issue_line'], 1)
         self.assertNotIn('全市第二', json.dumps(diagnostics, ensure_ascii=False))
 
 

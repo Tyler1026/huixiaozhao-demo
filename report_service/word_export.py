@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from docx import Document
 from docx.shared import Pt, Inches, Cm, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT, WD_TAB_LEADER
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
@@ -257,25 +257,50 @@ def _add_page_numbers(doc):
 
 
 def _add_contents(doc, labels):
-    add_heading_styled(doc, '目录', 1)
-    for number, label in enumerate(labels):
+    _bookmark_heading(add_heading_styled(doc, '目录', 1), 'contents')
+    settings = doc.settings.element
+    update = settings.find(qn('w:updateFields'))
+    if update is None:
+        update = OxmlElement('w:updateFields')
+        settings.append(update)
+    update.set(qn('w:val'), 'true')
+    for number, entry in enumerate(labels):
+        label, anchor, level = entry if isinstance(entry, tuple) else (entry, f'chapter_{number}', 1)
         p = doc.add_paragraph()
+        p.paragraph_format.left_indent = Cm(0.45 * (level - 1))
+        p.paragraph_format.space_after = Pt(4)
+        p.paragraph_format.line_spacing = 1
+        p.paragraph_format.tab_stops.add_tab_stop(Cm(14.3), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
         link = OxmlElement('w:hyperlink')
-        link.set(qn('w:anchor'), f'chapter_{number}')
+        link.set(qn('w:anchor'), anchor)
         run = OxmlElement('w:r')
+        props = OxmlElement('w:rPr')
+        fonts = OxmlElement('w:rFonts')
+        for key, value in (('ascii', FONT_NAME_EN), ('hAnsi', FONT_NAME_EN), ('eastAsia', FONT_NAME)):
+            fonts.set(qn('w:' + key), value)
+        props.append(fonts)
+        size = OxmlElement('w:sz')
+        size.set(qn('w:val'), '22')
+        props.append(size)
+        run.append(props)
         text = OxmlElement('w:t')
         text.text = label
         run.append(text)
         link.append(run)
         p._p.append(link)
+        p.add_run('\t')
+        field = OxmlElement('w:fldSimple')
+        field.set(qn('w:instr'), f'PAGEREF {anchor} \\h')
+        field.set(qn('w:dirty'), 'true')
+        p._p.append(field)
     doc.add_page_break()
 
 
-def _chapter(doc, label, number):
-    p = add_heading_styled(doc, label, 1)
+def _bookmark_heading(p, anchor):
+    number = len(p.part.element.xpath('.//w:bookmarkStart'))
     start = OxmlElement('w:bookmarkStart')
     start.set(qn('w:id'), str(number))
-    start.set(qn('w:name'), f'chapter_{number}')
+    start.set(qn('w:name'), anchor)
     end = OxmlElement('w:bookmarkEnd')
     end.set(qn('w:id'), str(number))
     p._p.insert(1 if p._p.pPr is not None else 0, start)
@@ -283,48 +308,94 @@ def _chapter(doc, label, number):
     return p
 
 
+def _chapter(doc, label, number):
+    return _bookmark_heading(add_heading_styled(doc, label, 1), f'chapter_{number}')
+
+
+def _section(doc, label, anchor):
+    p = add_heading_styled(doc, label, 2)
+    for run in p.runs:
+        set_run_font(run, 14, bold=True)
+    p.paragraph_format.space_before = Pt(6)
+    p.paragraph_format.space_after = Pt(3)
+    return _bookmark_heading(p, anchor)
+
+
+def _unique_section(sections, label):
+    key, number = label, 2
+    while key in sections:
+        key = f'{label}（续{number}）'
+        number += 1
+    return key
+
+
 def _infer_compact_sections(content):
-    """Group a native numbered report without deleting or summarizing lines."""
+    """Use explicit leading labels only; preserve each input line and its order."""
     markers = (
-        (r'区域基本盘|区域概况|经济概况', '区域概况'),
-        (r'三大产业方向|产业方向的确定|主导产业方向', '产业方向与载体'),
-        (r'最直接制造端断点|产业链.*(?:断点|缺口)', '产业链缺口'),
-        (r'补链以.*路径|补链方向与路径', '补链方向'),
-        (r'本市存量企业服务重点一|目标企业总览|重点企业清单', '目标企业与对接'),
-        (r'区级政策工具一|政策工具与条件', '政策工具与条件'),
-        (r'优先级最高核查项|行动计划与里程碑', '行动与核查'),
-        (r'待核实事项汇总|时效性与来源限制总说明', '资料边界与待核事项'),
+        (r'区域基本盘|经济底盘|区域概况|经济概况', '区域概况'),
+        (r'区域定位方面|空间框架', '区域定位与空间'),
+        (r'三大产业方向(?:的确定依据)?|产业方向的确定|主导产业方向', '产业方向与载体'),
+        (r'产业链环节分布方面|产业链全景与缺口分析|产业链缺口(?:分析)?|最直接制造端断点|断点与卡点方面', '产业链与断点'),
+        (r'补链强链方面|补链方向与路径', '补链方向'),
+        (r'国家产业政策方面|省市政策方面|区级政策方面|区级政策工具一|政策工具与条件', '政策工具与条件'),
+        (r'本市存量企业服务优先级排序|本市存量企业服务(?:重点一|第一优先级)|目标企业总览|重点企业清单', '本地企业与服务'),
+        (r'外地潜在招引第一类', '外地企业与对接'),
+        (r'优先级最高核查项|断点补链行动第一项|行动计划与里程碑', '补链行动与核查'),
+        (r'数据底座建设行动第一项', '数据底座建设'),
+        (r'跨方向协同行动第一项|责任分工建议|优先级排序结论|里程碑验收口径一', '协同分工与验收'),
+        (r'待核实事项汇总|时效性与来源限制总说明|精简报告的证据边界', '资料边界与待核事项'),
+        (r'综合判断|综合结论', '综合判断'),
     )
     sections, order = {}, []
-    current = '概览'
-    sections[current] = []
-    order.append(current)
+    current, current_label = None, None
     for line in content.splitlines():
         body = re.sub(r'^\s*\d+[.、．]\s+', '', line)
-        lead = body.split('：', 1)[0]
+        heading = re.match(r'^\s*#{1,6}\s+(.+?)\s*#*\s*$', body)
+        chinese = re.match(r'^\s*[一二三四五六七八九十百零〇]+[、．]\s*(\S[^。！？]{0,79})$', body)
+        title = heading.group(1) if heading else chinese.group(1) if chinese else None
+        lead = re.split(r'[：:，,]', body, maxsplit=1)[0].strip().replace('**', '')
+        label = title
         for pattern, label in markers:
-            if re.search(pattern, lead) and label not in sections:
-                current = label
-                sections[current] = []
-                order.append(current)
+            if re.fullmatch(pattern, lead):
                 break
-        sections[current].append(body)
+        else:
+            label = title
+        if current is None or (label and label != current_label):
+            current_label = label or '概览'
+            current = _unique_section(sections, current_label)
+            sections[current] = []
+            order.append(current)
+        sections[current].append(line)
     return sections, order
 
 
-def _render_reader_body(doc, lines, dense=False):
+def _display_direction_labels(text, directions):
+    # Replace exact internal tokens only, never URL/filename components or dir10.
+    text = str(text)
+    def label(match):
+        name = directions.get(match.group(0))
+        if not name:
+            return match.group(0)
+        # Some saved sentences already spell the label after its internal ID.
+        # Remove only that ID rather than repeating the existing human label.
+        return '' if text[match.end():].startswith(name) else name
+    return re.sub(r'(?<![A-Za-z0-9_/.\-])dir[123](?![A-Za-z0-9_/.\-])',
+                  label, text)
+
+
+def _render_reader_body(doc, lines, dense=False, directions=None):
     # The model's continuous 1..90 numbering is not a document hierarchy.
     # Keep all text, with a bold descriptive lead when one is present.
     rendered = []
     for line in lines:
-        line = re.sub(r'^\s*\d+[.、．]\s+', '', line)
+        line = _display_direction_labels(line, directions or {})
         if line and not line.startswith(('#', '|', '>', '-', '*')) and '：' in line:
             lead, tail = line.split('：', 1)
             if len(lead) <= 32:
                 line = '**' + lead + '：**' + tail
         rendered.append(line)
     start = len(doc.paragraphs)
-    _render_md_lines(doc, rendered, highlight_top_tables=True)
+    _render_md_lines(doc, rendered, highlight_top_tables=True, preserve_numbering=True)
     if dense:
         for paragraph in doc.paragraphs[start:]:
             if paragraph.style.name.startswith('Heading'):
@@ -335,19 +406,27 @@ def _render_reader_body(doc, lines, dense=False):
 
 def _build_decision_main(doc, root, metadata):
     labels = ['研判正文', '目标企业清单', '企业匹配评分', '事实核验与资料边界']
-    _add_contents(doc, labels)
-    _chapter(doc, labels[0], 0)
     sections, order = _split_compact_sections((root / '09_compact_report.md').read_text(encoding='utf-8'))
     if not order:
         sections, order = _infer_compact_sections((root / '09_compact_report.md').read_text(encoding='utf-8'))
-    for key in order:
-        add_heading_styled(doc, COMPACT_SECTION_LABELS.get(key, key), 2)
-        _render_reader_body(doc, sections[key])
+    elif sections.get('_preamble'):
+        order.insert(0, '_preamble')
+    directions = {item.get('id'): item.get('name') for item in metadata.get('02_industry_direction.md', {}).get('directions', [])}
+    section_labels = [COMPACT_SECTION_LABELS.get(key, '概览' if key == '_preamble' else key) for key in order]
+    directory = [(labels[0], 'chapter_0', 1)]
+    directory.extend((label, f'body_{index}', 2) for index, label in enumerate(section_labels))
+    directory.append((labels[1], 'chapter_1', 1))
+    directory.extend((directions.get(f'dir{number}') or f'产业方向{number}', f'direction_{number}', 2) for number in range(1, 4))
+    directory.extend((labels[index], f'chapter_{index}', 1) for index in (2, 3))
+    _add_contents(doc, directory)
+    _chapter(doc, labels[0], 0)
+    for index, key in enumerate(order):
+        _section(doc, section_labels[index], f'body_{index}')
+        _render_reader_body(doc, sections[key], directions=directions)
     doc.add_page_break()
     _chapter(doc, labels[1], 1)
-    directions = {item.get('id'): item.get('name') for item in metadata.get('02_industry_direction.md', {}).get('directions', [])}
     for number, filename in enumerate(('05a_target_enterprises_dir1.md', '05b_target_enterprises_dir2.md', '05c_target_enterprises_dir3.md'), 1):
-        add_heading_styled(doc, directions.get(f'dir{number}') or f'产业方向{number}', 2)
+        _section(doc, directions.get(f'dir{number}') or f'产业方向{number}', f'direction_{number}')
         for index, company in enumerate(metadata.get(filename, {}).get('selected', []), 1):
             add_heading_styled(doc, f'{index}. {company.get("name", "名称待核实")}', 3)
             for key, label in (('landing_status', '落地状态'), ('segment', '产业环节'),
@@ -356,7 +435,8 @@ def _build_decision_main(doc, root, metadata):
                                ('evidence_ref', '落地依据来源')):
                 value = company.get(key)
                 if value:
-                    add_styled_paragraph(doc, f'{label}：{value}')
+                    display = value if key in ('url', 'evidence_ref') else _display_direction_labels(value, directions)
+                    add_styled_paragraph(doc, f'{label}：{display}')
     doc.add_page_break()
     _chapter(doc, labels[2], 2)
     dimension_labels = {'industry_fit': '产业适配', 'supply_chain_fit': '补链价值',
@@ -370,7 +450,7 @@ def _build_decision_main(doc, root, metadata):
     _chapter(doc, labels[3], 3)
     checks = metadata.get('06b_fact_check.md', {})
     for check in checks.get('checks', []):
-        add_styled_paragraph(doc, str(check.get('claim', '')))
+        add_styled_paragraph(doc, _display_direction_labels(check.get('claim', ''), directions))
         add_styled_paragraph(doc, f'核验结论：{check.get("verdict", "待核实")}；年份：{check.get("year", "待核实")}')
         for key, label in (('source', '来源'), ('cross_source', '交叉来源')):
             if check.get(key):
@@ -380,7 +460,7 @@ def _build_decision_main(doc, root, metadata):
     add_styled_paragraph(doc, '完整研究附件保存各阶段研究正文与原始证据摘录，可用于逐项复核。')
 
 
-def _render_md_lines(doc, lines, highlight_top_tables=False, score_col_idx=None):
+def _render_md_lines(doc, lines, highlight_top_tables=False, score_col_idx=None, preserve_numbering=False):
     """将 Markdown 行列表渲染到 doc，支持表格高亮控制。
 
     highlight_top_tables: 若 True，所有表格均启用表头浅灰高亮，并尝试识别评分列
@@ -392,7 +472,8 @@ def _render_md_lines(doc, lines, highlight_top_tables=False, score_col_idx=None)
 
         # Headings (skip # which is file title, use ## and below)
         if line.startswith('# '):
-            pass  # skip, we already added chapter label
+            if preserve_numbering:
+                add_heading_styled(doc, line[2:].strip(), level=2)
         elif line.startswith('## '):
             add_heading_styled(doc, line[3:].strip(), level=2)
         elif line.startswith('### '):
@@ -428,6 +509,9 @@ def _render_md_lines(doc, lines, highlight_top_tables=False, score_col_idx=None)
             text = line.lstrip('> ').strip()
             if text:
                 add_styled_paragraph(doc, text, size_pt=12)
+        # Structural SECTION comments are represented by the navigation heading.
+        elif re.fullmatch(r'\s*<!--\s*SECTION\s*[：:].*?-->\s*', line, flags=re.IGNORECASE):
+            pass
         # Horizontal rule
         elif line.strip() == '---':
             pass
@@ -437,6 +521,10 @@ def _render_md_lines(doc, lines, highlight_top_tables=False, score_col_idx=None)
             add_styled_paragraph(doc, text, size_pt=12, bullet=True)
         # Numbered list
         elif re.match(r'^\d+\.\s', line.strip()):
+            if preserve_numbering:
+                add_styled_paragraph(doc, line.strip(), size_pt=12)
+                i += 1
+                continue
             text = re.sub(r'^\d+\.\s', '', line.strip())
             p = doc.add_paragraph(style='List Number')
             segments = re.split(r'(\*\*.+?\*\*)', text)
@@ -547,43 +635,24 @@ def _split_compact_sections(content):
     )
 
     lines = content.split('\n')
-    sections = {}       # key -> [lines]
-    order = []          # 保持顺序
-    current_key = None
-    current_lines = []
-
-    def _flush():
-        nonlocal current_key, current_lines
-        if current_key is not None:
-            sections[current_key] = current_lines
-        elif current_lines:
-            # 文件开头无标记内容，归入 _preamble
-            sections['_preamble'] = current_lines
-        current_lines = []
+    sections = {'_preamble': []}
+    order = []
+    current_key = '_preamble'
 
     for line in lines:
         # 检测 HTML 注释标记
         m = section_comment_re.match(line.strip())
         if m:
-            _flush()
-            current_key = m.group(1).strip()
-            if current_key not in order:
+            current_key = _unique_section(sections, m.group(1).strip())
+            order.append(current_key)
+            sections[current_key] = []
+        else:
+            m2 = section_heading_re.match(line)
+            if m2:
+                current_key = _unique_section(sections, m2.group(1).strip())
                 order.append(current_key)
-            continue
-
-        # 检测 Markdown 段标题
-        m2 = section_heading_re.match(line)
-        if m2:
-            _flush()
-            current_key = m2.group(1).strip()
-            if current_key not in order:
-                order.append(current_key)
-            current_lines.append(line)  # 保留标题行本身
-            continue
-
-        current_lines.append(line)
-
-    _flush()
+                sections[current_key] = []
+        sections[current_key].append(line)
     return sections, order
 
 
@@ -636,15 +705,8 @@ def build_compact_docx(city, input_dir, output_path, synthetic=False):
     # ── 拆分章节 ──
     sections, detected_order = _split_compact_sections(content)
 
-    # 按照预定顺序渲染（优先使用预定义顺序，兼容文件内出现顺序）
-    render_order = []
-    for key in COMPACT_SECTION_ORDER:
-        if key in sections:
-            render_order.append(key)
-    # 补充文件中检测到但预定义列表里没有的节
-    for key in detected_order:
-        if key not in render_order and key != '_preamble':
-            render_order.append(key)
+    # Keep source order; a navigation layout must not reorder its assertions.
+    render_order = list(detected_order)
 
     # Native reports use numbered facts rather than the older SECTION tags.
     # Infer navigable groups without discarding any numbered fact.
@@ -652,7 +714,7 @@ def build_compact_docx(city, input_dir, output_path, synthetic=False):
         sections, render_order = _infer_compact_sections(content)
         _add_contents(doc, render_order)
         for index, key in enumerate(render_order):
-            _chapter(doc, key, index)
+            _section(doc, key, f'chapter_{index}')
             _render_reader_body(doc, sections[key], dense=True)
     else:
         if sections.get('_preamble'):
