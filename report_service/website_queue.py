@@ -376,12 +376,14 @@ class WebsiteQueue:
             return
         files = None
         if job['status'] == 'completed':
+            deliveries = [('full.docx', 'full', '_招商报告.docx'),
+                          ('compact.docx', 'short', '_招商报告_精简版.docx')]
+            if any(e['name'] == 'research.zip' for e in job['manifest']['files']):
+                deliveries.append(('research.zip', 'research', '_完整研究附件.zip'))
             files = [{'kind': website_kind, 'name': r['city'] + suffix,
-                      'b64': base64.b64encode(self.store.artifact(TENANT, rid, kind + '.docx')).decode(),
-                      'sha256': next(e['sha256'] for e in job['manifest']['files'] if e['name'] == kind + '.docx')}
-                     for kind, website_kind, suffix in [
-                         ('full', 'full', '_招商报告.docx'),
-                         ('compact', 'short', '_招商报告_精简版.docx')]]
+                      'b64': base64.b64encode(self.store.artifact(TENANT, rid, name)).decode(),
+                      'sha256': next(e['sha256'] for e in job['manifest']['files'] if e['name'] == name)}
+                     for name, website_kind, suffix in deliveries]
         with self.session() as session:
             state = json.loads(session.read())
             target = next((x for x in state.get('REPORT_REQUESTS') or []

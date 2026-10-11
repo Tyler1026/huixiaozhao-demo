@@ -71,7 +71,7 @@ function extractFunction(src, startMarker) {
   throw new Error(`${startMarker} 花括号未配平`);
 }
 
-const SRC_SUBMIT_DEMAND = extractFunction(html, 'function submitDemand()');
+const SRC_SUBMIT_DEMAND = extractFunction(html, 'function demandReportSnapshot(') + '\n' + extractFunction(html, 'function submitDemand()');
 const SRC_FIND_EXISTING = extractFunction(html, 'function _findExistingDemand(');
 const SRC_NORMALIZE_TOPIC = extractFunction(html, 'function _normalizeTopic(');
 // submitDemand 依赖的取当前项目函数（真实源码，避免测试自造产品逻辑）

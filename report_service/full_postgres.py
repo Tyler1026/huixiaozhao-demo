@@ -99,6 +99,10 @@ class PostgresFullStore(FullStore):
             raise ValueError('report is not complete')
         entry = next((e for e in report['manifest']['files'] if e['name'] == name), None)
         if not entry:
+            if name == 'research.zip':
+                from .full_artifacts import REQUIRED_FILES, research_zip
+                return research_zip({filename: self.artifact(tenant, report_id, filename)
+                                     for filename in (*REQUIRED_FILES, 'evidence.json')})
             raise ValueError('unlisted artifact')
         with self.db() as c:
             row = c.execute('SELECT data,sha256 FROM full_artifact_bytes WHERE report_id=? AND name=?',

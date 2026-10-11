@@ -183,7 +183,8 @@ test('report values and request identifiers cannot inject markup or inline JavaS
   h.ctx.downloadReqFile = (...args) => values.push(args);
   h.ctx.pushReportToRag = (...args) => values.push(args);
   for (const handler of handlers(html).filter(value => /^(downloadReqFile|pushReportToRag)\(/.test(value))) vm.runInContext(handler, h.ctx);
-  assert.equal(values.length, 2);
+  assert.equal(values.length, 4);
+  assert.deepEqual(values.filter(args=>typeof args[1]==='string').map(args=>args[1]).sort(), ['full','research','short']);
   assert.ok(values.every(args => args[0] === hostileId)); assert.equal(h.ctx.injected, undefined);
 });
 

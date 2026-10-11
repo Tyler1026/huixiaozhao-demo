@@ -1,20 +1,122 @@
-/* ===== 企业线索删除墓碑 =====
-   服务端 _merge_clues 会保留「服务端独有」的线索（防旧快照冲掉已核验状态），
-   所以单纯从 p.clues 里 splice 掉，下一次 GET 就会被合并复活（删了又回来），
-   与项目删除同一个坑。这里用 'projKey::clueId' 墓碑，persist 带给服务端做永久移除。 */
-function _projKeyOf(p){
-  if(!p) return null;
-  try{
-    var ks=Object.keys(PROJECTS);
-    for(var i=0;i<ks.length;i++){ if(PROJECTS[ks[i]]===p) return ks[i]; }
-  }catch(_){}
+/* ===== 主区视图 ===== */
+function mainPane(p){
+  if(view==='knowledge')return kbPage(p);
+  if(view==='settings')return settingsPage(p);
+  if(view==='report')return homePage(p);      // 研判需求：出报告的对话工作区
+  if(view==='docking')return dockingPage(p);   // 招商对接：独立tab
+  if(view==='subwork')return subWorkPage(p);   // 招引项目独立工作页
+  return projMgmtPage(p);                       // home = 项目管理（默认）
+}
+// 项目管理：项目列表切换（AI对话分类式）+ 进入项目工作区
+/* ══════════════════════════════════════════════════════════════
+   企业线索管理 — projMgmtPage 完整重写
+   数据源：PROJECTS[k].clues[]
+   每条 clue: {id, name, kind, region, source, status, tone, reason, signal, questions:[]}
+   tone: 'slate'待接触 / 'amber'核验中 / 'teal'可安排沟通
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── 从研判报告文本派生候选线索 ── */
+
+/* ── 从报告文本提取缺口（供通用城市动态扫描用）── */
+function extractGapsForScan(p){
+  var gaps=[];
+  var rsx=(typeof REPORTSTATE!=='undefined')?REPORTSTATE[p.id]:null;
+  var text=rsx&&rsx.text||'';
+  if(text){
+    var lines=text.split('\n'); var inTop5=false;
+    for(var i=0;i<lines.length;i++){
+      var l=lines[i];
+      if(l.indexOf('补链优先级')>=0||l.indexOf('TOP5')>=0||l.indexOf('优先级清单')>=0)inTop5=true;
+      if(inTop5&&l.trim().charAt(0)==='|'){
+        var cells=l.trim().slice(1,-1).split('|').map(function(c){return c.replace(/[*★]/g,'').trim();});
+        if(cells.every(function(c){return /^[\s\-:]+$/.test(c);})||cells[0]==='排名'||cells[0]==='缺口节点')continue;
+        var rank=parseInt(cells[0]); if(!isNaN(rank)&&cells[1])gaps.push(cells[1]);
+      }
+      if(inTop5&&gaps.length>=4)break;
+    }
+    if(!gaps.length){
+      lines.forEach(function(l){
+        if(l.indexOf('❌')>=0&&gaps.length<4){
+          var c=l.replace(/^[*\-•|#\s]+/,'').replace(/❌|\*\*/g,'').replace('缺失','').trim();
+          c=c.split(/[（(，,：:]/)[0].trim();
+          if(c.length>=3&&c.length<30)gaps.push(c);
+        }
+      });
+    }
+  }
+  if(!gaps.length)gaps=['核心零部件配套','关键系统集成','精深加工延链','智能装备升级'];
+  return gaps.slice(0,4);
+}
+
+/* AI 企业漏斗 — 真实调用 DeepSeek(/api/kb-chat mode=funnel) 按项目分析，不用任何硬编码企业库 */
+var _funnelRunning = {};
+var KB_API_OPS = '/api/kb-chat';
+function _funnelInput(p){
+  var rsx=(typeof REPORTSTATE!=='undefined')?REPORTSTATE[p.id]:null;
+  var text=(rsx&&rsx.text)||'';
+  var gaps=[]; try{ gaps=extractGapsForScan(p); }catch(e){}
+  return {text:text, gaps:gaps};
+}
+function savedEvidenceIdentity(key, topic){
+  var p=PROJECTS[key];if(!p)return null;
+  var rs=(typeof REPORTSTATE!=='undefined'&&REPORTSTATE[key])||{},root=p.workspaceId||key;
+  function stable(v){
+    if(Array.isArray(v))return v.map(stable);
+    if(v&&typeof v==='object'){var out={};Object.keys(v).sort().forEach(function(k){if(v[k]!==undefined)out[k]=stable(v[k]);});return out;}
+    return v;
+  }
+  var keys=root===key?[key]:[root,key];
+  return JSON.stringify(stable({workspace:root,city:p.city||'',topic:topic,selectedTopic:p.topic||'',requestId:p.reportRequestId||rs.reportRequestId||'',
+    kb:keys.map(function(k){return (PROJECTS[k]||{}).kb||[];}),onboarding:p.onboarding||{},
+    report:(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'')||''}));
+}
+function runAIFunnel(projKey, done, onProgress){
+  var p=PROJECTS[projKey]; if(!p){ done&&done('no project'); return; }
+  if(_funnelRunning[projKey])return;
+  var run={},epoch=typeof _authEpoch==='number'?_authEpoch:0,requestId=p.reportRequestId||null,topic=p.topic||'';
+  var sourceIdentity=savedEvidenceIdentity(projKey,topic);
+  _funnelRunning[projKey]=run;
+  function current(){return savedEvidenceIdentity(projKey,topic)===sourceIdentity&&(typeof _authEpoch==='number'?_authEpoch:0)===epoch;}
+  function release(){if(_funnelRunning[projKey]===run)delete _funnelRunning[projKey];}
+  var q='针对当前方向 '+topic+'，从服务端提供的完整证据目录提取有来源的企业候选。每家必须给出 evidence_ids。只列材料中存在的企业，不为凑数量补入常识名单。业务匹配是待核推断；没有直接投资意向证据时 score_relocate=null。';
+  fetch(KB_API_OPS,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,projectKey:projKey,topic:topic,reportRequestId:requestId,stream:true,mode:'funnel'})})
+  .then(async function(resp){
+    if(!resp.ok)throw new Error('服务繁忙或来源已变更（'+resp.status+'），请重试');
+    var result=await readTopicReportStream(resp,function(acc){if(onProgress&&current())onProgress(Math.min(90,5+Math.round(acc.length/15000*85)),acc);});
+    if(!current())throw new Error('工作区、方向或报告版本已变化；旧响应未写入');
+    var obj=_parseFunnelJson(result.text);
+    if(!obj||!obj.companies||!obj.companies.length)throw new Error('没有通过来源校验的候选，请补充材料');
+    if(obj.evidence_contract!=='saved-excerpts-v1'||obj.projectKey!==projKey||obj.topic!==topic||(obj.reportRequestId||null)!==requestId)throw new Error('来源校验未通过，原候选清单已保留');
+    var seen={};
+    var companies=obj.companies.filter(function(c){
+      var name=String(c.name||'').replace(/\s/g,'');
+      if(!name||seen[name]||!Array.isArray(c.evidence)||!c.evidence.length)return false;
+      seen[name]=true;return true;
+    }).map(function(c,i){return Object.assign({},c,{id:c.id||_funnelClueId(projKey,c.name,i)});});
+    if(!companies.length)throw new Error('没有通过来源校验的候选，请补充材料');
+    PROJECTS[projKey].funnel=Object.assign({},obj,{ts:Date.now(),total:companies.length,companies:companies,pushed:false});
+    persist();release();done&&done(null,PROJECTS[projKey].funnel);
+  }).catch(function(e){release();done&&done(e&&e.message||'network');});
+}
+
+function _parseFunnelJson(s){
+  if(!s) return null; var t=String(s).trim();
+  t=t.replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,'');
+  try{ return JSON.parse(t); }catch(e){}
+  var a=t.indexOf('{'), b=t.lastIndexOf('}');
+  if(a>=0&&b>a){ try{ return JSON.parse(t.slice(a,b+1)); }catch(e){} }
   return null;
 }
-/* 【2026-09-22 修复 P0】墓碑必须按「企业身份（名称）」匹配，不能按 clue.id。
-   根因：AI 漏斗 id 曾是 'f_'+projKey+'_'+下标（ops.html runAIFunnel），下标随每次
-   重跑的模型返回顺序重新分配，同一个 id 跨两次漏斗指向完全不同的企业。
-   实测事故：上一批删 CT 企业留下墓碑 f_<pk>_0，下一批漏斗的 f_<pk>_0 是诺唯赞生物
-   （88 分 Top8 第 2），推送时被当成「已删除」静默跳过，界面看不出少了一家。
-   所以：新墓碑写 'projKey::@<规范化企业名>'；位置型 id 的旧墓碑一律失效，
-   否则同一个 bug 原样复发（既挡推送，也会在政府端把新企业渲染掉）。
-   手工录入 id 是 clue_manual_<时间戳>，唯一且不复用，legacy 键继续兼容。 */
+/* 【2026-09-22 修复 P0】clue 身份与墓碑口径必须与政府端 index.html 完全一致。
+   旧 id 'f_'+projKey+'_'+下标 跨漏斗复用：上一批删掉的企业留下的墓碑，会在下一批
+   把恰好排到同一下标的新企业静默吃掉（实测诺唯赞生物 88 分被吞）。
+   现在 id 由企业名派生（跨次重跑稳定），墓碑按企业名匹配，位置型旧 id 墓碑失效。 */
+
+/* Source links are protocol-checked even for legacy browser cache data. */
+function funnelEvidenceLinks(company){
+  var urls=[], refs=Array.isArray(company.evidence)?company.evidence:[];
+  refs.forEach(function(ref){(Array.isArray(ref.urls)?ref.urls:[]).forEach(function(url){
+    try{var parsed=new URL(url);if((parsed.protocol==='https:'||parsed.protocol==='http:')&&!parsed.username&&urls.indexOf(parsed.href)<0)urls.push(parsed.href);}catch(_){}
+  });});
+  return '<div style="font-size:11px;word-break:break-all;margin-top:5px">'+(urls.length?urls.map(function(url,i){return '<a href="'+_authEscape(url)+'" target="_blank" rel="noopener noreferrer">来源 '+(i+1)+'</a>';}).join(' · '):'来源待补充')+'</div>';
+}

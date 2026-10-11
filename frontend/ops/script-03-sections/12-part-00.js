@@ -20,7 +20,7 @@ function mainPane(p){
 /* ── 从报告文本提取缺口（供通用城市动态扫描用）── */
 function extractGapsForScan(p){
   var gaps=[];
-  var rsx=(typeof REPORTSTATE!=='undefined')?(REPORTSTATE[p.id]||REPORTSTATE[cur]):null;
+  var rsx=(typeof REPORTSTATE!=='undefined')?REPORTSTATE[p.id]:null;
   var text=rsx&&rsx.text||'';
   if(text){
     var lines=text.split('\n'); var inTop5=false;
@@ -52,63 +52,53 @@ function extractGapsForScan(p){
 var _funnelRunning = {};
 var KB_API_OPS = '/api/kb-chat';
 function _funnelInput(p){
-  var rsx=(typeof REPORTSTATE!=='undefined')?(REPORTSTATE[p.id]||REPORTSTATE[cur]):null;
+  var rsx=(typeof REPORTSTATE!=='undefined')?REPORTSTATE[p.id]:null;
   var text=(rsx&&rsx.text)||'';
   var gaps=[]; try{ gaps=extractGapsForScan(p); }catch(e){}
   return {text:text, gaps:gaps};
 }
+function savedEvidenceIdentity(key, topic){
+  var p=PROJECTS[key];if(!p)return null;
+  var rs=(typeof REPORTSTATE!=='undefined'&&REPORTSTATE[key])||{},root=p.workspaceId||key;
+  function stable(v){
+    if(Array.isArray(v))return v.map(stable);
+    if(v&&typeof v==='object'){var out={};Object.keys(v).sort().forEach(function(k){if(v[k]!==undefined)out[k]=stable(v[k]);});return out;}
+    return v;
+  }
+  var keys=root===key?[key]:[root,key];
+  return JSON.stringify(stable({workspace:root,city:p.city||'',topic:topic,selectedTopic:p.topic||'',requestId:p.reportRequestId||rs.reportRequestId||'',
+    kb:keys.map(function(k){return (PROJECTS[k]||{}).kb||[];}),onboarding:p.onboarding||{},
+    report:(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'')||''}));
+}
 function runAIFunnel(projKey, done, onProgress){
   var p=PROJECTS[projKey]; if(!p){ done&&done('no project'); return; }
-  if(_funnelRunning[projKey]){ return; }
-  _funnelRunning[projKey]=true;
-  var inp=_funnelInput(p); var topic=p.topic||'';
-  var q='招商方向：'+topic+' 城市：'+(p.city||'')+'\n\n产业研判报告：\n'+(inp.text? inp.text.slice(0,4000) : '（暂无完整报告，请基于招商方向与常识分析）')+'\n\n已识别缺口：'+(inp.gaps&&inp.gaps.length?inp.gaps.join('、'):'（见报告）')+'\n\n请针对该招商方向筛选真实存在的适配企业构成企业漏斗，目标40家（至少30家）。每家企业按评分卡分别给出 score_match(0-40)/score_relocate(0-30)/score_strength(0-30) 三项分数；如企业有明确扩张需求或领导与本城市/本省有可考的派系关联（校友/籍贯/商会等），填 expansion/faction 字段，无则留空、严禁编造。严格按 SYSTEM 要求输出 JSON。';
-  fetch(KB_API_OPS,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q, city:(p.city||''), chunks:[], stream:true, mode:'funnel'})})
-  .then(function(resp){
-    if(!resp.ok){ _funnelRunning[projKey]=false; return resp.json().then(function(e){ done&&done('服务繁忙或超时，请重试（'+((e&&e.error)||resp.status)+'）'); }).catch(function(){ done&&done('服务繁忙或超时，请重试'); }); }
-    var acc='';
-    function _finishFunnel(content){
-      _funnelRunning[projKey]=false;
-      if(!content){ done&&done('模型未返回内容，请重试'); return; }
-      var obj=_parseFunnelJson(content);
-      if(!obj||!obj.companies||!obj.companies.length){ done&&done('parse'); return; }
-      var _num=function(v,max){var n=(typeof v==='number')?v:parseInt(v)||0; if(n<0)n=0; if(n>max)n=max; return n;};
-      var companies=obj.companies.map(function(c,i){
-        var sm=_num(c.score_match,40), sr=_num(c.score_relocate,30), ss=_num(c.score_strength,30);
-        var total=sm+sr+ss; if(total>100)total=100;
-        return {id:_funnelClueId(projKey, c.name, i), name:c.name||'', region:c.region||'', kind:c.kind||'', fit:c.fit||'',
-          score_match:sm, score_relocate:sr, score_strength:ss, score_reason:c.score_reason||'',
-          fit_score:total,
-          signal:c.signal||'', expansion:c.expansion||'', faction:c.faction||'',
-          listed:c.listed||'', source:c.source||'公开信息（AI推断，待核验）'};
-      }).filter(function(c){return c.name;}).sort(function(a,b){
-        if(b.fit_score!==a.fit_score) return b.fit_score-a.fit_score;
-        var fa=(a.expansion?1:0)+(a.faction?1:0), fb=(b.expansion?1:0)+(b.faction?1:0);
-        return fb-fa;
-      });
-      PROJECTS[projKey].funnel={ ts:Date.now(), topic:obj.topic||topic, total:(obj.total_scanned||companies.length), companies:companies, pushed:false };
-      persist(); done&&done(null, PROJECTS[projKey].funnel);
-    }
-    if(!resp.body||!resp.body.getReader){ return resp.text().then(function(txt){ txt.split('\n').forEach(function(line){ if(line.indexOf('data:')!==0) return; var d=line.slice(5).trim(); if(d==='[DONE]'||!d) return; try{ var j=JSON.parse(d); var dt=(j.choices&&j.choices[0]&&((j.choices[0].delta&&j.choices[0].delta.content)||(j.choices[0].message&&j.choices[0].message.content)))||''; acc+=dt; }catch(_){}}); _finishFunnel(acc); }); }
-    var reader=resp.body.getReader(), decoder=new TextDecoder(), buf='';
-    function pump(){
-      return reader.read().then(function(d){
-        if(d.done){ _finishFunnel(acc); return; }
-        buf+=decoder.decode(d.value,{stream:true});
-        var lines=buf.split('\n'); buf=lines.pop();
-        lines.forEach(function(line){
-          if(line.indexOf('data:')!==0) return;
-          var dd=line.slice(5).trim();
-          if(dd==='[DONE]'||!dd) return;
-          try{ var j=JSON.parse(dd); var delta=(j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||''; if(delta) acc+=delta; }catch(_){}
-        });
-        if(onProgress){ var pct=Math.min(90, 5+Math.round(acc.length/15000*85)); try{ onProgress(pct, acc); }catch(_){} }
-        return pump();
-      });
-    }
-    return pump();
-  }).catch(function(e){ _funnelRunning[projKey]=false; done&&done(e&&e.message||'network'); });
+  if(_funnelRunning[projKey])return;
+  var run={},epoch=typeof _authEpoch==='number'?_authEpoch:0,requestId=p.reportRequestId||null,topic=p.topic||'';
+  var sourceIdentity=savedEvidenceIdentity(projKey,topic);
+  _funnelRunning[projKey]=run;
+  function current(){return savedEvidenceIdentity(projKey,topic)===sourceIdentity&&(typeof _authEpoch==='number'?_authEpoch:0)===epoch;}
+  function release(){if(_funnelRunning[projKey]===run)delete _funnelRunning[projKey];}
+  var q='针对当前方向 '+topic+'，从服务端提供的完整证据目录提取有来源的企业候选。每家必须给出 evidence_ids。只列材料中存在的企业，不为凑数量补入常识名单。业务匹配是待核推断；没有直接投资意向证据时 score_relocate=null。';
+  fetch(KB_API_OPS,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,projectKey:projKey,topic:topic,reportRequestId:requestId,stream:true,mode:'funnel'})})
+  .then(async function(resp){
+    if(!resp.ok)throw new Error('服务繁忙或来源已变更（'+resp.status+'），请重试');
+    var result=await readTopicReportStream(resp,function(acc){if(onProgress&&current())onProgress(Math.min(90,5+Math.round(acc.length/15000*85)),acc);});
+    if(!current())throw new Error('工作区、方向或报告版本已变化；旧响应未写入');
+    var obj=_parseFunnelJson(result.text);
+    if(!obj||!obj.companies||!obj.companies.length)throw new Error('没有通过来源校验的候选，请补充材料');
+    if(obj.evidence_contract!=='saved-excerpts-v1'||obj.projectKey!==projKey||obj.topic!==topic||(obj.reportRequestId||null)!==requestId)throw new Error('来源校验未通过，原候选清单已保留');
+    var seen={};
+    var companies=obj.companies.filter(function(c){
+      var name=String(c.name||'').replace(/\s/g,'');
+      if(!name||seen[name]||!Array.isArray(c.evidence)||!c.evidence.length)return false;
+      seen[name]=true;return true;
+    }).map(function(c,i){return Object.assign({},c,{id:c.id||_funnelClueId(projKey,c.name,i)});});
+    if(!companies.length)throw new Error('没有通过来源校验的候选，请补充材料');
+    PROJECTS[projKey].funnel=Object.assign({},obj,{ts:Date.now(),total:companies.length,companies:companies,pushed:false});
+    persist();release();done&&done(null,PROJECTS[projKey].funnel);
+  }).catch(function(e){release();done&&done(e&&e.message||'network');});
 }
+
 function _parseFunnelJson(s){
   if(!s) return null; var t=String(s).trim();
   t=t.replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,'');
@@ -121,3 +111,12 @@ function _parseFunnelJson(s){
    旧 id 'f_'+projKey+'_'+下标 跨漏斗复用：上一批删掉的企业留下的墓碑，会在下一批
    把恰好排到同一下标的新企业静默吃掉（实测诺唯赞生物 88 分被吞）。
    现在 id 由企业名派生（跨次重跑稳定），墓碑按企业名匹配，位置型旧 id 墓碑失效。 */
+
+/* Source links are protocol-checked even for legacy browser cache data. */
+function funnelEvidenceLinks(company){
+  var urls=[], refs=Array.isArray(company.evidence)?company.evidence:[];
+  refs.forEach(function(ref){(Array.isArray(ref.urls)?ref.urls:[]).forEach(function(url){
+    try{var parsed=new URL(url);if((parsed.protocol==='https:'||parsed.protocol==='http:')&&!parsed.username&&urls.indexOf(parsed.href)<0)urls.push(parsed.href);}catch(_){}
+  });});
+  return '<div style="font-size:11px;word-break:break-all;margin-top:5px">'+(urls.length?urls.map(function(url,i){return '<a href="'+_authEscape(url)+'" target="_blank" rel="noopener noreferrer">来源 '+(i+1)+'</a>';}).join(' · '):'来源待补充')+'</div>';
+}

@@ -101,10 +101,14 @@ def make_handler(store, token_map, *, allow_live=False):
                 if report['status'] != 'completed':
                     self.send(409, {'error': 'report not completed'})
                     return
-                from .full_artifacts import read_artifact
+                from .full_artifacts import read_artifact, MEDIA_TYPES
                 try:
                     payload = read_artifact(store.artifact_root, rid, name, report['manifest'])
-                    item = next(x for x in report['manifest']['files'] if x['name'] == name)
+                    item = next((x for x in report['manifest']['files'] if x['name'] == name), None)
+                    if item is None and name == 'research.zip':
+                        item = {'media_type': MEDIA_TYPES[name]}
+                    if item is None:
+                        raise ValueError('unlisted artifact')
                 except (OSError, ValueError, KeyError, TypeError, StopIteration):
                     self.send(404, {'error': 'artifact unavailable or invalid'})
                     return

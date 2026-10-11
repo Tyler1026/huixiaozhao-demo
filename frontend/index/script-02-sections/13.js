@@ -224,7 +224,13 @@ function detailClue(c){
       '<div class="boundary-note"><i class="i">🔒</i>仅展示脱敏状态、公开依据和下一步，不展示内部人脉路径。</div>'+
     '</div>';
 }
-function toggleDetail(){detailOpen=!detailOpen;render()}
+function toggleDetail(){
+  detailOpen=!detailOpen;
+  // Detail controls must remain usable while the main report is streaming or a
+  // verification dialog protects its DOM. Update only the sibling detail slot.
+  if(typeof syncDetailPane==='function'&&syncDetailPane())return;
+  render();
+}
 // 返回：按当前视图回到对应右栏（报告页→本次研判，项目页→项目详情），而不是永远跳旧的通用分析栏
 function backToAnalysis(){detailData=null;var dp=$('.detail-pane');
   var back=view==='report'?detailReport(P()):(view==='subwork'&&subprojOf(cur)[curSub])?detailSub(subprojOf(cur)[curSub]):detailAnalysis(P());

@@ -103,24 +103,39 @@ def _decision_view(prior, stage_id, part):
     dependencies = {'action': ('chain', 'policy'),
                     'summary': ('economy', 'chain', 'action', 'policy'),
                     'compact': ('summary', 'chain', 'action', 'policy')}
-    _keep(view, prior, *dependencies[stage_id], stage_id)
+    _keep(view, prior, *dependencies[stage_id], 'fact_check', stage_id)
     return view
 
 
-def _enterprise_stage_view(prior, stage_id, part):
+def _enterprise_stage_view(prior, stage_id, part, mode='deep'):
     if part not in get_stage(stage_id, mode='deep')['parts']:
         raise ValueError('unsupported enterprise context part')
     view = {'industry': _direction_view(prior)}
     _keep(view, prior, 'chain', 'policy')
+    metadata = copy.deepcopy(_metadata(prior.get(stage_id)))
+    target_only = mode == 'standard' and part.startswith(('落地情况', '扩产信号'))
+    if target_only:
+        import re
+        match = re.search(r'(\d+)$', part)
+        offset = (int(match.group(1)) - 1 if match else 0) * 5
+        candidates = _records(metadata.get('candidates'))[offset:offset + 5]
+        names = {item.get('name') for item in candidates if isinstance(item, dict)}
+        metadata['candidates'] = candidates
+        metadata['selected'] = [item for item in _records(metadata.get('selected'))
+                                if isinstance(item, dict) and item.get('name') in names]
+        explanation = '本子步骤只核查以下五家目标的完整记录；其他企业及全部原始证据继续保存在原报告。'
+    else:
+        explanation = '候选、精选及其全部原始字段和顺序保留，原子章节正文继续保存在完整报告中。'
     view[stage_id] = {
-        'text': f'当前{stage_id}子步骤{part}对应dir{stage_id[-1]}，使用全部已保存企业事实记录；'
-                '候选、精选及其全部原始字段和顺序保留，原子章节正文继续保存在完整报告中。',
-        'metadata': copy.deepcopy(_metadata(prior.get(stage_id))),
+        'text': f'当前{stage_id}子步骤{part}对应dir{stage_id[-1]}，'
+                + ('使用本子步骤所需的已保存企业事实记录；' if target_only else '使用全部已保存企业事实记录；')
+                + explanation,
+        'metadata': metadata,
     }
     return view
 
 
-def scoped_prior(prior, stage_id, part):
+def scoped_prior(prior, stage_id, part, mode='deep'):
     """Return the full facts required by a research or decision substep.
 
     Other stages retain their existing dependency handling. Scoring is split
@@ -137,7 +152,7 @@ def scoped_prior(prior, stage_id, part):
     if not isinstance(prior, dict):
         raise TypeError('scoped report context requires a stage mapping')
     if stage_id in enterprise_stages:
-        return _enterprise_stage_view(prior, stage_id, part)
+        return _enterprise_stage_view(prior, stage_id, part, mode)
     if stage_id in {'action', 'summary', 'compact'}:
         return _decision_view(prior, stage_id, part)
     if stage_id == 'fact_check':

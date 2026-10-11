@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from zipfile import ZipFile
+from io import BytesIO
 from xml.etree import ElementTree as ET
 
 from report_service.full_artifacts import (
@@ -31,9 +32,9 @@ class FullArtifactsTests(unittest.TestCase):
         m = self.build()
         self.assertTrue(verify_bundle(self.root, self.id, m))
         self.assertEqual(m['version'], 'full-v1')
-        self.assertEqual(len(m['files']), 19)
+        self.assertEqual(len(m['files']), 20)
         self.assertEqual(set(p.name for p in (self.root / self.id).iterdir()),
-                         set(REQUIRED_FILES) | {'full.docx', 'compact.docx', 'evidence.json', 'manifest.json'})
+                         set(REQUIRED_FILES) | {'full.docx', 'compact.docx', 'evidence.json', 'research.zip', 'manifest.json'})
         for n in REQUIRED_FILES:
             self.assertIn(b'SYNTHETIC TEST', read_artifact(self.root, self.id, n, m))
         evidence = json.loads(read_artifact(self.root, self.id, 'evidence.json', m))
@@ -70,6 +71,29 @@ class FullArtifactsTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         self.build(outputs=outputs)
         self.assertFalse((self.root / self.id).exists())
+
+    def test_research_archive_preserves_every_source_byte(self):
+        manifest = self.build()
+        archive = read_artifact(self.root, self.id, 'research.zip', manifest)
+        with ZipFile(BytesIO(archive)) as package:
+            self.assertEqual(set(package.namelist()), set(REQUIRED_FILES) | {'evidence.json'})
+            for name in package.namelist():
+                self.assertEqual(package.read(name), read_artifact(self.root, self.id, name, manifest))
+
+    def test_legacy_receipt_and_files_are_unchanged_by_optional_research_download(self):
+        from report_service.full_artifacts import _json
+        manifest = self.build()
+        legacy = copy.deepcopy(manifest)
+        legacy['files'] = [item for item in legacy['files'] if item['name'] != 'research.zip']
+        folder = self.root / self.id
+        (folder / 'research.zip').unlink()
+        (folder / 'manifest.json').write_bytes(_json(legacy))
+        before = {path.name: path.read_bytes() for path in folder.iterdir()}
+        self.assertTrue(verify_bundle(self.root, self.id, legacy))
+        with ZipFile(BytesIO(read_artifact(self.root, self.id, 'research.zip', legacy))) as package:
+            self.assertEqual(package.read('evidence.json'), before['evidence.json'])
+        self.assertEqual(self.build(), legacy)
+        self.assertEqual(before, {path.name: path.read_bytes() for path in folder.iterdir()})
 
     def test_unsafe_names_and_ids(self):
         for n in ('../escape.md', '/absolute.md', 'a/b.md', 'a\\b.md', 'unknown.md', ''):

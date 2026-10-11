@@ -12,6 +12,8 @@ def report_file(self,use_database,read,file_path):
         self.send_response(status); self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
         self.cors(); self.end_headers(); self.wfile.write(body)
+    if kind not in {'full', 'short', 'research'}:
+        return error(400, '不支持的报告文件类型')
     try:
         if use_database:
             stored = read()
@@ -48,7 +50,13 @@ def report_file(self,use_database,read,file_path):
             if isinstance(pv, dict) and pv.get('city') == city and pv.get('reportFiles'):
                 files = pv['reportFiles']; break
     if files and not request_id:
-        meta = next((m for m in files if m.get('kind') == kind), None) or files[0]
+        meta = next((m for m in files if m.get('kind') == kind), None)
+    legacy_research = False
+    if not meta and kind == 'research' and files:
+        # The old full Word already contains every research chapter. Package
+        # its original bytes on demand; never alter a saved file or receipt.
+        meta = next((m for m in files if m.get('kind') == 'full'), None)
+        legacy_research = meta is not None
     if not meta or not meta.get('b64'):
         msg = json.dumps({'ok': False, 'error': '未找到该城市原始报告文件'}).encode()
         self.send_response(404); self.send_header('Content-Type', 'application/json; charset=utf-8')
@@ -61,9 +69,20 @@ def report_file(self,use_database,read,file_path):
     except Exception:
         return error(503, '报告文件校验失败，请稍后重试')
     fname = meta.get('name') or (city + '_报告.docx')
+    if legacy_research:
+        from io import BytesIO
+        from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
+        package = BytesIO()
+        with ZipFile(package, 'w') as archive:
+            info = ZipInfo('original_full_report.docx', (1980, 1, 1, 0, 0, 0))
+            info.compress_type = ZIP_DEFLATED
+            archive.writestr(info, blob)
+        blob = package.getvalue()
+        fname = city + '_完整研究附件_原始报告.zip'
     fname_enc = urllib.parse.quote(fname)
     self.send_response(200)
-    self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    self.send_header('Content-Type', 'application/zip' if kind == 'research' else
+                     'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
     self.send_header('Content-Disposition',
                      "attachment; filename*=UTF-8''" + fname_enc)
     self.send_header('Content-Length', str(len(blob)))
