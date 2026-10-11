@@ -1470,6 +1470,8 @@ var USER_PROFILES = (typeof USER_PROFILES!=='undefined'&&USER_PROFILES) || {};  
 var INVITE_CODES = (typeof INVITE_CODES!=='undefined'&&INVITE_CODES) || {};
 /* 城市基础包指针表：结构同政府端 03.js 里的说明。管理端在「城市智库RAG」页
    用它判断/管理某城市的权威基础包来自哪个projKey。 */
+// Server-owned canonical city workspace registry; keep invitation secrets out of persisted caches.
+var CITY_WORKSPACES = {};
 var CITY_BASE_PACKAGES = (typeof CITY_BASE_PACKAGES!=='undefined'&&CITY_BASE_PACKAGES) || {};
 function getCityBasePackage(city){
   var authorityKey=CITY_BASE_PACKAGES[city];

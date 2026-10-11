@@ -219,7 +219,7 @@ test('admin gate requires cookie auth and denies ordinary users before syncing',
 
 test('admin invitation save failure preserves form and maps; success uses server-created project', async () => {
   const h = harness('ops'); h.ctx._authAccept(auth({scope: 'admin', projectKeys: []}));
-  h.input('invCityInput', '测试城市'); h.input('invEmailInput', 'test@example.invalid');
+  h.input('invProvinceInput', '测试省'); h.input('invCityInput', '测试城市'); h.input('invEmailInput', 'test@example.invalid');
   h.queue.push(response(503, {ok: false, error: 'storage_unavailable', message: '保存失败，请重试'}));
   await h.ctx.doGenerateInviteCode();
   assert.deepEqual(Object.keys(h.ctx.INVITE_CODES), []); assert.deepEqual(Object.keys(h.ctx.PROJECTS), []);
@@ -227,7 +227,7 @@ test('admin invitation save failure preserves form and maps; success uses server
   assert.equal(h.toasts.at(-1), '保存失败，请重试');
   h.queue.push(response(200, {ok: true, invite: {code: 'SYNTHETIC_ONLY', city: '测试城市', projKey: 'server-team'}, project: {id: 'server-team', workspaceId: 'server-team', city: '测试城市'}}));
   await h.ctx.doGenerateInviteCode();
-  assert.deepEqual(JSON.parse(h.calls.at(-1).options.body), {action: 'create', city: '测试城市', distributedEmail: 'test@example.invalid'});
+  assert.deepEqual(JSON.parse(h.calls.at(-1).options.body), {action: 'create', province: '测试省', city: '测试城市', distributedEmail: 'test@example.invalid'});
   assert.equal(h.ctx.INVITE_CODES.SYNTHETIC_ONLY.projKey, 'server-team');
   assert.equal(h.ctx.PROJECTS['server-team'].workspaceId, 'server-team'); assert.equal(h.closed(), 1);
 });

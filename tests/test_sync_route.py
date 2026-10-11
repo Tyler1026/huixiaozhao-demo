@@ -37,6 +37,10 @@ class SyncRouteTests(unittest.TestCase):
         # 放宽比较标准去容纳它们。新增行为由下面 test_invite_codes_branch_* 单独验证。
         NEW_KEYS = {'INVITE_CODES', 'CITY_BASE_PACKAGES'}
         class StripInviteCodesAdditions(ast.NodeTransformer):
+            def visit_Expr(self,node):
+                if isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name) and node.value.func.id == 'protect_city_sync':
+                    return None
+                return self.generic_visit(node)
             def visit_If(self,node):
                 self.generic_visit(node)
                 test=node.test

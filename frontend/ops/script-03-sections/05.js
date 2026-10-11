@@ -218,13 +218,17 @@ function rrPanel(options){
     var pushCtrl='';
     if(r.status==='done'){
       if(r.pushed){
-        pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#166534;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:5px 11px;white-space:nowrap">✓ 已推送 · 账号 '+escape(r.account||'—')+'</span>';
+        var workspace=typeof opsCityWorkspace==='function'?opsCityWorkspace(r.city):null;
+        var primary=workspace&&(r.projectKey===workspace.projectKey||r.account===workspace.projectKey);
+        pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#166534;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:5px 11px;white-space:nowrap">'+(primary?'✓ 已发布至地区主工作区':'✓ 已发布 · 历史报告基础库')+'</span>';
       } else if(r.engine!=='full-v1'){
         pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:5px 11px;white-space:nowrap">需重新生成后发布</span>';
+      } else if(r.publicationSkipped==='newer-report-already-published'){
+        pushCtrl='<span class="ops-ui-badge is-muted">已有更新版本</span>';
       } else if(r.pushRequested){
         pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:5px 11px;white-space:nowrap">⏳ 推送中…</span>';
       } else {
-        pushCtrl='<button onclick="pushReportToRag(\''+rrInlineString(r.id)+'\',this)" style="flex-shrink:0;padding:6px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap">🚀 推送到 RAG</button>';
+        pushCtrl='<button onclick="pushReportToRag(\''+rrInlineString(r.id)+'\',this)" style="flex-shrink:0;padding:6px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap">发布到地区主工作区</button>';
       }
     }
     var cancelBtn='';
@@ -237,7 +241,7 @@ function rrPanel(options){
     return '<div class="ops-row ops-ui-report-row" style="align-items:flex-start;flex-direction:column"><div class="ops-ui-report-row-head" style="display:flex;align-items:center;gap:10px;width:100%">'+
       '<div class="r-ic"></div>'+
       '<div class="r-main"><div class="ops-ui-report-title" style="display:flex;align-items:center;gap:8px"><strong>'+escape(r.province)+' · '+escape(r.city)+'</strong>'+(r.submissionPending?'<span class="ops-badge orange">等待保存确认</span>':rrStatusBadge(r.status,r))+'</div>'+
-      '<small>'+escape(r.by)+' · '+tm+' 发起'+escape(doneInfo+serviceInfo)+(r.submissionPending?' · '+escape(r.submissionError||'正在确认，暂未进入生成队列'):'')+(r.status==='failed'&&r.failReason&&!serviceInfo?' · '+escape(r.failReason):'')+'</small></div>'+
+      '<small>'+escape(r.by)+' · '+tm+' 发起'+(r.autoPublish===true&&/^\d{4}-\d{2}$/.test(r.scheduledMonth||'')?' · '+escape(r.scheduledMonth)+' 月度更新':'')+escape(doneInfo+serviceInfo)+(r.publicationSkipped==='newer-report-already-published'?' · 已有更新版本，保留当前资料':'')+(r.submissionPending?' · '+escape(r.submissionError||'正在确认，暂未进入生成队列'):'')+(r.status==='failed'&&r.failReason&&!serviceInfo?' · '+escape(r.failReason):'')+'</small></div>'+
       '<div class="ops-ui-report-actions" style="margin-left:auto;display:flex;align-items:center;gap:8px">'+dlBtn+pushCtrl+cancelBtn+'</div></div>'+
       rrProgress(r)+'</div>';
   }).join('')||'<div class="ops-ui-empty">'+(query||status!=='all'?'没有符合筛选条件的报告':'暂无申请记录')+'</div>';
