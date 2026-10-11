@@ -788,6 +788,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._scoped_state = scoped_sync_view(state, self._principal)
             except AuthError as error:
                 return error_response(self, error)
+        if path == '/api/upload-file':
+            from backend.upload_originals import download_upload
+            return download_upload(self, self._account_session, self._account_config())
         # ── 写入前快照查询（防覆盖事故的后路）──
         # GET /api/sync-history            → 列出快照 ts 与大小
         # GET /api/sync-history?ts=<ts>    → 取该份快照完整内容
@@ -1097,185 +1100,11 @@ class Handler(BaseHTTPRequestHandler):
             from backend.extract_route import extract_text
             return extract_text(self, raw, _extract_doc_text)
         # ── 接口1：管理员上传文档，补充/修正城市智库 ──
-        if self.path == '/api/kb-upload':
-            try:
-                body = json.loads(raw)
-                city = body.get('city', '')
-                pkey = body.get('projectKey', '')
-                topic = body.get('topic', '')          # 目标主题名
-                text = body.get('text', '')            # 文档全文（前端已提取或纯文本）
-                filename = body.get('filename', '上传文档')
-                mode = body.get('mode', 'append')       # append=补充 / replace=修正覆盖该主题
-                # 后端文档解析：传 fileB64 时服务端提取文本（PDF/Word），优先于 text
-                file_b64 = body.get('fileB64', '')
-                if file_b64:
-                    try:
-                        _fb = base64.b64decode(file_b64)
-                    except Exception as _e:
-                        resp = json.dumps({'ok': False, 'error': '文件解码失败：' + str(_e)}).encode()
-                        self.send_response(200); self.send_header('Content-Type', 'application/json')
-                        self.send_header('Content-Length', str(len(resp)))
-                        self.cors(); self.end_headers(); self.wfile.write(resp); return
-                    _ext_text, _ext_err = _extract_doc_text(filename, _fb)
-                    if _ext_err:
-                        resp = json.dumps({'ok': False, 'error': _ext_err}).encode()
-                        self.send_response(200); self.send_header('Content-Type', 'application/json')
-                        self.send_header('Content-Length', str(len(resp)))
-                        self.cors(); self.end_headers(); self.wfile.write(resp); return
-                    text = _ext_text
-                if _PG_AVAIL and DATABASE_URL:
-                    store = json.loads(_db_get() or '{}')
-                else:
-                    with open(SYNC_PATH, 'r', encoding='utf-8') as f2:
-                        store = json.loads(f2.read())
-                projects = store.get('PROJECTS') or {}
-                # 定位项目：优先 projectKey，其次按 city 匹配
-                if pkey and pkey in projects:
-                    key = pkey
-                else:
-                    key = next((k for k, v in projects.items()
-                                if isinstance(v, dict) and v.get('city') == city), None)
-                if not key:
-                    resp = json.dumps({'ok': False, 'error': 'project not found'}).encode()
-                else:
-                    p = projects[key]
-                    if not isinstance(p.get('kb'), list):
-                        p['kb'] = []
-                    # origin: admin(管理员) / user(前端用户)；nature: support(佐证) / fix(修正/修改) / confirm(确认)
-                    origin = body.get('origin', 'admin')
-                    nature = body.get('nature', 'support')   # 默认佐证
-                    # 【2026-09-29】by 此前只写进 p.kbUploads[] 审计日志（整批上传的元信息），
-                    # 没有落到每条 chunk/annotation 本身，导致前端逐条渲染时读不到"是谁上传的"，
-                    # 徽标只能显示笼统的"管理员/用户"。现在把它也带进每条记录，字段名对齐前端
-                    # ragOriginStyle() 读取的 account。
-                    by_account = body.get('by', '')
-                    import time as _tt
-                    _ts = int(_tt.time() * 1000)
-                    # 切分文档为结构化 chunks（每条带来源标记，前端据此着色）
-                    import re as _re
-                    parts = [x.strip() for x in _re.split(r'\n\s*\n', text) if len(x.strip()) >= 20]
-                    chunks = []
-                    for para in parts:
-                        para = _re.sub(r'\s+', ' ', para)[:420]
-                        if _is_noise_chunk(para):   # 过滤附注/免责/页码等无价值模板话
-                            continue
-                        chunks.append({'text': para, 'origin': origin, 'nature': nature,
-                                       'src': filename, 'ts': _ts, 'account': by_account})
-                    # 找/建目标主题
-                    tp = next((t for t in p['kb'] if t.get('t') == topic), None)
-                    if not tp:
-                        tp = {'icon': '📎', 't': topic or '管理员补充资料',
-                              'sub': '', 'tag': '', 'known': [], 'calls': []}
-                        p['kb'].append(tp)
-                    # 就地匹配：新 chunk 与已有条目相似度高 → 在已有条目上打标注，不新增
-                    def _strip_tag(s):
-                        # 剥掉结构化导入的 [对象ID|状态] 前缀，避免稀释相似度
-                        return _re.sub(r'^\s*[\[【][^\]】]{0,50}[\]】]\s*', '', str(s or ''))
-                    def _norm(s):
-                        return _re.sub(r'[\s，,。、；;：:（）()【】\[\]|—\-]+', '', _strip_tag(s))
-                    def _chunk_text(k):
-                        return k.get('text', '') if isinstance(k, dict) else str(k)
-                    def _sal_nums(s):
-                        # 显著数字：带小数点 / 百分数 / ≥3位非年份——用于"同一指标同一数值"佐证通道
-                        out = set()
-                        for m in _re.findall(r'\d+(?:\.\d+)?%?', _strip_tag(s)):
-                            if m.endswith('%') or '.' in m:
-                                out.add(m.rstrip('%') + ('%' if m.endswith('%') else ''))
-                            elif len(m) >= 3 and not (1900 <= int(m) <= 2100):
-                                out.add(m)
-                        return out
-                    def _similar(a, b):
-                        a, b = _norm(a), _norm(b)
-                        if not a or not b:
-                            return 0.0
-                        # 双向包含 or 字符级重叠比例
-                        if a in b or b in a:
-                            return 0.9
-                        short, long = (a, b) if len(a) <= len(b) else (b, a)
-                        # 滑窗取 short 的若干 8-gram 命中率
-                        grams = [short[x:x+8] for x in range(0, max(1, len(short) - 7), 4)] or [short]
-                        hit = sum(1 for g in grams if g and g in long)
-                        return hit / len(grams)
-                    _IND_WORDS = ('生产总值', 'GDP', '增加值', '产值', '产量', '增速', '增长',
-                                  '配套率', '城镇化率', '常住人口', '进出口', '进口', '出口',
-                                  '财政收入', '投资', '用电', '客运', '货运', '面积', '营收',
-                                  '利润', '税收', '就业', '工资', '房价', '地价')
-                    def _ind_hit(a, b):
-                        # 指标核心词共现：两段文本含同一个指标词才允许数字佐证通道生效
-                        return any(w in a and w in b for w in _IND_WORDS)
-                    def _is_strong_num(n):
-                        # 高精度数字（1502.81 / 75287）撞上即近乎必为同一事实；
-                        # 低精度（2.6 / 10% / 100）必须再过指标词门禁
-                        d = n.rstrip('%').replace('.', '')
-                        return ('.' in n and len(d) >= 4) or ('.' not in n and not n.endswith('%') and len(d) >= 5)
-
-                    matched_ct = 0
-                    if mode == 'replace':
-                        base = [k for k in (tp.get('known') or [])
-                                if isinstance(k, str) or (isinstance(k, dict) and k.get('origin') == 'ai')]
-                        tp['known'] = base + chunks
-                    else:
-                        # 跨主题匹配：原文（如GDP在园区主题、产业事实在产业链主题）分布在
-                        # 不同主题，佐证应挂到全库任何一条命中原文上；未命中才追加到目标主题
-                        norm_known = []
-                        for _tpc in p['kb']:
-                            _kn = _tpc.get('known') or []
-                            for _i, _k in enumerate(_kn):
-                                if not isinstance(_k, dict):
-                                    _kn[_i] = {'text': _k, 'origin': 'ai', 'nature': 'base'}
-                            _tpc['known'] = _kn
-                            norm_known.extend(_kn)
-                        leftover = []
-                        for nc in chunks:
-                            best, best_score = None, 0.55   # 相似度阈值
-                            nc_nums = _sal_nums(nc['text'])
-                            for ek in norm_known:
-                                et = ek.get('text', '')
-                                sc = _similar(nc['text'], et)
-                                # 数字佐证通道：同一显著数值 → 视为佐证同一事实
-                                if sc <= best_score and nc_nums:
-                                    # 数字佐证：高精度数字撞上直接挂；低精度数字须指标词共现，
-                                    # 防止碰巧同数值的不同指标误挂（增速10% vs 占有率10%、2.6亿 vs 2.6万亿）
-                                    shared = nc_nums & _sal_nums(et)
-                                    if shared:
-                                        if any(_is_strong_num(n) for n in shared):
-                                            sc = max(sc, 0.8)   # 高精度数值（如1502.81、75287）
-                                        elif _ind_hit(nc['text'], et):
-                                            sc = max(sc, 0.7)   # 低精度数值+指标词命中
-                                if sc > best_score:
-                                    best, best_score = ek, sc
-                            if best is not None:
-                                # 就地标注到已有条目
-                                best.setdefault('annotations', []).append({
-                                    'origin': origin, 'nature': nature, 'src': filename,
-                                    'text': nc['text'], 'ts': _ts, 'account': by_account})
-                                matched_ct += 1
-                            else:
-                                leftover.append(nc)
-                        tp['known'] = (tp.get('known') or []) + leftover
-                    # 记录上传审计
-                    p.setdefault('kbUploads', []).append({
-                        'filename': filename, 'topic': topic, 'mode': mode,
-                        'chunks': len(chunks), 'ts': int(__import__('time').time() * 1000),
-                        'by': body.get('by', '管理员'),
-                        'source': body.get('source', 'file')})
-                    store['PROJECTS'] = projects
-                    out_str = json.dumps(store, ensure_ascii=False)
-                    if _PG_AVAIL and DATABASE_URL:
-                        if not _db_set(out_str):
-                            raise RuntimeError('storage write failed')
-                    else:
-                        _file_snapshot()
-                        with open(SYNC_PATH, 'w', encoding='utf-8') as f:
-                            f.write(out_str)
-                    resp = json.dumps({'ok': True, 'chunks': len(chunks),
-                                       'matched': matched_ct, 'chars': len(text),
-                                       'topic': tp['t'], 'total': len(tp['known'])}).encode()
-            except Exception as e:
-                resp = json.dumps({'ok': False, 'error': str(e)}).encode()
-            self.send_response(200); self.send_header('Content-Type', 'application/json')
-            self.send_header('Content-Length', str(len(resp)))
-            self.cors(); self.end_headers(); self.wfile.write(resp); return
+        if path in ('/api/kb-upload', '/api/upload-file'):
+            from backend.upload_originals import handle_upload
+            return handle_upload(self, raw, self._account_session, _extract_doc_text,
+                                 self._account_config(), _is_noise_chunk,
+                                 admin=path == '/api/kb-upload')
 
         # ── 接口2：城市智库版本管理（多次报告按时间快照+覆盖）──
         if self.path == '/api/kb-version':

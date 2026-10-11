@@ -38,6 +38,8 @@ def _init_db():
                 created_at TIMESTAMP DEFAULT NOW()
             )
         """)
+        from .upload_originals import initialize
+        initialize(cur)
         conn.commit(); cur.close(); conn.close()
         print("[db] PostgreSQL sync_data + sync_history 表就绪")
     except Exception as e:

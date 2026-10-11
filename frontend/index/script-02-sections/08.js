@@ -259,69 +259,26 @@ function _startProjectAnalysis(city, onboardingAns){
 
 /* onboarding 阶段上传文件的真实摄取：读取内容→切片→写入 KB_FILE_CHUNKS/UPLOADS */
 function ingestSetupFiles(files, projKey){
-  var p=PROJECTS[projKey]; if(!p) return;
-  if(!KB_FILE_CHUNKS[projKey]) KB_FILE_CHUNKS[projKey]=[];
-  if(!UPLOADS[projKey]) UPLOADS[projKey]=[];
-  files.forEach(function(file){
-    var isDocx=/\.docx?$/i.test(file.name);
-    var isPdf=/\.pdf$/i.test(file.name);
-    var canRead=/\.(txt|md|csv|json)$/i.test(file.name);
-    if(isPdf){
-      // 建库阶段同样真解析 PDF（走服务端），此前与智库入口一样只登记文件名
-      var _ep={name:file.name,size:file.size,ts:Date.now(),chunks:0,kbIdx:null,pending:true};
-      UPLOADS[projKey].push(_ep);persist();
-      extractDocTextViaServer(file).then(function(txt){
-        txt=(txt||'').trim();
-        if(txt.length<30){
-          _ep.pending=false; _ep.parseFailed='未提取到有效文字（可能是扫描件）';
-        } else {
-          var cks=textToChunks(txt,file.name,p,null);
-          KB_FILE_CHUNKS[projKey]=KB_FILE_CHUNKS[projKey].concat(cks);
-          _ep.chunks=cks.length; _ep.pending=false;
-        }
-        persist();
-        if(typeof render==='function')try{render();}catch(_){}
-      }).catch(function(err){
-        _ep.pending=false; _ep.parseFailed=(err&&err.message)||'PDF 解析失败'; persist();
-        if(typeof render==='function')try{render();}catch(_){}
-      });
-    } else if(isDocx && typeof mammoth!=='undefined'){
-      var _e2={name:file.name,size:file.size,ts:Date.now(),chunks:0,kbIdx:null,pending:true};
-      UPLOADS[projKey].push(_e2);persist();
-      var _r2=new FileReader();
-      _r2.onload=function(ev){
-        mammoth.extractRawText({arrayBuffer:ev.target.result}).then(function(res){
-          var cks=textToChunks(res.value||'',file.name,p,null);
-          KB_FILE_CHUNKS[projKey]=KB_FILE_CHUNKS[projKey].concat(cks);
-          _e2.chunks=cks.length;_e2.pending=false;persist();
-          if(typeof render==='function')try{render();}catch(_){}
-        }).catch(function(){_e2.pending=false;persist();});
-      };
-      _r2.readAsArrayBuffer(file);
-    } else if(canRead){
-      // 先同步登记 pending 条目：FileReader 异步，若等 onload 才入库，动画结束渲染侧栏时 UPLOADS 还是空 → 显示"0份材料"
-      var entry={name:file.name, size:file.size, ts:Date.now(), chunks:0, kbIdx:null, pending:true};
-      UPLOADS[projKey].push(entry);
-      persist();
-      var reader=new FileReader();
-      reader.onload=function(e){
-        var chunks=textToChunks(e.target.result||'', file.name, p, null);
-        KB_FILE_CHUNKS[projKey]=KB_FILE_CHUNKS[projKey].concat(chunks);
-        // 回填已登记的 pending 条目，避免重复计数
-        entry.chunks=chunks.length; entry.pending=false;
-        persist();
-        if(typeof render==='function') try{ render(); }catch(_){}
-        console.log('[setup-ingest] '+file.name+' → '+chunks.length+' chunks');
-      };
-      reader.readAsText(file,'utf-8');
-    } else {
-      // 【2026-09-21】不再写入「用户已上传文件…」伪片段：chunks 记 0 并标注原因，
-      //   界面显示「未解析」而不是假装有 1 个片段。
-      UPLOADS[projKey].push({name:file.name, size:file.size, ts:Date.now(), chunks:0, kbIdx:null,
-        parseFailed:'暂不支持该格式的正文解析（当前支持 pdf / docx / txt / md / csv / json）'});
-      persist();
-    }
-  });
+  var epoch=originalUploadEpoch();
+  if(!PROJECTS[projKey])return Promise.resolve([]);
+  var snapshot=JSON.parse(localStorage.getItem('huixiaozhao_kb_v1')||'{}');
+  return fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_safeSyncSnapshot(snapshot))})
+    .then(function(r){return r.json();}).then(function(result){
+      if(!originalUploadSessionCurrent(epoch))return [];
+      if(!result||!result.ok)throw new Error('工作区尚未保存，请刷新后重新上传');
+      return Promise.all(Array.from(files).map(function(file){
+        return submitOriginalFile(file,projKey,null,epoch).then(function(receipt){
+          if(!originalUploadSessionCurrent(epoch))return null;
+          applyOriginalReceipt(projKey,receipt,epoch);return receipt;
+        });
+      }));
+    }).then(function(receipts){
+      if(!originalUploadSessionCurrent(epoch))return [];
+      persist();if(typeof render==='function')render();return receipts;
+    }).catch(function(error){
+      if(!originalUploadSessionCurrent(epoch))return [];
+      if(typeof toast==='function')toast('材料未全部保存：'+error.message);return [];
+    });
 }
 
 /* 点击「进入工作区」按钮时调用 */

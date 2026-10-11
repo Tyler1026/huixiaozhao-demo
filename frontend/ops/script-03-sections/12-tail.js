@@ -1609,7 +1609,7 @@ function renderConfirmPanel(items, projKey){
             'style="margin-top:8px;padding:10px;border:1.5px dashed #c7d2fe;border-radius:8px;text-align:center;cursor:pointer;background:#f8faff;font-size:12px;color:#6366f1">'+
             '<span id="ci-file-hint-'+projKey+'-'+idx+'">📎 上传附件（可选，拖拽或点击）</span>'+
           '</div>'+
-          '<input id="ci-finp-'+projKey+'-'+idx+'" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.csv" style="display:none" onchange="ciFileSelected(this,\''+projKey+'\','+idx+')"/>'+
+          '<input id="ci-finp-'+projKey+'-'+idx+'" type="file" multiple accept=".pdf,.docx,.txt,.md,.csv,.json" style="display:none" onchange="ciFileSelected(this,\''+projKey+'\','+idx+')"/>'+
           '<div style="display:flex;gap:8px;margin-top:8px">'+
             '<button onclick="ciSave(\''+projKey+'\','+idx+')" style="flex:1;padding:7px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer">✓ 保存修改</button>'+
             '<button onclick="ciCancelEdit(\''+projKey+'\','+idx+')" style="padding:7px 12px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;color:#4a5568;cursor:pointer">取消</button>'+
@@ -1780,15 +1780,16 @@ function ciFileSelected(inp, projKey, idx){
   if(files.length) ciAttachFiles(files, projKey, idx);
 }
 function ciAttachFiles(files, projKey, idx){
-  var item = currentPendingItems(projKey)[idx];
-  if(!item) return;
-  if(!item.files) item.files = [];
-  files.forEach(function(f){ item.files.push({name:f.name, size:f.size, ts:Date.now()}); });
-  ingestFiles(files, null);  // 加入城市智库 corpus
-  var hint = document.getElementById('ci-file-hint-'+projKey+'-'+idx);
-  if(hint) hint.innerHTML = '✅ 已上传 '+item.files.length+' 个附件：'+item.files.map(function(f){return f.name;}).join('、');
-  persist();
-  toast('📎 已上传 '+files.length+' 个附件并加入知识库');
+  var epoch=originalUploadEpoch(),item=currentPendingItems(projKey)[idx];if(!item||cur!==projKey)return;
+  var hint=document.getElementById('ci-file-hint-'+projKey+'-'+idx);
+  if(hint)hint.textContent='正在保存附件原件…';
+  return ingestFiles(files,null).then(function(saved){
+    if(!originalUploadSessionCurrent(epoch))return;
+    if(!item.files)item.files=[];
+    saved.forEach(function(f){item.files.push(f._originalReceipt.upload);});
+    if(cur===projKey&&hint)hint.textContent='已保存 '+saved.length+' 个附件原件';
+    persist();
+  });
 }
 
 

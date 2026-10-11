@@ -39,6 +39,8 @@ def environment(raw, store='{}', write_ok=True, path='/api/sync'):
     from backend import sync_merge
     for name in names:
         if hasattr(sync_merge,name):ns[name]=getattr(sync_merge,name)
+    from backend.documents import _extract_doc_text
+    ns['_extract_doc_text'] = _extract_doc_text
     ns['_db_set'] = save
     from contextlib import contextmanager
     @contextmanager

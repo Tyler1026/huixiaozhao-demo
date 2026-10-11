@@ -868,7 +868,7 @@ function confirmKbItem(kbIdx,itemIdx){
 function editPickFile(kbIdx,itemIdx){
   var inp=document.createElement('input');
   inp.type='file'; inp.multiple=true;
-  inp.accept='.txt,.md,.csv,.pdf,.doc,.docx,.xls,.xlsx';
+  inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
   inp.onchange=function(){
     var files=Array.from(inp.files||[]);
     if(!files.length)return;
@@ -885,38 +885,16 @@ function editDropFile(e,kbIdx,itemIdx){
 }
 
 function processEditFiles(files,kbIdx,itemIdx){
-  var hint=document.getElementById('kb-file-hint-'+kbIdx+'-'+itemIdx);
+  var key=cur,epoch=originalUploadEpoch(),hint=document.getElementById('kb-file-hint-'+kbIdx+'-'+itemIdx);
   var ta=document.getElementById('kb-edit-'+kbIdx+'-'+itemIdx);
-  // 先触发全局 ingestFiles（更新 corpus）
-  ingestFiles(files, kbIdx);
-  // 然后读取文本文件内容追加到 textarea
-  var textFiles=files.filter(function(f){return /\.(txt|md|csv|json)$/i.test(f.name);});
-  var binary=files.filter(function(f){return !/\.(txt|md|csv|json)$/i.test(f.name);});
-  // 更新 hint 文本
-  if(hint)hint.textContent='✅ 已上传 '+files.length+' 个文件：'+files.map(function(f){return f.name;}).join('、');
-  // binary 文件只记录名称到 textarea
-  if(binary.length&&ta){
-    ta.value+=(ta.value?'\n':'')+'[已上传文件：'+binary.map(function(f){return f.name;}).join('、')+'，内容已加入知识库]';
-  }
-  if(!textFiles.length)return;
-  // 读取纯文本文件，提取摘要追加到 textarea
-  var done=0;
-  textFiles.forEach(function(f){
-    var reader=new FileReader();
-    reader.onload=function(e){
-      var text=(e.target.result||'').trim();
-      // 取前 500 字作为摘要
-      var summary=text.slice(0,500).replace(/\n+/g,' ').trim();
-      if(ta&&summary){
-        ta.value+=(ta.value?'\n':'')+'['+f.name+'] '+summary;
-      }
-      done++;
-      if(done===textFiles.length&&ta){
-        ta.focus();
-        ta.setSelectionRange(ta.value.length,ta.value.length);
-      }
-    };
-    reader.readAsText(f,'utf-8');
+  if(hint)hint.textContent='正在保存附件原件…';
+  return ingestFiles(files,kbIdx).then(function(saved){
+    if(!originalUploadSessionCurrent(epoch)||cur!==key)return;
+    if(hint)hint.textContent='已保存 '+saved.length+' 个附件原件'+(saved.length<files.length?'，部分文件失败，请查看原因':'');
+    if(ta)saved.forEach(function(f){
+      var text=(f._originalReceipt.fileChunks||[]).map(function(c){return c.text;}).join(' ').slice(0,500);
+      ta.value+=(ta.value?'\n':'')+'['+f.name+'] '+text;
+    });
   });
 }
 
@@ -1221,7 +1199,7 @@ function askAboutKb(i){
 function pickLocalFile(kbTopicIdx){
   var inp=document.createElement('input');
   inp.type='file';inp.multiple=true;
-  inp.accept='.txt,.md,.csv,.pdf,.doc,.docx,.xls,.xlsx';
+  inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
   inp.onchange=function(){
     var files=Array.from(inp.files||[]);
     if(!files.length)return;
@@ -1232,70 +1210,60 @@ function pickLocalFile(kbTopicIdx){
 }
 
 /* ── 文件摄取：读取 → 切 chunk → 存 KB_FILE_CHUNKS → 更新 kb.known ── */
+/* Original bytes live in PostgreSQL; the browser only stores their scoped receipt. */
+function uploadOriginalUrl(key, rec){
+  if(!rec || !/^[a-f0-9]{32}$/.test(rec.originalId||''))return '';
+  return '/api/upload-file?projectKey='+encodeURIComponent(key)+'&uploadId='+encodeURIComponent(rec.originalId);
+}
+function originalUploadEpoch(){return typeof _authEpoch==='number'?_authEpoch:0;}
+function originalUploadSessionCurrent(epoch){return epoch===originalUploadEpoch();}
+function submitOriginalFile(file, key, kbTopicIdx, epoch){
+  if(epoch===undefined)epoch=originalUploadEpoch();
+  return new Promise(function(resolve,reject){
+    if(!originalUploadSessionCurrent(epoch)){reject(new Error('登录状态已变化，上传结果未载入'));return;}
+    if(!file||!file.size){reject(new Error('不能上传空文件'));return;}
+    if(file.size>20*1024*1024){reject(new Error('单个文件不能超过 20MB'));return;}
+    var bytes=new Uint8Array(16);crypto.getRandomValues(bytes);
+    var uploadId=Array.from(bytes).map(function(b){return ('0'+b.toString(16)).slice(-2);}).join('');
+    var fr=new FileReader();
+    fr.onerror=function(){reject(new Error('文件读取失败'));};
+    fr.onload=function(){
+      if(!originalUploadSessionCurrent(epoch)){reject(new Error('登录状态已变化，上传结果未载入'));return;}
+      var encoded=String(fr.result||'').split(',')[1]||'';
+      fetch('/api/upload-file',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({projectKey:key,filename:file.name,fileB64:encoded,uploadId:uploadId,kbIdx:kbTopicIdx==null?null:kbTopicIdx})})
+        .then(function(r){return r.json();}).then(function(result){
+          if(!originalUploadSessionCurrent(epoch))throw new Error('登录状态已变化，上传结果未载入');
+          if(!result||!result.ok||!result.upload||!result.original)throw new Error((result&&(result.message||result.error))||'文件尚未保存');
+          resolve(result);
+        }).catch(reject);
+    };
+    fr.readAsDataURL(file);
+  });
+}
+function applyOriginalReceipt(key,result,epoch){
+  if(epoch!==undefined&&!originalUploadSessionCurrent(epoch))return false;
+  if(!UPLOADS[key])UPLOADS[key]=[];
+  if(!UPLOADS[key].some(function(u){return u.originalId===result.upload.originalId;}))UPLOADS[key].push(result.upload);
+  if(!KB_FILE_CHUNKS[key])KB_FILE_CHUNKS[key]=[];
+  (result.fileChunks||[]).forEach(function(c){if(!KB_FILE_CHUNKS[key].some(function(old){return old.id===c.id;}))KB_FILE_CHUNKS[key].push(c);});
+  if(typeof UPLOAD_TOMBS!=='undefined')delete UPLOAD_TOMBS[key+'::'+result.upload.name];
+}
 function ingestFiles(files, kbTopicIdx){
-  var p=P(); if(!p) return;
-  var total=files.length, done=0, allChunks=[];
-
-  var c=document.getElementById('kbConv');
-  if(c){
-    var nd=document.createElement('div'); nd.className='message is-user';
-    nd.innerHTML='<div class="message-bubble"><p>📎 已上传 '+total+' 个文件：'+
-      files.map(function(f){return f.name;}).join('、')+'</p></div>';
-    c.appendChild(nd); c.scrollTop=c.scrollHeight;
-  }
-
-  files.forEach(function(file){
-    var canRead=/\.(txt|md|csv|json)$/i.test(file.name);
-    var isPDF=/\.pdf$/i.test(file.name);
-    if(canRead){
-      var reader=new FileReader();
-      reader.onload=function(e){
-        var chunks=textToChunks(e.target.result||'', file.name, p, kbTopicIdx);
-        allChunks=allChunks.concat(chunks);
-        done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
-      };
-      reader.onerror=function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p); };
-      reader.readAsText(file,'utf-8');
-    } else if(isPDF && typeof pdfjsLib!=='undefined'){
-      var reader2=new FileReader();
-      reader2.onload=function(e){
-        var typedArr=new Uint8Array(e.target.result);
-        pdfjsLib.getDocument({data:typedArr}).promise.then(function(pdf){
-          var pages=[]; var numPages=pdf.numPages;
-          var pDone=0;
-          for(var pi=1;pi<=numPages;pi++){
-            (function(pageNum){
-              pdf.getPage(pageNum).then(function(page){
-                page.getTextContent().then(function(tc){
-                  pages[pageNum-1]=tc.items.map(function(it){return it.str;}).join(' ');
-                  pDone++;
-                  if(pDone===numPages){
-                    var fullText=pages.join('\n\n');
-                    var chunks=textToChunks(fullText, file.name, p, kbTopicIdx);
-                    allChunks=allChunks.concat(chunks);
-                    done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
-                  }
-                });
-              });
-            })(pi);
-          }
-        }).catch(function(){
-          allChunks.push({id:'file:'+file.name+':0',topic:kbTopicIdx!=null&&p.kb[kbTopicIdx]?p.kb[kbTopicIdx].t:'上传材料',tags:['上传','材料'],text:'用户已上传文件「'+file.name+'」('+Math.round(file.size/1024)+'KB)，PDF解析失败，该文件包含与'+p.city+'招商研判相关的材料。',cite:file.name});
-          done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
-        });
-      };
-      reader2.onerror=function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p); };
-      reader2.readAsArrayBuffer(file);
-    } else {
-      allChunks.push({
-        id:'file:'+file.name+':0',
-        topic: kbTopicIdx!=null&&p.kb[kbTopicIdx] ? p.kb[kbTopicIdx].t : '上传材料',
-        tags:['上传','材料'],
-        text:'用户已上传文件「'+file.name+'」('+Math.round(file.size/1024)+'KB)，该文件包含与'+p.city+'招商研判相关的材料。',
-        cite:file.name
-      });
-      done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p);
-    }
+  var key=cur,p=PROJECTS[key],epoch=originalUploadEpoch();if(!p)return Promise.resolve([]);
+  var saved=[],failures=[],chunks=[];
+  if(typeof toast==='function')toast('正在保存原件并解析材料…');
+  return Promise.all(Array.from(files).map(function(file){
+    return submitOriginalFile(file,key,kbTopicIdx,epoch).then(function(result){
+      if(!originalUploadSessionCurrent(epoch))return;
+      file._originalReceipt=result; saved.push(file); chunks=chunks.concat(result.fileChunks||[]);
+      applyOriginalReceipt(key,result,epoch);
+    }).catch(function(error){if(!originalUploadSessionCurrent(epoch))return;failures.push({name:file.name,reason:error.message||'文件尚未保存'});});
+  })).then(function(){
+    if(!originalUploadSessionCurrent(epoch))return [];
+    if(cur!==key){if(typeof toast==='function')toast('材料处理完成，请返回原工作区查看；成功 '+saved.length+'，失败 '+failures.length);return saved;}
+    finalizeIngest(chunks,saved,kbTopicIdx,p,failures);
+    return saved;
   });
 }
 
@@ -1320,27 +1288,14 @@ function textToChunks(text, fname, p, kbTopicIdx){
 }
 
 /* 摄取完成 — 存 KB_FILE_CHUNKS，更新 kb.known，触发 RAG 摘要 */
-function finalizeIngest(chunks, files, kbTopicIdx, p){
+function finalizeIngest(chunks, files, kbTopicIdx, p, parseFailed){
+  parseFailed=parseFailed||[];
+  if(parseFailed.length&&typeof toast==='function')toast(parseFailed.map(function(f){return f.name+'：'+f.reason;}).join('；'));
   if(!cur) return;
   if(!KB_FILE_CHUNKS[cur]) KB_FILE_CHUNKS[cur]=[];
-  KB_FILE_CHUNKS[cur]=KB_FILE_CHUNKS[cur].concat(chunks);
-
-  if(!UPLOADS[cur]) UPLOADS[cur]=[];
-  files.forEach(function(f){
-    var rec={name:f.name, size:f.size, ts:Date.now(),
-      chunks:chunks.filter(function(c){return c.cite===f.name;}).length,
-      kbIdx:kbTopicIdx};
-    UPLOADS[cur].push(rec);
-    // 关键修复：dataUrl 靠 FileReader 异步补写，之前 rec 先入库若在补写前 persist/刷新，
-    // 同步到服务器的记录就没有 dataUrl → 管理端下载提示「该文件无原始数据」。
-    // 改为读完(或失败)后都再 persist 一次，保证原始数据落库。
-    (function(record, file){
-      var fr=new FileReader();
-      fr.onload=function(ev){ record.dataUrl=ev.target.result; persist(); };
-      fr.onerror=function(){ persist(); };
-      fr.readAsDataURL(file);
-    })(rec, f);
-  });
+  chunks.forEach(function(c){if(!KB_FILE_CHUNKS[cur].some(function(old){return old.id===c.id;}))KB_FILE_CHUNKS[cur].push(c);});
+  files.forEach(function(f){if(f._originalReceipt)applyOriginalReceipt(cur,f._originalReceipt);});
+  persist();
 
   if(kbTopicIdx!=null && p.kb && p.kb[kbTopicIdx]){
     var k=p.kb[kbTopicIdx];
@@ -1367,7 +1322,7 @@ function finalizeIngest(chunks, files, kbTopicIdx, p){
     '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">'+
     files.map(function(f){
       var n=chunks.filter(function(c){return c.cite===f.name;}).length;
-      return '<span style="padding:3px 10px;background:#f0fdf4;color:#166534;border-radius:12px;font-size:11.5px;border:1px solid #bbf7d0">'+f.name+' · '+n+' 片段</span>';
+      return '<span style="padding:3px 10px;background:#f0fdf4;color:#166534;border-radius:12px;font-size:11.5px;border:1px solid #bbf7d0">'+_authEscape(f.name)+' · '+n+' 片段</span>';
     }).join('')+
     '</div><p style="margin-top:8px;font-size:12px;color:#8492a6">知识库现有 '+totalChunks+' 个片段，提问时自动检索最相关内容。</p>'+
     '</div>';
@@ -1465,7 +1420,7 @@ function doUpload(){
   closeModal();
   var inp=document.createElement('input');
   inp.type='file';inp.multiple=true;
-  inp.accept='.pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.csv';
+  inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
   inp.onchange=function(){
     var files=Array.from(inp.files||[]);
     if(!files.length)return;
