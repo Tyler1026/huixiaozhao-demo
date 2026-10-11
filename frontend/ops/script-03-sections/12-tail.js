@@ -744,7 +744,7 @@ function projMgmtPage(p){
         '<textarea id="stage-note-'+k+'" placeholder="填写回复说明（如：材料已初审通过，建议约下周三第一次会议）…" '+
           'style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;resize:vertical;min-height:56px;outline:none;line-height:1.6"></textarea>'+
         '<div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">'+
-          '<select id="stage-target-'+k+'" style="flex:1;min-width:150px;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;background:#fff;color:#0b183b;outline:none">'+stageOptions(x)+'</select>'+
+          '<select id="stage-target-'+k+'" style="flex:1;min-width:150px;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;background:#fff;color:#0b183b;outline:none">'+stageOptions(x,k)+'</select>'+
           '<button onclick="saveStageAdvance(\''+k+'\')" style="padding:9px 16px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:650;cursor:pointer;white-space:nowrap">保存并推进</button>'+
           '<button onclick="addCustomStage(\''+k+'\')" style="padding:9px 14px;background:#fff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:13px;color:#6d28d9;cursor:pointer;font-weight:600;white-space:nowrap">＋ 新增阶段</button>'+
         '</div>'+
@@ -851,8 +851,9 @@ function projMgmtPage(p){
 function advanceStage(projKey){
   var p = PROJECTS[projKey]; if(!p) return;
   var st=projStages(p);
-  if(p.stage < st.length){
-    advanceStageTo(projKey, p.stage+1, '');
+  var current=demandEffectiveStage(projKey,p);
+  if(current < st.length){
+    advanceStageTo(projKey, current+1, '');
   }
 }
 
@@ -864,8 +865,9 @@ function advanceStageTo(projKey, target, note){
   if(!target || target<1 || target>st.length){
     toast('无效的阶段'); return;
   }
-  if(target === p.stage){ toast('已在该阶段'); return; }
-  var from = p.stage;
+  var current=demandEffectiveStage(projKey,p);
+  if(target === current){ toast('已在该阶段'); return; }
+  var from = current;
   p.stage = target;
   if(!p.stageLog) p.stageLog=[];
   p.stageLog.unshift({ts:Date.now(), from:from, to:target, note:(note||'').trim(), who:'运营端'});
@@ -875,9 +877,9 @@ function advanceStageTo(projKey, target, note){
 }
 
 /* 阶段推进面板：下拉选项（当前阶段之后的所有阶段） */
-function stageOptions(p){
+function stageOptions(p,projKey){
   var st = projStages(p);
-  var cur = p.stage || 1;
+  var cur = projKey?demandEffectiveStage(projKey,p):(p.stage||1);
   var html = '';
   for(var n=cur+1; n<=st.length; n++){
     html += '<option value="'+n+'">推进到「'+st[n-1][0]+'」</option>';
