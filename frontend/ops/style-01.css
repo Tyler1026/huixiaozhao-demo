@@ -318,16 +318,18 @@ body.ops-mode .ops-v3{display:flex;flex-direction:column;height:100dvh;min-heigh
 .ops-v3 .ops-ui-cell-title{font-size:13px;font-weight:650;color:#2c415e;overflow-wrap:anywhere}
 .ops-v3 .ops-ui-cell-meta{font-size:11px;color:#95a0b0;margin-top:3px;overflow-wrap:anywhere;max-width:280px}
 .ops-v3 .ops-ui-user-table{min-width:800px}
-.ops-v3 .ops-ui-invite-table{min-width:880px;table-layout:fixed}
-.ops-v3 .ops-ui-invite-table th,.ops-v3 .ops-ui-invite-table td{width:auto}
-.ops-v3 .ops-ui-invite-table th:nth-child(1){width:16%}
-.ops-v3 .ops-ui-invite-table th:nth-child(2){width:20%}
-.ops-v3 .ops-ui-invite-table th:nth-child(3){width:8%}
-.ops-v3 .ops-ui-invite-table th:nth-child(4){width:16%}
-.ops-v3 .ops-ui-invite-table th:nth-child(5){width:14%}
-.ops-v3 .ops-ui-invite-table th:nth-child(6){width:10%}
-.ops-v3 .ops-ui-invite-table th:last-child{width:16%}
-.ops-v3 .ops-ui-invite-table th,.ops-v3 .ops-ui-invite-table td{padding:13px 12px}
+.ops-v3 .ops-ui-invite-table{min-width:980px;table-layout:auto}
+.ops-v3 .ops-ui-invite-table th,.ops-v3 .ops-ui-invite-table td{padding:13px 10px;vertical-align:top}
+.ops-v3 .ops-ui-invite-identity{min-width:138px}
+.ops-v3 .ops-ui-invite-workspace{min-width:152px;max-width:230px}
+.ops-v3 .ops-ui-invite-members{min-width:144px;max-width:220px}
+.ops-v3 .ops-ui-invite-monthly{min-width:180px;max-width:240px}
+.ops-v3 .ops-ui-invite-distribution{min-width:112px;max-width:190px}
+.ops-v3 .ops-ui-invite-actions{min-width:106px}
+.ops-v3 .ops-ui-invite-members>div:first-child{overflow-wrap:anywhere}
+.ops-v3 .ops-ui-invite-members .ops-ui-cell-meta{overflow-wrap:normal;white-space:nowrap}
+.ops-v3 .ops-ui-invite-monthly .ops-ui-cell-meta{overflow-wrap:normal;word-break:normal}
+.ops-v3 .ops-ui-invite-status{margin-top:7px}
 .ops-v3 .ops-ui-invite-table .ic-code{font-size:12px;font-weight:650;color:#35577f;background:#f1f5fc;padding:5px 7px;border-radius:5px;letter-spacing:.3px}
 .ops-v3 .ops-ui-invite-table .ic-code-cell{gap:5px;white-space:normal;flex-wrap:wrap}
 .ops-v3 .ops-ui-invite-table .ic-code{max-width:100%;overflow-wrap:anywhere}

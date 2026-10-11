@@ -84,6 +84,35 @@ test('canonical invitation shows server-designated owner, unique members and nex
   assert.doesNotMatch(h.ctx.opsInviteResults(), /主负责人 · @owner/);
 });
 
+test('six readable invitation columns retain timestamps, states and exact code actions', async () => {
+  const h = await boot(); h.admin(); seedCity(h);
+  h.ctx.INVITE_CODES.CURRENT.createdAt = Date.parse('2026-10-01T01:00:00Z');
+  const html = h.ctx.opsInviteResults();
+  const header = html.match(/<thead>([\s\S]*?)<\/thead>/)[1];
+  assert.equal((header.match(/<th\b/g) || []).length, 6);
+  assert.match(header, /邀请码 \/ 状态/); assert.match(header, /主账号 \/ 成员/);
+  assert.doesNotMatch(header, /生成时间|<th[^>]*>状态<\/th>/);
+  const rows = Array.from(html.matchAll(/<tr>([\s\S]*?)<\/tr>/g), match => match[1]).slice(1);
+  assert.equal(rows.length, 2);
+  for (const row of rows) assert.equal((row.match(/<td\b/g) || []).length, 6);
+  const current = rows.find(row => row.includes('data-code="CURRENT"'));
+  const identity = current.match(/<td class="ops-ui-invite-identity">([\s\S]*?)<\/td>/)[1];
+  assert.match(identity, /生效中/); assert.match(identity, /创建于 2026/);
+  assert.match(rows.find(row => row.includes('data-code="OLD"')), /已作废/);
+  assert.match(current, /class="ops-ui-invite-members"/);
+  assert.match(current, /class="ops-ui-invite-monthly"/);
+  const actions = [];
+  h.ctx.openMarkDistributedModal = code => actions.push(['distribution', code]);
+  h.ctx.revokeInviteCode = code => actions.push(['revoke', code]);
+  for (const handler of handlers(current).filter(value => /^(openMarkDistributedModal|revokeInviteCode)\(/.test(value))) vm.runInContext(handler, h.ctx);
+  assert.deepEqual(actions, [['distribution', 'CURRENT'], ['revoke', 'CURRENT']]);
+  const css = fs.readFileSync(path.join(__dirname, '../frontend/ops/style-01.css'), 'utf8');
+  assert.match(css, /\.ops-ui-invite-table\{[^}]*table-layout:auto/);
+  assert.doesNotMatch(css, /\.ops-ui-invite-table\s+th(?::nth-child\([^)]*\)|:last-child)\s*\{[^}]*width:\s*\d+%/);
+  assert.match(css, /\.ops-ui-invite-members\{[^}]*min-width:/);
+  assert.match(css, /\.ops-ui-invite-monthly\{[^}]*min-width:/);
+});
+
 test('authoritative active membership arrays override removed legacy default roots, including empty arrays', async () => {
   const h = await boot(); h.admin(); seedCity(h);
   // Shape returned by admin scoped_sync_view -> safe_profile after a joins b
