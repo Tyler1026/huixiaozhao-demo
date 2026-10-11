@@ -6,7 +6,8 @@ import secrets
 import time
 import unicodedata
 
-from .auth import AuthError, require_session
+from .auth import AuthError, require_session, _invitation
+from .city_workspaces import get_city_workspace, next_month_report_at
 
 
 def _text(value, name, limit=128, optional=False):
@@ -85,23 +86,56 @@ def manage_invite(body, session, *, headers=None, token=None, admin_config=None,
     result = {}
     if action == 'create':
         city = _text(body.get('city'), '城市', 128)
+        province = _text(body.get('province'), '省份', 128, optional=True)
         email = _text(body.get('distributedEmail'), '分发邮箱', 254, optional=True)
         if email and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email):
             raise AuthError(400, 'invalid_email', '请填写有效邮箱')
+        now_seconds = time.time() if now is None else now
+        canonical = get_city_workspace(state, city)
+        if canonical is not None:
+            current_code = canonical['inviteCode']
+            current_invite = invitations.get(current_code)
+            if (not isinstance(current_invite, dict) or current_invite.get('city') != city
+                    or current_invite.get('projKey') != canonical['projectKey']):
+                raise AuthError(503, 'city_workspace_unavailable', '城市工作区配置暂不可用')
+            try:
+                _invitation({'inviteCode': current_code}, state, now_seconds)
+            except AuthError as error:
+                if error.code != 'invalid_invite':
+                    raise
+            else:
+                return dict(ok=True, reused=True,
+                            invite=dict(copy.deepcopy(invitations[current_code]), code=current_code),
+                            project=copy.deepcopy(projects[canonical['projectKey']]),
+                            cityWorkspace=copy.deepcopy(canonical))
         while True:
             code = ''.join(secrets.choice('ABCDEFGHJKLMNPQRSTUVWXYZ23456789') for _ in range(10))
             if code not in invitations:
                 break
-        key = 'p' + secrets.token_hex(12)
-        while key in projects:
+        if canonical is None:
             key = 'p' + secrets.token_hex(12)
-        project = _project(state, city, key)
-        projects[key] = project
+            while key in projects:
+                key = 'p' + secrets.token_hex(12)
+            project = _project(state, city, key)
+            if province:
+                project['province'] = province
+            projects[key] = project
+            canonical = dict(projectKey=key, inviteCode=code, ownerUser=None,
+                             province=province, createdAt=int(now_seconds * 1000),
+                             monthlyEnabled=True, nextReportAt=next_month_report_at(now_seconds))
+            state.setdefault('CITY_WORKSPACES', {})[city] = canonical
+            result['reused'] = False
+        else:
+            key = canonical['projectKey']
+            project = projects[key]
+            canonical['inviteCode'] = code
+            result['reused'] = True
         invite = dict(city=city, projKey=key, role='member', createdBy=actor['user'],
-                      createdAt=int((time.time() if now is None else now) * 1000),
+                      createdAt=int(now_seconds * 1000),
                       revoked=False, usedBy=[], distributed=bool(email), distributedEmail=email)
         invitations[code] = invite
         result['project'] = copy.deepcopy(project)
+        result['cityWorkspace'] = copy.deepcopy(canonical)
     else:
         code = _text(body.get('code'), '邀请码', 128).upper()
         invite = invitations.get(code)

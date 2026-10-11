@@ -3,6 +3,7 @@ import json
 from dataclasses import dataclass
 from typing import Callable
 from .sync_merge import _apply_kb_item_tombs, _clue_tombstoned, _merge_invite_codes, _merge_kb_item_tombs, _merge_map
+from .city_workspaces import protect_city_sync
 
 @dataclass(frozen=True)
 class SyncDependencies:
@@ -32,6 +33,7 @@ def handle_sync(self, raw, deps):
                 existing = {}
         if not isinstance(existing, dict):
             raise ValueError('stored state must be an object')
+        protect_city_sync(incoming, existing)
         # -- 空 body 保护：整体为空或只有极少字段的写入直接拒绝 --
         # 防止未登录/初始化态的浏览器把空 localStorage 推上来清空全库。
         if isinstance(incoming, dict):

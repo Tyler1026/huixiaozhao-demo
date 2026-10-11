@@ -40,6 +40,17 @@ function _applyKbItemTombs(projMap){
 }
 var KB_CONFIRMS={};  // {projKey:{kbIdx:{itemIdx:{status,text,ts}}}}
 
+// A server reset starts a new data generation. Never merge earlier local data into it.
+function _acceptServerGeneration(srv){
+  if(!srv.RESET_GEN||srv.RESET_GEN===RESET_GEN)return false;
+  ['PROJECTS','UPLOADS','KB_CONFIRMS','KB_CONFIRM_TOMBS','KB_ITEM_TOMBS','KB_FILE_CHUNKS','KB_UNLOCKED','REPORTSTATE','REPORT_HISTORY','PENDING_CONFIRMS','DOCK_LOGS','KB_CHAT','KB_CHAT_TOMBS','UPLOAD_TOMBS','CITY_BASE_PACKAGES','CITY_WORKSPACES','SUBPROJ'].forEach(function(key){if(typeof window[key]!=='undefined')window[key]={};});
+  ['OPS_ENT','DEMANDS','REPORT_REQUESTS'].forEach(function(key){if(typeof window[key]!=='undefined')window[key]=[];});
+  window.DELETED_PROJECTS=[];window.DELETED_CLUES=[];cur=null;
+  ['huixiaozhao_kb_v1','hxz_reportstate','hxz_rpt_history','hxz_report_history','hxz_uploads','HXZ_UPLOAD_TOMBS','HXZ_KBCHAT_TOMBS','hxz_subproj'].forEach(function(key){try{localStorage.removeItem(key);}catch(_){}});
+  RESET_GEN=srv.RESET_GEN;return true;
+}
+
+var _serverRestoreSeq=0;
 function restoreFromServer(callback){
   if(!AUTH||_authState!=='ready'){if(callback)callback(false);return Promise.resolve(false);}
   var authEpoch=_authEpoch;
@@ -49,13 +60,14 @@ function restoreFromServer(callback){
     console.log('[sync] skip restoreFromServer: generation/interview in progress');
     if(callback)callback(false); return;
   }
+  var readSeq=window._serverRestoreSeq=(window._serverRestoreSeq||0)+1;
   window._serverSyncLock=true;
   // 保存用户当前操作状态，避免服务器数据覆盖用户刚做的方向切换
   var _userCur = cur;
   var _userTopic = (cur && PROJECTS[cur]) ? PROJECTS[cur].topic : null;
   var _userView = view;
-  return fetch('/api/sync',{credentials:'same-origin',headers:{'X-HXZ-Report-Client':'website'}}).then(function(response){if(authEpoch!==_authEpoch)throw new Error('会话已变化');return _authReadSync(response);}).then(function(raw){
-    if(authEpoch!==_authEpoch){window._serverSyncLock=false;if(callback)callback(false);return;}
+  return fetch('/api/sync',{credentials:'same-origin',headers:{'X-HXZ-Report-Client':'website'}}).then(function(response){if(authEpoch!==_authEpoch||readSeq!==_serverRestoreSeq)throw new Error('同步请求已过期');return _authReadSync(response);}).then(function(raw){
+    if(authEpoch!==_authEpoch||readSeq!==_serverRestoreSeq)return;
     if(!raw){window._serverSyncLock=false;if(callback)callback(false);return;}
     // 兼容两种存储格式：
     //   扁平格式（persist()写入）: {PROJECTS:{...}, UPLOADS:{...}, ...}
@@ -64,6 +76,7 @@ function restoreFromServer(callback){
               ? raw.huixiaozhao_kb_v1
               : raw;
     if(!srv||!srv.PROJECTS){window._serverSyncLock=false;if(callback)callback(false);return;}
+    if(_acceptServerGeneration(srv)){_userCur=null;_userTopic=null;_userView=null;}
     // 服务器直接覆盖本地，不做合并——保证所有人看到同一份数据
     // 但保护本地刚提交的 isDemand 项目：5秒防抖内刷新时服务器尚无这些数据，直接覆盖会丢
     var _localDemandProj={}, _localDemandRS={}, _localDemands=(typeof DEMANDS!=='undefined')?DEMANDS.slice():[];
@@ -105,14 +118,14 @@ function restoreFromServer(callback){
     // 企业库：管理端录入的目标企业，供政府端产业链图谱关联展示
     if(srv.OPS_ENT) OPS_ENT = srv.OPS_ENT;
     // 历史报告：服务器有则用服务器，否则保留本地已加载的（避免旧记录被空值冲掉）
-    if(srv.REPORT_HISTORY && Object.keys(srv.REPORT_HISTORY).length) REPORT_HISTORY = srv.REPORT_HISTORY;
+    REPORT_HISTORY = srv.REPORT_HISTORY || {};
     // 注册用户资料：合并服务器与本地(不丢本地新注册未同步的)
     USER_PROFILES=_safeProfiles(srv.USER_PROFILES);
     CITY_ACCOUNTS={};
     // 邀请码库：合并服务器与本地，不用裸覆盖（管理端可能同时在生成新码）
     INVITE_CODES={};
     // 城市基础包指针表：同理合并，不裸覆盖
-    if(srv.CITY_BASE_PACKAGES){ Object.keys(srv.CITY_BASE_PACKAGES).forEach(function(ck){ CITY_BASE_PACKAGES[ck]=srv.CITY_BASE_PACKAGES[ck]; }); }
+    CITY_BASE_PACKAGES = srv.CITY_BASE_PACKAGES || {};
     if(srv.RESET_GEN){ RESET_GEN = srv.RESET_GEN; }  // 记住服务端代际,persist时带回
     // 删除墓碑：合并服务端与本地墓碑，并从恢复的数据中过滤已删项目（防复活）
     (function(){
@@ -269,7 +282,7 @@ function restoreFromServer(callback){
     console.log('[sync] restored from server, projects:',Object.keys(PROJECTS).length,', preserved topic:', _userTopic);
     try{ migrateKbChatToCity(); }catch(_){}
     if(callback)callback(true);
-  }).catch(function(){ if(authEpoch===_authEpoch)window._serverSyncLock=false; if(callback)callback(false); });
+  }).catch(function(){if(authEpoch!==_authEpoch||readSeq!==_serverRestoreSeq)return;window._serverSyncLock=false;if(callback)callback(false);});
 }
 function clearPersist(){
   localStorage.removeItem(LS_KEY);
@@ -309,6 +322,18 @@ window.addEventListener('storage', function(e){
     }
     var data=_safeSyncSnapshot(JSON.parse(e.newValue));
     if(data.clientUser!==AUTH.user)return;
+    // Cross-tab snapshots are not authoritative for reset generations. Never
+    // relabel old business data with this tab's newer server generation.
+    if(RESET_GEN&&data.RESET_GEN!==RESET_GEN){
+      if(!window._resetGenerationSyncPending&&typeof restoreFromServer==='function'){
+        window._resetGenerationSyncPending=true;
+        try{
+          var refresh=restoreFromServer(function(ok){if(ok&&typeof render==='function')render();});
+          Promise.resolve(refresh).then(function(){window._resetGenerationSyncPending=false;},function(){window._resetGenerationSyncPending=false;});
+        }catch(_){window._resetGenerationSyncPending=false;}
+      }
+      return;
+    }
     if(!data.PROJECTS) return;
     // 关键修复(周期性闪烁根因)：多开政府端+管理端时，另一标签每次 persist(哪怕只是 5 秒防抖空转、
     // 仅 syncTs 变化、业务数据未变)都会派发 storage 事件，旧逻辑无条件整体覆盖内存 + render() 全量重绘

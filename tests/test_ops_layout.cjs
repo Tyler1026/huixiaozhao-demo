@@ -86,7 +86,8 @@ test('invitation text/status/distribution filters intersect without collapsing s
   let html = h.ctx.opsInviteResults();
   assert.deepEqual(inviteCodes(html), ['BETA', 'ALPHA']);
   assert.match(html, /workspace-a/); assert.match(html, /workspace-b/);
-  assert.equal((html.match(/同城存在独立工作区，请核对编号/g) || []).length, 2);
+  assert.equal((html.match(/历史邀请码/g) || []).length, 2);
+  assert.doesNotMatch(html, /地区主工作区 · workspace-[ab]/);
   h.ctx.OPS_UI.invitations.status = 'active';
   h.ctx.OPS_UI.invitations.distribution = 'pending';
   assert.deepEqual(inviteCodes(h.ctx.opsInviteResults()), ['ALPHA']);
@@ -122,7 +123,7 @@ test('city labels that match object prototype keys remain ordinary independent g
     THREE: {city: 'constructor', projKey: 'c', usedBy: []}};
   const html = h.ctx.opsInviteResults();
   assert.equal(inviteCodes(html).length, 3);
-  assert.equal((html.match(/同城存在独立工作区，请核对编号/g) || []).length, 2);
+  assert.equal((html.match(/历史邀请码/g) || []).length, 3);
   h.ctx.USER_PROFILES = {one: {city: '__proto__'}, two: {city: 'constructor'}};
   assert.match(h.ctx.opsUsers(), /value="__proto__"/); assert.match(h.ctx.opsUsers(), /value="constructor"/);
 });

@@ -12,6 +12,7 @@ import json
 from collections.abc import Mapping
 
 from .auth import AuthError, _active, _memberships, safe_profile
+from .city_workspaces import get_city_workspace, protect_city_sync
 
 
 PROJECT_MAP_FIELDS = frozenset({
@@ -20,7 +21,7 @@ PROJECT_MAP_FIELDS = frozenset({
     'DOCK_LOGS', 'REPORT_HISTORY',
 })
 COMPOSITE_MAP_FIELDS = frozenset({'UPLOAD_TOMBS', 'KB_CHAT_TOMBS'})
-AUTH_TABLES = frozenset({'USER_PROFILES', 'INVITE_CODES', 'CITY_ACCOUNTS'})
+AUTH_TABLES = frozenset({'USER_PROFILES', 'INVITE_CODES', 'CITY_ACCOUNTS', 'CITY_WORKSPACES'})
 PARENT_FIELDS = ('parentKey', 'parentProjKey', 'parentProjectKey', 'parent')
 REPORT_REFERENCE_FIELDS = frozenset({'reportRequestId', 'sourceReportId'})
 _READONLY_FIELDS = frozenset({'CITY_BASE_PACKAGES', 'OPS_ENT'})
@@ -295,7 +296,14 @@ def scoped_sync_view(state, principal):
     if not isinstance(state, dict):
         _deny('invalid_storage', '数据暂不可用')
     if _scope(principal) == 'admin':
-        return _redact(state)
+        result = _redact(state)
+        for field in ('USER_PROFILES', 'CITY_ACCOUNTS'):
+            table = state.get(field)
+            if isinstance(table, dict):
+                result[field] = {user: safe_profile(record, user)
+                                 for user, record in table.items()
+                                 if isinstance(user, str) and isinstance(record, dict)}
+        return result
     allowed = allowed_project_keys(state, principal)
     project_roots = _project_roots(state, principal)
     roots = _member_roots(principal)
@@ -335,6 +343,16 @@ def scoped_sync_view(state, principal):
     packages = state.get('CITY_BASE_PACKAGES')
     if isinstance(packages, dict):
         result['CITY_BASE_PACKAGES'] = {city: key for city, key in packages.items() if key in allowed}
+    registry = state.get('CITY_WORKSPACES', {})
+    if not isinstance(registry, dict):
+        _deny('invalid_storage', '城市工作区配置暂不可用')
+    result['CITY_WORKSPACES'] = {}
+    for city in registry:
+        record = get_city_workspace(state, city)
+        if record['projectKey'] in roots:
+            result['CITY_WORKSPACES'][city] = {
+                field: copy.deepcopy(record[field]) for field in
+                ('projectKey', 'ownerUser', 'province', 'createdAt', 'monthlyEnabled', 'nextReportAt')}
     for field in ('view', 'syncTs', 'RESET_GEN'):
         if field in state:
             result[field] = copy.deepcopy(state[field])
@@ -509,6 +527,7 @@ def guard_sync(raw_bytes, state, principal):
         _deny('invalid_sync', '同步数据格式不正确')
     if not isinstance(incoming, dict) or not isinstance(state, dict):
         _deny('invalid_sync', '同步数据格式不正确')
+    protect_city_sync(incoming, state)
     _scan_payload(incoming)
     if scope == 'admin':
         for key, value in _map(incoming.get('PROJECTS', {})).items():

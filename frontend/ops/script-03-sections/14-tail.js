@@ -75,12 +75,23 @@ function restore(){
   return false;
 }
 
+// A server reset starts a new data generation. Never merge earlier local data into it.
+function _acceptServerGeneration(srv){
+  if(!srv.RESET_GEN||srv.RESET_GEN===RESET_GEN)return false;
+  ['PROJECTS','UPLOADS','KB_CONFIRMS','KB_CONFIRM_TOMBS','KB_ITEM_TOMBS','KB_FILE_CHUNKS','KB_UNLOCKED','REPORTSTATE','REPORT_HISTORY','PENDING_CONFIRMS','DOCK_LOGS','KB_CHAT','KB_CHAT_TOMBS','UPLOAD_TOMBS','CITY_BASE_PACKAGES','CITY_WORKSPACES','SUBPROJ'].forEach(function(key){if(typeof window[key]!=='undefined')window[key]={};});
+  ['OPS_ENT','DEMANDS','REPORT_REQUESTS'].forEach(function(key){if(typeof window[key]!=='undefined')window[key]=[];});
+  window.DELETED_PROJECTS=[];window.DELETED_CLUES=[];cur=null;
+  ['huixiaozhao_kb_v1','hxz_reportstate','hxz_rpt_history','hxz_report_history','hxz_uploads','HXZ_UPLOAD_TOMBS','HXZ_KBCHAT_TOMBS','hxz_subproj'].forEach(function(key){try{localStorage.removeItem(key);}catch(_){}});
+  RESET_GEN=srv.RESET_GEN;return true;
+}
+
+var _serverRestoreSeq=0;
 function restoreFromServer(callback){
   if(!AUTH||AUTH.scope!=='admin'){if(callback)callback(false);return Promise.resolve(false);}
-  var authEpoch=_authEpoch;
+  var authEpoch=_authEpoch,readSeq=window._serverRestoreSeq=(window._serverRestoreSeq||0)+1;
   var localENT = OPS_ENT && OPS_ENT.length ? OPS_ENT.slice() : [];
-  return fetch('/api/sync?raw=1',{credentials:'same-origin',headers:{'X-HXZ-Report-Client':'website'}}).then(function(response){if(authEpoch!==_authEpoch)throw new Error('会话已变化');return _authReadSync(response);}).then(function(raw){
-    if(authEpoch!==_authEpoch){if(callback)callback(false);return;}
+  return fetch('/api/sync?raw=1',{credentials:'same-origin',headers:{'X-HXZ-Report-Client':'website'}}).then(function(response){if(authEpoch!==_authEpoch||readSeq!==_serverRestoreSeq)throw new Error('同步请求已过期');return _authReadSync(response);}).then(function(raw){
+    if(authEpoch!==_authEpoch||readSeq!==_serverRestoreSeq)return;
     if(!raw){ window._opsDataReady=false; if(callback)callback(false); return; }
     var srv = (raw.huixiaozhao_kb_v1 && raw.huixiaozhao_kb_v1.PROJECTS)
               ? raw.huixiaozhao_kb_v1 : raw;
@@ -89,6 +100,7 @@ function restoreFromServer(callback){
       if(localENT.length && !OPS_ENT.length) OPS_ENT = localENT;
       if(callback)callback(false); return;
     }
+    if(_acceptServerGeneration(srv))localENT=[];
     PROJECTS         = srv.PROJECTS         || {};
     UPLOADS          = srv.UPLOADS          || {};
     _mergeKbItemTombs(srv.KB_ITEM_TOMBS);
@@ -106,14 +118,13 @@ function restoreFromServer(callback){
     DOCK_LOGS        = srv.DOCK_LOGS        || {};
     if(srv.DEMANDS) DEMANDS = srv.DEMANDS;
     if(srv.REPORT_REQUESTS) REPORT_REQUESTS = srv.REPORT_REQUESTS;
-    // Merge: server wins if non-empty; otherwise keep local/hardcoded
-    if(srv.OPS_ENT && srv.OPS_ENT.length){
-      OPS_ENT = srv.OPS_ENT;
-    } else if(localENT.length){
-      OPS_ENT = localENT;
-    }
+    // An explicitly empty server list is authoritative after a reset.
+    OPS_ENT = Array.isArray(srv.OPS_ENT) ? srv.OPS_ENT : [];
     USER_PROFILES=_safeProfiles(srv.USER_PROFILES);CITY_ACCOUNTS={};
     INVITE_CODES=srv.INVITE_CODES||{};
+    CITY_WORKSPACES=srv.CITY_WORKSPACES||{};
+    CITY_BASE_PACKAGES=srv.CITY_BASE_PACKAGES||{};
+    REPORT_HISTORY=srv.REPORT_HISTORY||{};
     if(srv.RESET_GEN){ RESET_GEN = srv.RESET_GEN; }  // reset代际:persist时带回,否则被服务端拒绝
     // 政府端移除的企业线索墓碑：读回后既不重复推送，也从拉到的 clues 里剔除
     if(srv.DELETED_CLUES){
@@ -130,12 +141,9 @@ function restoreFromServer(callback){
     try{localStorage.setItem(LS_KEY,JSON.stringify(Object.assign(_safeSyncSnapshot(srv),{clientUser:AUTH.user})));}catch(e){}
     window._opsServerHadData=true;
     window._opsDataReady=true;
-    // If server had no OPS_ENT but we have local data, push it up now
-    if((!srv.OPS_ENT || !srv.OPS_ENT.length) && OPS_ENT.length){
-      persist();
-    }
+
     if(callback) callback(true);
-  }).catch(function(e){ console.warn('[restoreFromServer]',e); if(authEpoch===_authEpoch)window._opsDataReady=false; if(callback)callback(false); });
+  }).catch(function(e){if(authEpoch!==_authEpoch||readSeq!==_serverRestoreSeq)return;console.warn('[restoreFromServer]',e);window._opsDataReady=false;if(callback)callback(false);});
 }
 
 function clearPersist(){

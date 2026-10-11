@@ -20,6 +20,7 @@ import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from http.cookies import CookieError, SimpleCookie
+from .city_workspaces import canonical_invitation, get_city_workspace, membership_role
 
 SESSION_COOKIE_NAME = 'hxz_session'
 SESSION_TTL_SECONDS = 7 * 24 * 60 * 60
@@ -225,6 +226,7 @@ def safe_profile(record, username=None):
         key: {'role': member['role'], **({'joinedAt': member['joinedAt']}
               if type(member.get('joinedAt')) in (int, float) and math.isfinite(member['joinedAt']) else {})}
         for key, member in memberships.items()}
+    result['projectKeys'] = sorted(memberships) if _active(record) else []
     if username is not None:
         result['user'] = username
     return result
@@ -240,6 +242,7 @@ def _invitation(body, state, now):
         raise AuthError(400, 'invalid_invite', '邀请码不存在或已失效')
     if not _project_key(invite.get('projKey')):
         raise AuthError(400, 'invalid_invite', '邀请码不存在或已失效')
+    canonical_invitation(state, invite['city'], code, invite['projKey'])
     for key, milliseconds in (('expires_at', False), ('expiresAt', True)):
         if key in invite:
             expiry = invite[key]
@@ -410,7 +413,7 @@ def register(body, session, *, admin_config=None, now=None):
             raise AuthError(400, 'invalid_profile', '用户资料格式不正确')
         profile[key] = value.strip()
     key = invite['projKey'].strip()
-    role = _role(invite.get('role'))
+    role = membership_role(state, invite['city'], code, key, username, _role(invite.get('role')))
     profile.update(name=profile['name'] or username, city=invite['city'], projKey=key,
                    role=role, resident=False, ts=int(now * 1000), inviteCode=code,
                    password_hash=hash_password(password), memberships={
@@ -487,8 +490,11 @@ def join(body, session, *, headers=None, token=None, admin_config=None, now=None
         raise AuthError(503, 'storage_unavailable', '账户服务暂不可用')
     # Preserve disabled membership tombstones while adding another workspace.
     memberships = dict(raw) if isinstance(raw, dict) else _memberships(record)
-    memberships.setdefault(key, {'role': _role(invite.get('role')), 'joinedAt': int(now * 1000),
+    role = membership_role(state, invite['city'], code, key, principal['user'], _role(invite.get('role')))
+    memberships.setdefault(key, {'role': role, 'joinedAt': int(now * 1000),
                                  'inviteCode': code, 'city': invite['city']})
+    if get_city_workspace(state, invite['city']) is not None:
+        memberships[key]['role'] = role
     record['memberships'] = memberships
     if not _project_key(record.get('projKey')):
         record['projKey'] = key

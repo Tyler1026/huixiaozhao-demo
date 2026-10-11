@@ -199,23 +199,28 @@ class AdminInvitationTests(unittest.TestCase):
         self.assertEqual(self.store.state['INVITE_CODES']['AAAAAAAAAA'], state['INVITE_CODES']['AAAAAAAAAA'])
         self.assertEqual(self.store.state['PROJECTS']['p' + 'a' * 24], {'keep': True})
 
-    def test_same_city_separate_invites_register_into_isolated_workspaces(self):
+    def test_same_city_create_reuses_canonical_invite_and_members_share_only_that_root(self):
         token = self.login()
         first = self.manage({'action': 'create', 'city': '同名市'}, token=token)
         second = self.manage({'action': 'create', 'city': '同名市'}, token=token)
         keys = [first['invite']['projKey'], second['invite']['projKey']]
-        self.assertNotEqual(*keys)
+        self.assertEqual(*keys)
+        self.assertEqual(first['invite']['code'], second['invite']['code'])
+        self.assertFalse(first['reused'])
+        self.assertTrue(second['reused'])
         for number, result in enumerate((first, second)):
             registered = self.call_auth('register', {'username': 'new-' + str(number),
                 'password': PASSWORD, 'inviteCode': result['invite']['code'],
                 'role': 'owner', 'projKey': keys[1 - number]})
             actor = registered['auth']
             self.assertEqual(actor['projectKeys'], [keys[number]])
-            self.assertEqual(actor['role'], 'member')
+            self.assertEqual(actor['role'], 'owner' if number == 0 else 'member')
             self.assertEqual(allowed_project_keys(self.store.state, actor), {keys[number]})
             view = scoped_sync_view(self.store.state, actor)
             self.assertEqual(set(view['PROJECTS']), {keys[number]})
             self.assertNotIn('INVITE_CODES', view)
+            self.assertNotIn('inviteCode', view['CITY_WORKSPACES']['同名市'])
+        self.assertEqual(self.store.state['CITY_WORKSPACES']['同名市']['ownerUser'], 'new-0')
 
     def test_base_package_copies_only_material_into_distinct_root(self):
         token = self.login()

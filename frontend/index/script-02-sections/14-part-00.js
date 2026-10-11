@@ -18,11 +18,12 @@ function _sanitizeReportState(){
       }
       // 2) 清孤儿方向数据（仅在有 userGeneratedTopics 时启用，否则可能是老数据不敢乱删）
       var _valid=_r.userGeneratedTopics;
+      var _baseTopic=PROJECTS[_k]&&PROJECTS[_k].baseReportVersion&&PROJECTS[_k].baseReportTopic;
       if(_valid && Object.keys(_valid).length){
         ['chainByTopic','aiReportByTopic','phaseByTopic','pendingByTopic','actionItemsByTopic','scoreByTopic','tsByTopic','reportByTopic'].forEach(function(_field){
           if(!_r[_field]) return;
           Object.keys(_r[_field]).forEach(function(_t){
-            if(!_valid[_t]) delete _r[_field][_t];
+            if(!_valid[_t]&&_t!==_baseTopic) delete _r[_field][_t];
           });
         });
       }

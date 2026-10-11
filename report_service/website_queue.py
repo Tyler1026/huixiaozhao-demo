@@ -7,8 +7,12 @@ import base64
 import copy
 import hashlib
 import json
+import math
 import re
 import time
+from datetime import datetime, timedelta, timezone
+
+from backend.city_workspaces import get_city_workspace, next_month_report_at
 
 TENANT = 'website-report-queue'
 ENGINE = 'full-v1'
@@ -22,6 +26,54 @@ TOPICS = (
 
 def report_id(request_id):
     return hashlib.sha256(('full-v1\0' + TENANT + '\0' + request_id).encode()).hexdigest()
+
+
+def _monthly_request_id(city, project_key, month):
+    scope = hashlib.sha256((city + '\0' + project_key).encode()).hexdigest()[:24]
+    return 'rrmonthly' + scope + month.replace('-', '')
+
+
+def _automatic_publication(request):
+    """Only the server's deterministic monthly request format may auto-push."""
+    month, key = request.get('scheduledMonth'), request.get('projectKey')
+    return (request.get('autoPublish') is True and isinstance(key, str) and bool(key)
+            and isinstance(month, str) and re.fullmatch(r'\d{4}-(0[1-9]|1[0-2])', month)
+            and request.get('id') == _monthly_request_id(request['city'], key, month))
+
+
+def _request_version(request):
+    # Claim time is server-owned. Browser clocks cannot make a report forever
+    # newer than future monthly reports. Old unclaimed fixtures use their ts.
+    stamp = request.get('claimTs', request.get('ts', 0))
+    if type(stamp) not in (int, float) or not math.isfinite(stamp) or stamp < 0:
+        stamp = 0
+    return int(stamp), request['id']
+
+
+def _replace_base_topics(existing, replacement):
+    """Refresh the four report sections without discarding customer material."""
+    if not isinstance(existing, list):
+        raise ValueError('invalid workspace knowledge')
+    generated_topics = {topic['t']: topic for topic in replacement}
+    pending = dict(generated_topics)
+    output = []
+    for original in existing:
+        if not isinstance(original, dict) or original.get('t') not in generated_topics:
+            output.append(copy.deepcopy(original))
+            continue
+        generated = pending.pop(original['t'], None)
+        known = original.get('known', [])
+        if not isinstance(known, list):
+            raise ValueError('invalid workspace knowledge')
+        topic = copy.deepcopy(original)
+        topic['known'] = (copy.deepcopy(generated['known']) if generated else []) + [copy.deepcopy(item) for item in known
+                         if not isinstance(item, dict) or item.get('nature') != 'base']
+        if generated:
+            for field in ('icon', 'sub', 'tag', 'calls'):
+                topic.setdefault(field, copy.deepcopy(generated[field]))
+        output.append(topic)
+    output.extend(copy.deepcopy(topic) for topic in replacement if topic['t'] in pending)
+    return output
 
 
 def valid_request(r):
@@ -191,6 +243,10 @@ def request_publication(handler, raw, session_factory):
             if target.get('engine') != ENGINE and not target.get('pushed'):
                 return reply(409, {'ok': False, 'code': 'legacy-report-requires-regeneration',
                                    'error': '历史报告缺少独立发布所需的研究材料，请重新生成后推送'})
+            if target.get('publicationSkipped'):
+                return reply(200, {'ok': True, 'id': target['id'], 'city': city,
+                                   'alreadyRequested': True, 'pushed': False,
+                                   'publicationSkipped': target['publicationSkipped']})
             if target.get('pushRequested') or target.get('pushed'):
                 return reply(200, {'ok': True, 'id': target['id'], 'city': city,
                                    'alreadyRequested': True, 'pushed': bool(target.get('pushed'))})
@@ -212,8 +268,62 @@ class WebsiteQueue:
         if not session.write(json.dumps(state, ensure_ascii=False)):
             raise OSError('website storage unavailable')
 
+    def schedule_monthly(self, now=None):
+        """Schedule at most one current-month report per canonical workspace.
+
+        The website row lock covers due checks, active-job checks, insertion and
+        advancing the calendar. Missed months are never replayed as a backlog.
+        A blocked/failed job remains active until explicitly cancelled or done.
+        """
+        from backend.auth import AuthError
+        now = time.time() if now is None else now
+        next_at = next_month_report_at(now)
+        current = datetime.fromtimestamp(now, timezone(timedelta(hours=8)))
+        # An overdue previous month must not make this month's report run
+        # before its own release time on the first day at 09:00 Beijing time.
+        if now < current.replace(day=1, hour=9, minute=0, second=0, microsecond=0).timestamp():
+            return 0
+        month = current.strftime('%Y-%m')
+        created = 0
+        with self.session() as session:
+            state = json.loads(session.read())
+            registry = state.get('CITY_WORKSPACES', {})
+            if not isinstance(registry, dict):
+                return 0
+            rows = state.setdefault('REPORT_REQUESTS', [])
+            if not isinstance(rows, list):
+                raise ValueError('invalid report queue')
+            changed = False
+            for city in registry:
+                try:
+                    binding = get_city_workspace(state, city)
+                except AuthError:
+                    continue
+                if (not binding or binding['monthlyEnabled'] is not True
+                        or binding['nextReportAt'] > now * 1000):
+                    continue
+                request = {'id': _monthly_request_id(city, binding['projectKey'], month),
+                           'city': city, 'province': binding['province'], 'mode': 'standard',
+                           'status': 'pending', 'engine': ENGINE, 'ts': int(now * 1000),
+                           'projectKey': binding['projectKey'], 'scheduledMonth': month,
+                           'autoPublish': True, 'by': '每月自动更新'}
+                if not valid_request(request):
+                    continue
+                if any(isinstance(row, dict) and row.get('city') == city
+                       and row.get('status') not in ('done', 'cancelled') for row in rows):
+                    continue
+                if not any(isinstance(row, dict) and row.get('id') == request['id'] for row in rows):
+                    rows.append(request)
+                    created += 1
+                binding['nextReportAt'] = next_at
+                changed = True
+            if changed:
+                self._save(session, state)
+        return created
+
     def ingest(self):
         """Idempotent queue handoff, never import unfinished legacy artifacts."""
+        self.schedule_monthly()
         with self.session() as session:
             state = json.loads(session.read())
             changed = False
@@ -256,7 +366,9 @@ class WebsiteQueue:
             return
         if r.get('deliveryRetryAt', 0) > time.time():
             return
-        if r.get('status') == 'done' and r.get('files') and (not r.get('pushRequested') or r.get('pushed')):
+        wants_publication = r.get('pushRequested') or _automatic_publication(r)
+        if (r.get('status') == 'done' and r.get('files')
+                and (not wants_publication or r.get('pushed') or r.get('publicationSkipped'))):
             return
         rid = report_id(r['id'])
         job = self.store.get(TENANT, rid)
@@ -300,7 +412,7 @@ class WebsiteQueue:
                 target['status'] = 'running'
             if target != before:
                 self._save(session, state)
-        if files and r.get('pushRequested') and not r.get('pushed'):
+        if files and wants_publication and not r.get('pushed') and not r.get('publicationSkipped'):
             self.publish(r, job)
 
     def publish(self, request, job):
@@ -337,38 +449,81 @@ class WebsiteQueue:
         # Preserve the old numeric field, but prevent displaying it as quality.
         score_status = ('unavailable' if not checks else
                         'unclassified' if verdict_counts['unclassified'] else 'classified')
-        key = 'report_' + reqid
-        topic = request['city'] + '产业链招引'
         published_at = int(time.time() * 1000)
         with self.session() as session:
             state = json.loads(session.read())
             target = next((r for r in state.get('REPORT_REQUESTS') or []
                            if r.get('id') == reqid and r.get('engine') == ENGINE), None)
-            if not target or target.get('status') != 'done' or not target.get('pushRequested'):
+            if (not target or target.get('status') != 'done'
+                    or not (target.get('pushRequested') or _automatic_publication(target))):
                 return False
             receipts = state.setdefault('REPORT_PUBLICATIONS', {})
             if reqid in receipts:
                 return True
             projects = state.setdefault('PROJECTS', {})
-            if key in projects:
-                raise ValueError('project publication conflict')
-            projects[key] = {'id': key, 'city': request['city'], 'province': request['province'],
-                             'org': '', 'who': '', 'topic': topic,
-                             'stage': 1, 'kb': topics, 'clues': [], 'report': None,
-                             'reportRequestId': reqid, 'reportFiles': target['files']}
+            binding = get_city_workspace(state, request['city'])
+            key = binding['projectKey'] if binding else 'report_' + reqid
+            if _automatic_publication(target) and (not binding or target['projectKey'] != key):
+                raise ValueError('monthly report workspace changed')
+            version_order = _request_version(target)
+            version = {'requestId': reqid, 'requestedAt': version_order[0],
+                       'publishedAt': published_at, 'scheduledMonth': target.get('scheduledMonth')}
+            if binding:
+                project = projects[key]
+                previous = project.get('baseReportVersion')
+                previous_id = project.get('reportRequestId')
+                if isinstance(previous, dict):
+                    stamp = previous.get('requestedAt')
+                    if type(stamp) not in (int, float) or not math.isfinite(stamp):
+                        raise ValueError('invalid previous report version')
+                    previous_order = int(stamp), str(previous.get('requestId', ''))
+                else:
+                    previous_request = next((r for r in state.get('REPORT_REQUESTS') or []
+                                             if isinstance(r, dict) and r.get('id') == previous_id), None)
+                    previous_order = _request_version(previous_request) if previous_request else None
+                if previous_order is not None and version_order < previous_order:
+                    target.update(pushed=False, pushRequested=False,
+                                  publicationSkipped='newer-report-already-published')
+                    receipts[reqid] = {'engineReportId': rid, 'projectKey': key,
+                                      'publishedAt': None, 'recordedAt': published_at,
+                                      'status': 'superseded', 'version': version,
+                                      'manifest': job['manifest']}
+                    self._save(session, state)
+                    return True
+                topic = request['city'] + '产业链招引'
+                project['kb'] = _replace_base_topics(project.get('kb', []), topics)
+                project.update(reportRequestId=reqid, reportFiles=target['files'],
+                               baseReportTopic=topic, baseReportVersion=version)
+            else:
+                if key in projects:
+                    raise ValueError('project publication conflict')
+                topic = request['city'] + '产业链招引'
+                projects[key] = {'id': key, 'city': request['city'], 'province': request['province'],
+                                 'org': '', 'who': '', 'topic': topic,
+                                 'stage': 1, 'kb': topics, 'clues': [], 'report': None,
+                                 'reportRequestId': reqid, 'reportFiles': target['files']}
             state.setdefault('CITY_BASE_PACKAGES', {})[request['city']] = key
             # The browser deliberately reads by exact topic to avoid showing a
             # different direction's report. Publish the saved compact verbatim
             # under this project's topic as well as the legacy text field.
-            state.setdefault('REPORTSTATE', {})[key] = {
+            report = state.setdefault('REPORTSTATE', {}).setdefault(key, {})
+            if not isinstance(report, dict):
+                raise ValueError('invalid workspace report')
+            report.update({
                 'text': compact, 'topic': topic, 'ts': published_at, 'phase': 2,
-                'aiReportByTopic': {topic: compact}, 'phaseByTopic': {topic: 2},
-                'tsByTopic': {topic: published_at},
                 'score': score, 'scoreBasis': '核验一致项比例',
                 'scoreStatus': score_status, 'checkVerdictCounts': verdict_counts,
-                'sourceReportId': reqid}
+                'sourceReportId': reqid})
+            for field, value in (('aiReportByTopic', compact), ('phaseByTopic', 2), ('tsByTopic', published_at)):
+                if not isinstance(report.setdefault(field, {}), dict):
+                    raise ValueError('invalid workspace report topic map')
+                report[field][topic] = value
+            if binding:
+                report['baseReportVersion'] = version
             target.update(pushed=True, pushRequested=False, projectKey=key, chunks=total)
             receipts[reqid] = {'engineReportId': rid, 'projectKey': key,
-                              'publishedAt': int(time.time() * 1000), 'manifest': job['manifest']}
+                              'publishedAt': published_at, 'manifest': job['manifest']}
+            if binding:
+                receipts[reqid].update(status='published', version=version)
             self._save(session, state)
             return True

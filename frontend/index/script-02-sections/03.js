@@ -107,7 +107,7 @@ function _safeProfiles(profiles){
 }
 function _safeSyncSnapshot(raw){
   var data=Object.assign({},raw||{});
-  ['USER_PROFILES','CITY_ACCOUNTS','INVITE_CODES','ACCOUNTS','AUTH','auth','password','pwd','token'].forEach(function(k){delete data[k];});
+  ['USER_PROFILES','CITY_ACCOUNTS','INVITE_CODES','CITY_WORKSPACES','ACCOUNTS','AUTH','auth','password','pwd','token'].forEach(function(k){delete data[k];});
   if(data.huixiaozhao_kb_v1)data.huixiaozhao_kb_v1=_safeSyncSnapshot(data.huixiaozhao_kb_v1);
   return data;
 }
