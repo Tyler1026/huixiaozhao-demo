@@ -105,13 +105,15 @@ class SynthesisProviderBoundaryTests(unittest.TestCase):
         self.assertEqual(prior, before)
         provider._gather_evidence.assert_not_called()
 
-    def test_second_bad_result_still_fails_and_deep_does_not_change(self):
+    def test_second_bad_result_is_projected_without_more_calls_and_deep_does_not_change(self):
         from report_service.full_provider import FullProviderError
         prior = {'economy': {'text': '全市第二来自自媒体，待核实。', 'metadata': {}}}
         bad = json.dumps({'text': self.text('总量居全市第二。')})
         provider = self.provider([bad, bad])
-        with self.assertRaises(FullProviderError):
-            provider.run_part('compact', '精简报告', {'city': '测试区'}, prior)
+        result = provider.run_part('compact', '精简报告', {'city': '测试区'}, prior)
+        self.assertIn('尚未获得原文核验', result['text'])
+        self.assertEqual(len(result['text'].splitlines()), 80)
+        self.assertEqual(result['metadata']['factual_projection'][0]['original'], '总量居全市第二。')
         self.assertEqual(provider._chat_part.call_count, 2)
         from report_service.full_worker import _provider_issue
         self.assertEqual(_provider_issue(FullProviderError('decision prose changed source facts or omitted qualifications', 'quality')),

@@ -21,8 +21,8 @@ class WordExportTests(unittest.TestCase):
         content='1. 区域基本盘：数值与来源保留。\n2. 三大产业方向的确定依据：原文。\n3. 区级政策工具一：完整条件。\n4. 待核实事项汇总：原文未知。'
         groups,order=_infer_compact_sections(content)
         self.assertEqual([x for key in order for x in groups[key]],[
-            '区域基本盘：数值与来源保留。','三大产业方向的确定依据：原文。',
-            '区级政策工具一：完整条件。','待核实事项汇总：原文未知。'])
+            '1. 区域基本盘：数值与来源保留。','2. 三大产业方向的确定依据：原文。',
+            '3. 区级政策工具一：完整条件。','4. 待核实事项汇总：原文未知。'])
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);(root/'09_compact_report.md').write_text(content)
             build_compact_docx('闵行区',root,root/'brief.docx')

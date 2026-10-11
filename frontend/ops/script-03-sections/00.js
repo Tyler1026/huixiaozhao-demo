@@ -305,8 +305,9 @@ function reportExportSourceHeading(context){
   var key=context.key||cur;
   if(typeof nativeReportState==='function'&&nativeReportState(context.topic,key))return '来源索引';
   if(typeof reportMaterialDirectoryForContext==='function'&&reportMaterialDirectoryForContext(context))return '生成时材料快照（非逐句引用）';
-  return context.project&&context.project.isDemand===true
-    ?'该需求当前保存的材料目录（非逐句引用）':'正文链接（未核验）';
+  if(context.project&&context.project.isDemand===true)return '该需求当前保存的材料目录（非逐句引用）';
+  if((((context.state||{}).userGeneratedTopics||{})[context.topic])===true)return '当前工作区保存的材料目录（非逐句引用）';
+  return '正文链接（未核验）';
 }
 
 function reportExportSourceRecords(context){
@@ -327,9 +328,10 @@ function reportExportSourceRecords(context){
     ((typeof UPLOADS!=='undefined'&&UPLOADS[key])||[]).forEach(function(item){if(item&&!item.pending&&!item.parseFailed)add('上传材料',item.name);});
   }else{
     var snapshot=typeof reportMaterialDirectoryForContext==='function'?reportMaterialDirectoryForContext(context):null;
-    // A submitted demand owns a deep-copied KB. Legacy demands can expose that
-    // saved directory, never the parent's newer report or an inferred citation.
-    if(!snapshot&&!((context.state||{}).materialDirectoryByTopic||{})[context.topic]&&p.isDemand===true&&typeof captureReportMaterialDirectory==='function')snapshot=captureReportMaterialDirectory(key,context.topic);
+    // Legacy custom text can expose only its own current directory, not an
+    // inferred generation snapshot or another project's material directory.
+    var custom=p.isDemand===true||(((context.state||{}).userGeneratedTopics||{})[context.topic])===true;
+    if(!snapshot&&!((context.state||{}).materialDirectoryByTopic||{})[context.topic]&&custom&&typeof captureReportMaterialDirectory==='function')snapshot=captureReportMaterialDirectory(key,context.topic);
     (snapshot&&snapshot.records||[]).forEach(function(item){
       if(item&&typeof item==='object'&&(item.kind==='保存材料'||item.kind==='上传材料'))add(item.kind,item.value);
     });

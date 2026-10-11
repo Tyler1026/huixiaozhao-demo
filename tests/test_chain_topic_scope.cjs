@@ -24,7 +24,7 @@ function setup(file,result){
     document:{getElementById:()=>null},reportTextForTopic:()=>report,
     escapeChainText:s=>String(s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')};
   vm.createContext(c);
-  vm.runInContext(['_correctChainLevel','_normalizeChain','currentEvidenceChain','chainSnapshotIdentity','chainSavedSourceMatches','chainSaveCurrent','savePendingChain','syncTopicReportInputs','generateChainFromReport','_renderRichChain','chainMapHtml'].map(n=>declaration(source,n)).join('\n'),c);
+  vm.runInContext(['_correctChainLevel','_normalizeChain','currentEvidenceChain','chainSnapshotIdentity','chainSourceIdentity','chainEvidenceIdentity','chainSavedSourceMatches','chainSaveCurrent','savePendingChain','syncTopicReportInputs','generateChainFromReport','_renderRichChain','chainMapHtml'].map(n=>declaration(source,n)).join('\n'),c);
   return {c,events,report};
 }
 for(const [surface,file] of [['user','frontend/index/script-02-sections/12-tail.js'],['admin','frontend/ops/script-03-sections/12-tail.js']]){

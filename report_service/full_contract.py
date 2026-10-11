@@ -515,7 +515,7 @@ def validate(stage_id, text, metadata=None, synthetic=False, *, mode='standard')
     if stage_id in ("enterprises_1", "enterprises_2", "enterprises_3"):
         errors.extend(_validate_companies(stage_id, meta, synthetic, mode))
     elif stage_id == "fact_check":
-        errors.extend(_validate_checks(stage_id, meta, synthetic))
+        errors.extend(_validate_checks(stage_id, meta, synthetic, mode=mode))
     elif stage_id == "scoring":
         errors.extend(_validate_scores(stage_id, meta))
 
@@ -727,7 +727,7 @@ def fact_check_part_errors(part, meta):
     return []
 
 
-def _validate_checks(stage_id, meta, synthetic):
+def _validate_checks(stage_id, meta, synthetic, *, mode='standard'):
     errors = []
     checks = meta.get("checks")
     if not isinstance(checks, list):
@@ -763,8 +763,37 @@ def _validate_checks(stage_id, meta, synthetic):
         cross = c.get("cross_source")
         if not isinstance(source, str) or not source.strip():
             errors.append(f"{stage_id} checks[{i}] missing source")
-        if not isinstance(cross, str) or not cross.strip():
+        # Economic/policy audits may explicitly retain a supported primary
+        # source or an unresolved claim. Do not invent a second URL merely to
+        # satisfy the old shape. The high-star contract remains unchanged.
+        primary_support = c.get('source_support')
+        gap = c.get('support_gap')
+        status = c.get('support_status')
+        explicit_incomplete = (
+            mode == 'standard' and cat in {'economic', 'policy'}
+            and isinstance(status, str) and status in {'single_source', 'pending'}
+            and isinstance(gap, str) and bool(gap.strip())
+            and isinstance(c.get('verdict'), str)
+            and ('单源' in c['verdict'] or '待核' in c['verdict'])
+            and isinstance(source, str) and bool(source.strip())
+            and isinstance(primary_support, dict)
+            and type(primary_support.get('supported')) is bool
+            and ((status == 'single_source' and primary_support['supported'] is True
+                  and isinstance(primary_support.get('quote'), str)
+                  and bool(primary_support['quote'].strip()))
+                 or (status == 'pending' and primary_support['supported'] is False
+                     and isinstance(primary_support.get('reason'), str)
+                     and bool(primary_support['reason'].strip())))
+        )
+        if explicit_incomplete:
+            from .full_synthesis import incomplete_audit_is_grounded
+            explicit_incomplete = incomplete_audit_is_grounded(c, meta.get('evidence', []))
+        if (not isinstance(cross, str) or not cross.strip()) and not explicit_incomplete:
             errors.append(f"{stage_id} checks[{i}] missing cross_source")
+        if mode == 'deep' and not synthetic and cat in {'economic', 'policy'}:
+            from .full_synthesis import ground_audit_check
+            if ground_audit_check(c, meta.get('evidence', []))['support_status'] != 'corroborated':
+                errors.append(f"{stage_id} checks[{i}] deep requires two grounded claim spans")
         if source and cross and canonical_url(source) == canonical_url(cross):
             errors.append(
                 f"{stage_id} checks[{i}] source and cross_source are not independent"
