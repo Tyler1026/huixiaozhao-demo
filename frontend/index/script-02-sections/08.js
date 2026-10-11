@@ -364,7 +364,7 @@ function topicHasFullReport(topic){
   if(!topic || !cur) return false;
   var _rs=REPORTSTATE[cur];
   // 方向级 phase 是权威判据（项目级 phase 是单例，切方向会污染）
-  if(_rs && _rs.phaseByTopic && _rs.phaseByTopic[topic]===2) return true;
+  if(_rs && _rs.phaseByTopic && Object.prototype.hasOwnProperty.call(_rs.phaseByTopic,topic)) return _rs.phaseByTopic[topic]===2;
   // 兼容旧数据：无 phaseByTopic 记录时，回退到历史报告里该方向的完整报告
   if(typeof REPORT_HISTORY!=='undefined' && REPORT_HISTORY[cur]){
     if(REPORT_HISTORY[cur].some(function(h){return h && h.topic===topic && h.phase===2 && h.text;})) return true;
@@ -477,110 +477,76 @@ var _summaryTimer=null;
 
 /* ── 下载分析报告 Modal ── */
 function showDownloadReport(){
-  var p=P();
-  if(!p||!p.city){toast('请先完成城市分析');return;}
-  var city=p.city;
-  // 直接从项目kb数据生成报告（不依赖generateKbConclusions）
-  var kb=p.kb||[];
-  var sections=['主导产业与产业链','园区与承载条件','链主与存量企业','政策、规划与领导关注'];
-  var sectionData=sections.map(function(title,si){
-    var sect=kb[si];
-    if(!sect) return {title:title,items:[]};
-    return {title:title, items:(sect.known||[]).map(function(x){return _kbText(x);}).filter(function(x){return x&&!_isJunkKbItem(x);})};
+  var context=reportExportContext();
+  if(!context){toast('当前方向暂无报告，请先完成产业分析');return;}
+  var p=context.project;
+  function esc(value){return String(value==null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  var files=(p.reportFiles||[]).filter(function(file){
+    return file&&typeof file.name==='string'&&typeof file.downloadUrl==='string'
+      &&/^\/(?!\/)/.test(file.downloadUrl)&&p.reportRequestId
+      &&(!file.reportRequestId||file.reportRequestId===p.reportRequestId);
   });
-  if(sectionData.every(function(s){return s.items.length===0;})){toast('城市智库暂无数据，请先上传材料');return;}
-
-  // 完整版内容
-  var fullLines=[
-    city+'城市智库 · 招商研判报告（完整版）',
-    '生成时间：'+new Date().toLocaleDateString('zh-CN')+'  |  数据来源：城市智库RAG知识库',
-    '════════════════════════════════',
-    ''
-  ];
-  sectionData.forEach(function(s,idx){
-    fullLines.push((['一','二','三','四'][idx]||'')+'、'+s.title);
-    if(s.items.length){
-      s.items.slice(0,15).forEach(function(x){
-        fullLines.push((x.indexOf('⚠️')>=0?'  ⚠ ':'  • ')+x.replace('⚠️ ',''));
-      });
-      if(s.items.length>15) fullLines.push('  … 共'+s.items.length+'条');
-    } else {
-      fullLines.push('  （暂无数据）');
-    }
-    fullLines.push('');
-  });
-  fullLines.push('════════════════════════════════');
-  fullLines.push('研判建议：');
-  fullLines.push('  1. 优先补链方向：链主外采依赖最集中的核心零部件/系统集成环节');
-  fullLines.push('  2. 推荐承接园区：'+city+'国家级/省级开发区（具体园区需向招商局确认）');
-  fullLines.push('  3. 招引目标画像：具备落地意向、产品与缺口直接匹配的细分领域龙头');
-  fullLines.push('');
-  fullLines.push('⚠ 本报告基于公开信息整理，正式招商决策需结合政府授权材料与确认。');
-  var fullText=fullLines.join('\n');
-
-  // 精简版内容
-  var shortItems=sectionData.map(function(s){return '【'+s.title+'】'+(s.items[0]||'暂无数据');});
-  var shortLines=[
-    city+'招商研判报告 · 精简版',
-    '生成时间：'+new Date().toLocaleDateString('zh-CN'),
-    '────────────────────',
-    ''
-  ].concat(shortItems).concat([
-    '',
-    '【核心建议】优先招引链主外采依赖最重的关键环节企业，结合园区政策争取一事一议。',
-    '',
-    '⚠ 以上为公开信息整理，需干部结合实际材料确认。',
-  ]).join('\n');
-
-  function dlFile(content, filename){
-    var blob=new Blob([content],{type:'text/plain;charset=utf-8'});
-    var url=URL.createObjectURL(blob);
-    var a=document.createElement('a');a.href=url;a.download=filename;
-    document.body.appendChild(a);a.click();
-    setTimeout(function(){URL.revokeObjectURL(url);a.remove();},300);
+  if(p.reportRequestId&&context.state.sourceReportId===p.reportRequestId&&!files.some(function(file){return file.kind==='research';})){
+    files.push({kind:'research',name:'完整研究附件（ZIP）',downloadUrl:'/api/report-file?city='+encodeURIComponent(p.city||'')+'&requestId='+encodeURIComponent(p.reportRequestId)+'&kind=research'});
   }
+  var old=document.getElementById('dlReportModal');if(old)old.remove();
+  var wrap=document.createElement('div');wrap.id='dlReportModal';wrap.className='modal-layer';
+  wrap.onclick=function(event){if(event.target===wrap)wrap.remove();};
+  wrap.innerHTML='<div class="modal"><header><div><h2>'+esc(p.city)+' · 报告下载</h2><p class="download-caption">'+esc(context.topic)+'</p></div><button aria-label="关闭报告下载" onclick="document.getElementById(\'dlReportModal\').remove()">✕</button></header>'+
+    '<div class="modal-body report-download-options">'+
+    '<section><h3>研判报告 PDF</h3><p>当前方向已保存的全部正文，保留来源与待核说明；不等同于原始研究附件。</p><button class="primary-button" onclick="downloadReportPDF(\'full\')">下载研判报告 PDF</button></section>'+
+    '<section><h3>快速简报 PDF</h3><p>摘录城市概况、产业判断、企业线索、政策条件和核查事项。仅选取原文，不新增事实。</p><button class="secondary-button" onclick="downloadReportPDF(\'short\')">下载快速简报 PDF</button></section>'+
+    (files.length?'<section><h3>原始研究文件</h3><p>服务器保存的原件，可查看完整研究材料。</p>'+files.map(function(file){return '<a class="ghost-button" href="'+esc(file.downloadUrl)+'" download="'+esc(file.name)+'">'+esc(file.kind==='research'?'完整研究附件（ZIP）':file.name)+'</a>';}).join('')+'</section>':'')+
+    '<p class="download-caption">点击 PDF 后等待打印预览，再选择“另存为 PDF”。关键结论仍须核查来源、时效及适用条件。</p></div></div>';
+  document.body.appendChild(wrap);
+}
 
-  var modal='<div id="dlReportModal" style="position:fixed;inset:0;background:rgba(11,24,59,.45);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)" onclick="if(event.target.id===\'dlReportModal\')this.remove()">'+
-    '<div style="background:#fff;border-radius:22px;padding:36px;max-width:480px;width:92%;box-shadow:0 8px 60px rgba(11,24,59,.18);animation:fadeUp .3s ease">'+
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">'+
-        '<div>'+
-          '<div style="font-size:12px;font-weight:650;color:#8492a6;letter-spacing:.5px;margin-bottom:4px">分析报告下载</div>'+
-          '<h2 style="font-size:18px;font-weight:750;color:#0b183b;margin:0">'+city+' 城市智库报告</h2>'+
-        '</div>'+
-        '<button onclick="document.getElementById(\'dlReportModal\').remove()" style="background:none;border:none;font-size:18px;color:#9aa5b5;cursor:pointer;padding:4px">✕</button>'+
-      '</div>'+
-      '<div style="display:flex;flex-direction:column;gap:12px">'+
-        '<div style="border:1.5px solid #e8edf5;border-radius:14px;padding:18px 20px">'+
-          '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'+
-            '<span style="font-size:20px">📄</span>'+
-            '<div><div style="font-size:13.5px;font-weight:650;color:#0b183b">完整版报告</div>'+
-            '<div style="font-size:11.5px;color:#8492a6;margin-top:1px">四大主题全部内容 · 含核心研判建议</div></div>'+
-          '</div>'+
-          '<button onclick="downloadReportPDF(\'full\')" style="width:100%;padding:10px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer">⬇ 下载完整版 PDF</button>'+
-        '</div>'+
-        '<div style="border:1.5px solid #e8edf5;border-radius:14px;padding:18px 20px">'+
-          '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'+
-            '<span style="font-size:20px">📋</span>'+
-            '<div><div style="font-size:13.5px;font-weight:650;color:#0b183b">精简版报告</div>'+
-            '<div style="font-size:11.5px;color:#8492a6;margin-top:1px">一句话摘要 · 适合快速分享</div></div>'+
-          '</div>'+
-          '<button onclick="downloadReportPDF(\'short\')" style="width:100%;padding:10px;background:#f5f7fb;color:#0b183b;border:1.5px solid #e8edf5;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer">⬇ 下载精简版 PDF</button>'+
-        '</div>'+
-      '</div>'+
-      '<p style="font-size:11px;color:#b0bac8;margin:16px 0 0;text-align:center;line-height:1.7">报告内容为公开信息整理的初步研判，正式招商决策需结合政府授权材料与确认</p>'+
-    '</div>'+
-  '</div>';
-
-  var wrap=document.createElement('div');
-  wrap.innerHTML=modal;
-  document.body.appendChild(wrap.firstChild);
+/* The cards describe stored material coverage, never inferred factual quality.
+   Use raw item text: _kbText intentionally strips citations and is unsuitable
+   for evidence-bearing excerpts. No saved report or knowledge record is edited. */
+function kbSectionSummary(section){
+  var records=[], sources=[], seenSources={};
+  function addSource(value){
+    if(typeof value!=='string'||!value.trim())return;
+    value=value.trim();if(seenSources[value])return;seenSources[value]=true;sources.push(value);
+  }
+  (section&&section.known||[]).forEach(function(item,index){
+    var text=typeof item==='string'?item:(item&&typeof item.text==='string'?item.text:'');
+    if(!text.trim()||/请在此输入补充内容|暂无数据.*请上传|尚无材料/.test(text))return;
+    records.push({text:text,index:index,item:item});
+    if(item&&typeof item==='object')addSource(item.sourceFile||item.cite||item.src);
+    (text.match(/https?:\/\/[^\s<>()（）\[\]，。；]+/g)||[]).forEach(addSource);
+  });
+  var candidate=null, best=-Infinity, pendingCount=0;
+  records.forEach(function(record){
+    var pending=/待核|待确认|未核|未知|推断|推算|可能已过时|未披露|未检索到/.test(record.text);
+    if(pending)pendingCount++;
+    var lines=record.text.split(/\n+/).filter(function(line){return line.trim()&&!/^\s*(?:#{1,6}\s|\|[- :|]+$)/.test(line);});
+    lines.forEach(function(line){
+      var clean=line.replace(/^\s*(?:\d+[.、．)]|[-*•])\s*/,'');
+      var score=(/\d/.test(clean)?4:0)+(/[：:]/.test(clean)?2:0)+(/https?:/.test(line)?1:0)+Math.min(clean.length,180)/180;
+      if(/^本(?:报告|节|阶段)|^研究范围|^编制|^说明|^本次任务|^以下|^结论生成/.test(clean))score-=12;
+      if(clean.length<20)score-=8;
+      if(/^\s*\|/.test(clean))score-=8;
+      if(score>best){best=score;candidate={text:clean,pending:pending};}
+    });
+  });
+  var excerpt=candidate?candidate.text:'';
+  if(excerpt.length>280){
+    var cut=excerpt.slice(0,280), boundary=Math.max(cut.lastIndexOf('。'),cut.lastIndexOf('；'));
+    excerpt=(boundary>=140?cut.slice(0,boundary+1):cut)+'…';
+  }
+  return {count:records.length,sourceCount:sources.length,sources:sources,pendingCount:pendingCount,
+    excerpt:excerpt,excerptPending:!!(candidate&&candidate.pending),
+    displaySub:records.length?('已收录 '+records.length+' 条材料 · '+sources.length+' 项来源记录'):'暂无材料',
+    displayTag:records.length?(pendingCount?'含待核内容':'原文已收录'):'待补充材料'};
 }
 
 function showSummaryModal(city2,sectors){
   // 生成kb一句话摘要
   var p=cur&&PROJECTS[cur];
   // 已移除随州硬编码假结论与通用捏造文案：无上传材料时不虚构研判结论。
-  var _hasUp2=k.known&&k.known.length>0;
+  var _hasUp2=!!(p&&(p.kb||[]).some(function(section){return kbSectionSummary(section).count>0;}));
   var _phRow=_hasUp2?'已结合上传材料完成初步归纳，进入城市智库查看':'暂无数据，请上传政府材料后由 AI 生成';
   var insights=[_phRow,_phRow,_phRow,_phRow];
   var rows=(sectors||[]).map(function(s,i){

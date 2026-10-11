@@ -10,6 +10,25 @@ function closeModal(){
   window._verifyInProgress=false;var l=$('#modalLayer');if(l)l.remove();var cm=$('#conflictModal');if(cm)cm.remove();}
 var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','产业分析','产业分析·可来回优化'],['home','🤝','招商对接','项目列表·对接进度'],['settings','⚙️','设置','账号与提醒']];
 
+function syncDetailPane(){
+  var root=document.getElementById('root');
+  var workspace=root&&root.querySelector?root.querySelector('.workspace'):null;
+  if(!workspace)return false;
+  var pane=workspace.querySelector('.detail-pane'), reopen=workspace.querySelector('.reopen-detail');
+  if(pane)pane.remove();if(reopen)reopen.remove();
+  if(view==='knowledge')return true;
+  if(detailOpen){
+    var aside=document.createElement('aside');aside.className='detail-pane';
+    aside.setAttribute('aria-label','当前项目详情');
+    aside.innerHTML=role==='ops'?opsDetail():detailPane(P());workspace.appendChild(aside);
+  }else{
+    var button=document.createElement('button');button.className='reopen-detail';
+    button.type='button';button.textContent='展开详情';button.onclick=toggleDetail;
+    workspace.appendChild(button);
+  }
+  return true;
+}
+
 function render(){
   // 跳过重渲染：用户正在查看校验结果或冲突面板时不重建DOM
   if(AUTH&&_authState==='ready'&&(window._verifyInProgress || document.getElementById('conflictModal'))) return;

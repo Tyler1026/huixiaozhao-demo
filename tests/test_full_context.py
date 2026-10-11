@@ -57,6 +57,20 @@ class FullContextTests(unittest.TestCase):
     def setUp(self):
         self.prior = _prior()
 
+    def test_standard_company_checks_receive_only_the_exact_five_full_targets(self):
+        prior = self._decision_prior()
+        source = prior['enterprises_1']['metadata']
+        source['candidates'] = copy.deepcopy(source['selected'])
+        original = copy.deepcopy(prior)
+        for part in ('落地情况2', '扩产信号2'):
+            view = scoped_prior(prior, 'enterprises_1', part, mode='standard')
+            self.assertEqual(view['enterprises_1']['metadata']['candidates'], source['candidates'][5:10])
+            self.assertEqual(view['enterprises_1']['metadata']['selected'], source['selected'][5:10])
+            self.assertEqual(view['enterprises_1']['metadata']['evidence'], source['evidence'])
+        deep = scoped_prior(prior, 'enterprises_1', '扩产信号2', mode='deep')
+        self.assertEqual(deep['enterprises_1']['metadata'], source)
+        self.assertEqual(prior, original)
+
     def test_economic_and_policy_context_keep_complete_isolated_facts_and_current_work(self):
         for part, dependency in (('经济关键数字', 'economy'), ('政策金额', 'policy')):
             with self.subTest(part=part):
@@ -241,7 +255,8 @@ class FullContextTests(unittest.TestCase):
                 self.assertEqual(view['industry']['metadata']['directions'], prior['industry']['metadata']['directions'])
                 for dependency in dependencies[stage] + (stage,):
                     self.assertEqual(view[dependency], prior[dependency])
-                self.assertEqual(set(view), {'industry', 'enterprises_1', 'enterprises_2', 'enterprises_3',
+                self.assertEqual(view['fact_check'], prior['fact_check'])
+                self.assertEqual(set(view), {'industry', 'enterprises_1', 'enterprises_2', 'enterprises_3', 'fact_check',
                                              'scoring', *dependencies[stage], stage})
                 view['scoring']['metadata']['scores'][0]['dimensions']['risk']['original'][1]['uncertainty'] = 'changed view'
                 view['enterprises_1']['metadata']['selected'][0]['rationale']['raw'][0] = 'changed company'

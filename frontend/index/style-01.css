@@ -229,3 +229,11 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
   content-visibility:auto;
   contain-intrinsic-size:auto 220px;
 }
+
+/* Detail remains a sibling column: never cover report actions on desktop. */
+.workspace{min-width:0;gap:0}
+.detail-pane{flex:0 0 clamp(280px,29%,390px);width:clamp(280px,29%,390px);max-width:42%;border-left:1px solid var(--line)}
+.collapse-detail{background:#f3f6fa;border:1px solid var(--line);min-width:38px;min-height:38px}
+.report-download-options{display:grid;gap:18px}.report-download-options section{border:1px solid var(--line);border-radius:12px;padding:16px}.report-download-options h3{margin:0 0 8px}.report-download-options p,.download-caption{color:var(--muted);font-size:12px;line-height:1.7}.report-download-options a{margin:4px 0;width:100%;height:auto;overflow-wrap:anywhere;text-align:left}
+@media (min-width:768px) and (max-width:1100px){.detail-pane{position:relative;inset:auto;z-index:auto;flex-basis:300px;width:300px;max-width:42%;box-shadow:none}.main-pane{width:auto}.detail-scroll{padding-inline:16px}.detail-header{padding-inline:16px}}
+@media (max-width:767px){.workspace{flex-direction:column;overflow:auto}.main-pane{flex:1 0 64%;width:100%;min-height:320px}.detail-pane{position:relative;inset:auto;flex:0 0 auto;width:100%;max-width:none;max-height:45vh;min-height:230px;border-left:0;border-top:1px solid var(--line);box-shadow:none}.detail-page{min-height:230px}.reopen-detail{position:relative;top:auto;right:auto;align-self:flex-end;flex:0 0 auto}.collapse-detail{top:12px;right:12px}.detail-header{padding-right:62px}.report-download-options .primary-button,.report-download-options .secondary-button{width:100%}}

@@ -1,6 +1,7 @@
 """Offline Word title and section pagination regressions."""
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 from docx import Document
@@ -11,10 +12,43 @@ from report_service.word_export import (
     add_heading_styled,
     build_compact_docx,
     md_to_docx,
+    _infer_compact_sections,
 )
 
 
 class WordExportTests(unittest.TestCase):
+    def test_native_numbered_report_keeps_all_body_in_navigable_sections(self):
+        content='1. 区域基本盘：数值与来源保留。\n2. 三大产业方向的确定依据：原文。\n3. 区级政策工具一：完整条件。\n4. 待核实事项汇总：原文未知。'
+        groups,order=_infer_compact_sections(content)
+        self.assertEqual([x for key in order for x in groups[key]],[
+            '区域基本盘：数值与来源保留。','三大产业方向的确定依据：原文。',
+            '区级政策工具一：完整条件。','待核实事项汇总：原文未知。'])
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);(root/'09_compact_report.md').write_text(content)
+            build_compact_docx('闵行区',root,root/'brief.docx')
+            doc=Document(root/'brief.docx')
+            body='\n'.join(p.text for p in doc.paragraphs)
+            self.assertIn('完整条件',body)
+            self.assertTrue(any(p.style.name=='Heading 1' for p in doc.paragraphs))
+            self.assertFalse(any(p.style.name=='List Number' for p in doc.paragraphs))
+            self.assertIn('PAGE',doc.sections[0].footer._element.xml)
+            self.assertIn('w:hyperlink',doc._element.xml)
+
+    def test_main_report_includes_all_structured_entities_and_keeps_research_separate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            for filename in CHAPTER_ORDER:
+                (root/filename).write_text('ONLY-RESEARCH-ATTACHMENT '+filename)
+            (root/'09_compact_report.md').write_text('1. 区域基本盘：COMPACT-ORIGINAL。')
+            metadata={'stages':{'05a_target_enterprises_dir1.md':{'selected':[{'name':'独立企业甲','landing_status':'待核实','rationale':'完整适配条件','uncertainty':'投资意愿未知'}]},
+                '07_matching_score.md':{'scores':[{'name':'独立企业甲','rank':1,'weighted_score':7.4,'dimensions':{'industry_fit':8,'risk':3}}]},
+                '06b_fact_check.md':{'checks':[{'claim':'原始核验主张','verdict':'待核实','source':'https://gov.cn/one','cross_source':'https://gov.cn/two'}]}}}
+            (root/'evidence.json').write_text(json.dumps(metadata))
+            md_to_docx(root,root/'main.docx','闵行区')
+            doc=Document(root/'main.docx');body='\n'.join(p.text for p in doc.paragraphs)
+            for text in ('COMPACT-ORIGINAL','独立企业甲','完整适配条件','投资意愿未知','7.4','原始核验主张','https://gov.cn/two'):
+                self.assertIn(text,body)
+            self.assertNotIn('ONLY-RESEARCH-ATTACHMENT',body)
     def test_compact_cover_and_header_preserve_region_suffix(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

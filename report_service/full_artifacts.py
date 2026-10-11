@@ -28,6 +28,8 @@ DOCX_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.docu
 MEDIA_TYPES = {**{n: 'text/markdown; charset=utf-8' for n in REQUIRED_FILES},
                'full.docx': DOCX_TYPE, 'compact.docx': DOCX_TYPE,
                'evidence.json': 'application/json'}
+LEGACY_ARTIFACT_NAMES = frozenset(MEDIA_TYPES)
+MEDIA_TYPES['research.zip'] = 'application/zip'
 MARKER = 'SYNTHETIC TEST — 合成测试，非真实研究\n\n'
 
 
@@ -94,6 +96,17 @@ def _valid_docx(data):
             ElementTree.fromstring(z.read(name))
 
 
+def research_zip(contents):
+    """Package byte-exact original research, with stable archive metadata."""
+    result = BytesIO()
+    with ZipFile(result, 'w', compression=ZIP_DEFLATED) as archive:
+        for name in (*REQUIRED_FILES, 'evidence.json'):
+            info = ZipInfo(name, (1980, 1, 1, 0, 0, 0))
+            info.compress_type = ZIP_DEFLATED
+            archive.writestr(info, contents[name])
+    return result.getvalue()
+
+
 def _verify(fd, report_id, manifest):
     if not isinstance(manifest, dict) or set(manifest) != {
             'version', 'report_id', 'synthetic', 'files', 'created_at'}:
@@ -105,12 +118,12 @@ def _verify(fd, report_id, manifest):
     if date.tzinfo is None:
         raise ValueError('Manifest time requires timezone')
     entries = manifest['files']
-    if not isinstance(entries, list) or len(entries) != len(MEDIA_TYPES):
+    if not isinstance(entries, list):
         raise ValueError('Incomplete manifest')
     names = [e['name'] for e in entries]
-    if len(set(names)) != len(names) or set(names) != set(MEDIA_TYPES):
+    if len(set(names)) != len(names) or set(names) not in (LEGACY_ARTIFACT_NAMES, frozenset(MEDIA_TYPES)):
         raise ValueError('Duplicate or unsafe artifact name')
-    if set(os.listdir(fd)) != set(MEDIA_TYPES) | {'manifest.json'}:
+    if set(os.listdir(fd)) != set(names) | {'manifest.json'}:
         raise ValueError('Unexpected directory contents')
     if _read(fd, 'manifest.json') != _json(manifest):
         raise ValueError('Manifest mismatch')
@@ -131,6 +144,8 @@ def _verify(fd, report_id, manifest):
     evidence = json.loads(contents['evidence.json'])
     if set(evidence['stages']) != set(REQUIRED_FILES):
         raise ValueError('Incomplete evidence')
+    if 'research.zip' in contents and contents['research.zip'] != research_zip(contents):
+        raise ValueError('Research archive does not preserve original artifacts')
     return contents
 
 
@@ -157,7 +172,10 @@ def read_artifact(root: Path, report_id: str, name: str, manifest: dict) -> byte
         raise ValueError('Unlisted artifact')
     try:
         with _bundle_fd(root, report_id) as fd:
-            return _verify(fd, report_id, manifest)[name]
+            contents = _verify(fd, report_id, manifest)
+            if name == 'research.zip' and name not in contents:
+                return research_zip(contents)
+            return contents[name]
     except Exception as exc:
         raise ValueError('Invalid bundle or artifact') from exc
 
@@ -217,11 +235,25 @@ def build_bundle(root: Path, report_id: str, city: str,
                       'stages': metadata})
     root = _root(root, create=True)
     target = root / report_id
+    if target.exists():
+        # A renderer upgrade must not rewrite an already delivered report.
+        # Compare immutable research inputs, then return its original receipt.
+        try:
+            with _bundle_fd(root, report_id) as fd:
+                old = json.loads(_read(fd, 'manifest.json'))
+                original = _verify(fd, report_id, old)
+            if (old['synthetic'] == synthetic and original['evidence.json'] == evidence
+                    and all(original[name] == data for name, data in texts.items())):
+                return old
+        except Exception as exc:
+            raise ValueError('Existing report conflicts or is invalid') from exc
+        raise ValueError('Report already exists with different contents')
     stage = Path(tempfile.mkdtemp(prefix=f'.{report_id}-', dir=root))
     try:
         for name, data in texts.items():
             (stage / name).write_bytes(data)
         (stage / 'evidence.json').write_bytes(evidence)
+        (stage / 'research.zip').write_bytes(research_zip({**texts, 'evidence.json': evidence}))
         md_to_docx(stage, stage / 'full.docx', city, synthetic=synthetic)
         build_compact_docx(city, stage, stage / 'compact.docx', synthetic=synthetic)
         for name in ('full.docx', 'compact.docx'):

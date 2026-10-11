@@ -30,6 +30,15 @@ function rrTimeSplit(r){
           stall:(r.stallMs?rrElapsed(r.stallMs):null),
           gap:(r.gapMs?rrElapsed(r.gapMs):null), gapCount:r.gapCount||0};
 }
+function rrRunState(r,now){
+  now=now||Date.now();
+  var stale=r.progressTs?Math.max(0,Math.floor((now-r.progressTs)/60000)):null;
+  var names={quality:'内容校验未通过',timeout:'上游请求超时',upstream:'上游服务暂时不可用',worker_crash:'执行器已重启',configuration:'服务配置待处理'};
+  if(r.engineStatus==='retry_wait')return {text:(names[r.failureCode]||'本轮未完成')+'，已保留进度并等待自动重试',stale:stale,retrying:true};
+  if(r.engineStatus==='queued'||r.status==='pending')return {text:'等待执行，尚未开始研究',stale:stale,retrying:false};
+  if(stale!==null && stale>5)return {text:stale+' 分钟未产出新检查点，当前执行状态待确认',stale:stale,retrying:false};
+  return {text:r.attempts>1?'当前步骤第 '+r.attempts+' 次尝试':'研究进行中',stale:stale,retrying:false};
+}
 // 专员归属阶段（按 activity.id 分组到 6 个研判阶段）
 var RR_STAGE_OF={economic_profiler:0,population_profiler:0,transport_land_profiler:0,life_support_profiler:0,industry_analyst:0,competition_scout:0,policy_researcher:0,
   chain_mapper:1,enterprise_hunter_1:2,enterprise_hunter_2:2,enterprise_hunter_3:2,fact_checker:3,scoring_engine:4,action_planner:4,compact_writer:5};
@@ -150,7 +159,7 @@ function rrProgress(r){
   var pct=Math.min(96, Math.round(fd/ft*100));
   var step=r.step||'AI 研判启动中…';
   var eta=(r.etaMin!=null)?('预计还需 '+r.etaMin+' 分钟'):'完成时间以实际研判进度为准';
-  var staleMin=r.progressTs?Math.floor((Date.now()-r.progressTs)/60000):null;
+  var runState=rrRunState(r),staleMin=runState.stale;
   var stale=staleMin!=null&&staleMin>5;
   var lastUpd=staleMin==null?'':staleMin<1?'刚更新':staleMin+' 分钟前更新';
   var gapBadge=ts.gap?('<span title="机器睡眠/离线导致的暂停时长（'+ts.gapCount+' 次断点），不计入有效运行时间" '+
@@ -161,7 +170,7 @@ function rrProgress(r){
   return '<div style="margin-top:8px;padding:10px 12px;border:1px solid #e3ebf6;border-radius:8px;background:#f8fbff">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#3d5471;margin-bottom:7px">'+
       '<span><span class="'+(stale?'':'rr-dot-live')+'" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+(stale?'#c85b09':'#0aa696')+';margin-right:6px"></span>'+
-      '<b style="color:#0757ad" class="rr-step-glow">'+rrHtml(step)+'</b>'+(stale?' <span style="color:#c85b09">（'+staleMin+' 分钟未更新，等待执行器恢复）</span>':'')+'</span>'+
+      '<b style="color:#0757ad" class="rr-step-glow">'+rrHtml(step)+'</b> <span style="color:'+(stale||runState.retrying?'#c85b09':'#667590')+'">（'+rrHtml(runState.text)+'）</span></span>'+
       '<span style="display:inline-flex;align-items:center"><span id="rrElapsed" style="font-variant-numeric:tabular-nums">'+(r.engine==='full-v1'?'报告耗时 ':'有效运行 ')+ts.active+'</span>'+gapBadge+'</span></div>'+
     '<div style="height:8px;border-radius:4px;background:#e6edf6;overflow:hidden;margin-bottom:7px">'+
       '<div class="'+(stale?'':'rr-bar-live')+'" style="height:100%;width:'+pct+'%;border-radius:4px;background:linear-gradient(90deg,#0757ad,#007f82);transition:width .6s"></div></div>'+
@@ -213,7 +222,9 @@ function rrPanel(options){
     }
     var dlBtn='';
     if(r.status==='done' && r.files && r.files.length){
-      dlBtn='<button onclick="downloadReqFile(\''+rrInlineString(r.id)+'\',\'full\')" style="flex-shrink:0;padding:6px 12px;background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:8px;font-size:12px;color:#4338ca;cursor:pointer;font-weight:600;white-space:nowrap">⬇ 原始报告(docx)</button>';
+      dlBtn='<button onclick="downloadReqFile(\''+rrInlineString(r.id)+'\',\'full\')" style="flex-shrink:0;padding:6px 12px;background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:8px;font-size:12px;color:#4338ca;cursor:pointer;font-weight:600;white-space:nowrap">⬇ 研判主报告（Word）</button>';
+      dlBtn+='<button onclick="downloadReqFile(\''+rrInlineString(r.id)+'\',\'short\')">快速简报（Word）</button>' +
+        '<button onclick="downloadReqFile(\''+rrInlineString(r.id)+'\',\'research\')">完整研究附件（ZIP）</button>';
     }
     var pushCtrl='';
     if(r.status==='done'){

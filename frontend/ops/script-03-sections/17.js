@@ -858,6 +858,10 @@ function cpCityMap(){
     var nk=p.kb.reduce(function(s,t){return s+(t.known||[]).length;},0);
     if(nk>nc) byCity[c]=k;
   });
+  Object.keys(byCity).forEach(function(city){
+    var registry=typeof CITY_WORKSPACES!=='undefined'&&CITY_WORKSPACES[city];
+    if(registry&&PROJECTS[registry.projectKey])byCity[city]=registry.projectKey;
+  });
   return byCity;
 }
 function cpProjKey(){
@@ -867,12 +871,12 @@ function cpProjKey(){
   cpCity=cities[0];
   return m[cpCity];
 }
-/* 该城市全部材料（跨同城项目合并，画像要看城市而非单个方向）*/
+/* 只读当前选定工作区：同城名称不构成资料共享授权。 */
 function cpCorpus(city){
-  var out=[];
+  var out=[], selected=cpCityMap()[city];
   Object.keys(PROJECTS).forEach(function(k){
     var p=PROJECTS[k];
-    if(!p||(p.city||k)!==city) return;
+    if(!p||k!==selected) return;
     (p.kb||[]).forEach(function(t){
       (t.known||[]).forEach(function(it,i){
         var s=(it&&typeof it==='object')?(it.text||''):it;
@@ -889,10 +893,10 @@ function cpCorpus(city){
 }
 /* 该城市的问卷答案：同城任一项目填过就算（政府端按项目存）*/
 function cpOnboarding(city){
-  var found=null;
+  var found=null, selected=cpCityMap()[city];
   Object.keys(PROJECTS).forEach(function(k){
     var p=PROJECTS[k];
-    if(!p||(p.city||k)!==city||found) return;
+    if(!p||k!==selected||found) return;
     if(p.onboarding && Object.keys(p.onboarding).length) found=p.onboarding;
   });
   return found;
@@ -918,39 +922,24 @@ function cpInterviewCount(city){
 }
 /* ── 生成画像：吃全量语料 + 问卷 → 结构化 JSON 缓存到 PROJECTS[key].profile ── */
 function cpGenerate(force){
-  var key=cpProjKey(); if(!key||cpBusy) return;
-  var p=PROJECTS[key], city=p.city||key;
+  var key=cpProjKey();if(!key||cpBusy)return;
+  var p=PROJECTS[key],city=p.city||key,topic=p.topic||'',requestId=p.reportRequestId||null,epoch=typeof _authEpoch==='number'?_authEpoch:0;
+  var sourceIdentity=savedEvidenceIdentity(key,topic);
+  function current(){return savedEvidenceIdentity(key,topic)===sourceIdentity&&(typeof _authEpoch==='number'?_authEpoch:0)===epoch;}
   var corpus=cpCorpus(city);
-  if(!corpus.length){ cpErr='该城市暂无智库材料，无法生成画像'; renderOpsV2(); return; }
-  cpBusy=true; cpErr=''; cpRaw=''; renderOpsV2();
+  if(!corpus.length){cpErr='该城市暂无智库材料，无法生成画像';renderOpsV2();return;}
+  cpBusy=true;cpErr='';cpRaw='';renderOpsV2();
   var ob=cpOnboarding(city);
-  var body={question:'为'+city+'生成城市画像：客观自身条件与招商偏好',
-            chunks:corpus, city:city, mode:'city_profile', stream:true};
-  var pf=cpPrefs(ob); if(pf) body.prefs=pf;
-  fetch('/api/kb-chat',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(body)})
-    .then(function(resp){
-      if(!resp.ok||!resp.body) throw new Error('HTTP '+resp.status);
-      var reader=resp.body.getReader(), dec=new TextDecoder(), buf='', acc='';
-      function pump(){
-        return reader.read().then(function(r){
-          if(r.done){ cpFinish(key, acc, corpus.length, !!ob); return; }
-          buf+=dec.decode(r.value,{stream:true});
-          var lines=buf.split('\n'); buf=lines.pop();
-          lines.forEach(function(line){
-            line=line.trim(); if(line.indexOf('data:')!==0) return;
-            var d=line.slice(5).trim(); if(!d||d==='[DONE]') return;
-            try{ var j=JSON.parse(d);
-                 var delta=((j.choices||[{}])[0].delta||{}).content||'';
-                 if(delta) acc+=delta;
-            }catch(e){}
-          });
-          return pump();
-        });
-      }
-      return pump();
-    })
-    .catch(function(e){ cpBusy=false; cpErr='生成失败：'+e.message; renderOpsV2(); });
+  var body={question:'为'+city+'生成城市画像：客观自身条件与招商偏好',projectKey:key,topic:topic,reportRequestId:requestId,mode:'city_profile',stream:true};
+  fetch('/api/kb-chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(async function(resp){
+      if(!resp.ok)throw new Error('HTTP '+resp.status);
+      var result=await readTopicReportStream(resp,function(){});
+      if(!current())throw new Error('工作区或报告版本已变化，旧响应未写入');
+      var obj=JSON.parse(result.text);
+      if(obj.projectKey!==key||obj.topic!==topic||(obj.reportRequestId||null)!==requestId)throw new Error('画像来源版本已变化，旧画像已保留');
+      cpFinish(key,result.text,corpus.length,!!ob);
+    }).catch(function(e){cpBusy=false;cpErr='生成失败：'+e.message;renderOpsV2();});
 }
 /* 【2026-09-17】JSON 保守修复：把字符串值内部的裸双引号替换成中文引号。
    逐字符扫描并跟踪是否处于字符串内；只有当一个双引号后面紧跟的不是
@@ -994,7 +983,7 @@ function cpFinish(key, txt, nChunks, hadOb){
     try{ obj=JSON.parse(cpRepairJson(_jsonTxt)); }
     catch(e2){ cpErr='画像 JSON 解析失败：'+e.message+'（可重新生成）'; renderOpsV2(); return; }
   }
-  if(!obj||typeof obj!=='object'){ cpErr='画像数据为空'; renderOpsV2(); return; }
+  if(!obj||typeof obj!=='object'||obj.evidence_contract!=='saved-excerpts-v1'||obj.projectKey!==key){ cpErr='画像来源校验未通过，旧画像已保留'; renderOpsV2(); return; }
   obj.__ts=Date.now(); obj.__chunks=nChunks; obj.__hasOnboarding=!!hadOb;
   PROJECTS[key].profile=obj;
   cpErr='';
@@ -1032,7 +1021,7 @@ function cpObjBlock(title, icon, rows){
           '<div style="font-size:13px;font-weight:650;color:#0b183b;flex:1">'+cpEsc(r.value)+'</div>'+
         '</div>'+
         (r.detail?'<div style="font-size:12px;color:#5a7398;margin:3px 0 0 98px;line-height:1.6">'+cpEsc(r.detail)+'</div>':'')+
-        (r.cite?'<div style="font-size:10.5px;color:#a8b3c4;margin:3px 0 0 98px">来源：'+cpEsc(r.cite)+'</div>':'')+
+        (r.evidence&&r.evidence.length?funnelEvidenceLinks({evidence:r.evidence}):(r.cite?'<div style="font-size:10.5px;color:#a8b3c4;margin:3px 0 0 98px">来源：'+cpEsc(r.cite)+'</div>':''))+
       '</div>';
     }).join('')+'</div></div>';
 }
@@ -1590,12 +1579,13 @@ function opsDemandResults(){
     var collapsed=window.__funnelCollapse[k]===true;
     var head='<div style="padding:12px 20px 4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
       '<span onclick="toggleFunnelBlock('+_authEscape(JSON.stringify(k))+')" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none">'+'<span style="font-size:11px;color:#6d28d9;display:inline-block;transform:rotate('+(collapsed?'-90':'0')+'deg)">▼</span>'+'<span style="font-size:12.5px;font-weight:750;color:#0b183b">AI 企业漏斗</span>'+'</span>'+
-      (fn?'<span style="font-size:11px;padding:2px 8px;background:#f5f3ff;color:#6d28d9;border-radius:10px">扫描'+(fn.total||fn.companies.length)+'家 · 精筛'+fn.companies.length+'家</span>':'')+
+      (fn?'<span style="font-size:11px;padding:2px 8px;background:#f5f3ff;color:#6d28d9;border-radius:10px">有来源候选 '+fn.companies.length+' 家</span>':'')+
       '<div style="flex:1"></div>'+
       (fn&&fn.companies&&fn.companies.length?'<button onclick="showFunnelPyramid('+_authEscape(JSON.stringify(k))+')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:11.5px;color:#1a56db;cursor:pointer;font-weight:600;margin-right:8px">📊 分级图谱</button>':'')+
       (running?'<span style="font-size:11.5px;color:#6d28d9">⏳ 分析中…</span>':'<button onclick="loadAIScanClues('+_authEscape(JSON.stringify(k))+')" style="padding:4px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:11.5px;color:#6d28d9;cursor:pointer;font-weight:600">🔄 重新分析</button>')+
     '</div>';
     if(collapsed) return head;
+    if(fn&&fn.evidence_contract!=='saved-excerpts-v1')return head+'<div style="padding:12px 20px;color:#92400e">此旧清单尚未逐条核对来源。请重新分析后查看和推送。</div>';
     var body;
     if(running && !fn){
       body='<div style="margin:6px 20px 14px;text-align:center;padding:20px;background:#faf9ff;border-radius:10px;border:1px solid #ede9fe;font-size:12.5px;color:#6d28d9">⏳ AI 正在按该方向缺口分析适配企业，约需 1-2 分钟…</div>';
@@ -1606,7 +1596,7 @@ function opsDemandResults(){
       '</div>';
     } else {
       var pushedTip=fn.pushed?'<span style="font-size:11px;color:#166534;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:3px 9px">✓ 已推送 '+(fn.pushedNames?fn.pushedNames.length:0)+' 家到政府端</span>':'';
-      var pushBtn='<button onclick="pushFunnelTopToGov('+_authEscape(JSON.stringify(k))+',8)" style="padding:7px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer">🚀 推送 Top8 精准企业到政府端</button>';
+      var pushBtn='<button onclick="pushFunnelTopToGov('+_authEscape(JSON.stringify(k))+',8)" style="padding:7px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer">核对来源后推送候选（最多8家）</button>';
       if(!window.__funnelExpand) window.__funnelExpand={};
       var expandAll=window.__funnelExpand[k]===true;
       var COLLAPSE_N=8;
@@ -1619,7 +1609,7 @@ function opsDemandResults(){
             '<div style="font-size:12.5px;font-weight:650;color:#0b183b;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
               '<span>'+_authEscape(c.name)+'</span>'+
               (c.listed?'<span style="font-size:10px;color:#6d28d9;background:#f5f3ff;border-radius:6px;padding:1px 6px">'+_authEscape(c.listed)+'</span>':'')+
-              (isTop?'<span style="font-size:10px;color:#1a56db;background:#eff6ff;border-radius:6px;padding:1px 6px">Top8</span>':'')+
+              (isTop?'<span style="font-size:10px;color:#1a56db;background:#eff6ff;border-radius:6px;padding:1px 6px">待核候选</span>':'')+
             '</div>'+
             '<div style="font-size:11px;color:#8492a6;margin-top:2px">'+_authEscape(c.region||'')+(c.kind?' \u00b7 '+_authEscape(c.kind):'')+'</div>'+
             (c.fit?'<div style="font-size:11px;color:#4a5568;margin-top:3px;line-height:1.5">'+_authEscape(c.fit)+'</div>':'')+
@@ -1630,9 +1620,10 @@ function opsDemandResults(){
             (c.expansion?'<div style="font-size:10.5px;color:#166534;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:2px 7px;margin-top:4px;display:inline-block;line-height:1.5">🚀 有扩张需求：'+_authEscape(c.expansion)+'</div>':'')+
             (c.faction?'<div style="font-size:10.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:2px 7px;margin-top:4px;margin-left:4px;display:inline-block;line-height:1.5">🤝 派系关联：'+_authEscape(c.faction)+'</div>':'')+
             // 评分卡分项构成
-            '<div style="font-size:10px;color:#9aa5b5;margin-top:4px">匹配 '+_authEscape(c.score_match||0)+' + 可招引 '+_authEscape(c.score_relocate||0)+' + 实力 '+_authEscape(c.score_strength||0)+'</div>'+
+            '<div style="font-size:10px;color:#9aa5b5;margin-top:4px">业务适配待核 · 投资意向未知 · 实力待核</div>'+
+            funnelEvidenceLinks(c)+
           '</div>'+
-          '<span style="flex-shrink:0;font-size:13px;font-weight:800;color:'+(c.fit_score>=80?'#16a34a':c.fit_score>=60?'#d97706':'#6b7280')+'">'+_authEscape(c.fit_score||0)+'<span style="font-size:10px;font-weight:600">\u5206</span></span>'+
+          '<span style="flex-shrink:0;font-size:13px;font-weight:800;color:'+(c.fit_score>=80?'#16a34a':c.fit_score>=60?'#d97706':'#6b7280')+'">'+_authEscape(c.fit_score==null?'待核':c.fit_score)+'<span style="font-size:10px;font-weight:600">'+(c.fit_score==null?'':'分')+'</span></span>'+
         '</div>';
       }).join('');
       var toggle='';
@@ -2066,6 +2057,7 @@ function opsEntListV2(list){
         '<div style="font-size:12px;color:#4a5568">'+_authEscape(e.kind)+' · '+_authEscape(e.region)+(e.revenue?' · '+_authEscape(e.revenue):'')+'</div>' +
         (e.gap?'<div style="font-size:11.5px;color:#667590;margin-top:2px">'+_authEscape(e.gap)+'</div>':'') +
         (e.signal&&e.signal!=='（无扩张信号）'?'<div style="font-size:11px;color:#b45309;margin-top:5px;line-height:1.5;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:6px 9px">📡 '+_authEscape(e.signal)+'</div>':'') +
+        (e.aiEvidenceStatus==='pending'?'<div style="margin-top:6px;padding:6px 9px;background:#fffbeb;border-radius:8px;font-size:11px;color:#92400e">含AI待核资料；不代表已核实事实或投资意向。'+enterpriseDraftSourcesHTML({sources:e.aiSources||Object.keys(e.aiEvidence||{}).reduce(function(out,k){return out.concat((e.aiEvidence[k]||{}).sources||[]);},[])})+'</div>':'')+
         tagsHtml +
         factionHtml +
         (e.contact?'<div style="margin-top:6px;font-size:11.5px;color:#4a5568"><b>'+_authEscape(e.contact)+'</b>'+(e.note?' · '+_authEscape(e.note):'')+'</div>':'') +
@@ -2144,6 +2136,8 @@ function opsEntList(){
 
 /* 手动录入 */
 function opsEntAdd(){
+  window._enterpriseNewDraft=null;
+  window._enterpriseAddToken=(window._enterpriseAddToken||0)+1;
   var body=
     '<div style="display:flex;flex-direction:column;gap:12px">'+
     '<div style="display:flex;gap:10px;align-items:flex-end">'+
@@ -2185,9 +2179,45 @@ function opsEntAdd(){
 }
 
 /* AI智能填充：输入企业名后自动查询公开信息填充表单 */
+function enterpriseDraftText(text){
+  var full='', stopped=false, error=false;
+  text.split('\n').forEach(function(line){
+    if(line.indexOf('data:')!==0)return;var raw=line.slice(5).trim();if(!raw||raw==='[DONE]')return;
+    try{var obj=JSON.parse(raw),choice=(obj.choices||[])[0]||{};if(obj.error)error=true;if(choice.finish_reason==='stop')stopped=true;else if(choice.finish_reason)error=true;full+=(choice.delta||{}).content||'';}catch(_){}
+  });
+  if(error||!stopped||!full.trim())throw new Error('企业资料生成未完成，原有字段已保留');
+  return full;
+}
+function enterpriseDraftInfo(text,name){
+  var info=JSON.parse(enterpriseDraftText(text));
+  if(!info||info.evidence_contract!=='enterprise-draft-v1'||info.entityName!==name)throw new Error('企业资料来源或企业身份不匹配');
+  info.sources=(Array.isArray(info.sources)?info.sources:[]).filter(function(s){try{var u=new URL(s.url);return /^https?:$/.test(u.protocol)&&!u.username&&!u.password;}catch(_){return false;}});
+  info.signal='';info.hasMoveSignal=false;info.investment_intent='unknown';
+  return info;
+}
+function enterpriseDraftSourcesHTML(info){
+  var seen={},sources=(Array.isArray(info.sources)?info.sources:[]).filter(function(s){try{var u=new URL(s.url);if(!/^https?:$/.test(u.protocol)||u.username||u.password||seen[u.href])return false;seen[u.href]=true;return true;}catch(_){return false;}}).slice(0,20);
+  return '<div style="margin:8px 0;font-size:12px;line-height:1.7;color:#92400e">AI搜索建议仍待核验，不代表已核实企业事实或投资意向。'+(sources.length?'请打开来源逐条核对：':'未返回可核查来源，不能采纳字段。')+'</div>'+sources.map(function(s,i){return '<a href="'+_authEscape(s.url)+'" target="_blank" rel="noopener noreferrer" style="display:block;word-break:break-all;font-size:12px">'+_authEscape(s.title||('来源 '+(i+1)))+' · '+_authEscape(s.url)+'</a>';}).join('');
+}
+function enterpriseFillRevision(e){
+  function stable(v){if(Array.isArray(v))return v.map(stable);if(v&&typeof v==='object'){var result={};Object.keys(v).sort().forEach(function(k){result[k]=stable(v[k]);});return result;}return v;}
+  return JSON.stringify(['name','kind','region','revenue','employees','gap','tags','faction','contact','signal','note','aiEvidence'].map(function(k){return e[k]===undefined?null:stable(e[k]);}));
+}
+function enterpriseFillTarget(e){
+  var id=String(opsEntEnsureId(e)),runs=window._enterpriseFillRuns||(window._enterpriseFillRuns={});
+  var token=(runs[id]||0)+1;runs[id]=token;
+  return {id:id,name:e.name,revision:enterpriseFillRevision(e),epoch:typeof _authEpoch==='number'?_authEpoch:0,token:token};
+}
+function currentEnterpriseFillTarget(target){
+  if(!target||(typeof _authEpoch==='number'?_authEpoch:0)!==target.epoch||(window._enterpriseFillRuns||{})[target.id]!==target.token)return null;
+  var matches=OPS_ENT.filter(function(e){return String(e.id)===target.id;});
+  var e=matches.length===1?matches[0]:null;
+  return e&&e.name===target.name&&enterpriseFillRevision(e)===target.revision?e:null;
+}
 /* AI补全已有企业信息（标签/派系/营收等）- 需人工确认 */
 function opsEntAiFillExisting(idx){
   var e = OPS_ENT[idx]; if(!e) return;
+  var target=enterpriseFillTarget(e);persist();
   toast('正在为「'+e.name+'」查询信息…');
 
   var prompt='请查询企业「'+e.name+'」的以下公开信息，以JSON格式返回（不要markdown代码块）：'+
@@ -2197,24 +2227,17 @@ function opsEntAiFillExisting(idx){
     '已知信息：行业='+e.kind+'，地区='+e.region+'，方向='+(e.gap||'')+
     '。要求：①faction重点列出CEO/董事长/CTO的毕业院校（校友会）和参与的商会组织；②tags包含行业关键词；③基于公开可查资料，不确定的标注"待核实"';
 
-  fetch('/api/kb-chat',{
+  fetch('/api/enterprise-enrich',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:prompt,city:'企业查询',role:'ops'})
+    body:JSON.stringify({entityName:e.name})
   }).then(function(r){return r.text();}).then(function(text){
-    var full='';
-    text.split('\n').forEach(function(line){
-      if(!line.startsWith('data:'))return;
-      var d=line.slice(5).trim();if(d==='[DONE]')return;
-      try{var j=JSON.parse(d);var c=(j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||'';full+=c;}catch(ex){}
-    });
-    var jsonMatch=full.match(/\{[\s\S]*\}/);
-    if(!jsonMatch){toast('AI返回格式异常');return;}
     try{
-      var info=JSON.parse(jsonMatch[0]);
+      var info=enterpriseDraftInfo(text,target.name),current=currentEnterpriseFillTarget(target);
+      if(!current){toast('企业资料或登录会话已变化，本次建议未应用');return;}
       // 弹出确认面板让用户逐项确认
-      window._aiFillPending={idx:idx, info:info};
-      showAiFillConfirm(idx, info, e);
+      window._aiFillPending={target:target,info:info};
+      showAiFillConfirm(OPS_ENT.indexOf(current),info,current);
     }catch(ex){toast('解析失败：'+ex.message);}
   }).catch(function(err){toast('连接失败：'+err.message);});
 }
@@ -2230,7 +2253,6 @@ function showAiFillConfirm(idx, info, e){
     {key:'tags',label:'标签',old:(e.tags||[]).join(', '),new:(info.tags||[]).join(', ')},
     {key:'faction',label:'人脉/派系',old:(e.faction||[]).map(function(f){return (f.person||'')+' · '+(f.label||'');}).join(', '),
      new:(info.faction||[]).map(function(f){return (f.person||'')+' · '+(f.label||'');}).join(', ')},
-    {key:'signal',label:'扩张信号',old:e.signal,new:info.signal},
     {key:'note',label:'备注',old:e.note,new:info.note}
   ];
 
@@ -2239,14 +2261,14 @@ function showAiFillConfirm(idx, info, e){
     var hasNew=f.new&&f.new.trim();
     if(!hasNew) return '';
     if(hasOld && f.old===f.new) return '';
-    var checked=hasOld?'':'checked';
-    var safeNew=String(f.new).replace(/"/g,'&quot;');
+    var checked='';
+    var safeNew=_authEscape(String(f.new));
     return '<div style="padding:10px 12px;background:#f8faff;border:1px solid #e8edf5;border-radius:8px;margin-bottom:8px">'+
       '<div style="display:flex;align-items:flex-start;gap:10px">'+
         '<input type="checkbox" data-field="'+f.key+'" '+checked+' style="margin-top:3px;width:16px;height:16px;cursor:pointer" />'+
         '<div style="flex:1">'+
           '<div style="font-size:12px;font-weight:650;color:#4a5568;margin-bottom:3px">'+f.label+'</div>'+
-          (hasOld?'<div style="font-size:12px;color:#9aa5b5;text-decoration:line-through;margin-bottom:4px">现有：'+f.old+'</div>':'')+
+          (hasOld?'<div style="font-size:12px;color:#9aa5b5;text-decoration:line-through;margin-bottom:4px">现有：'+_authEscape(f.old)+'</div>':'')+
           '<div style="display:flex;align-items:center;gap:6px">'+
             '<span style="font-size:12px;color:#6d28d9;font-weight:600;flex-shrink:0">AI建议</span>'+
             '<input type="text" data-fieldval="'+f.key+'" value="'+safeNew+'" '+
@@ -2260,17 +2282,17 @@ function showAiFillConfirm(idx, info, e){
   }).filter(Boolean).join('');
 
   if(!rows){
-    toast('AI未发现新信息可补全');return;
+    toast(info.notice||'AI未发现有来源的新信息可补全');return;
   }
 
-  var body='<div style="max-height:60vh;overflow-y:auto">'+
-    '<div style="font-size:12.5px;color:#8492a6;margin-bottom:12px">勾选需要采纳的字段，取消勾选则保留原值：</div>'+
+  var body='<div style="max-height:60vh;overflow-y:auto">'+enterpriseDraftSourcesHTML(info)+
+    '<div style="font-size:12.5px;color:#8492a6;margin:12px 0">核对来源后勾选需要保留的待核字段；原投资意向不会被AI改动。</div>'+
     rows+
   '</div>';
 
   openModal('AI补全确认 · '+e.name, body,
     '<button class="secondary-button" onclick="closeModal()">取消</button>'+
-    '<button class="primary-button" onclick="applyAiFill()">确认采纳</button>');
+    '<button class="primary-button" onclick="applyAiFill()">保留选中待核资料</button>');
 }
 
 /* 应用AI补全（仅勾选的字段） */
@@ -2339,30 +2361,40 @@ function applyManualEdit(){
 
 function applyAiFill(){
   var pending=window._aiFillPending; if(!pending) return;
-  var e=OPS_ENT[pending.idx]; var info=pending.info;
+  var e=currentEnterpriseFillTarget(pending.target); var info=pending.info;
+  if(!e){window._aiFillPending=null;toast('企业资料或登录会话已变化，请重新查询');return;}
+  if(!info.sources||!info.sources.length){toast('缺少可核查来源，不能采纳');return;}
+  var allowed=['kind','region','revenue','employees','gap','tags','faction','note'],accepted=[];
   var checkboxes=document.querySelectorAll('#modalLayer input[type=checkbox]');
   checkboxes.forEach(function(cb){
     if(!cb.checked) return;
     var field=cb.dataset.field;
+    if(allowed.indexOf(field)<0||!info.field_status||info.field_status[field]!=='draft_unverified')return;
     // 读取输入框里（可能被手动修改过的）值，回退到 AI 原值
     var inp=document.querySelector('#modalLayer input[data-fieldval="'+field+'"]');
     var editedVal=inp?inp.value.trim():'';
     if(field==='tags'){ e.tags=editedVal?editedVal.split(/[,，、]+/).map(function(t){return t.trim();}).filter(Boolean):(info.tags||e.tags); }
     else if(field==='faction' && info.faction) e.faction=info.faction;
-    else if(field==='signal'){ e.signal=editedVal||info.signal; e.hasMoveSignal=true; }
     else if(editedVal) e[field]=editedVal;
     else if(info[field]) e[field]=info[field];
+    e.aiEvidence=e.aiEvidence||{};
+    e.aiEvidence[field]={value:e[field],status:'pending',origin:'ai_search',sources:info.sources,at:Date.now()};
+    accepted.push(field);
   });
+  if(!accepted.length){toast('请核对来源后至少勾选一项');return;}
+  e.aiEvidenceStatus='pending';window._aiFillPending=null;
   persist();
   closeModal();
   renderOpsV2();
-  toast('✓ 已更新「'+e.name+'」信息');
+  toast('已保留「'+e.name+'」待核资料，投资意向未改变');
 }
 
 
 function opsEntAiFill(){
-  var name=((document.getElementById('oe-name')||{}).value||'').trim();
+  var nameInput=document.getElementById('oe-name'),name=((nameInput||{}).value||'').trim();
   if(!name){toast('请先输入企业名称');return;}
+  var epoch=typeof _authEpoch==='number'?_authEpoch:0,formToken=window._enterpriseAddToken,run=(window._enterpriseNewRun||0)+1;window._enterpriseNewRun=run;
+  function current(){return run===window._enterpriseNewRun&&epoch===(typeof _authEpoch==='number'?_authEpoch:0)&&formToken===window._enterpriseAddToken&&document.getElementById('oe-name')===nameInput&&nameInput.value.trim()===name;}
   var btn=document.getElementById('oe-ai-btn');
   var status=document.getElementById('oe-ai-status');
   if(btn){btn.disabled=true;btn.textContent='查询中…';}
@@ -2374,24 +2406,15 @@ function opsEntAiFill(){
     '"gap":"该企业可能适合的产业补链方向","signal":"近期是否有产能扩张/异地投资信号(如有写具体内容,无则写空字符串)","note":"一句话企业简介"}'+
     '要求：①faction重点列出CEO/董事长/CTO的毕业院校（校友会）和参与的商会组织；②tags包含行业关键词；③信息必须基于公开可查资料，不确定的标注"待核实"';
 
-  fetch('/api/kb-chat',{
+  fetch('/api/enterprise-enrich',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:prompt,city:'企业查询',role:'ops'})
+    body:JSON.stringify({entityName:name})
   }).then(function(r){return r.text();}).then(function(text){
-    // Parse streaming response
-    var full='';
-    text.split('\n').forEach(function(line){
-      if(!line.startsWith('data:'))return;
-      var d=line.slice(5).trim();if(d==='[DONE]')return;
-      try{var j=JSON.parse(d);var c=(j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||'';full+=c;}catch(e){}
-    });
-    // Try to extract JSON from response
-    var jsonStr=full;
-    var jsonMatch=full.match(/\{[\s\S]*\}/);
-    if(jsonMatch) jsonStr=jsonMatch[0];
+    if(!current())return;
     try{
-      var info=JSON.parse(jsonStr);
+      var info=enterpriseDraftInfo(text,name);
+      window._enterpriseNewDraft={name:name,input:nameInput,epoch:epoch,token:formToken,info:info};
       // Fill form fields
       if(info.kind) document.getElementById('oe-kind').value=info.kind;
       if(info.region) document.getElementById('oe-region').value=info.region;
@@ -2404,14 +2427,14 @@ function opsEntAiFill(){
           return (f.person||'')+'·'+(f.label||'')+(f.type==='校友会'?'毕业':'');
         }).join(',');
       }
-      if(info.signal) document.getElementById('oe-signal').value=info.signal;
       if(info.note) document.getElementById('oe-note').value=info.note;
-      if(status){status.textContent='✓ 已自动填充，请核对后保存';status.style.color='#059669';status.style.background='#f0fdf4';}
+      if(status){status.innerHTML=enterpriseDraftSourcesHTML(info);status.style.color='#92400e';status.style.background='#fffbeb';}
     }catch(e){
-      if(status){status.textContent='⚠ AI返回格式异常，请手动填写：'+full.substring(0,100);status.style.color='#d97706';status.style.background='#fffbeb';}
+      if(status){status.textContent='AI建议未应用：'+e.message;status.style.color='#d97706';status.style.background='#fffbeb';}
     }
     if(btn){btn.disabled=false;btn.textContent='AI 智能填充';}
   }).catch(function(e){
+    if(!current())return;
     if(status){status.textContent='连接失败：'+e.message;status.style.color='#ef4444';status.style.background='#fef2f2';}
     if(btn){btn.disabled=false;btn.textContent='AI 智能填充';}
   });
@@ -2459,6 +2482,14 @@ function opsEntSaveV2(){
     gap:gap,tags:tags,faction:faction,contact:contact,note:note,
     hasMoveSignal:!!signal,signal:signal,status:'manual',matches:[]
   };
+  var draft=window._enterpriseNewDraft;
+  if(draft&&draft.name===name&&draft.input===document.getElementById('oe-name')&&draft.epoch===(typeof _authEpoch==='number'?_authEpoch:0)&&draft.token===window._enterpriseAddToken&&draft.info.sources.length){
+    ent.aiEvidence={};ent.aiSources=draft.info.sources;ent.aiEvidenceStatus='pending';
+    ['kind','region','revenue','employees','gap','tags','faction','note'].forEach(function(field){
+      if(draft.info.field_status&&draft.info.field_status[field]==='draft_unverified')ent.aiEvidence[field]={value:ent[field],status:'pending',origin:'ai_search',sources:draft.info.sources,at:Date.now()};
+    });
+  }
+  window._enterpriseNewDraft=null;
   opsEntEnsureId(ent);
   OPS_ENT.push(ent);
   persist();

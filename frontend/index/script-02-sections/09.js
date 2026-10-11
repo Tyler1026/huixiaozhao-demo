@@ -228,7 +228,7 @@ function kbReadiness(){
   var _progHint=(warnTotal>0)?(' · 已确认 '+warnConfirmed+'/'+warnTotal):'';
   var label=pendingWarn>0
     ? (pendingWarn+' 条待确认'+_secHint+_progHint)
-    : (score>=80?'已就绪':score>=50?'基本完整':score>=20?'待补充':'未开始');
+    : (score>=80?'材料覆盖充分 · 事实仍需核验':score>=50?'材料基本覆盖':score>=20?'待补充材料':'未开始');
   var color=pendingWarn>0
     ? '#f59e0b'
     : (score>=80?'#22c55e':score>=50?'#f59e0b':score>=20?'#3b82f6':'#9aa5b5');
@@ -281,6 +281,9 @@ function _frozenScoreIn(pk, topic){
 function nativeReportState(topic, projKey){
   var pk=projKey||cur, p=PROJECTS[pk], st=REPORTSTATE[pk];
   if(!p||!st||!st.sourceReportId||st.sourceReportId!==p.reportRequestId
+      ||(st.userGeneratedTopics&&st.userGeneratedTopics[topic])
+      ||(st.evidenceStatusByTopic&&st.evidenceStatusByTopic[topic]==='unreviewed')
+      ||(st.phaseByTopic&&st.phaseByTopic[topic]===1)
       ||topic!==p.topic||topic!==st.topic||st.scoreBasis!=='核验一致项比例') return null;
   return st;
 }
@@ -289,10 +292,13 @@ function nativeReportScore(topic, projKey){
   return st&&typeof st.score==='number'&&isFinite(st.score)&&st.score>=0&&st.score<=100 ? st.score : null;
 }
 function topicScoreLabel(topic, projKey){
+  var st=REPORTSTATE[projKey||cur];
+  if(st&&st.evidenceStatusByTopic&&st.evidenceStatusByTopic[topic]==='unreviewed')return '内容待核验';
   return nativeReportScore(topic,projKey)!==null ? '核验一致项比例' : '置信度';
 }
 function topicScoreDisplay(topic, projKey){
-  var pk=projKey||cur, st=nativeReportState(topic,pk);
+  var pk=projKey||cur, rs=REPORTSTATE[pk], st=nativeReportState(topic,pk);
+  if(rs&&rs.evidenceStatusByTopic&&rs.evidenceStatusByTopic[topic]==='unreviewed')return '内容待核验';
   if(st && st.scoreStatus==='unclassified') return '核验分类待校核';
   if(st && (st.scoreStatus==='unavailable'||nativeReportScore(topic,pk)===null)) return '暂无核验结论';
   return topicScoreLabel(topic,pk)+' '+topicScore(topic,pk)+'%';
@@ -390,7 +396,7 @@ function kbPageProgressInner(r){
   var warn='⚠️'; var info='ⓘ';
   var tint=r.color+'0d'; // 更淡的底色（透明度从14降到0d）
   return '<div style="display:flex;align-items:center;gap:12px;margin-top:9px;padding:9px 14px;border-radius:8px;background:'+tint+'">'+
-    '<span style="font-size:16px;font-weight:650;color:'+r.color+';line-height:1;white-space:nowrap">'+r.score+'%</span>'+
+    '<span style="font-size:14px;font-weight:650;color:'+r.color+';line-height:1;white-space:nowrap">材料覆盖 '+r.score+'%</span>'+
     '<div style="flex:1;min-width:0">'+
       '<div style="background:#fff;border-radius:3px;height:6px;overflow:hidden;box-shadow:inset 0 0 0 1px '+r.color+'1f">'+
         '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:3px;transition:width .4s"></div>'+
@@ -401,13 +407,13 @@ function kbPageProgressInner(r){
       '</div>'+
     '</div>'+
   '</div>'+
-  (r.score<80?'<p style="font-size:11.5px;color:#a16207;margin:6px 0 0;padding:6px 12px;background:#fdf6e8;border-radius:6px">⚡ 上传越多材料、确认越多结论，研判数据可靠性越高（差 '+(80-r.score)+'% 自动解锁后续步骤）</p>':'');
+  (r.score<80?'<p style="font-size:11.5px;color:#a16207;margin:6px 0 0;padding:6px 12px;background:#fdf6e8;border-radius:6px">⚡ 补充材料、核查待确认项可完善覆盖；覆盖度不代表事实正确率（差 '+(80-r.score)+'% 自动解锁后续步骤）</p>':'');
 }
 function kbProgressInner(r){
   r=r||kbReadiness();
   return '<div style="padding:10px 14px 8px;border-top:1px solid #f0f4ff">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">'+
-      '<span style="font-size:10.5px;color:#9aa5b5;letter-spacing:.3px">城市智库完成度</span>'+
+      '<span style="font-size:10.5px;color:#9aa5b5;letter-spacing:.3px">城市智库材料覆盖</span>'+
       '<span style="font-size:11px;font-weight:700;color:'+r.color+'">'+r.score+'%</span>'+
     '</div>'+
     '<div style="height:4px;background:#f0f4ff;border-radius:2px;overflow:hidden">'+
@@ -435,7 +441,7 @@ function sidebar(){
       var conf=KB_CONFIRMS[cur]?Object.keys(KB_CONFIRMS[cur]).reduce(function(n,ki){return n+Object.keys(KB_CONFIRMS[cur][ki]).length;},0):0;
       var uploads=(UPLOADS[cur]||[]).length;
       if(r.pendingWarn>0) return '⚠ '+r.pendingWarn+' 条待确认 · 数据覆盖 '+(r.rawScore!==undefined?r.rawScore:r.score)+'%';
-  if(r.score>=80) return '✓ 已就绪 '+r.score+'% · '+conf+'条已确认';
+  if(r.score>=80) return '材料覆盖 '+r.score+'% · 事实仍需核验';
       return conf>0?(conf+'条已确认 · '+uploads+'份材料 · '+r.score+'%'):'待完善 · 产业/园区/企业/政策';
     })(),
     report: '生成缺口分析与招引方向',

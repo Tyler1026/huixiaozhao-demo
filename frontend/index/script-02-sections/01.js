@@ -390,27 +390,14 @@ function _getWarnKnown(kbIdx){
   });
 }
 function _getDisplaySub(kbIdx){
-  if(_kbSummaryData && _kbSummaryData.kb && _kbSummaryData.kb[kbIdx]){
-    var s=_kbSummaryData.kb[kbIdx].sub;
-    if(s) return s;
-  }
-  var p=P(); if(!p||!p.kb||!p.kb[kbIdx]) return '';
-  var sub=p.kb[kbIdx].sub||'';
-  // 如果是“AI流水线产出”类无意义文字，替换为板块概述
-  if(sub.indexOf('AI流水线')>=0||sub.indexOf('流水线产出')>=0||!sub){
-    var city=p.city||'';
-    var topic=p.kb[kbIdx].t||'';
-    var map={'主导产业与产业链':city+'主导产业集群与核心缺口','园区与承载条件':city+'主要园区与承载能力','链主与存量企业':city+'链主企业与配套格局','政策、规划与领导关注':city+'政策方向与竞争态势'};
-    sub=map[topic]||(city+'产业数据');
-  }
-  return sub;
+  var p=P(), section=p&&p.kb&&p.kb[kbIdx];
+  if(!section)return '';
+  return typeof kbSectionSummary==='function'?kbSectionSummary(section).displaySub:(section.sub||'');
 }
 function _getDisplayTag(kbIdx){
-  if(_kbSummaryData && _kbSummaryData.kb && _kbSummaryData.kb[kbIdx]){
-    return _kbSummaryData.kb[kbIdx].tag||'';
-  }
-  var p=P(); if(!p||!p.kb||!p.kb[kbIdx]) return '';
-  return p.kb[kbIdx].tag||'';
+  var p=P(), section=p&&p.kb&&p.kb[kbIdx];
+  if(!section)return '';
+  return typeof kbSectionSummary==='function'?kbSectionSummary(section).displayTag:(section.tag||'');
 }
 function _kbMeta(x){ return (x&&typeof x==='object')?x:{text:String(x==null?'':x),origin:'ai',nature:'base'}; }
 

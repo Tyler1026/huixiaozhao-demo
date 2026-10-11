@@ -6,7 +6,7 @@
 - GET  /health      → 健康检查
 - POST /api/kb-chat → RAG 问答，流式调用 DeepSeek API
 """
-import json, os, urllib.request, urllib.error, urllib.parse, time, datetime, hashlib, base64, io
+import json, os, urllib.request, urllib.error, urllib.parse, time, datetime, hashlib, base64, io, uuid
 from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 from backend.storage import (
     _PG_AVAIL, DATABASE_URL, SYNC_PATH, SNAPSHOT_KEEP,
@@ -972,11 +972,33 @@ class Handler(BaseHTTPRequestHandler):
                 state = load_state(bool(_PG_AVAIL and DATABASE_URL), _db_get, SYNC_PATH)
                 self._principal = require_session(self.headers, state, admin_config=self._account_config())
                 if path in ('/api/admin-reset', '/api/kb-clean', '/api/kb-upload',
-                            '/api/kb-version', '/api/report-push-request'):
+                            '/api/kb-version', '/api/report-push-request', '/api/funnel-review-push', '/api/enterprise-enrich'):
                     require_admin(self._principal)
                 self._scoped_state = scoped_sync_view(state, self._principal)
             except AuthError as error:
                 return error_response(self, error)
+        if path == '/api/funnel-review-push':
+            from backend.evidence_grounding import review_and_push
+            from backend.sync_transaction import file_session
+            from backend.auth_routes import respond
+            factory = (_sync_transaction if _PG_AVAIL and DATABASE_URL else lambda: file_session(SYNC_PATH, _file_snapshot))
+            try:
+                body = json.loads(raw)
+                if not isinstance(body, dict):
+                    raise AuthError(400, 'invalid_json', '请求格式不正确')
+                with factory() as session:
+                    live = json.loads(session.read())
+                    principal = require_session(self.headers, live, admin_config=self._account_config())
+                    require_admin(principal)
+                    result = review_and_push(body, live, principal.get('user', 'admin'))
+                    if not session.write(json.dumps(live, ensure_ascii=False)):
+                        raise AuthError(503, 'storage_unavailable', '尚未保存，请重试')
+                return respond(self, 200, result)
+            except AuthError as error:
+                return error_response(self, error)
+            except Exception:
+                return error_response(self, AuthError(503, 'storage_unavailable', '尚未保存，请重试'))
+
         # 云端数据同步：POST /api/sync 合并保存（保护字段不被空值覆盖）
         if self.path == '/api/sync':
             from backend.sync_route import handle_sync, SyncDependencies
@@ -1311,10 +1333,26 @@ class Handler(BaseHTTPRequestHandler):
                        lambda: file_session(SYNC_PATH, _file_snapshot))
             return request_publication(self, raw, session)
 
-        if self.path != '/api/kb-chat':
+        if self.path not in ('/api/kb-chat', '/api/enterprise-enrich'):
             self.send_error(404); return
 
-        body   = json.loads(raw)
+        try:
+            body = json.loads(raw)
+            if not isinstance(body, dict):
+                raise ValueError()
+        except (ValueError, UnicodeError):
+            return error_response(self, AuthError(400, 'invalid_json', '请求格式不正确'))
+        enterprise_draft = self.path == '/api/enterprise-enrich'
+        enterprise_name = ''
+        if enterprise_draft:
+            name = body.get('entityName')
+            if not isinstance(name, str) or not 2 <= len(name.strip()) <= 160 or any(char in name for char in '\n\r{}<>'):
+                return error_response(self, AuthError(400, 'entity_required', '请填写企业规范名称'))
+            # Dedicated admin operation: ignores arbitrary question/mode/purpose.
+            enterprise_name = name.strip()
+            body = {'question': '查询企业“'+enterprise_name+'”的公开资料，仅返回企业资料待核草稿 JSON。字段 kind/region/revenue/employees/gap/signal/note 为字符串，tags 和 faction 为数组，sources 为可核查原始 URL 数组。无法找到确切来源的值留空，signal 一律留空，不输出或推断投资意向，不输出招商报告或企业评分。', 'city': '企业资料', 'mode': 'chat', 'stream': True, 'chunks': []}
+        if not isinstance(body.get('question', ''), str) or not isinstance(body.get('chunks', []), list):
+            return error_response(self, AuthError(400, 'invalid_input', '问题或材料格式不正确'))
         q      = body.get("question", "").strip()
         chunks = body.get("chunks", [])
         city   = body.get("city", "")
@@ -1330,6 +1368,28 @@ class Handler(BaseHTTPRequestHandler):
 
         if not q:
             self.send_error(400, "question required"); return
+
+        from backend.evidence_grounding import (project_context, validate_confirmations,
+            evidence_catalog, bounded_catalog, model_catalog, ground_funnel, ground_profile, ground_chain,
+            enterprise_sources, ground_enterprise_draft)
+        evidence_context = None
+        catalog = []
+        structured = mode in ('funnel', 'city_profile') or body.get('purpose') == 'chain_map'
+        if structured or mode in ('full', 'draft') or body.get('purpose') in ('topic_full', 'topic_draft'):
+            try:
+                evidence_context = project_context(body, self._scoped_state)
+                if mode == 'full' or body.get('purpose') == 'topic_full':
+                    validate_confirmations(body, evidence_context)
+                chunks = evidence_context['chunks']
+                city = evidence_context['city']
+                # Questionnaire values come from authenticated workspace state.
+                ob = evidence_context['onboarding']
+                prefs = {'options': json.dumps({k: v for k, v in ob.items() if k != '__custom'}, ensure_ascii=False),
+                         'custom': json.dumps(ob.get('__custom') or {}, ensure_ascii=False)} if ob else {}
+            except AuthError as error:
+                return error_response(self, error)
+        request_run_id = uuid.uuid4().hex
+        request_started = time.monotonic()
 
         # 拼 RAG context —— 真实检索：按问题与语料词重合度打分取 TopK，而非盲切前 N
         # 报告类 mode（full/research/chain/funnel）吃进更多语料，对话类少吃
@@ -1369,10 +1429,15 @@ class Handler(BaseHTTPRequestHandler):
             if isinstance(c, str): return c
             if isinstance(c, dict): return str(c.get("text", "") or "")
             return ""
+        if structured:
+            catalog = bounded_catalog(evidence_catalog(chunks))
         ctx = "\n\n".join(
             f"[{(c.get('cite','') if isinstance(c, dict) else '')}·{(c.get('topic','') if isinstance(c, dict) else '')}]\n{_ctext(c)}"
             for c in used
         ) or "暂无检索到相关内容，请基于通用招商知识回答。"
+
+        if structured:
+            ctx = model_catalog(catalog)
 
         # —— 智库未命中：不要让用户自己去搜，后端直接把联网搜索补上 ——
         # chat/onboard_options 走 Responses API + web_search，平台自己会搜；
@@ -1390,10 +1455,16 @@ class Handler(BaseHTTPRequestHandler):
         # —— RAG 审计日志：证明本次分析实际吃进了哪些数据、其中多少来自用户上传 ——
         # total_available = 前端送来的候选总数；total_chunks = 真实命中并吃进的数量（可能 0~top_k）
         upload_used = [c for c in used if _is_upload_chunk(c)]
-        audit_log({
+        audit_entry = {
+            "runId": request_run_id,
+            "projectKey": evidence_context['projectKey'] if evidence_context else body.get('projectKey', ''),
+            "topic": evidence_context['topic'] if evidence_context else body.get('topic', ''),
+            "reportRequestId": evidence_context['reportRequestId'] if evidence_context else body.get('reportRequestId', ''),
+            "actor": self._principal.get('user', ''),
             "city": city,
             "mode": mode,
             "question": q,
+            "evidence_records": len(catalog),
             "total_available": len(chunks),
             "total_chunks": len(used),
             "upload_chunks": len(upload_used),
@@ -1406,7 +1477,10 @@ class Handler(BaseHTTPRequestHandler):
                  "text": _ctext(c)[:120]}
                 for c in upload_used
             ],
-        })
+        }
+        def record_outcome(outcome, finish_reason=''):
+            audit_log(dict(audit_entry, outcome=outcome, finish_reason=finish_reason,
+                           elapsed_ms=round((time.monotonic()-request_started)*1000)))
 
         if mode == "suggest":
             system_prompt = SYSTEM_SUGGEST
@@ -1439,6 +1513,12 @@ class Handler(BaseHTTPRequestHandler):
         else:
             system_prompt = SYSTEM_FULL
             max_tokens    = MAX_TOKENS_FULL
+
+        if structured:
+            system_prompt += "\n所有证据必须来自所给目录。每个客观条目或企业增加 evidence_ids 数组，引用目录中完整 id。不得发明企业、URL、数字或加强原文结论。保留待核、未见、有效期及政策适用条件。企业不足目标数量时按实数输出；无投资意向证据则 score_relocate=null。画像每个 objective 条目引用原句对应 id，偏好以已保存问卷为准，未知则留待补充。"
+            # Structured output must be validated before any model text can
+            # reach a consumer that might persist it as a completed result.
+        upstream_stream = bool(stream and not structured)
 
         # 多轮上下文：注入最近几轮对话（仅保留合法 role + 非空文本，限制条数防止 context 膨胀）
         hist_msgs = []
@@ -1485,7 +1565,7 @@ class Handler(BaseHTTPRequestHandler):
         payload_dict = {
             "model": MODEL,
             "max_tokens": max_tokens,
-            "stream": stream,
+            "stream": upstream_stream,
             "temperature": 0,
             "messages": [
                 {"role": "system", "content": system_prompt},
@@ -1524,73 +1604,152 @@ class Handler(BaseHTTPRequestHandler):
                      "Authorization": f"Bearer {DS_KEY}"}
         )
 
+        headers_sent = False
+        def send_event(value):
+            encoded = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+            self.wfile.write(('data: '+encoded+'\n\n').encode())
+            self.wfile.flush()
+        def terminal_error(code):
+            send_event({'error': {'code': code, 'message': '生成未完成，请重试；已有完成结果保留。'},
+                        'choices': [{'delta': {}, 'finish_reason': code}], 'runId': request_run_id})
         try:
             _timeout = 150 if mode in ("funnel", "chain", "research") else 90
             with DS_OPENER.open(req, timeout=_timeout) as resp:
-                if stream:
+                if structured:
+                    result = json.loads(resp.read())
+                    choice = (result.get('choices') or [{}])[0]
+                    finish = choice.get('finish_reason')
+                    if finish != 'stop':
+                        raise ValueError('incomplete_'+str(finish or 'missing_finish'))
+                    content = (choice.get('message') or {}).get('content', '')
+                    model_obj = json.loads(content.strip().removeprefix('```json').removesuffix('```').strip())
+                    grounder = ground_funnel if mode == 'funnel' else ground_chain if body.get('purpose') == 'chain_map' else ground_profile
+                    grounded = grounder(model_obj, catalog, evidence_context)
+                    if mode in ('funnel', 'city_profile'):
+                        # Commit before acknowledging completion, and recheck
+                        # both authorization and evidence while holding the lock.
+                        with self._account_session() as session:
+                            live = json.loads(session.read())
+                            principal = require_session(self.headers, live, admin_config=self._account_config())
+                            scoped = scoped_sync_view(live, principal)
+                            current = project_context(body, scoped)
+                            fingerprint = lambda rows: hashlib.sha256(json.dumps(rows, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+                            if fingerprint(current['chunks']) != fingerprint(evidence_context['chunks']):
+                                raise AuthError(409, 'evidence_changed', '材料已更新，请重试')
+                            p = live['PROJECTS'][current['projectKey']]
+                            grounded['ts' if mode == 'funnel' else '__ts'] = int(time.time()*1000)
+                            if mode == 'funnel':
+                                if p.get('topic') != current['topic']:
+                                    raise AuthError(409, 'topic_changed', '当前方向已切换，请重试')
+                                grounded.update(total=len(grounded['companies']), pushed=False)
+                            else:
+                                grounded.update(__chunks=len(current['chunks']), __hasOnboarding=bool(current['onboarding']))
+                            p['funnel' if mode == 'funnel' else 'profile'] = grounded
+                            if not session.write(json.dumps(live, ensure_ascii=False)):
+                                raise AuthError(503, 'storage_unavailable', '结果尚未保存，请重试')
+                    content = json.dumps(grounded, ensure_ascii=False)
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/event-stream' if stream else 'application/json')
+                    self.send_header('Cache-Control', 'no-store')
+                    self.cors(); self.end_headers(); headers_sent = True
+                    response = {'choices': [{'delta' if stream else 'message': {'content': content}, 'finish_reason': 'stop'}], 'runId': request_run_id}
+                    if stream:
+                        send_event(response); send_event('[DONE]')
+                    else:
+                        self.wfile.write(json.dumps(response, ensure_ascii=False).encode())
+                    record_outcome('completed', 'stop')
+                elif stream:
                     self.send_response(200)
                     self.send_header("Content-Type", "text/event-stream")
                     self.send_header("Cache-Control", "no-cache")
-                    self.cors(); self.end_headers()
-                    if mode in ("chat", "onboard_options"):
-                        # Responses SSE → chat-completions SSE 翻译层
-                        # 修复"先卡住再涌出"：web_search/思考阶段上游长时间不吐 output_text，
-                        # 前端旧逻辑只能干等。现把中间状态事件翻译成 reasoning_content 发给前端，
-                        # 前端已有 reasoning 分支会显示"深度推理中"进度，同时也起到保活作用。
-                        for raw_line in resp:
-                            line = raw_line.decode("utf-8", errors="replace").strip()
-                            if not line.startswith("data:"): continue
-                            data = line[5:].strip()
-                            if not data: continue
-                            try: ev = json.loads(data)
-                            except Exception: continue
-                            et = ev.get("type", "")
-                            if et == "response.output_text.delta":
-                                out = json.dumps({"choices": [{"delta": {"content": ev.get("delta", "")}}]}, ensure_ascii=False)
-                                self.wfile.write(f"data: {out}\n\n".encode()); self.wfile.flush()
-                            elif et in ("response.web_search_call.in_progress", "response.web_search_call.searching"):
-                                out = json.dumps({"choices": [{"delta": {"reasoning_content": "[searching]"}}]}, ensure_ascii=False)
-                                self.wfile.write(f"data: {out}\n\n".encode()); self.wfile.flush()
-                            elif et == "response.reasoning_text.delta":
-                                out = json.dumps({"choices": [{"delta": {"reasoning_content": ev.get("delta", "")}}]}, ensure_ascii=False)
-                                self.wfile.write(f"data: {out}\n\n".encode()); self.wfile.flush()
-                            elif et in ("response.completed", "response.failed", "response.incomplete"):
-                                self.wfile.write(b"data: [DONE]\n\n"); self.wfile.flush()
+                    self.cors(); self.end_headers(); headers_sent = True
+                    terminal = None
+                    content_seen = False
+                    enterprise_parts, enterprise_refs = [], []
+                    for raw_line in resp:
+                        line = raw_line.decode('utf-8', errors='replace').strip()
+                        if not line.startswith('data:'):
+                            continue
+                        data = line[5:].strip()
+                        if not data or data == '[DONE]':
+                            continue
+                        try:
+                            ev = json.loads(data)
+                        except (ValueError, TypeError):
+                            continue
+                        if mode in ('chat', 'onboard_options'):
+                            et = ev.get('type', '')
+                            if enterprise_draft:
+                                enterprise_refs.extend(enterprise_sources(ev))
+                            if et == 'response.output_text.delta':
+                                content_seen = content_seen or bool(ev.get('delta', '').strip())
+                                if enterprise_draft:
+                                    enterprise_parts.append(ev.get('delta', ''))
+                                else:
+                                    send_event({'choices': [{'delta': {'content': ev.get('delta', '')}}]})
+                            elif et in ('response.web_search_call.in_progress', 'response.web_search_call.searching'):
+                                send_event({'choices': [{'delta': {'reasoning_content': '[searching]'}}]})
+                            elif et == 'response.completed':
+                                response = ev.get('response') or {}
+                                terminal = 'stop' if response.get('status', 'completed') == 'completed' else 'incomplete'
+                                break
+                            elif et in ('response.failed', 'response.incomplete', 'error'):
+                                terminal = 'incomplete' if et == 'response.incomplete' else 'upstream_error'
+                                break
+                        else:
+                            if ev.get('error'):
+                                terminal = 'upstream_error'; break
+                            choices = ev.get('choices') or []
+                            for choice in choices:
+                                content_seen = content_seen or bool((choice.get('delta') or {}).get('content', '').strip())
+                                reason = choice.get('finish_reason')
+                                if reason is not None:
+                                    terminal = reason
+                            if terminal and terminal != 'stop':
+                                break
+                            send_event(ev)
+                            if terminal:
+                                break
+                    if terminal == 'stop' and content_seen:
+                        if enterprise_draft:
+                            # Hold model text until it can be labelled and
+                            # stripped of unsupported investment intent.
+                            draft = json.loads(''.join(enterprise_parts).strip().removeprefix('```json').removesuffix('```').strip())
+                            draft = ground_enterprise_draft(draft, enterprise_refs, enterprise_name)
+                            send_event({'choices': [{'delta': {'content': json.dumps(draft, ensure_ascii=False)}}]})
+                        send_event({'choices': [{'delta': {}, 'finish_reason': 'stop'}], 'runId': request_run_id})
+                        send_event('[DONE]'); record_outcome('completed', 'stop')
                     else:
-                        while True:
-                            line = resp.readline()
-                            if not line: break
-                            self.wfile.write(line); self.wfile.flush()
-                        # 显式发送[DONE]确保前端reader.read()收到done=true
-                        self.wfile.write(b"data: [DONE]\n\n"); self.wfile.flush()
+                        terminal_error('empty_output' if terminal == 'stop' else terminal or 'unexpected_eof')
+                        record_outcome('incomplete', 'empty_output' if terminal == 'stop' else terminal or 'unexpected_eof')
                 else:
-                    data = resp.read()
-                    if mode in ("chat", "onboard_options"):
-                        # Responses JSON → chat-completions JSON 翻译
-                        d = json.loads(data)
-                        txt = "".join(
-                            c.get("text", "")
-                            for i in d.get("output", []) if i.get("type") == "message"
-                            for c in i.get("content", []) if c.get("type") == "output_text"
-                        )
-                        data = json.dumps({"choices": [{"message": {"role": "assistant", "content": txt}}]}, ensure_ascii=False).encode()
-                    self.send_response(200)
-                    self.send_header("Content-Type", "application/json")
-                    self.cors(); self.end_headers(); self.wfile.write(data)
-
-        except urllib.error.HTTPError as e:
-            err = e.read().decode(errors="replace")
-            print(f"[kb] upstream {e.code}: {err[:200]}")
-            self.send_response(e.code)
-            self.send_header("Content-Type", "application/json")
-            self.cors(); self.end_headers()
-            self.wfile.write(json.dumps({"error": err[:400]}).encode())
+                    d = json.loads(resp.read())
+                    if mode in ('chat', 'onboard_options'):
+                        if d.get('status') != 'completed':
+                            raise ValueError('upstream_incomplete')
+                        txt = ''.join(c.get('text', '') for i in d.get('output', []) if i.get('type') == 'message' for c in i.get('content', []) if c.get('type') == 'output_text')
+                        d = {'choices': [{'message': {'role': 'assistant', 'content': txt}, 'finish_reason': 'stop'}]}
+                    elif (d.get('choices') or [{}])[0].get('finish_reason') != 'stop':
+                        raise ValueError('upstream_incomplete')
+                    self.send_response(200); self.send_header('Content-Type', 'application/json')
+                    self.cors(); self.end_headers(); headers_sent = True
+                    self.wfile.write(json.dumps(d, ensure_ascii=False).encode())
+                    record_outcome('completed', 'stop')
+        except (BrokenPipeError, ConnectionResetError):
+            record_outcome('client_disconnected')
         except Exception as e:
-            print(f"[kb] error: {e}")
-            self.send_response(500)
-            self.send_header("Content-Type", "application/json")
-            self.cors(); self.end_headers()
-            self.wfile.write(json.dumps({"error": str(e)}).encode())
+            code = 'upstream_error' if isinstance(e, urllib.error.HTTPError) else 'incomplete'
+            record_outcome('failed', code)
+            if headers_sent:
+                try:
+                    terminal_error(code)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+            else:
+                self.send_response(e.status if isinstance(e, AuthError) else 502)
+                self.send_header('Content-Type', 'application/json')
+                self.cors(); self.end_headers()
+                self.wfile.write(json.dumps({'error': code, 'message': '生成未完成或缺少可核查来源，请补充材料后重试。', 'runId': request_run_id}, ensure_ascii=False).encode())
 
 
 if __name__ == "__main__":

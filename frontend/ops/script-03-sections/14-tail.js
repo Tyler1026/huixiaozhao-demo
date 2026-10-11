@@ -223,26 +223,11 @@ var TOPIC_REPORTS={
   '\u4ea7\u4e1a\u8f6c\u79fb\u627f\u63a5': '## 一、产业基础判断\n\n随州地处中部交通枢纽，用工/土地成本较沿海低30-40%，经开区/高新区厂房资源充裕。专用汽车产业链为承接汽车零部件配套提供了天然需求端，香菇产业为食品加工提供了原料优势。当前沿海制造业向中部转移窗口明确，随州承接条件具备。\n\n## 二、适合承接的产业方向\n\n- ✅ 优先：汽车零部件配套（就近供应程力/新楚风/齐星，需求稳定）\n- ✅ 优先：劳动密集型轻工制造（篷布/纺织/包装，人力成本优势显著）\n- ⚠️ 潜力：食品精深加工（香菇/农产品原料丰富，冷链待完善）\n- ⚠️ 培育：电子零部件组装（泰晶晶振生态初步形成）\n\n## 三、承接优先方向TOP3\n\n| 排名 | 方向 | 核心优势 | 综合评级 |\n|---|---|---|---|\n| 1 | 汽车零部件配套 | 专汽产业链需求牵引 | 第一优先 |\n| 2 | 劳动密集型制造 | 用工/土地成本优势 | 第二优先 |\n| 3 | 食品精深加工 | 农业原料资源丰富 | 第三优先 |\n\n## 四、目标企业画像\n\n**汽车零部件（第一优先）**\n- 目标：沿海汽车零部件企业，寻求降本转移，年产值5000万以上\n- 话术：随州16万辆/年专用车产量就是您稳定的本地订单，就近配套可节省15-20%物流成本。\n\n## 五、待确认事项\n\n⚠️ 各园区可承接厂房面积与租金优惠政策，需园区管委会确认\n⚠️ 转移企业税收减免与人才补贴，需招商局确认'
 };
 function getTopicReport(topic){
-  if(!topic) return null;
-  var keys=Object.keys(TOPIC_REPORTS);
-  for(var i=0;i<keys.length;i++){ if(topic===keys[i]) return TOPIC_REPORTS[keys[i]]; }
-// 预置样板：随州氢能一条完整主线（其余方向留白，避免全空也不塞满假数据）
-(function seedDemo(){
-  if(localStorage.getItem('hxz_seeded_v3'))return;
-  REPORTSTATE.sz={ver:2,finalized:true,patches:['楚胜汽车园区可承接电控配套'],edits:{}};
-  UPLOADS.sz=[];
-  // 派生项目：dir 与 clueName 必须与 PROJECTS.sz.clues 完全一致，右侧栏/工作页才能匹配到候选企业
-  SUBPROJ.sz=[
-    {name:'商用车燃料电池系统集成商 · 引进项目',dir:'商用车燃料电池系统集成商 · 长三角',clueName:'脱敏企业 A（氢驰动力·代号）',stage:5,from:'氢能专用车补链'},
-    {name:'燃料电池电堆研发与制造 · 引进项目',dir:'燃料电池电堆研发与制造企业 · 华南',clueName:'脱敏企业 B（势通氢能·代号）',stage:4,from:'氢能专用车补链'}
-  ];
-  // 随州氢能已定稿并派生项目、进入对接 → 阶段应到「招商对接」，否则进度条/招商对接页与事实矛盾
-  if(PROJECTS.sz)PROJECTS.sz.stage=5;
-  saveReportState();saveUploads();saveSubproj();
-  try{localStorage.setItem('hxz_seeded_v3','1')}catch(e){}
-})();
+  var rs=REPORTSTATE[cur];if(!topic||!rs)return null;
+  return (rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:null)||null;
 }
-// 历史报告 / 上传材料 弹窗（历史报告入口）
+function reportTextForTopic(topic){return getTopicReport(topic);}
+
 function openHistory(){
   var st=REPORTSTATE[cur];var ups=UPLOADS[cur]||[];
   var repHtml = st ? ('<div class="source-list"><li onclick="closeModal();go(\'report\');setTimeout(showReport,60)" style="cursor:pointer"><i class="i">📄</i>'+P().topic+' 研判报告 · v'+st.ver+(st.finalized?'（已定稿）':'（草稿）')+'<small>点击重新打开</small></li></div>') : '<p class="modal-intro">该项目暂无已生成的报告。</p>';

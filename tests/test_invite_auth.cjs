@@ -355,7 +355,7 @@ test('both government demand creation paths bind to their parent workspace and n
     const h = await bootPage('index.html', response(401, {ok: false, message: '请登录'})); workspaceFixture(h);
     h.ctx.AUTH.projectKeys.push('team-b');
     h.ctx.PROJECTS.foreign = {id: 'foreign', workspaceId: 'team-b', city: '同名城市', topic: '原方向', isDemand: true};
-    h.ctx.REPORTSTATE['team-a'] = {text: '已完成的研判报告', topic: '原方向'};
+    h.ctx.REPORTSTATE['team-a'] = {text: '已完成的研判报告', topic: '原方向', phase: 2};
     if (action === 'import') h.ctx.importToProject('原方向', '同名城市', '原方向');
     else await h.ctx.submitDemand();
     const children = Object.entries(h.ctx.PROJECTS).filter(([key, p]) => key !== 'foreign' && p.isDemand);

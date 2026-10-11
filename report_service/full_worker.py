@@ -55,6 +55,7 @@ def _provider_issue(error):
         'expansion part needs five grounded target companies': 'expansion_target_coverage',
         'score identity is absent from saved selections': 'score_identity',
         'score dimensions require seven finite values within 0..10': 'score_dimensions',
+        'decision prose changed source facts or omitted qualifications': 'synthesis_grounding',
     }
     # These providers emit fixed messages. Match the whole original message so
     # appended company names, URLs or upstream details stay in the fallback.
