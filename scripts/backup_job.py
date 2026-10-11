@@ -16,6 +16,29 @@ AAD = b'huixiaozhao-postgres-backup-v1'
 TOOL = 'huixiaozhao-postgres-backup'
 CHUNK = 1024 * 1024
 ID_RE = re.compile(r'^\d{8}T\d{6}Z-[0-9a-f]{12}$')
+# libpq environment mappings (PostgreSQL 18 fe-connect.c). Parameters without
+# an environment equivalent are rejected, never silently omitted.
+LIBPQ_ENV = {
+    'service': 'PGSERVICE', 'user': 'PGUSER', 'password': 'PGPASSWORD',
+    'passfile': 'PGPASSFILE', 'channel_binding': 'PGCHANNELBINDING',
+    'connect_timeout': 'PGCONNECT_TIMEOUT', 'dbname': 'PGDATABASE',
+    'host': 'PGHOST', 'hostaddr': 'PGHOSTADDR', 'port': 'PGPORT',
+    'client_encoding': 'PGCLIENTENCODING', 'options': 'PGOPTIONS',
+    'application_name': 'PGAPPNAME', 'sslmode': 'PGSSLMODE',
+    'sslnegotiation': 'PGSSLNEGOTIATION', 'sslcompression': 'PGSSLCOMPRESSION',
+    'sslcert': 'PGSSLCERT', 'sslkey': 'PGSSLKEY', 'sslcertmode': 'PGSSLCERTMODE',
+    'sslrootcert': 'PGSSLROOTCERT', 'sslcrl': 'PGSSLCRL',
+    'sslcrldir': 'PGSSLCRLDIR', 'sslsni': 'PGSSLSNI',
+    'requirepeer': 'PGREQUIREPEER', 'require_auth': 'PGREQUIREAUTH',
+    'min_protocol_version': 'PGMINPROTOCOLVERSION',
+    'max_protocol_version': 'PGMAXPROTOCOLVERSION',
+    'ssl_min_protocol_version': 'PGSSLMINPROTOCOLVERSION',
+    'ssl_max_protocol_version': 'PGSSLMAXPROTOCOLVERSION',
+    'gssencmode': 'PGGSSENCMODE', 'krbsrvname': 'PGKRBSRVNAME',
+    'gsslib': 'PGGSSLIB', 'gssdelegation': 'PGGSSDELEGATION',
+    'target_session_attrs': 'PGTARGETSESSIONATTRS',
+    'load_balance_hosts': 'PGLOADBALANCEHOSTS',
+}
 
 
 class BackupError(Exception):
@@ -130,13 +153,31 @@ def s3_client(environ):
                                       s3={'addressing_style': style}))
 
 
-def dump_database(path, environ):
+def database_environment(environ):
+    from psycopg2.extensions import parse_dsn
     url = environ.get('DATABASE_URL', '')
-    parsed = urlsplit(url)
-    if parsed.scheme not in ('postgres', 'postgresql') or not parsed.hostname or not parsed.path.strip('/'):
-        raise BackupError('invalid_database_configuration')
-    child_env = dict(environ)
-    child_env['PGDATABASE'] = url  # libpq accepts a URI here; it is never argv.
+    try:
+        parsed = urlsplit(url)
+        if parsed.scheme not in ('postgres', 'postgresql') or not parsed.hostname:
+            raise ValueError()
+        parameters = parse_dsn(url)
+        if not parameters.get('dbname') or not (parameters.get('host') or parameters.get('hostaddr')):
+            raise ValueError()
+    except Exception:
+        raise BackupError('invalid_database_configuration') from None
+    if any(key not in LIBPQ_ENV for key in parameters):
+        raise BackupError('unsupported_database_parameter')
+    # PGDATABASE is a literal name, not a URI. libpq only expands explicitly
+    # supplied dbname arguments; its later environment-default pass does not.
+    # Clear inherited routing/auth/TLS defaults before applying this DSN.
+    child_env = {key: value for key, value in environ.items() if not key.startswith('PG')}
+    child_env.update((LIBPQ_ENV[key], value) for key, value in parameters.items())
+    child_env.setdefault('PGCONNECT_TIMEOUT', '15')
+    return child_env
+
+
+def dump_database(path, environ):
+    child_env = database_environment(environ)
     try:
         result = subprocess.run(['pg_dump', '--format=custom', '--no-owner', '--no-acl',
                                  '--lock-wait-timeout=30000', '--file', str(path)],

@@ -190,7 +190,35 @@ class BackupTests(unittest.TestCase):
             job.dump_database(Path(d)/'dump',env)
         self.assertEqual(len(calls),2)
         self.assertNotIn('SECRET',repr([x[0] for x in calls]))
-        self.assertEqual(calls[0][1]['env']['PGDATABASE'],env['DATABASE_URL'])
+        self.assertEqual(calls[0][1]['env']['PGDATABASE'],'railway')
+        self.assertEqual(calls[0][1]['env']['PGHOST'],'host')
+        self.assertEqual(calls[0][1]['env']['PGPORT'],'5432')
+        self.assertEqual(calls[0][1]['env']['PGUSER'],'user')
+        self.assertEqual(calls[0][1]['env']['PGPASSWORD'],'SECRET')
+    def test_database_url_decodes_credentials_and_preserves_tls_options(self):
+        env={'DATABASE_URL':'postgresql://user%40x:s%40fe%2Fkey@db.example:5544/db%20name'
+             '?sslmode=verify-full&sslrootcert=%2Fcerts%2Fca.pem&sslcert=%2Fcerts%2Fclient.pem'
+             '&sslkey=%2Fcerts%2Fkey.pem&sslcrl=%2Fcerts%2Frevoke.pem'
+             '&ssl_min_protocol_version=TLSv1.3&channel_binding=require'
+             '&application_name=hxz%20backup&options=-c%20statement_timeout%3D0&connect_timeout=8',
+             'PGHOST':'wrong-host','PGPORT':'9999','PGPASSWORD':'wrong-password',
+             'PGSERVICE':'wrong-service','PGSERVICEFILE':'/wrong','PGSSLMODE':'disable',
+             'PATH':'/bin'}
+        actual=job.database_environment(env)
+        expected={'PGUSER':'user@x','PGPASSWORD':'s@fe/key','PGHOST':'db.example',
+                  'PGPORT':'5544','PGDATABASE':'db name','PGSSLMODE':'verify-full',
+                  'PGSSLROOTCERT':'/certs/ca.pem','PGSSLCERT':'/certs/client.pem',
+                  'PGSSLKEY':'/certs/key.pem','PGSSLCRL':'/certs/revoke.pem',
+                  'PGSSLMINPROTOCOLVERSION':'TLSv1.3','PGCHANNELBINDING':'require',
+                  'PGAPPNAME':'hxz backup','PGOPTIONS':'-c statement_timeout=0','PGCONNECT_TIMEOUT':'8'}
+        self.assertEqual({k:v for k,v in actual.items() if k.startswith('PG')},expected)
+        self.assertEqual(actual['PATH'],'/bin')
+    def test_database_unknown_parameter_is_rejected_before_running_client(self):
+        # keepalives is valid libpq syntax but has no environment equivalent.
+        with patch.object(job.subprocess,'run') as command, tempfile.TemporaryDirectory() as d:
+            with self.assertRaisesRegex(job.BackupError,'^unsupported_database_parameter$'):
+                job.dump_database(Path(d)/'dump',{'DATABASE_URL':'postgresql://u:p@host/db?keepalives=1'})
+        command.assert_not_called()
     def test_database_dump_error_hides_stderr(self):
         r=__import__('subprocess').CompletedProcess([],1,stderr=b'password SECRET')
         with patch.object(job.subprocess,'run',return_value=r), tempfile.TemporaryDirectory() as d:
