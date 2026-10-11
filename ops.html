@@ -321,16 +321,18 @@ body.ops-mode .ops-v3{display:flex;flex-direction:column;height:100dvh;min-heigh
 .ops-v3 .ops-ui-cell-title{font-size:13px;font-weight:650;color:#2c415e;overflow-wrap:anywhere}
 .ops-v3 .ops-ui-cell-meta{font-size:11px;color:#95a0b0;margin-top:3px;overflow-wrap:anywhere;max-width:280px}
 .ops-v3 .ops-ui-user-table{min-width:800px}
-.ops-v3 .ops-ui-invite-table{min-width:880px;table-layout:fixed}
-.ops-v3 .ops-ui-invite-table th,.ops-v3 .ops-ui-invite-table td{width:auto}
-.ops-v3 .ops-ui-invite-table th:nth-child(1){width:16%}
-.ops-v3 .ops-ui-invite-table th:nth-child(2){width:20%}
-.ops-v3 .ops-ui-invite-table th:nth-child(3){width:8%}
-.ops-v3 .ops-ui-invite-table th:nth-child(4){width:16%}
-.ops-v3 .ops-ui-invite-table th:nth-child(5){width:14%}
-.ops-v3 .ops-ui-invite-table th:nth-child(6){width:10%}
-.ops-v3 .ops-ui-invite-table th:last-child{width:16%}
-.ops-v3 .ops-ui-invite-table th,.ops-v3 .ops-ui-invite-table td{padding:13px 12px}
+.ops-v3 .ops-ui-invite-table{min-width:980px;table-layout:auto}
+.ops-v3 .ops-ui-invite-table th,.ops-v3 .ops-ui-invite-table td{padding:13px 10px;vertical-align:top}
+.ops-v3 .ops-ui-invite-identity{min-width:138px}
+.ops-v3 .ops-ui-invite-workspace{min-width:152px;max-width:230px}
+.ops-v3 .ops-ui-invite-members{min-width:144px;max-width:220px}
+.ops-v3 .ops-ui-invite-monthly{min-width:180px;max-width:240px}
+.ops-v3 .ops-ui-invite-distribution{min-width:112px;max-width:190px}
+.ops-v3 .ops-ui-invite-actions{min-width:106px}
+.ops-v3 .ops-ui-invite-members>div:first-child{overflow-wrap:anywhere}
+.ops-v3 .ops-ui-invite-members .ops-ui-cell-meta{overflow-wrap:normal;white-space:nowrap}
+.ops-v3 .ops-ui-invite-monthly .ops-ui-cell-meta{overflow-wrap:normal;word-break:normal}
+.ops-v3 .ops-ui-invite-status{margin-top:7px}
 .ops-v3 .ops-ui-invite-table .ic-code{font-size:12px;font-weight:650;color:#35577f;background:#f1f5fc;padding:5px 7px;border-radius:5px;letter-spacing:.3px}
 .ops-v3 .ops-ui-invite-table .ic-code-cell{gap:5px;white-space:normal;flex-wrap:wrap}
 .ops-v3 .ops-ui-invite-table .ic-code{max-width:100%;overflow-wrap:anywhere}
@@ -9259,9 +9261,14 @@ function opsInviteResults(){
     var ownerText=primary?(owner?(profile&&profile.name?profile.name+' · @'+owner:'@'+owner):'待首位成员注册'):'未归入地区主工作区';
     var copy='<button class="ops-ui-button ic-copy" data-code="'+code+'" onclick="copyInviteCode(this)" title="复制邀请码 '+code+'">复制</button>';
     var actions=inv.revoked?'<span class="ops-ui-muted">已停用</span>':'<button class="ops-ui-button" onclick="openMarkDistributedModal(\''+code+'\')">'+(inv.distributed?'修改分发':'标记分发')+'</button><button class="ops-ui-button is-danger" onclick="revokeInviteCode(\''+code+'\')">作废</button>';
-    return '<tr><td><div class="ic-code-cell"><code class="ic-code">'+code+'</code>'+copy+'</div></td><td><div class="ops-ui-cell-title">'+_authEscape(inv.city||'—')+'</div><div class="ops-ui-cell-meta">'+_authEscape(primary?'地区主工作区':'历史邀请码')+' · '+_authEscape(inv.projKey||'—')+'</div>'+(primary&&workspace.province?'<div class="ops-ui-cell-meta">'+_authEscape(workspace.province)+'</div>':'')+'</td><td><div>'+_authEscape(ownerText)+'</div><div class="ops-ui-cell-meta">'+members+' 位'+(primary?'成员（含主账号）':'历史使用者')+'</div></td><td>'+(primary?opsMonthlyCell(inv.city):'<span class="ops-ui-muted">不参与月度更新</span>')+'</td><td><span class="ops-ui-badge '+(inv.distributed?'is-on':'is-muted')+'">'+(inv.distributed?'已分发':'未分发')+'</span>'+(inv.distributed?'<div class="ops-ui-cell-meta">'+_authEscape(inv.distributedEmail||'未记录邮箱')+'</div>':'')+'</td><td>'+opsDate(inv.createdAt)+'</td><td><span class="ops-ui-badge '+(inv.revoked?'is-danger':'is-on')+'">'+(inv.revoked?'已作废':'生效中')+'</span></td><td><div class="ops-ui-row-actions">'+actions+'</div></td></tr>';
+    return '<tr><td class="ops-ui-invite-identity"><div class="ic-code-cell"><code class="ic-code">'+code+'</code>'+copy+'</div><div class="ops-ui-invite-status"><span class="ops-ui-badge '+(inv.revoked?'is-danger':'is-on')+'">'+(inv.revoked?'已作废':'生效中')+'</span></div><div class="ops-ui-cell-meta ic-time">创建于 '+opsDate(inv.createdAt)+'</div></td>'+
+      '<td class="ops-ui-invite-workspace"><div class="ops-ui-cell-title">'+_authEscape(inv.city||'—')+'</div><div class="ops-ui-cell-meta">'+_authEscape(primary?'地区主工作区':'历史邀请码')+' · '+_authEscape(inv.projKey||'—')+'</div>'+(primary&&workspace.province?'<div class="ops-ui-cell-meta">'+_authEscape(workspace.province)+'</div>':'')+'</td>'+
+      '<td class="ops-ui-invite-members"><div>'+_authEscape(ownerText)+'</div><div class="ops-ui-cell-meta">'+members+' 位'+(primary?'成员（含主账号）':'历史使用者')+'</div></td>'+
+      '<td class="ops-ui-invite-monthly">'+(primary?opsMonthlyCell(inv.city):'<span class="ops-ui-muted">不参与月度更新</span>')+'</td>'+
+      '<td class="ops-ui-invite-distribution"><span class="ops-ui-badge '+(inv.distributed?'is-on':'is-muted')+'">'+(inv.distributed?'已分发':'未分发')+'</span>'+(inv.distributed?'<div class="ops-ui-cell-meta">'+_authEscape(inv.distributedEmail||'未记录邮箱')+'</div>':'')+'</td>'+
+      '<td class="ops-ui-invite-actions"><div class="ops-ui-row-actions">'+actions+'</div></td></tr>';
   }).join('');
-  return meta+'<div class="ops-ui-table-wrap"><table class="ops-ui-table ops-ui-invite-table"><thead><tr><th scope="col">邀请码</th><th scope="col">地区 / 主工作区</th><th scope="col">主账号 / 成员</th><th scope="col">月度报告更新</th><th scope="col">分发情况</th><th scope="col">生成时间</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  return meta+'<div class="ops-ui-table-wrap"><table class="ops-ui-table ops-ui-invite-table"><thead><tr><th scope="col" class="ops-ui-invite-identity">邀请码 / 状态</th><th scope="col" class="ops-ui-invite-workspace">地区 / 主工作区</th><th scope="col" class="ops-ui-invite-members">主账号 / 成员</th><th scope="col" class="ops-ui-invite-monthly">月度报告更新</th><th scope="col" class="ops-ui-invite-distribution">分发情况</th><th scope="col" class="ops-ui-invite-actions">操作</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 function inviteCodeSection(){return opsInvitations();}
 /* 复制邀请码到剪贴板：优先用 Clipboard API，非安全上下文(如内网http)降级用
