@@ -673,12 +673,14 @@ class FullLiveProvider:
             return text, metadata
         saved = previous.get('metadata', {}).get('candidates', []) if isinstance(previous, dict) else []
         excluded = [company['name'] for company in saved]
-        from .company_identity import company_identity
+        from .company_identity import candidate_identity
         known = list(saved) + candidates
-        seen = {company_identity(company, known) for company in saved}
+        previous_meta = previous.get('metadata', {}) if isinstance(previous, dict) else {}
+        sources = list(previous_meta.get('evidence', [])) + metadata['evidence']
+        seen = {candidate_identity(company, known, sources) for company in saved}
         accepted = []
         for company in candidates:
-            identity = company_identity(company, known)
+            identity = candidate_identity(company, known, sources)
             if identity not in seen:
                 accepted.append(company)
                 seen.add(identity)
@@ -734,10 +736,11 @@ class FullLiveProvider:
             if canonical_url(item.get('url')) not in assoc:
                 raise FullProviderError('company identity needs a retrieved source URL', 'quality')
         if part.startswith('候选池'):
-            from .company_identity import company_identity
+            from .company_identity import candidate_identity
             known = list(saved) + candidates
-            identities = {company_identity(item, known) for item in candidates}
-            saved_identities = {company_identity(item, known) for item in saved}
+            sources = list(previous_meta.get('evidence', [])) + metadata.get('evidence', [])
+            identities = {candidate_identity(item, known, sources) for item in candidates}
+            saved_identities = {candidate_identity(item, known, sources) for item in saved}
             if (len(candidates) != 5 or len(identities - saved_identities) != 5
                     or identities & saved_identities):
                 raise FullProviderError('candidate part needs five new grounded companies', 'quality')
