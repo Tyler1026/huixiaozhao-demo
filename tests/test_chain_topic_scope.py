@@ -1,7 +1,7 @@
 """Current-topic chain nodes require an exact saved source sentence."""
 import unittest
 
-from backend.evidence_grounding import evidence_catalog, ground_chain
+from backend.evidence_grounding import evidence_catalog, ground_chain, project_context
 
 
 class ChainTopicScopeTests(unittest.TestCase):
@@ -44,6 +44,22 @@ class ChainTopicScopeTests(unittest.TestCase):
         for bad in ({}, [{'seg': '其他', 'nodes': []}], [{'seg': '上游', 'nodes': 'invalid'}]):
             with self.assertRaises(ValueError):
                 ground_chain(bad, self.catalog, self.context)
+
+    def test_identical_current_report_and_generic_kb_keep_current_topic_without_changing_id(self):
+        text = '核级换热器研发项目建设条件需进一步核实。来源 https://official.example/current'
+        foreign = '生物医药出海环节资料仍然处于待核状态。来源 https://official.example/foreign'
+        state = {'PROJECTS': {'p': {'topic': '核电换热设备', 'city': '闵行区', 'kb': [
+            {'t': '企业', 'known': [text, foreign]}]}},
+            'REPORTSTATE': {'p': {'topic': '核电换热设备', 'text': text}}}
+        context = project_context({'projectKey': 'p'}, state)
+        rows = evidence_catalog(context['chunks'])
+        same = next(row for row in rows if row['quote'] == text)
+        self.assertEqual(same['topic'], '核电换热设备')
+        self.assertEqual(next(row for row in rows if row['quote'] == foreign)['topic'], '企业')
+        expected_id = evidence_catalog([dict(context['chunks'][0], topic='企业')])[0]['id']
+        self.assertEqual(same['id'], expected_id)
+        result = ground_chain([{'seg': '上游', 'nodes': [self.node('核级换热器', same), self.node('生物医药出海环节', next(row for row in rows if row['quote'] == foreign))]}], rows, context)
+        self.assertEqual([node['name'] for node in result[0]['nodes']], ['核级换热器'])
 
 
 if __name__ == '__main__':

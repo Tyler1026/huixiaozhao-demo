@@ -74,13 +74,19 @@ def project_context(body, state):
         for block in re.split(r'\n\s*\n', str(report)):
             if block.strip():
                 corpus.append({'text': block, 'cite': '当前报告 / '+topic, 'topic': topic, 'origin': 'report'})
-    dedup, seen = [], set()
+    dedup, positions = [], {}
     for chunk in corpus:
         sig = hashlib.sha256(chunk['text'].encode()).hexdigest()
-        if sig in seen:
-            continue
-        seen.add(sig)
         chunk['id'] = 'ev_'+sig[:20]
+        if sig in positions:
+            # Identical report text is still current-topic evidence even if
+            # it was encountered first in a generic base knowledge section.
+            # Preserve the content-based ID; do not widen a foreign-only row.
+            index = positions[sig]
+            if chunk.get('topic') == topic and dedup[index].get('topic') != topic:
+                dedup[index] = chunk
+            continue
+        positions[sig] = len(dedup)
         dedup.append(chunk)
     if not dedup:
         raise AuthError(409, 'evidence_missing', '当前工作区尚无可核查材料，请先补充材料')
