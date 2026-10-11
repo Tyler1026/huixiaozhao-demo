@@ -12142,6 +12142,45 @@ function uploadParsed(fname){
     toast('材料已解析并加入本次研判');
   },200);
 }
+// 只列当前项目实际保存的来源元数据，不从正文或示例清单猜测文件名。
+function summarySourceRecords(p, projectKey){
+  var sources=[], seen=Object.create(null);
+  var reportId=p&&typeof p.reportRequestId==='string'?p.reportRequestId:'';
+  function add(label, value, reportSource){
+    if(typeof value!=='string')return;
+    var name=value, trimmed=value.trim(), normalized=trimmed.replace(/\s+/g,' ');
+    if(!trimmed||seen[name])return;
+    if(!reportSource&&typeof UPLOAD_TOMBS!=='undefined'&&UPLOAD_TOMBS&&
+       (UPLOAD_TOMBS[projectKey+'::'+name]||UPLOAD_TOMBS[projectKey+'::'+trimmed]||UPLOAD_TOMBS[projectKey+'::'+normalized]))return;
+    seen[name]=true;
+    sources.push(label+'：'+name);
+  }
+  var uploads=typeof UPLOADS!=='undefined'&&UPLOADS&&UPLOADS[projectKey];
+  (Array.isArray(uploads)?uploads:[]).forEach(function(u){
+    // 旧演示条目只有 name/at；真实摄取记录还保存文件大小、时间或片段数。
+    if(u&&typeof u==='object'&&(typeof u.size==='number'||typeof u.ts==='number'||typeof u.chunks==='number'))add('上传材料',u.name,false);
+  });
+  var chunks=typeof KB_FILE_CHUNKS!=='undefined'&&KB_FILE_CHUNKS&&KB_FILE_CHUNKS[projectKey];
+  (Array.isArray(chunks)?chunks:[]).forEach(function(c){
+    if(c&&typeof c==='object')add('智库材料',c.file||c.source||c.cite,false);
+  });
+  if(reportId){
+    (Array.isArray(p.reportFiles)?p.reportFiles:[]).forEach(function(file){
+      if(file&&typeof file==='object'&&(!file.reportRequestId||file.reportRequestId===reportId))add('报告文件',file.name,true);
+    });
+  }
+  (p&&Array.isArray(p.kb)?p.kb:[]).forEach(function(card){
+    (card&&Array.isArray(card.known)?card.known:[]).forEach(function(item){
+      if(!item||typeof item!=='object')return;
+      if(item.origin==='report'||item.reportRequestId){
+        if(reportId&&item.reportRequestId===reportId)add('报告研究材料',item.sourceFile||item.cite,true);
+      }else{
+        add('智库材料',item.src||item.sourceFile||item.cite,false);
+      }
+    });
+  });
+  return sources;
+}
 // 直接下载：生成一份详细的城市智库摘要文件并触发浏览器下载
 function downloadSummary(){
   var p=P();var kb=p.kb;var now=new Date().toLocaleString('zh-CN');
@@ -12158,12 +12197,11 @@ function downloadSummary(){
     L.push('');
   });
   L.push('----------------------------------------------------');
-  L.push('可下载的原始材料清单：');
-  ['重点园区清单.xlsx（随州高新区/曾都经开区/专汽产业园/随县香菇产业园载体明细）',
-   '随州三大产业链图谱.pdf（氢能专用车/智慧应急/香菇深加工缺口分析）',
-   '今日公开信息摘要（更新至 '+nowLabel()+'，含新楚风/程力/博利特/品源最新动态）',
-   '2026年随州市政府工作报告（完整版）',
-   '随州市领导近期产业发言（含氢能走廊/应急示范基地/香菇升级方向公开报道整理）'].forEach(function(x){L.push('  - '+x)});
+  L.push('当前项目来源记录：');
+  var sources=summarySourceRecords(p,typeof cur==='string'?cur:'');
+  if(sources.length)sources.forEach(function(x){L.push('  - '+x)});
+  else L.push('  暂无来源记录。');
+  L.push('来源记录不等同于原始文件可下载。');
   L.push('');
   L.push('====================================================');
   L.push('使用边界：公开信息仅用于辅助研判；园区承载、企业采购和领导任务仍需政府授权材料确认。');

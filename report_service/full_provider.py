@@ -60,9 +60,9 @@ from report_service.full_contract import (
 # Re-export the landing vocabulary / weights (single source of truth: the contract).
 LANDING_STATUSES = tuple(sorted(_LANDING_STATUSES))
 
-# These stages carry prose/evidence, rather than persistent entity batches.
+# These research and action stages carry prose, rather than persistent entity batches.
 _REPETITION_CORRECTION_STAGES = frozenset({
-    'economy', 'population', 'transport', 'life', 'competition', 'policy', 'chain',
+    'economy', 'population', 'transport', 'life', 'competition', 'policy', 'chain', 'action',
 })
 
 
