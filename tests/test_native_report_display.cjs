@@ -57,7 +57,7 @@ function harness(state) {
     ['08.js', 'getEmbeddedReport'], ['08.js', 'getTopicReport'], ['08.js', 'reportTextForTopic'], ['08.js', 'topicHasFullReport'],
     ['09.js', '_normTopic'], ['09.js', '_frozenScoreIn'], ['09.js', 'nativeReportState'], ['09.js', 'nativeReportScore'], ['09.js', 'topicScoreLabel'],
     ['09.js', 'topicScoreDisplay'], ['09.js', 'topicScore'], ['09.js', 'hashTopic'],
-    ['12-tail.js', 'fullReportConfirmation'], ['12-tail.js', 'demandSubmissionState'], ['12-tail.js', 'demandEffectiveStage'], ['12-tail.js', 'demandReportSnapshot'], ['12-tail.js', 'alignChainToReport'], ['12-tail.js', 'reportHtml'], ['12-tail.js', 'reportBottomBarInner'],
+    ['12-tail.js', 'fullReportConfirmation'], ['12-tail.js', 'demandSubmissionState'], ['12-tail.js', 'demandEffectiveStage'], ['12-tail.js', 'demandDisplayProject'], ['12-tail.js', 'reportDemandActionButton'], ['12-tail.js', 'demandReportSnapshot'], ['12-tail.js', 'alignChainToReport'], ['12-tail.js', 'reportHtml'], ['12-tail.js', 'reportBottomBarInner'],
     ['00.js', 'setReportAreaHtml'], ['00.js', 'viewCurrentReport'], ['13.js', 'detailReport'],
     ['00.js', 'reportMdToHtml'], ['00.js', 'reportExportContext'], ['00.js', 'buildReportBrief'],
     ['00.js', 'reportExportSourceRecords'], ['00.js', 'printReportDocument'],

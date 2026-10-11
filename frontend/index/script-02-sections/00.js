@@ -83,7 +83,7 @@ function viewCurrentReport(){
       '<button onclick="startAiInterview()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">🔄 重新生成</button>'+
       '<button onclick="downloadReport(\'full\')" style="padding:12px 14px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;font-size:13px;color:#1a56db;cursor:pointer;font-weight:600">⬇ 下载研判报告</button>'+
       '<button onclick="downloadReport(\'short\')" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">⬇ 下载快速简报</button>'+
-      '<button onclick="submitDemand()" style="flex:1;padding:12px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer">提交当前方向招商需求</button>';
+      reportDemandActionButton(P());
   }
 }
 

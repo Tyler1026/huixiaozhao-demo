@@ -698,7 +698,7 @@ function projMgmtPage(p){
   }
 
   var groups = projKeys.map(function(k){
-    var x = PROJECTS[k];
+    var x = Object.assign({},PROJECTS[k],{stage:demandEffectiveStage(k,PROJECTS[k])});
     var sc = stColor(x.stage);
     var expanded = (window.__projOpen === k);
 
@@ -2198,10 +2198,7 @@ function homePage(p){
             '🔍 开始初步研判'+
       '</button>'))+
       '<button onclick="doUpload()" style="padding:13px 16px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>'+
-      (REPORTSTATE[cur]
-        ? '<button onclick="submitDemand()" style="padding:13px 16px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;font-size:13px;color:#166534;cursor:pointer;font-weight:600">提交招引需求 →</button>'
-        : ''
-      )+
+      reportDemandActionButton(p)+
     '</div>'+
   '</div>';
 }
@@ -2421,6 +2418,23 @@ function demandEffectiveStage(key,p){
   return demandSubmissionState(key)==='submitted'?Math.max(Number(p.stage)||1,4):(Number(p.stage)||1);
 }
 
+// Read-only presentation of submitted demands; never rewrites business stages.
+function demandDisplayProject(key,p){
+  if(!p)return p;
+  var demandKey=p.isDemand===true?key:_findExistingDemand(p.city,p.topic);
+  var demand=demandKey&&PROJECTS[demandKey];
+  return demand?Object.assign({},demand,{stage:demandEffectiveStage(demandKey,demand)}):p;
+}
+
+function reportDemandActionButton(p){
+  if(!p||!demandReportSnapshot(cur,p.topic))return '';
+  var key=p.isDemand===true?cur:_findExistingDemand(p.city,p.topic);
+  var state=key?demandSubmissionState(key):'not_submitted';
+  var label=state==='submitted'?'查看已递交需求':state==='pending'?'需求正在保存':state==='failed'?'重试提交当前方向需求':'提交当前方向招商需求';
+  var action=state==='submitted'?"view='home';render()":"submitDemand()";
+  return '<button onclick="'+action+'"'+(state==='pending'?' disabled':'')+' style="padding:12px 16px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;font-size:13px;color:#166534;cursor:pointer;font-weight:600">'+label+'</button>';
+}
+
 
 function _normalizeTopic(t){
   if(!t) return '';
@@ -2449,10 +2463,7 @@ function _findExistingDemand(city, topic){
 
 function restoreActionItems(){
   var p=P();if(!p || !demandReportSnapshot(cur,p.topic))return '';
-  var key=_findExistingDemand(p.city,p.topic),state=key?demandSubmissionState(key):'not_submitted';
-  var label=state==='submitted'?'查看已递交需求':state==='pending'?'需求正在保存':state==='failed'?'重试提交当前方向需求':'提交当前方向招商需求';
-  var action=state==='submitted'?"view='home';render()":"submitDemand()";
-  return '<section style="margin-top:16px;padding:16px;border:1px solid #dbeafe;border-radius:12px;background:#f8faff"><strong>'+escapeChainText(p.topic)+'</strong><p>完整研判已生成。提交后，管理端将基于当前方向核验并推荐企业；报告和线索中的待核结论不代表投资意向已确认。</p><button onclick="'+action+'"'+(state==='pending'?' disabled':'')+'>'+label+'</button></section>';
+  return '<section style="margin-top:16px;padding:16px;border:1px solid #dbeafe;border-radius:12px;background:#f8faff"><strong>'+escapeChainText(p.topic)+'</strong><p>完整研判已生成。提交后，管理端将基于当前方向核验并推荐企业；报告和线索中的待核结论不代表投资意向已确认。</p>'+reportDemandActionButton(p)+'</section>';
 }
 
 

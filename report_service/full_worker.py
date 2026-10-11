@@ -134,7 +134,12 @@ def _safe_provider_metrics(error):
               'text_chars': MAX_RESULT_BYTES, 'literal_newline_count': 10_000,
               'elapsed_ms': 7_200_000, 'query_count': 10_000,
               'successful_queries': 10_000, 'failed_queries': 10_000,
-              'cached_source_count': 10_000}
+              'cached_source_count': 10_000,
+              'synthesis_issue_count': 10_000,
+              'synthesis_numeric_source_mismatch_count': 10_000,
+              'synthesis_rank_uncertainty_lost_count': 10_000,
+              'synthesis_policy_condition_lost_count': 10_000,
+              'synthesis_first_issue_line': 10_000}
     safe = {field: metrics[field] for field, limit in limits.items()
             if field in metrics and type(metrics[field]) is int and 0 <= metrics[field] <= limit}
     operation = metrics.get('operation')

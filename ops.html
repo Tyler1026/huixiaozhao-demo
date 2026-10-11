@@ -542,7 +542,7 @@ function viewCurrentReport(){
           '<button onclick="downloadOrigReport(\'short\')" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">⬇ 快速简报（Word）</button>'+
           '<button onclick="downloadOrigReport(\'research\')" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">完整研究附件（ZIP）</button>'
         : '<button onclick="downloadReport(\'full\')" style="padding:12px 14px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;font-size:13px;color:#1a56db;cursor:pointer;font-weight:600">⬇ 下载研判摘要</button>')+
-      '<button onclick="submitDemand()" style="flex:1;padding:12px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer">✓ 确认方向，提交招引需求</button>';
+      reportDemandActionButton(P());
   }
 }
 
@@ -3315,7 +3315,7 @@ function projMgmtPage(p){
   }
 
   var groups = projKeys.map(function(k){
-    var x = PROJECTS[k];
+    var x = Object.assign({},PROJECTS[k],{stage:demandEffectiveStage(k,PROJECTS[k])});
     var sc = stColor(x.stage);
     var expanded = (window.__projOpen === k);
 
@@ -4815,10 +4815,7 @@ function homePage(p){
             '🔍 开始初步研判'+
       '</button>'))+
       '<button onclick="doUpload()" style="padding:13px 16px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>'+
-      (REPORTSTATE[cur]
-        ? '<button onclick="submitDemand()" style="padding:13px 16px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;font-size:13px;color:#166534;cursor:pointer;font-weight:600">提交招引需求 →</button>'
-        : ''
-      )+
+      reportDemandActionButton(p)+
     '</div>'+
   '</div>';
 }
@@ -5038,6 +5035,23 @@ function demandEffectiveStage(key,p){
   return demandSubmissionState(key)==='submitted'?Math.max(Number(p.stage)||1,4):(Number(p.stage)||1);
 }
 
+// Read-only presentation of submitted demands; never rewrites business stages.
+function demandDisplayProject(key,p){
+  if(!p)return p;
+  var demandKey=p.isDemand===true?key:_findExistingDemand(p.city,p.topic);
+  var demand=demandKey&&PROJECTS[demandKey];
+  return demand?Object.assign({},demand,{stage:demandEffectiveStage(demandKey,demand)}):p;
+}
+
+function reportDemandActionButton(p){
+  if(!p||!demandReportSnapshot(cur,p.topic))return '';
+  var key=p.isDemand===true?cur:_findExistingDemand(p.city,p.topic);
+  var state=key?demandSubmissionState(key):'not_submitted';
+  var label=state==='submitted'?'查看已递交需求':state==='pending'?'需求正在保存':state==='failed'?'重试提交当前方向需求':'提交当前方向招商需求';
+  var action=state==='submitted'?"view='home';render()":"submitDemand()";
+  return '<button onclick="'+action+'"'+(state==='pending'?' disabled':'')+' style="padding:12px 16px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;font-size:13px;color:#166534;cursor:pointer;font-weight:600">'+label+'</button>';
+}
+
 
 function _normalizeTopic(t){
   if(!t) return '';
@@ -5066,10 +5080,7 @@ function _findExistingDemand(city, topic){
 
 function restoreActionItems(){
   var p=P();if(!p || !demandReportSnapshot(cur,p.topic))return '';
-  var key=_findExistingDemand(p.city,p.topic),state=key?demandSubmissionState(key):'not_submitted';
-  var label=state==='submitted'?'查看已递交需求':state==='pending'?'需求正在保存':state==='failed'?'重试提交当前方向需求':'提交当前方向招商需求';
-  var action=state==='submitted'?"view='home';render()":"submitDemand()";
-  return '<section style="margin-top:16px;padding:16px;border:1px solid #dbeafe;border-radius:12px;background:#f8faff"><strong>'+escapeChainText(p.topic)+'</strong><p>完整研判已生成。提交后，管理端将基于当前方向核验并推荐企业；报告和线索中的待核结论不代表投资意向已确认。</p><button onclick="'+action+'"'+(state==='pending'?' disabled':'')+'>'+label+'</button></section>';
+  return '<section style="margin-top:16px;padding:16px;border:1px solid #dbeafe;border-radius:12px;background:#f8faff"><strong>'+escapeChainText(p.topic)+'</strong><p>完整研判已生成。提交后，管理端将基于当前方向核验并推荐企业；报告和线索中的待核结论不代表投资意向已确认。</p>'+reportDemandActionButton(p)+'</section>';
 }
 
 
@@ -5343,7 +5354,7 @@ function detailPane(p){
 }
 // 我的需求页 → 右侧：需求汇总统计
 function detailNeeds(p){
-  var ks=Object.keys(PROJECTS);var byStage={};ks.forEach(function(k){var s=PROJECTS[k].stage;byStage[s]=(byStage[s]||0)+1});
+  var ks=Object.keys(PROJECTS);var byStage={};ks.forEach(function(k){var s=demandEffectiveStage(k,PROJECTS[k]);byStage[s]=(byStage[s]||0)+1});
   return '<div class="detail-header"><div><span class="eyebrow">OVERVIEW</span><h2>需求概览</h2><p>'+p.who+' 名下研判汇总</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>研判总数</h3><p class="detail-copy" style="font-size:22px;font-weight:700;color:#013582">'+ks.length+' 个产业方向</p></div>'+
@@ -5384,6 +5395,7 @@ function detailSub(s){
 }
 // 研判需求页 → 右侧：本次研判（版本/进度/待核实/已传材料）
 function detailReport(p){
+  var stageProject=demandDisplayProject(cur,p);
   var st=REPORTSTATE[cur]; var ups=(UPLOADS[cur]||[]);
   return '<div class="detail-header"><div><span class="eyebrow">CURRENT STUDY</span><h2>本次研判</h2><p>'+p.topic+'</p></div></div>'+
     '<div class="detail-scroll">'+
@@ -5395,7 +5407,7 @@ function detailReport(p){
           '</ul>'
         : '<div class="info-callout" style="margin-top:0">尚未生成报告。请先在「研判需求」选择方向并点击生成。</div>'      )+'</div>'+
       '<div class="detail-block"><h3>当前阶段</h3>'+
-        '<div class="info-callout" style="margin-top:0">'+(STAGES[p.stage-1]?STAGES[p.stage-1][0]:'未知')+' · '+(STAGES[p.stage-1]?STAGES[p.stage-1][1]:'')+'</div>'+
+        '<div class="info-callout" style="margin-top:0">'+stageNameOf(stageProject,stageProject.stage)+' · '+stageDescOf(stageProject,stageProject.stage)+'</div>'+
       '</div>'+
       '<div class="detail-block"><h3>已上传材料</h3>'+(ups.length
         ? '<ul class="source-list">'+ups.map(function(u){return '<li><i class="i"></i>'+u.name+'<small style="color:#9aa5b5;margin-left:6px">'+Math.round(u.size/1024)+'KB</small></li>';}).join('')+'</ul>'
@@ -5414,8 +5426,8 @@ function detailReport(p){
 // 招商对接页 → 右侧：对接概览
 function detailDocking(p){
   var ks=Object.keys(PROJECTS);
-  var n4=ks.filter(function(k){return PROJECTS[k].stage>=4}).length;
-  var n5=ks.filter(function(k){return PROJECTS[k].stage>=5}).length;
+  var n4=ks.filter(function(k){return demandEffectiveStage(k,PROJECTS[k])>=4}).length;
+  var n5=ks.filter(function(k){return demandEffectiveStage(k,PROJECTS[k])>=5}).length;
   return '<div class="detail-header"><div><span class="eyebrow">DOCKING</span><h2>对接概览</h2><p>各项目对接进度</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>进行中</h3><ul class="check-list"><li><i class="i">🔄</i>资源匹配中：'+n4+' 个</li><li><i class="i">🤝</i>已进入对接：'+n5+' 个</li></ul></div>'+

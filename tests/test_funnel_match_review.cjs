@@ -56,7 +56,7 @@ test('legacy automatic derivation is a no-op in both applications and preserves 
 test('viewing project management neither synthesizes companies nor starts AI work',()=>{
  const c={PROJECTS:{p:{id:'p',topic:'核电换热需求',city:'闵行区',stage:1,clues:[]}},REPORTSTATE:{p:{text:'TOP5\n❌缺失关键材料'}},stColor:()=>({bg:'#fff',dot:'#000',fg:'#000'}),stageName:()=> '准备',stageNameOf:()=> '准备',
   deriveCluesFromReport:()=>{throw Error('automatic derivation');},runAIFunnel:()=>{throw Error('automatic AI');},_authEscape:String};
- c.window=c;vm.createContext(c);vm.runInContext(declaration(src,'projMgmtPage'),c);const before=JSON.stringify(c.PROJECTS);const html=c.projMgmtPage(c.PROJECTS.p);assert.ok(html.includes('核电换热需求'));assert.equal(JSON.stringify(c.PROJECTS),before);
+ c.window=c;vm.createContext(c);vm.runInContext(['demandSubmissionState','demandEffectiveStage','projMgmtPage'].map(n=>declaration(src,n)).join('\n'),c);const before=JSON.stringify(c.PROJECTS);const html=c.projMgmtPage(c.PROJECTS.p);assert.ok(html.includes('核电换热需求'));assert.equal(JSON.stringify(c.PROJECTS),before);
 });
 test('legacy convert action opens only the selected company review and changes no clue status',()=>{
  const h=boot(2);h.c.PROJECTS.p.clues=[{id:'old',name:'乙公司',status:'ai_scan'}];vm.runInContext(declaration(src,'convertToClue'),h.c);const before=JSON.stringify(h.c.PROJECTS.p.clues);h.c.convertToClue('p','old');assert.equal(JSON.stringify(h.c.PROJECTS.p.clues),before);assert.equal(h.c.pushFunnelTopToGov.review.companies.length,1);assert.equal(h.c.pushFunnelTopToGov.review.companies[0].name,'乙公司');assert.equal(h.calls.length,0);
