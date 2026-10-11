@@ -83,7 +83,7 @@ function viewCurrentReport(){
       '<button onclick="startAiInterview()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">🔄 重新生成</button>'+
       '<button onclick="downloadReport(\'full\')" style="padding:12px 14px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;font-size:13px;color:#1a56db;cursor:pointer;font-weight:600">⬇ 下载研判报告</button>'+
       '<button onclick="downloadReport(\'short\')" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">⬇ 下载快速简报</button>'+
-      '<button onclick="submitDemand()" style="flex:1;padding:12px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer">提交当前方向招商需求</button>';
+      reportDemandActionButton(P());
   }
 }
 
@@ -340,12 +340,12 @@ function downloadReportPDF(mode){
     'h1{font-size:24px;line-height:1.4;margin:0 0 7px;color:#0b183b}.subtitle{font-size:13px;margin-bottom:10px}.meta{font-size:10px;color:#667590}'+
     'h2,h3,h4{color:#0b183b;break-after:avoid;page-break-after:avoid;line-height:1.4}h2{font-size:15px;border-bottom:1px solid #dbeafe;margin:20px 0 10px;padding-bottom:6px}h3,h4{font-size:12px}'+
     'blockquote{margin:8px 0;padding:2px 10px;border-left:3px solid #cbd5e1;color:#334155}blockquote p{margin:3px 0}hr{border:0;border-top:1px solid #dbeafe;margin:14px 0}.keep-next{break-after:avoid;page-break-after:avoid}p{margin:7px 0;orphans:3;widows:3}ul{padding-left:20px}li{margin:4px 0}table{width:100%;border-collapse:collapse;font-size:10px;margin:10px 0}thead{display:table-header-group}tr{break-inside:avoid}th,td{border:1px solid #d8e0ed;padding:6px;text-align:left;overflow-wrap:anywhere}th{background:#edf4ff}'+
-    '.num{color:#1a56db;font-weight:600}.source-list{font-size:9px;line-height:1.4;color:#475569;margin-top:12px}.source-list h2{font-size:11px;margin:10px 0 6px;padding-bottom:4px}.source-list ul{column-count:2;column-gap:20px;margin:4px 0;padding-left:14px}.source-list li{overflow-wrap:anywhere;break-inside:avoid;margin:2px 0}a{color:#174b91;text-decoration:underline}'+
-    '.report-end{break-inside:avoid;page-break-inside:avoid;margin-top:16px;padding-top:10px;border-top:1px solid #d8e0ed;color:#667590;font-size:9px}.report-end p{margin:4px 0}'+
+    '.num{color:#1a56db;font-weight:600}.source-list{font-size:9px;line-height:1.4;color:#475569;margin-top:6px;break-inside:auto;page-break-inside:auto}.source-list h2{font-size:11px;margin:6px 0 3px;padding-bottom:3px}.source-items{margin:0;orphans:1;widows:1}.source-item{overflow-wrap:anywhere}a{color:#174b91;text-decoration:underline}'+
+    '.report-end{break-inside:auto;page-break-inside:auto;margin-top:6px;padding-top:4px;border-top:1px solid #d8e0ed;color:#667590;font-size:9px}.report-end p{margin:0;orphans:1;widows:1}'+
     '</style></head><body><header class="cover"><div class="brand">慧小招 · 招商研判</div><h1>'+esc(city)+' · '+kind+'</h1><div class="subtitle">'+esc(topic)+'</div><div class="meta">生成时间：'+esc(date)+' · '+statusHtml+'</div><p class="meta">'+(mode==='short'?'现有正文摘录，保留原文条件与不确定性。':'当前方向已保存正文；原始研究文件请从报告文件入口下载。')+'</p></header>'+
     '<main>'+reportMdToHtml(body)+'</main>'+
-    (sources.length?'<section class="source-list"><h2>来源索引</h2><ul>'+sources.map(function(source){return '<li>'+esc(source.kind)+'：'+(/^https?:\/\//.test(source.value)?'<a href="'+esc(source.value)+'">'+esc(source.value)+'</a>':esc(source.value))+'</li>';}).join('')+'</ul></section>':'<p class="source-list">未保存独立来源索引，请逐项核对正文中的来源说明。</p>')+
-    '<footer class="report-end"><p>本报告为 AI 辅助研判；待核、推断、政策有效期和适用条件仍需逐项确认。</p><p>慧小招 · '+esc(city)+' · '+esc(date)+'</p></footer></body></html>';
+    (sources.length?'<section class="source-list"><h2>来源索引</h2><p class="source-items">'+sources.map(function(source){return '<span class="source-item">'+esc(source.kind)+'：'+(/^https?:\/\//.test(source.value)?'<a href="'+esc(source.value)+'">'+esc(source.value)+'</a>':esc(source.value))+'</span>';}).join('； ')+'</p></section>':'<p class="source-list">未保存独立来源索引，请逐项核对正文中的来源说明。</p>')+
+    '<footer class="report-end"><p>本报告为 AI 辅助研判；待核、推断、政策有效期和适用条件仍需逐项确认。 · 慧小招 · '+esc(city)+' · '+esc(date)+'</p></footer></body></html>';
   printReportDocument(html);
 }
 

@@ -87,6 +87,32 @@ class FullProviderError(providers.ProviderError):
         super().__init__(message)
 
 
+def _synthesis_safe_metrics(issues):
+    """Expose static issue counts and one bounded line number, never content."""
+    fields = {
+        'numeric_source_mismatch': 'synthesis_numeric_source_mismatch_count',
+        'rank_uncertainty_lost': 'synthesis_rank_uncertainty_lost_count',
+        'policy_condition_lost': 'synthesis_policy_condition_lost_count',
+    }
+    metrics = dict.fromkeys(fields.values(), 0)
+    metrics['synthesis_issue_count'] = 0
+    lines = []
+    for issue in issues if isinstance(issues, list) else []:
+        if not isinstance(issue, dict) or type(issue.get('kind')) is not str:
+            continue
+        field = fields.get(issue['kind'])
+        if not field or metrics['synthesis_issue_count'] >= 10_000:
+            continue
+        metrics[field] += 1
+        metrics['synthesis_issue_count'] += 1
+        line = issue.get('line')
+        if type(line) is int and 1 <= line <= 10_000:
+            lines.append(line)
+    if lines:
+        metrics['synthesis_first_issue_line'] = min(lines)
+    return metrics
+
+
 def _classify_failure(exc):
     """Map a composed-provider ``ProviderError`` (or raw error) to a safe code.
 
@@ -241,8 +267,10 @@ class FullLiveProvider:
                     raise _to_provider_error(exc)
                 parsed = self._parse_part(stage_id, part, payload, all_evidence, prior)
                 text = parsed['text']
-                if synthesis_issues(text, prior):
-                    raise FullProviderError('decision prose changed source facts or omitted qualifications', 'quality')
+                remaining_issues = synthesis_issues(text, prior)
+                if remaining_issues:
+                    raise FullProviderError('decision prose changed source facts or omitted qualifications', 'quality',
+                                            safe_metrics=_synthesis_safe_metrics(remaining_issues))
         metadata = None
         if stage_id.startswith('enterprises_') and part.startswith('候选池'):
             metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior)
@@ -673,12 +701,14 @@ class FullLiveProvider:
             return text, metadata
         saved = previous.get('metadata', {}).get('candidates', []) if isinstance(previous, dict) else []
         excluded = [company['name'] for company in saved]
-        from .company_identity import company_identity
+        from .company_identity import candidate_identity
         known = list(saved) + candidates
-        seen = {company_identity(company, known) for company in saved}
+        previous_meta = previous.get('metadata', {}) if isinstance(previous, dict) else {}
+        sources = list(previous_meta.get('evidence', [])) + metadata['evidence']
+        seen = {candidate_identity(company, known, sources) for company in saved}
         accepted = []
         for company in candidates:
-            identity = company_identity(company, known)
+            identity = candidate_identity(company, known, sources)
             if identity not in seen:
                 accepted.append(company)
                 seen.add(identity)
@@ -734,10 +764,11 @@ class FullLiveProvider:
             if canonical_url(item.get('url')) not in assoc:
                 raise FullProviderError('company identity needs a retrieved source URL', 'quality')
         if part.startswith('候选池'):
-            from .company_identity import company_identity
+            from .company_identity import candidate_identity
             known = list(saved) + candidates
-            identities = {company_identity(item, known) for item in candidates}
-            saved_identities = {company_identity(item, known) for item in saved}
+            sources = list(previous_meta.get('evidence', [])) + metadata.get('evidence', [])
+            identities = {candidate_identity(item, known, sources) for item in candidates}
+            saved_identities = {candidate_identity(item, known, sources) for item in saved}
             if (len(candidates) != 5 or len(identities - saved_identities) != 5
                     or identities & saved_identities):
                 raise FullProviderError('candidate part needs five new grounded companies', 'quality')

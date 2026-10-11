@@ -9,6 +9,12 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../frontend/ops/script-03-sections/17.js'), 'utf8');
 const renderer = source.slice(source.indexOf('function opsDemandResults(){'), source.indexOf('\nfunction toggleFunnelBlock('));
 const statRenderer = source.slice(source.indexOf('function statCell('), source.indexOf('\nfunction statCellClickable('));
+const demandSource = fs.readFileSync(path.join(__dirname, '../frontend/ops/script-03-sections/12-tail.js'), 'utf8');
+const demandHelpers = ['demandSubmissionState', 'demandEffectiveStage', 'demandDisplayProject'].map(name => {
+  const start = demandSource.indexOf('function ' + name + '(');
+  const end = demandSource.indexOf('\nfunction ', start + 1);
+  return demandSource.slice(start, end < 0 ? demandSource.length : end);
+}).join('\n');
 
 function render(enterprises, key = 'proj_mv3i83ap') {
   const projects = {
@@ -28,7 +34,7 @@ function render(enterprises, key = 'proj_mv3i83ap') {
   };
   ctx.window = ctx;
   vm.createContext(ctx);
-  vm.runInContext(statRenderer + '\n' + renderer, ctx);
+  vm.runInContext(demandHelpers + '\n' + statRenderer + '\n' + renderer, ctx);
   const stats = [];
   const actualStatCell = ctx.statCell;
   ctx.statCell = (label, value, color) => {stats.push({label, value, color}); return actualStatCell(label, value, color);};

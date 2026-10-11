@@ -468,6 +468,23 @@ function demandEffectiveStage(key,p){
   return demandSubmissionState(key)==='submitted'?Math.max(Number(p.stage)||1,4):(Number(p.stage)||1);
 }
 
+// Read-only presentation of submitted demands; never rewrites business stages.
+function demandDisplayProject(key,p){
+  if(!p)return p;
+  var demandKey=p.isDemand===true?key:_findExistingDemand(p.city,p.topic);
+  var demand=demandKey&&PROJECTS[demandKey];
+  return demand?Object.assign({},demand,{stage:demandEffectiveStage(demandKey,demand)}):p;
+}
+
+function reportDemandActionButton(p){
+  if(!p||!demandReportSnapshot(cur,p.topic))return '';
+  var key=p.isDemand===true?cur:_findExistingDemand(p.city,p.topic);
+  var state=key?demandSubmissionState(key):'not_submitted';
+  var label=state==='submitted'?'查看已递交需求':state==='pending'?'需求正在保存':state==='failed'?'重试提交当前方向需求':'提交当前方向招商需求';
+  var action=state==='submitted'?"view='home';render()":"submitDemand()";
+  return '<button onclick="'+action+'"'+(state==='pending'?' disabled':'')+' style="padding:12px 16px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;font-size:13px;color:#166534;cursor:pointer;font-weight:600">'+label+'</button>';
+}
+
 function projMgmtPage(p){
   // 账号按城市独立：只显示当前登录城市（cur 项目所在城市）的项目
   var _myCity = (cur && PROJECTS[cur] && PROJECTS[cur].city) ? PROJECTS[cur].city : null;
@@ -1135,7 +1152,7 @@ function dockingPage(p){
    在展开的项目卡片内展示：递交时间线 + 候选状态 + 对接记录
    ══════════════════════════════════════════════════════════════ */
 function dockProgressInline(pk){
-  var px=PROJECTS[pk]; if(!px) return '';
+  var px=demandDisplayProject(pk,PROJECTS[pk]); if(!px) return '';
   var clues=px.clues||[];
   var logs=DOCK_LOGS[pk]||[];
 
@@ -2090,10 +2107,7 @@ function deriveActionItemsFromChain(){
 /* 从REPORTSTATE恢复已保存的招引方向卡片 */
 function restoreActionItems(){
   var p=P();if(!p || !demandReportSnapshot(cur,p.topic))return '';
-  var key=_findExistingDemand(p.city,p.topic),state=key?demandSubmissionState(key):'not_submitted';
-  var label=state==='submitted'?'查看已递交需求':state==='pending'?'需求正在保存':state==='failed'?'重试提交当前方向需求':'提交当前方向招商需求';
-  var action=state==='submitted'?"view='home';render()":"submitDemand()";
-  return '<section style="margin-top:16px;padding:16px;border:1px solid #dbeafe;border-radius:12px;background:#f8faff"><strong>'+escapeChainText(p.topic)+'</strong><p>完整研判已生成。提交后，管理端将基于当前方向核验并推荐企业；报告和线索中的待核结论不代表投资意向已确认。</p><button onclick="'+action+'"'+(state==='pending'?' disabled':'')+'>'+label+'</button></section>';
+  return '<section style="margin-top:16px;padding:16px;border:1px solid #dbeafe;border-radius:12px;background:#f8faff"><strong>'+escapeChainText(p.topic)+'</strong><p>完整研判已生成。提交后，管理端将基于当前方向核验并推荐企业；报告和线索中的待核结论不代表投资意向已确认。</p>'+reportDemandActionButton(p)+'</section>';
 }
 
 /* 从报告文本解析TOP3招引方向（供渲染与切换方向时复用） */
@@ -2931,7 +2945,7 @@ function currentEvidenceChain(topic,key){
   var p=PROJECTS[key],rs=REPORTSTATE[key];if(!p||!rs)return null;
   var meta=(rs.chainEvidenceByTopic||{})[topic],chain=(rs.chainByTopic||{})[topic];
   var text=(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'');
-  return meta&&meta.contract==='saved-excerpts-v1'&&meta.requestId===(p.reportRequestId||'')&&meta.reportText===text&&meta.sourceIdentity===savedEvidenceIdentity(key,topic)&&Array.isArray(chain)?chain:null;
+  return meta&&meta.contract==='saved-excerpts-v1'&&meta.scope==='current-topic-v1'&&meta.requestId===(p.reportRequestId||'')&&meta.reportText===text&&meta.sourceIdentity===savedEvidenceIdentity(key,topic)&&Array.isArray(chain)?chain:null;
 }
 
 function generateChainFromReport(topic, reportText, city){
@@ -2956,14 +2970,16 @@ function generateChainFromReport(topic, reportText, city){
     if(!response.ok)throw new Error('图谱服务未接受请求（'+response.status+'）');
     return readTopicReportStream(response,function(){});
   }).then(function(result){
-    var parsed=JSON.parse(result.text), chain=_normalizeChain(parsed);
-    if(!chain.length || !chain.some(function(s){return s.nodes&&s.nodes.length;}))throw new Error('没有可用的图谱节点');
+    var parsed=JSON.parse(result.text);
+    if(!Array.isArray(parsed)||!parsed.every(function(s){return s&&['上游','中游','下游'].indexOf(s.seg)>=0&&Array.isArray(s.nodes);}))throw new Error('图谱格式不完整');
+    var normalized=_normalizeChain(parsed);
+    var chain=['上游','中游','下游'].map(function(name){return normalized.find(function(s){return s.seg===name;})||{seg:name,nodes:[]};});
     if(!active())return;
     rs=REPORTSTATE[key];
     if(((rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:''))!==exact)return;
     rs.chainByTopic[topic]=chain;
     rs.chainEvidenceByTopic=rs.chainEvidenceByTopic||{};
-    rs.chainEvidenceByTopic[topic]={contract:'saved-excerpts-v1',requestId:requestId,reportText:exact,sourceIdentity:sourceIdentity};
+    rs.chainEvidenceByTopic[topic]={contract:'saved-excerpts-v1',scope:'current-topic-v1',requestId:requestId,reportText:exact,sourceIdentity:sourceIdentity};
     rs.chainStatusByTopic=rs.chainStatusByTopic||{};rs.chainStatusByTopic[topic]='ready';
     persist();
   }).catch(function(error){
@@ -3026,6 +3042,7 @@ function _renderRichChain(topic, segments, recs, p){
     h+='<span style="font-size:7.5px;color:'+sm.fc+';opacity:.55;letter-spacing:.5px;writing-mode:vertical-rl">'+sm.tag+'</span>';
     h+='</div>';
     h+='<div style="flex:1;display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:2px">';
+    if(!(seg.nodes||[]).length)h+='<div style="flex:1;padding:18px;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b;font-size:12px;line-height:1.7">资料待补：当前方向尚无可引用的环节原句和来源链接，不能据此判断该环节不存在。</div>';
     (seg.nodes||[]).forEach(function(nd,i){
       var lv=LEVEL[nd.level]||LEVEL.unknown;
       h+='<div style="flex:1;min-width:96px;background:'+lv.bg+';border:2px solid '+lv.bd+';border-radius:12px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;text-align:center">';
@@ -3086,7 +3103,7 @@ function chainMapHtml(p){
   var failed=rs.chainStatusByTopic&&rs.chainStatusByTopic[topic]==='failed';
   return '<div style="margin-top:16px;padding:20px;border-radius:14px;border:1.5px dashed #cbd5e1;background:#f8fafc;text-align:center;color:#64748b;font-size:12.5px;line-height:1.7">'+
     '<div style="font-size:26px;margin-bottom:8px">🧭</div>「'+escapeChainText(topic)+'」'+(failed?'图谱生成未完成':'尚未生成基于当前材料的图谱')+'<br>'+
-    '<span style="font-size:11.5px;color:#94a3b8">仅引用当前方向材料；证据不足的环节会标记待核。</span>'+
+    '<span style="font-size:11.5px;color:#94a3b8">仅展示当前方向有原句和来源链接的环节；资料不足会显示待补。</span>'+
     (text?'<br><button onclick="requestChainGeneration()">'+(failed?'重试生成图谱':'生成产业链图谱')+'</button>':'')+'</div>';
 }
 
@@ -3504,12 +3521,7 @@ function reportBottomBarInner(p){
     '</button>'))+
     '<button onclick="doUpload()" style="padding:13px 16px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>'+
     // 提交招引需求：仅在该方向已有完整报告时才出现（无报告不该能提交）
-    (_hasFull && _findExistingDemand(p.city,p.topic) && demandSubmissionState(_findExistingDemand(p.city,p.topic))==='submitted'
-      ? '<button onclick="view=\'home\';render()">查看已递交需求</button>'
-      : _hasFull
-      ? '<button onclick="submitDemand()" style="padding:13px 16px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;font-size:13px;color:#166534;cursor:pointer;font-weight:600">提交招引需求 →</button>'
-      : ''
-    );
+    (_hasFull?reportDemandActionButton(p):'');
 }
 
 

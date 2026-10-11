@@ -344,7 +344,7 @@ function viewCurrentReport(){
       '<button onclick="startAiInterview()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">🔄 重新生成</button>'+
       '<button onclick="downloadReport(\'full\')" style="padding:12px 14px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;font-size:13px;color:#1a56db;cursor:pointer;font-weight:600">⬇ 下载研判报告</button>'+
       '<button onclick="downloadReport(\'short\')" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">⬇ 下载快速简报</button>'+
-      '<button onclick="submitDemand()" style="flex:1;padding:12px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer">提交当前方向招商需求</button>';
+      reportDemandActionButton(P());
   }
 }
 
@@ -601,12 +601,12 @@ function downloadReportPDF(mode){
     'h1{font-size:24px;line-height:1.4;margin:0 0 7px;color:#0b183b}.subtitle{font-size:13px;margin-bottom:10px}.meta{font-size:10px;color:#667590}'+
     'h2,h3,h4{color:#0b183b;break-after:avoid;page-break-after:avoid;line-height:1.4}h2{font-size:15px;border-bottom:1px solid #dbeafe;margin:20px 0 10px;padding-bottom:6px}h3,h4{font-size:12px}'+
     'blockquote{margin:8px 0;padding:2px 10px;border-left:3px solid #cbd5e1;color:#334155}blockquote p{margin:3px 0}hr{border:0;border-top:1px solid #dbeafe;margin:14px 0}.keep-next{break-after:avoid;page-break-after:avoid}p{margin:7px 0;orphans:3;widows:3}ul{padding-left:20px}li{margin:4px 0}table{width:100%;border-collapse:collapse;font-size:10px;margin:10px 0}thead{display:table-header-group}tr{break-inside:avoid}th,td{border:1px solid #d8e0ed;padding:6px;text-align:left;overflow-wrap:anywhere}th{background:#edf4ff}'+
-    '.num{color:#1a56db;font-weight:600}.source-list{font-size:9px;line-height:1.4;color:#475569;margin-top:12px}.source-list h2{font-size:11px;margin:10px 0 6px;padding-bottom:4px}.source-list ul{column-count:2;column-gap:20px;margin:4px 0;padding-left:14px}.source-list li{overflow-wrap:anywhere;break-inside:avoid;margin:2px 0}a{color:#174b91;text-decoration:underline}'+
-    '.report-end{break-inside:avoid;page-break-inside:avoid;margin-top:16px;padding-top:10px;border-top:1px solid #d8e0ed;color:#667590;font-size:9px}.report-end p{margin:4px 0}'+
+    '.num{color:#1a56db;font-weight:600}.source-list{font-size:9px;line-height:1.4;color:#475569;margin-top:6px;break-inside:auto;page-break-inside:auto}.source-list h2{font-size:11px;margin:6px 0 3px;padding-bottom:3px}.source-items{margin:0;orphans:1;widows:1}.source-item{overflow-wrap:anywhere}a{color:#174b91;text-decoration:underline}'+
+    '.report-end{break-inside:auto;page-break-inside:auto;margin-top:6px;padding-top:4px;border-top:1px solid #d8e0ed;color:#667590;font-size:9px}.report-end p{margin:0;orphans:1;widows:1}'+
     '</style></head><body><header class="cover"><div class="brand">慧小招 · 招商研判</div><h1>'+esc(city)+' · '+kind+'</h1><div class="subtitle">'+esc(topic)+'</div><div class="meta">生成时间：'+esc(date)+' · '+statusHtml+'</div><p class="meta">'+(mode==='short'?'现有正文摘录，保留原文条件与不确定性。':'当前方向已保存正文；原始研究文件请从报告文件入口下载。')+'</p></header>'+
     '<main>'+reportMdToHtml(body)+'</main>'+
-    (sources.length?'<section class="source-list"><h2>来源索引</h2><ul>'+sources.map(function(source){return '<li>'+esc(source.kind)+'：'+(/^https?:\/\//.test(source.value)?'<a href="'+esc(source.value)+'">'+esc(source.value)+'</a>':esc(source.value))+'</li>';}).join('')+'</ul></section>':'<p class="source-list">未保存独立来源索引，请逐项核对正文中的来源说明。</p>')+
-    '<footer class="report-end"><p>本报告为 AI 辅助研判；待核、推断、政策有效期和适用条件仍需逐项确认。</p><p>慧小招 · '+esc(city)+' · '+esc(date)+'</p></footer></body></html>';
+    (sources.length?'<section class="source-list"><h2>来源索引</h2><p class="source-items">'+sources.map(function(source){return '<span class="source-item">'+esc(source.kind)+'：'+(/^https?:\/\//.test(source.value)?'<a href="'+esc(source.value)+'">'+esc(source.value)+'</a>':esc(source.value))+'</span>';}).join('； ')+'</p></section>':'<p class="source-list">未保存独立来源索引，请逐项核对正文中的来源说明。</p>')+
+    '<footer class="report-end"><p>本报告为 AI 辅助研判；待核、推断、政策有效期和适用条件仍需逐项确认。 · 慧小招 · '+esc(city)+' · '+esc(date)+'</p></footer></body></html>';
   printReportDocument(html);
 }
 
@@ -3916,6 +3916,23 @@ function demandEffectiveStage(key,p){
   return demandSubmissionState(key)==='submitted'?Math.max(Number(p.stage)||1,4):(Number(p.stage)||1);
 }
 
+// Read-only presentation of submitted demands; never rewrites business stages.
+function demandDisplayProject(key,p){
+  if(!p)return p;
+  var demandKey=p.isDemand===true?key:_findExistingDemand(p.city,p.topic);
+  var demand=demandKey&&PROJECTS[demandKey];
+  return demand?Object.assign({},demand,{stage:demandEffectiveStage(demandKey,demand)}):p;
+}
+
+function reportDemandActionButton(p){
+  if(!p||!demandReportSnapshot(cur,p.topic))return '';
+  var key=p.isDemand===true?cur:_findExistingDemand(p.city,p.topic);
+  var state=key?demandSubmissionState(key):'not_submitted';
+  var label=state==='submitted'?'查看已递交需求':state==='pending'?'需求正在保存':state==='failed'?'重试提交当前方向需求':'提交当前方向招商需求';
+  var action=state==='submitted'?"view='home';render()":"submitDemand()";
+  return '<button onclick="'+action+'"'+(state==='pending'?' disabled':'')+' style="padding:12px 16px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;font-size:13px;color:#166534;cursor:pointer;font-weight:600">'+label+'</button>';
+}
+
 function projMgmtPage(p){
   // 账号按城市独立：只显示当前登录城市（cur 项目所在城市）的项目
   var _myCity = (cur && PROJECTS[cur] && PROJECTS[cur].city) ? PROJECTS[cur].city : null;
@@ -4583,7 +4600,7 @@ function dockingPage(p){
    在展开的项目卡片内展示：递交时间线 + 候选状态 + 对接记录
    ══════════════════════════════════════════════════════════════ */
 function dockProgressInline(pk){
-  var px=PROJECTS[pk]; if(!px) return '';
+  var px=demandDisplayProject(pk,PROJECTS[pk]); if(!px) return '';
   var clues=px.clues||[];
   var logs=DOCK_LOGS[pk]||[];
 
@@ -5538,10 +5555,7 @@ function deriveActionItemsFromChain(){
 /* 从REPORTSTATE恢复已保存的招引方向卡片 */
 function restoreActionItems(){
   var p=P();if(!p || !demandReportSnapshot(cur,p.topic))return '';
-  var key=_findExistingDemand(p.city,p.topic),state=key?demandSubmissionState(key):'not_submitted';
-  var label=state==='submitted'?'查看已递交需求':state==='pending'?'需求正在保存':state==='failed'?'重试提交当前方向需求':'提交当前方向招商需求';
-  var action=state==='submitted'?"view='home';render()":"submitDemand()";
-  return '<section style="margin-top:16px;padding:16px;border:1px solid #dbeafe;border-radius:12px;background:#f8faff"><strong>'+escapeChainText(p.topic)+'</strong><p>完整研判已生成。提交后，管理端将基于当前方向核验并推荐企业；报告和线索中的待核结论不代表投资意向已确认。</p><button onclick="'+action+'"'+(state==='pending'?' disabled':'')+'>'+label+'</button></section>';
+  return '<section style="margin-top:16px;padding:16px;border:1px solid #dbeafe;border-radius:12px;background:#f8faff"><strong>'+escapeChainText(p.topic)+'</strong><p>完整研判已生成。提交后，管理端将基于当前方向核验并推荐企业；报告和线索中的待核结论不代表投资意向已确认。</p>'+reportDemandActionButton(p)+'</section>';
 }
 
 /* 从报告文本解析TOP3招引方向（供渲染与切换方向时复用） */
@@ -6379,7 +6393,7 @@ function currentEvidenceChain(topic,key){
   var p=PROJECTS[key],rs=REPORTSTATE[key];if(!p||!rs)return null;
   var meta=(rs.chainEvidenceByTopic||{})[topic],chain=(rs.chainByTopic||{})[topic];
   var text=(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'');
-  return meta&&meta.contract==='saved-excerpts-v1'&&meta.requestId===(p.reportRequestId||'')&&meta.reportText===text&&meta.sourceIdentity===savedEvidenceIdentity(key,topic)&&Array.isArray(chain)?chain:null;
+  return meta&&meta.contract==='saved-excerpts-v1'&&meta.scope==='current-topic-v1'&&meta.requestId===(p.reportRequestId||'')&&meta.reportText===text&&meta.sourceIdentity===savedEvidenceIdentity(key,topic)&&Array.isArray(chain)?chain:null;
 }
 
 function generateChainFromReport(topic, reportText, city){
@@ -6404,14 +6418,16 @@ function generateChainFromReport(topic, reportText, city){
     if(!response.ok)throw new Error('图谱服务未接受请求（'+response.status+'）');
     return readTopicReportStream(response,function(){});
   }).then(function(result){
-    var parsed=JSON.parse(result.text), chain=_normalizeChain(parsed);
-    if(!chain.length || !chain.some(function(s){return s.nodes&&s.nodes.length;}))throw new Error('没有可用的图谱节点');
+    var parsed=JSON.parse(result.text);
+    if(!Array.isArray(parsed)||!parsed.every(function(s){return s&&['上游','中游','下游'].indexOf(s.seg)>=0&&Array.isArray(s.nodes);}))throw new Error('图谱格式不完整');
+    var normalized=_normalizeChain(parsed);
+    var chain=['上游','中游','下游'].map(function(name){return normalized.find(function(s){return s.seg===name;})||{seg:name,nodes:[]};});
     if(!active())return;
     rs=REPORTSTATE[key];
     if(((rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:''))!==exact)return;
     rs.chainByTopic[topic]=chain;
     rs.chainEvidenceByTopic=rs.chainEvidenceByTopic||{};
-    rs.chainEvidenceByTopic[topic]={contract:'saved-excerpts-v1',requestId:requestId,reportText:exact,sourceIdentity:sourceIdentity};
+    rs.chainEvidenceByTopic[topic]={contract:'saved-excerpts-v1',scope:'current-topic-v1',requestId:requestId,reportText:exact,sourceIdentity:sourceIdentity};
     rs.chainStatusByTopic=rs.chainStatusByTopic||{};rs.chainStatusByTopic[topic]='ready';
     persist();
   }).catch(function(error){
@@ -6474,6 +6490,7 @@ function _renderRichChain(topic, segments, recs, p){
     h+='<span style="font-size:7.5px;color:'+sm.fc+';opacity:.55;letter-spacing:.5px;writing-mode:vertical-rl">'+sm.tag+'</span>';
     h+='</div>';
     h+='<div style="flex:1;display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:2px">';
+    if(!(seg.nodes||[]).length)h+='<div style="flex:1;padding:18px;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b;font-size:12px;line-height:1.7">资料待补：当前方向尚无可引用的环节原句和来源链接，不能据此判断该环节不存在。</div>';
     (seg.nodes||[]).forEach(function(nd,i){
       var lv=LEVEL[nd.level]||LEVEL.unknown;
       h+='<div style="flex:1;min-width:96px;background:'+lv.bg+';border:2px solid '+lv.bd+';border-radius:12px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;text-align:center">';
@@ -6534,7 +6551,7 @@ function chainMapHtml(p){
   var failed=rs.chainStatusByTopic&&rs.chainStatusByTopic[topic]==='failed';
   return '<div style="margin-top:16px;padding:20px;border-radius:14px;border:1.5px dashed #cbd5e1;background:#f8fafc;text-align:center;color:#64748b;font-size:12.5px;line-height:1.7">'+
     '<div style="font-size:26px;margin-bottom:8px">🧭</div>「'+escapeChainText(topic)+'」'+(failed?'图谱生成未完成':'尚未生成基于当前材料的图谱')+'<br>'+
-    '<span style="font-size:11.5px;color:#94a3b8">仅引用当前方向材料；证据不足的环节会标记待核。</span>'+
+    '<span style="font-size:11.5px;color:#94a3b8">仅展示当前方向有原句和来源链接的环节；资料不足会显示待补。</span>'+
     (text?'<br><button onclick="requestChainGeneration()">'+(failed?'重试生成图谱':'生成产业链图谱')+'</button>':'')+'</div>';
 }
 
@@ -6952,12 +6969,7 @@ function reportBottomBarInner(p){
     '</button>'))+
     '<button onclick="doUpload()" style="padding:13px 16px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>'+
     // 提交招引需求：仅在该方向已有完整报告时才出现（无报告不该能提交）
-    (_hasFull && _findExistingDemand(p.city,p.topic) && demandSubmissionState(_findExistingDemand(p.city,p.topic))==='submitted'
-      ? '<button onclick="view=\'home\';render()">查看已递交需求</button>'
-      : _hasFull
-      ? '<button onclick="submitDemand()" style="padding:13px 16px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;font-size:13px;color:#166534;cursor:pointer;font-weight:600">提交招引需求 →</button>'
-      : ''
-    );
+    (_hasFull?reportDemandActionButton(p):'');
 }
 
 
@@ -7401,7 +7413,7 @@ function detailNeeds(p){
   // 若有展开的方向：右侧显示该方向上下文；否则显示全局汇总
   var openK = window.__projOpen;
   if(openK && PROJECTS[openK]){
-    var x = PROJECTS[openK];
+    var x = demandDisplayProject(openK,PROJECTS[openK]);
     var clues = x.clues||[];
     var teal  = clues.filter(function(c){return c.tone==='teal';}).length;
     var amber = clues.filter(function(c){return c.tone==='amber';}).length;
@@ -7429,19 +7441,19 @@ function detailNeeds(p){
     if(x.isDemand===true) return true;
     return false; // 只认isDemand===true，不再用stage>=3兜底（防止产业分析项目误入招商对接）
   });
-  var byStage={};ks.forEach(function(k){var s=PROJECTS[k].stage;byStage[s]=(byStage[s]||0)+1});
+  var byStage={};ks.forEach(function(k){var s=demandEffectiveStage(k,PROJECTS[k]);byStage[s]=(byStage[s]||0)+1});
   return '<div class="detail-header"><div><span class="eyebrow">OVERVIEW</span><h2>需求概览</h2><p>'+_authEscape(p.who)+' 名下产业分析汇总</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>产业分析总数</h3><p class="detail-copy" style="font-size:22px;font-weight:700;color:#013582">'+ks.length+' 个产业方向</p></div>'+
       '<div class="detail-block"><h3>阶段分布</h3><ul class="check-list">'+
         (function(){
           // 阶段名按项目取（可能有自定义阶段，序号会超过 STAGES 长度）
-          var maxN=STAGES.length; ks.forEach(function(k){var s=PROJECTS[k].stage||1; if(s>maxN)maxN=s;});
+          var maxN=STAGES.length; ks.forEach(function(k){var s=demandEffectiveStage(k,PROJECTS[k]); if(s>maxN)maxN=s;});
           var rows='';
           for(var i=1;i<=maxN;i++){
             var n=byStage[i]||0; if(!n) continue;
             var nm='';
-            for(var j=0;j<ks.length;j++){ if((PROJECTS[ks[j]].stage||1)===i){ nm=stageNameOf(PROJECTS[ks[j]],i); break; } }
+            for(var j=0;j<ks.length;j++){ if(demandEffectiveStage(ks[j],PROJECTS[ks[j]])===i){ nm=stageNameOf(PROJECTS[ks[j]],i); break; } }
             if(!nm) nm=(STAGES[i-1]&&STAGES[i-1][0])||('第'+i+'阶段');
             rows+='<li><i class="i">•</i>'+nm+'：'+n+' 个</li>';
           }
@@ -7516,6 +7528,7 @@ function detailSub(s){
 }
 // 产业分析页 → 右侧：本次研判（版本/进度/待核实/已传材料）
 function detailReport(p){
+  var stageProject=demandDisplayProject(cur,p);
   var st=REPORTSTATE[cur]; var ups=(UPLOADS[cur]||[]);
   // 按当前方向判断该方向是否已生成报告/是否完整报告（项目级 st.phase/st.ts 是单例，切方向会串）
   var _topicFull = topicHasFullReport(p.topic);
@@ -7531,7 +7544,7 @@ function detailReport(p){
           '</ul>'
         : '<div class="info-callout" style="margin-top:0">尚未生成报告。请先在「产业分析」选择方向并点击生成。</div>'      )+'</div>'+
       '<div class="detail-block"><h3>当前阶段</h3>'+
-        '<div class="info-callout" style="margin-top:0">'+stageNameOf(p,p.stage)+' · '+stageDescOf(p,p.stage)+'</div>'+
+        '<div class="info-callout" style="margin-top:0">'+stageNameOf(stageProject,stageProject.stage)+' · '+stageDescOf(stageProject,stageProject.stage)+'</div>'+
       '</div>'+
       '<div class="detail-block"><h3>已上传材料</h3>'+(ups.length
         ? '<ul class="source-list">'+ups.map(function(u){return '<li><i class="i"></i>'+u.name+'<small style="color:#9aa5b5;margin-left:6px">'+Math.round(u.size/1024)+'KB</small></li>';}).join('')+'</ul>'
@@ -7550,8 +7563,8 @@ function detailReport(p){
 // 招商对接页 → 右侧：对接概览
 function detailDocking(p){
   var ks=cityKeys();
-  var n4=ks.filter(function(k){return PROJECTS[k].stage>=4}).length;
-  var n5=ks.filter(function(k){return PROJECTS[k].stage>=5}).length;
+  var n4=ks.filter(function(k){return demandEffectiveStage(k,PROJECTS[k])>=4}).length;
+  var n5=ks.filter(function(k){return demandEffectiveStage(k,PROJECTS[k])>=5}).length;
   return '<div class="detail-header"><div><span class="eyebrow">DOCKING</span><h2>对接概览</h2><p>各项目对接进度</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>进行中</h3><ul class="check-list"><li><i class="i">🔄</i>资源匹配中：'+n4+' 个</li><li><i class="i">🤝</i>已进入对接：'+n5+' 个</li></ul></div>'+

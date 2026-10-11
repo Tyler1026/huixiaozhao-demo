@@ -192,7 +192,7 @@ test('graph cache requires exact report and request provenance, and never rewrit
   rs.aiReportByTopic['核电配套'] = fullText;
   rs.chainByTopic = {'核电配套':[{seg:'上游',nodes:[]}]};
   assert.equal(c.currentEvidenceChain('核电配套'), null);
-  rs.chainEvidenceByTopic = {'核电配套':{contract:'saved-excerpts-v1',requestId:'request-1',reportText:fullText,sourceIdentity:c.savedEvidenceIdentity('p','核电配套')}};
+  rs.chainEvidenceByTopic = {'核电配套':{contract:'saved-excerpts-v1',scope:'current-topic-v1',requestId:'request-1',reportText:fullText,sourceIdentity:c.savedEvidenceIdentity('p','核电配套')}};
   assert.equal(c.currentEvidenceChain('核电配套').length, 1);
   rs.aiReportByTopic['核电配套'] += '新版';
   assert.equal(c.currentEvidenceChain('核电配套'), null);

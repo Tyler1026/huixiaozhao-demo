@@ -74,13 +74,19 @@ def project_context(body, state):
         for block in re.split(r'\n\s*\n', str(report)):
             if block.strip():
                 corpus.append({'text': block, 'cite': '当前报告 / '+topic, 'topic': topic, 'origin': 'report'})
-    dedup, seen = [], set()
+    dedup, positions = [], {}
     for chunk in corpus:
         sig = hashlib.sha256(chunk['text'].encode()).hexdigest()
-        if sig in seen:
-            continue
-        seen.add(sig)
         chunk['id'] = 'ev_'+sig[:20]
+        if sig in positions:
+            # Identical report text is still current-topic evidence even if
+            # it was encountered first in a generic base knowledge section.
+            # Preserve the content-based ID; do not widen a foreign-only row.
+            index = positions[sig]
+            if chunk.get('topic') == topic and dedup[index].get('topic') != topic:
+                dedup[index] = chunk
+            continue
+        positions[sig] = len(dedup)
         dedup.append(chunk)
     if not dedup:
         raise AuthError(409, 'evidence_missing', '当前工作区尚无可核查材料，请先补充材料')
@@ -464,11 +470,14 @@ def review_and_push(body, state, actor):
 def ground_chain(obj, catalog, context):
     if not isinstance(obj, list):
         raise ValueError('invalid chain JSON')
-    result = []
+    groups = {name: [] for name in ('上游', '中游', '下游')}
+    valid_segments = 0
     for segment in obj:
-        if not isinstance(segment, dict) or segment.get('seg') not in ('上游', '中游', '下游'):
+        if (not isinstance(segment, dict) or segment.get('seg') not in groups
+                or not isinstance(segment.get('nodes'), list)):
             continue
-        nodes, seen = [], set()
+        valid_segments += 1
+        nodes, seen = groups[segment['seg']], set()
         for raw in segment.get('nodes') or []:
             if not isinstance(raw, dict):
                 continue
@@ -476,7 +485,13 @@ def ground_chain(obj, catalog, context):
             if not name or len(name) > 80 or name in seen:
                 continue
             seen.add(name)
-            refs = [x for x in _refs(raw, catalog, name) if name in x['quote'] and x['urls']]
+            refs = [x for x in _refs(raw, catalog, name)
+                    if x.get('topic') == context.get('topic') and context.get('topic')
+                    and name in x['quote'] and x['urls']]
+            # Unknown is a claim about verification, not permission to add a
+            # model-created or another direction's industrial segment.
+            if not refs:
+                continue
             level = 'unknown'
             if refs:
                 # Source wording, never model confidence, determines whether
@@ -501,11 +516,11 @@ def ground_chain(obj, catalog, context):
             nodes.append({'name': name, 'level': level,
                 'note': ('材料原文：'+'；'.join(x['quote'] for x in refs[:2])+'；强弱及落地状态仍待核实。') if refs else '待核节点：当前材料缺少可追溯依据，不能判定本地强弱或现实中不存在。',
                 'local_leaders': leaders, 'benchmark': [], 'evidence_ids': [x['id'] for x in refs], 'sourceRecords': _basis(refs), 'urls': list(dict.fromkeys(u for x in refs for u in x['urls']))})
-        if nodes:
-            result.append({'seg': segment['seg'], 'nodes': nodes})
-    if not result:
-        raise ValueError('no chain nodes')
-    return result
+    if obj and not valid_segments:
+        raise ValueError('invalid chain segments')
+    # Empty current-topic evidence is a completed material-gap result, never
+    # a fabricated node or an assertion that this industry does not exist.
+    return [{'seg': name, 'nodes': nodes} for name, nodes in groups.items()]
 
 
 def enterprise_sources(event):

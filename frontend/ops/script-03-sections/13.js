@@ -14,7 +14,7 @@ function detailPane(p){
 }
 // 我的需求页 → 右侧：需求汇总统计
 function detailNeeds(p){
-  var ks=Object.keys(PROJECTS);var byStage={};ks.forEach(function(k){var s=PROJECTS[k].stage;byStage[s]=(byStage[s]||0)+1});
+  var ks=Object.keys(PROJECTS);var byStage={};ks.forEach(function(k){var s=demandEffectiveStage(k,PROJECTS[k]);byStage[s]=(byStage[s]||0)+1});
   return '<div class="detail-header"><div><span class="eyebrow">OVERVIEW</span><h2>需求概览</h2><p>'+p.who+' 名下研判汇总</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>研判总数</h3><p class="detail-copy" style="font-size:22px;font-weight:700;color:#013582">'+ks.length+' 个产业方向</p></div>'+
@@ -55,6 +55,7 @@ function detailSub(s){
 }
 // 研判需求页 → 右侧：本次研判（版本/进度/待核实/已传材料）
 function detailReport(p){
+  var stageProject=demandDisplayProject(cur,p);
   var st=REPORTSTATE[cur]; var ups=(UPLOADS[cur]||[]);
   return '<div class="detail-header"><div><span class="eyebrow">CURRENT STUDY</span><h2>本次研判</h2><p>'+p.topic+'</p></div></div>'+
     '<div class="detail-scroll">'+
@@ -66,7 +67,7 @@ function detailReport(p){
           '</ul>'
         : '<div class="info-callout" style="margin-top:0">尚未生成报告。请先在「研判需求」选择方向并点击生成。</div>'      )+'</div>'+
       '<div class="detail-block"><h3>当前阶段</h3>'+
-        '<div class="info-callout" style="margin-top:0">'+(STAGES[p.stage-1]?STAGES[p.stage-1][0]:'未知')+' · '+(STAGES[p.stage-1]?STAGES[p.stage-1][1]:'')+'</div>'+
+        '<div class="info-callout" style="margin-top:0">'+stageNameOf(stageProject,stageProject.stage)+' · '+stageDescOf(stageProject,stageProject.stage)+'</div>'+
       '</div>'+
       '<div class="detail-block"><h3>已上传材料</h3>'+(ups.length
         ? '<ul class="source-list">'+ups.map(function(u){return '<li><i class="i"></i>'+u.name+'<small style="color:#9aa5b5;margin-left:6px">'+Math.round(u.size/1024)+'KB</small></li>';}).join('')+'</ul>'
@@ -85,8 +86,8 @@ function detailReport(p){
 // 招商对接页 → 右侧：对接概览
 function detailDocking(p){
   var ks=Object.keys(PROJECTS);
-  var n4=ks.filter(function(k){return PROJECTS[k].stage>=4}).length;
-  var n5=ks.filter(function(k){return PROJECTS[k].stage>=5}).length;
+  var n4=ks.filter(function(k){return demandEffectiveStage(k,PROJECTS[k])>=4}).length;
+  var n5=ks.filter(function(k){return demandEffectiveStage(k,PROJECTS[k])>=5}).length;
   return '<div class="detail-header"><div><span class="eyebrow">DOCKING</span><h2>对接概览</h2><p>各项目对接进度</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>进行中</h3><ul class="check-list"><li><i class="i">🔄</i>资源匹配中：'+n4+' 个</li><li><i class="i">🤝</i>已进入对接：'+n5+' 个</li></ul></div>'+

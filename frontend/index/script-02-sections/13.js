@@ -17,7 +17,7 @@ function detailNeeds(p){
   // 若有展开的方向：右侧显示该方向上下文；否则显示全局汇总
   var openK = window.__projOpen;
   if(openK && PROJECTS[openK]){
-    var x = PROJECTS[openK];
+    var x = demandDisplayProject(openK,PROJECTS[openK]);
     var clues = x.clues||[];
     var teal  = clues.filter(function(c){return c.tone==='teal';}).length;
     var amber = clues.filter(function(c){return c.tone==='amber';}).length;
@@ -45,19 +45,19 @@ function detailNeeds(p){
     if(x.isDemand===true) return true;
     return false; // 只认isDemand===true，不再用stage>=3兜底（防止产业分析项目误入招商对接）
   });
-  var byStage={};ks.forEach(function(k){var s=PROJECTS[k].stage;byStage[s]=(byStage[s]||0)+1});
+  var byStage={};ks.forEach(function(k){var s=demandEffectiveStage(k,PROJECTS[k]);byStage[s]=(byStage[s]||0)+1});
   return '<div class="detail-header"><div><span class="eyebrow">OVERVIEW</span><h2>需求概览</h2><p>'+_authEscape(p.who)+' 名下产业分析汇总</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>产业分析总数</h3><p class="detail-copy" style="font-size:22px;font-weight:700;color:#013582">'+ks.length+' 个产业方向</p></div>'+
       '<div class="detail-block"><h3>阶段分布</h3><ul class="check-list">'+
         (function(){
           // 阶段名按项目取（可能有自定义阶段，序号会超过 STAGES 长度）
-          var maxN=STAGES.length; ks.forEach(function(k){var s=PROJECTS[k].stage||1; if(s>maxN)maxN=s;});
+          var maxN=STAGES.length; ks.forEach(function(k){var s=demandEffectiveStage(k,PROJECTS[k]); if(s>maxN)maxN=s;});
           var rows='';
           for(var i=1;i<=maxN;i++){
             var n=byStage[i]||0; if(!n) continue;
             var nm='';
-            for(var j=0;j<ks.length;j++){ if((PROJECTS[ks[j]].stage||1)===i){ nm=stageNameOf(PROJECTS[ks[j]],i); break; } }
+            for(var j=0;j<ks.length;j++){ if(demandEffectiveStage(ks[j],PROJECTS[ks[j]])===i){ nm=stageNameOf(PROJECTS[ks[j]],i); break; } }
             if(!nm) nm=(STAGES[i-1]&&STAGES[i-1][0])||('第'+i+'阶段');
             rows+='<li><i class="i">•</i>'+nm+'：'+n+' 个</li>';
           }
@@ -132,6 +132,7 @@ function detailSub(s){
 }
 // 产业分析页 → 右侧：本次研判（版本/进度/待核实/已传材料）
 function detailReport(p){
+  var stageProject=demandDisplayProject(cur,p);
   var st=REPORTSTATE[cur]; var ups=(UPLOADS[cur]||[]);
   // 按当前方向判断该方向是否已生成报告/是否完整报告（项目级 st.phase/st.ts 是单例，切方向会串）
   var _topicFull = topicHasFullReport(p.topic);
@@ -147,7 +148,7 @@ function detailReport(p){
           '</ul>'
         : '<div class="info-callout" style="margin-top:0">尚未生成报告。请先在「产业分析」选择方向并点击生成。</div>'      )+'</div>'+
       '<div class="detail-block"><h3>当前阶段</h3>'+
-        '<div class="info-callout" style="margin-top:0">'+stageNameOf(p,p.stage)+' · '+stageDescOf(p,p.stage)+'</div>'+
+        '<div class="info-callout" style="margin-top:0">'+stageNameOf(stageProject,stageProject.stage)+' · '+stageDescOf(stageProject,stageProject.stage)+'</div>'+
       '</div>'+
       '<div class="detail-block"><h3>已上传材料</h3>'+(ups.length
         ? '<ul class="source-list">'+ups.map(function(u){return '<li><i class="i"></i>'+u.name+'<small style="color:#9aa5b5;margin-left:6px">'+Math.round(u.size/1024)+'KB</small></li>';}).join('')+'</ul>'
@@ -166,8 +167,8 @@ function detailReport(p){
 // 招商对接页 → 右侧：对接概览
 function detailDocking(p){
   var ks=cityKeys();
-  var n4=ks.filter(function(k){return PROJECTS[k].stage>=4}).length;
-  var n5=ks.filter(function(k){return PROJECTS[k].stage>=5}).length;
+  var n4=ks.filter(function(k){return demandEffectiveStage(k,PROJECTS[k])>=4}).length;
+  var n5=ks.filter(function(k){return demandEffectiveStage(k,PROJECTS[k])>=5}).length;
   return '<div class="detail-header"><div><span class="eyebrow">DOCKING</span><h2>对接概览</h2><p>各项目对接进度</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>进行中</h3><ul class="check-list"><li><i class="i">🔄</i>资源匹配中：'+n4+' 个</li><li><i class="i">🤝</i>已进入对接：'+n5+' 个</li></ul></div>'+
