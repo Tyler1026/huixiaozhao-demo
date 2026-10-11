@@ -2107,7 +2107,10 @@ function deriveActionItemsFromChain(){
 /* 从REPORTSTATE恢复已保存的招引方向卡片 */
 function restoreActionItems(){
   var p=P();if(!p || !demandReportSnapshot(cur,p.topic))return '';
-  return '<section style="margin-top:16px;padding:16px;border:1px solid #dbeafe;border-radius:12px;background:#f8faff"><strong>'+escapeChainText(p.topic)+'</strong><p>完整研判已生成。提交后，管理端将基于当前方向核验并推荐企业；报告和线索中的待核结论不代表投资意向已确认。</p>'+reportDemandActionButton(p)+'</section>';
+  var demandKey=p.isDemand===true?cur:_findExistingDemand(p.city,p.topic);
+  var submitted=demandKey&&demandSubmissionState(demandKey)==='submitted';
+  var message=submitted?'需求已递交，资源端正在开展当前方向的企业核验与推荐。':'完整研判已生成。提交后，管理端将基于当前方向核验并推荐企业。';
+  return '<section style="margin-top:16px;padding:16px;border:1px solid #dbeafe;border-radius:12px;background:#f8faff"><strong>'+escapeChainText(p.topic)+'</strong><p>'+message+'报告和线索中的待核结论不代表投资意向已确认。</p>'+reportDemandActionButton(p)+'</section>';
 }
 
 /* 从报告文本解析TOP3招引方向（供渲染与切换方向时复用） */
@@ -2606,12 +2609,12 @@ async function readTopicReportStream(response, onText){
   return {text:text,finishReason:finish,transportEnded:ended};
 }
 
-async function syncTopicReportInputs(){
+async function syncTopicReportInputs(capturedSnapshot){
   if(window._syncTimer){clearTimeout(window._syncTimer);window._syncTimer=null;}
-  var raw=JSON.parse(localStorage.getItem(LS_KEY)||'{}');
+  var raw=capturedSnapshot===undefined?JSON.parse(localStorage.getItem(LS_KEY)||'{}'):capturedSnapshot;
   var snapshot=typeof _safeSyncSnapshot==='function'?_safeSyncSnapshot(raw):raw;
   var response=await fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(snapshot)});
-  if(!response.ok)throw new Error('当前方向和确认事项尚未保存，请重试');
+  if(!response.ok)throw new Error(response.status===403?'报告基础版本已更新，请刷新后重试保存':'当前方向和确认事项尚未保存，请重试');
   var result=await response.json();
   if(!result || result.ok!==true)throw new Error('当前方向和确认事项保存未确认，请刷新后重试');
 }
@@ -2641,6 +2644,7 @@ function triggerReport(phase){
   if(window._topicReportJobs[jobKey]){toast('当前方向正在生成，请稍候');return;}
   var epoch=typeof _authEpoch==='undefined'?null:_authEpoch;
   var requestId=p.reportRequestId||'';
+  var materialDirectory=typeof captureReportMaterialDirectory==='function'?captureReportMaterialDirectory(key,topic):null;
   var controller=new AbortController(),started=Date.now(),text='';
   window._topicReportJobs[jobKey]=controller;window._reportGenerating=true;
   try{p.topic=topic;persist();}catch(error){delete window._topicReportJobs[jobKey];updateReportBusy();toast('本地保存未完成，请重试');return Promise.resolve();}
@@ -2681,6 +2685,10 @@ function triggerReport(phase){
     var now=Date.now();
     ['aiReportByTopic','phaseByTopic','tsByTopic','scoreByTopic','userGeneratedTopics','pendingByTopic'].forEach(function(field){rs[field]=rs[field]||{};});
     rs.aiReportByTopic[topic]=text;rs.phaseByTopic[topic]=phase;rs.tsByTopic[topic]=now;
+    if(materialDirectory){
+      materialDirectory.reportText=text;rs.materialDirectoryByTopic=rs.materialDirectoryByTopic||{};
+      rs.materialDirectoryByTopic[topic]=materialDirectory;
+    }
     rs.userGeneratedTopics[topic]=true;
     if(rs.chainByTopic)delete rs.chainByTopic[topic];
     if(rs.chainEvidenceByTopic)delete rs.chainEvidenceByTopic[topic];
@@ -2717,6 +2725,8 @@ function demandReportSnapshot(key,topic){
   var copy={text:text,topic:topic,phase:2,ts:(rs.tsByTopic||{})[topic]||rs.ts||Date.now(),
     aiReportByTopic:{},phaseByTopic:{},tsByTopic:{},scoreByTopic:{},evidenceStatusByTopic:{}};
   copy.aiReportByTopic[topic]=text;copy.phaseByTopic[topic]=2;copy.tsByTopic[topic]=copy.ts;
+  var directory=typeof reportMaterialDirectoryForContext==='function'?reportMaterialDirectoryForContext({key:key,project:PROJECTS[key],state:rs,topic:topic,text:text}):null;
+  if(directory){copy.materialDirectoryByTopic={};copy.materialDirectoryByTopic[topic]=JSON.parse(JSON.stringify(directory));}
   copy.scoreByTopic[topic]=(rs.scoreByTopic||{})[topic];
   copy.evidenceStatusByTopic[topic]=(rs.evidenceStatusByTopic||{})[topic] || (native?'native':'unreviewed');
   if(native){['sourceReportId','scoreBasis','scoreStatus','score','sourceEngineReportId','sourceGeneration'].forEach(function(f){if(rs[f]!=null)copy[f]=rs[f];});}
@@ -2941,11 +2951,87 @@ function _extractChainRobust(raw){
   return (out.length && out.some(function(s){return s.nodes.length;}))?out:null;
 }
 function currentEvidenceChain(topic,key){
-  key=key||cur;
+  key=key||cur;if(typeof _chainGenInFlight!=='undefined'&&_chainGenInFlight[key+'|'+topic])return null;
   var p=PROJECTS[key],rs=REPORTSTATE[key];if(!p||!rs)return null;
   var meta=(rs.chainEvidenceByTopic||{})[topic],chain=(rs.chainByTopic||{})[topic];
   var text=(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'');
   return meta&&meta.contract==='saved-excerpts-v1'&&meta.scope==='current-topic-v1'&&meta.requestId===(p.reportRequestId||'')&&meta.reportText===text&&meta.sourceIdentity===savedEvidenceIdentity(key,topic)&&Array.isArray(chain)?chain:null;
+}
+
+function chainSnapshotIdentity(value){
+  if(Array.isArray(value))return '['+value.map(chainSnapshotIdentity).join(',')+']';
+  if(value&&typeof value==='object')return '{'+Object.keys(value).sort().map(function(k){return JSON.stringify(k)+':'+chainSnapshotIdentity(value[k]);}).join(',')+'}';
+  return JSON.stringify(value);
+}
+
+function chainSavedSourceMatches(saved,key,topic,evidence){
+  var p=(saved&&saved.PROJECTS||{})[key],rs=(saved&&saved.REPORTSTATE||{})[key];
+  return !!(p&&rs&&evidence.requestId===(p.reportRequestId||'')&&evidence.reportText===((rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:''))&&evidence.sourceIdentity===savedEvidenceIdentity(key,topic,saved));
+}
+
+function chainSaveCurrent(key,topic,evidence,epoch){
+  var p=PROJECTS[key],rs=REPORTSTATE[key];
+  return !!(p&&rs&&evidence&&evidence.contract==='saved-excerpts-v1'&&evidence.scope==='current-topic-v1'&&evidence.topic===topic&&
+    (p.reportRequestId||'')===evidence.requestId&&savedEvidenceIdentity(key,topic)===evidence.sourceIdentity&&
+    ((rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:''))===evidence.reportText&&
+    (epoch===null||epoch===_authEpoch));
+}
+
+function savePendingChain(key,topic,epoch){
+  var rs=REPORTSTATE[key],pending=rs&&(rs.pendingChainSaves||{})[topic],inflight=key+'|'+topic;
+  if(!pending||!Array.isArray(pending.chain)||!chainSaveCurrent(key,topic,pending.evidence,epoch))return Promise.resolve(false);
+  _chainGenInFlight[inflight]='saving';
+  rs.chainStatusByTopic=rs.chainStatusByTopic||{};rs.chainStatusByTopic[topic]='saving';
+  function current(){return chainSaveCurrent(key,topic,pending.evidence,epoch);}
+  function show(){if(cur===key&&P().topic===topic&&view==='report')render();}
+  var snapshot;
+  try{
+    persist();
+    // Capture synchronously after persist. A restore or another tab cannot
+    // replace this payload between capture and the awaited server write.
+    snapshot=JSON.parse(localStorage.getItem(LS_KEY)||'{}');
+    var target=(snapshot.REPORTSTATE||{})[key];
+    if(!target||JSON.stringify((target.pendingChainSaves||{})[topic])!==JSON.stringify(pending))throw new Error('图谱尚未写入本地快照');
+    target.chainByTopic=target.chainByTopic||{};target.chainByTopic[topic]=JSON.parse(JSON.stringify(pending.chain));
+    target.chainEvidenceByTopic=target.chainEvidenceByTopic||{};target.chainEvidenceByTopic[topic]=JSON.parse(JSON.stringify(pending.evidence));
+    target.chainStatusByTopic=target.chainStatusByTopic||{};target.chainStatusByTopic[topic]='ready';
+    delete target.pendingChainSaves[topic];
+    // A graph save cannot replay another tab's old base package or customer data.
+    var project=(snapshot.PROJECTS||{})[key];if(!project)throw new Error('项目身份尚未保存');
+    var identity={};['id','workspaceId','parentKey','city','isDemand'].forEach(function(field){if(project[field]!==undefined)identity[field]=project[field];});
+    var delta={PROJECTS:{},REPORTSTATE:{},syncTs:Date.now()};delta.PROJECTS[key]=identity;delta.REPORTSTATE[key]={};
+    ['chainByTopic','chainEvidenceByTopic','chainStatusByTopic'].forEach(function(field){delta.REPORTSTATE[key][field]={};delta.REPORTSTATE[key][field][topic]=target[field][topic];});
+    ['RESET_GEN','clientUser'].forEach(function(field){if(snapshot[field]!==undefined)delta[field]=snapshot[field];});
+    snapshot=delta;
+  }catch(error){snapshot=null;}
+  show();
+  var work=snapshot?syncTopicReportInputs(snapshot):Promise.reject(new Error('图谱本地保存未确认'));
+  return work.then(function(){
+    if(!current())return false;
+    // The POST acknowledges a merge, not necessarily this cache version. Read
+    // back the exact bundle before claiming it was saved.
+    return fetch('/api/sync',{credentials:'same-origin',headers:{'X-HXZ-Report-Client':'website'}}).then(function(response){
+      if(!response.ok)throw new Error('图谱保存尚未确认');return response.json();
+    }).then(function(saved){
+      var state=((saved||{}).REPORTSTATE||{})[key]||{};
+      if(!current())return false;
+      if(!chainSavedSourceMatches(saved,key,topic,pending.evidence))throw new Error('材料或报告已更新，请刷新后重新生成图谱');
+      if(chainSnapshotIdentity((state.chainEvidenceByTopic||{})[topic])!==chainSnapshotIdentity(pending.evidence)||chainSnapshotIdentity((state.chainByTopic||{})[topic])!==chainSnapshotIdentity(pending.chain)||((state.chainStatusByTopic||{})[topic])!=='ready')throw new Error('图谱版本尚未保存');
+    rs=REPORTSTATE[key];
+    rs.chainByTopic=rs.chainByTopic||{};rs.chainByTopic[topic]=pending.chain;
+    rs.chainEvidenceByTopic=rs.chainEvidenceByTopic||{};rs.chainEvidenceByTopic[topic]=pending.evidence;
+    rs.chainStatusByTopic=rs.chainStatusByTopic||{};rs.chainStatusByTopic[topic]='ready';
+    if(rs.chainSaveErrorByTopic)delete rs.chainSaveErrorByTopic[topic];
+    if(rs.pendingChainSaves)delete rs.pendingChainSaves[topic];
+    persist();return true;
+    });
+  }).catch(function(error){
+    if(!current())return false;
+    rs=REPORTSTATE[key];rs.pendingChainSaves=rs.pendingChainSaves||{};rs.pendingChainSaves[topic]=pending;
+    rs.chainStatusByTopic=rs.chainStatusByTopic||{};rs.chainStatusByTopic[topic]='save_failed';
+    rs.chainSaveErrorByTopic=rs.chainSaveErrorByTopic||{};rs.chainSaveErrorByTopic[topic]=error&&error.message==='报告基础版本已更新，请刷新后重试保存'?error.message:error&&error.message==='材料或报告已更新，请刷新后重新生成图谱'?error.message:'图谱已生成，但保存未确认。请重试保存。';
+    persist();return false;
+  }).finally(function(){delete _chainGenInFlight[inflight];show();});
 }
 
 function generateChainFromReport(topic, reportText, city){
@@ -2960,7 +3046,7 @@ function generateChainFromReport(topic, reportText, city){
   var exact=(rs.aiReportByTopic||{})[topic] || (rs.topic===topic?rs.text:'');
   if(!exact || exact.trim().length<100)return;
   var controller=new AbortController();
-  _chainGenInFlight[inflight]=true;rs.chainByTopic[topic]='loading';
+  _chainGenInFlight[inflight]=true;
   var timer=setTimeout(function(){controller.abort();},90000);
   function active(){return PROJECTS[key] && savedEvidenceIdentity(key,topic)===sourceIdentity && (PROJECTS[key].reportRequestId||'')===requestId && (epoch===null || epoch===_authEpoch);}
   var prompt='仅依据当前工作区已保存的「'+topic+'」报告和材料，梳理产业链。输出JSON数组[{"seg":"上游","nodes":[{"name":"环节","level":"unknown","note":"依据或待核问题","local_leaders":[],"benchmark":[],"evidence_ids":[]}]}]。只引用服务端给出的证据ID，不能凭常识补企业或数字。无证据用unknown，未检索到不等于不存在。不要求三种强弱都有，不凑数量。';
@@ -2977,15 +3063,12 @@ function generateChainFromReport(topic, reportText, city){
     if(!active())return;
     rs=REPORTSTATE[key];
     if(((rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:''))!==exact)return;
-    rs.chainByTopic[topic]=chain;
-    rs.chainEvidenceByTopic=rs.chainEvidenceByTopic||{};
-    rs.chainEvidenceByTopic[topic]={contract:'saved-excerpts-v1',scope:'current-topic-v1',requestId:requestId,reportText:exact,sourceIdentity:sourceIdentity};
-    rs.chainStatusByTopic=rs.chainStatusByTopic||{};rs.chainStatusByTopic[topic]='ready';
-    persist();
+    rs.pendingChainSaves=rs.pendingChainSaves||{};
+    rs.pendingChainSaves[topic]={chain:JSON.parse(JSON.stringify(chain)),evidence:{contract:'saved-excerpts-v1',scope:'current-topic-v1',topic:topic,generatedAt:Date.now(),requestId:requestId,reportText:exact,sourceIdentity:sourceIdentity}};
+    return savePendingChain(key,topic,epoch);
   }).catch(function(error){
     if(!active())return;
     rs=REPORTSTATE[key];rs.chainByTopic=rs.chainByTopic||{};
-    rs.chainByTopic[topic]=null;
     rs.chainStatusByTopic=rs.chainStatusByTopic||{};rs.chainStatusByTopic[topic]='failed';
     persist();
     if(cur===key && P().topic===topic){var block=document.getElementById('chainMapBlock');if(block)block.innerHTML='<div style="padding:20px;color:#92400e">图谱未完成，原报告已保留。请稍后点击重试。</div>';}
@@ -2997,6 +3080,8 @@ function generateChainFromReport(topic, reportText, city){
 
 function requestChainGeneration(){
   var p=P(), rs=REPORTSTATE[cur];if(!p||!rs)return;
+  var pending=(rs.pendingChainSaves||{})[p.topic],epoch=typeof _authEpoch==='undefined'?null:_authEpoch;
+  if(pending&&chainSaveCurrent(cur,p.topic,pending.evidence,epoch))return savePendingChain(cur,p.topic,epoch);
   if(rs.chainStatusByTopic)delete rs.chainStatusByTopic[p.topic];
   var work=generateChainFromReport(p.topic,(rs.aiReportByTopic||{})[p.topic]||(rs.topic===p.topic?rs.text:''),p.city);
   render();return work;
@@ -3098,7 +3183,9 @@ function chainMapHtml(p){
   if(!p)return '';
   var topic=p.topic||'',rs=REPORTSTATE[cur]||{},chain=currentEvidenceChain(topic,cur);
   if(Array.isArray(chain)&&chain.length)return _renderRichChain(topic,chain,null,p);
-  if(_chainGenInFlight[(cur||'')+'|'+topic])return '<div style="margin-top:16px;padding:20px;border-radius:14px;border:1.5px dashed #cbd5e1;background:#f8fafc;text-align:center;color:#64748b">正在生成产业链图谱…</div>';
+  if(_chainGenInFlight[(cur||'')+'|'+topic])return '<div style="margin-top:16px;padding:20px;border-radius:14px;border:1.5px dashed #cbd5e1;background:#f8fafc;text-align:center;color:#64748b">'+(_chainGenInFlight[(cur||'')+'|'+topic]==='saving'?'图谱已生成，正在保存…':'正在生成产业链图谱…')+'</div>';
+  var pending=(rs.pendingChainSaves||{})[topic],epoch=typeof _authEpoch==='undefined'?null:_authEpoch;
+  if(pending&&chainSaveCurrent(cur,topic,pending.evidence,epoch))return '<div role="status">'+escapeChainText((rs.chainSaveErrorByTopic||{})[topic]||'图谱已生成，但保存未确认。')+'<button onclick="requestChainGeneration()">重试保存图谱</button></div>';
   var text=typeof reportTextForTopic==='function'?reportTextForTopic(topic):null;
   var failed=rs.chainStatusByTopic&&rs.chainStatusByTopic[topic]==='failed';
   return '<div style="margin-top:16px;padding:20px;border-radius:14px;border:1.5px dashed #cbd5e1;background:#f8fafc;text-align:center;color:#64748b;font-size:12.5px;line-height:1.7">'+
@@ -3127,48 +3214,17 @@ function alignChainToReport(text){
 function reportHtml(p){
   var rs=REPORTSTATE[cur]; if(!rs) return '';
   var r=kbReadiness();
-  function renderMd(md){
-    md=md.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    md=md.replace(/\*\*([^*\n]+)\*\*/g,'<strong style="color:#0b183b">$1</strong>');
-    md=md.replace(/⚠️/g,'<span style="color:#d97706;font-weight:600">⚠️</span>');
-    md=md.replace(/✅/g,'<span style="color:#16a34a">✅</span>');
-    md=md.replace(/❌/g,'<span style="color:#dc2626">❌</span>');
-    md=md.replace(/★+/g,function(m){return '<span style="color:#f59e0b">'+m+'</span>';});
-    md=md.replace(/^#{0,3}\s*([一二三四五六七八九十]+)[、]\s*(.+)$/gm,
-      '<div style="display:flex;align-items:center;gap:10px;margin:18px 0 8px;padding-bottom:6px;border-bottom:2px solid #1a56db">'+
-        '<span style="display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;background:#1a56db;color:#fff;border-radius:50%;font-size:12px;font-weight:700">$1</span>'+
-        '<span style="font-size:14px;font-weight:750;color:#0b183b">$2</span></div>');
-    md=md.replace(/^###\s(.+)$/gm,'<div style="font-size:13px;font-weight:700;color:#4a5568;margin:10px 0 4px;padding-left:10px;border-left:3px solid #6366f1">$1</div>');
-    md=md.replace(/^##\s(.+)$/gm,'<div style="font-size:13.5px;font-weight:750;color:#0b183b;margin:12px 0 6px;padding:5px 12px;background:#f8faff;border-radius:8px;border-left:4px solid #1a56db">$1</div>');
-    // 表格
-    var outLines=[]; var inTbl=false;
-    md.split('\n').forEach(function(line){
-      var tr=line.trim();
-      if(tr.charAt(0)==='|'&&tr.charAt(tr.length-1)==='|'){
-        if(tr.slice(1,-1).split('|').every(function(c){return /^[\s\-:]+$/.test(c);})) return;
-        var cells=tr.slice(1,-1).split('|').map(function(c){return c.trim();});
-        if(!inTbl){inTbl=true;outLines.push('<div style="overflow-x:auto;margin:10px 0"><table style="width:100%;border-collapse:collapse;font-size:12.5px">');
-          outLines.push('<thead><tr>'+cells.map(function(c){return '<th style="padding:7px 10px;background:#f0f4ff;border:1px solid #dbeafe;font-weight:700;color:#1e3a8a;text-align:left">'+c+'</th>';}).join('')+'</tr></thead><tbody>');}
-        else outLines.push('<tr>'+cells.map(function(c,ci){return '<td style="padding:7px 10px;border:1px solid #e8edf5;color:#1e293b;background:'+(ci===0?'#fafbff':'#fff')+'">'+c+'</td>';}).join('')+'</tr>');
-      } else {if(inTbl){outLines.push('</tbody></table></div>');inTbl=false;} outLines.push(line);}
-    });
-    if(inTbl)outLines.push('</tbody></table></div>');
-    md=outLines.join('\n');
-    md=md.replace(/^[-•]\s(.+)$/gm,'<li style="margin:4px 0;color:#1e293b">$1</li>');
-    var parts=md.split('\n\n');
-    md=parts.map(function(chunk){var c=chunk.trim();if(!c)return '';if(/^<(div|table|ul)/.test(c))return c;return '<p style="margin:5px 0;line-height:1.85;color:#1e293b">'+c.replace(/\n/g,'<br>')+'</p>';}).filter(Boolean).join('\n');
-    return md;
-  }
+
   return '<div style="border-radius:14px;border:1.5px solid #e8edf5;overflow:hidden;margin-bottom:8px">'+
     '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
       '<span style="font-size:12px;font-weight:650;color:#1a56db">📋 产业分析报告</span>'+
-      '<span style="font-size:11.5px;color:#4a5568">'+p.topic+'</span>'+
+      '<span style="font-size:11.5px;color:#4a5568">'+escapeChainText(p.topic)+'</span>'+
       '<span style="margin-left:auto;font-size:11px;color:'+(topicScore(p.topic)>=80?'#22c55e':'#f59e0b')+'">'+topicScoreDisplay(p.topic)+'</span>'+
       '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
     '</div>'+
     '<div style="padding:16px 18px;font-size:13px;color:#1e293b;line-height:1.8">'+
       // 按方向取报告正文：项目级 rs.text 是单例，切到未生成报告的新方向会串显旧方向正文
-      '<p style="margin:0">'+renderMd(alignChainToReport((typeof reportTextForTopic==='function'?reportTextForTopic(p.topic):null)||''))+'</p>'+
+      reportMdToHtml(alignChainToReport((typeof reportTextForTopic==='function'?reportTextForTopic(p.topic):null)||''))+
     '</div>'+
   '</div>';
 }

@@ -15,8 +15,8 @@ function setReportAreaHtml(area, html){
 }
 
 function viewCurrentReport(){
-  var rs = REPORTSTATE[cur];
-  if(!rs || !rs.text){ toast('暂无报告，请先在产业分析页生成'); return; }
+  var context=reportExportContext(), rs=context&&context.state;
+  if(!context){ toast('暂无报告，请先在产业分析页生成'); return; }
   var area = document.getElementById('reportArea');
   if(!area){
     // 不在产业分析页，跳转过去再显示
@@ -24,47 +24,21 @@ function viewCurrentReport(){
     setTimeout(function(){ viewCurrentReport(); }, 200);
     return;
   }
-  // renderMd 是 triggerReport 内的局部函数，这里内联一个简化版
-  function md(t){
-    return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-      .replace(/\*\*([^*\n]+)\*\*/g,'<strong>$1</strong>')
-      .replace(/⚠️/g,'<span style="color:#d97706;font-weight:600">⚠️</span>')
-      .replace(/✅/g,'<span style="color:#16a34a">✅</span>')
-      .replace(/❌/g,'<span style="color:#dc2626">❌</span>')
-      .replace(/★+/g,function(m){return '<span style="color:#f59e0b">'+m+'</span>';})
-      .replace(/^#{0,3}\s*([一二三四五六七八九十]+)[、]\s*(.+)$/gm,
-        '<div style="display:flex;align-items:center;gap:10px;margin:20px 0 8px;padding-bottom:7px;border-bottom:2px solid #1a56db">'+
-        '<span style="display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;background:#1a56db;color:#fff;border-radius:50%;font-size:12px;font-weight:700">$1</span>'+
-        '<span style="font-size:14px;font-weight:750;color:#0b183b">$2</span></div>')
-      .replace(/^\|(.+)\|$/gm,function(m,inner){
-        var cells=inner.split('|').map(function(c){return c.trim();});
-        if(cells.every(function(c){return /^[\s\-:]+$/.test(c);})) return '';
-        return '<tr>'+cells.map(function(c,ci){
-          return ci===0
-            ? '<th style="padding:8px 12px;background:#f0f4ff;border:1px solid #dbeafe;font-weight:700;color:#1e3a8a;text-align:left">'+c+'</th>'
-            : '<td style="padding:8px 12px;border:1px solid #e8edf5;color:#1e293b">'+c+'</td>';
-        }).join('')+'</tr>';
-      })
-      .replace(/(<tr>[\s\S]+?<\/tr>)+/g,'<table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:12.5px">$&</table>')
-      .replace(/^[-•]\s(.+)$/gm,'<li style="margin:4px 0;color:#1e293b">$1</li>')
-      .replace(/\n{2,}/g,'</p><p style="margin:6px 0;line-height:1.85;color:#1e293b">')
-      .replace(/\n/g,'<br>');
-  }
 
   setReportAreaHtml(area,
     '<div style="border-radius:14px;border:1.5px solid #bfdbfe;overflow:hidden;margin-bottom:8px">'+
       '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
         '<span style="font-size:13px;font-weight:700;color:#1d4ed8">📊 产业分析报告（当前正文）</span>'+
-        '<span style="font-size:11.5px;color:#8492a6">'+rs.topic+'</span>'+
-        '<span style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f0fdf4;color:#166534">'+topicScoreDisplay(rs.topic)+'</span>'+
+        '<span style="font-size:11.5px;color:#8492a6">'+context.topic.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>'+
+        '<span style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f0fdf4;color:#166534">'+topicScoreDisplay(context.topic)+'</span>'+
         '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
       '</div>'+
       '<div style="padding:18px 20px;font-size:13px;line-height:1.85;color:#1e293b">'+
-        '<p style="margin:0">'+md(rs.text)+'</p>'+
+        reportMdToHtml(context.text)+
       '</div>'+
       '<div style="padding:10px 16px;background:#f9fafb;border-top:1px solid #f0f4ff;font-size:11px;color:#9aa5b5">'+
         '生成时间：'+new Date(rs.ts).toLocaleDateString('zh-CN')+' · '+
-        '数据来源：慧小招实测报告+DeepSeek分析 · '+topicScoreDisplay(rs.topic)+
+        '数据来源：慧小招实测报告+DeepSeek分析 · '+topicScoreDisplay(context.topic)+
       '</div>'+
     '</div>');
 
@@ -151,7 +125,7 @@ function reportExportContext(){
   var text=typeof reportTextForTopic==='function' ? reportTextForTopic(topic) : (rs.topic===topic?rs.text:'');
   if(!text&&rs.topic===topic) text=rs.text;
   if(typeof text!=='string'||!text.trim()) return null;
-  return {project:p,state:rs,topic:topic,text:text,city:String(p.city||''),ts:rs.ts};
+  return {key:cur,project:p,state:rs,topic:topic,text:text,city:String(p.city||''),ts:rs.ts};
 }
 
 /* Only excerpts are selected: no model, no paraphrasing, no implied verification.
@@ -275,21 +249,70 @@ function buildReportBrief(text){
   return chunks.join('\n\n');
 }
 
+/* Material directories are frozen with a topic's text. They are not a map
+   from generated claims to citations, and never read another project's live KB. */
+function captureReportMaterialDirectory(key,topic){
+  var p=PROJECTS[key];if(!p)return null;
+  var records=[],seen=Object.create(null);
+  function add(kind,value){
+    if(typeof value!=='string'||!value.trim())return;
+    value=value.trim();var id=kind+'\0'+value;if(seen[id])return;seen[id]=true;
+    records.push({kind:kind,value:value});
+  }
+  (p.kb||[]).forEach(function(section){(section.known||[]).forEach(function(item){
+    if(item&&typeof item==='object')add('保存材料',item.sourceFile||item.cite||item.src);
+  });});
+  ((typeof UPLOADS!=='undefined'&&UPLOADS[key])||[]).forEach(function(item){
+    if(item&&!item.pending&&!item.parseFailed)add('上传材料',item.name);
+  });
+  return {contract:'saved-material-directory-v1',projectKey:key,workspaceId:p.workspaceId||key,
+    topic:topic,createdAt:Date.now(),records:records};
+}
+
+function reportMaterialDirectoryForContext(context){
+  var p=context.project||{},key=context.key||cur,rs=context.state||{};
+  var snapshot=(rs.materialDirectoryByTopic||{})[context.topic];
+  if(!snapshot||snapshot.contract!=='saved-material-directory-v1'||snapshot.topic!==context.topic||
+      snapshot.reportText!==context.text||!Array.isArray(snapshot.records))return null;
+  var root=p.workspaceId||key;
+  if(snapshot.workspaceId!==root||(snapshot.projectKey!==key&&snapshot.projectKey!==root))return null;
+  return snapshot;
+}
+
+function reportExportSourceHeading(context){
+  var key=context.key||cur;
+  if(typeof nativeReportState==='function'&&nativeReportState(context.topic,key))return '来源索引';
+  if(typeof reportMaterialDirectoryForContext==='function'&&reportMaterialDirectoryForContext(context))return '生成时材料快照（非逐句引用）';
+  return context.project&&context.project.isDemand===true
+    ?'该需求当前保存的材料目录（非逐句引用）':'正文链接（未核验）';
+}
+
 function reportExportSourceRecords(context){
-  var records=[], seen={};
+  var records=[], seen=Object.create(null), key=context.key||cur;
   function add(kind,value){
     if(typeof value!=='string'||!value.trim()) return;
-    var key=kind+'\0'+value.trim();if(seen[key]) return;seen[key]=true;
+    var id=kind+'\0'+value.trim();if(seen[id]) return;seen[id]=true;
     records.push({kind:kind,value:value.trim()});
   }
-  var p=context.project, requestId=p.reportRequestId;
-  (p.kb||[]).forEach(function(section){(section.known||[]).forEach(function(item){
-    if(!item||typeof item!=='object')return;
-    if(item.origin==='report'&&(!requestId||item.reportRequestId!==requestId))return;
-    add('研究材料',item.sourceFile||item.cite||item.src);
-  });});
-  (UPLOADS[cur]||[]).forEach(function(item){if(item&&!item.pending&&!item.parseFailed)add('上传材料',item.name);});
-  (context.text.match(/https?:\/\/[^\s<>()（）\[\]，。；]+/g)||[]).forEach(function(url){add('正文引用',url);});
+  var p=context.project, native=typeof nativeReportState==='function'&&nativeReportState(context.topic,key);
+  if(native){
+    var requestId=p.reportRequestId;
+    (p.kb||[]).forEach(function(section){(section.known||[]).forEach(function(item){
+      if(!item||typeof item!=='object')return;
+      if(item.origin==='report'&&(!requestId||item.reportRequestId!==requestId))return;
+      add('研究材料',item.sourceFile||item.cite||item.src);
+    });});
+    ((typeof UPLOADS!=='undefined'&&UPLOADS[key])||[]).forEach(function(item){if(item&&!item.pending&&!item.parseFailed)add('上传材料',item.name);});
+  }else{
+    var snapshot=typeof reportMaterialDirectoryForContext==='function'?reportMaterialDirectoryForContext(context):null;
+    // A submitted demand owns a deep-copied KB. Legacy demands can expose that
+    // saved directory, never the parent's newer report or an inferred citation.
+    if(!snapshot&&!((context.state||{}).materialDirectoryByTopic||{})[context.topic]&&p.isDemand===true&&typeof captureReportMaterialDirectory==='function')snapshot=captureReportMaterialDirectory(key,context.topic);
+    (snapshot&&snapshot.records||[]).forEach(function(item){
+      if(item&&typeof item==='object'&&(item.kind==='保存材料'||item.kind==='上传材料'))add(item.kind,item.value);
+    });
+  }
+  (context.text.match(/https?:\/\/[^\s<>()（）\[\]，。；]+/g)||[]).forEach(function(url){add(native?'正文引用':'正文链接（未核验）',url);});
   return records;
 }
 
@@ -332,6 +355,7 @@ function downloadReportPDF(mode){
   var isLegacy=!nativeReportState(topic)&&!(rs.evidenceStatusByTopic&&rs.evidenceStatusByTopic[topic]==='unreviewed');
   var statusHtml=isLegacy&&typeof rs.score==='number'&&isFinite(rs.score)?'研判置信度<b>'+rs.score+'%</b>':esc(status);
   var sources=reportExportSourceRecords(context);
+  var sourceHeading=typeof reportExportSourceHeading==='function'?reportExportSourceHeading(context):'来源索引';
   var body=mode==='short'?buildReportBrief(context.text):context.text;
   var html='<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>'+esc(city+' · '+kind)+'</title><style>'+
     '@page{size:A4;margin:16mm 17mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
@@ -344,7 +368,7 @@ function downloadReportPDF(mode){
     '.report-end{break-inside:auto;page-break-inside:auto;margin-top:6px;padding-top:4px;border-top:1px solid #d8e0ed;color:#667590;font-size:9px}.report-end p{margin:0;orphans:1;widows:1}'+
     '</style></head><body><header class="cover"><div class="brand">慧小招 · 招商研判</div><h1>'+esc(city)+' · '+kind+'</h1><div class="subtitle">'+esc(topic)+'</div><div class="meta">生成时间：'+esc(date)+' · '+statusHtml+'</div><p class="meta">'+(mode==='short'?'现有正文摘录，保留原文条件与不确定性。':'当前方向已保存正文；原始研究文件请从报告文件入口下载。')+'</p></header>'+
     '<main>'+reportMdToHtml(body)+'</main>'+
-    (sources.length?'<section class="source-list"><h2>来源索引</h2><p class="source-items">'+sources.map(function(source){return '<span class="source-item">'+esc(source.kind)+'：'+(/^https?:\/\//.test(source.value)?'<a href="'+esc(source.value)+'">'+esc(source.value)+'</a>':esc(source.value))+'</span>';}).join('； ')+'</p></section>':'<p class="source-list">未保存独立来源索引，请逐项核对正文中的来源说明。</p>')+
+    (sources.length?'<section class="source-list"><h2>'+esc(sourceHeading)+'</h2><p class="source-items">'+sources.map(function(source){return '<span class="source-item">'+esc(source.kind)+'：'+(/^https?:\/\//.test(source.value)?'<a href="'+esc(source.value)+'">'+esc(source.value)+'</a>':esc(source.value))+'</span>';}).join('； ')+'</p></section>':'<p class="source-list">未保存独立来源索引，请逐项核对正文中的来源说明。</p>')+
     '<footer class="report-end"><p>本报告为 AI 辅助研判；待核、推断、政策有效期和适用条件仍需逐项确认。 · 慧小招 · '+esc(city)+' · '+esc(date)+'</p></footer></body></html>';
   printReportDocument(html);
 }
@@ -358,7 +382,7 @@ function downloadReportTxt(mode){
   var content=[context.city+' · '+context.topic+' · '+kind,
     '生成时间：'+(context.ts?new Date(context.ts).toLocaleDateString('zh-CN'):'未记录'),
     (!nativeReportState(context.topic)&&!(context.state.evidenceStatusByTopic&&context.state.evidenceStatusByTopic[context.topic]==='unreviewed')&&typeof context.state.score==='number')?'置信度：'+context.state.score+'%':(typeof topicScoreDisplay==='function'?topicScoreDisplay(context.topic):'内容待核验'),'',text,'',
-    '来源索引：'].concat(reportExportSourceRecords(context).map(function(source){return source.kind+'：'+source.value;})).concat([
+    (typeof reportExportSourceHeading==='function'?reportExportSourceHeading(context):'来源索引')+'：'].concat(reportExportSourceRecords(context).map(function(source){return source.kind+'：'+source.value;})).concat([
     '', '本文件来自当前方向已保存正文，待核结论与政策条件继续适用。原始研究文件请从报告文件入口下载。']).join('\n');
   var filename=context.city+'_'+context.topic+'_'+kind+'.txt';
   var blob=new Blob([content],{type:'text/plain;charset=utf-8'}),url=URL.createObjectURL(blob);

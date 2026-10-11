@@ -13,18 +13,18 @@ function declaration(source,name){
 function setup(file,result){
   const source=fs.readFileSync(path.join(root,file),'utf8');
   const report='本次核电换热设备报告保留原文、条件、主体和来源。'.repeat(8);
-  const events={calls:0,persist:0};
+  const events={calls:0,persist:0}, storage={};let stored={};
   const c={PROJECTS:{p:{topic:'核电换热设备',city:'闵行区',reportRequestId:'r1'}},
     REPORTSTATE:{p:{topic:'核电换热设备',aiReportByTopic:{'核电换热设备':report}}},
-    cur:'p',view:'report',_authEpoch:1,_chainGenInFlight:{},KB_API:'/api/kb-chat',
-    savedEvidenceIdentity:()=>report,P:()=>c.PROJECTS.p,persist:()=>events.persist++,render:()=>{},
-    fetch:async()=>{events.calls++;return {ok:true};},
+    cur:'p',window:{},LS_KEY:'test',localStorage:{getItem:k=>storage[k]||null},Date,view:'report',_authEpoch:1,_chainGenInFlight:{},KB_API:'/api/kb-chat',
+    savedEvidenceIdentity:()=>JSON.stringify({workspace:'p',city:'闵行区',topic:'核电换热设备',selectedTopic:'核电换热设备',requestId:'r1',kb:[[]],onboarding:{},report}),P:()=>c.PROJECTS.p,persist:()=>{events.persist++;storage.test=JSON.stringify({PROJECTS:c.PROJECTS,REPORTSTATE:c.REPORTSTATE});},render:()=>{},
+    fetch:async(url,init)=>{if(url==='/api/sync'){if(init&&init.method==='POST'){const delta=JSON.parse(init.body);stored={PROJECTS:c.PROJECTS,REPORTSTATE:JSON.parse(JSON.stringify(c.REPORTSTATE))};Object.assign(stored.REPORTSTATE.p,delta.REPORTSTATE.p);return {ok:true,json:async()=>({ok:true})};}return {ok:true,json:async()=>stored};}events.calls++;return {ok:true};},
     readTopicReportStream:async()=>({text:JSON.stringify(result)}),
     setTimeout:()=>1,clearTimeout:()=>{},AbortController,
     document:{getElementById:()=>null},reportTextForTopic:()=>report,
     escapeChainText:s=>String(s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')};
   vm.createContext(c);
-  vm.runInContext(['_correctChainLevel','_normalizeChain','currentEvidenceChain','generateChainFromReport','_renderRichChain','chainMapHtml'].map(n=>declaration(source,n)).join('\n'),c);
+  vm.runInContext(['_correctChainLevel','_normalizeChain','currentEvidenceChain','chainSnapshotIdentity','chainSavedSourceMatches','chainSaveCurrent','savePendingChain','syncTopicReportInputs','generateChainFromReport','_renderRichChain','chainMapHtml'].map(n=>declaration(source,n)).join('\n'),c);
   return {c,events,report};
 }
 for(const [surface,file] of [['user','frontend/index/script-02-sections/12-tail.js'],['admin','frontend/ops/script-03-sections/12-tail.js']]){
