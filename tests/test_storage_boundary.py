@@ -8,7 +8,19 @@ class StorageTests(unittest.TestCase):
     def test_storage_functions_preserve_baseline_ast(self):
         from backend import storage
         old=subprocess.check_output(['git','show','21baa54:server.py'],cwd=ROOT,text=True)
-        def functions(s):return {n.name:ast.dump(n) for n in ast.parse(s).body if isinstance(n,ast.FunctionDef) and n.name in NAMES}
+        def functions(s):
+            tree=ast.parse(s)
+            for node in tree.body:
+                if isinstance(node,ast.FunctionDef) and node.name=='_init_db':
+                    # The original storage contract stays identical apart from
+                    # initializing the new original-file table in this transaction.
+                    for child in ast.walk(node):
+                        if isinstance(child,ast.Try):
+                            child.body=[item for item in child.body if not (
+                                isinstance(item,ast.ImportFrom) and item.module=='upload_originals') and not (
+                                isinstance(item,ast.Expr) and isinstance(item.value,ast.Call)
+                                and isinstance(item.value.func,ast.Name) and item.value.func.id=='initialize')]
+            return {n.name:ast.dump(n) for n in tree.body if isinstance(n,ast.FunctionDef) and n.name in NAMES}
         self.assertEqual(functions(old),functions(Path(storage.__file__).read_text()))
     def test_write_snapshots_before_replace_and_commits_once(self):
         from unittest.mock import Mock,patch
@@ -36,3 +48,15 @@ class StorageTests(unittest.TestCase):
     def test_import_does_not_open_database(self):
         from backend import storage
         self.assertTrue(callable(storage._db_get))
+
+    def test_original_schema_initializes_before_transaction_commit(self):
+        from unittest.mock import Mock,patch
+        from backend import storage,upload_originals
+        cursor=Mock();connection=Mock();connection.cursor.return_value=cursor
+        events=[]
+        with patch.object(storage,'_PG_AVAIL',True),patch.object(storage,'DATABASE_URL','isolated'), \
+             patch.object(storage,'_db_conn',return_value=connection), \
+             patch.object(upload_originals,'initialize',side_effect=lambda c:events.append(('schema',c))):
+            connection.commit.side_effect=lambda:events.append(('commit',None))
+            storage._init_db()
+        self.assertEqual(events,[('schema',cursor),('commit',None)])

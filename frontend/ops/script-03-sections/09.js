@@ -33,7 +33,7 @@ function setupPage(){
             '<span style="font-size:11px;color:#b0bac8;margin-top:3px;display:inline-block">若不上传，将基于公开可查询信息完成分析</span>'+
           '</div>'+
         '</div>'+
-        '<input id="setupFileInput" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" multiple style="display:none" onchange="setupFileSelected(this)" />'+
+        '<input id="setupFileInput" type="file" accept=".pdf,.docx,.txt,.md,.csv,.json" multiple style="display:none" onchange="setupFileSelected(this)" />'+
         '<button id="setupBtn" onclick="createProject()" '+
           'style="width:100%;padding:14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:650;cursor:pointer;opacity:.4;pointer-events:none;transition:opacity .15s,transform .1s;letter-spacing:.2px" '+
           'onmousedown="this.style.transform=\'scale(.98)\'" onmouseup="this.style.transform=\'\'">'+

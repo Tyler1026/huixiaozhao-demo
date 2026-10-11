@@ -332,52 +332,49 @@ function ragUploadPanel(p,key){
     log+'</div>';
 }
 function ragReadFile(inp,key){
-  var f=inp.files&&inp.files[0]; if(!f)return;
-  var nm=document.getElementById('ragUpFileName'); if(nm)nm.textContent='正在读取：'+f.name;
-  var isBin=/\.(pdf|docx)$/i.test(f.name);
-  if(isBin){
-    // PDF/Word：读为 base64 交后端解析（pdfplumber / python-docx）
-    var rb=new FileReader();
-    rb.onload=function(){
-      var b64=String(rb.result||'').split(',')[1]||'';  // 去掉 data:...;base64, 前缀
-      ragDoUpload(key, null, f.name, b64);
-    };
-    rb.onerror=function(){toast&&toast('文件读取失败');if(nm)nm.textContent='点击选择文件（.pdf / .docx / .txt / .md / .csv）';};
-    rb.readAsDataURL(f);
-  } else {
-    var rd=new FileReader();
-    rd.onload=function(){ ragDoUpload(key, rd.result, f.name, null); };
-    rd.readAsText(f);
-  }
+  var epoch=originalUploadEpoch();
+  var f=inp.files&&inp.files[0];if(!f)return;
+  if(f.size>20*1024*1024){toast('单个文件不能超过 20MB');return;}
+  var nm=document.getElementById('ragUpFileName');if(nm)nm.textContent='正在读取：'+f.name;
+  var rb=new FileReader();
+  rb.onload=function(){if(!originalUploadSessionCurrent(epoch))return;ragDoUpload(key,null,f.name,String(rb.result||'').split(',')[1]||'',epoch);};
+  rb.onerror=function(){if(originalUploadSessionCurrent(epoch))toast('文件读取失败');};
+  rb.readAsDataURL(f);
 }
-function ragDoUpload(key, text, name, fileB64){
+function ragDoUpload(key, text, name, fileB64, epoch){
+  if(epoch===undefined)epoch=originalUploadEpoch();
+  if(!originalUploadSessionCurrent(epoch))return;
+  var bytes=new Uint8Array(16);crypto.getRandomValues(bytes);
+  var uploadId=Array.from(bytes).map(function(b){return ('0'+b.toString(16)).slice(-2);}).join('');
   var topic=(document.getElementById('ragUpTopic')||{}).value||'';
   var nature=(document.getElementById('ragUpNature')||{}).value||'support';
   if(!fileB64 && (!text||!text.trim())){toast&&toast('文件内容为空');return;}
-  var p=PROJECTS[key];
+  var p=PROJECTS[key];if(!p)return;
   var restLabel='点击选择文件（.pdf / .docx / .txt / .md / .csv）';
   function send(finalTopic){
+    if(!originalUploadSessionCurrent(epoch))return;
     var mode=nature==='fix'?'replace':'append';
     var nm=document.getElementById('ragUpFileName'); if(nm)nm.textContent='正在解析入库…';
     var payload={projectKey:key,city:p.city,topic:finalTopic,filename:name||'上传文件',
         mode:mode,origin:'admin',nature:nature,by:(getOpsOperator()||'管理端'),source:'file'};
-    if(fileB64){ payload.fileB64=fileB64; } else { payload.text=text; }
+    if(fileB64){ payload.fileB64=fileB64;payload.uploadId=uploadId; } else { payload.text=text; }
     fetch('/api/kb-upload',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(payload)})
       .then(function(r){return r.json();}).then(function(res){
+        if(!originalUploadSessionCurrent(epoch))return;
         if(res.ok){
           var extra=res.matched?('，命中已有 '+res.matched+' 条'):'';
           toast&&toast('已入库 '+res.chunks+' 条（'+(nature==='fix'?'修正':'佐证')+'）'+extra);
-          restoreFromServer(function(){renderOpsV2();});
+          restoreFromServer(function(){if(originalUploadSessionCurrent(epoch))renderOpsV2();});
         }
-        else{toast&&toast('上传失败：'+(res.error||''));if(nm)nm.textContent=restLabel;}
-      }).catch(function(e){toast&&toast('上传出错');if(nm)nm.textContent=restLabel;});
+        else{toast&&toast('上传失败：'+(res.message||res.error||''));if(nm)nm.textContent=restLabel;}
+      }).catch(function(e){if(!originalUploadSessionCurrent(epoch))return;toast&&toast('上传出错');if(nm)nm.textContent=restLabel;});
   }
   // 新建主题：用页面内 modal 取名（不使用原生 prompt）
   if(topic==='__new__'){
     ragCommitModal({key:key,city:p.city,topics:(p.kb||[]).map(function(t){return t.t;}),
       defaultTopic:'__new__',preview:(text||name||''),
-      onConfirm:function(finalTopic,finalNature){ nature=finalNature||nature; send(finalTopic||'管理员补充资料'); }});
+      onConfirm:function(finalTopic,finalNature){if(!originalUploadSessionCurrent(epoch))return; nature=finalNature||nature; send(finalTopic||'管理员补充资料'); }});
   } else {
     send(topic);
   }
@@ -1752,11 +1749,11 @@ function opsViewCityUploads(cityEnc){
           (u.name.match(/\.pdf$/i)?'PDF':u.name.match(/\.xlsx?$/i)?'XLS':u.name.match(/\.docx?$/i)?'DOC':'') +
         '</div>' +
         '<div style="flex:1;min-width:0">' +
-          '<div style="font-size:13px;font-weight:600;color:#0b183b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + u.name + '</div>' +
+          '<div style="font-size:13px;font-weight:600;color:#0b183b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _authEscape(u.name) + '</div>' +
           '<div style="font-size:11.5px;color:#8492a6;margin-top:2px">' + (it.projTopic?it.projTopic+' · ':'') + (sizeStr?sizeStr+' · ':'') + dateStr + (u.chunks?' · '+u.chunks+'个知识片段':'') + '</div>' +
         '</div>' +
-        '<button data-proj="'+it.proj+'" data-file="'+u.name.replace(/"/g,'&quot;')+'" onclick="opsViewFileChunks(this.dataset.proj,this.dataset.file)" style="flex-shrink:0;font-size:11px;color:#1a56db;padding:4px 10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;cursor:pointer">查看内容</button>' +
-        '<button data-proj="'+it.proj+'" data-file="'+u.name.replace(/"/g,'&quot;')+'" onclick="opsDownloadFile(this.dataset.proj,this.dataset.file)" style="flex-shrink:0;margin-left:6px;font-size:11px;color:#166534;padding:4px 10px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;cursor:pointer">下载</button>' +
+        '<button data-proj="'+it.proj+'" data-file="'+u.name.replace(/"/g,'&quot;')+'" data-original="'+(u.originalId||'')+'" onclick="opsViewFileChunks(this.dataset.proj,this.dataset.file,this.dataset.original)" style="flex-shrink:0;font-size:11px;color:#1a56db;padding:4px 10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;cursor:pointer">查看内容</button>' +
+        '<button data-proj="'+it.proj+'" data-file="'+u.name.replace(/"/g,'&quot;')+'" data-original="'+(u.originalId||'')+'" onclick="opsDownloadFile(this.dataset.proj,this.dataset.file,this.dataset.original)" style="flex-shrink:0;margin-left:6px;font-size:11px;color:#166534;padding:4px 10px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;cursor:pointer">下载</button>' +
       '</div>';
     }).join('') +
   '</div>';
@@ -1777,11 +1774,11 @@ function opsViewUploads(projKey){
           (u.name.match(/\.pdf$/i)?'PDF':u.name.match(/\.xlsx?$/i)?'XLS':u.name.match(/\.docx?$/i)?'DOC':'') +
         '</div>' +
         '<div style="flex:1;min-width:0">' +
-          '<div style="font-size:13px;font-weight:600;color:#0b183b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + u.name + '</div>' +
+          '<div style="font-size:13px;font-weight:600;color:#0b183b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _authEscape(u.name) + '</div>' +
           '<div style="font-size:11.5px;color:#8492a6;margin-top:2px">' + (sizeStr?sizeStr+' · ':'') + dateStr + (u.chunks?' · '+u.chunks+'个知识片段':'') + '</div>' +
         '</div>' +
-        '<button data-proj="'+projKey+'" data-file="'+u.name.replace(/"/g,'&quot;')+'" onclick="opsViewFileChunks(this.dataset.proj,this.dataset.file)" style="flex-shrink:0;font-size:11px;color:#1a56db;padding:4px 10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;cursor:pointer">查看内容</button>' +
-        '<button data-proj="'+projKey+'" data-file="'+u.name.replace(/"/g,'&quot;')+'" onclick="opsDownloadFile(this.dataset.proj,this.dataset.file)" style="flex-shrink:0;margin-left:6px;font-size:11px;color:#166534;padding:4px 10px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;cursor:pointer">下载</button>' +
+        '<button data-proj="'+projKey+'" data-file="'+u.name.replace(/"/g,'&quot;')+'" data-original="'+(u.originalId||'')+'" onclick="opsViewFileChunks(this.dataset.proj,this.dataset.file,this.dataset.original)" style="flex-shrink:0;font-size:11px;color:#1a56db;padding:4px 10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;cursor:pointer">查看内容</button>' +
+        '<button data-proj="'+projKey+'" data-file="'+u.name.replace(/"/g,'&quot;')+'" data-original="'+(u.originalId||'')+'" onclick="opsDownloadFile(this.dataset.proj,this.dataset.file,this.dataset.original)" style="flex-shrink:0;margin-left:6px;font-size:11px;color:#166534;padding:4px 10px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;cursor:pointer">下载</button>' +
       '</div>';
     }).join('') +
   '</div>';
@@ -1790,18 +1787,22 @@ function opsViewUploads(projKey){
 }
 
 /* 查看某个文件（优先显示原始文件，fallback到解析片段） */
-function opsViewFileChunks(projKey, fname){
+function opsViewFileChunks(projKey, fname, originalId){
   var ups = UPLOADS[projKey] || [];
   var rec = null;
-  for(var i=ups.length-1;i>=0;i--){ if(ups[i].name===fname && ups[i].dataUrl){ rec=ups[i]; break; } }
+  for(var i=ups.length-1;i>=0;i--){ if(ups[i].name===fname && (originalId?ups[i].originalId===originalId:!ups[i].originalId)){ rec=ups[i]; break; } }
   function esc(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   var isPDF   = /\.pdf$/i.test(fname);
   var isImage = /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(fname);
   var isText  = /\.(txt|md|markdown|csv|tsv|json|log|xml|yaml|yml|ini|htm|html)$/i.test(fname);
-  var chunks  = (KB_FILE_CHUNKS[projKey]||[]).filter(function(c){ return c.cite === fname; });
+  var chunks  = (KB_FILE_CHUNKS[projKey]||[]).filter(function(c){ return originalId ? c.originalId === originalId : c.cite === fname; });
   var parsedHtml = chunks.length ? '<div style="padding:16px 20px;background:#f8faff;border:1px solid #e8edf5;border-radius:10px;font-size:13px;color:#1e293b;line-height:2;white-space:pre-wrap;max-height:50vh;overflow-y:auto">' + esc(chunks.map(function(c){ return c.text; }).join('\n\n')) + '</div>' : '';
   var closeBtn = '<button class="secondary-button" onclick="closeModal()">关闭</button>';
 
+  var originalUrl=uploadOriginalUrl(projKey,rec);
+  if(originalUrl){
+    openModal(fname,'<div style="padding:12px">原件已保存，可下载核对。<p><a href="'+originalUrl+'" download>下载原始文件</a></p></div>'+parsedHtml,closeBtn);return;
+  }
   if(rec && rec.dataUrl){
     if(isPDF){
       openModal(fname, '<iframe src="'+rec.dataUrl+'" style="width:100%;height:72vh;border:none;border-radius:8px"></iframe>', closeBtn);
@@ -1824,19 +1825,20 @@ function opsViewFileChunks(projKey, fname){
     openModal(fname, dl + (parsedHtml?'<div style="margin-top:12px">'+parsedHtml+'</div>':''), closeBtn);
     return;
   }
-  // 无 dataUrl（历史数据）：显示解析内容
-  openModal(fname, parsedHtml || '<div style="padding:20px;text-align:center;color:#8492a6;font-size:13px">该文件的解析内容暂未保存。</div>', closeBtn);
+  // 历史解析文字不是原件，不能声称可还原文件。
+  openModal(fname, '<p>历史材料未保存原件，请重新上传以纳入备份。</p>'+(parsedHtml || '<div style="padding:20px;text-align:center;color:#8492a6;font-size:13px">该文件的解析内容暂未保存。</div>'), closeBtn);
 }
 
 
 /* 下载上传的原始文件 */
-function opsDownloadFile(projKey, fname){
+function opsDownloadFile(projKey, fname, originalId){
   var ups = UPLOADS[projKey] || [];
   var rec = null;
-  for(var i=ups.length-1;i>=0;i--){ if(ups[i].name===fname && ups[i].dataUrl){ rec=ups[i]; break; } }
-  if(!rec || !rec.dataUrl){ toast('该文件无原始数据，无法下载'); return; }
+  for(var i=ups.length-1;i>=0;i--){ if(ups[i].name===fname && (originalId?ups[i].originalId===originalId:!ups[i].originalId)){ rec=ups[i]; break; } }
+  var originalUrl=uploadOriginalUrl(projKey,rec);
+  if(!originalUrl&&(!rec || !rec.dataUrl)){ toast('历史材料未保存原件，请重新上传'); return; }
   var a=document.createElement('a');
-  a.href=rec.dataUrl;
+  a.href=originalUrl||rec.dataUrl;
   a.download=fname;
   document.body.appendChild(a);
   a.click();

@@ -25,7 +25,7 @@ function setupPage(){
             'onkeydown="if(event.key===\'Enter\'){var b=document.getElementById(\'setupBtn\');if(b&&b.style.pointerEvents!==\'none\')createProject();}" />'+
         '</div>'+
         '<!-- 补充材料区域已移至城市智库页面 -->'+
-        '<input id="setupFileInput" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" multiple style="display:none" onchange="setupFileSelected(this)" />'+
+        '<input id="setupFileInput" type="file" accept=".pdf,.docx,.txt,.md,.csv,.json" multiple style="display:none" onchange="setupFileSelected(this)" />'+
         '<button id="setupBtn" onclick="createProject()" '+
           'style="width:100%;padding:14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:650;cursor:pointer;opacity:'+(_locked?'1':'.4')+';pointer-events:'+(_locked?'auto':'none')+';transition:opacity .15s,transform .1s;letter-spacing:.2px" '+
           'onmousedown="this.style.transform=\'scale(.98)\'" onmouseup="this.style.transform=\'\'">'+

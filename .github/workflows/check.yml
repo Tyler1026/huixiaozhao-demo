@@ -37,7 +37,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install syntax and report test dependencies
-        run: pip install esprima python-docx==1.1.2 psycopg2-binary
+        run: pip install esprima python-docx==1.1.2 psycopg2-binary boto3 cryptography
 
       - name: Verify generated frontend is unchanged
         run: python3 scripts/build_frontend.py --check
@@ -65,3 +65,11 @@ jobs:
 
       - name: Smoke standalone report imports with networking disabled
         run: docker run --rm --network none --entrypoint python hxz-full-report-check:${{ github.sha }} -c "from report_service.full_cli import parse; from report_service.full_provider import FullSyntheticProvider; from report_service.full_contract import STAGES; assert len(STAGES) == 16"
+
+      - name: Build encrypted one-shot backup image
+        run: docker build -f Dockerfile.backup --tag hxz-backup-check:${{ github.sha }} .
+
+      - name: Smoke backup imports without credentials or networking
+        run: |
+          docker image inspect hxz-backup-check:${{ github.sha }} --format '{{json .Config}}' | python3 -c 'import json,sys; c=json.load(sys.stdin); assert not c["Entrypoint"]; assert c["Cmd"] == ["python3", "scripts/backup_job.py"]'
+          docker run --rm --network none hxz-backup-check:${{ github.sha }} python3 -c "from scripts.backup_job import MAGIC; import boto3, cryptography, psycopg2; assert MAGIC == b'HXZBKUP1'"

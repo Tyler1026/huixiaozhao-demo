@@ -1714,7 +1714,7 @@ function confirmKbItem(kbIdx,itemIdx){
 function editPickFile(kbIdx,itemIdx){
   var inp=document.createElement('input');
   inp.type='file'; inp.multiple=true;
-  inp.accept='.txt,.md,.csv,.pdf,.doc,.docx,.xls,.xlsx';
+  inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
   inp.onchange=function(){
     var files=Array.from(inp.files||[]);
     if(!files.length)return;
@@ -1731,38 +1731,16 @@ function editDropFile(e,kbIdx,itemIdx){
 }
 
 function processEditFiles(files,kbIdx,itemIdx){
-  var hint=document.getElementById('kb-file-hint-'+kbIdx+'-'+itemIdx);
+  var key=cur,epoch=originalUploadEpoch(),hint=document.getElementById('kb-file-hint-'+kbIdx+'-'+itemIdx);
   var ta=document.getElementById('kb-edit-'+kbIdx+'-'+itemIdx);
-  // 先触发全局 ingestFiles（更新 corpus）
-  ingestFiles(files, kbIdx);
-  // 然后读取文本文件内容追加到 textarea
-  var textFiles=files.filter(function(f){return /\.(txt|md|csv|json)$/i.test(f.name);});
-  var binary=files.filter(function(f){return !/\.(txt|md|csv|json)$/i.test(f.name);});
-  // 更新 hint 文本
-  if(hint)hint.textContent='✅ 已上传 '+files.length+' 个文件：'+files.map(function(f){return f.name;}).join('、');
-  // binary 文件只记录名称到 textarea
-  if(binary.length&&ta){
-    ta.value+=(ta.value?'\n':'')+'[已上传文件：'+binary.map(function(f){return f.name;}).join('、')+'，内容已加入知识库]';
-  }
-  if(!textFiles.length)return;
-  // 读取纯文本文件，提取摘要追加到 textarea
-  var done=0;
-  textFiles.forEach(function(f){
-    var reader=new FileReader();
-    reader.onload=function(e){
-      var text=(e.target.result||'').trim();
-      // 取前 500 字作为摘要
-      var summary=text.slice(0,500).replace(/\n+/g,' ').trim();
-      if(ta&&summary){
-        ta.value+=(ta.value?'\n':'')+'['+f.name+'] '+summary;
-      }
-      done++;
-      if(done===textFiles.length&&ta){
-        ta.focus();
-        ta.setSelectionRange(ta.value.length,ta.value.length);
-      }
-    };
-    reader.readAsText(f,'utf-8');
+  if(hint)hint.textContent='正在保存附件原件…';
+  return ingestFiles(files,kbIdx).then(function(saved){
+    if(!originalUploadSessionCurrent(epoch)||cur!==key)return;
+    if(hint)hint.textContent='已保存 '+saved.length+' 个附件原件'+(saved.length<files.length?'，部分文件失败，请查看原因':'');
+    if(ta)saved.forEach(function(f){
+      var text=(f._originalReceipt.fileChunks||[]).map(function(c){return c.text;}).join(' ').slice(0,500);
+      ta.value+=(ta.value?'\n':'')+'['+f.name+'] '+text;
+    });
   });
 }
 
@@ -2202,7 +2180,7 @@ function askAboutKb(i){
 function pickLocalFile(kbTopicIdx){
   var inp=document.createElement('input');
   inp.type='file';inp.multiple=true;
-  inp.accept='.txt,.md,.csv,.pdf,.doc,.docx,.xls,.xlsx';
+  inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
   inp.onchange=function(){
     var files=Array.from(inp.files||[]);
     if(!files.length)return;
@@ -2213,85 +2191,60 @@ function pickLocalFile(kbTopicIdx){
 }
 
 /* ── 文件摄取：读取 → 切 chunk → 存 KB_FILE_CHUNKS → 更新 kb.known ── */
+/* Original bytes live in PostgreSQL; the browser only stores their scoped receipt. */
+function uploadOriginalUrl(key, rec){
+  if(!rec || !/^[a-f0-9]{32}$/.test(rec.originalId||''))return '';
+  return '/api/upload-file?projectKey='+encodeURIComponent(key)+'&uploadId='+encodeURIComponent(rec.originalId);
+}
+function originalUploadEpoch(){return typeof _authEpoch==='number'?_authEpoch:0;}
+function originalUploadSessionCurrent(epoch){return epoch===originalUploadEpoch();}
+function submitOriginalFile(file, key, kbTopicIdx, epoch){
+  if(epoch===undefined)epoch=originalUploadEpoch();
+  return new Promise(function(resolve,reject){
+    if(!originalUploadSessionCurrent(epoch)){reject(new Error('登录状态已变化，上传结果未载入'));return;}
+    if(!file||!file.size){reject(new Error('不能上传空文件'));return;}
+    if(file.size>20*1024*1024){reject(new Error('单个文件不能超过 20MB'));return;}
+    var bytes=new Uint8Array(16);crypto.getRandomValues(bytes);
+    var uploadId=Array.from(bytes).map(function(b){return ('0'+b.toString(16)).slice(-2);}).join('');
+    var fr=new FileReader();
+    fr.onerror=function(){reject(new Error('文件读取失败'));};
+    fr.onload=function(){
+      if(!originalUploadSessionCurrent(epoch)){reject(new Error('登录状态已变化，上传结果未载入'));return;}
+      var encoded=String(fr.result||'').split(',')[1]||'';
+      fetch('/api/upload-file',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({projectKey:key,filename:file.name,fileB64:encoded,uploadId:uploadId,kbIdx:kbTopicIdx==null?null:kbTopicIdx})})
+        .then(function(r){return r.json();}).then(function(result){
+          if(!originalUploadSessionCurrent(epoch))throw new Error('登录状态已变化，上传结果未载入');
+          if(!result||!result.ok||!result.upload||!result.original)throw new Error((result&&(result.message||result.error))||'文件尚未保存');
+          resolve(result);
+        }).catch(reject);
+    };
+    fr.readAsDataURL(file);
+  });
+}
+function applyOriginalReceipt(key,result,epoch){
+  if(epoch!==undefined&&!originalUploadSessionCurrent(epoch))return false;
+  if(!UPLOADS[key])UPLOADS[key]=[];
+  if(!UPLOADS[key].some(function(u){return u.originalId===result.upload.originalId;}))UPLOADS[key].push(result.upload);
+  if(!KB_FILE_CHUNKS[key])KB_FILE_CHUNKS[key]=[];
+  (result.fileChunks||[]).forEach(function(c){if(!KB_FILE_CHUNKS[key].some(function(old){return old.id===c.id;}))KB_FILE_CHUNKS[key].push(c);});
+  if(typeof UPLOAD_TOMBS!=='undefined')delete UPLOAD_TOMBS[key+'::'+result.upload.name];
+}
 function ingestFiles(files, kbTopicIdx){
-  var p=P(); if(!p) return;
-  var total=files.length, done=0, allChunks=[];
-
-  // 先登记上传条目（pending），避免解析异步进行时侧栏/进度读到「0 份」
-  // 【2026-09-21】重新上传同名文件时必须清掉它的删除墓碑，否则服务端合并会把
-  // 新上传的这份当成「已删除」直接剔除（墓碑键是 projKey::fileName，不含 ts）。
-  files.forEach(function(f){
-    if(!f||!f.name) return;
-    try{ delete UPLOAD_TOMBS[cur+'::'+f.name]; }catch(_){}
-  });
-  try{ localStorage.setItem('HXZ_UPLOAD_TOMBS', JSON.stringify(UPLOAD_TOMBS)); }catch(_){}
-  if(!UPLOADS[cur]) UPLOADS[cur]=[];
-  files.forEach(function(f){
-    UPLOADS[cur].push({name:f.name, size:f.size, ts:Date.now(), chunks:0, kbIdx:kbTopicIdx, pending:true});
-  });
-  try{ refreshKbProgress(); }catch(e){}
-  try{ persist(); }catch(e){}
-
-  var c=document.getElementById('kbConv');
-  if(c){
-    var nd=document.createElement('div'); nd.className='message is-user';
-    nd.innerHTML='<div class="message-bubble"><p>📎 已上传 '+total+' 个文件：'+
-      files.map(function(f){return f.name;}).join('、')+'</p></div>';
-    c.appendChild(nd); c.scrollTop=c.scrollHeight;
-    // 持久化上传气泡：否则任一 render()（含跨标签 storage 事件）会经 kbChatReplay 把它冲掉
-    try{ kbChatPush('user', nd.outerHTML); }catch(_){}
-  }
-
-  // 记录哪些文件真的解析出了正文：finalizeIngest 据此给出真实提示而非一律报成功
-  var _parseFailed=[];
-  files.forEach(function(file){
-    var isDocx=/\.docx?$/i.test(file.name);
-    var isPdf=/\.pdf$/i.test(file.name);
-    var canRead=/\.(txt|md|csv|json)$/i.test(file.name);
-    if(isPdf){
-      // PDF：交服务端 pdfplumber 解析。扫描件/无文字层由服务端返回明确原因，
-      // 记入 _parseFailed 后如实告知，绝不伪造片段。
-      var _finP=function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p,_parseFailed); };
-      extractDocTextViaServer(file).then(function(txt){
-        txt=(txt||'').trim();
-        if(txt.length<30){
-          _parseFailed.push({name:file.name, reason:'未提取到有效文字（可能是扫描件/图片型 PDF）'});
-        } else {
-          allChunks=allChunks.concat(textToChunks(txt, file.name, p, kbTopicIdx));
-        }
-        _finP();
-      }).catch(function(err){
-        _parseFailed.push({name:file.name, reason:(err&&err.message)||'PDF 解析失败'});
-        _finP();
-      });
-    } else if(isDocx && typeof mammoth!=='undefined'){
-      // docx：用 mammoth 提取纯文本
-      var reader=new FileReader();
-      reader.onload=function(e){
-        mammoth.extractRawText({arrayBuffer:e.target.result}).then(function(result){
-          var chunks=textToChunks(result.value||'', file.name, p, kbTopicIdx);
-          allChunks=allChunks.concat(chunks);
-          done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p,_parseFailed);
-        }).catch(function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p,_parseFailed); });
-      };
-      reader.onerror=function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p,_parseFailed); };
-      reader.readAsArrayBuffer(file);
-    } else if(canRead){
-      var reader=new FileReader();
-      reader.onload=function(e){
-        var chunks=textToChunks(e.target.result||'', file.name, p, kbTopicIdx);
-        allChunks=allChunks.concat(chunks);
-        done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p,_parseFailed);
-      };
-      reader.onerror=function(){ done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p,_parseFailed); };
-      reader.readAsText(file,'utf-8');
-    } else {
-      // 【2026-09-21】原来这里塞一条「用户已上传文件「X」(N KB)」伪片段，于是无解析器的
-      //   格式看起来"摄取成功"、正文实际从未入库，伪片段还会污染 RAG 检索。改为如实告知。
-      _parseFailed.push({name:file.name,
-        reason:'暂不支持该格式的正文解析（当前支持 pdf / docx / txt / md / csv / json）'});
-      done++; if(done===total) finalizeIngest(allChunks,files,kbTopicIdx,p,_parseFailed);
-    }
+  var key=cur,p=PROJECTS[key],epoch=originalUploadEpoch();if(!p)return Promise.resolve([]);
+  var saved=[],failures=[],chunks=[];
+  if(typeof toast==='function')toast('正在保存原件并解析材料…');
+  return Promise.all(Array.from(files).map(function(file){
+    return submitOriginalFile(file,key,kbTopicIdx,epoch).then(function(result){
+      if(!originalUploadSessionCurrent(epoch))return;
+      file._originalReceipt=result; saved.push(file); chunks=chunks.concat(result.fileChunks||[]);
+      applyOriginalReceipt(key,result,epoch);
+    }).catch(function(error){if(!originalUploadSessionCurrent(epoch))return;failures.push({name:file.name,reason:error.message||'文件尚未保存'});});
+  })).then(function(){
+    if(!originalUploadSessionCurrent(epoch))return [];
+    if(cur!==key){if(typeof toast==='function')toast('材料处理完成，请返回原工作区查看；成功 '+saved.length+'，失败 '+failures.length);return saved;}
+    finalizeIngest(chunks,saved,kbTopicIdx,p,failures);
+    return saved;
   });
 }
 
@@ -2318,36 +2271,12 @@ function textToChunks(text, fname, p, kbTopicIdx){
 /* 摄取完成 — 存 KB_FILE_CHUNKS，更新 kb.known，触发 RAG 摘要 */
 function finalizeIngest(chunks, files, kbTopicIdx, p, parseFailed){
   parseFailed = parseFailed || [];
-  var _failNames = parseFailed.map(function(x){return x.name;});
-  var _okFiles = files.filter(function(f){ return _failNames.indexOf(f.name)<0; });
+  var _okFiles = files; // Only server-acknowledged originals reach this function.
   if(!cur) return;
   if(!KB_FILE_CHUNKS[cur]) KB_FILE_CHUNKS[cur]=[];
-  KB_FILE_CHUNKS[cur]=KB_FILE_CHUNKS[cur].concat(chunks);
-
-  if(!UPLOADS[cur]) UPLOADS[cur]=[];
-  files.forEach(function(f){
-    var n=chunks.filter(function(c){return c.cite===f.name;}).length;
-    // 优先更新 ingestFiles 入口登记的 pending 条目，避免重复计数
-    var existing=null;
-    for(var i=UPLOADS[cur].length-1;i>=0;i--){
-      if(UPLOADS[cur][i].pending && UPLOADS[cur][i].name===f.name){ existing=UPLOADS[cur][i]; break; }
-    }
-    var rec;
-    if(existing){ existing.chunks=n; existing.kbIdx=kbTopicIdx; delete existing.pending; rec=existing; }
-    else { rec={name:f.name, size:f.size, ts:Date.now(), chunks:n, kbIdx:kbTopicIdx}; UPLOADS[cur].push(rec); }
-    // 关键修复：保存原始文件为 dataUrl，否则管理端下载提示「该文件无原始数据」。
-    // 之前 index.html(政府端)上传入库根本没存 dataUrl —— 材料从源头就没有原始数据。
-    if(f && (typeof Blob!=='undefined') && (f instanceof Blob) && !rec.dataUrl){
-      (function(record, file){
-        try{
-          var fr=new FileReader();
-          fr.onload=function(ev){ record.dataUrl=ev.target.result; persist(); };
-          fr.onerror=function(){ persist(); };
-          fr.readAsDataURL(file);
-        }catch(e){}
-      })(rec, f);
-    }
-  });
+  chunks.forEach(function(c){if(!KB_FILE_CHUNKS[cur].some(function(old){return old.id===c.id;}))KB_FILE_CHUNKS[cur].push(c);});
+  files.forEach(function(f){if(f._originalReceipt)applyOriginalReceipt(cur,f._originalReceipt);});
+  persist();
 
   if(kbTopicIdx!=null && p.kb && p.kb[kbTopicIdx]){
     var k=p.kb[kbTopicIdx];
@@ -2378,10 +2307,10 @@ function finalizeIngest(chunks, files, kbTopicIdx, p, parseFailed){
   var _okCount=_okFiles.length, _failCount=parseFailed.length;
   var _chipOk=_okFiles.map(function(f){
       var n=chunks.filter(function(c){return c.cite===f.name;}).length;
-      return '<span style="padding:3px 10px;background:#f0fdf4;color:#166534;border-radius:12px;font-size:11.5px;border:1px solid #bbf7d0">'+f.name+' · '+n+' 片段</span>';
+      return '<span style="padding:3px 10px;background:#f0fdf4;color:#166534;border-radius:12px;font-size:11.5px;border:1px solid #bbf7d0">'+_authEscape(f.name)+' · '+n+' 片段</span>';
     }).join('');
   var _chipFail=parseFailed.map(function(x){
-      return '<span style="padding:3px 10px;background:#fef2f2;color:#b91c1c;border-radius:12px;font-size:11.5px;border:1px solid #fecaca">'+x.name+' · 未解析</span>';
+      return '<span style="padding:3px 10px;background:#fef2f2;color:#b91c1c;border-radius:12px;font-size:11.5px;border:1px solid #fecaca">'+_authEscape(x.name)+' · 未解析</span>';
     }).join('');
   var _head;
   if(_okCount>0 && _failCount===0){
@@ -2393,7 +2322,7 @@ function finalizeIngest(chunks, files, kbTopicIdx, p, parseFailed){
     _head='<p>❌ <strong>'+_failCount+' 个文件均未能解析</strong>，内容<strong>没有进入知识库</strong>，提问时不会被检索到。</p>';
   }
   var _reasons = _failCount? ('<div style="margin-top:8px;padding:8px 10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:11.5px;color:#92400e;line-height:1.7">'
-      + parseFailed.map(function(x){ return '· <strong>'+x.name+'</strong>：'+x.reason; }).join('<br>')
+      + parseFailed.map(function(x){ return '· <strong>'+_authEscape(x.name)+'</strong>：'+_authEscape(x.reason); }).join('<br>')
       + '<br>建议：扫描件可先用 OCR 转成可复制文字的 PDF，或直接粘贴关键段落到对话框。</div>') : '';
   nd.innerHTML='<img src="'+aiAvatar()+'"><div class="message-bubble">'+
     _head+
@@ -3316,7 +3245,7 @@ function doUpload(){
   closeModal();
   var inp=document.createElement('input');
   inp.type='file';inp.multiple=true;
-  inp.accept='.pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.csv';
+  inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
   inp.onchange=function(){
     var files=Array.from(inp.files||[]);
     if(!files.length)return;
