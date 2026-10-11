@@ -203,9 +203,11 @@ class OriginalPostgresTests(unittest.TestCase):
                     stream=io.StringIO();cursor.copy_expert('COPY '+table+' TO STDOUT WITH CSV',stream)
                     backups[table]=stream.getvalue()
                 cursor.execute('TRUNCATE upload_originals,sync_data')
-        self.assertEqual(self.read()[1],[])
         with self.connect() as conn:
             with conn.cursor() as cursor:
+                for table in ('sync_data','upload_originals'):
+                    cursor.execute('SELECT count(*) FROM '+table)
+                    self.assertEqual(cursor.fetchone()[0],0)
                 for table in ('sync_data','upload_originals'):
                     cursor.copy_expert('COPY '+table+' FROM STDIN WITH CSV',io.StringIO(backups[table]))
         restored,rows=self.read()
