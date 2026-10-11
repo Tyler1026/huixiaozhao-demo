@@ -2931,7 +2931,7 @@ function currentEvidenceChain(topic,key){
   var p=PROJECTS[key],rs=REPORTSTATE[key];if(!p||!rs)return null;
   var meta=(rs.chainEvidenceByTopic||{})[topic],chain=(rs.chainByTopic||{})[topic];
   var text=(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'');
-  return meta&&meta.contract==='saved-excerpts-v1'&&meta.requestId===(p.reportRequestId||'')&&meta.reportText===text&&meta.sourceIdentity===savedEvidenceIdentity(key,topic)&&Array.isArray(chain)?chain:null;
+  return meta&&meta.contract==='saved-excerpts-v1'&&meta.scope==='current-topic-v1'&&meta.requestId===(p.reportRequestId||'')&&meta.reportText===text&&meta.sourceIdentity===savedEvidenceIdentity(key,topic)&&Array.isArray(chain)?chain:null;
 }
 
 function generateChainFromReport(topic, reportText, city){
@@ -2956,14 +2956,16 @@ function generateChainFromReport(topic, reportText, city){
     if(!response.ok)throw new Error('图谱服务未接受请求（'+response.status+'）');
     return readTopicReportStream(response,function(){});
   }).then(function(result){
-    var parsed=JSON.parse(result.text), chain=_normalizeChain(parsed);
-    if(!chain.length || !chain.some(function(s){return s.nodes&&s.nodes.length;}))throw new Error('没有可用的图谱节点');
+    var parsed=JSON.parse(result.text);
+    if(!Array.isArray(parsed)||!parsed.every(function(s){return s&&['上游','中游','下游'].indexOf(s.seg)>=0&&Array.isArray(s.nodes);}))throw new Error('图谱格式不完整');
+    var normalized=_normalizeChain(parsed);
+    var chain=['上游','中游','下游'].map(function(name){return normalized.find(function(s){return s.seg===name;})||{seg:name,nodes:[]};});
     if(!active())return;
     rs=REPORTSTATE[key];
     if(((rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:''))!==exact)return;
     rs.chainByTopic[topic]=chain;
     rs.chainEvidenceByTopic=rs.chainEvidenceByTopic||{};
-    rs.chainEvidenceByTopic[topic]={contract:'saved-excerpts-v1',requestId:requestId,reportText:exact,sourceIdentity:sourceIdentity};
+    rs.chainEvidenceByTopic[topic]={contract:'saved-excerpts-v1',scope:'current-topic-v1',requestId:requestId,reportText:exact,sourceIdentity:sourceIdentity};
     rs.chainStatusByTopic=rs.chainStatusByTopic||{};rs.chainStatusByTopic[topic]='ready';
     persist();
   }).catch(function(error){
@@ -3026,6 +3028,7 @@ function _renderRichChain(topic, segments, recs, p){
     h+='<span style="font-size:7.5px;color:'+sm.fc+';opacity:.55;letter-spacing:.5px;writing-mode:vertical-rl">'+sm.tag+'</span>';
     h+='</div>';
     h+='<div style="flex:1;display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:2px">';
+    if(!(seg.nodes||[]).length)h+='<div style="flex:1;padding:18px;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b;font-size:12px;line-height:1.7">资料待补：当前方向尚无可引用的环节原句和来源链接，不能据此判断该环节不存在。</div>';
     (seg.nodes||[]).forEach(function(nd,i){
       var lv=LEVEL[nd.level]||LEVEL.unknown;
       h+='<div style="flex:1;min-width:96px;background:'+lv.bg+';border:2px solid '+lv.bd+';border-radius:12px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;text-align:center">';
@@ -3086,7 +3089,7 @@ function chainMapHtml(p){
   var failed=rs.chainStatusByTopic&&rs.chainStatusByTopic[topic]==='failed';
   return '<div style="margin-top:16px;padding:20px;border-radius:14px;border:1.5px dashed #cbd5e1;background:#f8fafc;text-align:center;color:#64748b;font-size:12.5px;line-height:1.7">'+
     '<div style="font-size:26px;margin-bottom:8px">🧭</div>「'+escapeChainText(topic)+'」'+(failed?'图谱生成未完成':'尚未生成基于当前材料的图谱')+'<br>'+
-    '<span style="font-size:11.5px;color:#94a3b8">仅引用当前方向材料；证据不足的环节会标记待核。</span>'+
+    '<span style="font-size:11.5px;color:#94a3b8">仅展示当前方向有原句和来源链接的环节；资料不足会显示待补。</span>'+
     (text?'<br><button onclick="requestChainGeneration()">'+(failed?'重试生成图谱':'生成产业链图谱')+'</button>':'')+'</div>';
 }
 

@@ -10,6 +10,11 @@ class InteractiveChainContractTests(unittest.TestCase):
     setUp = boundary.StreamBoundaryTests.setUp
 
     def _request(self, model, purpose='chain_map'):
+        # This is current-direction evidence, not a generic enterprise-library
+        # row from the base city report.
+        saved=self.h.state()
+        saved['PROJECTS']['a']['kb'][0]['t']='液体火箭'
+        self.h.replace(saved)
         self.h.ns['SYSTEM_RESEARCH_CHAIN']='LEGACY_CHAIN_OBJECT_PROMPT: return {chain,segments:[{name}]}'
         self.h.ns['DS_OPENER'].open.return_value=boundary.FakeResponse(json.dumps({'choices':[{'message':{'content':json.dumps(model)},'finish_reason':'stop'}]}).encode())
         body={'question':'整理当前证据产业链','mode':'chain','projectKey':'a','topic':'液体火箭','reportRequestId':'r1','stream':True}
@@ -41,8 +46,17 @@ class InteractiveChainContractTests(unittest.TestCase):
         self.assertEqual(self.audits[-1]['outcome'],'completed')
         self.assertEqual(self.h.ns['DS_OPENER'].open.call_count,1)
 
-    def test_empty_or_legacy_object_output_stays_fail_closed(self):
-        for bad in ([],{'chain':'液体火箭','segments':[]}):
+    def test_empty_array_completes_as_three_material_gaps(self):
+        status,text,_=self._request([])
+        self.assertEqual(status,200)
+        self.assertIn('[DONE]',text)
+        event=json.loads(next(line[6:] for line in text.splitlines() if line.startswith('data: {')))
+        result=json.loads(event['choices'][0]['delta']['content'])
+        self.assertEqual(result,[{'seg':name,'nodes':[]} for name in ('上游','中游','下游')])
+        self.assertEqual(self.audits[-1]['outcome'],'completed')
+
+    def test_legacy_object_or_malformed_segments_stay_fail_closed(self):
+        for bad in ({'chain':'液体火箭','segments':[]},[{'seg':'上游','nodes':'not-a-list'}]):
             status,text,_=self._request(bad)
             self.assertEqual(status,502)
             self.assertNotIn('[DONE]',text)

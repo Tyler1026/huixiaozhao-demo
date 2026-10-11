@@ -90,14 +90,25 @@ for(const app of ['index','ops']){
     assert.match(html,/<h4 class="keep-next">缺口5：测试与配套<\/h4>\n<ul>/);
     assert.match(html,/1 &lt; 2，A &gt; B/);
   });
-  test(app+' print retains all source records in compact columns without marking whole sections unbreakable',()=>{
+  test(app+' print keeps all sources in fragmentable inline flow without shrinking body or retaining an atomic footer',()=>{
     const c=harness(app),sources=Array.from({length:17},(_,i)=>({kind:'研究材料',value:'source-'+i+'.md'}));
+    sources.push({kind:'正文引用',value:'https://official.example/'+('long-path/'.repeat(60))+'?a=1&b=2'});
+    const original=JSON.stringify(sources);
     let html;
     Object.assign(c,{reportExportContext:()=>({project:{},state:{ts:1,evidenceStatusByTopic:{t:'unreviewed'}},city:'甲区',topic:'t',text:body}),topicScoreDisplay:()=> '内容待核验',nativeReportState:()=>null,reportExportSourceRecords:()=>sources,printReportDocument:value=>{html=value;}});
     c.downloadReportPDF('full');
-    assert.match(html,/\.source-list ul\{column-count:2/);assert.match(html,/\.source-list li\{[^}]*break-inside:avoid/);
+    assert.match(html,/\.source-list\{[^}]*break-inside:auto;page-break-inside:auto/);
+    assert.match(html,/\.source-items\{[^}]*orphans:1;widows:1/);
+    assert.match(html,/\.source-item\{overflow-wrap:anywhere\}/);
+    assert.doesNotMatch(html,/column-count|\.source-list[^}]*break-inside:avoid/);
+    assert.match(html,/\.report-end\{[^}]*break-inside:auto;page-break-inside:auto/);
+    assert.match(html,/body\{[^}]*font-size:11px/);
+    assert.equal((html.match(/<span class="source-item">/g)||[]).length,sources.length);
     assert.doesNotMatch(html,/<main[^>]*style="[^"]*break-inside:avoid/);
-    for(const s of sources)assert.ok(html.includes(s.value));
+    let at=0;for(const s of sources){const next=html.indexOf(s.value.replace(/&/g,'&amp;'),at);assert.ok(next>=at);at=next+1;}
+    assert.equal(JSON.stringify(sources),original);
+    assert.equal(html.match(/<main>([\s\S]*?)<\/main>/)[1],c.reportMdToHtml(body));
+    assert.match(html,/<footer class="report-end"><p>本报告为 AI 辅助研判；待核、推断、政策有效期和适用条件仍需逐项确认。 · 慧小招 · 甲区/);
     assert.match(html,/\.keep-next\{break-after:avoid/);
   });
 }
