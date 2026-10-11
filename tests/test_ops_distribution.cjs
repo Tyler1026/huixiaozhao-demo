@@ -135,32 +135,35 @@ test('editing a legacy enterprise repairs its ID without rewriting other enterpr
   assert.equal(h.ctx.OPS_ENT[1].id, undefined); assert.equal(h.persists(), 1);
 });
 
-test('manual distribution repairs legacy ID after target validation and writes the exact same-city workspace', async () => {
+test('legacy resource must be explicitly saved before review and never silently pushes', async () => {
   const h = await boot();
-  h.ctx.OPS_ENT = [{name: '旧企业甲', kind: '半导体', signal: '扩产'}, {name: '旧企业乙'}];
+  h.ctx.OPS_ENT = [{name: '旧企业甲', kind: '半导体'}, {name: '旧企业乙'}];
   h.ctx.PROJECTS = {a: {city: '闵行区', topic: '方向甲', clues: []}, b: {city: '闵行区', topic: '方向乙', clues: []}};
   h.ctx.opsEntManualPushModal(0);
-  assert.equal(h.ctx.OPS_ENT[0].id, undefined, 'opening modal does not migrate the record');
-  h.input('mpTopic', 'missing'); h.ctx.opsEntDoManualPush();
-  assert.equal(h.ctx.OPS_ENT[0].id, undefined, 'invalid target does not migrate the record');
-  h.input('mpTopic', 'b'); h.ctx.opsEntDoManualPush();
-  const selected = h.ctx.OPS_ENT[0], clue = h.ctx.PROJECTS.b.clues[0];
-  assert.ok(selected.id); assert.ok(clue.id.includes(selected.id));
-  assert.ok(!clue.id.includes('undefined')); assert.equal(h.ctx.OPS_ENT[1].id, undefined);
-  assert.equal(h.ctx.PROJECTS.a.clues.length, 0); assert.equal(h.ctx.PROJECTS.b.clues.length, 1);
-  assert.equal(selected.matches[0].projKey, 'b'); assert.equal(selected.matches[0].pushed, true);
-  const before = h.persists(); h.ctx.opsEntDoManualPush();
-  assert.equal(h.ctx.PROJECTS.b.clues.length, 1); assert.equal(h.persists(), before);
+  assert.match(h.toasts.at(-1), /先保存有编号/);
+  assert.equal(h.ctx.OPS_ENT[0].id, undefined);
+  assert.equal(h.persists(), 0);
+  h.ctx._manualEditIdx = 0; h.input('me-kind', '半导体');h.ctx.applyManualEdit();
+  const id=h.ctx.OPS_ENT[0].id;assert.ok(id);assert.equal(h.ctx.OPS_ENT[1].id,undefined);
+  h.ctx.opsEntManualPushModal(0);
+  assert.deepEqual(Array.from(h.ctx.resourceReviewChooseProject.selection.ids), [id]);
+  assert.match(h.modals.at(-1).body, /请选择项目/);
+  h.input('resourceReviewProject','missing');h.ctx.opsEntDoManualPush();
+  assert.match(h.toasts.at(-1), /明确选择/);
+  assert.equal(h.ctx.PROJECTS.a.clues.length,0);assert.equal(h.ctx.PROJECTS.b.clues.length,0);
 });
 
-test('two previously ID-less enterprises create distinct clues and each deduplicates independently', async () => {
-  const h = await boot();
-  h.ctx.PROJECTS = {target: {city: '闵行区', topic: '半导体', clues: []}};
-  h.ctx.OPS_ENT = [{name: '企业甲'}, {name: '企业乙'}]; h.input('mpTopic', 'target');
-  for (const index of [0, 1, 0, 1]) {h.ctx.__manualPushEnt = index; h.ctx.opsEntDoManualPush();}
-  assert.equal(h.ctx.PROJECTS.target.clues.length, 2);
-  assert.equal(new Set(h.ctx.PROJECTS.target.clues.map(item => item.id)).size, 2);
-  assert.deepEqual(Array.from(h.ctx.PROJECTS.target.clues, item => item.name), ['企业甲（脱敏）', '企业乙（脱敏）']);
-  assert.ok(h.ctx.PROJECTS.target.clues.every(item => !item.id.includes('undefined')));
-  assert.equal(h.persists(), 2);
+test('saved legacy enterprises retain distinct IDs and exact targets in readonly review requests', async () => {
+  const h = await boot(), calls=[];
+  h.ctx.PROJECTS={a:{city:'闵行区',topic:'方向甲',clues:[]},b:{city:'闵行区',topic:'方向乙',clues:[]}};
+  h.ctx.OPS_ENT=[{name:'企业甲'},{name:'企业乙'}];
+  for(const i of [0,1]){h.ctx._manualEditIdx=i;h.input('me-kind','半导体');h.ctx.applyManualEdit();}
+  const ids=h.ctx.OPS_ENT.map(e=>e.id);assert.equal(new Set(ids).size,2);
+  h.ctx.fetch=async (url,options)=>{calls.push({url,body:JSON.parse(options.body)});return {ok:true,json:async()=>({})};};
+  for(const i of [0,1]){h.ctx.opsEntManualPushModal(i);h.input('resourceReviewProject',i?'b':'a');h.ctx.opsEntDoManualPush();for(let j=0;j<20;j++)await Promise.resolve();}
+  assert.deepEqual(calls.map(c=>c.url),['/api/funnel-resource-preview','/api/funnel-resource-preview']);
+  assert.deepEqual(calls.map(c=>c.body.projectKey),['a','b']);
+  assert.deepEqual(calls.map(c=>Array.from(c.body.resourceIds)),ids.map(id=>[id]));
+  assert.equal(h.ctx.PROJECTS.a.clues.length,0);assert.equal(h.ctx.PROJECTS.b.clues.length,0);
+  assert.equal(h.persists(),2,'only the explicit saves persist; preview never writes clues');
 });

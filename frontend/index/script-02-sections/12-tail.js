@@ -87,68 +87,11 @@ function toggleClueGroup(projKey, seg){
 
 
 function deriveCluesFromReport(projKey){
-  var rs = REPORTSTATE[projKey];
-  var p  = PROJECTS[projKey];
-  if(!rs || !rs.text || !p) return;
-  if(p.clues && p.clues.length > 0) return; // 已有线索不重复派生
-
-  var text = rs.text;
-  var lines = text.split('\n');
-  var items = [];
-
-  // 从 TOP5 / ❌缺失 行提取缺口
-  var gaps = [];
-  var inTop5 = false;
-  for(var i=0; i<lines.length; i++){
-    var l = lines[i];
-    if(l.indexOf('补链优先级')>=0 || l.indexOf('TOP5')>=0 || l.indexOf('优先级清单')>=0) inTop5=true;
-    if(inTop5 && l.trim().charAt(0)==='|'){
-      var cells = l.trim().slice(1,-1).split('|').map(function(c){return c.replace(/[*★]/g,'').trim();});
-      var isSep = cells.every(function(c){return /^[\s\-:]+$/.test(c);});
-      if(isSep || cells[0]==='排名' || cells[0]==='缺口节点') continue;
-      var rank = parseInt(cells[0]);
-      if(!isNaN(rank) && rank>=1 && rank<=3 && cells[1]) gaps.push(cells[1]);
-    }
-    if(inTop5 && gaps.length>=3) break;
-  }
-  // 降级：找 ❌ 行
-  if(!gaps.length){
-    lines.forEach(function(l){
-      if(l.indexOf('❌')>=0 && gaps.length<3){
-        var c = l.replace(/^[*\-•|#\s]+/,'').replace(/❌|\*\*/g,'').trim();
-        if(c.length>4 && c.length<50) gaps.push(c);
-      }
-    });
-  }
-
-  // 每个缺口生成一条脱敏候选线索
-  var regionMap = ['长三角','华南','华东','华中'];
-  var kindSuffix = ['系统集成商','制造企业','配套企业'];
-  gaps.slice(0,3).forEach(function(gap, idx){
-    items.push({
-      id: 'clue_' + projKey + '_' + idx,
-      name: '脱敏企业 ' + String.fromCharCode(65+idx) + '（' + gap.slice(0,8) + '·代号）',
-      kind: gap + kindSuffix[idx%3],
-      region: regionMap[idx%4],
-      source: '慧小招研判报告（' + new Date().toLocaleDateString('zh-CN') + '）',
-      status: '待资源核验',
-      tone: 'slate',
-      reason: '直接补「' + gap + '」缺口，与' + p.city + '本地链主形成配套需求。',
-      signal: '基于报告缺口判断，具体企业投资意向与决策层触达可能性需资源团队核验。',
-      questions: [
-        '企业是否有异地布局或产能扩张计划',
-        '与' + p.city + '本地链主的配套合作可行性',
-        '落地规模与首批场景要求'
-      ]
-    });
-  });
-
-  if(!p.clues) p.clues = [];
-  p.clues = p.clues.concat(items);
-  persist();
+  // Compatibility only: viewing a report never creates synthetic companies.
+  // Existing saved clues remain unchanged; new recommendations use review.
+  return;
 }
 
-/* ── 线索卡片渲染 ── */
 function clueCard(clue, projKey, idx){
   var toneMap = {
     slate: {bg:'#f5f7fb', border:'#e8edf5', dot:'#9aa5b5', label:'待接触'},
@@ -1691,6 +1634,49 @@ var REPORT_HISTORY = REPORT_HISTORY || {};
 function saveReportHistory(){try{localStorage.setItem('hxz_rpt_history',JSON.stringify(REPORT_HISTORY));}catch(e){}}
 function loadReportHistory(){try{var d=localStorage.getItem('hxz_rpt_history');if(d)REPORT_HISTORY=JSON.parse(d);}catch(e){}}
 loadReportHistory();
+// Freeze the score's meaning with the report. A missing score is not a request
+// to estimate confidence from body length or reuse another topic's score.
+function reportHistoryRecord(key, topic, text){
+  var rs=REPORTSTATE[key]||{}, scores=rs.scoreByTopic||{};
+  var unreviewed=(rs.evidenceStatusByTopic||{})[topic]==='unreviewed';
+  var native=nativeReportState(topic,key), score=null;
+  if(!unreviewed){
+    if(native) score=nativeReportScore(topic,key);
+    else if(Object.prototype.hasOwnProperty.call(scores,topic)) score=scores[topic];
+    else if(rs.topic===topic) score=rs.score;
+  }
+  if(typeof score!=='number'||!isFinite(score)||score<0||score>100) score=null;
+  return {
+    topic:topic, text:text, rep:text,
+    ts:(rs.tsByTopic||{})[topic]||(rs.topic===topic?rs.ts:0)||rs.ts||0,
+    phase:(rs.phaseByTopic||{})[topic]||(rs.topic===topic?rs.phase:2)||2,
+    score:score, evidenceStatus:unreviewed?'unreviewed':null,
+    scoreBasis:native?native.scoreBasis:null,
+    scoreStatus:native?native.scoreStatus:null,
+    sourceReportId:native?native.sourceReportId:null
+  };
+}
+
+function reportHistoryScoreDisplay(rep,key){
+  var rs=REPORTSTATE[key]||{}, topic=rep.topic;
+  var text=(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:null);
+  var ts=(rs.tsByTopic||{})[topic]||(rs.topic===topic?rs.ts:0)||rs.ts||0;
+  // The same current snapshot may have been archived before evidence metadata
+  // was introduced. Its live explicit status still takes precedence.
+  if(text===rep.text && ts===rep.ts){
+    if((rs.evidenceStatusByTopic||{})[topic]==='unreviewed') return '内容待核验';
+    if(nativeReportState(topic,key)) return topicScoreDisplay(topic,key);
+  }
+  if(rep.evidenceStatus==='unreviewed') return '内容待核验';
+  var score=typeof rep.score==='number'&&isFinite(rep.score)&&rep.score>=0&&rep.score<=100?rep.score:null;
+  if(rep.scoreBasis==='核验一致项比例' && rep.sourceReportId){
+    if(rep.scoreStatus==='unclassified') return '核验分类待校核';
+    if(rep.scoreStatus==='unavailable'||score===null) return '暂无核验结论';
+    return '核验一致项比例 '+score+'%';
+  }
+  return score===null?'内容待核验':score+'%';
+}
+
 // 补充：从 aiReportByTopic 构建历史（解决 rs.text 清空后历史报告为空的问题）
 function getReportHistoryForProject(key){
   var rs=REPORTSTATE[key]; if(!rs) return [];
@@ -1700,18 +1686,7 @@ function getReportHistoryForProject(key){
     Object.keys(rs.aiReportByTopic).forEach(function(t){
       var txt=rs.aiReportByTopic[t];
       if(!txt || txt.length<=100) return;
-      // score/phase/ts 必须按方向读，否则历史卡片会显示 0% 与错误时间/阶段（fix 2026-08-28）
-      var _phase = (rs.phaseByTopic && rs.phaseByTopic[t]) || (rs.topic===t ? rs.phase : 2) || 2;
-      var _score;
-      // 【2026-09-21】回退重算必须带 key：否则历史卡片会用当前项目的数据
-      //   为别的项目算分，同一报告又多出第三个置信度。
-      if(rs.scoreByTopic && rs.scoreByTopic[t]!=null) _score=rs.scoreByTopic[t];
-      else if(rs.topic===t && rs.score!=null) _score=rs.score;
-      else { try{ _score=topicScore(t, key); }catch(e){ _score=0; } }
-      // 【2026-09-21】ts 缺失时原来兜底 Date.now()，导致该历史卡每次渲染都显示「刚刚」
-      //   （实测 1.5 秒内两次取值不同）。改为回退到项目级 ts，仍缺失才用当前时间并标记。
-      var _ts = (rs.tsByTopic && rs.tsByTopic[t]) || (rs.topic===t ? rs.ts : 0) || rs.ts || 0;
-      fromAi.push({topic:t, text:txt, rep:txt, ts:_ts, score:_score, phase:_phase});
+      fromAi.push(reportHistoryRecord(key,t,txt));
     });
   }
   // 合并 REPORT_HISTORY（去重）
@@ -1727,16 +1702,16 @@ function getReportHistoryForProject(key){
 
 function archiveCurrentReport(key){
   var rs=REPORTSTATE[key];
-  if(!rs) return; // 首次生成报告时 REPORTSTATE[key] 尚不存在，归档旧报告时可能为空
-  var _archTxt=(rs.aiReportByTopic&&rs.topic)?rs.aiReportByTopic[rs.topic]||rs.text:''; if(!_archTxt) return;
+  if(!rs) return;
+  var text=(rs.aiReportByTopic||{})[rs.topic]||rs.text;
+  if(!text) return;
   if(!REPORT_HISTORY[key]) REPORT_HISTORY[key]=[];
-  // 避免重复归档（同 ts）
-  var exists=REPORT_HISTORY[key].some(function(h){return h.ts===rs.ts;});
-  if(!exists){
-    REPORT_HISTORY[key].unshift({text:_archTxt,topic:rs.topic, rep:_archTxt,ts:rs.ts,score:rs.score,phase:rs.phase});
-    if(REPORT_HISTORY[key].length>10) REPORT_HISTORY[key]=REPORT_HISTORY[key].slice(0,10);
-    saveReportHistory();
-  }
+  var record=reportHistoryRecord(key,rs.topic,text);
+  var existing=REPORT_HISTORY[key].findIndex(function(h){return h.topic===record.topic&&h.ts===record.ts;});
+  if(existing>=0) REPORT_HISTORY[key][existing]=record;
+  else REPORT_HISTORY[key].unshift(record);
+  if(REPORT_HISTORY[key].length>10) REPORT_HISTORY[key]=REPORT_HISTORY[key].slice(0,10);
+  saveReportHistory();
 }
 
 function deleteHistoryReport(key, idx){
@@ -1799,10 +1774,7 @@ function renderHistoryReports(key, topicFilter){
     h+='<span style="font-size:11px;padding:1px 7px;border-radius:10px;background:'+phaseBg+';color:'+phaseColor+';font-weight:700">'+phaseLabel+'</span>';
     h+='<span style="font-size:12px;font-weight:600;color:#374151;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+rep.topic+'</span>';
     h+='<span style="font-size:11px;color:#94a3b8;flex-shrink:0">'+dt+'</span>';
-    var nativeHistory=nativeReportState(rep.topic,key);
-    var currentNative=nativeHistory && (nativeHistory.aiReportByTopic||{})[rep.topic]===rep.text
-      && rep.ts===((nativeHistory.tsByTopic||{})[rep.topic]||nativeHistory.ts);
-    if(rep.score!=null || currentNative) h+='<span style="font-size:11px;color:#64748b;flex-shrink:0;margin-left:4px">'+(currentNative?topicScoreDisplay(rep.topic,key):rep.score+'%')+'</span>';
+    h+='<span style="font-size:11px;color:#64748b;flex-shrink:0;margin-left:4px">'+reportHistoryScoreDisplay(rep,key)+'</span>';
     // 全部方向模式下，点报告可一键切回该方向
     h+='<button onclick="event.stopPropagation();selectTopic(\''+String(rep.topic).replace(/'/g,"\\'")+'\')" title="切到该方向" style="flex-shrink:0;margin-left:6px;padding:2px 8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:11px;color:#1d4ed8;cursor:pointer;font-weight:600">切到此方向</button>';
     h+='<button onclick="event.stopPropagation();deleteHistoryReport(\''+key+'\','+oi+')" style="flex-shrink:0;margin-left:4px;padding:2px 8px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;font-size:11px;color:#ef4444;cursor:pointer;font-weight:600">删除</button>';

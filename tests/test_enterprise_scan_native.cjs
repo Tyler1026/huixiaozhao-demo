@@ -112,22 +112,16 @@ test('native and legacy duplicates preserve current city-plus-gap deduplication'
   assert.ok(matches(ctx).every(item => item.pushed === false));
 });
 
-test('scan results push only to their exact targets and repeated push does not duplicate clues', async () => {
-  const h = await boot(), {ctx} = h;
-  ctx.PROJECTS = {
-    native: {city: '闵行区', kb: [{known: [{text: '缺失电堆核心配套'}]}], clues: []},
-    legacy: {city: '嘉定区', kb: [{known: ['补链氢能配套企业']}], clues: []},
-    unrelated: {city: '松江区', kb: [{known: [{text: '补链医疗器械产业配套'}]}], clues: []},
-  };
-  ctx.opsEntScanOne(0, true);
-  assert.equal(h.persists(), 0); assert.equal(h.renders(), 0);
-  assert.deepEqual(matches(ctx).map(item => item.projKey), ['native', 'legacy']);
-  ctx.opsEntDoPush(0, [0]); ctx.opsEntDoPush(0, [0]);
-  assert.equal(ctx.PROJECTS.native.clues.length, 1);
-  assert.equal(ctx.PROJECTS.legacy.clues.length, 0);
-  assert.equal(ctx.PROJECTS.unrelated.clues.length, 0);
-  ctx.opsEntDoPush(0, [1]); ctx.opsEntDoPush(0, [0, 1]);
-  assert.equal(ctx.PROJECTS.native.clues.length, 1); assert.equal(ctx.PROJECTS.legacy.clues.length, 1);
-  assert.equal(ctx.PROJECTS.native.clues[0].id, 'entity-one_to_native');
-  assert.equal(ctx.PROJECTS.legacy.clues[0].id, 'entity-one_to_legacy');
+test('scan suggestions enter explicit target review and never directly create clues', async () => {
+  const h=await boot(),{ctx}=h;ctx.openModal=()=>{};
+  ctx.PROJECTS={native:{city:'闵行区',topic:'电堆',kb:[{known:[{text:'缺失电堆核心配套'}]}],clues:[]},legacy:{city:'嘉定区',topic:'氢能',kb:[{known:['补链氢能配套企业']}],clues:[]},unrelated:{city:'松江区',topic:'医疗',clues:[]}};
+  ctx.opsEntScanOne(0,true);assert.deepEqual(matches(ctx).map(item=>item.projKey),['native','legacy']);
+  for(const requested of [[0],[1],[0,1]]){ctx.opsEntDoPush(0,requested);assert.deepEqual(Array.from(ctx.resourceReviewChooseProject.selection.ids),['entity-one']);}
+  assert.ok(Object.values(ctx.PROJECTS).every(p=>p.clues.length===0));
+  assert.ok(matches(ctx).every(m=>m.pushed===false));assert.equal(h.persists(),0);
+  const calls=[];ctx.fetch=async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return {ok:true,json:async()=>({})};};
+  h.nodes.resourceReviewProject={value:'legacy'};ctx.resourceReviewStartFromSelection();for(let i=0;i<20;i++)await Promise.resolve();
+  assert.equal(calls[0].url,'/api/funnel-resource-preview');assert.equal(calls[0].body.projectKey,'legacy');
+  assert.deepEqual(Array.from(calls[0].body.resourceIds),['entity-one']);
+  assert.ok(Object.values(ctx.PROJECTS).every(p=>p.clues.length===0));
 });

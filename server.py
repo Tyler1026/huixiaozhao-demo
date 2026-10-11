@@ -972,11 +972,23 @@ class Handler(BaseHTTPRequestHandler):
                 state = load_state(bool(_PG_AVAIL and DATABASE_URL), _db_get, SYNC_PATH)
                 self._principal = require_session(self.headers, state, admin_config=self._account_config())
                 if path in ('/api/admin-reset', '/api/kb-clean', '/api/kb-upload',
-                            '/api/kb-version', '/api/report-push-request', '/api/funnel-review-push', '/api/enterprise-enrich'):
+                            '/api/kb-version', '/api/report-push-request', '/api/funnel-review-push', '/api/funnel-resource-preview', '/api/enterprise-enrich'):
                     require_admin(self._principal)
                 self._scoped_state = scoped_sync_view(state, self._principal)
             except AuthError as error:
                 return error_response(self, error)
+        if path == '/api/funnel-resource-preview':
+            from backend.evidence_grounding import resource_review_preview
+            from backend.auth_routes import respond
+            try:
+                body = json.loads(raw)
+                if not isinstance(body, dict):
+                    raise AuthError(400, 'invalid_json', '请求格式不正确')
+                return respond(self, 200, resource_review_preview(body, self._scoped_state))
+            except AuthError as error:
+                return error_response(self, error)
+            except (ValueError, TypeError):
+                return error_response(self, AuthError(400, 'invalid_json', '请求格式不正确'))
         if path == '/api/funnel-review-push':
             from backend.evidence_grounding import review_and_push
             from backend.sync_transaction import file_session
@@ -1478,8 +1490,8 @@ class Handler(BaseHTTPRequestHandler):
                 for c in upload_used
             ],
         }
-        def record_outcome(outcome, finish_reason=''):
-            audit_log(dict(audit_entry, outcome=outcome, finish_reason=finish_reason,
+        def record_outcome(outcome, finish_reason='', error_code=''):
+            audit_log(dict(audit_entry, outcome=outcome, finish_reason=finish_reason, error_code=error_code,
                            elapsed_ms=round((time.monotonic()-request_started)*1000)))
 
         if mode == "suggest":
@@ -1514,7 +1526,28 @@ class Handler(BaseHTTPRequestHandler):
             system_prompt = SYSTEM_FULL
             max_tokens    = MAX_TOKENS_FULL
 
+        if body.get('purpose') == 'chain_map':
+            # Interactive maps have their own array contract. The legacy
+            # research-chain prompt requests a different object schema and
+            # must not override this endpoint's validated representation.
+            system_prompt = (
+                '你根据当前工作区提供的证据目录整理产业链示意。仅返回严格 JSON，顶层 JSON 数组，'
+                '不加 Markdown 或解释。数组项格式为 '
+                '[{"seg":"上游","nodes":[{"name":"证据中的环节名称","level":"unknown",'
+                '"note":"保留原文限制与待核情况","local_leaders":[],"benchmark":[],"evidence_ids":[]}]}]。'
+                'seg 只能为上游、中游、下游；每项 nodes 为数组。证据不足时 level=unknown，'
+                '不得把未知写成不存在，不凑齐环节、企业或强中弱等级。'
+                '环节和企业仅来自目录，evidence_ids 只引用目录中实际 id；'
+                '不能从常识补企业、编造 URL 或数字，不能把其他主体的优势或所在地归给当前节点。'
+            )
+
         if structured:
+            if mode == 'funnel':
+                system_prompt = """你负责从当前工作区已保存的证据目录整理企业材料，供管理员逐家筛选。
+只输出 JSON 对象 {"companies": [{"name": "企业规范名称", "kind": "原文产品或服务", "evidence_ids": ["目录id"]}]}。
+先阅读当前方向与需求，再选择其产品或服务有直接业务关联且有带链接原文支持的企业。仅同城、仅出现在材料、属于大类产业或泛化“可合作”都不构成关联。
+不得补入常识名单，不设最低企业数量。没有直接相关的企业证据时，返回 {"companies": []}，这表示现有材料不足，不表示现实中不存在企业。
+不推算适配分数、实力、迁移意向或投资承诺。最终业务适配须管理员逐家核对产品原文与需求原文，不能自动确认。"""
             system_prompt += "\n所有证据必须来自所给目录。每个客观条目或企业增加 evidence_ids 数组，引用目录中完整 id。不得发明企业、URL、数字或加强原文结论。保留待核、未见、有效期及政策适用条件。企业不足目标数量时按实数输出；无投资意向证据则 score_relocate=null。画像每个 objective 条目引用原句对应 id，偏好以已保存问卷为准，未知则留待补充。"
             # Structured output must be validated before any model text can
             # reach a consumer that might persist it as a completed result.
@@ -1609,8 +1642,8 @@ class Handler(BaseHTTPRequestHandler):
             encoded = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
             self.wfile.write(('data: '+encoded+'\n\n').encode())
             self.wfile.flush()
-        def terminal_error(code):
-            send_event({'error': {'code': code, 'message': '生成未完成，请重试；已有完成结果保留。'},
+        def terminal_error(code, message='生成未完成，请重试；已有完成结果保留。'):
+            send_event({'error': {'code': code, 'message': message},
                         'choices': [{'delta': {}, 'finish_reason': code}], 'runId': request_run_id})
         try:
             _timeout = 150 if mode in ("funnel", "chain", "research") else 90
@@ -1738,18 +1771,28 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             record_outcome('client_disconnected')
         except Exception as e:
-            code = 'upstream_error' if isinstance(e, urllib.error.HTTPError) else 'incomplete'
-            record_outcome('failed', code)
+            # Only our static AuthError contract is safe to expose. Provider
+            # bodies and arbitrary exception messages remain private.
+            known_auth_codes = {'evidence_changed', 'report_changed', 'topic_mismatch', 'topic_changed',
+                                'evidence_missing', 'confirmation_required', 'project_required',
+                                'auth_required', 'workspace_forbidden', 'membership_disabled',
+                                'session_unavailable', 'storage_unavailable'}
+            safe_auth = isinstance(e, AuthError) and e.code in known_auth_codes
+            code = e.code if safe_auth else 'upstream_error' if isinstance(e, urllib.error.HTTPError) else 'incomplete'
+            message = e.message if safe_auth else '生成未完成或缺少可核查来源，请补充材料后重试。'
+            if safe_auth and e.status == 409:
+                message += '；旧结果已保留，请刷新后重新生成。'
+            record_outcome('conflict' if safe_auth and e.status == 409 else 'failed', code, code if safe_auth else '')
             if headers_sent:
                 try:
-                    terminal_error(code)
+                    terminal_error(code, message)
                 except (BrokenPipeError, ConnectionResetError):
                     pass
             else:
                 self.send_response(e.status if isinstance(e, AuthError) else 502)
                 self.send_header('Content-Type', 'application/json')
                 self.cors(); self.end_headers()
-                self.wfile.write(json.dumps({'error': code, 'message': '生成未完成或缺少可核查来源，请补充材料后重试。', 'runId': request_run_id}, ensure_ascii=False).encode())
+                self.wfile.write(json.dumps({'error': code, 'code': code, 'message': message, 'runId': request_run_id}, ensure_ascii=False).encode())
 
 
 if __name__ == "__main__":

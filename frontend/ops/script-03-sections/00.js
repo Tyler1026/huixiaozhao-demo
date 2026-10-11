@@ -144,6 +144,11 @@ function reportMdToHtml(md){
     var ln=lines[i];
     if(/^\s*\|.*\|\s*$/.test(ln)){ inTable=true; tbuf.push(ln); continue; }
     else if(inTable){ flushTable(); }
+    if(/^\s*(?:-{3,}|_{3,}|\*{3,})\s*$/.test(ln)){out.push('<hr>');continue;}
+    var quote=ln.match(/^\s*>\s?(.*)$/);
+    if(quote){out.push('<blockquote><p>'+inline(quote[1])+'</p></blockquote>');continue;}
+    var label=ln.trim().match(/^\*\*((?:缺口[0-9一二三四五六七八九十]+[：:、]|原文第\s*\d+(?:\s*至\s*\d+)?\s*段)[^*]*)\*\*$/);
+    if(label){out.push('<h4 class="keep-next">'+inline(label[1])+'</h4>');continue;}
     var mh=ln.match(/^(#{1,4})\s+(.*)$/);
     if(mh){ var lv=mh[1].length; out.push('<h'+lv+'>'+inline(mh[2])+'</h'+lv+'>'); continue; }
     var mch=ln.match(/^\s*[一二三四五六七八九十]+、/);
@@ -176,63 +181,121 @@ function reportExportContext(){
 
 function buildReportBrief(text){
   var rows=String(text||'').replace(/\r\n?/g,'\n').split('\n');
-  var paragraphs=[], pending='', heading='';
-  function flush(){if(pending.trim()){paragraphs.push({text:pending.trim(),heading:heading});pending='';}}
+  var sections=[], stack=[], current=null, pending=[], ordinal=0;
+  function category(title){
+    var name=String(title||'').replace(/^\s*(?:[一二三四五六七八九十]+[、．.]|\d+(?:\.\d+)*[.、．)]?)\s*/,'').replace(/^附[：:]\s*/,'').trim();
+    if(/^(?:本报告的)?证据边界声明|^来源限制|^时效性(?:与来源限制|提示)|^原文的整体限制/.test(name))return 'limits';
+    if(/^(?:城市概况|区域基本盘|经济概况|经济运行|人口|财政)|产业总体定位$/.test(name))return 'city';
+    if(/^(?:政策工具适配性|补链优先级清单|待确认事项|待核实事项汇总|核查事项|优先级最高核查项|行动与待核事项|季度.*行动|全年行动)/.test(name))return 'action';
+    if(/^(?:可参照的)?政策(?:工具|意见|$)|^(?:区级|本地|国家层面)政策工具|^(?:产业政策|招商政策|支持政策|政策支持)/.test(name))return 'policy';
+    if(/^(?:目标企业|企业线索|企业推荐|本市存量企业服务重点|本地企业|方向对接假设|对接假设)/.test(name))return 'enterprise';
+    if(/^(?:产业基础|产业链缺口|产业判断|核心缺口|补链方向|补链抓手|制造端断点|空间组织|空间布局|园区承载)/.test(name))return 'industry';
+    return null;
+  }
+  function qualificationHeading(title){
+    var name=String(title||'').replace(/^\s*\d+(?:\.\d+)*[.、．)]?\s*/,'');
+    return /^(?:适用条件|适用范围|不适用范围|申报条件|申请条件|资格条件|资格要求|限制条件|限制|补充条件|有效期|实施期限|注意事项)(?:[：:\s（(]|$)/.test(name);
+  }
+  function flush(){
+    var value=pending.join('\n').trim();pending=[];
+    if(value&&!/^[-_*]{3,}$/.test(value)){current.paragraphs.push({text:value,number:++ordinal});}
+  }
+  function open(title,level){
+    if(current)flush();
+    while(stack.length&&stack[stack.length-1].level>=level)stack.pop();
+    current={title:title,level:level,parents:stack.slice(),paragraphs:[],index:sections.length};
+    sections.push(current);stack.push(current);
+  }
+  var structured=rows.some(function(line){
+    var md=line.match(/^\s*(#{1,6})\s+(.+)$/);
+    return !!(md&&(md[1].length>1||category(md[2])))||/^\s*[一二三四五六七八九十]+[、．]/.test(line)||/^\s*\d+\.\d+(?:\.\d+)*\s+/.test(line);
+  });
+  open('',0);
   rows.forEach(function(line){
     if(!line.trim()){flush();return;}
-    if(/^\s*#{1,6}\s+/.test(line)){flush();heading=line.replace(/^\s*#+\s*/,'');return;}
-    if(/^\s*\|/.test(line)){if(pending&&!/^\s*\|/.test(pending))flush();pending+=(pending?'\n':'')+line;return;}
-    if(/^\s*\|/.test(pending))flush();
-    if(/^\s*(?:\d+[.、．)]|[一二三四五六七八九十]+[、．]|[-*•]\s)/.test(line)){
-      flush();pending=line;flush();
-    }else pending+=(pending?'\n':'')+line;
+    var markdown=line.match(/^\s*(#{1,6})\s+(.+)$/);
+    var chapter=line.match(/^\s*([一二三四五六七八九十]+[、．])\s*(.+)$/);
+    var subheading=line.match(/^\s*(\d+\.\d+(?:\.\d+)*)\s+([^。！？]{1,100})$/);
+    if(markdown){
+      // Bind qualification headings to the preceding section at their
+      // own level. Chapter-wide restrictions must not disappear with an
+      // unselected final subsection.
+      var target=current, level=markdown[1].length;
+      for(var q=stack.length-1;q>=0;q--){if(stack[q].level<=level){target=stack[q];break;}}
+      var kind=category(target.title);
+      if(!kind){for(var q=target.parents.length-1;q>=0;q--){kind=category(target.parents[q].title);if(kind)break;}}
+      if(kind&&kind!=='limits'&&qualificationHeading(markdown[2])){
+        flush();current=target;target.hasQualification=true;
+        while(stack.length&&stack[stack.length-1]!==target)stack.pop();
+        pending.push('#### '+markdown[2].trim());return;
+      }
+      open(markdown[2].trim(),markdown[1].length);return;
+    }
+    if(chapter){open(chapter[1]+chapter[2],2);return;}
+    if(subheading){open(subheading[1]+' '+subheading[2],3);return;}
+    // Older flat reports put an explicit section label before a colon. Only
+    // that label determines its section; numbers and body keywords never do.
+    var labelled=line.match(/^\s*(?:\d+[.、．)]\s*)?([^：:\n]{2,40})[：:]/);
+    if(!structured&&labelled&&category(labelled[1])){open(labelled[1],2);pending.push(line);return;}
+    if(/^\s*\|/.test(line)){
+      if(pending.length&&!/^\s*\|/.test(pending[0]))flush();
+      pending.push(line);return;
+    }
+    if(pending.length&&/^\s*\|/.test(pending[0]))flush();
+    pending.push(line);
   });flush();
-  var groups=[
-    {title:'城市概况',preferred:[/区域基本盘|经济概况|地区生产总值/,/结构特征|产业结构|人口/],re:/经济|财政|人口/,limit:2},
-    {title:'产业判断与承载',preferred:[/产业方向.*依据/,/空间组织|空间布局/,/补链.*方向|补链抓手|制造端断点/],re:/产业基础|核心缺口|补链|承载/,limit:3},
-    {title:'企业线索',preferred:[/本市存量企业服务重点|本地企业/,/对接假设[一二三四五六七八九十0-9]|目标企业[一二三四五六七八九十0-9]/],re:/有限公司|集团|企业名称|目标企业/,limit:2},
-    {title:'政策工具与适用条件',preferred:[/区级政策工具|本地政策工具/,/国家层面政策工具/],re:/政策工具|政策意见|资助|补贴/,limit:2},
-    {title:'行动与待核事项',preferred:[/优先级最高核查项|待核实事项汇总|待确认事项/,/季度.*行动|全年行动|行动[：:]/],re:/核查事项|行动计划/,limit:2}
-  ];
+  sections.forEach(function(section){
+    var lineage=section.parents.concat([section]);section.group=null;
+    for(var i=lineage.length-1;i>=0;i--){var kind=category(lineage[i].title);if(kind){section.group=kind;break;}}
+    if(!section.group&&qualificationHeading(section.title))section.group='limits';
+  });
+  var groups=[{key:'city',title:'城市概况',limit:2},{key:'industry',title:'产业判断与承载',limit:2},
+    {key:'enterprise',title:'企业线索',limit:2},{key:'policy',title:'政策工具与适用条件',limit:2},
+    {key:'action',title:'行动与待核事项',limit:2}];
   var used={}, chunks=['> 快速简报仅摘录现有正文，不新增事实。原文的待核、推断与政策条件继续适用；未列出的内容请查阅研判报告及原始研究文件。'];
-  function qualify(row){return /条件|门槛|适用|上述|该(?:意见|政策|企业|公司|项目|通知)|核查事项|口径风险|待核实|待核验|未披露|有效期/.test(row.text);}
-  function add(index){
-    if(used[index]||!paragraphs[index]) return;
-    used[index]=true;
-    chunks.push('**原文第 '+(index+1)+' 段**\n'+paragraphs[index].text);
+  function addSection(section){
+    var available=section.paragraphs.filter(function(row){return !used[row.number];});
+    if(!available.length)return;
+    if(section.title)chunks.push('### '+section.title);
+    var first=available[0].number,last=available[available.length-1].number;
+    chunks.push('**原文第 '+first+(first===last?'':' 至 '+last)+' 段**\n'+available.map(function(row){used[row.number]=true;return row.text;}).join('\n\n'));
   }
   groups.forEach(function(group){
     chunks.push('## '+group.title);
-    var found=[];
-    function choose(expression){
-      for(var index=0;index<paragraphs.length&&found.length<group.limit;index++){
-        var row=paragraphs[index];
-        if(!used[index]&&found.indexOf(index)<0&&expression.test(row.heading+' '+row.text)&&row.text.replace(/[|\s:-]/g,'').length>15){found.push(index);return;}
-      }
-    }
-    group.preferred.forEach(choose);
-    while(found.length<group.limit){var before=found.length;choose(group.re);if(found.length===before)break;}
-    found.sort(function(a,b){return a-b;});
-    if(!found.length){chunks.push('现有正文未单列本项；请查看研判报告原文，不能据此认定不存在。');return;}
-    found.forEach(function(index){
-      add(index);
-      // Keep adjacent clauses so a headline amount cannot outlive its eligibility.
-      for(var offset=1;offset<=4;offset++){
-        var next=paragraphs[index+offset];
-        var nextText=next&&next.text.replace(/^\s*\d+[.、．)]\s*/,'');
-        var newSubject=nextText&&/^(?:区级政策工具|国家层面政策工具|本市存量企业服务重点|优先级最高核查项|20\d{2}年.*行动|空间组织)|方向对接假设/.test(nextText);
-        if(next&&!newSubject&&qualify(next)) add(index+offset); else break;
-      }
+    var candidates=sections.filter(function(section){return section.group===group.key&&section.paragraphs.length;});
+    var leaves=candidates.filter(function(section){return !candidates.some(function(other){return other.parents.indexOf(section)>=0;});});
+    var chosen=[], roots={};
+    // Cover separate original chapters before taking another subsection of
+    // the same chapter. Every chosen subsection remains whole, including its
+    // neighbouring conditions, uncertainty, tables and list items.
+    leaves.forEach(function(section){
+      var root=section.parents.filter(function(parent){return category(parent.title);})[0]||section;
+      if(chosen.length<group.limit&&!roots[root.index]){chosen.push(section);roots[root.index]=true;}
+    });
+    leaves.forEach(function(section){if(chosen.length<group.limit&&chosen.indexOf(section)<0)chosen.push(section);});
+    // An explicit qualification may govern earlier options as well (for
+    // example 'all above policies'). Never drop its owning section for the
+    // brevity limit; retain the subject and the complete qualification.
+    leaves.forEach(function(section){if(section.hasQualification&&chosen.indexOf(section)<0)chosen.push(section);});
+    chosen.sort(function(a,b){return a.index-b.index;});
+    if(!chosen.length){chunks.push('现有正文未单列本项；请查看研判报告原文，不能据此认定不存在。');return;}
+    chosen.forEach(function(section){
+      section.parents.forEach(function(parent){if(parent.group===group.key||!parent.group)addSection(parent);});
+      addSection(section);
     });
   });
-  var limits=[];
-  paragraphs.forEach(function(row,index){if(/时效性与来源限制|来源限制总说明|本报告.*(?:仅供|不构成)|未经.*核实.*不得|数据缺失.*不得编造/.test(row.text)&&!used[index]) limits.push(index);});
-  if(limits.length){chunks.push('## 原文的整体限制');limits.forEach(add);}
-  // Short unstructured reports are more useful intact than as empty sections.
-  if(!Object.keys(used).length&&paragraphs.length){chunks.push('## 正文摘录');paragraphs.slice(0,6).forEach(function(_,index){add(index);});}
+  var limits=sections.filter(function(section){return section.group==='limits'&&section.paragraphs.length;});
+  if(limits.length){chunks.push('## 原文的整体限制');limits.forEach(addSection);}
+  // Keep explicit report-wide limitations even when a flat source did not
+  // give them a separate heading. They are never used to classify a section.
+  var remaining=[];
+  sections.forEach(function(section){section.paragraphs.forEach(function(row){
+    if(!used[row.number]&&/时效性与来源限制|来源限制总说明|本报告.*(?:仅供|不构成)|未经.*核实.*不得|数据缺失.*不得编造/.test(row.text))remaining.push(row);
+  });});
+  if(remaining.length){if(!limits.length)chunks.push('## 原文的整体限制');remaining.forEach(function(row){used[row.number]=true;chunks.push('**原文第 '+row.number+' 段**\n'+row.text);});}
+  if(!Object.keys(used).length&&ordinal){chunks.push('## 正文摘录');sections.forEach(addSection);}
   return chunks.join('\n\n');
 }
-
 
 function reportExportSourceRecords(context){
   var records=[], seen={};
@@ -297,8 +360,8 @@ function downloadReportPDF(mode){
     '.cover{padding:0 0 14px;border-bottom:2px solid #1a56db;margin-bottom:18px;break-inside:avoid}.brand{font-size:12px;font-weight:700;color:#1a56db;margin-bottom:12px}'+
     'h1{font-size:24px;line-height:1.4;margin:0 0 7px;color:#0b183b}.subtitle{font-size:13px;margin-bottom:10px}.meta{font-size:10px;color:#667590}'+
     'h2,h3,h4{color:#0b183b;break-after:avoid;page-break-after:avoid;line-height:1.4}h2{font-size:15px;border-bottom:1px solid #dbeafe;margin:20px 0 10px;padding-bottom:6px}h3,h4{font-size:12px}'+
-    'p{margin:7px 0;orphans:3;widows:3}ul{padding-left:20px}li{margin:4px 0}table{width:100%;border-collapse:collapse;font-size:10px;margin:10px 0}thead{display:table-header-group}tr{break-inside:avoid}th,td{border:1px solid #d8e0ed;padding:6px;text-align:left;overflow-wrap:anywhere}th{background:#edf4ff}'+
-    '.num{color:#1a56db;font-weight:600}.source-list{font-size:9px;color:#475569}.source-list li{overflow-wrap:anywhere}a{color:#174b91;text-decoration:underline}'+
+    'blockquote{margin:8px 0;padding:2px 10px;border-left:3px solid #cbd5e1;color:#334155}blockquote p{margin:3px 0}hr{border:0;border-top:1px solid #dbeafe;margin:14px 0}.keep-next{break-after:avoid;page-break-after:avoid}p{margin:7px 0;orphans:3;widows:3}ul{padding-left:20px}li{margin:4px 0}table{width:100%;border-collapse:collapse;font-size:10px;margin:10px 0}thead{display:table-header-group}tr{break-inside:avoid}th,td{border:1px solid #d8e0ed;padding:6px;text-align:left;overflow-wrap:anywhere}th{background:#edf4ff}'+
+    '.num{color:#1a56db;font-weight:600}.source-list{font-size:9px;line-height:1.4;color:#475569;margin-top:12px}.source-list h2{font-size:11px;margin:10px 0 6px;padding-bottom:4px}.source-list ul{column-count:2;column-gap:20px;margin:4px 0;padding-left:14px}.source-list li{overflow-wrap:anywhere;break-inside:avoid;margin:2px 0}a{color:#174b91;text-decoration:underline}'+
     '.report-end{break-inside:avoid;page-break-inside:avoid;margin-top:16px;padding-top:10px;border-top:1px solid #d8e0ed;color:#667590;font-size:9px}.report-end p{margin:4px 0}'+
     '</style></head><body><header class="cover"><div class="brand">慧小招 · 招商研判</div><h1>'+esc(city)+' · '+kind+'</h1><div class="subtitle">'+esc(topic)+'</div><div class="meta">生成时间：'+esc(date)+' · '+statusHtml+'</div><p class="meta">'+(mode==='short'?'现有正文摘录，保留原文条件与不确定性。':'当前方向已保存正文；原始研究文件请从报告文件入口下载。')+'</p></header>'+
     '<main>'+reportMdToHtml(body)+'</main>'+
