@@ -192,7 +192,125 @@ def _merge_clues(old_clues, new_clues):
     return [by_id[i] for i in order]
 
 
-def _merge_map(old, new):
+import json as _chain_json
+import math as _chain_math
+import time as _chain_time
+
+_CHAIN_MAPS = ("chainByTopic", "chainEvidenceByTopic", "chainStatusByTopic")
+
+
+def _chain_source_matches(meta, topic, report, projects, key):
+    if not isinstance(projects, dict) or not isinstance(projects.get(key), dict):
+        return False
+    project = projects[key]
+    root = project.get('workspaceId') or key
+    if not isinstance(root, str) or not root:
+        return False
+    keys = [key] if root == key else [root, key]
+    if any(not isinstance(projects.get(item), dict) for item in keys):
+        return False
+    try:
+        supplied = _chain_json.loads(meta['sourceIdentity'], parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
+    except (ValueError, TypeError, KeyError):
+        return False
+    if not isinstance(supplied, dict):
+        return False
+    texts = report.get('aiReportByTopic') or {}
+    if not isinstance(texts, dict):
+        return False
+    expected = {'workspace': root, 'city': project.get('city') or '', 'topic': topic,
+                'selectedTopic': project.get('topic') or '',
+                'requestId': project.get('reportRequestId') or report.get('reportRequestId') or '',
+                'kb': [(projects.get(item) or {}).get('kb') or [] for item in keys],
+                'onboarding': project.get('onboarding') or {},
+                'report': texts.get(topic) or (report.get('text') if report.get('topic') == topic else '') or ''}
+    # Parsed equality permits JSON's equivalent 1/1.0 and Unicode/key ordering,
+    # while booleans remain distinct from numbers, as in JavaScript.
+    def equal(left, right):
+        if isinstance(left, bool) or isinstance(right, bool):
+            return type(left) is type(right) and left == right
+        if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+            if any(isinstance(value, float) and not _chain_math.isfinite(value) for value in (left, right)):
+                return False
+            return left == right
+        if type(left) is not type(right):
+            return False
+        if isinstance(left, dict):
+            return left.keys() == right.keys() and all(equal(left[k], right[k]) for k in left)
+        if isinstance(left, list):
+            return len(left) == len(right) and all(equal(a, b) for a, b in zip(left, right))
+        return left == right
+    return meta.get('requestId') == (project.get('reportRequestId') or '') and equal(supplied, expected)
+
+
+def _chain_bundle(record, topic, report, projects=None, key=None):
+    """Validate a complete saved graph; this is provenance, not a fact verdict."""
+    if not isinstance(record, dict) or not isinstance(report, dict):
+        return None
+    chain = (record.get("chainByTopic") or {}).get(topic) if isinstance(record.get("chainByTopic"), dict) else None
+    meta = (record.get("chainEvidenceByTopic") or {}).get(topic) if isinstance(record.get("chainEvidenceByTopic"), dict) else None
+    status = (record.get("chainStatusByTopic") or {}).get(topic) if isinstance(record.get("chainStatusByTopic"), dict) else None
+    texts = report.get("aiReportByTopic")
+    text = texts.get(topic) if isinstance(texts, dict) else None
+    if not text and report.get("topic") == topic:
+        text = report.get("text")
+    if not isinstance(meta, dict) or not isinstance(text, str) or not text:
+        return None
+    version = meta.get("generatedAt")
+    if (meta.get("contract") != "saved-excerpts-v1" or meta.get("scope") != "current-topic-v1"
+            or meta.get("topic") != topic or meta.get("reportText") != text
+            or not isinstance(meta.get("requestId"), str)
+            or not isinstance(meta.get("sourceIdentity"), str) or not meta["sourceIdentity"]
+            or isinstance(version, bool) or not isinstance(version, int)
+            or version <= 0 or version > int(_chain_time.time() * 1000) + 300000
+            or status != "ready" or not isinstance(chain, list) or len(chain) != 3):
+        return None
+    if [segment.get("seg") if isinstance(segment, dict) else None for segment in chain] != ["上游", "中游", "下游"]:
+        return None
+    if any(not isinstance(segment.get("nodes"), list) for segment in chain):
+        return None
+    if not _chain_source_matches(meta, topic, report, projects, key):
+        return None
+    return chain, meta, status, version
+
+
+def _merge_chain_maps(existing, incoming, report, projects=None, key=None):
+    """Merge graph/node/provenance/status atomically per topic, never whole maps.
+
+    Legacy caches are retained but cannot displace a versioned current-topic
+    graph. Invalid/partial/stale writes do not change any of the three fields.
+    Graphs cannot create report text or revive a removed project/topic.
+    """
+    result = {field: dict(existing.get(field) or {}) if isinstance(existing.get(field), dict) else {}
+              for field in _CHAIN_MAPS}
+    topics = set()
+    for field in _CHAIN_MAPS:
+        if isinstance(incoming.get(field), dict):
+            topics.update(incoming[field])
+    for topic in topics:
+        if not isinstance(topic, str) or not topic:
+            continue
+        new = _chain_bundle(incoming, topic, report, projects, key)
+        if new is None:
+            continue
+        old = _chain_bundle(existing, topic, report, projects, key)
+        # Equal versions keep the saved bundle, even if a late tab changes it.
+        if old is not None and new[3] <= old[3]:
+            continue
+        # Even if the report has changed, an older page must not replace a
+        # newer saved graph; its old graph remains non-renderable by identity.
+        old_meta = result["chainEvidenceByTopic"].get(topic)
+        old_version = old_meta.get("generatedAt") if isinstance(old_meta, dict) else None
+        if (isinstance(old_version, int) and not isinstance(old_version, bool)
+                and 0 < old_version <= int(_chain_time.time() * 1000) + 300000
+                and old_version >= new[3]):
+            continue
+        for field, value in zip(_CHAIN_MAPS, new[:3]):
+            result[field][topic] = value
+    return result
+
+
+def _merge_map(old, new, *, chain_projects=None):
     """按 key 合并 dict-of-dict（PROJECTS / REPORTSTATE / CITY_ACCOUNTS）：
     - 逐字段保留非空值；新增 key 直接并入。
     - kb 字段特判：非空列表也可能是「4 空主题」的占位骨架，按累计材料条数比较，
@@ -210,8 +328,19 @@ def _merge_map(old, new):
             merged[k] = v; continue
         base = merged.get(k)
         if not isinstance(base, dict):
-            merged[k] = dict(v); continue
+            merged[k] = dict(v)
+            if any(field in v for field in _CHAIN_MAPS):
+                bundles = _merge_chain_maps({}, v, merged[k], chain_projects, k)
+                for field in _CHAIN_MAPS:
+                    merged[k].pop(field, None)
+                    if bundles[field]:
+                        merged[k][field] = bundles[field]
+            continue
+        previous = dict(base)
+        chain_fields = any(field in v for field in _CHAIN_MAPS)
         for fk, fv in v.items():
+            if fk in _CHAIN_MAPS:
+                continue
             if fk == "kb":
                 # 材料多的一方胜出（相等时接受新值，允许内容更新）
                 if _kb_material_count(fv) >= _kb_material_count(base.get("kb")):
@@ -252,6 +381,11 @@ def _merge_map(old, new):
                     base[fk] = _cs
                 continue
             base[fk] = _keep_nonempty(base.get(fk), fv)
+        if chain_fields:
+            bundles = _merge_chain_maps(previous, v, base, chain_projects, k)
+            for field in _CHAIN_MAPS:
+                if field in previous or bundles[field]:
+                    base[field] = bundles[field]
     return merged
 
 

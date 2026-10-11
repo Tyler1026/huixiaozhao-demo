@@ -47,7 +47,7 @@ function boot(side) {
     'reportDemandActionButton', '_normalizeTopic', '_findExistingDemand', 'demandReportSnapshot',
     'restoreActionItems'].map(n => declaration(side, '12-tail.js', n)));
   functions.push(...['detailNeeds', 'detailReport', 'detailDocking'].map(n => declaration(side, '13.js', n)));
-  functions.push(declaration(side, '00.js', 'viewCurrentReport'));
+  functions.push(...['reportExportContext', 'reportMdToHtml', 'viewCurrentReport'].map(n => declaration(side, '00.js', n)));
   if (side === 'index') functions.push(declaration(side, '12-tail.js', 'reportBottomBarInner'));
   vm.runInContext(functions.join('\n'), c);
   return {c, parent, demand, report, elements, calls};

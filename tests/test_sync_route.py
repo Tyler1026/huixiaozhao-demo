@@ -80,6 +80,20 @@ class SyncRouteTests(unittest.TestCase):
                         return kept[0] if len(kept)==1 else ast.BoolOp(op=node.op,values=kept)
                 return node
         extracted=StripEmptyWriteFix().visit(extracted)
+        class StripChainSourceContext(ast.NodeTransformer):
+            def visit_Assign(self,node):
+                if any(isinstance(t,ast.Name) and t.id=='_chain_projects' for t in node.targets):
+                    return None
+                return self.generic_visit(node)
+            def visit_If(self,node):
+                # The else is the exact original _merge_map call; only the new
+                # REPORTSTATE path supplies authoritative project provenance.
+                if (isinstance(node.test,ast.Compare) and isinstance(node.test.left,ast.Name)
+                        and node.test.left.id=='k' and any(isinstance(c,ast.Constant) and c.value=='REPORTSTATE' for c in node.test.comparators)
+                        and node.orelse):
+                    return node.orelse
+                return self.generic_visit(node)
+        extracted=StripChainSourceContext().visit(extracted)
         # 【2026-09-30】卡死任务手动取消功能：_rr_rank 状态排序字典新增
         # 'cancelled': 4 键值对，让 cancelled 排在最高、任何调度回写都覆盖不了它。
         # 同样只剔除新增的键值对，不放宽比较标准。

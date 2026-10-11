@@ -57,9 +57,10 @@ function _funnelInput(p){
   var gaps=[]; try{ gaps=extractGapsForScan(p); }catch(e){}
   return {text:text, gaps:gaps};
 }
-function savedEvidenceIdentity(key, topic){
-  var p=PROJECTS[key];if(!p)return null;
-  var rs=(typeof REPORTSTATE!=='undefined'&&REPORTSTATE[key])||{},root=p.workspaceId||key;
+function savedEvidenceIdentity(key, topic, snapshot){
+  var projects=snapshot?snapshot.PROJECTS||{}:PROJECTS,states=snapshot?snapshot.REPORTSTATE||{}:(typeof REPORTSTATE!=='undefined'?REPORTSTATE:{});
+  var p=projects[key];if(!p)return null;
+  var rs=states[key]||{},root=p.workspaceId||key;
   function stable(v){
     if(Array.isArray(v))return v.map(stable);
     if(v&&typeof v==='object'){var out={};Object.keys(v).sort().forEach(function(k){if(v[k]!==undefined)out[k]=stable(v[k]);});return out;}
@@ -67,7 +68,7 @@ function savedEvidenceIdentity(key, topic){
   }
   var keys=root===key?[key]:[root,key];
   return JSON.stringify(stable({workspace:root,city:p.city||'',topic:topic,selectedTopic:p.topic||'',requestId:p.reportRequestId||rs.reportRequestId||'',
-    kb:keys.map(function(k){return (PROJECTS[k]||{}).kb||[];}),onboarding:p.onboarding||{},
+    kb:keys.map(function(k){return (projects[k]||{}).kb||[];}),onboarding:p.onboarding||{},
     report:(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'')||''}));
 }
 function runAIFunnel(projKey, done, onProgress){

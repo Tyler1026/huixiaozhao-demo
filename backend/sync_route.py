@@ -251,6 +251,8 @@ def handle_sync(self, raw, deps):
                 result[pk] = merged
             return result
 
+        # Graph provenance sees the final project materials regardless of JSON key order.
+        _chain_projects = _merge_map(existing.get('PROJECTS'), incoming.get('PROJECTS'))
         for k, v in incoming.items():
             # KB_CHAT 单独按会话合并,永不裸覆盖
             if k == 'KB_CHAT':
@@ -279,7 +281,10 @@ def handle_sync(self, raw, deps):
                 continue
             if k in ('PROJECTS', 'REPORTSTATE', 'CITY_ACCOUNTS'):
                 # 逐 key/逐字段合并，空值不覆盖非空——防止旧快照把已同步的 RAG/账号冲掉
-                existing[k] = _merge_map(existing.get(k), v)
+                if k == 'REPORTSTATE':
+                    existing[k] = _merge_map(existing.get(k), v, chain_projects=_chain_projects)
+                else:
+                    existing[k] = _merge_map(existing.get(k), v)
                 continue
             existing[k] = v
         # 同理把文件墓碑应用到已存 UPLOADS / KB_FILE_CHUNKS
