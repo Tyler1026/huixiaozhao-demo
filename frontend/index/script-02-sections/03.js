@@ -117,6 +117,7 @@ function _purgeAuthCache(){
   try{var raw=localStorage.getItem('huixiaozhao_kb_v1');if(raw)localStorage.setItem('huixiaozhao_kb_v1',JSON.stringify(_safeSyncSnapshot(JSON.parse(raw))));}catch(_){}
 }
 function _authResetView(){
+  if(typeof kbResetChatRequests==='function')kbResetChatRequests();
   PROJECTS={};USER_PROFILES={};CITY_ACCOUNTS={};INVITE_CODES={};
   ['REPORTSTATE','REPORT_HISTORY','UPLOADS','KB_FILE_CHUNKS','KB_CHAT','KB_CONFIRMS','KB_CONFIRM_TOMBS','KB_ITEM_TOMBS','KB_UNLOCKED','PENDING_CONFIRMS','DOCK_LOGS','SUBPROJ','UPLOAD_TOMBS','KB_CHAT_TOMBS','CITY_BASE_PACKAGES'].forEach(function(k){if(typeof window[k]!=='undefined')window[k]={};});
   ['DEMANDS','REPORT_REQUESTS','OPS_ENT'].forEach(function(k){if(typeof window[k]!=='undefined')window[k]=[];});
@@ -131,12 +132,13 @@ function _authAccept(auth){
   if(!auth||typeof auth.user!=='string'||!Array.isArray(auth.projectKeys))throw new Error('登录响应不完整，请重试');
   var keys=auth.projectKeys.filter(function(k){return typeof k==='string';});
   if(auth.projKey&&keys.indexOf(auth.projKey)<0&&auth.scope!=='admin')throw new Error('工作区授权不一致，请重试');
+  try{var selection=JSON.parse(localStorage.getItem('hxz_kb_selection_v1')||'{}');if(selection.user&&selection.user!==auth.user)localStorage.removeItem('hxz_kb_selection_v1');}catch(_){localStorage.removeItem('hxz_kb_selection_v1');}
   _authEpoch++;_authResetView();
   AUTH={user:auth.user,city:auth.city||'',projKey:auth.projKey||null,projectKeys:keys,role:auth.role||'member',scope:auth.scope||'user',who:auth.who||auth.user,org:auth.org||'',resident:!!auth.resident};
   _authState='ready';_authError='';cur=AUTH.projKey;view='knowledge';saveAuth();
   return AUTH;
 }
-function _authForget(){_authEpoch++;AUTH=null;_authState='anonymous';_authResetView();}
+function _authForget(){_authEpoch++;AUTH=null;_authState='anonymous';_authResetView();try{localStorage.removeItem('hxz_kb_selection_v1');}catch(_){}}
 function _authJson(path,body){
   var controller=typeof AbortController!=='undefined'?new AbortController():null;
   var timer;

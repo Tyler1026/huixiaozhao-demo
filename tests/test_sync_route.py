@@ -107,6 +107,16 @@ class SyncRouteTests(unittest.TestCase):
                     node.keys=[k for k,v in kept];node.values=[v for k,v in kept]
                 return node
         extracted=StripCancelledRank().visit(extracted)
+        # The session-selection fix changes exactly these assignments. Keep the
+        # legacy-merge gate intact everywhere else; behavior is tested separately.
+        class RestoreLegacyChatSelection(ast.NodeTransformer):
+            def visit_Assign(self, node):
+                if ast.dump(node) == ast.dump(ast.parse('selection = _chat_selection(A, B, sessions)').body[0]):
+                    return ast.parse("activeId = B.get('activeId') or A.get('activeId') or (sessions[-1]['id'] if sessions else None)").body[0]
+                if ast.dump(node) == ast.dump(ast.parse("result[ck] = {'sessions': sessions, **selection}").body[0]):
+                    return ast.parse("result[ck] = {'sessions': sessions, 'activeId': activeId}").body[0]
+                return self.generic_visit(node)
+        extracted=RestoreLegacyChatSelection().visit(extracted)
         ast.fix_missing_locations(extracted)
         self.assertEqual(ast.dump(expected),ast.dump(ast.Module(body=extracted.body,type_ignores=[])))
 
