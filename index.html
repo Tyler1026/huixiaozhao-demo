@@ -303,7 +303,7 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 .kb-session-item small{white-space:nowrap;color:#94a0b1;font-size:10px}
 .kb-session-item:hover{background:#edf2f9}.kb-session-item.active{background:#e7effa;color:#225f9f;font-weight:600}
 .kb-nav-empty{font-size:11px;color:#95a0ae;line-height:1.7;margin:4px 0}
-.kb-readiness{margin:22px 0 2px;border-top:1px solid #e5eaf2;padding-top:13px;font-size:11px;color:#8794a7}.kb-readiness summary{cursor:pointer}.kb-readiness #kbPageProgress{padding-top:8px}
+.sidebar>#kbProgressBox{margin-top:auto;flex-shrink:0}
 .kb-chat-panel{display:flex;flex-direction:column;min-width:0;min-height:0;position:relative;background:#fff}
 .kb-chat-panel #kbSessionBar{flex:0 0 auto;min-height:53px;border-bottom:1px solid #edf0f6}
 .kb-chat-panel #kbSessionBar>div{margin:0!important;padding:13px 22px!important;border:0!important;border-radius:0!important;background:transparent!important;min-height:53px;box-sizing:border-box}
@@ -7653,7 +7653,7 @@ function kbPage(p){
     '<aside id="kbTopicsPanel" class="kb-topics-panel" aria-label="历史会话"><div class="kb-pane-heading"><h2>历史对话</h2><button id="kbTopicsClose" class="kb-panel-close" type="button" onclick="kbClosePanels()" aria-label="关闭历史对话">×</button></div>'+
     '<button type="button" class="kb-new-conversation" onclick="kbNewSession(cur);kbClosePanels()"><span aria-hidden="true">＋</span> 新对话</button>'+
     '<section class="kb-nav-section kb-recent"><div class="kb-section-heading"><h3>最近对话</h3><button type="button" onclick="kbClosePanels();openKbHistory()">全部</button></div><div id="kbWorkspaceSessions">'+kbWorkspaceSessionsHtml()+'</div></section>'+
-    '<details class="kb-readiness"><summary>知识库状态</summary><div id="kbPageProgress">'+kbPageProgressInner(kbReadiness())+'</div></details></aside>'+
+    '</aside>'+
     '<section class="kb-chat-panel" aria-label="城市智库对话"><div id="kbSessionBar"></div>'+
     '<div class="knowledge-scroll" id="kbScroll" onscroll="kbToggleTopBtn()"><section id="kbWelcome" class="kb-welcome">'+
     '<h2>围绕城市资料，继续深入分析</h2><p>选择上方板块提问，或直接输入你关心的问题。</p></section>'+
