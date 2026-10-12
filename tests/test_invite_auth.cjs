@@ -249,11 +249,13 @@ async function bootPage(name, session, serverState = {PROJECTS: {}}) {
   const html = manifest[name].parts.map(file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8')).join('');
   const root = {innerHTML: '', style: {}}, calls = [], disk = new Map(), timers = [], events = {};
   const append = {appendChild() {}, removeChild() {}};
+  const bodyClasses = new Set();
+  const body = {...append, classList: {toggle(name, force) {const on = force === undefined ? !bodyClasses.has(name) : !!force; if (on) bodyClasses.add(name); else bodyClasses.delete(name); return on;}, contains(name) {return bodyClasses.has(name);}}};
   const ctx = {console: {log() {}, warn() {}}, Date, Math, Promise, JSON, AbortController, TextEncoder, URL, Uint8Array, Blob,
     location: {origin: 'http://localhost', search: '', href: 'http://localhost/'}, navigator: {}, performance: {now: () => Date.now()},
     localStorage: {getItem: key => disk.get(key) || null, setItem: (key, value) => disk.set(key, value), removeItem: key => disk.delete(key)},
     document: {getElementById: id => id === 'root' ? root : null, querySelector: selector => selector === '#root' ? root : null,
-      querySelectorAll: () => [], addEventListener() {}, documentElement: {style: {}}, head: append, body: append,
+      querySelectorAll: () => [], addEventListener() {}, documentElement: {style: {}}, head: append, body: body,
       createElement: () => ({style: {}, classList: {add() {}, remove() {}}, appendChild() {}, setAttribute() {}})},
     setInterval() {}, setTimeout(fn, ms) {timers.push({fn, ms}); return timers.length;}, clearTimeout() {},
     addEventListener(name, fn) {(events[name] ||= []).push(fn);},

@@ -1,9 +1,27 @@
 """Legacy sync route with explicit persistence dependencies and unchanged merge rules."""
 import json
+import math
 from dataclasses import dataclass
 from typing import Callable
 from .sync_merge import _apply_kb_item_tombs, _clue_tombstoned, _merge_invite_codes, _merge_kb_item_tombs, _merge_map
 from .city_workspaces import protect_city_sync
+
+
+def _chat_selection(old, incoming, sessions):
+    """Select independently of message length; stale snapshots cannot undo a click."""
+    valid = {s['id'] for s in sessions if isinstance(s, dict) and s.get('id')}
+    candidates = []
+    for priority, state in enumerate((old, incoming)):
+        if state.get('activeId') not in valid:
+            continue
+        value = state.get('selectedAt', 0)
+        stamp = float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0
+        stamp = stamp if math.isfinite(stamp) and stamp > 0 else 0
+        candidates.append((stamp, str(state['activeId']) if stamp else str(priority), state['activeId']))
+    if candidates:
+        stamp, _, active = max(candidates)
+        return {'activeId': active, 'selectedAt': stamp}
+    return {'activeId': sessions[-1]['id'] if sessions else None, 'selectedAt': 0}
 
 @dataclass(frozen=True)
 class SyncDependencies:
@@ -156,8 +174,8 @@ def handle_sync(self, raw, deps):
                 for se in A['sessions']: _take(se)
                 for se in B['sessions']: _take(se)
                 sessions = [by_sid[i] for i in order]
-                activeId = B.get('activeId') or A.get('activeId') or (sessions[-1]['id'] if sessions else None)
-                result[ck] = {'sessions': sessions, 'activeId': activeId}
+                selection = _chat_selection(A, B, sessions)
+                result[ck] = {'sessions': sessions, **selection}
             return result
         # 【2026-09-21】问答会话删除墓碑：两端合并，逐 key 取较新 ts。
         # 与 KB_ITEM_TOMBS 同一套思路（见上方 _apply_kb_item_tombs 的说明）。

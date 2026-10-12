@@ -515,6 +515,139 @@ function _mergeConfirms(incoming){
 }
 // 城市智库对话记录 {projKey:[{role:'user'|'ai', html:'...'}]}——切主题/切模块/刷新都不丢
 var KB_CHAT={};
+var _kbRequests={}, _kbTopicScopes={}, _kbRequestSeq=0;
+var KB_SELECTION_KEY='hxz_kb_selection_v1';
+function kbEscape(value){return String(value==null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function kbSelectionCache(){
+  try{var value=JSON.parse(localStorage.getItem(KB_SELECTION_KEY)||'{}');return AUTH&&value.user===AUTH.user?value:{user:AUTH&&AUTH.user,workspaces:{}};}catch(_){return {user:AUTH&&AUTH.user,workspaces:{}};}
+}
+function kbSelectionStamp(value){return typeof value==='number'&&isFinite(value)&&value>0?value:0;}
+function kbMergeSelection(a,b,sessions){
+  var valid={};sessions.forEach(function(s){valid[s.id]=true;});
+  var candidates=[a,b].map(function(s,i){return {id:s.activeId,ts:kbSelectionStamp(s.selectedAt),priority:i};}).filter(function(s){return valid[s.id];});
+  candidates.sort(function(x,y){return x.ts-y.ts||(x.ts?(String(x.id)>String(y.id)?1:String(x.id)<String(y.id)?-1:0):x.priority-y.priority);});
+  var chosen=candidates[candidates.length-1];
+  return {activeId:chosen?chosen.id:(sessions.length?sessions[sessions.length-1].id:null),selectedAt:chosen?chosen.ts:0};
+}
+function kbRememberSelection(key,st){
+  if(!AUTH||!_isAuthorizedChatKey(key))return;
+  var cache=kbSelectionCache();if(!cache.workspaces)cache.workspaces={};
+  cache.workspaces[key]={activeId:st.activeId,selectedAt:st.selectedAt};
+  try{localStorage.setItem(KB_SELECTION_KEY,JSON.stringify(cache));}catch(_){}
+}
+function kbApplySavedSelection(key,st){
+  var saved=(kbSelectionCache().workspaces||{})[key];
+  if(!saved||!st.sessions.some(function(s){return s.id===saved.activeId;}))return;
+  var selected=kbMergeSelection(st,saved,st.sessions);
+  st.activeId=selected.activeId;st.selectedAt=selected.selectedAt;
+}
+function kbSelectSession(key,st,id){
+  st.activeId=id;st.selectedAt=Math.max(Date.now(),kbSelectionStamp(st.selectedAt)+1);
+  kbRememberSelection(key,st);persist();kbSyncSession(key,st,true);
+}
+function kbSyncSession(key,st,selectionOnly){
+  if(!AUTH||_authState!=='ready'||!_isAuthorizedChatKey(key))return Promise.resolve(false);
+  var sessions=selectionOnly?st.sessions.filter(function(s){return s.id===st.activeId;}).map(function(s){return {id:s.id,title:s.title,ts:s.ts,messages:[]};}):st.sessions;
+  var body={KB_CHAT:{},RESET_GEN:RESET_GEN};body.KB_CHAT[key]={sessions:sessions,activeId:st.activeId,selectedAt:st.selectedAt||0};
+  return fetch('/api/sync',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),keepalive:!!selectionOnly}).then(function(r){return !!r.ok;}).catch(function(){return false;});
+}
+function kbRequestContext(){
+  if(!AUTH||_authState!=='ready'||!cur)return null;
+  var key=kbChatKey(cur),session=kbActiveSession(cur);if(!key||!session)return null;
+  return {projectKey:cur,key:key,sessionId:session.id,user:AUTH.user,epoch:_authEpoch};
+}
+function kbContextCurrent(ctx){
+  if(!ctx||!AUTH||_authState!=='ready'||ctx.epoch!==_authEpoch||ctx.user!==AUTH.user||ctx.projectKey!==cur||!_isAuthorizedChatKey(ctx.key))return false;
+  var st=KB_CHAT[ctx.key];return !!(st&&st.activeId===ctx.sessionId&&st.sessions.some(function(s){return s.id===ctx.sessionId;}));
+}
+function kbRequestKey(ctx){return ctx.key+'::'+ctx.sessionId;}
+function kbIsRequestPending(){var ctx=kbRequestContext();return !!(ctx&&_kbRequests[kbRequestKey(ctx)]);}
+function kbResetChatRequests(){
+  Object.keys(_kbRequests||{}).forEach(function(key){var req=_kbRequests[key];req.cancelled=true;if(req.controller)req.controller.abort();});
+  _kbRequests={};_kbTopicScopes={};if(typeof _kbSuggestCache!=='undefined')_kbSuggestCache={};
+  window._verifyRequestContext=null;window._verifyInProgress=false;
+}
+function kbCancelHiddenRequests(){
+  Object.keys(_kbRequests).forEach(function(key){var req=_kbRequests[key];if(!kbContextCurrent(req)){req.cancelled=true;if(req.controller)req.controller.abort();kbFinishRequest(req);}});
+}
+function kbRefreshWorkspace(){
+  try{if(typeof kbWorkspaceRefresh==='function')kbWorkspaceRefresh();}catch(_){}
+  try{updateKbConvCount();}catch(_){}
+  try{renderKbSessionBar();}catch(_){}
+}
+function kbPlainMessage(message){
+  if(typeof message.plainText==='string')return message.plainText;
+  var html=String(message.text||message.html||'');
+  try{var el=document.createElement('div');el.innerHTML=html;el.querySelectorAll('button,script,style,.kb-answer-footer,.answer-sources,.answer-note,.kb-source-list').forEach(function(n){n.remove();});return el.textContent||'';}catch(_){return html.replace(/<[^>]*>/g,' ');}
+}
+function kbHistory(session,query,excludeCurrent){
+  var messages=(session.messages||[]).filter(function(m){return (m.role==='user'||m.role==='ai'||m.role==='assistant')&&!m.error&&!m.streaming;}).slice();
+  if(excludeCurrent&&messages.length){var last=messages[messages.length-1];if(last.role==='user'&&kbPlainMessage(last).trim()===query.trim())messages.pop();}
+  var history=messages.slice(-8).map(function(m){return {role:m.role==='user'?'user':'assistant',content:kbPlainMessage(m).trim().slice(0,1500)};}).filter(function(m){return m.content;});
+  var remaining=8000;return history.reverse().map(function(m){m.content=remaining>0?m.content.slice(-remaining):'';remaining-=m.content.length;return m;}).filter(function(m){return m.content;}).reverse();
+}
+function kbScrollElement(container){return document.getElementById('kbScroll')||container;}
+function kbNearScrollBottom(element){return !!element&&(element.scrollHeight-(element.clientHeight||0)-element.scrollTop<=48);}
+function kbTrackScroll(ctx,container){
+  var element=kbScrollElement(container);if(ctx.scrollElement===element)return element;
+  if(ctx.scrollElement&&ctx.scrollListener&&ctx.scrollElement.removeEventListener)ctx.scrollElement.removeEventListener('scroll',ctx.scrollListener);
+  ctx.scrollElement=element;
+  ctx.scrollListener=function(){if(kbContextCurrent(ctx))ctx.followScroll=kbNearScrollBottom(element);};
+  if(element&&element.addEventListener)element.addEventListener('scroll',ctx.scrollListener,{passive:true});
+  return element;
+}
+function kbScrollToEnd(container){var element=kbScrollElement(container);if(element)element.scrollTop=element.scrollHeight;}
+function kbBeginRequest(query,container,history){
+  var ctx=kbRequestContext();if(!ctx||!container)return null;
+  kbCancelHiddenRequests();var key=kbRequestKey(ctx);
+  if(_kbRequests[key]){if(typeof toast==='function')toast('上一条回答仍在生成，请稍候');return null;}
+  var session=KB_CHAT[ctx.key].sessions.filter(function(s){return s.id===ctx.sessionId;})[0];
+  ctx.history=history||kbHistory(session,query,true);ctx.requestId='kb'+Date.now()+'_'+(++_kbRequestSeq);
+  ctx.controller=typeof AbortController!=='undefined'?new AbortController():null;ctx.container=container;ctx.cancelled=false;ctx.followScroll=true;
+  _kbRequests[key]=ctx;kbRefreshWorkspace();return ctx;
+}
+function kbFinishRequest(ctx){
+  if(ctx.scrollElement&&ctx.scrollListener&&ctx.scrollElement.removeEventListener)ctx.scrollElement.removeEventListener('scroll',ctx.scrollListener);
+  if(_kbRequests[kbRequestKey(ctx)]===ctx)delete _kbRequests[kbRequestKey(ctx)];
+  if(window._verifyRequestContext===ctx){window._verifyRequestContext=null;window._verifyInProgress=false;}
+  if(kbContextCurrent(ctx))kbRefreshWorkspace();
+}
+function kbScopeKey(){var ctx=kbRequestContext();return ctx?ctx.projectKey+'::'+ctx.sessionId:null;}
+function kbActiveTopic(){var key=kbScopeKey(),name=key&&_kbTopicScopes[key],p=P();return name&&p&&(p.kb||[]).filter(function(k){return k.t===name;})[0]||null;}
+function kbSafeSources(sources){
+  return (Array.isArray(sources)?sources:[]).filter(function(source){return source&&typeof source==='object';}).slice(0,20).map(function(source){
+    var urls=[];(Array.isArray(source.urls)?source.urls:[]).forEach(function(raw){try{var u=new URL(String(raw));if(/^https?:$/.test(u.protocol)&&!u.username&&!u.password&&urls.indexOf(u.href)<0)urls.push(u.href);}catch(_){}});
+    return {id:String(source.id||''),cite:String(source.cite||''),topic:String(source.topic||''),text:String(source.text||''),urls:urls,traceable:urls.length>0};
+  });
+}
+function kbSourcesHtml(sources){
+  if(!sources.length)return '<p class="kb-sources-empty">本次回答未返回可追溯材料，相关结论需要另行核实。</p>';
+  return sources.map(function(s,i){return '<article class="kb-source-card"><strong>['+(i+1)+'] '+kbEscape(s.cite||s.topic||'材料片段')+'</strong>'+
+    '<p>'+kbEscape(s.text.slice(0,220))+'</p>'+(s.text.length>220?'<details><summary>查看完整片段</summary><p>'+kbEscape(s.text)+'</p></details>':'')+
+    (s.urls.length?'<div class="kb-source-links">'+s.urls.map(function(u,n){return '<a href="'+kbEscape(u)+'" target="_blank" rel="noopener noreferrer">原始来源'+(s.urls.length>1?' '+(n+1):'')+'</a>';}).join(' ' )+'</div>':'<small>未附原始链接 · 待核来源</small>')+'</article>';}).join('');
+}
+function kbRenderSources(sources,context,state){
+  if(context&&!kbContextCurrent(context))return;
+  var list=document.getElementById('kbSourcesList'),title=document.getElementById('kbSourcesTitle');
+  sources=kbSafeSources(sources);
+  if(title)title.textContent='本次回答依据'+(sources.length?' · '+sources.length+' 条':'');
+  var empty=state==='idle'?'发送问题后，这里会显示回答实际使用的材料与原始链接。':state==='loading'?'正在查阅材料，回答依据会随本次请求更新。':state==='legacy'?'这条历史回答未保留来源清单，不能据此追溯到原始材料。':'';
+  if(list)list.innerHTML=empty?'<p class="kb-sources-empty">'+empty+'</p>':kbSourcesHtml(sources);
+}
+function kbSubmitQuestion(query,options){
+  options=options||{};query=String(query||'').trim();var container=options.container||document.getElementById('kbConv');
+  if(!query||!container)return false;
+  var current=kbRequestContext();if(!current)return false;
+  var session=KB_CHAT[current.key].sessions.filter(function(s){return s.id===current.sessionId;})[0];
+  var ctx=kbBeginRequest(query,container,kbHistory(session,query,false));if(!ctx)return false;
+  var node=document.createElement('div');node.className='message is-user';node.innerHTML='<div class="message-bubble"><p>'+kbEscape(query)+'</p></div>';
+  container.appendChild(node);kbChatPush('user',node.outerHTML,{context:ctx,plainText:query});
+  kbTrackScroll(ctx,container);kbScrollToEnd(container);
+  var topic=options.topic||kbActiveTopic();ctx.topic=topic?topic.t:'';
+  if(options.chunks)kbAnswerRender(container,query,options.chunks,(P()||{}).city,ctx);
+  else if(topic)kbRAGQueryWithHint(query,container,topic,ctx);else kbRAGQuery(query,container,ctx);
+  return true;
+}
 /* ══ KB_CHAT 会话级合并（唯一实现，三条恢复路径共用）══
  * 背景：问答记忆反复「消失」的根因始终是某条路径裸覆盖了 KB_CHAT。
  *   - restore()            读 localStorage（与管理端共用 LS_KEY，管理端固定写 {}）
@@ -663,7 +796,8 @@ function _mergeKbChat(incoming, local){
     };
     A.sessions.forEach(take); B.sessions.forEach(take);
     var sessions=order.map(function(id){return byId[id];});
-    merged[k]={sessions:sessions, activeId:B.activeId||A.activeId||(sessions.length?sessions[sessions.length-1].id:null)};
+    var selection=kbMergeSelection(A,B,sessions);
+    merged[k]={sessions:sessions,activeId:selection.activeId,selectedAt:selection.selectedAt};
   });
   // 一次性清理：2026-09-21 排查本 bug 时用 city:__probe__ 做过服务端合并探针。
   // 服务端 KB_CHAT 合并是「key 并集 + 永不删除」，该孤立键无法通过同步清掉，
@@ -708,13 +842,16 @@ function kbSessionStore(key){
   if(Array.isArray(v)){
     var msgs = v;
     var sess = { id:'s'+Date.now()+Math.floor(Math.random()*1000), title:kbDeriveTitle(msgs), ts:(msgs[0]&&msgs[0].ts)||Date.now(), messages:msgs };
-    KB_CHAT[key] = { sessions:[sess], activeId:sess.id };
+    KB_CHAT[key] = { sessions:[sess], activeId:sess.id, selectedAt:0 };
     return KB_CHAT[key];
   }
-  if(!v || typeof v!=='object'){ KB_CHAT[key] = { sessions:[], activeId:null }; return KB_CHAT[key]; }
+  if(!v || typeof v!=='object'){ KB_CHAT[key] = { sessions:[], activeId:null, selectedAt:0 }; return KB_CHAT[key]; }
   if(!v.sessions) v.sessions=[];
+  kbApplySavedSelection(key,v);
   return v;
 }
+function kbEnsureStore(key){return kbSessionStore(key);}
+function kbScopeTitle(){var topic=kbActiveTopic();return topic?topic.t:'全库问答';}
 // 从消息数组推导会话标题：取首条用户提问前20字
 function kbDeriveTitle(msgs){
   if(!msgs||!msgs.length) return '新对话';
@@ -744,17 +881,20 @@ function kbActiveMsgs(key){ var s=kbActiveSession(key); return s?s.messages:[]; 
 function kbNewSession(key, silent){
   key = key || cur; var st=kbSessionStore(key); if(!st) return null;
   var s = { id:'s'+Date.now()+Math.floor(Math.random()*1000), title:'新对话', ts:Date.now(), messages:[] };
-  st.sessions.push(s); st.activeId=s.id;
-  if(!silent){ persist(); var c=document.getElementById('kbConv'); if(c) c.innerHTML=''; try{kbChatReplay();}catch(_){}; try{renderKbSessionBar();}catch(_){} }
+  st.sessions.push(s);
+  kbSelectSession(kbChatKey(key),st,s.id);kbCancelHiddenRequests();
+  if(!silent){var c=document.getElementById('kbConv');if(c)c.innerHTML='';try{kbChatReplay();}catch(_){};try{renderKbSessionBar();}catch(_){};kbRefreshWorkspace();}
   return s;
 }
 // 切换到指定会话
 function kbSwitchSession(id){
   var st=kbSessionStore(); if(!st) return;
-  st.activeId=id; persist();
+  if(!st.sessions.some(function(s){return s.id===id;}))return;
+  kbSelectSession(kbChatKey(cur),st,id);kbCancelHiddenRequests();
   var c=document.getElementById('kbConv'); if(c) c.innerHTML='';
   try{kbChatReplay();}catch(_){}; try{renderKbSessionBar();}catch(_){}
   try{closeKbHistory();}catch(_){}
+  kbRefreshWorkspace();
 }
 // 删除指定会话
 function kbDeleteSession(id){
@@ -762,34 +902,20 @@ function kbDeleteSession(id){
   // 先打墓碑：否则下次 restoreFromServer 会把它从服务端合并回来
   try{ _tombKbChatSession(kbChatKey(cur), id); }catch(_){}
   st.sessions=st.sessions.filter(function(x){return x.id!==id;});
-  if(st.activeId===id) st.activeId = st.sessions.length?st.sessions[st.sessions.length-1].id:null;
-  persist();
+  if(st.activeId===id)kbSelectSession(kbChatKey(cur),st,st.sessions.length?st.sessions[st.sessions.length-1].id:null);
+  persist();kbCancelHiddenRequests();
   var c=document.getElementById('kbConv'); if(c) c.innerHTML='';
   try{kbChatReplay();}catch(_){}; try{renderKbSessionBar();}catch(_){}
+  kbRefreshWorkspace();
 }
 // 渲染对话区顶部的会话条：新对话按钮 + 当前会话名 + 历史会话入口
 function renderKbSessionBar(){
-  var bar=document.getElementById('kbSessionBar'); if(!bar) return;
-  var st=kbSessionStore(cur);
-  var active = st ? st.sessions.filter(function(x){return x.id===st.activeId;})[0] : null;
-  var cnt = st ? st.sessions.filter(function(s){return s.messages&&s.messages.length;}).length : 0;
-  var curName = (active&&active.messages&&active.messages.length)?(active.title||'新对话'):'新对话';
-  bar.innerHTML =
-    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:8px 10px;background:linear-gradient(180deg,#fbfdff,#f5f8fd);border:1px solid #e6eef8;border-radius:11px">'+
-      // 新对话：主按钮，蓝底
-      '<button onclick="kbNewSession()" title="开启一个新的问答会话" style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:#fff;background:linear-gradient(180deg,#0a63c2,#013582);border:0;border-radius:9px;padding:7px 13px;cursor:pointer;box-shadow:0 2px 6px rgba(1,53,130,.18)">'+
-        '<span style="font-size:14px;line-height:1">✚</span>新对话</button>'+
-      // 当前会话名：带小圆点 + 省略
-      '<div style="flex:1;min-width:0;display:flex;align-items:center;gap:7px">'+
-        '<span style="flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:#12b886;box-shadow:0 0 0 3px #d7f5ea"></span>'+
-        '<span style="font-size:12.5px;color:#334155;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+curName+'</span>'+
-      '</div>'+
-      // 历史会话：胶囊按钮 + 计数徽标
-      '<button onclick="openKbHistory()" title="查看全部历史会话" style="flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:550;color:#0757ad;background:#fff;border:1px solid #cfe0f1;border-radius:9px;padding:7px 12px;cursor:pointer;transition:all .15s" onmouseover="this.style.background=\'#f0f6fe\';this.style.borderColor=\'#a9c8ec\'" onmouseout="this.style.background=\'#fff\';this.style.borderColor=\'#cfe0f1\'">'+
-        '<span style="font-size:13px;line-height:1">🕘</span>历史会话'+
-        (cnt?('<span style="min-width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px;font-size:11px;font-weight:700;color:#fff;background:#0757ad;border-radius:9px">'+cnt+'</span>'):'')+
-      '</button>'+
-    '</div>';
+  var bar=document.getElementById('kbSessionBar');if(!bar||!cur)return;
+  var active=kbActiveSession(cur);if(!active)return;
+  var messages=active.messages||[],turns=messages.filter(function(m){return m.role==='user';}).length;
+  var pending=kbIsRequestPending();
+  bar.innerHTML='<div class="kb-session-status"><strong>'+kbEscape(active.title||'新对话')+'</strong>'+
+    '<span>'+turns+' 轮提问</span><span role="status">'+(pending?'正在回答…':turns?'当前会话':'等待提问')+'</span></div>';
 }
 // 打开历史会话抽屉
 function openKbHistory(){
@@ -826,7 +952,9 @@ function openKbHistory(){
 }
 function closeKbHistory(){ var d=document.getElementById('kbHistoryDrawer'); if(d) d.remove(); }
 // 记录一条消息：把 DOM 节点的 outerHTML 存进当前会话的对话数组并持久化
-function kbChatPush(role, html){
+function kbChatPush(role, html, options){
+  options=options||{};
+  if(options.context&&!kbContextCurrent(options.context))return null;
   if(!cur) return;
   var _s=kbActiveSession(cur); if(!_s) return;
   // 只存 bubble 内容文本，避免 data-URI 头像导致 localStorage 超限
@@ -839,7 +967,11 @@ function kbChatPush(role, html){
   // 去重：同 role + 相同文本在 3 秒内不重复存
   var last=_s.messages[_s.messages.length-1];
   if(last && last.role===role && last.text===text && Date.now()-last.ts<3000) return;
-  _s.messages.push({role:role, text:text, ts:Date.now()});
+  var message={id:options.id||'m'+Date.now()+'_'+(++_kbRequestSeq),role:role,text:text,ts:Date.now()};
+  if(typeof options.plainText==='string')message.plainText=options.plainText;
+  if(options.sources)message.sources=kbSafeSources(options.sources);
+  if(options.error)message.error=true;
+  _s.messages.push(message);
   // 首条用户提问确定会话标题（原为"新对话"时）
   if(role==='user' && (_s.title==='新对话'||!_s.title)) _s.title=kbDeriveTitle(_s.messages);
   _s.ts=Date.now();
@@ -848,13 +980,10 @@ function kbChatPush(role, html){
   persist();
   // 问答记忆:绕过5秒防抖立即 fetch 同步一次（不用 sendBeacon，因为它对 >64KB payload 会静默 return false;
   // 本项目 localStorage 整体 body 已 2MB，必须走 fetch 才能确保推上去）。
-  try{
-    if(!AUTH||_authState!=='ready')return;
-    var _kbBody=JSON.stringify(_safeSyncSnapshot(JSON.parse(localStorage.getItem(LS_KEY)||'{}')));
-    fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:_kbBody}).catch(function(){});
-  }catch(_){}
+  kbSyncSession(kbChatKey(cur),kbSessionStore(cur),false);
   try{updateKbConvCount();}catch(_){}
   try{renderKbSessionBar();}catch(_){}
+  kbRefreshWorkspace();return message;
 }
 // 更新最后一条 AI 消息内容（流式回复结束后调用）
 function kbChatUpdateLast(html){
@@ -875,23 +1004,24 @@ var _kbSuggestCache={};
 function kbGenSuggestions(){
   var listEl=document.getElementById('kbSuggestList');
   var p=P(); if(!listEl||!p||!p.city) return;
-  var city=p.city;
+  var city=p.city,owner=kbRequestContext(),projectKey=cur;
   function fill(qs){
+    if(!owner||!kbContextCurrent(owner))return;
+    listEl=document.getElementById('kbSuggestList');if(!listEl)return;
     if(!qs||!qs.length){ listEl.innerHTML='<li style="font-size:12.5px;color:#9aa5b5">· 暂无建议，直接在下方输入你的问题即可</li>'; return; }
     listEl.innerHTML=qs.map(function(q){
-      var safe=q.replace(/'/g,"\\'");
-      return '<li style="font-size:12.5px;color:#1a56db;cursor:pointer;line-height:1.7" onclick="askKB(\''+safe+'\')">• '+q+'</li>';
+      return '<li><button class="kb-suggestion" data-question="'+kbEscape(q)+'" onclick="askKB(this.dataset.question)">'+kbEscape(q)+'</button></li>';
     }).join('');
   }
   // 会话内缓存，避免每次渲染都重复调用
-  if(_kbSuggestCache[cur]){ fill(_kbSuggestCache[cur]); return; }
+  if(_kbSuggestCache[projectKey]){ fill(_kbSuggestCache[projectKey]); return; }
   var chunks=(typeof buildKBCorpus==='function')?buildKBCorpus(city):[];
   fetch(KB_API,{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({question:'请为'+city+'生成4个招商建议问题',chunks:chunks,city:city,stream:false,mode:'suggest'})
   }).then(function(r){return r.ok?r.json():null;}).then(function(j){
     var txt=(j&&j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content)||'';
     var qs=txt.split('\n').map(function(l){return l.replace(/^[\s\d.、)）·•\-]+/,'').trim();}).filter(function(l){return l.length>3;}).slice(0,4);
-    if(qs.length){ _kbSuggestCache[cur]=qs; }
+    if(qs.length&&owner&&kbContextCurrent(owner)){ _kbSuggestCache[projectKey]=qs; }
     fill(qs);
   }).catch(function(){ fill(null); });
 }
@@ -914,12 +1044,16 @@ function restoreIngestCtx(m){
 }
 // 把已存的历史对话回放进 #kbConv（在 render 重建容器后调用）
 function kbChatReplay(){
-  if(document.getElementById('kbSuggestList')) kbGenSuggestions();
+  kbCancelHiddenRequests();
   try{renderKbSessionBar();}catch(_){}
   var c=document.getElementById('kbConv');
   if(!c||!cur) return;
   var _msgs=kbActiveMsgs(cur);
-  if(!_msgs||!_msgs.length) return;
+  c.innerHTML='';
+  kbRenderSources([],kbRequestContext(),'idle');
+  kbRefreshTopicScope();
+  kbRefreshWorkspace();
+  if(!_msgs||!_msgs.length)return;
   var frag='';
   var _lastActions=null;
   _msgs.forEach(function(m){
@@ -939,14 +1073,20 @@ function kbChatReplay(){
     } else {
       // 回放时去除交互按钮（onclick已失效）
       var safeContent=content.replace(/<button[^>]*onclick[^>]*>.*?<\/button>/gi,'').replace(/<div[^>]*id="kbIngestActions"[^>]*>.*?<\/div>/gi,'');
+      if(m.id&&Array.isArray(m.sources))safeContent+='<div class="kb-answer-footer"><button class="kb-answer-source-button" onclick="kbOpenAnswerSources('+kbEscape(JSON.stringify(m.id))+')">查看本次依据 · '+m.sources.length+' 条</button></div>';
       frag+='<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble">'+safeContent+'</div></div>';
     }
 
   });
   c.insertAdjacentHTML('beforeend', frag);
+  var ctx=kbRequestContext(),pending=ctx&&_kbRequests[kbRequestKey(ctx)];
+  var lastAnswer=_msgs.slice().reverse().filter(function(m){return m.role==='ai'||m.role==='assistant';})[0];
+  kbRenderSources(pending?pending.sources||[]:lastAnswer&&lastAnswer.sources||[],ctx,pending?(pending.receivedSources?'':'loading'):lastAnswer?(Array.isArray(lastAnswer.sources)?'':'legacy'):'idle');
+  kbRefreshWorkspace();
   // 恢复最近一批上传的分析上下文，使重建的按钮点击后仍能拿到 chunks
   if(_lastActions) try{ restoreIngestCtx(_lastActions); }catch(_){}
-  c.scrollTop=c.scrollHeight;
+  if(!pending||pending.followScroll)kbScrollToEnd(c);
+  if(pending)kbTrackScroll(pending,c);
 }
 // 招引方向派生的项目（方案A三层：产业方向→报告→招引方向项目）{产业key:[{name,stage,from}]}
 var SUBPROJ={};
@@ -1187,16 +1327,7 @@ function dockPanel(){
     '</div>';
 }
 // 城市智库快捷提问（顶部"可以这样问"）→ 填入输入框，由用户点发送
-function askKB(q){
-  var c=document.getElementById('kbConv');
-  if(!c){fillComposer(q);return;}
-  var ud=document.createElement('div');
-  ud.className='message is-user';
-  ud.innerHTML='<div class="message-bubble"><p>'+q+'</p></div>';
-  c.appendChild(ud);c.scrollTop=c.scrollHeight;
-  kbChatPush('user', ud.outerHTML);
-  kbRAGQuery(q,c);
-}
+function askKB(q){return kbSubmitQuestion(q);}
 // 把问题填进输入框并聚焦（不自动发送）
 function fillComposer(q){
   var ta=$('#composerTa');
@@ -1210,6 +1341,13 @@ function fillComposer(q){
    ══════════════════════════════════════════════════════════════ */
 
 /* ── 1. 知识语料库 buildKBCorpus(city) ── */
+function kbKnownChunk(item,topic,index){
+  var structured=item&&typeof item==='object'?item:null;
+  var chunk={id:topic+':'+index,topic:topic,tags:topicTags(topic),text:structured?String(structured.text||''):String(item||''),cite:topic,
+    origin:structured?(structured.origin||'ai'):'ai',nature:structured?(structured.nature||'base'):'base'};
+  ['src','source','sources','url','urls','quote'].forEach(function(field){if(structured&&structured[field]!==undefined)chunk[field]=structured[field];});
+  return chunk;
+}
 function buildKBCorpus(city){
   var p=P(); var isSZ=city&&city.indexOf('随州')>=0;
   // 每条 chunk: {id, topic, tags:[], text, cite}
@@ -1217,11 +1355,8 @@ function buildKBCorpus(city){
   if(p&&p.kb){
     p.kb.forEach(function(k){
       (k.known||[]).forEach(function(t,i){
-        // 兼容结构化 chunk（对象含 origin/nature/src）与旧字符串
-        var txt=t, org='ai', nat='base', src='';
-        if(t&&typeof t==='object'){ txt=t.text||''; org=t.origin||'ai'; nat=t.nature||'base'; src=t.src||''; }
-        chunks.push({id:k.t+':'+i, topic:k.t, tags:topicTags(k.t), text:txt, cite:k.t,
-                     origin:org, nature:nat, src:src});
+        var chunk=kbKnownChunk(t,k.t,i);
+        chunks.push(chunk);
       });
     });
   }
@@ -1472,142 +1607,90 @@ function renderMarkdown(md){
       .replace(/\n{2,}/g,'</p><p style="margin:8px 0">')
       .replace(/\n/g,'<br>');
 }
-function kbAnswerRender(container, query, chunks, city){
-  // 1. 思考气泡
-  var thinking = document.createElement('div');
-  thinking.className = 'message';
-  thinking.innerHTML = '<img src="'+aiAvatar()+'">'+
-    '<div class="message-bubble" style="display:flex;align-items:center;gap:8px;color:#9aa5b5;font-size:13px">'+
-    '<span class="kb-thinking-dot"></span>正在调用 AI 分析…</div>';
-  container.appendChild(thinking);
-  container.scrollTop = container.scrollHeight;
-
-  // 2. 创建回答气泡（流式填充）
-  var ansNode = document.createElement('div');
-  ansNode.className = 'message';
-  ansNode.style.display = 'none';
-  var bodyDiv = document.createElement('div');
-  bodyDiv.className = 'kb-stream-body';
-  ansNode.innerHTML = '<img src="'+aiAvatar()+'">';
-  var bubble = document.createElement('div');
-  bubble.className = 'message-bubble';
-  bubble.appendChild(bodyDiv);
-  ansNode.appendChild(bubble);
-  container.appendChild(ansNode);
-
-  var accText = '';
-  var t0 = Date.now();
-
-
-  fetch(KB_API, {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({question:query, chunks:chunks, city:city, stream:true, mode:'chat', prefs:curOnbPrefs()})
-  }).then(function(resp){
-    thinking.remove();
-    ansNode.style.display = '';
-
-    if(!resp.ok){
-      return resp.json().then(function(e){
-        bodyDiv.innerHTML = '<span style="color:#ef4444">服务错误：'+(e.error||resp.status)+'</span>';
-      });
+async function kbAnswerRender(container, query, chunks, city, context){
+  var ctx=context||kbBeginRequest(query,container);if(!ctx)return false;
+  ctx.topic=ctx.topic||(kbActiveTopic()||{}).t||'';
+  var thinking=document.createElement('div');thinking.className='message';
+  thinking.innerHTML='<img src="'+aiAvatar()+'"><div class="message-bubble">正在查阅材料…</div>';
+  container.appendChild(thinking);kbTrackScroll(ctx,container);kbScrollToEnd(container);
+  var ansNode=document.createElement('div');ansNode.className='message';
+  var bubble=document.createElement('div');bubble.className='message-bubble';
+  var bodyDiv=document.createElement('div');bodyDiv.className='kb-stream-body';
+  bubble.appendChild(bodyDiv);ansNode.innerHTML='<img src="'+aiAvatar()+'">';ansNode.appendChild(bubble);
+  var accText='',sources=[],receivedSources=false,sawDone=false,reader=null;
+  function current(){return !ctx.cancelled&&kbContextCurrent(ctx);}
+  function requireCurrent(){if(!current()){if(ctx.controller)ctx.controller.abort();var e=new Error('请求已离开原会话');e.name='AbortError';throw e;}}
+  function display(){
+    requireCurrent();var live=document.getElementById('kbConv');if(live&&live!==container)container=live;
+    var scroll=kbTrackScroll(ctx,container),follow=ctx.followScroll&&kbNearScrollBottom(scroll);
+    if(thinking.parentNode)thinking.remove();if(ansNode.parentNode!==container)container.appendChild(ansNode);
+    return follow;
+  }
+  function renderStream(value,plain){var follow=display();if(plain)bodyDiv.textContent=value;else bodyDiv.innerHTML=value;if(follow)kbScrollToEnd(container);}
+  function event(line){
+    if(!line.startsWith('data:'))return;
+    var raw=line.slice(5).trim();if(raw==='[DONE]'){sawDone=true;return;}if(!raw)return;
+    var data;try{data=JSON.parse(raw);}catch(_){return;}
+    if(data.error)throw new Error('AI 服务未完成本次回答，请重试');
+    if(data.type==='kb_sources'){
+      if(data.scope&&data.scope.projectKey&&data.scope.projectKey!==ctx.projectKey)throw new Error('回答来源不属于当前工作区');
+      sources=kbSafeSources(data.sources);ctx.sources=sources;ctx.receivedSources=true;receivedSources=true;kbRenderSources(sources,ctx);return;
     }
-
-    var reader = resp.body.getReader();
-    var decoder = new TextDecoder();
-    var buf = '';
-
-    function pump(){
-      reader.read().then(function(d){
-        if(d.done){
-          // 兜底：流结束但正文为空（reasoning 吃光 token 或后端翻译层未捕获 content 事件）
-          if(!accText){
-            bodyDiv.innerHTML = '<span style="color:#ef4444">AI 未返回有效回答，请重试<br><small style="color:#9aa5b5">可能原因：推理消耗过多 token，正文内容被截断</small></span>';
-            kbChatPush('ai', ansNode.outerHTML);
-            return;
-          }
-          // 完成：追加来源 + 追问
-          var elapsed = Date.now()-t0;
-          var cites = [...new Set(chunks.map(function(c){return c.cite;}).filter(Boolean))];
-          var citeTags = cites.map(function(c){
-            return '<span style="display:inline-block;padding:2px 8px;background:#f0f4ff;color:#1a56db;border-radius:12px;font-size:11px;margin:2px 3px">📌 '+c+'</span>';
-          }).join('');
-
-          // 追问按钮
-          var _cy = city || (P()&&P().city) || '本市';
-          var followups = [_cy+'优先补链的核心环节？', _cy+'各园区如何分工承接？', _cy+'本地链主还缺哪些关键配套？'];
-          var followHtml = '<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">'+
-            followups.map(function(f){
-              return '<button onclick="kbSendQuestion(this,\''+f.replace(/'/g,"\\'")+'\')" '+
-                'style="padding:5px 11px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:20px;font-size:12px;color:#0b183b;cursor:pointer;transition:background .1s" '+
-                'onmouseover="this.style.background=\'#eef2ff\'" onmouseout="this.style.background=\'#f5f7fb\'">'+f+'</button>';
-            }).join('')+
-          '</div>';
-
-          var footer = (citeTags?'<div style="margin-top:8px">'+citeTags+'</div>':'')+
-
-            followHtml+
-            '<div style="margin-top:8px;padding:8px 10px;background:#f9fafb;border-radius:8px;font-size:11px;color:#9aa5b5;line-height:1.6">⚠ 以上内容基于公开信息与慧小招实测数据，园区承载、企业采购规模及领导具体交办仍需政府授权材料确认</div>';
-
-          bubble.insertAdjacentHTML('beforeend', footer);
-          container.scrollTop = container.scrollHeight;
-          // 存档最终完整的 AI 回复气泡（含来源/追问/免责），刷新或切换后可回放
-          kbChatPush('ai', ansNode.outerHTML);
-          return;
-        }
-
-        buf += decoder.decode(d.value, {stream:true});
-        var lines2 = buf.split('\n');
-        buf = lines2.pop(); // 保留不完整行
-
-        lines2.forEach(function(line){
-          if(!line.startsWith('data:')) return;
-          var data = line.slice(5).trim();
-          if(data === '[DONE]') return;
-          try{
-            var j = JSON.parse(data);
-            var delta = (j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||'';
-            if(delta){
-              accText += delta;
-              bodyDiv.innerHTML = '<p style="margin:0;line-height:1.75">'+renderMarkdown(accText)+'</p>';
-              container.scrollTop = container.scrollHeight;
-            }
-            // 修复"先卡住再涌出"：联网搜索/思考阶段正文未开始时，显示动态进度而非静止卡死
-            var rc=(j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.reasoning_content)||'';
-            if(rc && !accText){
-              var _lbl = rc==='[searching]' ? 'AI 正在联网搜索最新信息' : 'AI 正在深度思考';
-              bodyDiv.innerHTML = '<span style="color:#9aa5b5;font-size:12.5px;display:inline-flex;align-items:center;gap:8px">'+
-                '<span class="kb-thinking-dot"></span>'+_lbl+'（已 '+Math.round((Date.now()-t0)/1000)+'s）…</span>';
-              container.scrollTop = container.scrollHeight;
-            }
-          }catch(e){}
-        });
-        pump();
-      });
+    var choice=data.choices&&data.choices[0],delta=choice&&choice.delta||{};
+    if(choice&&choice.finish_reason==='stop')sawDone=true;
+    if(delta.content){accText+=delta.content;renderStream('<p>'+renderMarkdown(accText)+'</p>');}
+    else if(delta.reasoning_content&&!accText){renderStream(delta.reasoning_content==='[searching]'?'正在检索相关材料…':'正在整理回答…',true);}
+  }
+  try{
+    requireCurrent();kbRenderSources([],ctx,'loading');
+    var resp=await fetch(KB_API,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+      signal:ctx.controller?ctx.controller.signal:undefined,
+      body:JSON.stringify({question:query,chunks:chunks,city:city,projectKey:ctx.projectKey,topic:ctx.topic,stream:true,mode:'chat',history:ctx.history,prefs:curOnbPrefs()})});
+    requireCurrent();if(!resp.ok)throw new Error('AI 服务暂时不可用（'+resp.status+'），请重试');
+    if(!resp.body||!resp.body.getReader)throw new Error('浏览器未收到可读的回答流，请重试');
+    reader=resp.body.getReader();var decoder=new TextDecoder(),buf='';
+    while(true){
+      var chunk=await reader.read();requireCurrent();
+      if(chunk.done){buf+=decoder.decode();if(buf.trim())event(buf);break;}
+      buf+=decoder.decode(chunk.value,{stream:true});var lines=buf.split('\n');buf=lines.pop();lines.forEach(event);
     }
-    pump();
-
-  }).catch(function(err){
-    thinking.remove();
-    ansNode.style.display = '';
-    bodyDiv.innerHTML = '<span style="color:#ef4444">连接失败：'+err.message+
-      '<br><small style="color:#9aa5b5">AI 服务暂时不可用，请稍后重试</small></span>';
-  });
+    requireCurrent();if(!sawDone||!accText.trim())throw new Error('回答未完整返回，请重试');
+    var follow=display();bodyDiv.innerHTML='<p>'+renderMarkdown(accText)+'</p>';
+    var messageId=ctx.requestId+'_answer';
+    bubble.insertAdjacentHTML('beforeend','<div class="kb-answer-footer">'+
+      '<button class="kb-answer-source-button" onclick="kbOpenAnswerSources('+kbEscape(JSON.stringify(messageId))+')">查看本次依据 · '+sources.length+' 条</button>'+
+      (!receivedSources?'<span>本次未收到来源清单，结论待核实</span>':'')+
+      '<small>公开材料供辅助研判；政策适用、承载条件与企业意向仍需核实。</small></div>');
+    kbChatPush('ai',ansNode.outerHTML,{context:ctx,id:messageId,plainText:accText,sources:sources});
+    kbRenderSources(sources,ctx);if(follow)kbScrollToEnd(container);return true;
+  }catch(error){
+    if(current()&&error.name!=='AbortError'){
+      renderStream('<p class="kb-answer-error">'+kbEscape(error.message||'回答失败，请重试')+'</p>');
+      kbChatPush('ai',ansNode.outerHTML,{context:ctx,error:true,plainText:''});
+    }
+    return false;
+  }finally{
+    if(thinking.parentNode)thinking.remove();
+    if(!current()&&reader&&reader.cancel)try{await reader.cancel();}catch(_){}
+    kbFinishRequest(ctx);
+  }
 }
-
-function kbSendQuestion(btn, q){
-  if(btn){btn.style.opacity='0.5';btn.disabled=true;}
-  var c=document.getElementById('kbConv')||document.getElementById('conv');
-  if(!c)return;
-  var ud=document.createElement('div');
-  ud.className='message is-user';
-  ud.innerHTML='<div class="message-bubble"><p>'+q+'</p></div>';
-  c.appendChild(ud); c.scrollTop=c.scrollHeight;
-  kbChatPush('user', ud.outerHTML);
-  kbRAGQuery(q, c);
+function kbOpenAnswerSources(id){
+  var ctx=kbRequestContext();if(!ctx)return;
+  var session=KB_CHAT[ctx.key].sessions.filter(function(s){return s.id===ctx.sessionId;})[0];
+  var message=(session.messages||[]).filter(function(m){return m.id===id;})[0];
+  if(!message)return;
+  kbRenderSources(message.sources||[],ctx,Array.isArray(message.sources)?'':'legacy');
+  if(typeof kbShowSourcesPanel==='function'){kbShowSourcesPanel();return;}
+  var page=document.getElementById('kbWorkspace');if(!page)return;
+  var desktop=window.matchMedia&&window.matchMedia('(min-width:1121px)').matches;
+  if(desktop)page.classList.remove('kb-sources-hidden');
+  else {page.classList.remove('kb-topics-open');page.classList.add('kb-sources-open');}
+  var button=document.getElementById('kbToggle-sources');if(button)button.setAttribute('aria-expanded','true');
 }
+function kbSendQuestion(btn,q){return kbSubmitQuestion(q);}
 
-function kbRAGQueryWithHint(query, container, kbTopic){
+function kbRAGQueryWithHint(query, container, kbTopic, context){
   var p=P(); if(!p) return;
   var corpus=buildKBCorpus(p.city);
   // 检索更多候选（50），保证上传附件/政策材料真实命中不被置顶挤掉或因高频被IDF压出候选池。
@@ -1623,54 +1706,27 @@ function kbRAGQueryWithHint(query, container, kbTopic){
     topicUploads.forEach(function(uc){ if(seen.indexOf(uc.text)<0){ chunks.unshift(uc); seen.push(uc.text); } });
     // known 条目置顶，但最多 3 条，给检索结果+上传附件留出名额
     var pinned=kbTopic.known.slice(0,3).map(function(t,i){
-      return {id:'pin:'+i,topic:kbTopic.t,tags:topicTags(kbTopic.t),text:t,cite:kbTopic.t+'(置顶)'};
+      var chunk=kbKnownChunk(t,kbTopic.t,i);chunk.id='pin:'+i;chunk.cite=kbTopic.t+'(置顶)';return chunk;
     });
     pinned.reverse().forEach(function(pc){if(seen.indexOf(pc.text)<0){chunks.unshift(pc);seen.push(pc.text);}});
     chunks=chunks.slice(0,20);
   }
-  kbAnswerRender(container,query,chunks,p.city);
+  kbAnswerRender(container,query,chunks,p.city,context);
 }
 
-function kbRAGQuery(query, container){
+function kbRAGQuery(query, container, context){
   var p=P(); if(!p) return;
   var corpus=buildKBCorpus(p.city);
   // topK 从 5→20→60：候选池过小会把上传政策材料(如负面清单,一次上传即多条chunk)挤出，导致漏召回。
   var chunks=kbSearch(query, corpus, 60);
-  kbAnswerRender(container, query, chunks, p.city);
+  kbAnswerRender(container, query, chunks, p.city,context);
 }
 
 
 /* ══ RAG ENGINE END ══ */
 
-function kbAsk(q,k){
-  var c=$('#kbConv');if(!c)return;
-  var _uHtml='<div class="message is-user" style="margin-top:14px"><div class="message-bubble"><p>'+q+'</p></div></div>';
-  c.insertAdjacentHTML('beforeend',_uHtml);
-  kbChatPush('user', _uHtml);
-  c.scrollTop=c.scrollHeight;
-  var p0=P();
-  var bullet0=k.known.map(function(x){return '<li style="margin-bottom:5px">'+_kbText(x)+'</li>';}).join('');
-  var intro0='结合'+p0.city+'「'+k.t+'」当前已知情况：<ul style="margin:8px 0 8px 18px;padding:0;line-height:1.7">'+bullet0+'</ul>';
-  var tip0=(k.t.indexOf('产业')>-1||k.t.indexOf('主导')>-1)?
-    '<p style="margin-top:5px">本地配套率不足与核心系统外购是当前最大补链切入点，建议优先针对这些缺口方向招引。</p>':
-    (k.t.indexOf('园区')>-1)?
-    '<p style="margin-top:5px">具体厂房面积、能耗指标与用地条件仍以政府授权材料为准，以上为初步研判。</p>':
-    (k.t.indexOf('链主')>-1||k.t.indexOf('企业')>-1)?
-    '<p style="margin-top:5px">骨干企业采购规模与技术路线需进一步核实；以上为公开信息初步归类。</p>':
-    '<p style="margin-top:5px">方向性政策表述已识别，具体交办口径需补充领导最新发言后确认。</p>';
-  var ans=intro0+tip0;
-  var srcs=k.calls.map(function(s){return '<span>'+s+'</span>'}).join('');
-  setTimeout(function(){
-    var _aHtml='<div class="message" style="margin-top:14px"><img src="'+aiAvatar()+'"><div class="message-bubble"><p>'+ans+'</p>'+
-      '<div class="answer-sources"><em>本次回答调用（可追溯）：</em>'+srcs+'</div>'+
-      '<div class="answer-note">⚠ 公开信息仅用于辅助研判；园区承载、企业采购和领导任务仍需政府授权材料确认。</div></div></div>';
-    c.insertAdjacentHTML('beforeend',_aHtml);
-    kbChatPush('ai', _aHtml);
-    c.scrollTop=c.scrollHeight;
-  },400);
-}
+function kbAsk(q,k){return kbSubmitQuestion(q,{topic:k});}
 
-/* ── 确认/修改 known 条目 ── */
 function confirmKbItem(kbIdx,itemIdx){
   var p=P();if(!p)return;
   if(!KB_CONFIRMS[cur])KB_CONFIRMS[cur]={};
@@ -2125,56 +2181,40 @@ function closeKbDetail(){
   if(m)m.remove();
 }
 
-function setKbActiveTopic(idx,k,conv){
-  var rows=document.querySelectorAll('.topic-row');
-  rows.forEach(function(r,ri){
-    r.style.boxShadow=ri===idx?'0 0 0 2.5px #1a56db,0 4px 18px rgba(26,86,219,.15)':'';
-    r.style.borderColor=ri===idx?'#1a56db':'';
-    r.style.background=ri===idx?'#f0f4ff':'';
+function kbRefreshTopicScope(){
+  var topic=kbActiveTopic(),p=P();
+  document.querySelectorAll('.kb-topic-card[data-kb-topic],.topic-row').forEach(function(row,index){
+    var value=row.getAttribute&&row.getAttribute('data-kb-topic');
+    var active=!!topic&&(value===topic.t||String(index)===String((p.kb||[]).indexOf(topic))||value===String((p.kb||[]).indexOf(topic)));
+    if(row.classList)row.classList.toggle('active',active);
+    row.setAttribute('aria-pressed',active?'true':'false');
   });
-  var old=document.getElementById('kbTopicBadge');if(old)old.remove();
-  var CM={'主导产业与产业链':{bg:'#eff6ff',br:'#bfdbfe',tx:'#1d4ed8',dt:'#3b82f6'},
-    '园区与承载条件':{bg:'#f0fdf4',br:'#bbf7d0',tx:'#166534',dt:'#22c55e'},
-    '链主与存量企业':{bg:'#fdf4ff',br:'#e9d5ff',tx:'#6b21a8',dt:'#a855f7'},
-    '政策、规划与领导关注':{bg:'#fffbeb',br:'#fde68a',tx:'#92400e',dt:'#f59e0b'}};
-  var c=CM[k.t]||{bg:'#f5f7fb',br:'#e8edf5',tx:'#4a5568',dt:'#9aa5b5'};
-  var badge=document.createElement('div');badge.id='kbTopicBadge';
-  badge.style.cssText='margin:0 0 12px;padding:10px 14px;background:'+c.bg+';border:1.5px solid '+c.br+';border-radius:12px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:10';
-  badge.innerHTML='<span style="width:8px;height:8px;border-radius:50%;background:'+c.dt+';flex:0 0 auto"></span>'
-    +'<div style="flex:1"><div style="font-size:11px;font-weight:650;color:'+c.tx+';letter-spacing:.4px">当前提问主题</div>'
-    +'<div style="font-size:13px;font-weight:700;color:'+c.tx+'">'+k.icon+' '+k.t+'</div></div>'
-    +'<button onclick="clearKbActiveTopic()" style="background:none;border:none;color:'+c.tx+';opacity:.5;cursor:pointer;font-size:15px;padding:2px 6px">✕</button>';
-  if(conv){conv.insertBefore(badge,conv.children[1]||null);}
-  setTimeout(renderComposer,0);
+  var label=document.getElementById('kbScopeLabel');if(label)label.textContent=kbScopeTitle();
+  var bar=document.getElementById('kbTopicHintBar');if(bar)bar.style.display=topic?'':'none';
+  var hint=document.getElementById('kbTopicHintText');if(hint)hint.textContent=topic?topic.t:'';
+}
+function setKbActiveTopic(idx,k){
+  var key=kbScopeKey();if(key)_kbTopicScopes[key]=k.t;
+  if(typeof renderComposer==='function')renderComposer();kbRefreshTopicScope();
 }
 function clearKbActiveTopic(){
-  document.querySelectorAll('.topic-row').forEach(function(r){
-    r.style.boxShadow='';r.style.borderColor='';r.style.background='';
-  });
-  var b=document.getElementById('kbTopicBadge');if(b)b.remove();
-  renderComposer();
+  var key=kbScopeKey();if(key)delete _kbTopicScopes[key];
+  var old=document.getElementById('kbTopicBadge');if(old)old.remove();
+  if(typeof renderComposer==='function')renderComposer();kbRefreshTopicScope();
 }
-
-// 「基于这个主题提问」→ 在城市智库对话区直接问答（回复对应 + 底部调用来源）
+// Choosing a topic prepares an editable question; only Send calls the model.
 function askAboutKb(i){
-  var k=P().kb[i]; if(!k) return;
+  var p=P(),k=p&&p.kb&&p.kb[i];if(!k)return;
   var qMap={
-    '主导产业与产业链':P().city+'主导产业链上补链的核心缺口有哪些？结合配套率和链主外采情况分析。',
-    '园区与承载条件':P().city+'各园区如何分工承接不同细分产业？厂房、能耗与用地条件是否满足？',
-    '链主与存量企业':P().city+'本地链主企业的外采依赖集中在哪些核心环节？招引上游配套的优先级如何？',
-    '政策、规划与领导关注':P().city+'在「'+P().topic+'」方向，政策支持最强、待干部确认的关键事项有哪些？'
+    '主导产业与产业链':p.city+'主导产业链上补链的核心缺口有哪些？结合配套率和链主外采情况分析。',
+    '园区与承载条件':p.city+'各园区如何分工承接不同细分产业？厂房、能耗与用地条件是否满足？',
+    '链主与存量企业':p.city+'本地链主企业的外采依赖集中在哪些核心环节？招引上游配套的优先级如何？',
+    '政策、规划与领导关注':p.city+'在「'+p.topic+'」方向，政策支持最强、待干部确认的关键事项有哪些？'
   };
-  var q=qMap[k.t]||('请结合「'+k.t+'」主题数据，分析'+P().city+'的现状与优先推进的招引方向。');
-  closeKbDetail();
-  if(view!=='knowledge'){view='knowledge';render();}
-  var c=document.getElementById('kbConv');
-  if(!c){setTimeout(function(){askAboutKb(i);},100);return;}
-  var ud=document.createElement('div');ud.className='message is-user';
-  ud.innerHTML='<div class="message-bubble"><p>'+q+'</p></div>';
-  c.appendChild(ud);c.scrollTop=c.scrollHeight;
-  kbChatPush('user', ud.outerHTML);
-  setKbActiveTopic(i,k,c);
-  kbRAGQueryWithHint(q,c,k);
+  var query=qMap[k.t]||('请结合「'+k.t+'」主题数据，分析'+p.city+'的现状与优先推进的招引方向。');
+  closeKbDetail();if(view!=='knowledge'){view='knowledge';render();}
+  setKbActiveTopic(i,k);
+  kbDraftQuestion(query);
 }
 // 真实文件选择器：弹系统文件夹
 function pickLocalFile(kbTopicIdx){
@@ -2452,6 +2492,10 @@ function kbVerifyMaterial(){
   var kbIdx=window._lastIngestKbIdx;
   var p=P(); if(!p) return; if(!newChunks.length){ toast('请先上传材料后再校验'); return; }
 
+  var requestContainer=document.getElementById('kbConv');
+  var requestContext=kbBeginRequest('',requestContainer);if(!requestContext)return;
+  function requestCurrent(){return !requestContext.cancelled&&kbContextCurrent(requestContext);}
+  window._verifyRequestContext=requestContext;
   // 只把校验按钮变为加载态，其他两个按钮保留
   window._verifyInProgress=true;
   var verifyBtn=document.querySelector('#kbIngestActions [data-action="verify"]'); if(verifyBtn){verifyBtn.disabled=true;verifyBtn.textContent='🔍 校验中…';}
@@ -2464,7 +2508,7 @@ function kbVerifyMaterial(){
   qd.innerHTML='<div class="message-bubble"><p>'+q+'</p></div>';
   c.appendChild(qd); c.scrollTop=c.scrollHeight;
   var _ks=document.querySelector('.knowledge-scroll'); if(_ks) _ks.scrollTop=_ks.scrollHeight;
-  kbChatPush('user', qd.outerHTML);
+  kbChatPush('user', qd.outerHTML,{context:requestContext,plainText:q});
 
   // 把新文件原文和智库结论都直接嵌入 question，让模型两份原文逐字对比
   // 新文件原文
@@ -2607,18 +2651,26 @@ function kbVerifyMaterial(){
 
   // 涉 AI 必过 RAG：校验也要吃进该城市智库语料（否则无从比对）
   var _vChunks=[]; try{ _vChunks=kbSearch(prompt, buildKBCorpus(p.city), 6)||[]; }catch(e){ _vChunks=[]; }
+  function requestFailed(err){
+    thinking.remove();
+    if(requestCurrent()){c.appendChild(ansNode);bodyDiv.textContent='本次分析未完成，请重试。';}
+    kbFinishRequest(requestContext);
+  }
   fetch(KB_API,{
+    signal:requestContext.controller?requestContext.controller.signal:undefined,
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:prompt, chunks:_vChunks, city:p.city, stream:true, mode:'verify', prefs:curOnbPrefs()})
+    body:JSON.stringify({question:prompt, chunks:_vChunks, city:p.city,projectKey:requestContext.projectKey,topic:topicLabel,stream:true, mode:'verify', prefs:curOnbPrefs()})
   }).then(function(resp){
+    if(!requestCurrent()){thinking.remove();kbFinishRequest(requestContext);return;}
     thinking.remove();
     bodyDiv.innerHTML='<span style="color:#9aa5b5;font-size:12px"><span class="gov-spin" style="margin-right:6px"></span>AI 正在逐条核验数据点…</span>';
     c.appendChild(ansNode); c.scrollTop=c.scrollHeight;
-    if(!resp.ok){ bodyDiv.innerHTML='<span style="color:#ef4444">服务错误：'+resp.status+'</span>'; return; }
+    if(!resp.ok){requestFailed(new Error('http'));return;}
     var reader=resp.body.getReader(), dec=new TextDecoder(), buf='', _firstChunk=true;
     function pump(){
       reader.read().then(function(d){
+        if(!requestCurrent()){if(reader.cancel)reader.cancel().catch(function(){});kbFinishRequest(requestContext);return;}
         if(d.done){
           var elapsed=Date.now()-t0;
           // 判定优先级：先看 AI 首行的结构化结论标记，最可靠；关键词兜底只作为补充。
@@ -2661,7 +2713,7 @@ function kbVerifyMaterial(){
             // 存重写后的文本：面板兜底解析时才与正文、抬头同一份内容（行号也对得上）
             window._lastVerifyText=_shownText;
             window._lastVerifyKbIdx=(kbIdx!=null?kbIdx:0);
-            setTimeout(function(){ kbConfirmOverwrite(); }, 300);
+            setTimeout(function(){if(kbContextCurrent(requestContext))kbConfirmOverwrite();},300);
           }
           // 兜底：bodyDiv 为空但有内容时直接渲染纯文本（同样用重写后的文本）
           if(_shownText && !bodyDiv.innerHTML.trim()){
@@ -2671,7 +2723,8 @@ function kbVerifyMaterial(){
           window._verifyInProgress=false;
           if(verifyBtn){verifyBtn.disabled=false;verifyBtn.textContent='🔍 校验材料可信度';verifyBtn.style.background='#fff7ed';verifyBtn.style.color='#c2410c';verifyBtn.style.border='1.5px solid #fed7aa';}
 
-          kbChatPush('ai', ansNode.outerHTML);
+          kbChatPush('ai', ansNode.outerHTML,{context:requestContext,plainText:accText,sources:requestContext.sources||[]});
+          kbFinishRequest(requestContext);
           return;
         }
         buf+=dec.decode(d.value,{stream:true});
@@ -2689,13 +2742,10 @@ function kbVerifyMaterial(){
             if(rc && !accText){ bodyDiv.innerHTML='<span style="color:#9aa5b5;font-size:12px"><span class="gov-spin" style="margin-right:6px"></span>AI 深度推理中（已思考 '+Math.round((Date.now()-t0)/1000)+'s）…</span>'; c.scrollTop=c.scrollHeight; }}catch(e3){}
         });
         pump();
-      });
+      }).catch(requestFailed);
     }
     pump();
-  }).catch(function(err){
-    thinking.remove(); c.appendChild(ansNode);
-    bodyDiv.innerHTML='<span style="color:#ef4444">连接失败：'+err.message+'</span>';
-  });
+  }).catch(requestFailed);
 }
 
 /* ── 校验发现矛盾后：解析冲突项并弹出「是否覆盖原有数据」确认面板 ── */
@@ -2778,6 +2828,9 @@ function kbIncrementalAnalysis(){
   var kbIdx=window._lastIngestKbIdx;
   var p=P(); if(!p) return; if(!newChunks.length){ toast('请先上传材料后再分析'); return; }
 
+  var requestContainer=document.getElementById('kbConv');
+  var requestContext=kbBeginRequest('',requestContainer);if(!requestContext)return;
+  function requestCurrent(){return !requestContext.cancelled&&kbContextCurrent(requestContext);}
   var incrBtn=document.querySelector('#kbIngestActions button:first-child'); if(incrBtn){incrBtn.disabled=true;incrBtn.textContent='📄 分析中…';}
 
 
@@ -2788,7 +2841,7 @@ function kbIncrementalAnalysis(){
   qd.innerHTML='<div class="message-bubble"><p>'+q+'</p></div>';
   c.appendChild(qd); c.scrollTop=c.scrollHeight;
   var _ks=document.querySelector('.knowledge-scroll'); if(_ks) _ks.scrollTop=_ks.scrollHeight;
-  kbChatPush('user', qd.outerHTML);
+  kbChatPush('user', qd.outerHTML,{context:requestContext,plainText:q});
 
   // 构建现有结论摘要，告知 AI 避免重复
   // question 只放简短指令，现有结论摘要用于提示 AI，新材料走 chunks
@@ -2822,17 +2875,25 @@ function kbIncrementalAnalysis(){
   var accText='';
   var t0=Date.now();
 
+  function requestFailed(err){
+    thinking.remove();
+    if(requestCurrent()){c.appendChild(ansNode);bodyDiv.textContent='本次分析未完成，请重试。';}
+    kbFinishRequest(requestContext);
+  }
   fetch(KB_API,{
+    signal:requestContext.controller?requestContext.controller.signal:undefined,
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:prompt, chunks:newChunks.slice(0,6), city:p.city, stream:true, mode:'chat', prefs:curOnbPrefs()})
+    body:JSON.stringify({question:prompt, chunks:newChunks.slice(0,6), city:p.city,projectKey:requestContext.projectKey,topic:topicLabel,stream:true, mode:'chat', prefs:curOnbPrefs()})
   }).then(function(resp){
+    if(!requestCurrent()){thinking.remove();kbFinishRequest(requestContext);return;}
     thinking.remove();
     c.appendChild(ansNode); c.scrollTop=c.scrollHeight;
-    if(!resp.ok){ bodyDiv.innerHTML='<span style="color:#ef4444">服务错误：'+resp.status+'</span>'; return; }
+    if(!resp.ok){requestFailed(new Error('http'));return;}
     var reader=resp.body.getReader(), dec=new TextDecoder(), buf='';
     function pump(){
       reader.read().then(function(d){
+        if(!requestCurrent()){if(reader.cancel)reader.cancel().catch(function(){});kbFinishRequest(requestContext);return;}
         if(d.done){
           var elapsed=Date.now()-t0;
           // AI 判定与现有数据一致/无新增：不展示“新要点”面板，避免把结论句本身误当新要点
@@ -2860,7 +2921,8 @@ function kbIncrementalAnalysis(){
           bubble.insertAdjacentHTML('beforeend','<div style="font-size:10.5px;color:#b0bac8;margin-top:6px">仅基于新材料 · '+elapsed+'ms · '+newChunks.length+' 个片段</div>');
           var _ib=document.querySelector('#kbIngestActions button:first-child');
           if(_ib){_ib.disabled=false;_ib.textContent='✅ 已分析';_ib.style.background='#f0fdf4';_ib.style.color='#059669';_ib.style.border='1.5px solid #86efac';_ib.onclick=null;}
-          kbChatPush('ai', ansNode.outerHTML);
+          kbChatPush('ai', ansNode.outerHTML,{context:requestContext,plainText:accText,sources:requestContext.sources||[]});
+          kbFinishRequest(requestContext);
           return;
         }
         buf+=dec.decode(d.value,{stream:true});
@@ -2872,13 +2934,10 @@ function kbIncrementalAnalysis(){
             if(dl){accText+=dl;bodyDiv.innerHTML='<p style="margin:0;line-height:1.75">'+renderMarkdown(accText)+'</p>';c.scrollTop=c.scrollHeight;}}catch(e){}
         });
         pump();
-      });
+      }).catch(requestFailed);
     }
     pump();
-  }).catch(function(err){
-    thinking.remove(); c.appendChild(ansNode);
-    bodyDiv.innerHTML='<span style="color:#ef4444">连接失败：'+err.message+'</span>';
-  });
+  }).catch(requestFailed);
 }
 
 /* 新要点追加面板 HTML（供首次渲染与 kbChatReplay 回放复用，保持按钮一致且可点击） */
@@ -3153,29 +3212,25 @@ function kbRAGQueryFull(){
   var chunks=knownChunks.concat(allUploadChunks).slice(0,12);
 
   var autoQ='根据已上传的全部材料，'+p.city+'在「'+topicLabel+'」方向有哪些关键发现？请综合分析。';
-  var qd=document.createElement('div'); qd.className='message is-user';
-  qd.innerHTML='<div class="message-bubble"><p>'+autoQ+'</p></div>';
-  c.appendChild(qd); c.scrollTop=c.scrollHeight;
-  var _ks=document.querySelector('.knowledge-scroll'); if(_ks) _ks.scrollTop=_ks.scrollHeight;
-  kbChatPush('user', qd.outerHTML);
-  kbAnswerRender(c, autoQ, chunks, p.city);
+  return kbSubmitQuestion(autoQ,{chunks:chunks});
 }
 function kbFileParsed(fname){
-  var c=$('#kbConv');if(!c)return;
+  var c=$('#kbConv'),context=kbRequestContext();if(!c||!context)return;
   var _uHtml='<div class="message is-user" style="margin-top:14px"><div class="message-bubble"><p>[已上传本地材料] '+fname+'</p></div></div>';
   c.insertAdjacentHTML('beforeend',_uHtml);
-  kbChatPush('user', _uHtml);
+  kbChatPush('user', _uHtml,{context:context});
   setTimeout(function(){
+    if(!kbContextCurrent(context))return;
     var _aHtml='<div class="message" style="margin-top:14px"><img src="'+aiAvatar()+'"><div class="message-bubble"><p>已解析 <b>'+fname+'</b> 并并入本地材料库。识别到与当前主题相关的要点，已更新到右侧「本次回答可调用」清单，可据此继续提问。</p><div class="answer-sources"><span>调用：'+fname+'</span></div></div></div>';
     c.insertAdjacentHTML('beforeend',_aHtml);
-    kbChatPush('ai', _aHtml);
+    kbChatPush('ai', _aHtml,{context:context});
     c.scrollTop=c.scrollHeight;
   },400);
   toast('已解析并加入本地材料库');
 }
 function sendMsg(){var ta=$('#composerTa');if(!ta)return;var v=ta.value.trim();if(!v)return;
   // 城市智库页：留在本页作答（回复进 kbConv）
-  if(view==='knowledge'){doSend(v);ta.value='';ta.style.height='auto';return;}
+  if(view==='knowledge'){if(doSend(v)!==false){ta.value='';ta.style.height='auto';}return;}
   // 项目工作区：留在本页，基于项目上下文作答（回复进 #conv）
   if(view==='subwork'){doSend(v);ta.value='';ta.style.height='auto';return;}
   // 其他非首页：切回当前研判再作答
@@ -3184,14 +3239,7 @@ function sendMsg(){var ta=$('#composerTa');if(!ta)return;var v=ta.value.trim();i
 function doSend(v){
   // 城市智库页：走 RAG 检索引擎
   if(view==='knowledge'){
-    var _kbC=document.getElementById('kbConv');
-    if(!_kbC)return;
-    var _ud=document.createElement('div');
-    _ud.className='message is-user';
-    _ud.innerHTML='<div class="message-bubble"><p>'+v+'</p></div>';
-    _kbC.appendChild(_ud);_kbC.scrollTop=_kbC.scrollHeight;
-    kbChatPush('user', _ud.outerHTML);
-    kbRAGQuery(v,_kbC);return;
+    return kbSubmitQuestion(v);
   }
   // 项目工作区：结合项目上下文自由问答，命中快捷意图则走 subReply
   if(view==='subwork'){

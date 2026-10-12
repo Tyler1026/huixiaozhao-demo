@@ -1372,6 +1372,7 @@ function ctxBar(icon,strong,span){
 function composer(){
   var sub=view==='subwork';
   var isKb=view==='knowledge';
+  if(isKb) return kbComposer();
   var activeTopic=null;
   if(isKb){var b=document.getElementById('kbTopicBadge');
     if(b){var tel=b.querySelectorAll('div>div');tel.forEach(function(d){if(d.style&&d.fontSize==='13px')activeTopic=d.textContent.trim();});
@@ -1406,13 +1407,29 @@ function composer(){
     '<button onclick="uploadHint()">查看建议材料清单</button></div></div>';
 }
 
+function kbComposer(){
+  var scope=typeof kbScopeTitle==='function'?kbScopeTitle():'';
+  var busy=typeof kbIsRequestPending==='function'&&kbIsRequestPending();
+  return '<div class="composer-wrap kb-composer-wrap">'+
+    '<div class="kb-scope-bar"><span>提问范围</span><strong id="kbScopeLabel">'+_authEscape(scope||'全部知识')+'</strong>'+
+    '<button type="button" onclick="clearKbActiveTopic()" title="切回全部知识">重置范围</button></div>'+
+    '<div class="composer kb-composer"><label class="visually-hidden" for="composerTa">向城市智库提问</label>'+
+    '<textarea id="composerTa" rows="2" placeholder="输入问题，或继续追问上一条回答…" aria-describedby="kbInputHelp"></textarea>'+
+    '<button type="button" class="send-button" onclick="sendMsg()" aria-label="发送问题"'+(busy?' disabled':'')+'><i class="i">↑</i></button></div>'+
+    '<div class="composer-helper" id="kbInputHelp"><span>Enter 发送 · Shift + Enter 换行</span><span>回答需结合原始来源核实</span></div></div>';
+}
 function renderComposer(){
   var wrap=document.querySelector('.composer-wrap');
   if(!wrap)return;
+  var old=document.getElementById('composerTa');
+  var draft=old?old.value:'', start=old?old.selectionStart:0, end=old?old.selectionEnd:0;
+  var focused=old&&document.activeElement===old;
   var tmp=document.createElement('div');
   tmp.innerHTML=composer();
   wrap.replaceWith(tmp.firstChild);
   bind();
+  var next=document.getElementById('composerTa');
+  if(next){next.value=draft;if(focused){next.focus();next.setSelectionRange(start,end);}}
 }
 
 /* topic helpers */
@@ -3872,95 +3889,92 @@ function kbToggleTopBtn(){
     if(_shown!==_kbTopBtnLastShown){ btn.style.display = _shown ? 'flex' : 'none'; _kbTopBtnLastShown=_shown; }
   });
 }
+/* City knowledge workbench: independent navigation, conversation and source panes. */
+function kbDraftQuestion(question){
+  var ta=document.getElementById('composerTa');
+  if(!ta)return;
+  if(ta.value.trim()&&ta.value.trim()!==question.trim()) ta.value+='\n'+question;
+  else ta.value=question;
+  kbClosePanels();ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);
+}
+function kbTogglePanel(name){
+  var page=document.getElementById('kbWorkspace');if(!page)return;
+  if(name==='sources'&&window.matchMedia('(min-width:1121px)').matches){
+    var hidden=page.classList.toggle('kb-sources-hidden');
+    var control=document.getElementById('kbToggle-sources');if(control){control.setAttribute('aria-expanded',String(!hidden));control.focus();}
+    return;
+  }
+  var cls=name==='topics'?'kb-topics-open':'kb-sources-open';
+  var open=!page.classList.contains(cls);
+  page.classList.remove('kb-topics-open','kb-sources-open');
+  if(open)page.classList.add(cls);
+  ['topics','sources'].forEach(function(kind){var b=document.getElementById('kbToggle-'+kind);if(b)b.setAttribute('aria-expanded',String(open&&kind===name));});
+  var closer=document.getElementById(name==='topics'?'kbTopicsClose':'kbSourcesClose');
+  if(open&&closer)closer.focus();
+  else {var trigger=document.getElementById('kbToggle-'+name);if(trigger)trigger.focus();}
+}
+function kbShowSourcesPanel(){
+  var page=document.getElementById('kbWorkspace');if(!page)return;
+  page.classList.remove('kb-sources-hidden','kb-topics-open');
+  if(!window.matchMedia('(min-width:1121px)').matches)page.classList.add('kb-sources-open');
+  var control=document.getElementById('kbToggle-sources');if(control)control.setAttribute('aria-expanded','true');
+  var topics=document.getElementById('kbToggle-topics');if(topics)topics.setAttribute('aria-expanded','false');
+}
+function kbClosePanels(){
+  var page=document.getElementById('kbWorkspace');if(!page)return;
+  var kind=page.classList.contains('kb-topics-open')?'topics':(page.classList.contains('kb-sources-open')?'sources':'');
+  page.classList.remove('kb-topics-open','kb-sources-open');
+  ['topics','sources'].forEach(function(k){var b=document.getElementById('kbToggle-'+k);if(b)b.setAttribute('aria-expanded','false');});
+  var sourceToggle=document.getElementById('kbToggle-sources');if(sourceToggle&&window.matchMedia('(min-width:1121px)').matches)sourceToggle.setAttribute('aria-expanded',String(!page.classList.contains('kb-sources-hidden')));
+  if(kind){var trigger=document.getElementById('kbToggle-'+kind);if(trigger)trigger.focus();}
+}
+function kbWorkspaceSessionsHtml(){
+  var st=typeof kbEnsureStore==='function'&&cur?kbEnsureStore(cur):null;
+  if(!st||!st.sessions.length)return '<p class="kb-nav-empty">新建对话后，会自动保存在这里。</p>';
+  return st.sessions.slice().sort(function(a,b){return (b.ts||0)-(a.ts||0);}).slice(0,8).map(function(session){
+    var count=(session.messages||[]).filter(function(m){return m.role==='user';}).length;
+    var code=_authEscape(JSON.stringify(session.id));
+    return '<button type="button" class="kb-session-item'+(st.activeId===session.id?' active':'')+'" aria-current="'+(st.activeId===session.id?'true':'false')+'" onclick="kbSwitchSession('+code+');kbClosePanels()">'+
+      '<span>'+_authEscape(session.title||'新对话')+'</span><small>'+count+' 轮</small></button>';
+  }).join('');
+}
+function kbWorkspaceRefresh(){
+  var page=document.getElementById('kbWorkspace'),control=document.getElementById('kbToggle-sources');
+  if(page&&control)control.setAttribute('aria-expanded',String(window.matchMedia('(min-width:1121px)').matches?!page.classList.contains('kb-sources-hidden'):page.classList.contains('kb-sources-open')));
+  var list=document.getElementById('kbWorkspaceSessions');if(list)list.innerHTML=kbWorkspaceSessionsHtml();
+  var st=typeof kbEnsureStore==='function'&&cur?kbEnsureStore(cur):null;
+  var session=st&&(st.sessions||[]).find(function(x){return x.id===st.activeId;});
+  var messages=session&&session.messages||[];
+  var welcome=document.getElementById('kbWelcome');
+  if(welcome)welcome.hidden=messages.some(function(m){return m.role==='user'||m.role==='ai'||m.role==='assistant';});
+}
 function kbPage(p){
-  return '<div class="page" style="position:relative">'+
-    (function(){
-      var r=kbReadiness();
-      return '<div class="page-header"><div>'+
-        '<span class="eyebrow">CITY INTELLIGENCE</span><h1>城市智库 · 招商问答</h1>'+
-        '<p>点击主题卡展开详细结论，或直接在下方对话框提问。</p>'+
-        '<div id="kbPageProgress">'+kbPageProgressInner(r)+'</div>'+
-        '</div>'+
-        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
-        '<div style="position:relative;display:inline-block" onmouseenter="document.getElementById(\'uploadHint\').style.display=\'block\'" onmouseleave="document.getElementById(\'uploadHint\').style.display=\'none\'">'+
-        '<button onclick="uploadHint()" style="padding:9px 18px;background:#eff6ff;border:1.5px solid #1a56db;border-radius:10px;font-size:13px;font-weight:700;color:#1a56db;cursor:pointer">上传补充材料</button>'+
-        '<div id="uploadHint" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:#fff;border:1.5px solid #e8edf5;border-radius:12px;padding:14px 16px;box-shadow:0 6px 20px rgba(0,0,0,.08);width:260px;z-index:100">'+
-          '<div style="font-size:12px;color:#4a5568;line-height:1.7">支持上传：政府工作报告、会议讲话稿、产业报告、园区资料、企业名单等</div>'+
-        '</div>'+
-        '</div>'+
-        '<button class="ghost-button" onclick="openMemoryBank()" style="border-color:#c7d2fe;color:#4f46e5"> 记忆库'+memBankBadge()+'</button>'+
-        '<button class="ghost-button" onclick="showDownloadReport()"><i class="i"></i>下载分析报告</button>'+
-        '</div>'+
-        '</div>';
-    })()+
-
-    '<div class="knowledge-scroll" id="kbScroll" onscroll="kbToggleTopBtn()"><div class="topic-grid">'+
-      p.kb.map(function(k,i){
-        if(!k.known||!k.known.length) return '';
-        var summary=kbSectionSummary(k);
-        if(!summary.count)return '';
-        var tagColor=summary.count?
-          (summary.pendingCount>0?'color:#c08a2a;background:#fff8e6':'color:#006d70;background:#e4f5f3'):
-          'color:#9aa5b5;background:#f5f7fb';
-        var dot=k.known&&k.known.length?'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:5px;vertical-align:middle"></span>':'';
-        var firstKnown=summary.excerpt||'';
-        if(firstKnown&&firstKnown.length>80) firstKnown=firstKnown.substring(0,80)+'…';
-        // 用户手动补充/修改的结论：全部在卡片上单独高亮展示（最新在前）
-        var _userAdded=_getUserAddedKnown(i);
-        var _userHtml='';
-        if(_userAdded.length){
-          _userHtml='<div style="border-top:1px dashed #c7d2fe;padding-top:8px;margin-top:8px;display:flex;flex-direction:column;gap:5px">'+
-            _userAdded.map(function(u){
-              var _txt=u.replace(/^✅\s*/,''); if(_txt.length>72) _txt=_txt.substring(0,72)+'…';
-              return '<div style="font-size:11.5px;color:#166534;line-height:1.55;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:7px;padding:5px 8px">'+
-                '<span style="font-weight:700;color:#15803d">补充</span> '+highlightKeyData(_txt)+'</div>';
-            }).join('')+
-          '</div>';
-        }
-        // 待确认条目数：额外附加显示，让干部一眼看到还有多少事实没核实
-        var _warnN=summary.pendingCount;
-        var _warnBadge=_warnN?'<span style="padding:1px 7px;background:#fffbeb;color:#b45309;border:1px solid #fde68a;border-radius:20px;font-size:10.5px;font-weight:700;flex-shrink:0">⚠ '+_warnN+' 条待确认</span>':'';
-        return '<button class="topic-row" onclick="kbDetail('+i+')">'+
-          '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">'+
-            '<span style="font-size:20px">'+k.icon+'</span>'+
-            '<strong style="font-size:13px;color:#0b183b">'+k.t+'</strong>'+
-            _warnBadge+
-            '<em style="'+tagColor+';margin-left:auto;flex-shrink:0">'+dot+summary.displayTag+'</em>'+
-          '</div>'+
-          '<small style="display:block;font-size:11.5px;color:#8492a6;margin-bottom:6px;line-height:1.4">'+summary.displaySub+'</small>'+
-          (firstKnown&&!_userAdded.length?'<div style="font-size:12px;color:#33415a;line-height:1.65;border-top:1px solid #f0f4ff;padding-top:8px;margin-top:auto">'+highlightKeyData(firstKnown)+'</div>':'')+
-          _userHtml+
-        '</button>';
-      }).join('')+
-    '</div>'+
-    '<div class="suggestion-strip">可以这样问：'+
-    '<button onclick="askKB(\''+P().city+'补链的核心缺口有哪些？\')">补链的核心缺口</button>'+
-    '<button onclick="askKB(\''+P().city+'各园区如何分工承接不同细分产业？\')">园区分工承接方案</button>'+
-    '<button onclick="askKB(\'本地链主企业还缺哪些关键上游配套？\')">链主缺口分析</button>'+
-    '</div>'+
-    // 折叠条
-    '<div id="kbConvWrap">'+
-    '<div id="kbConvToggle" onclick="toggleKbConv()" '+
-      'style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;'+
-      'background:#f5f7fb;border:1px solid #e8edf5;border-radius:10px;cursor:pointer;margin-bottom:6px;user-select:none">'+
-      '<span style="font-size:12.5px;font-weight:650;color:#334155">💬 问答记录</span>'+
-      '<span id="kbConvCount" style="font-size:11.5px;color:#8492a6"></span>'+
-      '<span id="kbConvArrow" style="font-size:12px;color:#8492a6;transition:transform .2s">▲</span>'+
-    '</div>'+
-    '<div id="kbSessionBar"></div>'+
-    '<div id="kbConv" style="padding:0 0 8px">'+
-      '<div class="message" style="margin-top:0"><img src="'+aiAvatar()+'">'+
-      '<div class="message-bubble"><p>'+p.city+'城市智库已就位，你可以直接提问——AI 正在结合本市数据生成建议问题：</p>'+
-      '<ul id="kbSuggestList" style="margin:6px 0 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px">'+
-      '<li style="font-size:12.5px;color:#9aa5b5">· 正在生成建议问题…</li>'+
-      '</ul></div></div>'+
-    '</div></div></div>'+composer()+
-    '<button id="kbTopBtn" onclick="kbScrollTop()" title="回到顶部" '+
-      'style="position:absolute;right:26px;bottom:190px;z-index:30;width:44px;height:44px;'+
-      'display:none;align-items:center;justify-content:center;border:1px solid #d6e0f0;'+
-      'border-radius:50%;background:#fff;color:#1a56db;font-size:20px;cursor:pointer;'+
-      'box-shadow:0 4px 14px rgba(11,41,82,.16);transition:opacity .2s">↑</button>'+
-    '</div>';
+  var escape=_authEscape;
+  var topics=(p.kb||[]).map(function(k,i){
+    return '<div class="kb-topic-card kb-topic-row" data-kb-topic="'+i+'">'+
+      '<button type="button" class="kb-topic-question" onclick="askAboutKb('+i+')" title="以此主题准备问题">'+escape(k.t)+'</button>'+
+      '<button type="button" class="kb-topic-material" onclick="kbClosePanels();kbDetail('+i+')" aria-label="查看'+escape(k.t)+'资料">资料</button></div>';
+  }).join('');
+  var examples=[p.city+'补链的核心缺口有哪些？',p.city+'各园区如何分工承接不同细分产业？','本地链主企业还缺哪些关键上游配套？'];
+  return '<div class="page kb-workspace" id="kbWorkspace">'+
+    '<header class="kb-workbench-header"><div class="kb-heading"><span class="eyebrow">'+escape(p.city)+' · CITY INTELLIGENCE</span><h1>城市智库</h1></div>'+
+    '<nav class="kb-toolbar" aria-label="智库工具"><button type="button" id="kbToggle-topics" class="kb-nav-toggle" aria-controls="kbTopicsPanel" aria-expanded="false" onclick="kbTogglePanel(\'topics\')">主题与对话</button>'+
+    '<button type="button" onclick="uploadHint()">上传材料</button><button type="button" onclick="openMemoryBank()">记忆库</button><button type="button" onclick="showDownloadReport()">下载报告</button>'+
+    '<button type="button" id="kbToggle-sources" class="kb-source-toggle" aria-controls="kbSourcesPanel" aria-expanded="false" onclick="kbTogglePanel(\'sources\')">回答依据</button></nav></header>'+
+    '<div class="kb-workbench-grid"><button class="kb-panel-backdrop" aria-label="关闭侧栏" onclick="kbClosePanels()"></button>'+
+    '<aside id="kbTopicsPanel" class="kb-topics-panel" aria-label="知识主题与历史会话"><div class="kb-pane-heading"><h2>工作空间</h2><button id="kbTopicsClose" class="kb-panel-close" type="button" onclick="kbClosePanels()" aria-label="关闭主题与对话">×</button></div>'+
+    '<button type="button" class="kb-new-conversation" onclick="kbNewSession(cur);kbClosePanels()"><span aria-hidden="true">＋</span> 新对话</button>'+
+    '<section class="kb-nav-section kb-recent"><div class="kb-section-heading"><h3>最近对话</h3><button type="button" onclick="kbClosePanels();openKbHistory()">全部</button></div><div id="kbWorkspaceSessions">'+kbWorkspaceSessionsHtml()+'</div></section>'+
+    '<details class="kb-topic-nav"><summary>资料主题 <span>'+(p.kb||[]).length+'</span></summary><div class="kb-topic-list"><button type="button" class="kb-global-scope" onclick="clearKbActiveTopic();kbClosePanels()">全部知识 <span>全库提问</span></button>'+topics+'</div></details>'+
+    '<details class="kb-readiness"><summary>知识库状态</summary><div id="kbPageProgress">'+kbPageProgressInner(kbReadiness())+'</div></details></aside>'+
+    '<section class="kb-chat-panel" aria-label="城市智库对话"><div id="kbSessionBar"></div>'+
+    '<div class="knowledge-scroll" id="kbScroll" onscroll="kbToggleTopBtn()"><section id="kbWelcome" class="kb-welcome"><span class="kb-welcome-mark" aria-hidden="true">✦</span>'+
+    '<h2>从一个具体问题开始</h2><p>结合'+escape(p.city)+'已有报告与补充材料，帮你查依据、做比较、梳理下一步。</p>'+
+    '<div class="kb-starter-list">'+examples.map(function(q){return '<button type="button" onclick="kbDraftQuestion('+escape(JSON.stringify(q))+')"><span>'+escape(q)+'</span><span aria-hidden="true">↗</span></button>';}).join('')+'</div><small>先填写问题，确认后再发送。</small></section>'+
+    '<div id="kbConvWrap"><div id="kbConv" role="log" aria-label="问答记录" aria-live="polite"></div></div></div>'+kbComposer()+
+    '<button type="button" id="kbTopBtn" onclick="kbScrollTop()" title="回到对话顶部" aria-label="回到对话顶部">↑</button></section>'+
+    '<aside id="kbSourcesPanel" class="kb-sources-panel" aria-label="当前回答的依据"><div class="kb-pane-heading"><h2 id="kbSourcesTitle">回答依据</h2><button id="kbSourcesClose" class="kb-panel-close" type="button" onclick="kbTogglePanel(\'sources\')" aria-label="关闭回答依据">×</button></div>'+
+    '<p class="kb-source-intro">只列出当前回答送入模型的材料。来源链接供你回到原文核实。</p><div id="kbSourcesList"><div class="kb-sources-empty"><span aria-hidden="true">▤</span><strong>随回答查看依据</strong><p>发送问题后，这里会展示本次参考的片段与已有出处。</p></div></div></aside></div></div>';
 }
 function settingsPage(p){
   return '<div class="page">'+
