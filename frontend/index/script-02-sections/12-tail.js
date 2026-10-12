@@ -3940,6 +3940,7 @@ function kbWorkspaceSessionsHtml(){
 }
 function kbWorkspaceRefresh(){
   var page=document.getElementById('kbWorkspace'),control=document.getElementById('kbToggle-sources');
+  kbBindOverviewScroll(page);
   if(page&&control)control.setAttribute('aria-expanded',String(window.matchMedia('(min-width:1121px)').matches?!page.classList.contains('kb-sources-hidden'):page.classList.contains('kb-sources-open')));
   var list=document.getElementById('kbWorkspaceSessions');if(list)list.innerHTML=kbWorkspaceSessionsHtml();
   var st=typeof kbEnsureStore==='function'&&cur?kbEnsureStore(cur):null;
@@ -3947,6 +3948,90 @@ function kbWorkspaceRefresh(){
   var messages=session&&session.messages||[];
   var welcome=document.getElementById('kbWelcome');
   if(welcome)welcome.hidden=messages.some(function(m){return m.role==='user'||m.role==='ai'||m.role==='assistant';});
+}
+// Respond to reading gestures, never to streaming/replay or layout-generated scrolls.
+function kbSetOverviewCollapsed(page,collapsed,manual){
+  if(!page)return false;
+  var cards=page.querySelector('#kbOverviewCards'),toggle=page.querySelector('#kbOverviewToggle');
+  if(!cards||!toggle)return false;
+  collapsed=!!collapsed;
+  if(collapsed&&!manual&&cards.contains(document.activeElement))return false;
+  if(page.classList.contains('kb-overview-collapsed')===collapsed)return false;
+  page.classList.toggle('kb-overview-collapsed',collapsed);
+  page._kbOverviewIgnoreScrollUntil=Date.now()+320;
+  cards.inert=collapsed;cards.setAttribute('aria-hidden',String(collapsed));
+  toggle.setAttribute('aria-expanded',String(!collapsed));
+  toggle.textContent=collapsed?'展开板块 ↓':'收起板块 ↑';
+  return true;
+}
+function kbToggleOverview(){
+  var page=document.getElementById('kbWorkspace');
+  if(page)kbSetOverviewCollapsed(page,!page.classList.contains('kb-overview-collapsed'),true);
+}
+function kbBindOverviewScroll(page){
+  if(!page||page._kbOverviewScrollBound)return;
+  page._kbOverviewScrollBound=true;
+  var distance=0,lastAt=0,touch=null,drag=null;
+  function allowed(target,keyboard){
+    var node=target&&target.nodeType===3?target.parentElement:target;
+    if(!node||!node.closest)return true;
+    var excluded='input,textarea,select,[contenteditable]:not([contenteditable="false"]),#kbTopicsPanel,#kbSourcesPanel,.kb-panel-backdrop';
+    if(keyboard)excluded+=',button,a,summary,[role="button"]';
+    return !node.closest(excluded);
+  }
+  function move(delta){
+    if(!Number.isFinite(delta)||!delta)return;
+    var now=Date.now();
+    if(now-lastAt>240||distance*delta<0)distance=0;
+    lastAt=now;distance+=delta;
+    if(Math.abs(distance)<48)return;
+    kbSetOverviewCollapsed(page,distance>0,false);distance=0;
+  }
+  page.addEventListener('wheel',function(e){
+    if(e.ctrlKey||!allowed(e.target,false)||Math.abs(e.deltaX||0)>Math.abs(e.deltaY||0))return;
+    var scale=e.deltaMode===1?16:(e.deltaMode===2?page.clientHeight:1);
+    move(e.deltaY*scale);
+  },{passive:true});
+  page.addEventListener('touchstart',function(e){
+    distance=0;
+    touch=e.touches&&e.touches.length===1&&allowed(e.target,false)?{x:e.touches[0].clientX,y:e.touches[0].clientY}:null;
+  },{passive:true});
+  page.addEventListener('touchmove',function(e){
+    if(!touch||!e.touches||e.touches.length!==1){touch=null;return;}
+    var point=e.touches[0],dx=touch.x-point.clientX,dy=touch.y-point.clientY;
+    touch={x:point.clientX,y:point.clientY};
+    if(Math.abs(dx)>Math.abs(dy))return;
+    move(dy);
+  },{passive:true});
+  ['touchend','touchcancel'].forEach(function(type){page.addEventListener(type,function(){touch=null;distance=0;},{passive:true});});
+  page.addEventListener('keydown',function(e){
+    if(e.altKey||e.ctrlKey||e.metaKey||!allowed(e.target,true))return;
+    var direct={PageDown:true,End:true,PageUp:false,Home:false};
+    if(Object.prototype.hasOwnProperty.call(direct,e.key))kbSetOverviewCollapsed(page,direct[e.key],false);
+    else if(e.key===' ')kbSetOverviewCollapsed(page,!e.shiftKey,false);
+    else if(e.key==='ArrowDown'||e.key==='ArrowUp')move(e.key==='ArrowDown'?24:-24);
+  });
+  // Native scrollbar drags have a pointer intent; unrelated scroll events do not.
+  function endDrag(){
+    drag=null;distance=0;
+    document.removeEventListener('pointerup',endDrag);
+    document.removeEventListener('pointercancel',endDrag);
+  }
+  page.addEventListener('pointerdown',function(e){
+    var node=e.target;
+    if((node!==page&&node!==page.querySelector('#kbScroll'))||e.button!==0)return;
+    var rect=node.getBoundingClientRect();
+    if(e.clientX<rect.right-18||e.clientX>rect.right||node.scrollHeight<=node.clientHeight)return;
+    endDrag();drag={node:node,top:node.scrollTop};
+    document.addEventListener('pointerup',endDrag);
+    document.addEventListener('pointercancel',endDrag);
+  });
+  page.addEventListener('scroll',function(e){
+    if(!drag||e.target!==drag.node)return;
+    var top=drag.node.scrollTop,delta=top-drag.top;drag.top=top;
+    if(Date.now()<(page._kbOverviewIgnoreScrollUntil||0))return;
+    move(delta);
+  },{passive:true,capture:true});
 }
 function kbPage(p){
   var escape=_authEscape;
@@ -3963,12 +4048,12 @@ function kbPage(p){
       '<p>'+escape(topicDescriptions[k.t]||'查阅本板块已有资料与补充材料')+'</p><span class="kb-topic-read">查看资料 <span aria-hidden="true">↗</span></span></button>'+
       '<button type="button" class="kb-topic-question" onclick="askAboutKb('+i+')" aria-label="围绕'+escape(k.t)+'提问">围绕此板块提问 <span aria-hidden="true">→</span></button></article>';
   }).join('');
-  return '<div class="page kb-workspace" id="kbWorkspace">'+
+  return '<div class="page kb-workspace" id="kbWorkspace" tabindex="0" aria-label="城市智库工作区">'+
     '<header class="kb-workbench-header"><div class="kb-heading"><span class="eyebrow">'+escape(p.city)+' · CITY INTELLIGENCE</span><h1>城市智库</h1></div>'+
     '<nav class="kb-toolbar" aria-label="智库工具"><button type="button" id="kbToggle-topics" class="kb-nav-toggle" aria-controls="kbTopicsPanel" aria-expanded="false" onclick="kbTogglePanel(\'topics\')">历史对话</button>'+
     '<button type="button" onclick="uploadHint()">上传材料</button><button type="button" onclick="openMemoryBank()">记忆库</button><button type="button" onclick="showDownloadReport()">下载报告</button>'+
     '<button type="button" id="kbToggle-sources" class="kb-source-toggle" aria-controls="kbSourcesPanel" aria-expanded="false" onclick="kbTogglePanel(\'sources\')">回答依据</button></nav></header>'+
-    '<section class="kb-topic-overview" aria-labelledby="kbOverviewTitle"><div class="kb-overview-heading"><div><h2 id="kbOverviewTitle">城市知识全景</h2><p>从重点板块查阅资料，围绕具体问题深入分析。</p></div><button type="button" class="kb-global-scope" onclick="clearKbActiveTopic();kbClosePanels()">全库提问 <span aria-hidden="true">↗</span></button></div><div class="kb-topic-grid">'+topics+'</div></section>'+
+    '<section class="kb-topic-overview" aria-labelledby="kbOverviewTitle"><div class="kb-overview-heading"><div><h2 id="kbOverviewTitle">城市知识全景</h2><p>从重点板块查阅资料，围绕具体问题深入分析。</p></div><div class="kb-overview-actions"><button type="button" class="kb-overview-toggle" id="kbOverviewToggle" aria-controls="kbOverviewCards" aria-expanded="true" onclick="kbToggleOverview()">收起板块 ↑</button><button type="button" class="kb-global-scope" onclick="clearKbActiveTopic();kbClosePanels()">全库提问 <span aria-hidden="true">↗</span></button></div></div><div id="kbOverviewCards" class="kb-overview-body" aria-hidden="false"><div class="kb-overview-clip"><div class="kb-topic-grid">'+topics+'</div></div></div></section>'+
     '<div class="kb-workbench-grid"><button class="kb-panel-backdrop" aria-label="关闭侧栏" onclick="kbClosePanels()"></button>'+
     '<aside id="kbTopicsPanel" class="kb-topics-panel" aria-label="历史会话"><div class="kb-pane-heading"><h2>历史对话</h2><button id="kbTopicsClose" class="kb-panel-close" type="button" onclick="kbClosePanels()" aria-label="关闭历史对话">×</button></div>'+
     '<button type="button" class="kb-new-conversation" onclick="kbNewSession(cur);kbClosePanels()"><span aria-hidden="true">＋</span> 新对话</button>'+
