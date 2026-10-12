@@ -1732,8 +1732,8 @@ function confirmKbItem(kbIdx,itemIdx){
   if(!KB_CONFIRMS[cur])KB_CONFIRMS[cur]={};
   if(!KB_CONFIRMS[cur][kbIdx])KB_CONFIRMS[cur][kbIdx]={};
   var k=p.kb[kbIdx];if(!k)return;
-  var _rawC=k.known[itemIdx]||''; var orig=_kbText(_rawC);
-  var clean=orig.replace('\u26a0\ufe0f ','');
+  var _rawC=k.known[itemIdx]||'';
+  var clean=kbDetailSourceText(_rawC);
   // 写回 known：去掉 ⚠️，前缀改为 ✅（保留对象格式）
   if(_rawC&&typeof _rawC==='object'){_rawC.text='\u2705 '+clean;k.known[itemIdx]=_rawC;}else{k.known[itemIdx]='\u2705 '+clean;}
   var _nowTs=Date.now();
@@ -1745,7 +1745,7 @@ function confirmKbItem(kbIdx,itemIdx){
   _dups.forEach(function(di){
     if(di===itemIdx) return;
     var _dr=k.known[di]; if(!_dr) return;
-    var _dt=_kbText(_dr).replace('\u26a0\ufe0f ','');
+    var _dt=kbDetailSourceText(_dr);
     if(_dr&&typeof _dr==='object'){_dr.text='\u2705 '+_dt;k.known[di]=_dr;}else{k.known[di]='\u2705 '+_dt;}
     KB_CONFIRMS[cur][kbIdx][di]={status:'confirmed',text:_dt,ts:_nowTs,mergedFrom:itemIdx};
     _dupN++;
@@ -1756,10 +1756,10 @@ function confirmKbItem(kbIdx,itemIdx){
     KB_FILE_CHUNKS[cur]=KB_FILE_CHUNKS[cur].filter(function(c){return c.id!=='pin:'+kbIdx+':'+itemIdx;});
   }
   // 重新渲染 modal（保持滚动位置）
-  var _sc=document.querySelector('#kbDetailModal [style*="overflow-y:auto"]');
+  var _sc=document.querySelector('#kbDetailModal .kb-detail-scroll');
   var _st=_sc?_sc.scrollTop:0;
   kbDetail(kbIdx);
-  var _sc2=document.querySelector('#kbDetailModal [style*="overflow-y:auto"]');
+  var _sc2=document.querySelector('#kbDetailModal .kb-detail-scroll');
   if(_sc2)_sc2.scrollTop=_st;
   refreshKbProgress();
   toast('已确认：'+clean.slice(0,20)+'…'+(_dupN>0?('（含 '+_dupN+' 条重复表述）'):''));
@@ -1807,13 +1807,13 @@ function editKbItem(kbIdx,itemIdx){
   if(!card)return;
   var p=P();if(!p)return;
   var k=p.kb[kbIdx];if(!k)return;
-  var _raw=k.known[itemIdx]||''; var orig=_kbText(_raw).replace('\u26a0\ufe0f ','').replace('\u2705 ','');
+  var _raw=k.known[itemIdx]||''; var orig=kbDetailSourceText(_raw);
   card.innerHTML=
     '<div style="padding:10px 13px">'+
       '<div style="font-size:11px;color:#6366f1;font-weight:650;margin-bottom:6px">修改内容（确认后写入知识库）</div>'+
       '<textarea id="kb-edit-'+kbIdx+'-'+itemIdx+'" '+
         'style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #6366f1;border-radius:8px;font-size:13px;line-height:1.6;color:#1e293b;resize:vertical;min-height:72px;outline:none" '+
-        'onkeydown="if(event.key===\'Enter\'&&event.metaKey)saveKbEdit('+kbIdx+','+itemIdx+')">'+orig+'</textarea>'+
+        'onkeydown="if(event.key===\'Enter\'&&event.metaKey)saveKbEdit('+kbIdx+','+itemIdx+')">'+kbEscape(orig)+'</textarea>'+
       '<div style="margin:8px 0 0;padding:8px 10px;background:#f8faff;border:1.5px dashed #c7d2fe;border-radius:8px;cursor:pointer;text-align:center;font-size:12px;color:#4f46e5" '+
         'onclick="editPickFile('+kbIdx+','+itemIdx+')" '+
         'ondragover="event.preventDefault();this.style.background=\'#eef2ff\'" '+
@@ -1855,10 +1855,10 @@ function saveKbEdit(kbIdx,itemIdx){
   KB_CONFIRMS[cur][kbIdx][itemIdx]={status:'edited',text:newText,ts:Date.now()};
   persist();
   buildKBCorpus(p.city);
-  var _sc=document.querySelector('#kbDetailModal [style*="overflow-y:auto"]');
+  var _sc=document.querySelector('#kbDetailModal .kb-detail-scroll');
   var _st=_sc?_sc.scrollTop:0;
   kbDetail(kbIdx);
-  var _sc2=document.querySelector('#kbDetailModal [style*="overflow-y:auto"]');
+  var _sc2=document.querySelector('#kbDetailModal .kb-detail-scroll');
   if(_sc2)_sc2.scrollTop=_st;
   refreshKbProgress();
   toast('\u2705 已更新并写入知识库');
@@ -1925,13 +1925,35 @@ function deleteKbItem(kbIdx,itemIdx){
     KB_FILE_CHUNKS[cur]=KB_FILE_CHUNKS[cur].filter(function(c){return c.id!=='pin:'+kbIdx+':'+itemIdx;});
   }
   // 重新渲染 modal（保持滚动位置）
-  var _sc=document.querySelector('#kbDetailModal [style*="overflow-y:auto"]');
+  var _sc=document.querySelector('#kbDetailModal .kb-detail-scroll');
   var _st=_sc?_sc.scrollTop:0;
   kbDetail(kbIdx);
-  var _sc2=document.querySelector('#kbDetailModal [style*="overflow-y:auto"]');
+  var _sc2=document.querySelector('#kbDetailModal .kb-detail-scroll');
   if(_sc2)_sc2.scrollTop=_st;
   if(typeof refreshKbProgress==='function') refreshKbProgress();
   toast('已删除该条内容');
+}
+
+// Keep original text when displaying or confirming a record; filtering still uses _kbText.
+function kbDetailSourceText(value){
+  var text=value&&typeof value==='object'?value.text:value;
+  return String(text==null?'':text).replace(/^[\u2705\u26a0\ufe0f]+[ \t]*/, '');
+}
+function kbDetailTextHtml(value){
+  var text=kbDetailSourceText(value).replace(/\r\n?/g,'\n');
+  var blocks=reportMdToHtml(text).split('\n'),out=[],ordered=false;
+  blocks.forEach(function(block){
+    var item=block.match(/^<p>(\d{1,6})(?:[.)]\s+|、\s*)([\s\S]*)<\/p>$/);
+    if(item){
+      if(!ordered){out.push('<ol>');ordered=true;}
+      out.push('<li value="'+Number(item[1])+'">'+item[2]+'</li>');
+    }else{
+      if(ordered){out.push('</ol>');ordered=false;}
+      out.push(block);
+    }
+  });
+  if(ordered)out.push('</ol>');
+  return out.join('\n');
 }
 
 function kbDetail(i){
@@ -2072,11 +2094,11 @@ function kbDetail(i){
           return '<div id="kb-card-'+i+'-'+_oi+'" style="border-radius:12px;background:'+bg+';border:1.5px solid '+bd+';overflow:visible;transition:border-color .15s">'+
             '<div style="display:flex">'+
               '<div style="width:4px;background:'+accent+';flex-shrink:0"></div>'+
-              '<div style="padding:10px 13px;flex:1">'+
+              '<div style="padding:16px 18px;flex:1;min-width:0">'+
                 '<div style="display:flex;gap:8px;align-items:flex-start">'+
                   '<span style="font-size:12px;flex-shrink:0;margin-top:2px;color:'+accent+'">'+icon+'</span>'+
-                  '<div style="flex:1">'+
-                    '<span style="font-size:13px;color:'+txtColor+';line-height:1.7;word-break:break-all;overflow-wrap:break-word">'+highlightKeyData(clean)+'</span>'+
+                  '<div style="flex:1;min-width:0">'+
+                    '<div class="kb-detail-richtext" style="color:'+txtColor+'">'+kbDetailTextHtml(_rawAtIdx)+'</div>'+
                     badgeHtml+
                     actionBtns+
                   '</div>'+
@@ -2095,27 +2117,27 @@ function kbDetail(i){
   var callsHtml=(k.calls&&k.calls.length)
     ? '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">'+
         k.calls.map(function(c){
-          return '<span style="padding:3px 10px;background:#f0f4ff;color:#1a56db;border-radius:12px;font-size:11.5px">'+c+'</span>';
+          return '<span style="padding:3px 10px;background:#f0f4ff;color:#1a56db;border-radius:12px;font-size:11.5px">'+kbEscape(c)+'</span>';
         }).join('')+'</div>'
     : '';
 
   var modalHtml=
     '<div id="kbDetailModal" onclick="if(event.target.id===\'kbDetailModal\')closeKbDetail()" '+
-      'style="position:fixed;inset:0;background:rgba(11,24,59,.4);z-index:8888;display:flex;align-items:flex-start;justify-content:flex-end;padding:16px;backdrop-filter:blur(2px)">'+
-      '<div style="background:#fff;border-radius:18px;width:420px;max-width:95vw;max-height:calc(100vh - 32px);overflow:hidden;display:flex;flex-direction:column;box-shadow:0 8px 48px rgba(11,24,59,.16);animation:slideIn .22s ease">'+
+      'class="kb-detail-overlay">'+
+      '<div class="kb-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="kbDetailTitle">'+
 
         // 顶栏
         '<div style="padding:20px 22px 16px;border-bottom:1px solid #f0f4ff;flex:0 0 auto">'+
           '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'+
             '<span style="font-size:11px;font-weight:650;color:#6366f1;letter-spacing:.5px">KNOWLEDGE SCOPE</span>'+
-            '<button onclick="closeKbDetail()" style="background:none;border:none;font-size:18px;color:#9aa5b5;cursor:pointer;padding:2px 6px;border-radius:6px" onmouseover="this.style.background=\'#f5f7fb\'" onmouseout="this.style.background=\'none\'">✕</button>'+
+            '<button aria-label="关闭知识详情" onclick="closeKbDetail()" style="background:none;border:none;font-size:18px;color:#9aa5b5;cursor:pointer;padding:2px 6px;border-radius:6px" onmouseover="this.style.background=\'#f5f7fb\'" onmouseout="this.style.background=\'none\'">✕</button>'+
           '</div>'+
-          '<h2 style="font-size:17px;font-weight:750;color:#0b183b;margin:0 0 4px">'+k.icon+' '+k.t+'</h2>'+
-          '<p style="font-size:12.5px;color:#8492a6;margin:0">'+(_getDisplaySub(i)||k.sub)+'</p>'+
+          '<h2 id="kbDetailTitle" style="font-size:17px;font-weight:750;color:#0b183b;margin:0 0 4px">'+kbEscape(k.icon)+' '+kbEscape(k.t)+'</h2>'+
+          '<p style="font-size:12.5px;color:#8492a6;margin:0">'+kbEscape(_getDisplaySub(i)||k.sub)+'</p>'+
         '</div>'+
 
         // 内容区（可滚动）
-        '<div style="flex:1;overflow-y:auto;padding:18px 22px">'+
+        '<div class="kb-detail-scroll">'+
 
           '<div id="kbDetailList-'+i+'" style="margin-bottom:18px">'+
             '<h3 style="font-size:12px;font-weight:650;color:#4a5568;letter-spacing:.3px;margin:0 0 10px">当前已知'+
