@@ -3951,10 +3951,9 @@ function kbWorkspaceRefresh(){
 function kbPage(p){
   var escape=_authEscape;
   var topics=(p.kb||[]).map(function(k,i){
-    var summary=kbSectionSummary(k);
-    return '<article class="kb-topic-card" data-kb-topic="'+i+'"><div class="kb-topic-line"><span class="kb-topic-icon" aria-hidden="true">'+escape(k.icon||'▤')+'</span>'+
-      '<strong>'+escape(k.t)+'</strong></div><p>'+summary.count+' 条知识'+(summary.pendingCount?' · '+summary.pendingCount+' 条待确认':'')+'</p>'+
-      '<div class="kb-topic-actions"><button type="button" onclick="kbClosePanels();kbDetail('+i+')">查看资料</button><button type="button" onclick="askAboutKb('+i+')">以此提问 <span aria-hidden="true">↗</span></button></div></article>';
+    return '<div class="kb-topic-card kb-topic-row" data-kb-topic="'+i+'">'+
+      '<button type="button" class="kb-topic-question" onclick="askAboutKb('+i+')" title="以此主题准备问题">'+escape(k.t)+'</button>'+
+      '<button type="button" class="kb-topic-material" onclick="kbClosePanels();kbDetail('+i+')" aria-label="查看'+escape(k.t)+'资料">资料</button></div>';
   }).join('');
   var examples=[p.city+'补链的核心缺口有哪些？',p.city+'各园区如何分工承接不同细分产业？','本地链主企业还缺哪些关键上游配套？'];
   return '<div class="page kb-workspace" id="kbWorkspace">'+
@@ -3965,8 +3964,8 @@ function kbPage(p){
     '<div class="kb-workbench-grid"><button class="kb-panel-backdrop" aria-label="关闭侧栏" onclick="kbClosePanels()"></button>'+
     '<aside id="kbTopicsPanel" class="kb-topics-panel" aria-label="知识主题与历史会话"><div class="kb-pane-heading"><h2>工作空间</h2><button id="kbTopicsClose" class="kb-panel-close" type="button" onclick="kbClosePanels()" aria-label="关闭主题与对话">×</button></div>'+
     '<button type="button" class="kb-new-conversation" onclick="kbNewSession(cur);kbClosePanels()"><span aria-hidden="true">＋</span> 新对话</button>'+
-    '<section class="kb-nav-section"><h3>知识主题</h3><button type="button" class="kb-global-scope" onclick="clearKbActiveTopic();kbClosePanels()">全部知识 <span>全库提问</span></button>'+topics+'</section>'+
     '<section class="kb-nav-section kb-recent"><div class="kb-section-heading"><h3>最近对话</h3><button type="button" onclick="kbClosePanels();openKbHistory()">全部</button></div><div id="kbWorkspaceSessions">'+kbWorkspaceSessionsHtml()+'</div></section>'+
+    '<details class="kb-topic-nav"><summary>资料主题 <span>'+(p.kb||[]).length+'</span></summary><div class="kb-topic-list"><button type="button" class="kb-global-scope" onclick="clearKbActiveTopic();kbClosePanels()">全部知识 <span>全库提问</span></button>'+topics+'</div></details>'+
     '<details class="kb-readiness"><summary>知识库状态</summary><div id="kbPageProgress">'+kbPageProgressInner(kbReadiness())+'</div></details></aside>'+
     '<section class="kb-chat-panel" aria-label="城市智库对话"><div id="kbSessionBar"></div>'+
     '<div class="knowledge-scroll" id="kbScroll" onscroll="kbToggleTopBtn()"><section id="kbWelcome" class="kb-welcome"><span class="kb-welcome-mark" aria-hidden="true">✦</span>'+

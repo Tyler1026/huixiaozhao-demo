@@ -261,16 +261,18 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 .kb-global-scope{width:100%;border:0;border-radius:7px;padding:8px;background:transparent;color:#4b607b;display:flex;justify-content:space-between;gap:8px;cursor:pointer;text-align:left;font-size:12px}
 .kb-global-scope:hover{background:#edf2f8}
 .kb-global-scope span{font-size:10px;color:#8a96a8}
-.kb-topic-card{background:#fff;border:1px solid #e3e9f2;border-radius:9px;padding:12px 10px;margin-top:8px;transition:border-color .15s,box-shadow .15s}
-.kb-topic-card.active{border-color:#8aaddb;box-shadow:0 0 0 2px #e1edfc}
-.kb-topic-line{display:flex;align-items:flex-start;gap:7px}
-.kb-topic-line strong{font-size:12px;line-height:1.6;font-weight:600;color:#3b4d67}
-.kb-topic-icon{flex:0 0 18px;font-size:16px;line-height:1.3}
-.kb-topic-card>p{font-size:10px;color:#8a97aa;margin:7px 0 9px;line-height:1.5}
-.kb-topic-actions{display:flex;justify-content:space-between;gap:8px;border-top:1px solid #f0f3f8;padding-top:8px}
-.kb-topic-actions button{padding:0;border:0;background:transparent;color:#6c7c91;font-size:11px;cursor:pointer;min-height:22px}
-.kb-topic-actions button:last-child{color:#2865ae;font-weight:600}
-.kb-topic-actions button:hover{text-decoration:underline}
+.kb-topic-nav{margin-top:24px;border-top:1px solid #e5eaf2;padding-top:15px}
+.kb-topic-nav>summary{cursor:pointer;color:#7b899c;font-size:11px;line-height:24px}
+.kb-topic-nav>summary>span{float:right;font-size:10px;color:#9aa5b5}
+.kb-topic-list{margin-top:8px}
+.kb-topic-row{display:flex;align-items:center;gap:5px;margin:2px 0;padding:0 5px;border:0;border-radius:6px;background:transparent;box-shadow:none}
+.kb-topic-row:hover{background:#edf2f8}
+.kb-topic-row.active,.kb-topic-row.is-active{background:#e7effa;box-shadow:none}
+.kb-topic-row button{font:inherit;font-size:11px;border:0;background:transparent;cursor:pointer;min-height:36px;line-height:1.5;padding:8px 3px}
+.kb-topic-question{flex:1;min-width:0;text-align:left;color:#5d6e84}
+.kb-topic-row.active .kb-topic-question{color:#235e9e;font-weight:600}
+.kb-topic-material{flex:0 0 auto;color:#8c9aad;font-size:10px!important}
+.kb-topic-material:hover{color:#2865ae;text-decoration:underline}
 .kb-section-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
 .kb-section-heading h3{margin:0}.kb-section-heading button{font-size:10px;color:#7b8ba1;border:0;background:transparent;cursor:pointer}
 .kb-session-item{width:100%;display:flex;align-items:center;gap:8px;justify-content:space-between;border:0;border-radius:7px;padding:9px 8px;background:transparent;color:#6c798d;text-align:left;cursor:pointer}
@@ -335,15 +337,11 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 .kb-starter-list{gap:7px}.kb-starter-list button{min-height:40px;padding:8px 12px;font-size:11px}
 .kb-welcome>small{margin-top:8px}
 .kb-chat-panel .composer-helper{height:auto;min-height:0;padding:0;line-height:1.6}
-.kb-topic-card{padding:9px 8px;margin-top:7px}
-.kb-topic-line strong{font-size:11px;line-height:1.5}.kb-topic-icon{font-size:14px;flex-basis:16px}
-.kb-topic-card>p{margin:4px 0 6px}.kb-topic-actions{padding-top:4px}
 .kb-session-status{display:flex;align-items:center;gap:12px;color:#8997ab;font-size:11px}
 .kb-session-status strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:65%;color:#405979;font-size:13px;font-weight:600}
 .kb-session-status [role="status"]{margin-left:auto;white-space:nowrap;font-size:10px;color:#8b99ad}
 .kb-sources-empty{font-size:11px;line-height:1.9}
 @media(max-width:480px){.kb-session-status{gap:7px}.kb-session-status strong{max-width:55%}.kb-session-status>span{font-size:10px}.kb-session-status [role="status"]{font-size:9px}}
-.kb-topic-card.is-active{border-color:#8aaddb;box-shadow:0 0 0 2px #e1edfc}
 .kb-answer-footer{margin-top:14px;padding-top:10px;border-top:1px solid #edf1f7;color:#93a0b2;font-size:10px;line-height:1.8}
 .kb-answer-source-button{display:inline-flex;align-items:center;padding:5px 10px;background:#f2f6fc;border:1px solid #dbe5f3;border-radius:6px;color:#4b75a4;font:inherit;font-size:11px;cursor:pointer}
 .kb-answer-source-button:hover{border-color:#a5bfe0;background:#eaf1fb}.kb-answer-footer small{display:block;margin-top:8px;font-size:10px;color:#94a1b4}
