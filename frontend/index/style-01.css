@@ -348,8 +348,8 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 .kb-answer-source-button{display:inline-flex;align-items:center;padding:5px 10px;background:#f2f6fc;border:1px solid #dbe5f3;border-radius:6px;color:#4b75a4;font:inherit;font-size:11px;cursor:pointer}
 .kb-answer-source-button:hover{border-color:#a5bfe0;background:#eaf1fb}.kb-answer-footer small{display:block;margin-top:8px;font-size:10px;color:#94a1b4}
 .kb-answer-error{border-left:3px solid #d7a965;padding-left:12px;color:#96733f}
+@media(max-width:1279px){body.kb-view #kbProgressBox{display:none}}
 @media(max-width:767px){
-  body.kb-view #kbProgressBox{display:none}
   body.kb-view .top-meta{padding:0 10px;gap:0}
   body.kb-view .top-meta>span{display:none!important}
   body.kb-view .org-block{padding:0 12px;gap:0}
