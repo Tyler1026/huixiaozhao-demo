@@ -3950,27 +3950,33 @@ function kbWorkspaceRefresh(){
 }
 function kbPage(p){
   var escape=_authEscape;
+  var topicDescriptions={
+    '主导产业与产业链':'看清产业结构、关键环节与补链方向',
+    '园区与承载条件':'了解园区分工、空间载体与项目承接条件',
+    '链主与存量企业':'梳理重点企业、上下游关系与配套需求',
+    '政策、规划与领导关注':'查阅政策支持、发展规划与重点关注事项'
+  };
   var topics=(p.kb||[]).map(function(k,i){
-    return '<div class="kb-topic-card kb-topic-row" data-kb-topic="'+i+'">'+
-      '<button type="button" class="kb-topic-question" onclick="askAboutKb('+i+')" title="以此主题准备问题">'+escape(k.t)+'</button>'+
-      '<button type="button" class="kb-topic-material" onclick="kbClosePanels();kbDetail('+i+')" aria-label="查看'+escape(k.t)+'资料">资料</button></div>';
+    return '<article class="kb-topic-card" data-kb-topic="'+i+'">'+
+      '<button type="button" class="kb-topic-material" onclick="kbClosePanels();kbDetail('+i+')" aria-label="查看'+escape(k.t)+'资料">'+
+      '<span class="kb-topic-number" aria-hidden="true">'+String(i+1).padStart(2,'0')+'</span><span class="kb-topic-title">'+escape(k.t)+'</span>'+
+      '<p>'+escape(topicDescriptions[k.t]||'查阅本板块已有资料与补充材料')+'</p><span class="kb-topic-read">查看资料 <span aria-hidden="true">↗</span></span></button>'+
+      '<button type="button" class="kb-topic-question" onclick="askAboutKb('+i+')" aria-label="围绕'+escape(k.t)+'提问">围绕此板块提问 <span aria-hidden="true">→</span></button></article>';
   }).join('');
-  var examples=[p.city+'补链的核心缺口有哪些？',p.city+'各园区如何分工承接不同细分产业？','本地链主企业还缺哪些关键上游配套？'];
   return '<div class="page kb-workspace" id="kbWorkspace">'+
     '<header class="kb-workbench-header"><div class="kb-heading"><span class="eyebrow">'+escape(p.city)+' · CITY INTELLIGENCE</span><h1>城市智库</h1></div>'+
-    '<nav class="kb-toolbar" aria-label="智库工具"><button type="button" id="kbToggle-topics" class="kb-nav-toggle" aria-controls="kbTopicsPanel" aria-expanded="false" onclick="kbTogglePanel(\'topics\')">主题与对话</button>'+
+    '<nav class="kb-toolbar" aria-label="智库工具"><button type="button" id="kbToggle-topics" class="kb-nav-toggle" aria-controls="kbTopicsPanel" aria-expanded="false" onclick="kbTogglePanel(\'topics\')">历史对话</button>'+
     '<button type="button" onclick="uploadHint()">上传材料</button><button type="button" onclick="openMemoryBank()">记忆库</button><button type="button" onclick="showDownloadReport()">下载报告</button>'+
     '<button type="button" id="kbToggle-sources" class="kb-source-toggle" aria-controls="kbSourcesPanel" aria-expanded="false" onclick="kbTogglePanel(\'sources\')">回答依据</button></nav></header>'+
+    '<section class="kb-topic-overview" aria-labelledby="kbOverviewTitle"><div class="kb-overview-heading"><div><h2 id="kbOverviewTitle">城市知识全景</h2><p>从重点板块查阅资料，围绕具体问题深入分析。</p></div><button type="button" class="kb-global-scope" onclick="clearKbActiveTopic();kbClosePanels()">全库提问 <span aria-hidden="true">↗</span></button></div><div class="kb-topic-grid">'+topics+'</div></section>'+
     '<div class="kb-workbench-grid"><button class="kb-panel-backdrop" aria-label="关闭侧栏" onclick="kbClosePanels()"></button>'+
-    '<aside id="kbTopicsPanel" class="kb-topics-panel" aria-label="知识主题与历史会话"><div class="kb-pane-heading"><h2>工作空间</h2><button id="kbTopicsClose" class="kb-panel-close" type="button" onclick="kbClosePanels()" aria-label="关闭主题与对话">×</button></div>'+
+    '<aside id="kbTopicsPanel" class="kb-topics-panel" aria-label="历史会话"><div class="kb-pane-heading"><h2>历史对话</h2><button id="kbTopicsClose" class="kb-panel-close" type="button" onclick="kbClosePanels()" aria-label="关闭历史对话">×</button></div>'+
     '<button type="button" class="kb-new-conversation" onclick="kbNewSession(cur);kbClosePanels()"><span aria-hidden="true">＋</span> 新对话</button>'+
     '<section class="kb-nav-section kb-recent"><div class="kb-section-heading"><h3>最近对话</h3><button type="button" onclick="kbClosePanels();openKbHistory()">全部</button></div><div id="kbWorkspaceSessions">'+kbWorkspaceSessionsHtml()+'</div></section>'+
-    '<details class="kb-topic-nav"><summary>资料主题 <span>'+(p.kb||[]).length+'</span></summary><div class="kb-topic-list"><button type="button" class="kb-global-scope" onclick="clearKbActiveTopic();kbClosePanels()">全部知识 <span>全库提问</span></button>'+topics+'</div></details>'+
     '<details class="kb-readiness"><summary>知识库状态</summary><div id="kbPageProgress">'+kbPageProgressInner(kbReadiness())+'</div></details></aside>'+
     '<section class="kb-chat-panel" aria-label="城市智库对话"><div id="kbSessionBar"></div>'+
-    '<div class="knowledge-scroll" id="kbScroll" onscroll="kbToggleTopBtn()"><section id="kbWelcome" class="kb-welcome"><span class="kb-welcome-mark" aria-hidden="true">✦</span>'+
-    '<h2>从一个具体问题开始</h2><p>结合'+escape(p.city)+'已有报告与补充材料，帮你查依据、做比较、梳理下一步。</p>'+
-    '<div class="kb-starter-list">'+examples.map(function(q){return '<button type="button" onclick="kbDraftQuestion('+escape(JSON.stringify(q))+')"><span>'+escape(q)+'</span><span aria-hidden="true">↗</span></button>';}).join('')+'</div><small>先填写问题，确认后再发送。</small></section>'+
+    '<div class="knowledge-scroll" id="kbScroll" onscroll="kbToggleTopBtn()"><section id="kbWelcome" class="kb-welcome">'+
+    '<h2>围绕城市资料，继续深入分析</h2><p>选择上方板块提问，或直接输入你关心的问题。</p></section>'+
     '<div id="kbConvWrap"><div id="kbConv" role="log" aria-label="问答记录" aria-live="polite"></div></div></div>'+kbComposer()+
     '<button type="button" id="kbTopBtn" onclick="kbScrollTop()" title="回到对话顶部" aria-label="回到对话顶部">↑</button></section>'+
     '<aside id="kbSourcesPanel" class="kb-sources-panel" aria-label="当前回答的依据"><div class="kb-pane-heading"><h2 id="kbSourcesTitle">回答依据</h2><button id="kbSourcesClose" class="kb-panel-close" type="button" onclick="kbTogglePanel(\'sources\')" aria-label="关闭回答依据">×</button></div>'+

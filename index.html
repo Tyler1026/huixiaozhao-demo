@@ -242,7 +242,7 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 @media (max-width:767px){.workspace{flex-direction:column;overflow:auto}.main-pane{flex:1 0 64%;width:100%;min-height:320px}.detail-pane{position:relative;inset:auto;flex:0 0 auto;width:100%;max-width:none;max-height:45vh;min-height:230px;border-left:0;border-top:1px solid var(--line);box-shadow:none}.detail-page{min-height:230px}.reopen-detail{position:relative;top:auto;right:auto;align-self:flex-end;flex:0 0 auto}.collapse-detail{top:12px;right:12px}.detail-header{padding-right:62px}.report-download-options .primary-button,.report-download-options .secondary-button{width:100%}}
 
 /* City intelligence: chat stays visible; navigation and evidence scroll independently. */
-.kb-workspace{background:#f5f7fb;color:#23324a;isolation:isolate}
+.kb-workspace{background:#f5f7fb;color:#23324a;isolation:isolate;overflow:auto}
 .kb-workbench-header{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 26px;background:#fff;border-bottom:1px solid #e5eaf2}
 .kb-heading .eyebrow{font-size:10px;letter-spacing:1.1px;color:#8390a5}
 .kb-heading h1{margin:4px 0 0;font-size:22px;line-height:1.3;letter-spacing:.5px}
@@ -250,7 +250,7 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 .kb-toolbar button,.kb-panel-close{font:inherit;cursor:pointer;border:1px solid #e1e7f0;background:#fff;color:#50637d;border-radius:8px;padding:8px 11px;font-size:12px;white-space:nowrap}
 .kb-toolbar button:hover{background:#f2f6fc;border-color:#bacce3;color:#235e9e}
 .kb-toolbar .kb-nav-toggle{display:none}
-.kb-workbench-grid{display:grid;grid-template-columns:204px minmax(0,1fr) 272px;min-height:0;flex:1;gap:0;position:relative}
+.kb-workbench-grid{display:grid;grid-template-columns:204px minmax(0,1fr) 272px;min-height:280px;flex:1 0 280px;gap:0;position:relative}
 .kb-topics-panel{min-height:0;overflow:auto;padding:18px 14px;background:#f8fafc;border-right:1px solid #e5eaf2;overscroll-behavior:contain}
 .kb-pane-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:15px}
 .kb-pane-heading h2{font-size:13px;font-weight:650;letter-spacing:.3px;margin:0;color:#52627b}
@@ -264,18 +264,26 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 .kb-global-scope{width:100%;border:0;border-radius:7px;padding:8px;background:transparent;color:#4b607b;display:flex;justify-content:space-between;gap:8px;cursor:pointer;text-align:left;font-size:12px}
 .kb-global-scope:hover{background:#edf2f8}
 .kb-global-scope span{font-size:10px;color:#8a96a8}
-.kb-topic-nav{margin-top:24px;border-top:1px solid #e5eaf2;padding-top:15px}
-.kb-topic-nav>summary{cursor:pointer;color:#7b899c;font-size:11px;line-height:24px}
-.kb-topic-nav>summary>span{float:right;font-size:10px;color:#9aa5b5}
-.kb-topic-list{margin-top:8px}
-.kb-topic-row{display:flex;align-items:center;gap:5px;margin:2px 0;padding:0 5px;border:0;border-radius:6px;background:transparent;box-shadow:none}
-.kb-topic-row:hover{background:#edf2f8}
-.kb-topic-row.active,.kb-topic-row.is-active{background:#e7effa;box-shadow:none}
-.kb-topic-row button{font:inherit;font-size:11px;border:0;background:transparent;cursor:pointer;min-height:36px;line-height:1.5;padding:8px 3px}
-.kb-topic-question{flex:1;min-width:0;text-align:left;color:#5d6e84}
-.kb-topic-row.active .kb-topic-question{color:#235e9e;font-weight:600}
-.kb-topic-material{flex:0 0 auto;color:#8c9aad;font-size:10px!important}
-.kb-topic-material:hover{color:#2865ae;text-decoration:underline}
+.kb-topic-overview{flex:0 0 auto;padding:20px 26px 22px;background:linear-gradient(180deg,#f3f7fd,#f8fafd);border-bottom:1px solid #dfe7f2}
+.kb-overview-heading{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:14px}
+.kb-overview-heading h2{margin:0;color:#25466c;font-size:16px;font-weight:650;letter-spacing:.4px}
+.kb-overview-heading p{margin:5px 0 0;color:#7f8da1;font-size:11px;line-height:1.6}
+.kb-overview-heading .kb-global-scope{width:auto;flex-shrink:0;border:1px solid #cedbee;background:#fff;color:#456f9f;font-size:11px;padding:7px 10px}
+.kb-topic-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px}
+.kb-topic-card{min-width:0;display:flex;flex-direction:column;border:1px solid #d9e3ef;border-radius:12px;background:#fff;overflow:hidden;box-shadow:0 4px 14px #24466605;transition:border-color .15s,box-shadow .15s}
+.kb-topic-card:hover{border-color:#93b1d5;box-shadow:0 5px 16px #2446660c}
+.kb-topic-card.active,.kb-topic-card.is-active{border-color:#4e82bc;box-shadow:0 0 0 1px #4e82bc}
+.kb-topic-material{display:flex;flex-direction:column;align-items:flex-start;flex:1;position:relative;min-width:0;width:100%;border:0;background:transparent;padding:15px 16px 13px;font:inherit;cursor:pointer;text-align:left}
+.kb-topic-number{font-size:11px;line-height:1;font-weight:650;letter-spacing:1px;color:#6f91b9;margin-bottom:10px}
+.kb-topic-title{font-size:15px;line-height:1.5;margin:0 0 6px;color:#24476f;font-weight:650}
+.kb-topic-material p{margin:0 0 12px;font-size:11px;line-height:1.7;color:#8491a3}
+.kb-topic-read{display:flex;justify-content:space-between;align-items:center;gap:16px;width:100%;margin-top:auto;font-size:11px;color:#396da6;font-weight:550}
+.kb-topic-question{display:flex;align-items:center;justify-content:space-between;gap:8px;border:0;border-top:1px solid #ebeff5;background:#f9fbfe;padding:9px 16px;min-height:44px;color:#6b819d;font:inherit;font-size:10px;text-align:left;cursor:pointer}
+.kb-topic-question:hover{color:#245f9f;background:#edf4fe}
+.kb-topic-card.active .kb-topic-question{color:#245f9f;background:#edf4fe}
+@media(max-width:1120px){.kb-topic-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.kb-topic-material{padding:12px 14px 10px}.kb-topic-number{margin-bottom:7px}.kb-topic-material p{margin-bottom:8px}.kb-topic-overview{padding:16px 22px 18px}}
+@media(max-width:820px){.kb-topic-overview{padding:16px}.kb-topic-grid{gap:10px}.kb-overview-heading{gap:10px;margin-bottom:12px}}
+@media(max-width:480px){.kb-topic-overview{padding:13px 12px 15px}.kb-overview-heading h2{font-size:14px}.kb-overview-heading p{font-size:10px;max-width:200px}.kb-overview-heading .kb-global-scope{font-size:10px;padding:6px}.kb-topic-grid{gap:9px}.kb-topic-material{padding:11px 10px 10px}.kb-topic-title{font-size:13px;line-height:1.55}.kb-topic-material p{font-size:10px;line-height:1.6}.kb-topic-question{padding:8px 10px;font-size:10px}.kb-topic-read{font-size:10px}}
 .kb-section-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
 .kb-section-heading h3{margin:0}.kb-section-heading button{font-size:10px;color:#7b8ba1;border:0;background:transparent;cursor:pointer}
 .kb-session-item{width:100%;display:flex;align-items:center;gap:8px;justify-content:space-between;border:0;border-radius:7px;padding:9px 8px;background:transparent;color:#6c798d;text-align:left;cursor:pointer}
@@ -359,6 +367,11 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
   body.kb-view .kb-toolbar{display:grid;grid-template-columns:repeat(5,auto);gap:4px;justify-content:stretch}
   body.kb-view .kb-toolbar button{font-size:10px;padding:7px 4px}
 }
+
+/* Topic overview is the primary entry; keep the empty conversation subordinate. */
+.kb-chat-panel .kb-welcome{margin:4px auto;text-align:left;max-width:none}
+.kb-chat-panel .kb-welcome h2{font-size:14px;line-height:1.6;margin:0 0 4px;font-weight:550;color:#5d718c}
+.kb-chat-panel .kb-welcome>p{max-width:none;margin:0;font-size:11px;line-height:1.7}
 </style><script>
 window.onerror = function(msg, src, line, col, err) {
   if(document.getElementById('root') && !document.getElementById('root').innerHTML.trim()){
@@ -7520,27 +7533,33 @@ function kbWorkspaceRefresh(){
 }
 function kbPage(p){
   var escape=_authEscape;
+  var topicDescriptions={
+    '主导产业与产业链':'看清产业结构、关键环节与补链方向',
+    '园区与承载条件':'了解园区分工、空间载体与项目承接条件',
+    '链主与存量企业':'梳理重点企业、上下游关系与配套需求',
+    '政策、规划与领导关注':'查阅政策支持、发展规划与重点关注事项'
+  };
   var topics=(p.kb||[]).map(function(k,i){
-    return '<div class="kb-topic-card kb-topic-row" data-kb-topic="'+i+'">'+
-      '<button type="button" class="kb-topic-question" onclick="askAboutKb('+i+')" title="以此主题准备问题">'+escape(k.t)+'</button>'+
-      '<button type="button" class="kb-topic-material" onclick="kbClosePanels();kbDetail('+i+')" aria-label="查看'+escape(k.t)+'资料">资料</button></div>';
+    return '<article class="kb-topic-card" data-kb-topic="'+i+'">'+
+      '<button type="button" class="kb-topic-material" onclick="kbClosePanels();kbDetail('+i+')" aria-label="查看'+escape(k.t)+'资料">'+
+      '<span class="kb-topic-number" aria-hidden="true">'+String(i+1).padStart(2,'0')+'</span><span class="kb-topic-title">'+escape(k.t)+'</span>'+
+      '<p>'+escape(topicDescriptions[k.t]||'查阅本板块已有资料与补充材料')+'</p><span class="kb-topic-read">查看资料 <span aria-hidden="true">↗</span></span></button>'+
+      '<button type="button" class="kb-topic-question" onclick="askAboutKb('+i+')" aria-label="围绕'+escape(k.t)+'提问">围绕此板块提问 <span aria-hidden="true">→</span></button></article>';
   }).join('');
-  var examples=[p.city+'补链的核心缺口有哪些？',p.city+'各园区如何分工承接不同细分产业？','本地链主企业还缺哪些关键上游配套？'];
   return '<div class="page kb-workspace" id="kbWorkspace">'+
     '<header class="kb-workbench-header"><div class="kb-heading"><span class="eyebrow">'+escape(p.city)+' · CITY INTELLIGENCE</span><h1>城市智库</h1></div>'+
-    '<nav class="kb-toolbar" aria-label="智库工具"><button type="button" id="kbToggle-topics" class="kb-nav-toggle" aria-controls="kbTopicsPanel" aria-expanded="false" onclick="kbTogglePanel(\'topics\')">主题与对话</button>'+
+    '<nav class="kb-toolbar" aria-label="智库工具"><button type="button" id="kbToggle-topics" class="kb-nav-toggle" aria-controls="kbTopicsPanel" aria-expanded="false" onclick="kbTogglePanel(\'topics\')">历史对话</button>'+
     '<button type="button" onclick="uploadHint()">上传材料</button><button type="button" onclick="openMemoryBank()">记忆库</button><button type="button" onclick="showDownloadReport()">下载报告</button>'+
     '<button type="button" id="kbToggle-sources" class="kb-source-toggle" aria-controls="kbSourcesPanel" aria-expanded="false" onclick="kbTogglePanel(\'sources\')">回答依据</button></nav></header>'+
+    '<section class="kb-topic-overview" aria-labelledby="kbOverviewTitle"><div class="kb-overview-heading"><div><h2 id="kbOverviewTitle">城市知识全景</h2><p>从重点板块查阅资料，围绕具体问题深入分析。</p></div><button type="button" class="kb-global-scope" onclick="clearKbActiveTopic();kbClosePanels()">全库提问 <span aria-hidden="true">↗</span></button></div><div class="kb-topic-grid">'+topics+'</div></section>'+
     '<div class="kb-workbench-grid"><button class="kb-panel-backdrop" aria-label="关闭侧栏" onclick="kbClosePanels()"></button>'+
-    '<aside id="kbTopicsPanel" class="kb-topics-panel" aria-label="知识主题与历史会话"><div class="kb-pane-heading"><h2>工作空间</h2><button id="kbTopicsClose" class="kb-panel-close" type="button" onclick="kbClosePanels()" aria-label="关闭主题与对话">×</button></div>'+
+    '<aside id="kbTopicsPanel" class="kb-topics-panel" aria-label="历史会话"><div class="kb-pane-heading"><h2>历史对话</h2><button id="kbTopicsClose" class="kb-panel-close" type="button" onclick="kbClosePanels()" aria-label="关闭历史对话">×</button></div>'+
     '<button type="button" class="kb-new-conversation" onclick="kbNewSession(cur);kbClosePanels()"><span aria-hidden="true">＋</span> 新对话</button>'+
     '<section class="kb-nav-section kb-recent"><div class="kb-section-heading"><h3>最近对话</h3><button type="button" onclick="kbClosePanels();openKbHistory()">全部</button></div><div id="kbWorkspaceSessions">'+kbWorkspaceSessionsHtml()+'</div></section>'+
-    '<details class="kb-topic-nav"><summary>资料主题 <span>'+(p.kb||[]).length+'</span></summary><div class="kb-topic-list"><button type="button" class="kb-global-scope" onclick="clearKbActiveTopic();kbClosePanels()">全部知识 <span>全库提问</span></button>'+topics+'</div></details>'+
     '<details class="kb-readiness"><summary>知识库状态</summary><div id="kbPageProgress">'+kbPageProgressInner(kbReadiness())+'</div></details></aside>'+
     '<section class="kb-chat-panel" aria-label="城市智库对话"><div id="kbSessionBar"></div>'+
-    '<div class="knowledge-scroll" id="kbScroll" onscroll="kbToggleTopBtn()"><section id="kbWelcome" class="kb-welcome"><span class="kb-welcome-mark" aria-hidden="true">✦</span>'+
-    '<h2>从一个具体问题开始</h2><p>结合'+escape(p.city)+'已有报告与补充材料，帮你查依据、做比较、梳理下一步。</p>'+
-    '<div class="kb-starter-list">'+examples.map(function(q){return '<button type="button" onclick="kbDraftQuestion('+escape(JSON.stringify(q))+')"><span>'+escape(q)+'</span><span aria-hidden="true">↗</span></button>';}).join('')+'</div><small>先填写问题，确认后再发送。</small></section>'+
+    '<div class="knowledge-scroll" id="kbScroll" onscroll="kbToggleTopBtn()"><section id="kbWelcome" class="kb-welcome">'+
+    '<h2>围绕城市资料，继续深入分析</h2><p>选择上方板块提问，或直接输入你关心的问题。</p></section>'+
     '<div id="kbConvWrap"><div id="kbConv" role="log" aria-label="问答记录" aria-live="polite"></div></div></div>'+kbComposer()+
     '<button type="button" id="kbTopBtn" onclick="kbScrollTop()" title="回到对话顶部" aria-label="回到对话顶部">↑</button></section>'+
     '<aside id="kbSourcesPanel" class="kb-sources-panel" aria-label="当前回答的依据"><div class="kb-pane-heading"><h2 id="kbSourcesTitle">回答依据</h2><button id="kbSourcesClose" class="kb-panel-close" type="button" onclick="kbTogglePanel(\'sources\')" aria-label="关闭回答依据">×</button></div>'+
