@@ -239,7 +239,7 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 @media (max-width:767px){.workspace{flex-direction:column;overflow:auto}.main-pane{flex:1 0 64%;width:100%;min-height:320px}.detail-pane{position:relative;inset:auto;flex:0 0 auto;width:100%;max-width:none;max-height:45vh;min-height:230px;border-left:0;border-top:1px solid var(--line);box-shadow:none}.detail-page{min-height:230px}.reopen-detail{position:relative;top:auto;right:auto;align-self:flex-end;flex:0 0 auto}.collapse-detail{top:12px;right:12px}.detail-header{padding-right:62px}.report-download-options .primary-button,.report-download-options .secondary-button{width:100%}}
 
 /* City intelligence: chat stays visible; navigation and evidence scroll independently. */
-.kb-workspace{background:#f5f7fb;color:#23324a;isolation:isolate}
+.kb-workspace{background:#f5f7fb;color:#23324a;isolation:isolate;overflow:auto}
 .kb-workbench-header{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 26px;background:#fff;border-bottom:1px solid #e5eaf2}
 .kb-heading .eyebrow{font-size:10px;letter-spacing:1.1px;color:#8390a5}
 .kb-heading h1{margin:4px 0 0;font-size:22px;line-height:1.3;letter-spacing:.5px}
@@ -247,7 +247,7 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 .kb-toolbar button,.kb-panel-close{font:inherit;cursor:pointer;border:1px solid #e1e7f0;background:#fff;color:#50637d;border-radius:8px;padding:8px 11px;font-size:12px;white-space:nowrap}
 .kb-toolbar button:hover{background:#f2f6fc;border-color:#bacce3;color:#235e9e}
 .kb-toolbar .kb-nav-toggle{display:none}
-.kb-workbench-grid{display:grid;grid-template-columns:204px minmax(0,1fr) 272px;min-height:0;flex:1;gap:0;position:relative}
+.kb-workbench-grid{display:grid;grid-template-columns:204px minmax(0,1fr) 272px;min-height:280px;flex:1 0 280px;gap:0;position:relative}
 .kb-topics-panel{min-height:0;overflow:auto;padding:18px 14px;background:#f8fafc;border-right:1px solid #e5eaf2;overscroll-behavior:contain}
 .kb-pane-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:15px}
 .kb-pane-heading h2{font-size:13px;font-weight:650;letter-spacing:.3px;margin:0;color:#52627b}
@@ -261,18 +261,26 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 .kb-global-scope{width:100%;border:0;border-radius:7px;padding:8px;background:transparent;color:#4b607b;display:flex;justify-content:space-between;gap:8px;cursor:pointer;text-align:left;font-size:12px}
 .kb-global-scope:hover{background:#edf2f8}
 .kb-global-scope span{font-size:10px;color:#8a96a8}
-.kb-topic-nav{margin-top:24px;border-top:1px solid #e5eaf2;padding-top:15px}
-.kb-topic-nav>summary{cursor:pointer;color:#7b899c;font-size:11px;line-height:24px}
-.kb-topic-nav>summary>span{float:right;font-size:10px;color:#9aa5b5}
-.kb-topic-list{margin-top:8px}
-.kb-topic-row{display:flex;align-items:center;gap:5px;margin:2px 0;padding:0 5px;border:0;border-radius:6px;background:transparent;box-shadow:none}
-.kb-topic-row:hover{background:#edf2f8}
-.kb-topic-row.active,.kb-topic-row.is-active{background:#e7effa;box-shadow:none}
-.kb-topic-row button{font:inherit;font-size:11px;border:0;background:transparent;cursor:pointer;min-height:36px;line-height:1.5;padding:8px 3px}
-.kb-topic-question{flex:1;min-width:0;text-align:left;color:#5d6e84}
-.kb-topic-row.active .kb-topic-question{color:#235e9e;font-weight:600}
-.kb-topic-material{flex:0 0 auto;color:#8c9aad;font-size:10px!important}
-.kb-topic-material:hover{color:#2865ae;text-decoration:underline}
+.kb-topic-overview{flex:0 0 auto;padding:20px 26px 22px;background:linear-gradient(180deg,#f3f7fd,#f8fafd);border-bottom:1px solid #dfe7f2}
+.kb-overview-heading{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:14px}
+.kb-overview-heading h2{margin:0;color:#25466c;font-size:16px;font-weight:650;letter-spacing:.4px}
+.kb-overview-heading p{margin:5px 0 0;color:#7f8da1;font-size:11px;line-height:1.6}
+.kb-overview-heading .kb-global-scope{width:auto;flex-shrink:0;border:1px solid #cedbee;background:#fff;color:#456f9f;font-size:11px;padding:7px 10px}
+.kb-topic-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px}
+.kb-topic-card{min-width:0;display:flex;flex-direction:column;border:1px solid #d9e3ef;border-radius:12px;background:#fff;overflow:hidden;box-shadow:0 4px 14px #24466605;transition:border-color .15s,box-shadow .15s}
+.kb-topic-card:hover{border-color:#93b1d5;box-shadow:0 5px 16px #2446660c}
+.kb-topic-card.active,.kb-topic-card.is-active{border-color:#4e82bc;box-shadow:0 0 0 1px #4e82bc}
+.kb-topic-material{display:flex;flex-direction:column;align-items:flex-start;flex:1;position:relative;min-width:0;width:100%;border:0;background:transparent;padding:15px 16px 13px;font:inherit;cursor:pointer;text-align:left}
+.kb-topic-number{font-size:11px;line-height:1;font-weight:650;letter-spacing:1px;color:#6f91b9;margin-bottom:10px}
+.kb-topic-title{font-size:15px;line-height:1.5;margin:0 0 6px;color:#24476f;font-weight:650}
+.kb-topic-material p{margin:0 0 12px;font-size:11px;line-height:1.7;color:#8491a3}
+.kb-topic-read{display:flex;justify-content:space-between;align-items:center;gap:16px;width:100%;margin-top:auto;font-size:11px;color:#396da6;font-weight:550}
+.kb-topic-question{display:flex;align-items:center;justify-content:space-between;gap:8px;border:0;border-top:1px solid #ebeff5;background:#f9fbfe;padding:9px 16px;min-height:44px;color:#6b819d;font:inherit;font-size:10px;text-align:left;cursor:pointer}
+.kb-topic-question:hover{color:#245f9f;background:#edf4fe}
+.kb-topic-card.active .kb-topic-question{color:#245f9f;background:#edf4fe}
+@media(max-width:1120px){.kb-topic-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.kb-topic-material{padding:12px 14px 10px}.kb-topic-number{margin-bottom:7px}.kb-topic-material p{margin-bottom:8px}.kb-topic-overview{padding:16px 22px 18px}}
+@media(max-width:820px){.kb-topic-overview{padding:16px}.kb-topic-grid{gap:10px}.kb-overview-heading{gap:10px;margin-bottom:12px}}
+@media(max-width:480px){.kb-topic-overview{padding:13px 12px 15px}.kb-overview-heading h2{font-size:14px}.kb-overview-heading p{font-size:10px;max-width:200px}.kb-overview-heading .kb-global-scope{font-size:10px;padding:6px}.kb-topic-grid{gap:9px}.kb-topic-material{padding:11px 10px 10px}.kb-topic-title{font-size:13px;line-height:1.55}.kb-topic-material p{font-size:10px;line-height:1.6}.kb-topic-question{padding:8px 10px;font-size:10px}.kb-topic-read{font-size:10px}}
 .kb-section-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
 .kb-section-heading h3{margin:0}.kb-section-heading button{font-size:10px;color:#7b8ba1;border:0;background:transparent;cursor:pointer}
 .kb-session-item{width:100%;display:flex;align-items:center;gap:8px;justify-content:space-between;border:0;border-radius:7px;padding:9px 8px;background:transparent;color:#6c798d;text-align:left;cursor:pointer}
@@ -356,3 +364,8 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
   body.kb-view .kb-toolbar{display:grid;grid-template-columns:repeat(5,auto);gap:4px;justify-content:stretch}
   body.kb-view .kb-toolbar button{font-size:10px;padding:7px 4px}
 }
+
+/* Topic overview is the primary entry; keep the empty conversation subordinate. */
+.kb-chat-panel .kb-welcome{margin:4px auto;text-align:left;max-width:none}
+.kb-chat-panel .kb-welcome h2{font-size:14px;line-height:1.6;margin:0 0 4px;font-weight:550;color:#5d718c}
+.kb-chat-panel .kb-welcome>p{max-width:none;margin:0;font-size:11px;line-height:1.7}
