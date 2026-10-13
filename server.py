@@ -817,7 +817,9 @@ class Handler(BaseHTTPRequestHandler):
                 cur_proj = sync_obj.get('cur', '')
                 proj = projects.get(cur_proj) or {}
                 city = proj.get('city', '')
-                kb = proj.get('kb') or []
+                from backend.kb_edits import effective_known
+                kb = [dict(section, known=effective_known(sync_obj, cur_proj, index))
+                      for index, section in enumerate(proj.get('kb') or [])]
                 if not kb or not city:
                     data = json.dumps({"ok": False, "error": "no kb data"}).encode()
                 else:
@@ -959,14 +961,14 @@ class Handler(BaseHTTPRequestHandler):
         from backend.auth_routes import (dispatch_auth, error_response, load_state,
                                          require_admin, check_origin, sync_guard)
         from backend.access_control import guard_sync, scoped_sync_view
+        path = self.path.split('?', 1)[0]
         try:
             length = int(self.headers.get('Content-Length', 0))
-            if length < 0 or length > 50 * 1024 * 1024:
+            if length < 0 or length > (1024 * 1024 if path == '/api/kb-edit' else 50 * 1024 * 1024):
                 raise ValueError()
         except ValueError:
             return error_response(self, AuthError(413, 'request_too_large', '请求内容过大'))
         raw = self.rfile.read(length)
-        path = self.path.split('?', 1)[0]
         if dispatch_auth(self, 'POST', path, raw, self._account_session,
                          admin_config=self._account_config(), secure=self._secure_cookie()):
             return
@@ -981,6 +983,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._scoped_state = scoped_sync_view(state, self._principal)
             except AuthError as error:
                 return error_response(self, error)
+        if path == '/api/kb-edit':
+            from backend.kb_edits import handle_kb_edit
+            return handle_kb_edit(self, raw, self._account_session, self._account_config())
         if path == '/api/funnel-resource-preview':
             from backend.evidence_grounding import resource_review_preview
             from backend.auth_routes import respond

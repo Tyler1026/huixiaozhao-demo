@@ -128,27 +128,23 @@ function kbReadiness(){
   // 只统计 ⚠️ 条目作为「待确认」分母
   // 普通事实性条目（AI 从报告提取）默认已确认，不要求领导操作
   var warnTotal=0, warnConfirmed=0;
+  var effectiveSections=p.kb.map(function(section,index){
+    return typeof kbEffectiveKnown==='function'?kbEffectiveKnown(p,index,cur):(section.known||[]);
+  });
+  function originalWarningState(sectionIndex,item,index){
+    var text=_kbText(item);
+    if(typeof _isJunkKbItem==='function'&&_isJunkKbItem(text))return null;
+    text=text.replace(/\ufe0f/g,'');
+    var isWarn=text.indexOf('\u26a0')>=0,isDone=text.trim().indexOf('\u2705')===0;
+    var effective=effectiveSections[sectionIndex][index],edited=!!(effective&&effective._kbUserEdited);
+    var conf=KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][sectionIndex]&&KB_CONFIRMS[cur][sectionIndex][index];
+    return {counted:isWarn||isDone,confirmed:!edited&&!!(conf||isDone),pending:(isWarn||(isDone&&edited))&&!(conf&&!edited)};
+  }
   p.kb.forEach(function(k,ki){
-    (k.known||[]).forEach(function(x,xi){
-      x=_kbText(x);
-      /* 【2026-09-23 修复】计分分母必须与显示层同口径：跳过占位/垃圾条目。
-         根因：ops.html addKbItem() 先把「⚠️ 请在此输入补充内容（保存后写入知识库）」
-         占位符 push 进 kb.known 再弹编辑框，用户取消/关掉弹窗后占位符就永久留在数据里。
-         政府端 13 处显示路径都用 _isJunkKbItem 过滤掉了它，干部看不见；
-         但这里不过滤 → 占位符计入待确认分母，且永远无法被确认。
-         实测随州 4 个项目各 6 条占位：确认率被从 100% 压到 60%、
-         就绪分从 100 压到 92，pendingWarn 常驻 6 条清不掉。
-         只在计分时跳过，不动 kb.known 数据本身（数据完整性铁律）。 */
-      if(typeof _isJunkKbItem==='function' && _isJunkKbItem(x)) return;
-      // 归一化 emoji 变体选择符(U+FE0F)：报告RAG回填的条目常用裸码 ⚠(U+26A0)/✅(U+2705)，
-      // 若判断串带 ️ 会匹配不到 → warnTotal=0 → 确认率误判为满分白送30分(松江虚高80%根因)。
-      var _x=x.replace(/\ufe0f/g,'');
-      var isWarn=_x.indexOf('\u26a0')>=0;
-      var isDone=_x.trim().indexOf('\u2705')===0;
-      if(!isWarn&&!isDone) return;  // 非⚠️且非✅，跳过
-      warnTotal++;
-      var conf=KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][ki]&&KB_CONFIRMS[cur][ki][xi];
-      if(conf||isDone) warnConfirmed++;
+    // A text revision never confirms its source record, including formerly checked text.
+    (k.known||[]).forEach(function(item,index){
+      var state=originalWarningState(ki,item,index);if(!state||!state.counted)return;
+      warnTotal++;if(state.confirmed)warnConfirmed++;
     });
   });
   // 注意：城市智库进度只统计智库条目（⚠️/✅）+ 上传材料，不纳入产业分析报告页的
@@ -157,8 +153,8 @@ function kbReadiness(){
   var uploads=(UPLOADS[cur]||[]).length;
   // 统计所有 known 条目总数（不止⚠️/✅），用于判断板块是否真的有数据
   var knownTotal=0;
-  p.kb.forEach(function(k){
-    (k.known||[]).forEach(function(x){
+  effectiveSections.forEach(function(known){
+    known.forEach(function(x){
       // 占位/垃圾条目不计入数据覆盖度，否则空占位也能把覆盖率刷上去
       if(typeof _isJunkKbItem==='function' && _isJunkKbItem(_kbText(x))) return;
       knownTotal++;
@@ -180,14 +176,8 @@ function kbReadiness(){
   // 未确认的 ⚠️ 待确认条数（只数真正待确认的，不含已核验 ✅）
   var pendingWarn=0;
   p.kb.forEach(function(k,ki){
-    (k.known||[]).forEach(function(x,xi){
-      var _raw=_kbText(x);
-      // 与上面分母同口径：占位/垃圾条目不算待确认（否则进度条永远卡着清不掉）
-      if(typeof _isJunkKbItem==='function' && _isJunkKbItem(_raw)) return;
-      var _t=_raw.replace(/\ufe0f/g,'');
-      if(_t.indexOf('\u26a0')<0) return;
-      var _c=KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][ki]&&KB_CONFIRMS[cur][ki][xi];
-      if(!_c) pendingWarn++;
+    (k.known||[]).forEach(function(item,index){
+      var state=originalWarningState(ki,item,index);if(state&&state.pending)pendingWarn++;
     });
   });
   // 硬门槛：还有待确认事项没核实，就不能算「已就绪」——
@@ -215,10 +205,8 @@ function kbReadiness(){
   try{
     p.kb.forEach(function(k,ki){
       var _n=0;
-      (k.known||[]).forEach(function(x,xi){
-        var _t=_kbText(x).replace(/\ufe0f/g,'');
-        if(_t.indexOf('\u26a0')<0) return;
-        if(!(KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][ki]&&KB_CONFIRMS[cur][ki][xi])) _n++;
+      (k.known||[]).forEach(function(item,index){
+        var state=originalWarningState(ki,item,index);if(state&&state.pending)_n++;
       });
       if(_n>0) _pendSecs.push(String(k.t||'').replace(/[\u3001\uff0c].*$/,''));
     });
@@ -438,7 +426,7 @@ function sidebar(){
   var navMeta={
     knowledge: (function(){
       if(!p) return '完善材料·产业/园区/企业/政策';
-      var conf=KB_CONFIRMS[cur]?Object.keys(KB_CONFIRMS[cur]).reduce(function(n,ki){return n+Object.keys(KB_CONFIRMS[cur][ki]).length;},0):0;
+      var conf=r.confirmed||0;
       var uploads=(UPLOADS[cur]||[]).length;
       if(r.pendingWarn>0) return '⚠ '+r.pendingWarn+' 条待确认 · 数据覆盖 '+(r.rawScore!==undefined?r.rawScore:r.score)+'%';
   if(r.score>=80) return '材料覆盖 '+r.score+'% · 事实仍需核验';

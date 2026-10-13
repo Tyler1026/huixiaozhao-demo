@@ -9,7 +9,7 @@ function declaration(file,name){
   const source=fs.readFileSync(path.join(root,file),'utf8'),start=source.indexOf('function '+name+'(');
   assert.ok(start>=0,name);const end=source.indexOf('\nfunction ',start+1);return source.slice(start,end<0?source.length:end);
 }
-const funcs=[['00.js','reportExportContext'],['00.js','buildReportBrief'],['00.js','reportExportSourceRecords'],['00.js','reportMdToHtml'],['00.js','printReportDocument'],['00.js','downloadReportPDF'],['00.js','downloadReportTxt'],['01.js','_getDisplaySub'],['01.js','_getDisplayTag'],['08.js','showDownloadReport'],['08.js','kbSectionSummary'],['08.js','topicHasFullReport'],['09.js','topicScoreLabel'],['09.js','topicScoreDisplay'],['05.js','syncDetailPane'],['13.js','toggleDetail']];
+const funcs=[['01.js','kbValueEqual'],['01.js','kbEditRecords'],['01.js','kbEditRecord'],['01.js','kbSourceEdit'],['01.js','kbEffectiveKnown'],['00.js','reportExportContext'],['00.js','buildReportBrief'],['00.js','reportExportSourceRecords'],['00.js','reportMdToHtml'],['00.js','printReportDocument'],['00.js','downloadReportPDF'],['00.js','downloadReportTxt'],['01.js','_getDisplaySub'],['01.js','_getDisplayTag'],['08.js','showDownloadReport'],['08.js','kbSectionSummary'],['08.js','topicHasFullReport'],['09.js','topicScoreLabel'],['09.js','topicScoreDisplay'],['05.js','syncDetailPane'],['13.js','toggleDetail']];
 function boot(extra={}){
   const printed=[],toasts=[],documents=[],timers=[];
   const state={topic:'方向A',text:'2. 区域基本盘：测试地区2025年生产总值4268.99亿元，年份与口径待核实。\n57. 政策工具：研发奖励最高50万元。\n58. 该意见适用条件：企业成立不满五年且有自主知识产权，按研发投入10%，资格待核实。\n59. 该意见有效期未完整披露，须核对原文。\n89. 待核实事项汇总：企业本地投资意向未知，不得据产品匹配推断投资。\n90. 时效性与来源限制总说明：旧政策可能已过时，未经官方原文核实不得直接使用。',ts:1,score:0};

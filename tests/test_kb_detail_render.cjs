@@ -23,7 +23,7 @@ function freeze(value){if(value&&typeof value==='object'){Object.values(value).f
 function harness(kb=[]){
  const nodes=new Map(),actions=[],appended=[],project={city:'闵行区',kb};
  const body={appendChild(node){appended.push(node);if(node.id)nodes.set(node.id,node);return node;}};
- const c={console,Math,Number,String,Object,Array,JSON,URL,cur:'workspace-a',curKb:null,KB_CONFIRMS:{},
+ const c={console,Math,Number,String,Object,Array,JSON,URL,AbortController,setTimeout,clearTimeout,cur:'workspace-a',curKb:null,KB_CONFIRMS:{},KB_EDITS:{},RESET_GEN:'test-generation',
   P:()=>project,_getDisplaySub:()=>'',kbCancelEdit:()=>true,kbEditSession:null,
   confirmKbItem:(...args)=>actions.push(['confirm',...args]),editKbItem:(...args)=>actions.push(['edit',...args]),deleteKbItem:(...args)=>actions.push(['delete',...args]),
   document:{body,head:{appendChild:node=>{if(node.id)nodes.set(node.id,node);}},getElementById:id=>nodes.get(id)||null,createElement(tag){
@@ -165,7 +165,7 @@ test('detail markup exposes its dialog and responsive content hooks',()=>{
 });
 
 function actionHarness(known){
- const h=harness([{t:'政策',icon:'📜',known}]),c=h.c,scroll={scrollTop:123,getBoundingClientRect:()=>({top:100})},effects={persist:0,corpus:0,progress:0,toasts:[],selectors:[]};
+ const h=harness([{t:'政策',icon:'📜',known}]),c=h.c,scroll={scrollTop:123,getBoundingClientRect:()=>({top:100})},effects={persist:0,corpus:0,progress:0,toasts:[],selectors:[],requests:[]};
  const confirms=[],answers=[],created=[],decode=s=>s.replace(/&(?:lt|gt|amp|quot|#39);/g,x=>({'&lt;':'<','&gt;':'>','&amp;':'&','&quot;':'"','&#39;':"'"}[x]));
  function element(tag='div'){
   const attrs={},names=new Set(),node={connected:false,tagName:tag.toUpperCase(),style:{},children:[],parentNode:null,_html:'',value:'',hidden:false,disabled:false,
@@ -205,18 +205,24 @@ function actionHarness(known){
  function installReader(){dialog=element();dialog.connected=true;dialog.className='kb-detail-dialog';readers=[element('header'),element('main'),element('footer')];readers[1].setAttribute('inert','');readers.forEach(n=>dialog.appendChild(n));
   h.nodes.set('kbDetailModal',{querySelector:selector=>selector==='.kb-detail-dialog'?dialog:selector==='.kb-detail-scroll'?scroll:null,querySelectorAll:()=>[],remove(){h.nodes.delete('kbDetailModal');}});
  }
- const listeners={};Object.assign(c,{AUTH:{user:'reviewer'},_authEpoch:1,KB_FILE_CHUNKS:{'workspace-a':[{id:'pin:0:0'},{id:'unrelated'}]},
+ const listeners={};let nextEditId=0;Object.assign(c,{AUTH:{user:'reviewer'},_authEpoch:1,KB_FILE_CHUNKS:{'workspace-a':[{id:'pin:0:0'},{id:'unrelated'}]},
   addEventListener(name,handler){listeners[name]=handler;},
   originalUploadEpoch:()=>c._authEpoch,originalUploadSessionCurrent:epoch=>epoch===c._authEpoch,
   confirm(message){confirms.push(message);return answers.length?answers.shift():true;},
+  async fetch(url,options){
+   const body=JSON.parse(options.body);effects.requests.push({url,options,body});
+   const record={id:body.editId||'edit-'+(++nextEditId),sectionIndex:body.sectionIndex,sectionTitle:body.sectionTitle,sourceIndex:body.sourceIndex,sourceItem:body.sourceItem,baseReportVersion:body.baseReportVersion,text:body.text,revision:body.expectedRevision+1,ts:1000+nextEditId,account:'reviewer',status:'edited'};
+   return {ok:true,status:200,json:async()=>({ok:true,record})};
+  },
   persist(){effects.persist++;},buildKBCorpus(){effects.corpus++;},refreshKbProgress(){effects.progress++;},toast(message){effects.toasts.push(message);}});
  c.document.querySelector=selector=>{effects.selectors.push(selector);return selector==='#kbDetailModal .kb-detail-scroll'?scroll:null;};
+ c.document.querySelectorAll=selector=>selector==='#kbEditorPanel button, #kbEditorPanel textarea'?(h.nodes.get('kbEditorPanel')?.querySelectorAll('button,textarea')||[]):[];
  c.document.createElement=tag=>{const node=element(tag);created.push(node);return node;};
  vm.runInContext(between(source.detail,'function confirmKbItem(','/* 编辑框附件上传'),c);
  vm.runInContext(between(source.detail,'/* 编辑框附件上传','var kbEditSession=null;'),c);
  vm.runInContext(between(source.detail,'var kbEditSession=null;','/* 删除某条 known 条目'),c);
  const renderDetail=c.kbDetail;c.kbDetail=function(index){renderDetail(index);if(!c.kbEditSession)installReader();};installReader();
- return Object.assign(h,{effects,scroll,confirms,answers,created,listeners,dialog:()=>dialog,readers:()=>readers,textarea:()=>h.nodes.get('kb-edit-'+c.kbEditSession?.kbIdx+'-'+c.kbEditSession?.itemIdx),panel:()=>h.nodes.get('kbEditorPanel')});
+ return Object.assign(h,{effects,scroll,confirms,answers,created,listeners,effective:(index=0)=>c.kbEffectiveKnown(h.project,index,'workspace-a'),edits:()=>Object.values(c.KB_EDITS['workspace-a']||{}),dialog:()=>dialog,readers:()=>readers,textarea:()=>h.nodes.get('kb-edit-'+c.kbEditSession?.kbIdx+'-'+c.kbEditSession?.itemIdx),panel:()=>h.nodes.get('kbEditorPanel')});
 }
 
 test('confirming a structured record preserves its complete raw source and metadata',()=>{
@@ -252,22 +258,22 @@ test('opening edit uses the original paragraphs and source rather than the clean
  assert.equal(JSON.stringify(item),before);assert.equal(h.effects.persist,0);
 });
 
-test('opening and saving without editing does not write or change source metadata or confirmation',()=>{
+test('opening and saving without editing does not write or change source metadata or confirmation',async()=>{
  const raw='⚠️ ## 保留原始条款\n\n第一段申请条件。\n\n1. 第二段核验要求。\n来源：原部门\nhttps://official.example/save?a=1&b=2';
  const metadata=freeze({url:'https://official.example/save?a=1&b=2'}),item={text:raw,origin:'report',nature:'policy',sources:[metadata]},h=actionHarness([item]);
- const before=JSON.stringify(item);h.c.editKbItem(0,0);h.c.saveKbEdit(0,0);
+ const before=JSON.stringify(item);h.c.editKbItem(0,0);await h.c.saveKbEdit(0,0);
  assert.equal(JSON.stringify(item),before);assert.equal(item.sources[0],metadata);assert.deepEqual(h.c.KB_CONFIRMS,{});
  assert.equal(h.effects.persist,0);assert.equal(h.effects.corpus,0);assert.equal(h.c.kbEditSession,null);assert.equal(h.panel(),undefined);
  assert.equal(h.scroll.scrollTop,123);
 });
 
-test('textarea closing tags and scripts remain escaped and round-trip as literal text',()=>{
+test('textarea closing tags and scripts remain escaped and round-trip as literal text',async()=>{
  const raw='原文保留</textarea><script>globalThis.pwned=true</script>\n<img src=x onerror="alert(1)">\n字面实体 &lt; 与 &amp; 不可二次解码。';
  const known=[{text:raw,origin:'report'}],h=actionHarness(known);
  h.c.editKbItem(0,0);h.c.kbSelectEditorPart(-1);
  const panel=h.panel();assert.equal((panel.innerHTML.match(/<\/textarea>/g)||[]).length,1);assert.equal((panel.innerHTML.match(/<textarea\b/g)||[]).length,1);
  assert.doesNotMatch(panel.innerHTML,/<script\b|<img\b/);assert.match(panel.innerHTML,/&lt;\/textarea&gt;&lt;script&gt;/);
- assert.equal(h.nodes.get('kb-edit-0-0').value,raw);h.textarea().value+='\n补充核查条件。';h.c.saveKbEdit(0,0);assert.equal(known[0].text,'✅ '+raw+'\n补充核查条件。');assert.equal(h.c.pwned,undefined);
+ assert.equal(h.nodes.get('kb-edit-0-0').value,raw);h.textarea().value+='\n补充核查条件。';await h.c.saveKbEdit(0,0);assert.equal(known[0].text,raw);assert.equal(h.effective()[0].text,raw+'\n补充核查条件。');assert.deepEqual(h.c.KB_CONFIRMS,{});assert.equal(h.c.pwned,undefined);
 });
 
 test('document index metadata uses real first-line headings or quoted original section titles',()=>{
@@ -541,47 +547,47 @@ test('opening another record respects dirty cancellation and never changes origi
  assert.equal(h.c.editKbItem(0,1),false);h.c.kbDiscardEdit();assert.equal(h.textarea().value,'第二条原文');assert.equal(h.c.kbEditSession.itemIdx,1);assert.deepEqual(known,['第一条原文','第二条原文']);assert.equal(h.effects.persist,0);assert.equal(h.confirms.length,0);
 });
 
-test('new entry starts as an empty local draft and cancellation leaves no placeholder or confirmation',()=>{
+test('new entry starts as an empty local draft and cancellation leaves no placeholder or confirmation',async()=>{
  const known=['已有正文'],h=actionHarness(known),before=JSON.stringify(known);assert.equal(h.c.addKbItem(0),true);
  assert.equal(h.textarea().value,'');assert.equal(h.c.kbEditSession.isNew,true);assert.equal(h.nodes.get('kbEditorSave').disabled,true);
- assert.equal(JSON.stringify(known),before);h.c.saveKbEdit(0,1);assert.equal(JSON.stringify(known),before);assert.equal(h.effects.persist,0);
+ assert.equal(JSON.stringify(known),before);await h.c.saveKbEdit(0,1);assert.equal(JSON.stringify(known),before);assert.equal(h.effects.persist,0);
  h.c.kbCancelEdit(true);assert.equal(JSON.stringify(known),before);assert.deepEqual(h.c.KB_CONFIRMS,{});
 });
 
-test('saving a new draft appends only once at the current end and records the actual index',()=>{
+test('saving a new draft appends one effective item without changing the base records',async()=>{
  const known=['已有正文'],h=actionHarness(known);h.c.addKbItem(0);h.textarea().value='## 新资料\n完整新条款\n来源：https://official.example/new';
- known.push('独立新增的另一条');h.c.saveKbEdit(0,1);
- assert.equal(known.length,3);assert.equal(known[0],'已有正文');assert.equal(known[1],'独立新增的另一条');assert.match(known[2].text,/^✅ ## 新资料\n/);
- assert.equal(known[2].origin,'user');assert.equal(known[2].account,'reviewer');assert.equal(h.c.KB_CONFIRMS['workspace-a'][0][2].status,'edited');
- h.c.saveKbEdit(0,1);assert.equal(known.length,3);assert.equal(h.effects.persist,1);assert.equal(h.effects.corpus,1);
+ known.push('独立新增的另一条');await h.c.saveKbEdit(0,1);
+ assert.equal(known.length,2);assert.equal(known[0],'已有正文');assert.equal(known[1],'独立新增的另一条');const effective=h.effective();assert.equal(effective.length,3);assert.match(effective[2].text,/^## 新资料\n/);
+ const saved=h.edits()[0];assert.equal(saved.account,'reviewer');assert.equal(saved.sourceIndex,null);assert.equal(saved.sourceItem,null);assert.equal(saved.status,'edited');assert.deepEqual(h.c.KB_CONFIRMS,{});
+ await h.c.saveKbEdit(0,1);assert.equal(known.length,2);assert.equal(h.edits().length,1);assert.equal(h.effects.requests.length,1);assert.equal(h.effects.persist,1);assert.equal(h.effects.corpus,1);
 });
 
-test('saving a changed record preserves source metadata and updates only its original slot',()=>{
- const sourceMeta=freeze({url:'https://official.example/source'}),item={text:'⚠️ 原始条款\n来源：https://official.example/source',origin:'report',nature:'policy',sources:[sourceMeta]},known=['不相关第一条',item,'不相关末条'],h=actionHarness(known);
- h.c.editKbItem(0,1);h.c.kbSelectEditorPart(-1);h.textarea().value+='\n补充适用条件。';h.c.kbEditorChanged();h.c.saveKbEdit(0,1);
- assert.equal(known[1],item);assert.equal(item.sources[0],sourceMeta);assert.equal(item.nature,'policy');assert.equal(item.origin,'user');assert.equal(item.account,'reviewer');
- assert.equal(item.text,'✅ 原始条款\n来源：https://official.example/source\n补充适用条件。');assert.equal(known[0],'不相关第一条');assert.equal(known[2],'不相关末条');
- assert.equal(h.c.KB_CONFIRMS['workspace-a'][0][1].text,item.text.slice(2));assert.equal(h.effects.persist,1);assert.equal(h.scroll.scrollTop,123);
+test('saving a changed record preserves immutable base metadata and overlays its original slot',async()=>{
+ const sourceMeta=freeze({url:'https://official.example/source'}),item={text:'⚠️ 原始条款\n来源：https://official.example/source',origin:'report',nature:'policy',sources:[sourceMeta]},known=['不相关第一条',item,'不相关末条'],h=actionHarness(known),before=JSON.stringify(known);
+ h.c.editKbItem(0,1);h.c.kbSelectEditorPart(-1);h.textarea().value+='\n补充适用条件。';h.c.kbEditorChanged();await h.c.saveKbEdit(0,1);
+ assert.equal(known[1],item);assert.equal(item.sources[0],sourceMeta);assert.equal(item.nature,'policy');assert.equal(item.origin,'report');assert.equal(JSON.stringify(known),before);
+ assert.equal(h.effective()[1].text,'原始条款\n来源：https://official.example/source\n补充适用条件。');assert.equal(known[0],'不相关第一条');assert.equal(known[2],'不相关末条');
+ assert.equal(h.edits()[0].sourceIndex,1);assert.deepEqual(h.edits()[0].sourceItem,JSON.parse(JSON.stringify(item)));assert.notEqual(h.edits()[0].sourceItem,item);assert.deepEqual(h.c.KB_CONFIRMS,{});assert.equal(h.effects.persist,1);assert.equal(h.effects.requests.length,1);assert.equal(h.scroll.scrollTop,123);
 });
 
-for(const change of ['workspace','project','topic','known-array','item-reference','item-content','index-shift','auth-epoch'])test('saving refuses stale editor after '+change,()=>{
+for(const change of ['workspace','project','topic','known-array','item-reference-changed','item-content','index-shift','auth-epoch'])test('saving refuses stale editor after '+change,async()=>{
  const item={text:'原始正文',origin:'report'},known=[item,{text:'相邻条目'}],h=actionHarness(known);h.c.editKbItem(0,0);h.textarea().value='本地尚未保存的修改';
  if(change==='workspace')h.c.cur='other';
  if(change==='project')h.c.P=()=>({city:'别处',kb:h.project.kb});
  if(change==='topic')h.project.kb[0]={...h.project.kb[0]};
  if(change==='known-array')h.project.kb[0].known=known.slice();
- if(change==='item-reference')known[0]={...item};
+ if(change==='item-reference-changed')known[0]={...item,source:'changed-source'};
  if(change==='item-content')item.text='外部已经更新';
  if(change==='index-shift')known.shift();
  if(change==='auth-epoch')h.c._authEpoch++;
- const before=JSON.stringify(h.project),session=h.c.kbEditSession;h.c.saveKbEdit(0,0);
- assert.equal(JSON.stringify(h.project),before);assert.equal(h.effects.persist,0);assert.deepEqual(h.c.KB_CONFIRMS,{});
+ const before=JSON.stringify(h.project),session=h.c.kbEditSession;await h.c.saveKbEdit(0,0);
+ assert.equal(JSON.stringify(h.project),before);assert.equal(h.effects.persist,0);assert.equal(h.effects.requests.length,0);assert.deepEqual(h.c.KB_CONFIRMS,{});
  assert.equal(h.c.kbEditSession,session);assert.equal(h.textarea().value,'本地尚未保存的修改');assert.ok(h.effects.toasts.length>0);
 });
 
-test('save with wrong target arguments cannot alter either record or close the current draft',()=>{
+test('save with wrong target arguments cannot alter either record or close the current draft',async()=>{
  const known=['第一条','第二条'],h=actionHarness(known);h.c.editKbItem(0,0);h.textarea().value='修改第一条';const session=h.c.kbEditSession;
- h.c.saveKbEdit(0,1);h.c.saveKbEdit(1,0);assert.deepEqual(known,['第一条','第二条']);assert.equal(h.c.kbEditSession,session);assert.equal(h.effects.persist,0);
+ await h.c.saveKbEdit(0,1);await h.c.saveKbEdit(1,0);assert.deepEqual(known,['第一条','第二条']);assert.equal(h.c.kbEditSession,session);assert.equal(h.effects.persist,0);
 });
 
 test('detail close respects dirty editor cancellation rather than discarding draft',()=>{
@@ -607,12 +613,13 @@ test('successful same-session attachment updates draft and character status with
  assert.equal(h.nodes.get('kbEditorCount').textContent,Array.from(h.textarea().value).length+' 字符');assert.deepEqual(known,['原文']);assert.equal(h.effects.persist,0);
 });
 
+async function settleEditorSave(){for(let i=0;i<8;i++)await Promise.resolve();}
 function keyEvent(key,extra={}){return {key,preventDefault(){this.prevented=true;},stopPropagation(){this.stopped=true;},...extra};}
-test('editor keyboard save respects composition and ordinary Enter while explicit shortcuts save',()=>{
+test('editor keyboard save respects composition and ordinary Enter while explicit shortcuts save',async()=>{
  const known=['原文'],h=actionHarness(known);h.c.editKbItem(0,0);h.textarea().value='修改正文';
  for(const event of [keyEvent('Enter'),keyEvent('Enter',{ctrlKey:true,isComposing:true}),keyEvent('Enter',{metaKey:true,keyCode:229})]){h.c.kbEditKey(event);assert.equal(event.prevented,undefined);assert.equal(h.effects.persist,0);}
- const save=keyEvent('Enter',{ctrlKey:true});h.c.kbEditKey(save);assert.equal(save.prevented,true);assert.equal(h.effects.persist,1);assert.equal(known[0].text,'✅ 修改正文');assert.equal(h.c.kbEditSession,null);
- const other=actionHarness(['原文']);other.c.editKbItem(0,0);other.textarea().value='另一段';other.c.kbEditKey(keyEvent('Enter',{metaKey:true}));assert.equal(other.effects.persist,1);
+ const save=keyEvent('Enter',{ctrlKey:true});h.c.kbEditKey(save);await settleEditorSave();assert.equal(save.prevented,true);assert.equal(h.effects.persist,1);assert.deepEqual(known,['原文']);assert.equal(h.effective()[0].text,'修改正文');assert.equal(h.effects.requests.length,1);assert.equal(h.c.kbEditSession,null);
+ const other=actionHarness(['原文']);other.c.editKbItem(0,0);other.textarea().value='另一段';other.c.kbEditKey(keyEvent('Enter',{metaKey:true}));await settleEditorSave();assert.equal(other.effects.persist,1);assert.equal(other.effects.requests.length,1);
 });
 
 test('Escape opens a page prompt then keeps the draft when dismissing that prompt and never saves',()=>{
@@ -636,11 +643,11 @@ test('discard prompt confines Tab and Shift+Tab to its own actions instead of ed
  assert.notEqual(h.c.document.activeElement,h.textarea());assert.equal(h.effects.persist,0);
 });
 
-test('discard prompt blocks direct and keyboard saving until editing is explicitly resumed',()=>{
+test('discard prompt blocks direct and keyboard saving until editing is explicitly resumed',async()=>{
  const known=['原文'],h=actionHarness(known);h.c.editKbItem(0,0);h.textarea().value='尚未确认的草稿';h.c.kbCancelEdit();const session=h.c.kbEditSession;
- h.c.saveKbEdit(0,0);for(const key of ['ctrlKey','metaKey']){const event=keyEvent('Enter',{[key]:true});h.c.kbEditKey(event);assert.equal(event.prevented,true);}
+ await h.c.saveKbEdit(0,0);for(const key of ['ctrlKey','metaKey']){const event=keyEvent('Enter',{[key]:true});h.c.kbEditKey(event);assert.equal(event.prevented,true);}
  assert.equal(h.c.kbEditSession,session);assert.ok(h.nodes.has('kbEditorDiscard'));assert.deepEqual(known,['原文']);assert.equal(h.effects.persist,0);assert.deepEqual(h.c.KB_CONFIRMS,{});
- h.c.kbKeepEditing();h.c.kbEditKey(keyEvent('Enter',{ctrlKey:true}));assert.equal(h.effects.persist,1);assert.equal(known[0].text,'✅ 尚未确认的草稿');assert.equal(h.c.kbEditSession,null);
+ h.c.kbKeepEditing();h.c.kbEditKey(keyEvent('Enter',{ctrlKey:true}));await settleEditorSave();assert.equal(h.effects.persist,1);assert.deepEqual(known,['原文']);assert.equal(h.effective()[0].text,'尚未确认的草稿');assert.equal(h.c.kbEditSession,null);
 });
 
 test('changing details waits for discard and then follows the requested topic without saving a draft',()=>{
@@ -697,13 +704,13 @@ for(const change of ['workspace','auth-epoch','same-key-project','topic-referenc
  });
 }
 
-test('saved result returns to its original item id even after its user status changes display order',()=>{
+test('saved result returns to its original item id even after its user status changes display order',async()=>{
  const known=['第一条原文',{text:'第二条原文',origin:'report'}],h=actionHarness(known),lookups=[];
  const get=h.c.document.getElementById;h.c.document.getElementById=id=>{lookups.push(id);return get(id);};
  h.nodes.set('kb-card-0-0',{getBoundingClientRect:()=>({top:20})});h.nodes.set('kb-card-0-1',{getBoundingClientRect:()=>({top:330})});
- h.c.editKbItem(0,1);h.textarea().value='第二条修改后置顶';h.c.saveKbEdit(0,1);
- assert.equal(h.effects.persist,1);assert.equal(known[1].origin,'user');assert.ok(lookups.includes('kb-card-0-1'));assert.equal(h.scroll.scrollTop,333);
- assert.equal(known[0],'第一条原文');assert.equal(h.effects.toasts.at(-1),'修改已在当前页面生效');
+ h.c.editKbItem(0,1);h.textarea().value='第二条修改后置顶';await h.c.saveKbEdit(0,1);
+ assert.equal(h.effects.persist,1);assert.equal(known[1].origin,'report');assert.equal(h.effective()[1].text,'第二条修改后置顶');assert.ok(lookups.includes('kb-card-0-1'));assert.equal(h.scroll.scrollTop,333);
+ assert.equal(known[0],'第一条原文');assert.match(h.effects.toasts.at(-1),/保存|成功/);
 });
 
 test('segment offsets reconstruct mixed line endings and untouched whitespace without any loss',()=>{
@@ -741,20 +748,20 @@ test('multiline records default to one short segment and expose every separate s
  assert.equal(h.effects.persist,0);assert.equal(item.text,source);
 });
 
-test('editing one repeated paragraph replaces only its own original interval and preserves metadata',()=>{
+test('editing one repeated paragraph replaces only its own original interval and preserves metadata',async()=>{
  const source='  标题\r\n\r\n重复说明\r\n\t\r\n重复说明\r\n来源：https://official.example/policy?x=1&y=2\r\n  ';
  const sourceMeta=freeze({url:'https://official.example/policy?x=1&y=2',quote:'原始证据'}),item={text:source,origin:'report',nature:'policy',sources:[sourceMeta],custom:{id:'stable'}},known=['相邻资料',item,'末尾资料'],h=actionHarness(known);
- h.c.editKbItem(0,1);const index=h.c.kbEditSession.parts.map(p=>p.original).lastIndexOf('重复说明');h.c.kbSelectEditorPart(index);h.textarea().value='只改第二处';h.c.saveKbEdit(0,1);
- const expected=source.replace(/重复说明(?=\r\n来源)/,'只改第二处');assert.equal(item.text,'✅ '+expected);assert.equal(known[1],item);assert.equal(known.length,3);assert.equal(known[0],'相邻资料');assert.equal(known[2],'末尾资料');
- assert.equal(item.sources[0],sourceMeta);assert.equal(item.custom.id,'stable');assert.equal(item.nature,'policy');assert.equal(h.c.KB_CONFIRMS['workspace-a'][0][1].text,expected);assert.equal(h.effects.persist,1);
+ h.c.editKbItem(0,1);const index=h.c.kbEditSession.parts.map(p=>p.original).lastIndexOf('重复说明');h.c.kbSelectEditorPart(index);h.textarea().value='只改第二处';await h.c.saveKbEdit(0,1);
+ const expected=source.replace(/重复说明(?=\r\n来源)/,'只改第二处');assert.equal(h.effective()[1].text,expected);assert.equal(item.text,source);assert.equal(known[1],item);assert.equal(known.length,3);assert.equal(known[0],'相邻资料');assert.equal(known[2],'末尾资料');
+ assert.equal(item.sources[0],sourceMeta);assert.equal(item.custom.id,'stable');assert.equal(item.nature,'policy');assert.deepEqual(h.c.KB_CONFIRMS,{});assert.equal(h.edits()[0].text,expected);assert.equal(h.effects.persist,1);
 });
 
-test('switching short segments keeps separate drafts and saving combines all edits in source order',()=>{
+test('switching short segments keeps separate drafts and saving combines all edits in source order',async()=>{
  const source='第一段\n\n第二段\n第三段',h=actionHarness([{text:source,origin:'report'}]);h.c.editKbItem(0,0);const s=h.c.kbEditSession;
  h.textarea().value='第一段修改';h.c.kbSelectEditorPart(2);assert.equal(h.textarea().value,'第三段');assert.equal(s.parts[0].draft,'第一段修改');
  h.textarea().value='第三段修改';h.c.kbSelectEditorPart(1);assert.equal(h.textarea().value,'第二段');h.c.kbSelectEditorPart(0);assert.equal(h.textarea().value,'第一段修改');
- assert.equal(h.nodes.has('kbEditorDiscard'),false);assert.equal(h.confirms.length,0);assert.equal(h.effects.persist,0);h.c.saveKbEdit(0,0);
- assert.equal(h.project.kb[0].known[0].text,'✅ 第一段修改\n\n第二段\n第三段修改');assert.equal(h.effects.persist,1);
+ assert.equal(h.nodes.has('kbEditorDiscard'),false);assert.equal(h.confirms.length,0);assert.equal(h.effects.persist,0);await h.c.saveKbEdit(0,0);
+ assert.equal(h.effective()[0].text,'第一段修改\n\n第二段\n第三段修改');assert.equal(h.effects.persist,1);
 });
 
 test('inactive segment drafts keep the whole editor dirty for cancel and beforeunload',()=>{
@@ -770,22 +777,22 @@ test('restoring a changed inactive segment clears whole-document dirty status',(
  assert.equal(h.nodes.get('kbEditorStatus').textContent,'尚未修改');const event=keyEvent('');h.c.kbEditBeforeUnload(event);assert.equal(event.prevented,undefined);assert.equal(h.c.kbCancelEdit(),true);assert.equal(h.effects.persist,0);
 });
 
-test('no-op switching through every short segment and whole text preserves exact CRLF source',()=>{
+test('no-op switching through every short segment and whole text preserves exact CRLF source',async()=>{
  const raw='⚠️   第一段  \r\n\r\n第二段\r\n来源：https://official.example/a\r\n  ',item={text:raw,origin:'import',account:'original',source:{id:1}},h=actionHarness([item]),before=JSON.stringify(item);
- h.c.editKbItem(0,0);for(let i=0;i<h.c.kbEditSession.parts.length;i++)h.c.kbSelectEditorPart(i);h.c.kbSelectEditorPart(-1);h.c.kbSelectEditorPart(0);h.c.saveKbEdit(0,0);
+ h.c.editKbItem(0,0);for(let i=0;i<h.c.kbEditSession.parts.length;i++)h.c.kbSelectEditorPart(i);h.c.kbSelectEditorPart(-1);h.c.kbSelectEditorPart(0);await h.c.saveKbEdit(0,0);
  assert.equal(JSON.stringify(item),before);assert.equal(h.effects.persist,0);assert.deepEqual(h.c.KB_CONFIRMS,{});assert.equal(h.c.kbEditSession,null);
 });
 
-test('whole-text fallback contains prior segment edits and resegments later whole-text edits',()=>{
+test('whole-text fallback contains prior segment edits and resegments later whole-text edits',async()=>{
  const h=actionHarness(['第一段\r\n\r\n第二段']);h.c.editKbItem(0,0);h.textarea().value='第一段修改';h.c.kbSelectEditorPart(-1);
  assert.equal(h.c.kbEditSession.segmentIndex,-1);assert.equal(h.textarea().value,'第一段修改\n\n第二段');assert.equal(h.nodes.get('kbEditorLocation').textContent,'全文编辑');
- h.textarea().value+='\n第三段新增';h.c.kbSelectEditorPart(0);assert.equal(h.c.kbEditSession.parts.length,3);h.c.kbSelectEditorPart(2);assert.equal(h.textarea().value,'第三段新增');h.textarea().value='第三段再修改';h.c.saveKbEdit(0,0);
- assert.equal(h.project.kb[0].known[0].text,'✅ 第一段修改\r\n\r\n第二段\r\n第三段再修改');assert.equal(h.effects.persist,1);
+ h.textarea().value+='\n第三段新增';h.c.kbSelectEditorPart(0);assert.equal(h.c.kbEditSession.parts.length,3);h.c.kbSelectEditorPart(2);assert.equal(h.textarea().value,'第三段新增');h.textarea().value='第三段再修改';await h.c.saveKbEdit(0,0);
+ assert.equal(h.effective()[0].text,'第一段修改\r\n\r\n第二段\r\n第三段再修改');assert.equal(h.effects.persist,1);
 });
 
-test('emptying one selected segment retains surrounding paragraphs and exact gaps',()=>{
+test('emptying one selected segment retains surrounding paragraphs and exact gaps',async()=>{
  const h=actionHarness(['第一段\r\n\r\n待删除正文\r\n第三段']);h.c.editKbItem(0,0);h.c.kbSelectEditorPart(1);h.textarea().value='';h.c.kbEditorChanged();
- assert.equal(h.nodes.get('kbEditorSave').disabled,false);h.c.saveKbEdit(0,0);assert.equal(h.project.kb[0].known[0].text,'✅ 第一段\r\n\r\n\r\n第三段');assert.equal(h.effects.persist,1);
+ assert.equal(h.nodes.get('kbEditorSave').disabled,false);await h.c.saveKbEdit(0,0);assert.equal(h.effective()[0].text,'第一段\r\n\r\n\r\n第三段');assert.equal(h.effects.persist,1);
 });
 
 test('invalid segment indices never change the selected draft or mutate the underlying source',()=>{
@@ -794,16 +801,16 @@ test('invalid segment indices never change the selected draft or mutate the unde
  assert.equal(s.segmentIndex,0);assert.equal(s.segmentVersion,version);assert.equal(h.textarea().value,'本地修改');assert.deepEqual(h.project.kb[0].known,['第一段\n第二段']);assert.equal(h.effects.persist,0);
 });
 
-test('single short and new records retain direct whole-text editing without an empty segment rail',()=>{
+test('single short and new records retain direct whole-text editing without an empty segment rail',async()=>{
  const h=actionHarness(['单段原文']);h.c.editKbItem(0,0);assert.equal(h.c.kbEditSession.segmentIndex,-1);assert.equal(h.nodes.has('kbEditorSegments'),false);h.c.kbCancelEdit(true);
- h.c.addKbItem(0);assert.equal(h.c.kbEditSession.segmentIndex,-1);assert.equal(h.nodes.has('kbEditorSegments'),false);h.textarea().value='第一段新增\n\n第二段新增';h.c.saveKbEdit(0,1);
- assert.equal(h.project.kb[0].known.length,2);assert.equal(h.project.kb[0].known[1].text,'✅ 第一段新增\n\n第二段新增');assert.equal(h.effects.persist,1);
+ h.c.addKbItem(0);assert.equal(h.c.kbEditSession.segmentIndex,-1);assert.equal(h.nodes.has('kbEditorSegments'),false);h.textarea().value='第一段新增\n\n第二段新增';await h.c.saveKbEdit(0,1);
+ assert.equal(h.project.kb[0].known.length,1);assert.equal(h.effective().length,2);assert.equal(h.effective()[1].text,'第一段新增\n\n第二段新增');assert.equal(h.effects.persist,1);
 });
 
-test('long single physical lines also default to bounded local editing and retain complete source links',()=>{
+test('long single physical lines also default to bounded local editing and retain complete source links',async()=>{
  const source='长正文🌱'.repeat(200)+' https://official.example/source?q=1&x=2',h=actionHarness([source]);h.c.editKbItem(0,0);
- assert.ok(h.c.kbEditSession.parts.length>1);assert.equal(h.c.kbEditSession.segmentIndex,0);assert.ok(Array.from(h.textarea().value).length<=420);h.textarea().value='精确修改首段';h.c.saveKbEdit(0,0);
- assert.ok(h.project.kb[0].known[0].text.endsWith(' https://official.example/source?q=1&x=2'));assert.equal(h.effects.persist,1);
+ assert.ok(h.c.kbEditSession.parts.length>1);assert.equal(h.c.kbEditSession.segmentIndex,0);assert.ok(Array.from(h.textarea().value).length<=420);h.textarea().value='精确修改首段';await h.c.saveKbEdit(0,0);
+ assert.ok(h.effective()[0].text.endsWith(' https://official.example/source?q=1&x=2'));assert.equal(h.effects.persist,1);
 });
 
 test('segment preview renders only the selected draft safely and whole preview includes all drafts',()=>{
@@ -825,8 +832,8 @@ test('uploaded attachment receipts cannot append a delayed summary into another 
 
 test('same-segment attachment text joins only that segment and final save keeps other text intact',async()=>{
  const h=actionHarness(['第一段\r\n第二段\r\n来源：https://official.example/source']);h.c.editKbItem(0,0);h.c.kbSelectEditorPart(1);
- h.c.ingestFiles=async()=>[{name:'证明.txt',_originalReceipt:{fileChunks:[{text:'有效附件摘要'}]}}];await h.c.processEditFiles([{name:'证明.txt'}],0,0);h.c.saveKbEdit(0,0);
- assert.equal(h.project.kb[0].known[0].text,'✅ 第一段\r\n第二段\n[证明.txt] 有效附件摘要\r\n来源：https://official.example/source');assert.equal(h.effects.persist,1);
+ h.c.ingestFiles=async()=>[{name:'证明.txt',_originalReceipt:{fileChunks:[{text:'有效附件摘要'}]}}];await h.c.processEditFiles([{name:'证明.txt'}],0,0);await h.c.saveKbEdit(0,0);
+ assert.equal(h.effective()[0].text,'第一段\r\n第二段\n[证明.txt] 有效附件摘要\r\n来源：https://official.example/source');assert.equal(h.effects.persist,1);
 });
 
 test('Chinese sentence punctuation ends URL protection so following long prose remains short editable chunks',()=>{
@@ -842,10 +849,168 @@ test('balanced nested parentheses keep a long Markdown link protected as one ato
  const start=source.indexOf(link),end=start+link.length;for(const part of parts)assert.ok(!(part.end>start&&part.end<end),'no cut may occur between nested URL parentheses or before the outer closing parenthesis');
 });
 
-test('returning from a shortened whole draft clamps a stale segment button and refreshes its directory',()=>{
+test('returning from a shortened whole draft clamps a stale segment button and refreshes its directory',async()=>{
  const h=actionHarness(['第一段\n第二段\n第三段']);h.c.editKbItem(0,0);const oldThird=h.nodes.get('kbEditorSegments').querySelector('[data-kb-edit-part="2"]');assert.ok(oldThird);
  h.c.kbSelectEditorPart(-1);h.textarea().value='合并后的唯一一段';vm.runInContext(oldThird.getAttribute('onclick'),h.c);
  assert.equal(h.c.kbEditSession.parts.length,1);assert.equal(h.c.kbEditSession.segmentIndex,0);assert.equal(h.textarea().value,'合并后的唯一一段');assert.equal(h.nodes.get('kbEditorSegments').querySelectorAll('[data-kb-edit-part]').length,1);
  assert.equal(h.nodes.get('kbEditorSegments').querySelector('[data-kb-edit-part="2"]'),null);assert.equal(h.nodes.get('kbEditorSegments').querySelector('[data-kb-edit-part="0"]').getAttribute('aria-current'),'true');assert.match(h.nodes.get('kbEditorLocation').textContent,/第 1 \/ 1 段/);
- h.c.saveKbEdit(0,0);assert.equal(h.project.kb[0].known[0].text,'✅ 合并后的唯一一段');assert.equal(h.effects.persist,1);
+ await h.c.saveKbEdit(0,0);assert.equal(h.effective()[0].text,'合并后的唯一一段');assert.equal(h.effects.persist,1);
+});
+
+function kbEditReply(body,overrides={}){
+ const record={id:body.editId||'saved-edit',sectionIndex:body.sectionIndex,sectionTitle:body.sectionTitle,sourceIndex:body.sourceIndex,sourceItem:body.sourceItem,baseReportVersion:body.baseReportVersion,text:body.text,revision:(body.expectedRevision||0)+1,ts:123456,account:'reviewer',status:'edited',...overrides};
+ return {ok:true,status:200,json:async()=>({ok:true,record})};
+}
+function pendingKbEdit(h){
+ let resolve,reject;h.c.fetch=(url,options)=>{const body=JSON.parse(options.body);h.effects.requests.push({url,options,body});return new Promise((res,rej)=>{resolve=res;reject=rej;});};
+ return {resolve:response=>resolve(response),reject:error=>reject(error),body:()=>h.effects.requests.at(-1)?.body};
+}
+
+test('saving sends exact original identity and applies an edit only after server acknowledgement',async()=>{
+ const item=freeze({text:'⚠️ 第一段\r\n第二段',origin:'report',nature:'policy',sources:[{url:'https://official.example/policy'}]}),h=actionHarness([item]),before=JSON.stringify(h.project),server=pendingKbEdit(h);
+ h.c.editKbItem(0,0);h.c.kbSelectEditorPart(1);h.textarea().value='第二段修改';const pending=h.c.saveKbEdit(0,0);
+ assert.equal(h.effects.requests.length,1);assert.equal(h.effects.requests[0].url,'/api/kb-edit');assert.equal(h.effects.requests[0].options.method,'POST');assert.equal(h.effects.requests[0].options.credentials,'same-origin');
+ const payload=server.body();assert.equal(payload.projectKey,'workspace-a');assert.equal(payload.sectionIndex,0);assert.equal(payload.sectionTitle,'政策');assert.equal(payload.sourceIndex,0);assert.deepEqual(payload.sourceItem,JSON.parse(JSON.stringify(item)));assert.notEqual(payload.sourceItem,item);
+ assert.equal(payload.editId,null);assert.equal(payload.expectedRevision,0);assert.equal(payload.text,'第一段\r\n第二段修改');assert.equal(payload.resetGen,'test-generation');
+ assert.equal(JSON.stringify(h.project),before);assert.equal(h.edits().length,0);assert.equal(h.effective()[0],item);assert.deepEqual(h.c.KB_CONFIRMS,{});assert.ok(h.c.kbEditSession);
+ server.resolve(kbEditReply(payload));await pending;assert.equal(h.edits().length,1);assert.equal(h.effective()[0].text,payload.text);assert.equal(JSON.stringify(h.project),before);assert.deepEqual(h.c.KB_CONFIRMS,{});assert.equal(h.c.kbEditSession,null);assert.equal(h.effects.persist,1);
+});
+
+test('a pending save is single-flight and cannot be canceled or redirected to a different segment',async()=>{
+ const h=actionHarness(['第一段\n第二段']),server=pendingKbEdit(h);h.c.editKbItem(0,0);h.textarea().value='第一段修改';const s=h.c.kbEditSession,first=h.c.saveKbEdit(0,0);
+ const duplicate=h.c.saveKbEdit(0,0);assert.equal(h.effects.requests.length,1);assert.equal(h.c.kbCancelEdit(),false);h.c.kbSelectEditorPart(1);assert.equal(h.c.kbEditSession,s);assert.equal(s.segmentIndex,0);assert.equal(h.textarea().value,'第一段修改');
+ server.resolve(kbEditReply(server.body()));await Promise.all([first,duplicate]);assert.equal(h.effects.requests.length,1);assert.equal(h.edits().length,1);assert.equal(h.c.kbEditSession,null);
+});
+
+for(const status of [403,409,500])test('HTTP '+status+' keeps the entire segmented draft and immutable base intact',async()=>{
+ const item={text:'原始第一段\r\n原始第二段',origin:'report'},h=actionHarness([item]),before=JSON.stringify(item);h.c.editKbItem(0,0);h.textarea().value='第一段修改';h.c.kbSelectEditorPart(1);h.textarea().value='第二段修改';
+ h.c.fetch=async(url,options)=>{h.effects.requests.push({url,options,body:JSON.parse(options.body)});return {ok:false,status,json:async()=>({ok:false,error:status===409?'revision_conflict':'save_failed',message:'保存被拒绝，请保留草稿'})};};
+ await h.c.saveKbEdit(0,0);assert.ok(h.c.kbEditSession);assert.equal(h.textarea().value,'第二段修改');assert.equal(h.c.kbEditorCurrentText(h.c.kbEditSession),'第一段修改\r\n第二段修改');assert.equal(JSON.stringify(item),before);assert.equal(h.edits().length,0);assert.deepEqual(h.c.KB_CONFIRMS,{});assert.equal(h.effects.persist,0);assert.ok(h.effects.toasts.length>0);assert.equal(h.nodes.get('kbEditorSave').disabled,false);
+});
+
+test('network rejection leaves a retryable draft and never stores an optimistic edit',async()=>{
+ const h=actionHarness(['原始正文']);h.c.editKbItem(0,0);h.textarea().value='尚未保存的改动';h.c.fetch=async()=>{throw Error('network disconnected');};await h.c.saveKbEdit(0,0);
+ assert.equal(h.textarea().value,'尚未保存的改动');assert.equal(h.edits().length,0);assert.deepEqual(h.project.kb[0].known,['原始正文']);assert.deepEqual(h.c.KB_CONFIRMS,{});assert.equal(h.nodes.get('kbEditorSave').disabled,false);assert.ok(h.effects.toasts.length>0);
+});
+
+test('an aborted request retains the draft instead of presenting a successful save',async()=>{
+ const h=actionHarness(['原始正文']);h.c.editKbItem(0,0);h.textarea().value='超时后仍需保留';h.c.fetch=async()=>{const error=new Error('request aborted');error.name='AbortError';throw error;};await h.c.saveKbEdit(0,0);
+ assert.equal(h.textarea().value,'超时后仍需保留');assert.equal(h.edits().length,0);assert.deepEqual(h.project.kb[0].known,['原始正文']);assert.equal(h.nodes.get('kbEditorSave').disabled,false);assert.ok(h.effects.toasts.length>0);
+});
+
+test('a server acknowledgement after workspace change stays on its original key without altering new UI',async()=>{
+ const original={text:'旧工作区原文',origin:'report'},h=actionHarness([original]),server=pendingKbEdit(h);h.c.editKbItem(0,0);h.textarea().value='旧工作区修改';const pending=h.c.saveKbEdit(0,0),oldSession=h.c.kbEditSession;
+ const next={city:'新地区',kb:[{t:'政策',known:['新工作区原文']}]};h.c.cur='workspace-b';h.c.P=()=>next;server.resolve(kbEditReply(server.body()));await pending;
+ assert.equal(h.c.KB_EDITS['workspace-a']['saved-edit'].text,'旧工作区修改');assert.equal(h.c.KB_EDITS['workspace-b'],undefined);assert.deepEqual(next.kb[0].known,['新工作区原文']);assert.equal(original.text,'旧工作区原文');assert.equal(h.c.kbEditSession,oldSession);assert.equal(h.effects.persist,0);
+});
+
+test('an acknowledgement from a prior authentication epoch cannot inject its edit into the new session',async()=>{
+ const h=actionHarness(['原始正文']),server=pendingKbEdit(h);h.c.editKbItem(0,0);h.textarea().value='前一用户的改动';const pending=h.c.saveKbEdit(0,0);
+ h.c._authEpoch++;h.c.AUTH={user:'different-user'};h.c.KB_EDITS={};server.resolve(kbEditReply(server.body()));await pending;
+ assert.equal(Object.values(h.c.KB_EDITS).flatMap(Object.values).length,0);assert.deepEqual(h.project.kb[0].known,['原始正文']);assert.deepEqual(h.c.KB_CONFIRMS,{});assert.equal(h.effects.persist,0);
+});
+
+test('reopening an acknowledged edit updates that revision rather than creating a second base mutation',async()=>{
+ const item={text:'原始正文',origin:'report'},h=actionHarness([item]);h.c.editKbItem(0,0);h.textarea().value='第一版修订';await h.c.saveKbEdit(0,0);const first=h.edits()[0];
+ h.c.editKbItem(0,0);assert.equal(h.textarea().value,'第一版修订');h.textarea().value='第二版修订';await h.c.saveKbEdit(0,0);
+ const payload=h.effects.requests.at(-1).body;assert.equal(payload.editId,first.id);assert.equal(payload.expectedRevision,1);assert.equal(payload.sourceIndex,0);assert.deepEqual(payload.sourceItem,item);
+ assert.equal(h.edits().length,1);assert.equal(h.edits()[0].revision,2);assert.equal(h.effective()[0].text,'第二版修订');assert.equal(item.text,'原始正文');assert.deepEqual(h.c.KB_CONFIRMS,{});assert.equal(h.effects.persist,2);
+});
+
+test('equivalent immutable base reconstruction still saves against its original server identity',async()=>{
+ const item={text:'原始正文',origin:'report',source:{url:'https://official.example/x',id:1}},known=[item],h=actionHarness(known);h.c.editKbItem(0,0);h.textarea().value='修订正文';known[0]={source:{id:1,url:'https://official.example/x'},origin:'report',text:'原始正文'};
+ await h.c.saveKbEdit(0,0);assert.equal(h.effects.requests.length,1);assert.equal(known[0].text,'原始正文');assert.equal(h.effective()[0].text,'修订正文');assert.deepEqual(h.c.KB_CONFIRMS,{});
+});
+
+for(const [name,override] of [
+ ['different-section',{sectionIndex:9}],['non-edited-status',{status:'pending'}],['missing-account',{account:null}],['invalid-timestamp',{ts:NaN}],['empty-id',{id:''}],['old-revision',{revision:0}],['different-text',{text:'另一份正文'}],['different-source',{sourceItem:{text:'非原始资料'}}],['different-report',{baseReportVersion:{reportId:'another-report'}}]
+])test('invalid edit receipt '+name+' cannot replace source or close the draft',async()=>{
+ const h=actionHarness([{text:'原始正文',origin:'report'}]);h.c.editKbItem(0,0);h.textarea().value='待保存的修订';h.c.fetch=async(url,options)=>{const body=JSON.parse(options.body);h.effects.requests.push({url,options,body});return kbEditReply(body,override);};
+ await h.c.saveKbEdit(0,0);assert.equal(h.edits().length,0);assert.ok(h.c.kbEditSession);assert.equal(h.textarea().value,'待保存的修订');assert.equal(h.project.kb[0].known[0].text,'原始正文');assert.deepEqual(h.c.KB_CONFIRMS,{});assert.equal(h.effects.persist,0);
+});
+
+function sourceRevision(item,overrides={}){return {id:'edit-source',sectionIndex:0,sectionTitle:'政策',sourceIndex:0,sourceItem:JSON.parse(JSON.stringify(item)),baseReportVersion:null,text:'修订后的正文',revision:1,ts:100,account:'reviewer',status:'edited',...overrides};}
+test('effective source matching tolerates key order but rejects changed types, contents or report version',()=>{
+ const item={text:'原始正文',meta:{a:1,b:true}},h=actionHarness([item]);h.c.KB_EDITS['workspace-a']={'edit-source':sourceRevision(item,{sourceItem:{meta:{b:true,a:1},text:'原始正文'}})};
+ assert.equal(h.effective()[0].text,'修订后的正文');assert.equal(h.project.kb[0].known[0],item);assert.equal(item.text,'原始正文');
+ for(const override of [{sourceItem:{text:'原始正文',meta:{a:true,b:1}}},{sourceItem:{text:'外部已改',meta:{a:1,b:true}}},{baseReportVersion:{id:'new-version'}}]){
+  h.c.KB_EDITS['workspace-a']={'edit-source':sourceRevision(item,override)};assert.equal(h.effective()[0],item);
+ }
+});
+
+test('deleting a source revision restores raw source while retaining its tombstone for the next revision',()=>{
+ const item={text:'原始正文',origin:'report'},h=actionHarness([item]);h.c.KB_EDITS['workspace-a']={'edit-source':sourceRevision(item,{text:'最后修订',revision:2,deleted:true})};
+ assert.equal(h.effective()[0],item);assert.equal(item.text,'原始正文');assert.equal(h.c.kbSourceEdit(h.project,0,0,'workspace-a').id,'edit-source');assert.equal(h.c.kbEditRecord('workspace-a',{_kbEditId:'edit-source'}),null);
+});
+
+test('one live source revision is preserved when an unrelated revision id is deleted',()=>{
+ const item={text:'原始正文',origin:'report'},h=actionHarness([item]);h.c.KB_EDITS['workspace-a']={'live':sourceRevision(item,{id:'live',ts:100,text:'唯一有效修订'}),'tomb':sourceRevision(item,{id:'tomb',ts:200,revision:2,deleted:true})};
+ assert.equal(h.effective()[0].text,'唯一有效修订');assert.equal(h.c.kbSourceEdit(h.project,0,0,'workspace-a').id,'live');assert.equal(item.text,'原始正文');
+});
+
+test('multiple live revisions for an identical source fail closed while distinct source indices remain independent',()=>{
+ const item={text:'相同原始正文',origin:'report'},other={...item},h=actionHarness([item,other]);h.c.KB_EDITS['workspace-a']={a:sourceRevision(item,{id:'a',text:'首个修订'}),b:sourceRevision(item,{id:'b',text:'重复修订'}),c:sourceRevision(other,{id:'c',sourceIndex:1,text:'另一位置独立修订'})};
+ assert.equal(h.c.kbSourceEdit(h.project,0,0,'workspace-a'),null);assert.equal(h.effective()[0],item);assert.equal(h.effective()[1].text,'另一位置独立修订');assert.equal(other.text,'相同原始正文');
+});
+
+test('multiple deleted source records retain the latest timestamp and id solely for revision recovery',()=>{
+ const item={text:'原始正文',origin:'report'},h=actionHarness([item]);h.c.KB_EDITS['workspace-a']={a:sourceRevision(item,{id:'a',ts:200,deleted:true}),z:sourceRevision(item,{id:'z',ts:200,revision:3,deleted:true}),old:sourceRevision(item,{id:'old',ts:100,deleted:true})};
+ assert.equal(h.effective()[0],item);assert.equal(h.c.kbSourceEdit(h.project,0,0,'workspace-a').id,'z');
+});
+
+test('standalone notes append by timestamp and id only under a unique matching section title',()=>{
+ const h=actionHarness(['原始正文']);h.c.KB_EDITS['workspace-a']={
+  z:sourceRevision(null,{id:'z',sourceIndex:null,text:'第三条',ts:20}),a:sourceRevision(null,{id:'a',sourceIndex:null,text:'第一条',ts:10}),b:sourceRevision(null,{id:'b',sourceIndex:null,text:'第二条',ts:10}),deleted:sourceRevision(null,{id:'deleted',sourceIndex:null,text:'已删补充',ts:30,deleted:true})
+ };
+ assert.deepEqual(Array.from(h.effective(),item=>typeof item==='string'?item:item.text),['原始正文','第一条','第二条','第三条']);assert.equal(h.project.kb[0].known.length,1);
+ h.project.kb.push({t:'政策',known:['同标题第二节']});assert.deepEqual(Array.from(h.effective()),['原始正文']);assert.deepEqual(Array.from(h.effective(1)),['同标题第二节']);
+});
+
+test('an effective human revision disables stale AI card summaries without changing source materials',()=>{
+ const item={text:'原始资料包含完整适用条件和来源事实。',origin:'report'},h=actionHarness([item]),before=JSON.stringify(item);vm.runInContext(between(source.known,'function _getDisplayKnown(','function _kbMeta('),h.c);h.c._KB_PICK_N=6;h.c._kbSummaryData={kb:[{known:['这是旧版AI总结，不应该继续代替已经修订的资料。']}]};
+ assert.ok(h.c._getDisplayKnown(0).includes('这是旧版AI总结，不应该继续代替已经修订的资料。'));assert.ok(h.c._getPickedKnown(0).includes('这是旧版AI总结，不应该继续代替已经修订的资料。'));
+ h.c.KB_EDITS['workspace-a']={'edit-source':sourceRevision(item,{text:'人工修订需满足在本区经营和有效期限两项条件'})};
+ assert.ok(h.c._getDisplayKnown(0).includes('人工修订需满足在本区经营和有效期限两项条件'));assert.ok(!h.c._getDisplayKnown(0).includes('这是旧版AI总结，不应该继续代替已经修订的资料。'));assert.ok(!h.c._getPickedKnown(0).includes('这是旧版AI总结，不应该继续代替已经修订的资料。'));assert.equal(JSON.stringify(item),before);
+});
+
+test('human edits keep original readiness denominator and never inherit old confirmation status',()=>{
+ const warn={text:'⚠️ 需要核实第一项完整适用条件。',origin:'report'},done={text:'✅ 已核实第二项完整适用条件。',origin:'report'},h=actionHarness([warn,done]),before=JSON.stringify(h.project);
+ h.c.UPLOADS={'workspace-a':[]};h.c.hasRealKbData=()=>true;vm.runInContext(between(read('09'),'function kbReadiness(){','/* 按研判方向计算置信度'),h.c);
+ h.c.KB_CONFIRMS={'workspace-a':{0:{0:{status:'confirmed'}}}};let readiness=h.c.kbReadiness();assert.equal(readiness.total,2);assert.equal(readiness.confirmed,2);assert.equal(readiness.pendingWarn,0);
+ h.c.KB_EDITS['workspace-a']={'edit-source':sourceRevision(warn,{text:'人工修改后的第一项条件。'})};readiness=h.c.kbReadiness();assert.equal(readiness.total,2);assert.equal(readiness.confirmed,1);assert.equal(readiness.pendingWarn,1);
+ h.c.KB_EDITS['workspace-a'].second=sourceRevision(done,{id:'second',sourceIndex:1,text:'人工修改后的第二项条件。'});readiness=h.c.kbReadiness();assert.equal(readiness.total,2);assert.equal(readiness.confirmed,0);assert.equal(readiness.pendingWarn,2);assert.equal(JSON.stringify(h.project),before);assert.equal(h.c.KB_CONFIRMS['workspace-a'][0][0].status,'confirmed');
+});
+
+for(const operation of ['save','delete'])test('acknowledged '+operation+' invalidates an older server poll before it can overwrite revisions',async()=>{
+ const item={text:'原始正文',origin:'report'},h=actionHarness([item]);h.c.PROJECTS={'workspace-a':h.project};h.c._authState='ready';h.c.view='knowledge';h.c._serverRestoreSeq=40;let finishPoll,decoded=0,callbackCalls=0;
+ vm.runInContext(between(source.detail,'function restoreFromServer(callback){','function clearPersist(){'),h.c);
+ const normalFetch=h.c.fetch;h.c.fetch=(url,options)=>{
+  if(url==='/api/sync')return new Promise(resolve=>{finishPoll=resolve;});
+  if(operation==='delete'){const body=JSON.parse(options.body);h.effects.requests.push({url,options,body});return Promise.resolve(kbEditReply(body,{deleted:true,text:'先前修订'}));}
+  return normalFetch(url,options);
+ };
+ h.c._authReadSync=()=>{decoded++;return {PROJECTS:{'workspace-a':h.project},KB_EDITS:{}};};
+ const poll=h.c.restoreFromServer(()=>{callbackCalls++;}),pollSequence=h.c._serverRestoreSeq;assert.equal(pollSequence,41);assert.equal(h.c._serverSyncLock,true);
+ if(operation==='save'){h.c.editKbItem(0,0);h.textarea().value='已确认保存的修订';await h.c.saveKbEdit(0,0);}
+ else{h.c.KB_EDITS['workspace-a']={'saved-edit':sourceRevision(item,{id:'saved-edit',text:'先前修订'})};await h.c.kbRemoveRevision(0,0);}
+ assert.equal(h.c._serverRestoreSeq,pollSequence+1);assert.equal(h.c._serverSyncLock,false);const saved=JSON.stringify(h.c.KB_EDITS);assert.notEqual(saved,'{}');
+ finishPoll({ok:true,json:async()=>({PROJECTS:{},KB_EDITS:{}})});await poll;assert.equal(decoded,0,'old read is rejected before decoding/applying payload');assert.equal(callbackCalls,0);assert.equal(JSON.stringify(h.c.KB_EDITS),saved);assert.equal(item.text,'原始正文');
+});
+
+const malformedRevisionCases=[
+ ['empty-id',record=>({...record,id:''})],['negative-section',record=>({...record,sectionIndex:-1})],['fractional-section',record=>({...record,sectionIndex:0.5})],['blank-section-title',record=>({...record,sectionTitle:'   '})],
+ ['blank-text',record=>({...record,text:' \n '})],['oversize-codepoint-text',record=>({...record,text:'🌱'.repeat(200001)})],['zero-revision',record=>({...record,revision:0})],['fractional-revision',record=>({...record,revision:1.5})],
+ ['negative-timestamp',record=>({...record,ts:-1})],['nonfinite-timestamp',record=>({...record,ts:Infinity})],['nonstring-account',record=>({...record,account:1})],['wrong-status',record=>({...record,status:'confirmed'})],['nonboolean-deleted',record=>({...record,deleted:'true'})],
+ ['missing-source-index',record=>{delete record.sourceIndex;return record;}],['missing-source-item',record=>{delete record.sourceItem;return record;}],['missing-report-version',record=>{delete record.baseReportVersion;return record;}],
+ ['negative-source-index',record=>({...record,sourceIndex:-1})],['fractional-source-index',record=>({...record,sourceIndex:0.5})],['array-source-item',record=>({...record,sourceItem:[]})],['null-base-source',record=>({...record,sourceItem:null})],
+ ['note-with-source',record=>({...record,sourceIndex:null})],['note-with-report',record=>({...record,sourceIndex:null,sourceItem:null,baseReportVersion:{id:'report'}})]
+];
+for(const [name,corrupt] of malformedRevisionCases)test('malformed server revision '+name+' cannot affect effective knowledge',()=>{
+ const item={text:'原始正文',origin:'report'},h=actionHarness([item]),record=corrupt(sourceRevision(item));h.c.KB_EDITS['workspace-a']={'edit-source':record};
+ assert.equal(h.c.kbEditRecords('workspace-a').length,0);assert.equal(h.effective()[0],item);assert.equal(item.text,'原始正文');
+});
+
+test('malformed revision maps and mismatched map identifiers cannot inject source edits',()=>{
+ const item={text:'原始正文',origin:'report'},h=actionHarness([item]),record=sourceRevision(item);
+ for(const map of [[record],{'wrong-key':record},null,'invalid']){h.c.KB_EDITS['workspace-a']=map;assert.equal(h.c.kbEditRecords('workspace-a').length,0);assert.equal(h.effective()[0],item);}
 });

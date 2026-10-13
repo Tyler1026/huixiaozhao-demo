@@ -38,12 +38,13 @@ function _applyKbItemTombs(projMap){
     });
   }catch(_e){}
 }
+var KB_EDITS={};  // Server-acknowledged revisions; never part of generic snapshot writes.
 var KB_CONFIRMS={};  // {projKey:{kbIdx:{itemIdx:{status,text,ts}}}}
 
 // A server reset starts a new data generation. Never merge earlier local data into it.
 function _acceptServerGeneration(srv){
   if(!srv.RESET_GEN||srv.RESET_GEN===RESET_GEN)return false;
-  ['PROJECTS','UPLOADS','KB_CONFIRMS','KB_CONFIRM_TOMBS','KB_ITEM_TOMBS','KB_FILE_CHUNKS','KB_UNLOCKED','REPORTSTATE','REPORT_HISTORY','PENDING_CONFIRMS','DOCK_LOGS','KB_CHAT','KB_CHAT_TOMBS','UPLOAD_TOMBS','CITY_BASE_PACKAGES','CITY_WORKSPACES','SUBPROJ'].forEach(function(key){if(typeof window[key]!=='undefined')window[key]={};});
+  ['PROJECTS','UPLOADS','KB_EDITS','KB_CONFIRMS','KB_CONFIRM_TOMBS','KB_ITEM_TOMBS','KB_FILE_CHUNKS','KB_UNLOCKED','REPORTSTATE','REPORT_HISTORY','PENDING_CONFIRMS','DOCK_LOGS','KB_CHAT','KB_CHAT_TOMBS','UPLOAD_TOMBS','CITY_BASE_PACKAGES','CITY_WORKSPACES','SUBPROJ'].forEach(function(key){if(typeof window[key]!=='undefined')window[key]={};});
   ['OPS_ENT','DEMANDS','REPORT_REQUESTS'].forEach(function(key){if(typeof window[key]!=='undefined')window[key]=[];});
   window.DELETED_PROJECTS=[];window.DELETED_CLUES=[];cur=null;
   ['huixiaozhao_kb_v1','hxz_reportstate','hxz_rpt_history','hxz_report_history','hxz_uploads','HXZ_UPLOAD_TOMBS','HXZ_KBCHAT_TOMBS','hxz_subproj'].forEach(function(key){try{localStorage.removeItem(key);}catch(_){}});
@@ -83,6 +84,7 @@ function restoreFromServer(callback){
     Object.keys(PROJECTS).forEach(function(k){ if(PROJECTS[k]&&PROJECTS[k].isDemand) _localDemandProj[k]=PROJECTS[k]; });
     Object.keys(REPORTSTATE||{}).forEach(function(k){ if(_localDemandProj[k]&&REPORTSTATE[k]) _localDemandRS[k]=REPORTSTATE[k]; });
     PROJECTS         = _authFilterProjects(srv.PROJECTS);
+    KB_EDITS         = srv.KB_EDITS || {};
     UPLOADS          = _mergeUploads(srv.UPLOADS, UPLOADS);
     _mergeKbItemTombs(srv.KB_ITEM_TOMBS);
     // 【2026-09-18】过滤 srv 本体：部分路径会把 srv 原文回写 localStorage，
@@ -1353,8 +1355,8 @@ function buildKBCorpus(city){
   // 每条 chunk: {id, topic, tags:[], text, cite}
   var chunks=[];
   if(p&&p.kb){
-    p.kb.forEach(function(k){
-      (k.known||[]).forEach(function(t,i){
+    p.kb.forEach(function(k,ki){
+      kbEffectiveKnown(p,ki,cur).forEach(function(t,i){
         var chunk=kbKnownChunk(t,k.t,i);
         chunks.push(chunk);
       });
@@ -1705,7 +1707,7 @@ function kbRAGQueryWithHint(query, container, kbTopic, context){
     });
     topicUploads.forEach(function(uc){ if(seen.indexOf(uc.text)<0){ chunks.unshift(uc); seen.push(uc.text); } });
     // known 条目置顶，但最多 3 条，给检索结果+上传附件留出名额
-    var pinned=kbTopic.known.slice(0,3).map(function(t,i){
+    var pinned=kbEffectiveKnown(p,p.kb.indexOf(kbTopic),cur).slice(0,3).map(function(t,i){
       var chunk=kbKnownChunk(t,kbTopic.t,i);chunk.id='pin:'+i;chunk.cite=kbTopic.t+'(置顶)';return chunk;
     });
     pinned.reverse().forEach(function(pc){if(seen.indexOf(pc.text)<0){chunks.unshift(pc);seen.push(pc.text);}});
@@ -1857,7 +1859,7 @@ function kbEditorNavigation(s){
   }).join('')+'</nav><button class="kb-editor-whole" onclick="kbSelectEditorPart(-1)" aria-pressed="'+(s.segmentIndex<0)+'">编辑全文</button>';
 }
 function kbSelectEditorPart(index){
-  var s=kbEditSession;if(!s||document.getElementById('kbEditorDiscard')||!Number.isInteger(index)||index< -1||index>=s.parts.length)return;
+  var s=kbEditSession;if(!s||s.saving||document.getElementById('kbEditorDiscard')||!Number.isInteger(index)||index< -1||index>=s.parts.length)return;
   kbEditorSync(s);
   if(index<0&&s.segmentIndex>=0){s.fullOrigin=s.fullDraft=kbEditorJoinParts(s);}
   else if(index>=0&&s.segmentIndex<0){s.segmentSource=s.fullDraft;s.parts=kbEditorSegments(s.segmentSource);index=s.parts.length?Math.min(index,s.parts.length-1):-1;}
@@ -1877,15 +1879,20 @@ function editKbItem(kbIdx,itemIdx){return kbOpenEditor(kbIdx,itemIdx,false);}
 function kbOpenEditor(kbIdx,itemIdx,isNew){
   if(!Number.isInteger(kbIdx)||!Number.isInteger(itemIdx))return false;
   var p=P(),k=p&&p.kb&&p.kb[kbIdx];
-  if(!k||!Array.isArray(k.known)||itemIdx<0||(!isNew&&itemIdx>=k.known.length))return false;
+  if(!k||!Array.isArray(k.known)||itemIdx<0)return false;
+  var effective=kbEffectiveKnown(p,kbIdx,cur);
+  if(!isNew&&itemIdx>=effective.length)return false;
   if(kbEditSession&&!kbCancelEdit(false,function(){kbOpenEditor(kbIdx,itemIdx,isNew);}))return false;
   var modal=document.getElementById('kbDetailModal');
   if(!modal){kbDetail(kbIdx);modal=document.getElementById('kbDetailModal');}
   var dialog=modal&&modal.querySelector('.kb-detail-dialog');if(!dialog)return false;
-  var raw=isNew?null:k.known[itemIdx],source=isNew?'':kbDetailSourceText(raw),parts=kbEditorSegments(source),partIndex=!isNew&&parts.length>1?0:-1;
+  var raw=isNew?null:effective[itemIdx],source=isNew?'':kbDetailSourceText(raw),parts=kbEditorSegments(source),partIndex=!isNew&&parts.length>1?0:-1;
+  var revision=isNew?null:kbEditRecord(cur,raw);
+  var sourceIndex=isNew?null:revision?revision.sourceIndex:itemIdx;
+  if(!revision&&!isNew)revision=kbSourceEdit(p,kbIdx,sourceIndex,cur);
   var orig=kbEditorNormalize(partIndex<0?source:parts[partIndex].draft);
   var meta=isNew?{title:'补充结论',source:k.t}:kbDetailMeta(raw,itemIdx);
-  kbEditSession={id:++kbEditSequence,key:cur,project:p,topic:k,known:k.known,kbIdx:kbIdx,itemIdx:itemIdx,isNew:!!isNew,raw:raw,snapshot:JSON.stringify(raw),initial:orig,source:source,segmentSource:source,parts:parts,segmentIndex:partIndex,segmentVersion:0,fullOrigin:source,fullDraft:source,epoch:originalUploadEpoch(),obscured:[]};
+  kbEditSession={id:++kbEditSequence,key:cur,project:p,topic:k,known:k.known,kbIdx:kbIdx,itemIdx:itemIdx,isNew:!!isNew,raw:raw,snapshot:JSON.stringify(raw),sourceIndex:sourceIndex,sourceItem:sourceIndex===null?null:JSON.parse(JSON.stringify(k.known[sourceIndex])),editId:revision?revision.id:null,revision:revision?revision.revision:0,baseReportVersion:sourceIndex===null?null:JSON.parse(JSON.stringify(p.baseReportVersion||null)),initial:orig,source:source,segmentSource:source,parts:parts,segmentIndex:partIndex,segmentVersion:0,fullOrigin:source,fullDraft:source,epoch:originalUploadEpoch(),obscured:[]};
   var panel=document.createElement('div');panel.id='kbEditorPanel';panel.className='kb-editor-panel';
   panel.setAttribute('role','region');panel.setAttribute('aria-label',isNew?'补充知识资料':'修改知识资料');
   panel.setAttribute('data-mode','edit');panel.setAttribute('onkeydown','kbEditKey(event)');
@@ -1912,11 +1919,11 @@ function kbEditorChanged(){
   var count=document.getElementById('kbEditorCount'),status=document.getElementById('kbEditorStatus'),save=document.getElementById('kbEditorSave');
   kbEditorSync(s);
   if(count)count.textContent=(s.segmentIndex<0?'':'本段 ')+Array.from(ta.value).length.toLocaleString()+' 字符';
-  if(status)status.textContent=kbEditorCurrentText(s)!==s.source?'有未保存修改':s.isNew?'请输入补充内容':'尚未修改';
-  if(save)save.disabled=!kbEditorCurrentText(s).trim();
+  if(status)status.textContent=s.saving?'正在保存到云端…':s.saveError|| (kbEditorCurrentText(s)!==s.source?'有未保存修改':s.isNew?'请输入补充内容':'尚未修改');
+  if(save)save.disabled=!!s.saving||!kbEditorCurrentText(s).trim();
 }
 function kbSetEditorMode(mode){
-  if(!kbEditSession||(mode!=='edit'&&mode!=='preview'))return;
+  if(!kbEditSession||kbEditSession.saving||(mode!=='edit'&&mode!=='preview'))return;
   var s=kbEditSession,panel=document.getElementById('kbEditorPanel'),ta=document.getElementById('kb-edit-'+s.kbIdx+'-'+s.itemIdx),input=document.getElementById('kbEditorInput'),preview=document.getElementById('kbEditorPreview');
   if(!panel||!ta||!input||!preview)return;
   panel.setAttribute('data-mode',mode);input.hidden=mode!=='edit';preview.hidden=mode!=='preview';
@@ -1926,6 +1933,7 @@ function kbSetEditorMode(mode){
 }
 function kbCancelEdit(force,afterDiscard){
   var s=kbEditSession;if(!s)return true;
+  if(s.saving&&!force){toast('正在保存，请稍候。');return false;}
   var ta=document.getElementById('kb-edit-'+s.kbIdx+'-'+s.itemIdx);
   if(!force&&ta&&kbEditorHasChanges(s)){
     s.afterDiscard=afterDiscard||null;
@@ -1966,31 +1974,78 @@ function kbEditKey(event){
   if(event.key==='Escape'){event.preventDefault();event.stopPropagation();if(document.getElementById('kbEditorDiscard'))kbKeepEditing();else kbCancelEdit();}
   else if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();if(!document.getElementById('kbEditorDiscard'))saveKbEdit(kbEditSession.kbIdx,kbEditSession.itemIdx);}
 }
-function saveKbEdit(kbIdx,itemIdx){
+function kbValidateEditReceipt(record,body){
+  return record&&typeof record==='object'&&typeof record.id==='string'&&record.id&&
+    Number.isInteger(record.revision)&&record.revision>body.expectedRevision&&
+    record.status==='edited'&&typeof record.account==='string'&&typeof record.ts==='number'&&isFinite(record.ts)&&
+    (body.sourceIndex===null||record.sectionIndex===body.sectionIndex)&&record.sectionTitle===body.sectionTitle&&record.sourceIndex===body.sourceIndex&&
+    kbValueEqual(record.sourceItem,body.sourceItem)&&kbValueEqual(record.baseReportVersion,body.baseReportVersion)&&
+    (body.editId===null||record.id===body.editId)&&
+    (body.action==='delete'?record.deleted===true:record.text===body.text&&record.deleted!==true);
+}
+async function kbRequestEdit(body){
+  var controller=typeof AbortController==='function'?new AbortController():null;
+  var timer=controller?setTimeout(function(){controller.abort();},20000):null;
+  try{
+    var response=await fetch('/api/kb-edit',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:controller?controller.signal:undefined});
+    var result=await response.json();
+    if(!response.ok||!result||!result.ok)throw new Error(result&&result.message||'保存未完成，请重试。');
+    if(!kbValidateEditReceipt(result.record,body))throw new Error('保存回执不完整，请刷新确认后重试。');
+    return result.record;
+  }catch(error){if(error&&error.name==='AbortError')throw new Error('保存响应超时，草稿已保留；请刷新确认云端结果后重试。');if(error&&error.name==='TypeError')throw new Error('连接中断，草稿已保留，请稍后重试。');throw error;}
+  finally{if(timer!==null)clearTimeout(timer);}
+}
+async function saveKbEdit(kbIdx,itemIdx){
   if(document.getElementById('kbEditorDiscard'))return;
-  var s=kbEditSession;if(!s||s.kbIdx!==kbIdx||s.itemIdx!==itemIdx)return;
+  var s=kbEditSession;if(!s||s.saving||s.kbIdx!==kbIdx||s.itemIdx!==itemIdx)return;
   var ta=document.getElementById('kb-edit-'+kbIdx+'-'+itemIdx);if(!ta)return;
   kbEditorSync(s);var newText=kbEditorCurrentText(s);if(!newText.trim()){toast('内容不能为空');return;}
   var p=P(),k=p&&p.kb&&p.kb[kbIdx];
   if(!kbEditorContextCurrent(s)){toast('工作区或登录状态已变化，请保留草稿并重新打开资料。');return;}
-  if(k.known!==s.known||(!s.isNew&&(k.known[itemIdx]!==s.raw||JSON.stringify(k.known[itemIdx])!==s.snapshot))){toast('这条资料已更新，请保留草稿并重新打开后修改。');return;}
+  var current=kbEffectiveKnown(p,kbIdx,cur);
+  if(k.known!==s.known||(!s.isNew&&!kbValueEqual(current[itemIdx],JSON.parse(s.snapshot)))){toast('这条资料已更新，请保留草稿并重新打开后修改。');return;}
   if(!s.isNew&&newText===s.source){kbCancelEdit(true);toast('内容未修改');return;}
-  var _confirmAccount=(AUTH&&AUTH.user)||'',savedIdx=s.isNew?k.known.length:itemIdx;
-  var old=s.isNew?null:k.known[itemIdx];
-  if(old&&typeof old==='object'){old.text='\u2705 '+newText;old.origin='user';old.nature=old.nature||'fix';old.ts=Date.now();old.account=_confirmAccount;k.known[savedIdx]=old;}
-  else{k.known[savedIdx]={text:'\u2705 '+newText,origin:'user',nature:'fix',ts:Date.now(),account:_confirmAccount};}
-  if(!KB_CONFIRMS[cur])KB_CONFIRMS[cur]={};if(!KB_CONFIRMS[cur][kbIdx])KB_CONFIRMS[cur][kbIdx]={};
-  KB_CONFIRMS[cur][kbIdx][savedIdx]={status:'edited',text:newText,ts:Date.now()};
-  persist();buildKBCorpus(p.city);kbCancelEdit(true);
-  var sc=document.querySelector('#kbDetailModal .kb-detail-scroll'),st=sc?sc.scrollTop:0;
-  kbDetail(kbIdx);var sc2=document.querySelector('#kbDetailModal .kb-detail-scroll');
-  var savedCard=document.getElementById('kb-card-'+kbIdx+'-'+savedIdx);
-  if(sc2){sc2.scrollTop=st;if(savedCard)sc2.scrollTop=Math.max(0,sc2.scrollTop+savedCard.getBoundingClientRect().top-sc2.getBoundingClientRect().top-20);}
-  if(typeof refreshKbProgress==='function')refreshKbProgress();toast('修改已在当前页面生效');
+  var body={projectKey:s.key,sectionIndex:kbIdx,sectionTitle:k.t,baseReportVersion:s.baseReportVersion,sourceIndex:s.sourceIndex,sourceItem:s.sourceItem,editId:s.editId,expectedRevision:s.revision,text:newText,resetGen:typeof RESET_GEN==='undefined'?null:RESET_GEN};
+  s.saving=true;s.saveError='';kbEditorChanged();
+  var controls=Array.from(document.querySelectorAll('#kbEditorPanel button, #kbEditorPanel textarea'));controls.forEach(function(node){node.disabled=true;});
+  try{
+    var record=await kbRequestEdit(body);
+    if(!originalUploadSessionCurrent(s.epoch))return;
+    window._serverRestoreSeq=(window._serverRestoreSeq||0)+1;window._serverSyncLock=false;
+    if(!KB_EDITS[s.key])KB_EDITS[s.key]={};KB_EDITS[s.key][record.id]=record;
+    if(!kbEditorContextCurrent(s))return;
+    s.saving=false;persist();buildKBCorpus(p.city);kbCancelEdit(true);
+    var sc=document.querySelector('#kbDetailModal .kb-detail-scroll'),st=sc?sc.scrollTop:0;
+    kbDetail(kbIdx);var sc2=document.querySelector('#kbDetailModal .kb-detail-scroll');
+    var savedIdx=kbEffectiveKnown(p,kbIdx,s.key).findIndex(function(item){return item&&item._kbEditId===record.id;});
+    var savedCard=document.getElementById('kb-card-'+kbIdx+'-'+savedIdx);
+    if(sc2){sc2.scrollTop=st;if(savedCard)sc2.scrollTop=Math.max(0,sc2.scrollTop+savedCard.getBoundingClientRect().top-sc2.getBoundingClientRect().top-20);}
+    if(typeof refreshKbProgress==='function')refreshKbProgress();toast('已保存到云端，问答将使用更新后的内容。');
+  }catch(error){
+    if(kbEditSession===s){s.saveError=error&&error.message||'保存未完成，草稿已保留。';toast(s.saveError);}
+  }finally{
+    if(kbEditSession===s){s.saving=false;controls.forEach(function(node){node.disabled=false;});kbEditorChanged();}
+  }
+}
+async function kbRemoveRevision(kbIdx,itemIdx){
+  var p=P(),item=p&&kbEffectiveKnown(p,kbIdx,cur)[itemIdx],record=item&&kbEditRecord(cur,item);
+  if(!record||window._kbRemovingRevision)return;
+  var note=record.sourceIndex===null;
+  if(!confirm(note?'删除这条补充资料？':'恢复为报告原文？当前人工修订将停止用于问答。'))return;
+  var epoch=originalUploadEpoch(),key=cur;
+  window._kbRemovingRevision=true;
+  try{
+    var result=await kbRequestEdit({projectKey:key,sectionIndex:kbIdx,sectionTitle:p.kb[kbIdx].t,sourceIndex:record.sourceIndex,sourceItem:record.sourceItem,baseReportVersion:record.baseReportVersion,editId:record.id,expectedRevision:record.revision,action:'delete',resetGen:typeof RESET_GEN==='undefined'?null:RESET_GEN});
+    if(!originalUploadSessionCurrent(epoch))return;
+    window._serverRestoreSeq=(window._serverRestoreSeq||0)+1;window._serverSyncLock=false;
+    if(!KB_EDITS[key])KB_EDITS[key]={};KB_EDITS[key][result.id]=result;
+    if(cur===key&&P()===p){kbDetail(kbIdx);if(typeof refreshKbProgress==='function')refreshKbProgress();toast(note?'补充资料已删除。':'已恢复报告原文。');}
+  }catch(error){toast(error&&error.message||'未完成，请重试。');}
+  finally{window._kbRemovingRevision=false;}
 }
 function addKbItem(kbIdx){
   var p=P(),k=p&&p.kb&&p.kb[kbIdx];if(!k||!Array.isArray(k.known))return;
-  return kbOpenEditor(kbIdx,k.known.length,true);
+  return kbOpenEditor(kbIdx,kbEffectiveKnown(p,kbIdx,cur).length,true);
 }
 
 /* 删除某条 known 条目（待确认/已确认均可）。同步删除其确认记录，并把后续条目的
@@ -2108,7 +2163,7 @@ function kbDetail(i){
   // 已知条目列表。显示规则（用户 2026-09-18 定）：
   //   用户补充(全部) + 待确认⚠️(全部) + 精选6条(其余里挑)
   // 待确认与用户补充是「额外附加」，不占精选 6 条的名额；数据层 known 始终全量。
-  var _rawKnown=k.known||[];
+  var _rawKnown=kbEffectiveKnown(P(),i,cur);
   var _userPairs=[], _warnPairs=[], _donePairs=[], _normalPairs=[]; // [{text, origIdx}]
   for(var _di=0;_di<_rawKnown.length;_di++){
     var _draw=_rawKnown[_di];
@@ -2154,11 +2209,15 @@ function kbDetail(i){
     var raw=_rawKnown[pair.origIdx],meta=kbDetailMeta(raw,pos),warn=pair.text.indexOf('⚠️')>=0;
     var confirmed=KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][i]&&KB_CONFIRMS[cur][i][pair.origIdx];
     var isUser=raw&&typeof raw==='object'&&raw.origin==='user';
-    var state=confirmed?'已确认':warn?'待确认':isUser?'用户补充':'';
+    var edited=!!(raw&&raw._kbUserEdited);
+    if(edited)confirmed=false;
+    var state=edited?'已修改 · 待核验':confirmed&&confirmed.status==='confirmed'?'已确认':warn?'待确认':isUser?'用户补充':'';
     var duplicateCount=((window.__kbDupMap&&window.__kbDupMap[i]&&window.__kbDupMap[i][pair.origIdx])||[]).length;
-    var manage='<details class="kb-detail-manage"><summary>更多操作</summary><div class="kb-detail-manage-actions">'+
+    var protectedBase=raw&&raw.nature==='base'&&P().baseReportVersion;
+    var revision=edited&&kbEditRecord(cur,raw);
+    var manage=revision?'<button class="kb-detail-secondary" onclick="kbRemoveRevision('+i+','+pair.origIdx+')">'+(revision.sourceIndex===null?'删除补充':'恢复原文')+'</button>':protectedBase?'':'<details class="kb-detail-manage"><summary>更多操作</summary><div class="kb-detail-manage-actions">'+
       '<button class="is-danger" onclick="deleteKbItem('+i+','+pair.origIdx+')" title="删除该条">✕ 删除</button></div></details>';
-    var confirm=warn&&!confirmed?'<button class="kb-detail-confirm" onclick="confirmKbItem('+i+','+pair.origIdx+')">✓ 确认'+(duplicateCount?'（'+(duplicateCount+1)+' 条）':'')+'</button>':'';
+    var confirm=warn&&!confirmed&&!edited&&!protectedBase?'<button class="kb-detail-confirm" onclick="confirmKbItem('+i+','+pair.origIdx+')">✓ 确认'+(duplicateCount?'（'+(duplicateCount+1)+' 条）':'')+'</button>':'';
     return '<section id="kb-card-'+i+'-'+pair.origIdx+'" class="kb-detail-article" data-kb-section="'+pair.origIdx+'">'+
       '<header class="kb-detail-article-head"><div class="kb-detail-meta"><span class="kb-detail-section-label">资料 '+meta.number+'</span><span class="kb-detail-source-label" title="'+kbEscape(meta.file||meta.source)+'">'+kbEscape(meta.source)+'</span>'+
       (state?'<span class="kb-detail-state '+(warn&&!confirmed?'is-pending':'')+'">'+state+'</span>':'')+'</div>'+

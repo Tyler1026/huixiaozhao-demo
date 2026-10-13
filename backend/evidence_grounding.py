@@ -55,14 +55,21 @@ def project_context(body, state):
         raise AuthError(409, 'report_changed', '报告版本已更新，请刷新后重试')
     root = p.get('workspaceId') or key
     corpus = []
+    has_source_revision = False
     # Base knowledge and current direction only; same city is NOT an access key.
     keys = list(dict.fromkeys([root, key]))
     for k in keys:
         project = projects.get(k) or {}
         if k != key and (project.get('workspaceId') or k) != root:
             continue
-        for section in project.get('kb') or []:
-            for item in section.get('known') or []:
+        from .kb_edits import effective_known
+        for section_index, section in enumerate(project.get('kb') or []):
+            for item in effective_known(state, k, section_index):
+                if isinstance(item, dict) and item.get('_kbEditId'):
+                    edits = (state.get('KB_EDITS') or {}).get(k) or {}
+                    revision = edits.get(item['_kbEditId'])
+                    if isinstance(revision, dict) and revision.get('sourceIndex') is not None:
+                        has_source_revision = True
                 text = _text(item)
                 if text.strip():
                     corpus.append({'text': text, 'cite': (item.get('src') or section.get('t') or '') if isinstance(item, dict) else section.get('t', ''), 'topic': section.get('t', ''), 'origin': item.get('origin', '') if isinstance(item, dict) else '', 'nature': item.get('nature', '') if isinstance(item, dict) else ''})
@@ -70,7 +77,11 @@ def project_context(body, state):
     report = by_topic.get(topic)
     if not report and topic == (rs.get('topic') or p.get('topic')):
         report = rs.get('text')
-    if report:
+    # A saved source revision supersedes passages that may also occur in the
+    # archived report. Do not reintroduce its old facts as parallel evidence.
+    # Notes alone do not invalidate a report; inactive/deleted edits never
+    # carry _kbEditId into effective_known and therefore do not suppress it.
+    if report and not has_source_revision:
         for block in re.split(r'\n\s*\n', str(report)):
             if block.strip():
                 corpus.append({'text': block, 'cite': '当前报告 / '+topic, 'topic': topic, 'origin': 'report'})
