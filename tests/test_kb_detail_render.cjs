@@ -168,29 +168,41 @@ function actionHarness(known){
  const h=harness([{t:'政策',icon:'📜',known}]),c=h.c,scroll={scrollTop:123,getBoundingClientRect:()=>({top:100})},effects={persist:0,corpus:0,progress:0,toasts:[],selectors:[]};
  const confirms=[],answers=[],created=[],decode=s=>s.replace(/&(?:lt|gt|amp|quot|#39);/g,x=>({'&lt;':'<','&gt;':'>','&amp;':'&','&quot;':'"','&#39;':"'"}[x]));
  function element(tag='div'){
-  const attrs={},names=new Set(),node={tagName:tag.toUpperCase(),style:{},children:[],parentNode:null,_html:'',value:'',hidden:false,disabled:false,
+  const attrs={},names=new Set(),node={connected:false,tagName:tag.toUpperCase(),style:{},children:[],parentNode:null,_html:'',value:'',hidden:false,disabled:false,
    setAttribute(name,value){attrs[name]=String(value);if(name==='id')this.id=String(value);if(name==='class')this.className=String(value);},getAttribute:name=>attrs[name]??null,hasAttribute:name=>Object.hasOwn(attrs,name),removeAttribute:name=>{delete attrs[name];},
    classList:{add:name=>names.add(name),remove:name=>names.delete(name),contains:name=>names.has(name)},
    focus(){this.focused=true;c.document.activeElement=this;},click(){this.clicked=true;},setSelectionRange(a,b){this.selectionStart=a;this.selectionEnd=b;},getClientRects(){return this.hidden?[]:[{top:0}];},getBoundingClientRect:()=>({top:120}),
-   appendChild(child){child.parentNode=this;this.children.push(child);if(child.id)h.nodes.set(child.id,child);return child;},
+   appendChild(child){child.parentNode=this;this.children.push(child);if(this.connected){const connect=n=>{n.connected=true;if(n.id)h.nodes.set(n.id,n);n.children.forEach(connect);};connect(child);}return child;},
    remove(){for(const child of this.children)child.remove();if(this.parentNode)this.parentNode.children=this.parentNode.children.filter(x=>x!==this);if(h.nodes.get(this.id)===this)h.nodes.delete(this.id);this.parentNode=null;},
-   querySelectorAll(){return this.children.flatMap(x=>[x,...x.querySelectorAll()]).filter(x=>['BUTTON','TEXTAREA','INPUT','SUMMARY'].includes(x.tagName));},
-   querySelector(selector){return this.children.find(x=>selector.startsWith('.')?(x.className||'').split(/\s+/).includes(selector.slice(1)):selector.startsWith('#')?x.id===selector.slice(1):x.tagName.toLowerCase()===selector)||this.children.map(x=>x.querySelector(selector)).find(Boolean)||null;},
-   set innerHTML(html){this._html=String(html);this.children=[];
-    for(const match of this._html.matchAll(/<(textarea|button|div|span|input|h3)\b([^>]*)>/g)){
-     if(!/\bid="/.test(match[2])&&match[1]!=='button')continue;
-     const child=element(match[1]);
-     for(const attr of match[2].matchAll(/([\w-]+)(?:="([^"]*)")?/g))child.setAttribute(attr[1],decode(attr[2]||''));
-     child.hidden=/\bhidden\b/.test(match[2]);
-     if(match[1]==='textarea'){const after=this._html.slice(match.index+match[0].length),end=after.indexOf('</textarea>');child.value=decode(after.slice(0,end)).replace(/\r\n?/g,'\n');}
-     this.appendChild(child);
+   matches(selector){
+    if(selector.startsWith('.'))return (this.className||'').split(/\s+/).includes(selector.slice(1));
+    if(selector.startsWith('#'))return this.id===selector.slice(1);
+    const attr=selector.match(/^\[([\w-]+)(?:="([^"]*)")?\]$/);if(attr)return this.hasAttribute(attr[1])&&(attr[2]===undefined||this.getAttribute(attr[1])===attr[2]);
+    return this.tagName.toLowerCase()===selector.toLowerCase();
+   },
+   querySelectorAll(selector){const selectors=String(selector||'*').split(',').map(s=>s.trim());return this.children.flatMap(x=>[x,...x.querySelectorAll('*')]).filter(x=>selectors.some(s=>s==='*'||x.matches(s)));},
+   querySelector(selector){return this.querySelectorAll(selector)[0]||null;},
+   set innerHTML(html){
+    this.children.slice().forEach(child=>child.remove());this._html=String(html);this.textContent='';
+    const stack=[{node:this,start:0}];
+    for(const match of this._html.matchAll(/<\/?([\w-]+)\b([^>]*)>|([^<]+)/g)){
+     if(match[3]!==undefined){stack.at(-1).node.textContent+=decode(match[3]);continue;}
+     const tag=match[1].toLowerCase();
+     if(match[0].startsWith('</')){
+      const index=stack.map(entry=>entry.node.tagName.toLowerCase()).lastIndexOf(tag);
+      if(index>0){const entry=stack[index];entry.node._html=this._html.slice(entry.start,match.index);if(tag==='textarea')entry.node.value=decode(entry.node._html).replace(/\r\n?/g,'\n');stack.length=index;}
+      continue;
+     }
+     const child=element(tag);for(const attr of match[2].matchAll(/([\w-]+)(?:="([^"]*)")?/g))child.setAttribute(attr[1],decode(attr[2]||''));
+     child.hidden=/\bhidden\b/.test(match[2]);stack.at(-1).node.appendChild(child);
+     if(!['input','br','hr','img','meta','link'].includes(tag)&&!match[0].endsWith('/>'))stack.push({node:child,start:match.index+match[0].length});
     }
    },get innerHTML(){return this._html;},
    get firstChild(){const match=this._html.match(/^<div id="([^"]+)"/);return {id:match?match[1]:'',innerHTML:this._html,querySelector(){return null;},querySelectorAll(){return [];},remove(){h.nodes.delete(this.id);}};}
   };return node;
  }
  let dialog,readers;
- function installReader(){dialog=element();dialog.className='kb-detail-dialog';readers=[element('header'),element('main'),element('footer')];readers[1].setAttribute('inert','');readers.forEach(n=>dialog.appendChild(n));
+ function installReader(){dialog=element();dialog.connected=true;dialog.className='kb-detail-dialog';readers=[element('header'),element('main'),element('footer')];readers[1].setAttribute('inert','');readers.forEach(n=>dialog.appendChild(n));
   h.nodes.set('kbDetailModal',{querySelector:selector=>selector==='.kb-detail-dialog'?dialog:selector==='.kb-detail-scroll'?scroll:null,querySelectorAll:()=>[],remove(){h.nodes.delete('kbDetailModal');}});
  }
  const listeners={};Object.assign(c,{AUTH:{user:'reviewer'},_authEpoch:1,KB_FILE_CHUNKS:{'workspace-a':[{id:'pin:0:0'},{id:'unrelated'}]},
@@ -234,9 +246,9 @@ test('confirming grouped duplicates preserves each record own paragraphs and ori
 test('opening edit uses the original paragraphs and source rather than the cleaned display text',()=>{
  const raw='✅ ## 原始政策\n\n第一段规定。\n第二段限制。\n来源：原部门（2026-10-12）\nhttps://official.example/edit?a=1&b=2';
  const item={text:raw,origin:'report'},h=actionHarness([item]),before=JSON.stringify(item);
- h.c.editKbItem(0,0);const ta=h.nodes.get('kb-edit-0-0');
+ h.c.editKbItem(0,0);h.c.kbSelectEditorPart(-1);const ta=h.nodes.get('kb-edit-0-0');
  assert.equal(ta.value,raw.slice('✅ '.length));assert.equal(ta.focused,true);assert.equal(ta.selectionEnd,0);
- assert.match(h.panel().innerHTML,/来源：原部门/);assert.match(h.panel().innerHTML,/https:\/\/official\.example\/edit\?a=1&amp;b=2/);
+ h.c.kbSetEditorMode('preview');assert.match(h.nodes.get('kbEditorPreview').innerHTML,/来源：原部门/);assert.match(h.nodes.get('kbEditorPreview').innerHTML,/https:\/\/official\.example\/edit\?a=1&amp;b=2/);h.c.kbSetEditorMode('edit');
  assert.equal(JSON.stringify(item),before);assert.equal(h.effects.persist,0);
 });
 
@@ -252,7 +264,7 @@ test('opening and saving without editing does not write or change source metadat
 test('textarea closing tags and scripts remain escaped and round-trip as literal text',()=>{
  const raw='原文保留</textarea><script>globalThis.pwned=true</script>\n<img src=x onerror="alert(1)">\n字面实体 &lt; 与 &amp; 不可二次解码。';
  const known=[{text:raw,origin:'report'}],h=actionHarness(known);
- h.c.editKbItem(0,0);
+ h.c.editKbItem(0,0);h.c.kbSelectEditorPart(-1);
  const panel=h.panel();assert.equal((panel.innerHTML.match(/<\/textarea>/g)||[]).length,1);assert.equal((panel.innerHTML.match(/<textarea\b/g)||[]).length,1);
  assert.doesNotMatch(panel.innerHTML,/<script\b|<img\b/);assert.match(panel.innerHTML,/&lt;\/textarea&gt;&lt;script&gt;/);
  assert.equal(h.nodes.get('kb-edit-0-0').value,raw);h.textarea().value+='\n补充核查条件。';h.c.saveKbEdit(0,0);assert.equal(known[0].text,'✅ '+raw+'\n补充核查条件。');assert.equal(h.c.pwned,undefined);
@@ -546,7 +558,7 @@ test('saving a new draft appends only once at the current end and records the ac
 
 test('saving a changed record preserves source metadata and updates only its original slot',()=>{
  const sourceMeta=freeze({url:'https://official.example/source'}),item={text:'⚠️ 原始条款\n来源：https://official.example/source',origin:'report',nature:'policy',sources:[sourceMeta]},known=['不相关第一条',item,'不相关末条'],h=actionHarness(known);
- h.c.editKbItem(0,1);h.textarea().value+='\n补充适用条件。';h.c.kbEditorChanged();h.c.saveKbEdit(0,1);
+ h.c.editKbItem(0,1);h.c.kbSelectEditorPart(-1);h.textarea().value+='\n补充适用条件。';h.c.kbEditorChanged();h.c.saveKbEdit(0,1);
  assert.equal(known[1],item);assert.equal(item.sources[0],sourceMeta);assert.equal(item.nature,'policy');assert.equal(item.origin,'user');assert.equal(item.account,'reviewer');
  assert.equal(item.text,'✅ 原始条款\n来源：https://official.example/source\n补充适用条件。');assert.equal(known[0],'不相关第一条');assert.equal(known[2],'不相关末条');
  assert.equal(h.c.KB_CONFIRMS['workspace-a'][0][1].text,item.text.slice(2));assert.equal(h.effects.persist,1);assert.equal(h.scroll.scrollTop,123);
@@ -692,4 +704,148 @@ test('saved result returns to its original item id even after its user status ch
  h.c.editKbItem(0,1);h.textarea().value='第二条修改后置顶';h.c.saveKbEdit(0,1);
  assert.equal(h.effects.persist,1);assert.equal(known[1].origin,'user');assert.ok(lookups.includes('kb-card-0-1'));assert.equal(h.scroll.scrollTop,333);
  assert.equal(known[0],'第一条原文');assert.equal(h.effects.toasts.at(-1),'修改已在当前页面生效');
+});
+
+test('segment offsets reconstruct mixed line endings and untouched whitespace without any loss',()=>{
+ const c=actionHarness(['原文']).c;
+ const examples=['\r\n  第一段  \r\n\r\n\t\r\n第二段\r第三段\n  ', '甲🌱乙'.repeat(301)+'\r\n来源：https://example.org/资料?q=%E4%B8%AD&x=1\r\n', '\n \n\t\r\n'];
+ for(const source of examples){
+  const parts=c.kbEditorSegments(source);let previous=0;
+  for(const part of parts){assert.ok(part.end>part.start);assert.ok(part.start>=previous);assert.equal(source.slice(part.start,part.end),part.original);assert.equal(part.draft,part.original);previous=part.end;}
+  assert.equal(c.kbEditorJoinParts({segmentSource:source,parts}),source);
+ }
+});
+
+test('long prose is cut into bounded short segments without splitting Unicode code points',()=>{
+ const c=actionHarness(['原文']).c,source=('核查🌱资料'.repeat(63)+'。')+'下一项🧭'.repeat(220),parts=c.kbEditorSegments(source);
+ assert.ok(parts.length>3);assert.equal(parts.map(p=>p.original).join(''),source);
+ for(const part of parts){assert.ok(Array.from(part.original).length<=420);assert.doesNotMatch(part.original,/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/);}
+ assert.ok(parts[0].original.endsWith('。'),'a sufficiently long sentence boundary is preferred over a hard cut');
+});
+
+test('complete URLs, Markdown links and inline code survive a segment boundary intact',()=>{
+ const c=actionHarness(['原文']).c;
+ for(const atom of ['https://example.org/'+('a'.repeat(470))+'?q=%E4%B8%AD&x=1','[官方来源]('+('https://example.org/'+('b'.repeat(470)))+')','`'+('opaque_value_'.repeat(45))+'`']){
+  const source='前文'.repeat(195)+' '+atom+' 后文'.repeat(30),parts=c.kbEditorSegments(source);
+  assert.equal(parts.map(p=>p.original).join(''),source);assert.equal(parts.filter(p=>p.original.includes(atom)).length,1);
+  const a=source.indexOf(atom),b=a+atom.length;for(const part of parts)assert.ok(!(part.end>a&&part.end<b),'protected atom cannot be split');
+ }
+});
+
+test('multiline records default to one short segment and expose every separate source line',()=>{
+ const source='## 政策条件\n\n第一项需满足实际经营。\n第二项需满足申报期限。\n来源：https://official.example/policy',item={text:source,origin:'report'},h=actionHarness([item]);
+ h.c.editKbItem(0,0);const s=h.c.kbEditSession,nav=h.nodes.get('kbEditorSegments');
+ assert.equal(s.segmentIndex,0);assert.equal(h.textarea().value,'## 政策条件');assert.ok(h.textarea().value.length<source.length);assert.equal(s.parts.length,4);
+ const buttons=nav.querySelectorAll('[data-kb-edit-part]');assert.equal(buttons.length,4);assert.deepEqual(buttons.map(b=>b.getAttribute('data-kb-edit-part')),['0','1','2','3']);
+ assert.equal(buttons[0].getAttribute('aria-current'),'true');assert.equal(nav.querySelector('.kb-editor-whole').getAttribute('aria-pressed'),'false');assert.match(h.nodes.get('kbEditorLocation').textContent||h.nodes.get('kbEditorLocation').innerHTML,/第 1 \/ 4 段/);
+ assert.equal(h.effects.persist,0);assert.equal(item.text,source);
+});
+
+test('editing one repeated paragraph replaces only its own original interval and preserves metadata',()=>{
+ const source='  标题\r\n\r\n重复说明\r\n\t\r\n重复说明\r\n来源：https://official.example/policy?x=1&y=2\r\n  ';
+ const sourceMeta=freeze({url:'https://official.example/policy?x=1&y=2',quote:'原始证据'}),item={text:source,origin:'report',nature:'policy',sources:[sourceMeta],custom:{id:'stable'}},known=['相邻资料',item,'末尾资料'],h=actionHarness(known);
+ h.c.editKbItem(0,1);const index=h.c.kbEditSession.parts.map(p=>p.original).lastIndexOf('重复说明');h.c.kbSelectEditorPart(index);h.textarea().value='只改第二处';h.c.saveKbEdit(0,1);
+ const expected=source.replace(/重复说明(?=\r\n来源)/,'只改第二处');assert.equal(item.text,'✅ '+expected);assert.equal(known[1],item);assert.equal(known.length,3);assert.equal(known[0],'相邻资料');assert.equal(known[2],'末尾资料');
+ assert.equal(item.sources[0],sourceMeta);assert.equal(item.custom.id,'stable');assert.equal(item.nature,'policy');assert.equal(h.c.KB_CONFIRMS['workspace-a'][0][1].text,expected);assert.equal(h.effects.persist,1);
+});
+
+test('switching short segments keeps separate drafts and saving combines all edits in source order',()=>{
+ const source='第一段\n\n第二段\n第三段',h=actionHarness([{text:source,origin:'report'}]);h.c.editKbItem(0,0);const s=h.c.kbEditSession;
+ h.textarea().value='第一段修改';h.c.kbSelectEditorPart(2);assert.equal(h.textarea().value,'第三段');assert.equal(s.parts[0].draft,'第一段修改');
+ h.textarea().value='第三段修改';h.c.kbSelectEditorPart(1);assert.equal(h.textarea().value,'第二段');h.c.kbSelectEditorPart(0);assert.equal(h.textarea().value,'第一段修改');
+ assert.equal(h.nodes.has('kbEditorDiscard'),false);assert.equal(h.confirms.length,0);assert.equal(h.effects.persist,0);h.c.saveKbEdit(0,0);
+ assert.equal(h.project.kb[0].known[0].text,'✅ 第一段修改\n\n第二段\n第三段修改');assert.equal(h.effects.persist,1);
+});
+
+test('inactive segment drafts keep the whole editor dirty for cancel and beforeunload',()=>{
+ const h=actionHarness(['第一段\n第二段']);h.c.editKbItem(0,0);h.textarea().value='第一段修改';h.c.kbSelectEditorPart(1);const session=h.c.kbEditSession;
+ assert.equal(h.textarea().value,'第二段');assert.equal(h.nodes.get('kbEditorStatus').textContent,'有未保存修改');
+ const event=keyEvent('');h.c.kbEditBeforeUnload(event);assert.equal(event.prevented,true);assert.equal(h.c.kbCancelEdit(),false);assert.ok(h.nodes.has('kbEditorDiscard'));
+ h.c.kbSelectEditorPart(0);assert.equal(session.segmentIndex,1,'discard prompt blocks navigation behind it');h.c.kbKeepEditing();h.c.kbSelectEditorPart(0);assert.equal(h.textarea().value,'第一段修改');
+ h.c.kbCancelEdit();h.c.kbDiscardEdit();assert.equal(h.c.kbEditSession,null);assert.deepEqual(h.project.kb[0].known,['第一段\n第二段']);assert.equal(h.effects.persist,0);
+});
+
+test('restoring a changed inactive segment clears whole-document dirty status',()=>{
+ const h=actionHarness(['第一段\n第二段']);h.c.editKbItem(0,0);h.textarea().value='修改';h.c.kbSelectEditorPart(1);h.c.kbSelectEditorPart(0);h.textarea().value='第一段';h.c.kbSelectEditorPart(1);
+ assert.equal(h.nodes.get('kbEditorStatus').textContent,'尚未修改');const event=keyEvent('');h.c.kbEditBeforeUnload(event);assert.equal(event.prevented,undefined);assert.equal(h.c.kbCancelEdit(),true);assert.equal(h.effects.persist,0);
+});
+
+test('no-op switching through every short segment and whole text preserves exact CRLF source',()=>{
+ const raw='⚠️   第一段  \r\n\r\n第二段\r\n来源：https://official.example/a\r\n  ',item={text:raw,origin:'import',account:'original',source:{id:1}},h=actionHarness([item]),before=JSON.stringify(item);
+ h.c.editKbItem(0,0);for(let i=0;i<h.c.kbEditSession.parts.length;i++)h.c.kbSelectEditorPart(i);h.c.kbSelectEditorPart(-1);h.c.kbSelectEditorPart(0);h.c.saveKbEdit(0,0);
+ assert.equal(JSON.stringify(item),before);assert.equal(h.effects.persist,0);assert.deepEqual(h.c.KB_CONFIRMS,{});assert.equal(h.c.kbEditSession,null);
+});
+
+test('whole-text fallback contains prior segment edits and resegments later whole-text edits',()=>{
+ const h=actionHarness(['第一段\r\n\r\n第二段']);h.c.editKbItem(0,0);h.textarea().value='第一段修改';h.c.kbSelectEditorPart(-1);
+ assert.equal(h.c.kbEditSession.segmentIndex,-1);assert.equal(h.textarea().value,'第一段修改\n\n第二段');assert.equal(h.nodes.get('kbEditorLocation').textContent,'全文编辑');
+ h.textarea().value+='\n第三段新增';h.c.kbSelectEditorPart(0);assert.equal(h.c.kbEditSession.parts.length,3);h.c.kbSelectEditorPart(2);assert.equal(h.textarea().value,'第三段新增');h.textarea().value='第三段再修改';h.c.saveKbEdit(0,0);
+ assert.equal(h.project.kb[0].known[0].text,'✅ 第一段修改\r\n\r\n第二段\r\n第三段再修改');assert.equal(h.effects.persist,1);
+});
+
+test('emptying one selected segment retains surrounding paragraphs and exact gaps',()=>{
+ const h=actionHarness(['第一段\r\n\r\n待删除正文\r\n第三段']);h.c.editKbItem(0,0);h.c.kbSelectEditorPart(1);h.textarea().value='';h.c.kbEditorChanged();
+ assert.equal(h.nodes.get('kbEditorSave').disabled,false);h.c.saveKbEdit(0,0);assert.equal(h.project.kb[0].known[0].text,'✅ 第一段\r\n\r\n\r\n第三段');assert.equal(h.effects.persist,1);
+});
+
+test('invalid segment indices never change the selected draft or mutate the underlying source',()=>{
+ const h=actionHarness(['第一段\n第二段']);h.c.editKbItem(0,0);h.textarea().value='本地修改';const s=h.c.kbEditSession,version=s.segmentVersion;
+ for(const index of [NaN,Infinity,0.5,-2,2,'1',null])h.c.kbSelectEditorPart(index);
+ assert.equal(s.segmentIndex,0);assert.equal(s.segmentVersion,version);assert.equal(h.textarea().value,'本地修改');assert.deepEqual(h.project.kb[0].known,['第一段\n第二段']);assert.equal(h.effects.persist,0);
+});
+
+test('single short and new records retain direct whole-text editing without an empty segment rail',()=>{
+ const h=actionHarness(['单段原文']);h.c.editKbItem(0,0);assert.equal(h.c.kbEditSession.segmentIndex,-1);assert.equal(h.nodes.has('kbEditorSegments'),false);h.c.kbCancelEdit(true);
+ h.c.addKbItem(0);assert.equal(h.c.kbEditSession.segmentIndex,-1);assert.equal(h.nodes.has('kbEditorSegments'),false);h.textarea().value='第一段新增\n\n第二段新增';h.c.saveKbEdit(0,1);
+ assert.equal(h.project.kb[0].known.length,2);assert.equal(h.project.kb[0].known[1].text,'✅ 第一段新增\n\n第二段新增');assert.equal(h.effects.persist,1);
+});
+
+test('long single physical lines also default to bounded local editing and retain complete source links',()=>{
+ const source='长正文🌱'.repeat(200)+' https://official.example/source?q=1&x=2',h=actionHarness([source]);h.c.editKbItem(0,0);
+ assert.ok(h.c.kbEditSession.parts.length>1);assert.equal(h.c.kbEditSession.segmentIndex,0);assert.ok(Array.from(h.textarea().value).length<=420);h.textarea().value='精确修改首段';h.c.saveKbEdit(0,0);
+ assert.ok(h.project.kb[0].known[0].text.endsWith(' https://official.example/source?q=1&x=2'));assert.equal(h.effects.persist,1);
+});
+
+test('segment preview renders only the selected draft safely and whole preview includes all drafts',()=>{
+ const h=actionHarness(['第一段\n第二段']);h.c.editKbItem(0,0);h.textarea().value='## 第一段修改\n<script>alert(1)</script>';h.c.kbSetEditorMode('preview');
+ assert.match(h.nodes.get('kbEditorPreview').innerHTML,/<h2>第一段修改<\/h2>/);assert.doesNotMatch(h.nodes.get('kbEditorPreview').innerHTML,/<script\b|第二段/);
+ h.c.kbSelectEditorPart(-1);h.c.kbSetEditorMode('preview');assert.match(h.nodes.get('kbEditorPreview').innerHTML,/第二段/);assert.doesNotMatch(h.nodes.get('kbEditorPreview').innerHTML,/<script\b/);assert.deepEqual(h.project.kb[0].known,['第一段\n第二段']);
+});
+
+test('a pending file picker cannot ingest after segment location changes even if it is selected again',async()=>{
+ const h=actionHarness(['第一段\n第二段']);h.c.editKbItem(0,0);let calls=0;h.c.ingestFiles=async()=>{calls++;return [];};h.c.editPickFile(0,0);const picker=h.created.at(-1);picker.files=[{name:'迟到.txt'}];
+ h.c.kbSelectEditorPart(1);h.c.kbSelectEditorPart(0);picker.onchange();await Promise.resolve();assert.equal(calls,0);assert.equal(h.textarea().value,'第一段');assert.equal(h.effects.persist,0);
+});
+
+test('uploaded attachment receipts cannot append a delayed summary into another segment',async()=>{
+ const h=actionHarness(['第一段\n第二段']);h.c.editKbItem(0,0);let finish;h.c.ingestFiles=()=>new Promise(resolve=>{finish=resolve;});const waiting=h.c.processEditFiles([{name:'证明.txt'}],0,0);
+ h.c.kbSelectEditorPart(1);finish([{name:'证明.txt',_originalReceipt:{fileChunks:[{text:'延迟附件摘要'}]}}]);await waiting;
+ assert.equal(h.textarea().value,'第二段');assert.equal(h.c.kbEditSession.parts[0].draft,'第一段');assert.match(h.nodes.get('kb-file-hint-0-0').textContent,/附件已保存.*摘要未插入正文/);assert.deepEqual(h.project.kb[0].known,['第一段\n第二段']);assert.equal(h.effects.persist,0);
+});
+
+test('same-segment attachment text joins only that segment and final save keeps other text intact',async()=>{
+ const h=actionHarness(['第一段\r\n第二段\r\n来源：https://official.example/source']);h.c.editKbItem(0,0);h.c.kbSelectEditorPart(1);
+ h.c.ingestFiles=async()=>[{name:'证明.txt',_originalReceipt:{fileChunks:[{text:'有效附件摘要'}]}}];await h.c.processEditFiles([{name:'证明.txt'}],0,0);h.c.saveKbEdit(0,0);
+ assert.equal(h.project.kb[0].known[0].text,'✅ 第一段\r\n第二段\n[证明.txt] 有效附件摘要\r\n来源：https://official.example/source');assert.equal(h.effects.persist,1);
+});
+
+test('Chinese sentence punctuation ends URL protection so following long prose remains short editable chunks',()=>{
+ const c=actionHarness(['原文']).c,url='https://official.example/path',source='前'.repeat(390)+url+'。'+'后'.repeat(800),parts=c.kbEditorSegments(source);
+ assert.equal(parts.map(p=>p.original).join(''),source);assert.equal(parts.filter(p=>p.original.includes(url)).length,1);
+ assert.ok(parts.length>=3);for(const part of parts)assert.ok(Array.from(part.original).length<=420,'URL-adjacent ordinary prose must retain bounded chunks');
+ const urlEnd=source.indexOf(url)+url.length;assert.ok(parts.some(p=>p.start>=urlEnd),'the text after the Chinese full stop is not swallowed by URL protection');
+});
+
+test('balanced nested parentheses keep a long Markdown link protected as one atomic segment',()=>{
+ const c=actionHarness(['原文']).c,link='[官方资料](https://official.example/a_(b)/'+'x'.repeat(600)+')',source='前'.repeat(390)+link+' 后文仍独立',parts=c.kbEditorSegments(source);
+ assert.equal(parts.map(p=>p.original).join(''),source);const containing=parts.filter(p=>p.original.includes(link));assert.equal(containing.length,1);assert.ok(Array.from(containing[0].original).length>420,'only the complete protected link may exceed the chunk target');
+ const start=source.indexOf(link),end=start+link.length;for(const part of parts)assert.ok(!(part.end>start&&part.end<end),'no cut may occur between nested URL parentheses or before the outer closing parenthesis');
+});
+
+test('returning from a shortened whole draft clamps a stale segment button and refreshes its directory',()=>{
+ const h=actionHarness(['第一段\n第二段\n第三段']);h.c.editKbItem(0,0);const oldThird=h.nodes.get('kbEditorSegments').querySelector('[data-kb-edit-part="2"]');assert.ok(oldThird);
+ h.c.kbSelectEditorPart(-1);h.textarea().value='合并后的唯一一段';vm.runInContext(oldThird.getAttribute('onclick'),h.c);
+ assert.equal(h.c.kbEditSession.parts.length,1);assert.equal(h.c.kbEditSession.segmentIndex,0);assert.equal(h.textarea().value,'合并后的唯一一段');assert.equal(h.nodes.get('kbEditorSegments').querySelectorAll('[data-kb-edit-part]').length,1);
+ assert.equal(h.nodes.get('kbEditorSegments').querySelector('[data-kb-edit-part="2"]'),null);assert.equal(h.nodes.get('kbEditorSegments').querySelector('[data-kb-edit-part="0"]').getAttribute('aria-current'),'true');assert.match(h.nodes.get('kbEditorLocation').textContent,/第 1 \/ 1 段/);
+ h.c.saveKbEdit(0,0);assert.equal(h.project.kb[0].known[0].text,'✅ 合并后的唯一一段');assert.equal(h.effects.persist,1);
 });
