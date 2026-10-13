@@ -1939,8 +1939,33 @@ function kbDetailSourceText(value){
   var text=value&&typeof value==='object'?value.text:value;
   return String(text==null?'':text).replace(/^[\u2705\u26a0\ufe0f]+[ \t]*/, '');
 }
+function kbDetailMeta(value,index){
+  var item=value&&typeof value==='object'?value:{},text=kbDetailSourceText(value),first=text.split(/\r?\n/).filter(function(line){return line.trim();})[0]||'';
+  var file=String(item.sourceFile||item.src||item.cite||''),name=file.split(/[\\/]/).pop();
+  var labels={'01a_economy.md':'经济概况','01b_population.md':'人口与人才','01c_transport_land.md':'交通与空间','01d_life_support.md':'生活配套','02_industry_direction.md':'产业方向','03_competition.md':'区域竞争','04_policy_trends.md':'政策与规划','05a_target_enterprises_dir1.md':'方向一企业研究','05b_target_enterprises_dir2.md':'方向二企业研究','05c_target_enterprises_dir3.md':'方向三企业研究','06_supply_chain_gaps.md':'产业链研究','07_matching_score.md':'企业评分','07_enterprise_scores.md':'企业评分'};
+  var source=labels[name]||file||(item.origin==='user'?'用户补充':'来源未标注');
+  var heading=first.match(/^\s*#{1,4}\s+(.+)$/),quoted=first.match(/本子章节[“「"]([^”」"]{2,36})[”」"]/);
+  var title=heading?heading[1]:quoted?quoted[1]:labels[name]||String(item.title||'');
+  if(!title){var clean=first.replace(/^\s*(?:\d+[.)、]\s*|[-•]\s+)/,'').replace(/\*\*/g,'');title=clean.length<=28?clean:'知识片段';}
+  return {title:title||'知识片段',source:source,file:file,number:String(index+1).padStart(2,'0')};
+}
+function kbDetailDecorateHtml(html){
+  // Only decorate text nodes produced by the escaping Markdown renderer.
+  return html.split(/(<[^>]+>)/g).map(function(part){
+    if(part.charAt(0)==='<')return part;
+    return part.replace(/(来源\s*(?:\[\d+\])+)/g,'<span class="kb-detail-citation">$1</span>')
+      .replace(/（((?:发布年份|统计年份)[^（）<>]*)）/g,'<span class="kb-detail-note">（$1）</span>');
+  }).join('');
+}
 function kbDetailTextHtml(value){
   var text=kbDetailSourceText(value).replace(/\r\n?/g,'\n');
+  // Protect complete original URLs before the report renderer highlights numeric text.
+  var prefix='HXZDETAILSOURCE',links=[];while(text.indexOf(prefix)>=0)prefix+='X';
+  text=text.replace(/https?:\/\/[^\s<>"'“”（）()\[\]，。；、]+/g,function(url){
+    var parsed;try{parsed=new URL(url);}catch(_){return url;}
+    if(!/^https?:$/.test(parsed.protocol)||!parsed.hostname||parsed.username||parsed.password)return url;
+    var token=prefix+links.length+'END';links.push({token:token,html:'<a class="kb-detail-source-link" href="'+kbEscape(url)+'" target="_blank" rel="noopener noreferrer" title="'+kbEscape(url)+'">'+kbEscape(parsed.hostname)+' ↗</a>'});return token;
+  });
   var blocks=reportMdToHtml(text).split('\n'),out=[],ordered=false;
   blocks.forEach(function(block){
     var item=block.match(/^<p>(\d{1,6})(?:[.)]\s+|、\s*)([\s\S]*)<\/p>$/);
@@ -1953,7 +1978,27 @@ function kbDetailTextHtml(value){
     }
   });
   if(ordered)out.push('</ol>');
-  return out.join('\n');
+  var html=kbDetailDecorateHtml(out.join('\n'));
+  links.forEach(function(link){html=html.split(link.token).join(link.html);});
+  return html;
+}
+function kbJumpToDetail(kbIdx,itemIdx){
+  if(!Number.isInteger(kbIdx)||!Number.isInteger(itemIdx))return;
+  var modal=document.getElementById('kbDetailModal');if(!modal)return;
+  var sc=modal.querySelector('.kb-detail-scroll'),target=modal.querySelector('#kb-card-'+kbIdx+'-'+itemIdx);if(!sc||!target)return;
+  var top=sc.scrollTop+target.getBoundingClientRect().top-sc.getBoundingClientRect().top-20;
+  sc.scrollTo({top:Math.max(0,top),behavior:window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
+}
+function kbUpdateDetailIndex(){
+  var modal=document.getElementById('kbDetailModal');if(!modal)return;
+  var sc=modal.querySelector('.kb-detail-scroll');if(!sc)return;
+  var sections=Array.from(modal.querySelectorAll('[data-kb-section]')),active=sections[0],edge=sc.getBoundingClientRect().top+60;
+  sections.forEach(function(section){if(section.getBoundingClientRect().top<=edge)active=section;});
+  if(sc.scrollTop+sc.clientHeight>=sc.scrollHeight-2)active=sections[sections.length-1];
+  if(!active)return;
+  modal.querySelectorAll('.kb-detail-index-link').forEach(function(button){
+    if(button.getAttribute('data-target')===active.id)button.setAttribute('aria-current','location');else button.removeAttribute('aria-current');
+  });
 }
 
 function kbDetail(i){
@@ -2001,117 +2046,29 @@ function kbDetail(i){
   var _pickedRest=(_donePairs.length+_normalPairs.length)-_picked.length;
   var _moreCount=_pickedRest>0?_pickedRest:0;
   var displayKnown=_displayPairs.map(function(p2){return p2.text;});
-  var knownHtml=(displayKnown&&displayKnown.length)
-    ? '<div style="display:flex;flex-direction:column;gap:8px">'+
-        displayKnown.map(function(x,xi){
-          // 【2026-09-18 修复】用户条目已在分桶时放行，此处不能再把它渲染成空串。
-          var _rawAtIdx=_displayPairs[xi]?_rawKnown[_displayPairs[xi].origIdx]:null;
-          var _isUserRow=(_rawAtIdx && typeof _rawAtIdx==='object' && _rawAtIdx.origin==='user');
-          if(!_isUserRow && _isJunkKbItem(x)) return '';
-          var warn=x.indexOf('⚠️')>=0;
-          var isFile=x.indexOf('📎')===0;
-          var clean=x.replace('⚠️ ','');
-          var badges=[];
-          // 统一抽取卡片正文里的量化数字（金额/产能/面积/重量/长度/百分比/企业台数等），
-          // 避免旧正则只认 8 个单位导致卡片底部有时空白。2026-09-01 扩展包括：
-          //   金额：亿元/亿美元/亿/万元/万美元/万
-          //   产能：万辆/万吨/万台/万件/万套/万只/万头/万人
-          //   能量：GWh/MWh/kWh/MW/kW/Wh
-          //   重量/体积：吨/kg/公斤/克/m³/m²/㎡/万m³/万㎡
-          //   面积/长度：公顷/亩/公里/km
-          //   百分比：%/百分点
-          //   计数：家/户/款/台/座/项/条/人/个/张/批/次
-          var _seenBadge={};
-          clean.replace(/(\d+(?:[,\.]\d+)*)\s*(亿元|亿美元|亿|万元|万美元|万辆|万吨|万台|万件|万套|万只|万头|万人|万m³|万㎡|万|kwh|kWh|GWh|MWh|MW|kW|Wh|吨|kg|公斤|克|公顷|公里|km|m³|m²|㎡|亩|百分点|%|家|户|款|台|座|项|条|人|个|张|批|次)/g,function(m){
-            var _key=m.replace(/\s+/g,'');
-            if(!_seenBadge[_key] && badges.length<10){ _seenBadge[_key]=1; badges.push(_key); }
-            return m;
-          });
-          var badgeHtml=badges.length
-            ?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:7px">'+
-               badges.map(function(b){
-                 return '<span style="padding:2px 8px;background:#dbeafe;color:#1e40af;border-radius:6px;font-size:11.5px;font-weight:700;letter-spacing:.3px">'+b+'</span>';
-               }).join('')+'</div>':'';
-          var accent=warn?'#f59e0b':isFile?'#22c55e':xi===0?'#6366f1':'#94a3b8';
-          var bg=warn?'#fffbeb':isFile?'#f0fdf4':'#f8faff';
-          var bd=warn?'#fde68a':isFile?'#bbf7d0':'#e8edf5';
-          var icon=warn?'⚠':isFile?'📎':xi===0?'★':'•';
-          var txtColor=warn?'#78350f':isFile?'#14532d':'#1e293b';
-          // 检查是否已确认
-          var _oi=(_displayPairs[xi]?_displayPairs[xi].origIdx:xi);
-          var confirmed=KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][i]&&KB_CONFIRMS[cur][i][_oi];
-          var isConfirmed=!!confirmed;
-          // 已确认条目：绿色样式
-          if(isConfirmed){
-            bg='#f0fdf4';bd='#86efac';accent='#22c55e';icon='\u2705';txtColor='#14532d';
-          }
-          // ⚠️ 条目的操作按钮
-          var actionBtns='';
-          if(warn&&!isConfirmed){
-            // 【2026-09-18】去重提示：该条代表了几条同义表述，确认一次全清。
-            // 不标明的话，干部以为还剩很多条没点，或以为点完了却没点完。
-            var _dupN2=((window.__kbDupMap&&window.__kbDupMap[i]&&window.__kbDupMap[i][_oi])||[]).length;
-            var _dupTag=_dupN2>0
-              ?'<div style="margin-top:6px;font-size:11px;color:#92400e;background:#fef3c7;border:1px dashed #fcd34d;border-radius:6px;padding:3px 7px;display:inline-block">已合并 '+(_dupN2+1)+' 条同义表述，确认一次即全部清除</div>'
-              :'';
-            actionBtns=_dupTag+'<div style="display:flex;gap:6px;margin-top:8px">'+
-              '<button onclick="confirmKbItem('+i+','+(_displayPairs[xi]?_displayPairs[xi].origIdx:xi)+')" '+
-                'style="flex:1;padding:6px 0;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12px;color:#166534;cursor:pointer;font-weight:600" '+
-                'onmouseover="this.style.background=\'#dcfce7\'" onmouseout="this.style.background=\'#f0fdf4\'">'+
-                '\u2713 确认'+(_dupN2>0?('（'+(_dupN2+1)+' 条）'):'')+
-              '</button>'+
-              '<button onclick="editKbItem('+i+','+(_displayPairs[xi]?_displayPairs[xi].origIdx:xi)+')" '+
-                'style="flex:1;padding:6px 0;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600" '+
-                'onmouseover="this.style.background=\'#ede9fe\'" onmouseout="this.style.background=\'#f5f3ff\'">'+
-                '\u270e 修改内容'+
-              '</button>'+
-              '<button onclick="deleteKbItem('+i+','+(_displayPairs[xi]?_displayPairs[xi].origIdx:xi)+')" title="删除该条待确认事项" '+
-                'style="padding:6px 10px;background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;font-size:12px;color:#dc2626;cursor:pointer;font-weight:600" '+
-                'onmouseover="this.style.background=\'#fee2e2\'" onmouseout="this.style.background=\'#fef2f2\'">'+
-                '\u2715 删除'+
-              '</button>'+
-            '</div>';
-          } else if(isConfirmed){
-            actionBtns='<div style="margin-top:6px;font-size:11px;color:#22c55e;display:flex;align-items:center;gap:4px">'+
-              '<span>\u2713 已确认</span>'+
-              '<button onclick="editKbItem('+i+','+_oi+')" style="background:none;border:none;color:#94a3b8;font-size:11px;cursor:pointer;margin-left:6px">修改</button>'+
-              '<button onclick="deleteKbItem('+i+','+(_displayPairs[xi]?_displayPairs[xi].origIdx:xi)+')" style="background:none;border:none;color:#cbd5e1;font-size:11px;cursor:pointer;margin-left:2px">删除</button>'+
-            '</div>';
-          } else {
-            actionBtns='<div style="display:flex;gap:6px;margin-top:8px">'+
-              '<button onclick="editKbItem('+i+','+(_displayPairs[xi]?_displayPairs[xi].origIdx:xi)+')" '+
-                'style="flex:1;padding:6px 0;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600" '+
-                'onmouseover="this.style.background=\'#ede9fe\'" onmouseout="this.style.background=\'#f5f3ff\'">'+
-                '\u270e 修改内容'+
-              '</button>'+
-              '<button onclick="deleteKbItem('+i+','+(_displayPairs[xi]?_displayPairs[xi].origIdx:xi)+')" title="删除该条" '+
-                'style="padding:6px 10px;background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;font-size:12px;color:#dc2626;cursor:pointer;font-weight:600" '+
-                'onmouseover="this.style.background=\'#fee2e2\'" onmouseout="this.style.background=\'#fef2f2\'">'+
-                '\u2715 删除'+
-              '</button>'+
-            '</div>';
-          }
-          return '<div id="kb-card-'+i+'-'+_oi+'" style="border-radius:12px;background:'+bg+';border:1.5px solid '+bd+';overflow:visible;transition:border-color .15s">'+
-            '<div style="display:flex">'+
-              '<div style="width:4px;background:'+accent+';flex-shrink:0"></div>'+
-              '<div style="padding:16px 18px;flex:1;min-width:0">'+
-                '<div style="display:flex;gap:8px;align-items:flex-start">'+
-                  '<span style="font-size:12px;flex-shrink:0;margin-top:2px;color:'+accent+'">'+icon+'</span>'+
-                  '<div style="flex:1;min-width:0">'+
-                    '<div class="kb-detail-richtext" style="color:'+txtColor+'">'+kbDetailTextHtml(_rawAtIdx)+'</div>'+
-                    badgeHtml+
-                    actionBtns+
-                  '</div>'+
-                '</div>'+
-              '</div>'+
-            '</div>'+
-          '</div>';
-        }).join('')+
-      '</div>'
-    : '<div style="color:#9aa5b5;font-size:13px;padding:12px 0">暂无已知内容，点击下方按钮基于此主题提问。</div>';
-  if(_moreCount>0){
-    knownHtml+='<div style="text-align:center;padding:8px;font-size:12px;color:#8492a6;background:#f8faff;border-radius:8px;margin-top:6px">还有 '+_moreCount+' 条基础数据未展示（仅显示待确认项+精选摘要）</div>';
-  }
+  var indexHtml=_displayPairs.map(function(pair,pos){
+    var meta=kbDetailMeta(_rawKnown[pair.origIdx],pos),target='kb-card-'+i+'-'+pair.origIdx;
+    return '<button class="kb-detail-index-link" data-target="'+target+'" onclick="kbJumpToDetail('+i+','+pair.origIdx+')" title="'+kbEscape(meta.title)+'"><span>'+meta.number+'</span><span>'+kbEscape(meta.title)+'</span></button>';
+  }).join('');
+  var knownHtml=_displayPairs.length?_displayPairs.map(function(pair,pos){
+    var raw=_rawKnown[pair.origIdx],meta=kbDetailMeta(raw,pos),warn=pair.text.indexOf('⚠️')>=0;
+    var confirmed=KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][i]&&KB_CONFIRMS[cur][i][pair.origIdx];
+    var isUser=raw&&typeof raw==='object'&&raw.origin==='user';
+    var state=confirmed?'已确认':warn?'待确认':isUser?'用户补充':'';
+    var duplicateCount=((window.__kbDupMap&&window.__kbDupMap[i]&&window.__kbDupMap[i][pair.origIdx])||[]).length;
+    var manage='<details class="kb-detail-manage"><summary>修改或删除</summary><div class="kb-detail-manage-actions">'+
+      '<button onclick="editKbItem('+i+','+pair.origIdx+')">✎ 修改内容</button>'+
+      '<button class="is-danger" onclick="deleteKbItem('+i+','+pair.origIdx+')" title="删除该条">✕ 删除</button></div></details>';
+    var confirm=warn&&!confirmed?'<button class="kb-detail-confirm" onclick="confirmKbItem('+i+','+pair.origIdx+')">✓ 确认'+(duplicateCount?'（'+(duplicateCount+1)+' 条）':'')+'</button>':'';
+    return '<section id="kb-card-'+i+'-'+pair.origIdx+'" class="kb-detail-article" data-kb-section="'+pair.origIdx+'">'+
+      '<header class="kb-detail-article-head"><div class="kb-detail-meta"><span>资料 '+meta.number+'</span><span title="'+kbEscape(meta.file||meta.source)+'">'+kbEscape(meta.source)+'</span>'+
+      (state?'<span class="kb-detail-state '+(warn&&!confirmed?'is-pending':'')+'">'+state+'</span>':'')+'</div>'+
+      '<h3>'+kbEscape(meta.title)+'</h3></header>'+
+      '<div class="kb-detail-richtext">'+kbDetailTextHtml(raw)+'</div>'+
+      (duplicateCount&&warn&&!confirmed?'<p class="kb-detail-duplicate">合并了 '+(duplicateCount+1)+' 条同义表述，确认时将一并更新。</p>':'')+
+      '<footer class="kb-detail-article-actions">'+confirm+manage+'</footer></section>';
+  }).join(''):'<p class="kb-detail-empty">暂无已知内容，可基于此主题提问或补充资料。</p>';
+  if(_moreCount>0)knownHtml+='<p class="kb-detail-more">还有 '+_moreCount+' 条基础数据未展示，当前展示待确认项与精选资料。</p>';
 
   // 数据来源标签
   var callsHtml=(k.calls&&k.calls.length)
@@ -2122,40 +2079,21 @@ function kbDetail(i){
     : '';
 
   var modalHtml=
-    '<div id="kbDetailModal" onclick="if(event.target.id===\'kbDetailModal\')closeKbDetail()" '+
-      'class="kb-detail-overlay">'+
+    '<div id="kbDetailModal" onclick="if(event.target.id===\'kbDetailModal\')closeKbDetail()" class="kb-detail-overlay">'+
       '<div class="kb-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="kbDetailTitle">'+
-
-        // 顶栏
-        '<div style="padding:20px 22px 16px;border-bottom:1px solid #f0f4ff;flex:0 0 auto">'+
-          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'+
-            '<span style="font-size:11px;font-weight:650;color:#6366f1;letter-spacing:.5px">KNOWLEDGE SCOPE</span>'+
-            '<button aria-label="关闭知识详情" onclick="closeKbDetail()" style="background:none;border:none;font-size:18px;color:#9aa5b5;cursor:pointer;padding:2px 6px;border-radius:6px" onmouseover="this.style.background=\'#f5f7fb\'" onmouseout="this.style.background=\'none\'">✕</button>'+
-          '</div>'+
-          '<h2 id="kbDetailTitle" style="font-size:17px;font-weight:750;color:#0b183b;margin:0 0 4px">'+kbEscape(k.icon)+' '+kbEscape(k.t)+'</h2>'+
-          '<p style="font-size:12.5px;color:#8492a6;margin:0">'+kbEscape(_getDisplaySub(i)||k.sub)+'</p>'+
-        '</div>'+
-
-        // 内容区（可滚动）
-        '<div class="kb-detail-scroll">'+
-
-          '<div id="kbDetailList-'+i+'" style="margin-bottom:18px">'+
-            '<h3 style="font-size:12px;font-weight:650;color:#4a5568;letter-spacing:.3px;margin:0 0 10px">当前已知'+
-              '<span style="font-weight:400;color:#b0bac8;margin-left:6px">⚠ 标注项需政府确认</span>'+
-            '</h3>'+
-            knownHtml+
-          '</div>'+
-
-          (callsHtml?
-          '<div style="margin-bottom:16px">'+
-            '<h3 style="font-size:12px;font-weight:650;color:#4a5568;letter-spacing:.3px;margin:0 0 8px">本次回答可调用来源</h3>'+
-            callsHtml+
-          '</div>':'')+
-
-          '<div style="padding:10px 12px;background:#f8faff;border-radius:10px;font-size:11.5px;color:#9aa5b5;line-height:1.6">'+
-            '公开信息仅用于辅助研判；园区承载、企业采购和领导任务仍需政府授权材料确认。'+
-          '</div>'+
-        '</div>'+
+        '<header class="kb-detail-header"><div><span class="kb-detail-eyebrow">城市智库 / 资料阅读</span>'+
+          '<h2 id="kbDetailTitle">'+kbEscape(k.t)+'</h2>'+
+          '<p>'+kbEscape(_getDisplaySub(i)||k.sub)+'</p></div>'+
+          '<button class="kb-detail-close" aria-label="关闭知识详情" onclick="closeKbDetail()">✕</button></header>'+
+        '<div class="kb-detail-layout">'+
+          '<aside class="kb-detail-index"><p>本页目录 <span>'+_displayPairs.length+'</span></p><nav aria-label="资料目录">'+indexHtml+'</nav>'+
+            '<small>标题与内容来自原始材料</small></aside>'+
+          '<div class="kb-detail-scroll" onscroll="kbUpdateDetailIndex()">'+
+            '<details class="kb-detail-mobile-index"><summary>本页目录 · '+_displayPairs.length+' 段资料</summary><nav aria-label="窄屏资料目录">'+indexHtml+'</nav></details>'+
+            '<div id="kbDetailList-'+i+'">'+knownHtml+'</div>'+
+            (callsHtml?'<div class="kb-detail-related"><h3>相关资料类别</h3>'+callsHtml+'</div>':'')+
+            '<p class="kb-detail-disclaimer">公开信息用于辅助研判；来源编号沿用原始材料，事实与适用条件仍需核实。</p>'+
+          '</div></div>'+
 
         // 确认进度条
         (function(){
@@ -2171,19 +2109,11 @@ function kbDetail(i){
               '<div style="height:100%;width:'+(total?Math.round(done/total*100):0)+'%;background:linear-gradient(90deg,#22c55e,#16a34a);border-radius:3px;transition:width .4s"></div>'+
             '</div></div>';
         })()+
-        '<div style="padding:14px 22px 18px;border-top:1px solid #f0f4ff;flex:0 0 auto;display:flex;flex-wrap:wrap;gap:8px">'+
-          '<button onclick="closeKbDetail();askAboutKb('+i+')" style="flex:1;min-width:120px;padding:11px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer">'+
-            '基于此主题提问 →'+
-          '</button>'+
-          '<button onclick="addKbItem('+i+')" style="padding:11px 13px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;font-size:13px;color:#166534;cursor:pointer;font-weight:600">'+
-            '+ 补充结论'+
-          '</button>'+
-          '<button onclick="pickLocalFile('+i+')" style="padding:11px 13px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer">'+
-            '📎 上传材料'+
-          '</button>'+
-        '</div>'+
-      '</div>'+
-    '</div>';
+        '<footer class="kb-detail-footer">'+
+          '<button class="kb-detail-ask" onclick="closeKbDetail();askAboutKb('+i+')">基于此主题提问 →</button>'+
+          '<button class="kb-detail-secondary" onclick="addKbItem('+i+')">+ 补充结论</button>'+
+          '<button class="kb-detail-secondary" onclick="pickLocalFile('+i+')">上传材料</button>'+
+        '</footer></div></div>';
 
   // 注入 slideIn keyframe（只注一次）
   if(!document.getElementById('kbDetailStyle')){
@@ -2196,6 +2126,7 @@ function kbDetail(i){
   var wrap=document.createElement('div');
   wrap.innerHTML=modalHtml;
   document.body.appendChild(wrap.firstChild);
+  kbUpdateDetailIndex();
 }
 
 function closeKbDetail(){
