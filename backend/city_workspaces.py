@@ -71,6 +71,8 @@ def membership_role(state, city, code, project_key, username, legacy_role):
 def protect_city_sync(incoming, state):
     """Defense in depth for callers bypassing the normal authenticated guard."""
     from .auth import AuthError
+    if 'KB_EDITS' in incoming:
+        raise AuthError(403, 'protected_field', '资料修订只能通过专用接口修改')
     if 'CITY_WORKSPACES' in incoming:
         raise AuthError(403, 'protected_field', '城市工作区只能通过专用接口修改')
     if ('RESET_GEN' in incoming and incoming['RESET_GEN'] != state.get('RESET_GEN')

@@ -186,6 +186,79 @@ function _kbText(x){
   t=t.replace(/\*\*/g,'');
   return t;
 }
+// Server-owned edits are projected over the immutable report records only for reading.
+function kbValueEqual(a,b){
+  if(a===b)return true;
+  if(a===null||b===null||typeof a!==typeof b||typeof a!=='object')return false;
+  if(Array.isArray(a)!==Array.isArray(b))return false;
+  var ak=Object.keys(a).sort(),bk=Object.keys(b).sort();
+  if(ak.length!==bk.length)return false;
+  if(Array.isArray(a)&&a.length!==b.length)return false;
+  for(var i=0;i<ak.length;i++)if(ak[i]!==bk[i]||!kbValueEqual(a[ak[i]],b[bk[i]]))return false;
+  return true;
+}
+function kbEditRecords(key){
+  var map=typeof KB_EDITS!=='undefined'&&KB_EDITS&&KB_EDITS[key];
+  if(!map||typeof map!=='object'||Array.isArray(map))return [];
+  function index(value){return Number.isInteger(value)&&value>=0;}
+  return Object.keys(map).map(function(id){return map[id];}).filter(function(record){
+    if(!record||typeof record!=='object'||Array.isArray(record)||typeof record.id!=='string'||!record.id||
+        !Object.prototype.hasOwnProperty.call(map,record.id)||map[record.id]!==record||
+        !index(record.sectionIndex)||typeof record.sectionTitle!=='string'||!record.sectionTitle.trim()||
+        typeof record.text!=='string'||!record.text.trim()||Array.from(record.text).length>200000||
+        !index(record.revision)||record.revision===0||typeof record.ts!=='number'||!isFinite(record.ts)||record.ts<0||
+        typeof record.account!=='string'||record.status!=='edited'||
+        (Object.prototype.hasOwnProperty.call(record,'deleted')&&typeof record.deleted!=='boolean')||
+        !['sourceIndex','sourceItem','baseReportVersion'].every(function(field){return Object.prototype.hasOwnProperty.call(record,field);}))return false;
+    if(record.sourceIndex===null)return record.sourceItem===null&&record.baseReportVersion===null;
+    return index(record.sourceIndex)&&(typeof record.sourceItem==='string'||
+      record.sourceItem!==null&&typeof record.sourceItem==='object'&&!Array.isArray(record.sourceItem));
+  }).sort(function(a,b){return a.ts-b.ts||(a.id<b.id?-1:a.id>b.id?1:0);});
+}
+function kbEditRecord(key,item){
+  var id=item&&typeof item==='object'&&item._kbEditId;
+  if(typeof id!=='string')return null;
+  var records=kbEditRecords(key);
+  for(var i=0;i<records.length;i++)if(records[i].id===id&&!records[i].deleted)return records[i];
+  return null;
+}
+function kbSourceEdit(project,sectionIndex,sourceIndex,key){
+  var section=project&&Array.isArray(project.kb)&&project.kb[sectionIndex];
+  if(!section||!Number.isInteger(sectionIndex)||!Number.isInteger(sourceIndex)||
+      !Array.isArray(section.known)||sourceIndex<0||sourceIndex>=section.known.length)return null;
+  var version=project.baseReportVersion===undefined?null:project.baseReportVersion,matches=[];
+  kbEditRecords(key===undefined?(typeof cur==='undefined'?'':cur):key).forEach(function(record){
+    if(record.sectionIndex===sectionIndex&&record.sectionTitle===section.t&&record.sourceIndex===sourceIndex&&
+        kbValueEqual(record.sourceItem,section.known[sourceIndex])&&kbValueEqual(record.baseReportVersion,version))matches.push(record);
+  });
+  var live=matches.filter(function(record){return !record.deleted;});
+  // Ambiguous duplicated source revisions must fail closed in both the UI and AI projection.
+  if(live.length>1)return null;
+  return live.length===1?live[0]:matches.length?matches[matches.length-1]:null;
+}
+function kbEffectiveKnown(project,sectionIndex,key){
+  var section=project&&Array.isArray(project.kb)&&project.kb[sectionIndex];
+  if(!section||!Number.isInteger(sectionIndex)||!Array.isArray(section.known))return [];
+  key=key===undefined?(typeof cur==='undefined'?'':cur):key;
+  function effective(raw,record){
+    var item=raw&&typeof raw==='object'&&!Array.isArray(raw)?Object.assign({},raw):{};
+    item.text=record.text.replace(/^\s*\u2705\s*/,'');
+    item.origin='user';item.nature='fix';item._kbUserEdited=true;
+    item._kbEditId=record.id;item._kbRevision=record.revision;item.ts=record.ts;item.account=record.account;
+    return item;
+  }
+  var result=section.known.map(function(raw,index){
+    var record=kbSourceEdit(project,sectionIndex,index,key);
+    return record&&!record.deleted?effective(raw,record):raw;
+  });
+  var uniqueTitle=project.kb.filter(function(candidate){return candidate&&candidate.t===section.t;}).length===1;
+  if(uniqueTitle)kbEditRecords(key).forEach(function(record){
+    if(!record.deleted&&record.sourceIndex===null&&record.sourceItem===null&&record.baseReportVersion===null&&record.sectionTitle===section.t)
+      result.push(effective(null,record));
+  });
+  return result;
+}
+
 // 判断一条known是否为无用条目（纯标题/报告头/表格数据/碎片）
 function _isJunkKbItem(text){
   if(!text||text.length<6) return true;
@@ -298,7 +371,7 @@ function _dedupeWarnPairs(pairs){
 }
 function _getDisplayKnown(kbIdx){
   var p=P(); if(!p||!p.kb||!p.kb[kbIdx]) return [];
-  var raw=p.kb[kbIdx].known||[];
+  var raw=kbEffectiveKnown(p,kbIdx,cur);
   // 1. 用户补充/修改（origin=user）——全部显示，最新在前
   var userAdded=[];
   // 2. 待确认（⚠️）——全部显示，干部需要知道哪些事实还没核实
@@ -326,7 +399,7 @@ function _getDisplayKnown(kbIdx){
   // 精选 6 条：优先 AI 概括（更凝练），不足则用已核验 + 普通条目补齐
   var picked=[];
   var aiItems=[];
-  if(_kbSummaryData && _kbSummaryData.kb && _kbSummaryData.kb[kbIdx]){
+  if(!raw.some(function(item){return item&&item._kbUserEdited;}) && _kbSummaryData && _kbSummaryData.kb && _kbSummaryData.kb[kbIdx]){
     aiItems=(_kbSummaryData.kb[kbIdx].known||[]).filter(function(x){return !_isJunkKbItem(x);});
   }
   function _push(t){
@@ -345,7 +418,7 @@ function _getDisplayKnown(kbIdx){
 // 获取用户手动补充/修改的条目（origin==='user'），最新在前 —— 卡片专门展示这些
 function _getUserAddedKnown(kbIdx){
   var p=P(); if(!p||!p.kb||!p.kb[kbIdx]) return [];
-  var raw=p.kb[kbIdx].known||[];
+  var raw=kbEffectiveKnown(p,kbIdx,cur);
   var arr=[];
   raw.forEach(function(x,idx){
     if(typeof x!=='object' || x.origin!=='user' || !(x.nature==='fix'||x.nature==='confirm')) return;
@@ -362,7 +435,7 @@ function _getUserAddedKnown(kbIdx){
 // 避免摘要显示成「⚠️ …待核实」或与卡片下方的「补充」区重复。
 function _getPickedKnown(kbIdx){
   var p=P(); if(!p||!p.kb||!p.kb[kbIdx]) return [];
-  var raw=p.kb[kbIdx].known||[];
+  var raw=kbEffectiveKnown(p,kbIdx,cur);
   var confirmed=[], normal=[];
   raw.forEach(function(x){
     var t=_kbText(x);
@@ -372,7 +445,7 @@ function _getPickedKnown(kbIdx){
     if(t.indexOf('\u2705')===0) confirmed.push(t); else normal.push(t);
   });
   var picked=[], aiItems=[];
-  if(_kbSummaryData && _kbSummaryData.kb && _kbSummaryData.kb[kbIdx]){
+  if(!raw.some(function(item){return item&&item._kbUserEdited;}) && _kbSummaryData && _kbSummaryData.kb && _kbSummaryData.kb[kbIdx]){
     aiItems=(_kbSummaryData.kb[kbIdx].known||[]).filter(function(x){return !_isJunkKbItem(x);});
   }
   [aiItems, confirmed, normal].forEach(function(arr){
@@ -385,19 +458,21 @@ function _getPickedKnown(kbIdx){
 // 待确认（⚠️）条目，卡片用它显示计数
 function _getWarnKnown(kbIdx){
   var p=P(); if(!p||!p.kb||!p.kb[kbIdx]) return [];
-  return (p.kb[kbIdx].known||[]).map(_kbText).filter(function(t){
+  return kbEffectiveKnown(p,kbIdx,cur).map(_kbText).filter(function(t){
     return t && !_isJunkKbItem(t) && t.indexOf('\u26a0\ufe0f')>=0;
   });
 }
 function _getDisplaySub(kbIdx){
   var p=P(), section=p&&p.kb&&p.kb[kbIdx];
   if(!section)return '';
-  return typeof kbSectionSummary==='function'?kbSectionSummary(section).displaySub:(section.sub||'');
+  var effective=Object.assign({},section,{known:kbEffectiveKnown(p,kbIdx,cur)});
+  return typeof kbSectionSummary==='function'?kbSectionSummary(effective).displaySub:(section.sub||'');
 }
 function _getDisplayTag(kbIdx){
   var p=P(), section=p&&p.kb&&p.kb[kbIdx];
   if(!section)return '';
-  return typeof kbSectionSummary==='function'?kbSectionSummary(section).displayTag:(section.tag||'');
+  var effective=Object.assign({},section,{known:kbEffectiveKnown(p,kbIdx,cur)});
+  return typeof kbSectionSummary==='function'?kbSectionSummary(effective).displayTag:(section.tag||'');
 }
 function _kbMeta(x){ return (x&&typeof x==='object')?x:{text:String(x==null?'':x),origin:'ai',nature:'base'}; }
 

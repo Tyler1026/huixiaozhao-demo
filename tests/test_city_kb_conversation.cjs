@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const read=name=>fs.readFileSync(path.join(__dirname,'../frontend/index/script-02-sections',name+'.js'),'utf8');
-const tail=read('14-tail'),auth=read('03'),layout=read('12-tail');
+const tail=read('14-tail'),auth=read('03'),layout=read('12-tail'),known=read('01');
 const flush=async()=>{for(let i=0;i<30;i++)await Promise.resolve();};
 const plain=html=>html.replace(/<[^>]*>/g,'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&#39;/g,"'").replace(/&quot;/g,'"');
 class Element {
@@ -54,7 +54,7 @@ function harness(disk=new Map()){
   fetch(url,options){const body=JSON.parse(options.body);if(url==='/api/sync'){sync.push(body);return Promise.resolve({ok:true});}api.push(body);const f=feeds.shift();assert.ok(f,'missing response feed');return Promise.resolve(f.response(options.signal));}
  };
  c.window=c;vm.createContext(c);
- const code=[layout.slice(layout.indexOf('function kbDraftQuestion('),layout.indexOf('function kbTogglePanel(')),tail.slice(tail.indexOf('function kbKnownChunk('),tail.indexOf('function buildKBCorpus(')),tail.slice(tail.indexOf('function _kbChatTombKey('),tail.indexOf('function _tombKbChatSession(')),tail.slice(tail.indexOf('var KB_CHAT={};'),tail.indexOf('/* ══ KB_CHAT')),
+ const code=[known.slice(known.indexOf('function kbValueEqual('),known.indexOf('// 判断一条known')),layout.slice(layout.indexOf('function kbDraftQuestion('),layout.indexOf('function kbTogglePanel(')),tail.slice(tail.indexOf('function kbKnownChunk('),tail.indexOf('function buildKBCorpus(')),tail.slice(tail.indexOf('function _kbChatTombKey('),tail.indexOf('function _tombKbChatSession(')),tail.slice(tail.indexOf('var KB_CHAT={};'),tail.indexOf('/* ══ KB_CHAT')),
   tail.slice(tail.indexOf('function _mergeKbChat('),tail.indexOf('/* ══ 多会话')),
   tail.slice(tail.indexOf('var KB_SESSION_IDLE_MS'),tail.indexOf('// 渲染对话区顶部')),
   tail.slice(tail.indexOf('function kbChatPush('),tail.indexOf('// 更新最后一条 AI')),
