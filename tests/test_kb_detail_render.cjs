@@ -23,13 +23,13 @@ function freeze(value){if(value&&typeof value==='object'){Object.values(value).f
 function harness(kb=[]){
  const nodes=new Map(),actions=[],appended=[];
  const body={appendChild(node){appended.push(node);if(node.id)nodes.set(node.id,node);return node;}};
- const c={console,Math,Number,String,Object,Array,JSON,cur:'workspace-a',curKb:null,KB_CONFIRMS:{},
+ const c={console,Math,Number,String,Object,Array,JSON,URL,cur:'workspace-a',curKb:null,KB_CONFIRMS:{},
   P:()=>({city:'闵行区',kb}),_getDisplaySub:()=>'',
   confirmKbItem:(...args)=>actions.push(['confirm',...args]),editKbItem:(...args)=>actions.push(['edit',...args]),deleteKbItem:(...args)=>actions.push(['delete',...args]),
   document:{body,head:{appendChild:node=>{if(node.id)nodes.set(node.id,node);}},getElementById:id=>nodes.get(id)||null,createElement(tag){
    return {tagName:tag.toUpperCase(),id:'',textContent:'',html:'',set innerHTML(value){this.html=String(value);},get innerHTML(){return this.html;},get firstChild(){
     const parent=this,match=parent.html.match(/^<div id="([^"]+)"/);
-    return {id:match?match[1]:'',innerHTML:parent.html,remove(){nodes.delete(this.id);}};
+    return {id:match?match[1]:'',innerHTML:parent.html,querySelector(){return null;},querySelectorAll(){return [];},remove(){nodes.delete(this.id);}};
    }};
   }}
  };
@@ -45,7 +45,7 @@ test('real detail renderer preserves paragraphs and ordinary line breaks from LF
  for(const ending of ['\r\n','\r'])assert.equal(render(lines.join(ending)),expected);
  assert.match(expected,/<p>第一段含明确条件。<\/p>\n<p>第一段下一行保留。<\/p>/);
  assert.match(expected,/<p>第二段独立说明。<\/p>/);
- assert.match(expected,/来源：https:\/\/www\.shmh\.gov\.cn\/document\?id=1&amp;v=2/);
+ assert.match(expected,/来源：<a\b[^>]*href="https:\/\/www\.shmh\.gov\.cn\/document\?id=1&amp;v=2"/);
 });
 
 test('real detail renderer keeps Markdown headings, emphasis and unordered lists',()=>{
@@ -98,7 +98,7 @@ test('string and structured text inputs render identically without changing sour
  const text='✅ ## 政策条款\n\n1. 申请条件完整保留\n来源：https://official.example/policy';
  const object=freeze({text,origin:'report',source:'发文部门',sources:[{url:'https://official.example/policy'}],ts:12});
  const before=JSON.stringify(object);assert.equal(render(object),render(text));assert.equal(JSON.stringify(object),before);
- assert.match(render(object),/<h2>政策条款<\/h2>/);assert.match(render(object),/来源：https:\/\/official\.example\/policy/);
+ assert.match(render(object),/<h2>政策条款<\/h2>/);assert.match(render(object),/来源：<a\b[^>]*href="https:\/\/official\.example\/policy"/);
 });
 
 test('empty and absent text values produce no placeholder or object serialization',()=>{
@@ -234,4 +234,149 @@ test('textarea closing tags and scripts remain escaped and round-trip as literal
  assert.equal((card.innerHTML.match(/<\/textarea>/g)||[]).length,1);assert.equal((card.innerHTML.match(/<textarea\b/g)||[]).length,1);
  assert.doesNotMatch(card.innerHTML,/<script\b|<img\b/);assert.match(card.innerHTML,/&lt;\/textarea&gt;&lt;script&gt;/);
  assert.equal(h.nodes.get('kb-edit-0-0').value,raw);h.c.saveKbEdit(0,0);assert.equal(known[0].text,'✅ '+raw);assert.equal(h.c.pwned,undefined);
+});
+
+test('document index metadata uses real first-line headings or quoted original section titles',()=>{
+ const h=harness(),item=freeze({text:'⚠️ ## 2. 产业承载条件\r\n\r\n正文与来源保留。',sourceFile:'research/01c_transport_land.md',origin:'report'}),before=JSON.stringify(item);
+ const meta=h.c.kbDetailMeta(item,4);
+ assert.equal(meta.title,'2. 产业承载条件');assert.equal(meta.source,'交通与空间');assert.equal(meta.file,'research/01c_transport_land.md');assert.equal(meta.number,'05');assert.equal(JSON.stringify(item),before);
+ for(const quote of ['本子章节“政策适用条件”说明','本子章节「政策适用条件」说明','本子章节"政策适用条件"说明'])assert.equal(h.c.kbDetailMeta(quote,0).title,'政策适用条件');
+});
+
+test('index title fallback keeps mapped file names, original short text and explicit unknowns',()=>{
+ const c=harness().c;
+ assert.equal(c.kbDetailMeta({text:'这是较长的原始正文，含完整适用条件但没有任何独立标题，需要完整保留。',src:'C:\\reports\\04_policy_trends.md'},0).title,'政策与规划');
+ assert.equal(c.kbDetailMeta('3. 简短原文标题',0).title,'简短原文标题');
+ assert.equal(c.kbDetailMeta('无独立标题而且这段正文长度明显超过二十八个字，所以不能编造概括作为目录标题。',0).title,'知识片段');
+ assert.equal(c.kbDetailMeta({text:'',origin:'user'},0).source,'用户补充');
+ assert.equal(c.kbDetailMeta(null,0).source,'来源未标注');assert.equal(c.kbDetailMeta(null,0).title,'知识片段');
+});
+
+test('duplicate index titles retain distinct original targets after sorting and filtering',()=>{
+ const known=freeze([{text:'无效',origin:'report'},{text:'## 相同标题\n第一条正文具有独立条件。',origin:'report'},
+  {text:'## 相同标题\n第二条人工补充正文。',origin:'user',ts:100}]);
+ const h=harness([{t:'政策',known}]),before=JSON.stringify(known),html=h.render();
+ const sections=[...html.matchAll(/<section id="([^"]+)"[^>]*data-kb-section="(\d+)"/g)].map(m=>[m[1],Number(m[2])]);
+ assert.deepEqual(sections,[['kb-card-0-2',2],['kb-card-0-1',1]]);
+ for(const index of [2,1]){
+  const matches=[...html.matchAll(new RegExp('<button[^>]*data-target="kb-card-0-'+index+'"[^>]*onclick="kbJumpToDetail\\(0,'+index+'\\)"[^>]*>','g'))];
+  assert.equal(matches.length,2,'desktop and mobile directory each point to the original record');
+ }
+ assert.doesNotMatch(html,/data-target="kb-card-0-0"/);assert.equal(JSON.stringify(known),before);
+});
+
+test('directory labels and source metadata are escaped without executing original markup',()=>{
+ const known=[{text:'## <img src=x onerror="alert(1)">\n正文安全保留。',sourceFile:'<script>alert(2)</script>',origin:'user'}];
+ const html=harness([{t:'资料',known}]).render();
+ assert.doesNotMatch(html,/<img\b|<script\b/);assert.match(html,/&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/);
+ assert.match(html,/&lt;script&gt;alert\(2\)&lt;\/script&gt;/);assert.equal((html.match(/data-target="kb-card-0-0"/g)||[]).length,2);
+});
+
+test('only real safe source URLs become links and retain their complete targets',()=>{
+ const html=render('来源[1][3]\n网址 https://www.shmh.gov.cn/policy?a=1&b=2。\n补充 https://example.org/doc#part-2\nftp://example.org/no\njavascript:alert(1)\nhttps://name:secret@example.org/private');
+ assert.match(html,/<span class="kb-detail-citation">来源\[1\]\[3\]<\/span>/);
+ const links=[...html.matchAll(/<a class="kb-detail-source-link" href="([^"]+)"[^>]*>/g)].map(m=>m[1]);
+ assert.deepEqual(links,['https://www.shmh.gov.cn/policy?a=1&amp;b=2','https://example.org/doc#part-2']);
+ assert.equal((html.match(/target="_blank" rel="noopener noreferrer"/g)||[]).length,2);
+ assert.match(html,/>www\.shmh\.gov\.cn ↗<\/a>/);assert.match(html,/https:\/\/name:secret@example\.org\/private/);
+ assert.doesNotMatch(render('来源[7] 但原文没有可追溯网址。'),/<a\b/);
+});
+
+test('post-render note decoration leaves URL text and rendered attributes alone without unsafe HTML',()=>{
+ const c=harness().c,input='<p data-title="https://do-not-link.example/a">https://official.example/&lt;img</p>',html=c.kbDetailDecorateHtml(input);
+ assert.equal(html,input);assert.doesNotMatch(html,/<a\b/);
+ assert.doesNotMatch(html,/<img\b|onerror=|<script\b/);
+ const dangerous=render('原文 <img src="https://attacker.example/x" onerror="alert(1)">');
+ assert.doesNotMatch(dangerous,/<img\b/);assert.match(dangerous,/&lt;img/);
+});
+
+function navigationHarness(){
+ const h=harness(),calls=[],rect={top:100},sc={scrollTop:80,clientHeight:300,scrollHeight:1000,getBoundingClientRect:()=>rect,scrollTo:options=>calls.push(options)};
+ const positions=[90,140,300],sections=positions.map((top,index)=>({id:'kb-card-2-'+index,getBoundingClientRect:()=>({top:positions[index]})}));
+ const buttons=sections.flatMap(section=>[0,1].map(()=>({attrs:{'data-target':section.id},getAttribute(name){return this.attrs[name]??null;},setAttribute(name,value){this.attrs[name]=String(value);},removeAttribute(name){delete this.attrs[name];}})));
+ const queries=[],modal={querySelector(selector){queries.push(selector);return selector==='.kb-detail-scroll'?sc:sections.find(s=>'#'+s.id===selector)||null;},querySelectorAll(selector){return selector==='[data-kb-section]'?sections:selector==='.kb-detail-index-link'?buttons:[];}};
+ h.nodes.set('kbDetailModal',modal);h.c.matchMedia=()=>({matches:false});
+ return Object.assign(h,{calls,sc,rect,positions,sections,buttons,queries});
+}
+
+test('directory jump scrolls the modal viewport using relative geometry and motion preference',()=>{
+ const h=navigationHarness();h.c.kbJumpToDetail(2,2);
+ assert.equal(h.calls.length,1);assert.equal(h.calls[0].top,260);assert.equal(h.calls[0].behavior,'smooth');
+ h.c.matchMedia=()=>({matches:true});h.positions[0]=-100;h.c.kbJumpToDetail(2,0);
+ assert.equal(h.calls.at(-1).top,0);assert.equal(h.calls.at(-1).behavior,'auto');
+});
+
+test('directory navigation refuses invalid indexes or targets outside the current modal',()=>{
+ const h=navigationHarness();
+ h.nodes.set('kb-card-2-99',{scrollIntoView(){throw Error('must not reach another document node');}});
+ for(const args of [['2',0],[2,'0'],[2.5,0],[2,NaN],[Infinity,0],[2,'0\");alert(1)'],[2,99]])h.c.kbJumpToDetail(...args);
+ assert.equal(h.calls.length,0);assert.ok(h.queries.every(q=>q==='.kb-detail-scroll'||q==='#kb-card-2-99'));
+ h.nodes.delete('kbDetailModal');h.c.kbJumpToDetail(2,0);assert.equal(h.calls.length,0);
+});
+
+test('scroll position updates both directories aria-current within the active modal only',()=>{
+ const h=navigationHarness(),outside={attrs:{'aria-current':'outside'}};h.nodes.set('outside-directory',outside);
+ h.c.kbUpdateDetailIndex();
+ assert.deepEqual(h.buttons.map(b=>b.attrs['aria-current']),[undefined,undefined,'location','location',undefined,undefined]);
+ h.positions[0]=-200;h.positions[1]=-100;h.positions[2]=150;h.c.kbUpdateDetailIndex();
+ assert.deepEqual(h.buttons.map(b=>b.attrs['aria-current']),[undefined,undefined,undefined,undefined,'location','location']);
+ assert.equal(outside.attrs['aria-current'],'outside');assert.equal(h.calls.length,0);
+});
+
+test('document sections remove decorative cards and duplicate figures while managing actions stay collapsed',()=>{
+ const known=[{text:'## 项目投入\n项目总投资100亿元，具体条件仍需核实。',origin:'report'},
+  {text:'⚠️ ## 核验事项\n申报适用范围需要确认。',origin:'report'}];
+ const html=harness([{t:'资料',known}]).render();
+ const sections=[...html.matchAll(/<section\b[^>]*class="kb-detail-article"[^>]*>([\s\S]*?)<\/section>/g)].map(m=>m[1]);
+ assert.equal(sections.length,2);assert.equal((html.match(/100亿元/g)||[]).length,1);assert.doesNotMatch(html,/★|background:#dbeafe/);
+ for(const section of sections){
+  const details=section.match(/<details\b([^>]*)>([\s\S]*?)<\/details>/);assert.ok(details);assert.doesNotMatch(details[1],/\bopen(?:\s|=|$)/);
+  assert.match(details[2],/<summary>修改或删除<\/summary>/);assert.match(details[2],/editKbItem\(0,\d+\)/);assert.match(details[2],/deleteKbItem\(0,\d+\)/);
+  assert.doesNotMatch(section.replace(details[0],''),/editKbItem|deleteKbItem/);
+ }
+ const pending=sections.find(section=>section.includes('confirmKbItem'));
+ assert.ok(pending);assert.match(pending.replace(/<details\b[^>]*>[\s\S]*?<\/details>/,''),/confirmKbItem\(0,1\)/);
+ const css=fs.readFileSync(path.join(root,'frontend/index/style-01.css'),'utf8'),article=css.match(/\.kb-detail-article\{([^}]+)\}/)?.[1]||'';
+ assert.doesNotMatch(article,/background|box-shadow|border-radius/);
+});
+
+test('numeric distance inside a real URL remains an exact unsplit href',()=>{
+ const url='https://example.com/100km/report',html=render('来源 '+url+'\n运输距离为100km。');
+ const links=[...html.matchAll(/<a class="kb-detail-source-link" href="([^"]+)"[^>]*>/g)].map(m=>m[1]);
+ assert.deepEqual(links,[url]);assert.equal((html.match(/class="num"/g)||[]).length,1,'only ordinary distance text is highlighted');
+ assert.match(html,/<span class="num">100km<\/span>/);assert.doesNotMatch(links[0],/<|>|&lt;|&gt;/);
+});
+
+test('percent-encoded Chinese query and ampersand survive URL rendering exactly',()=>{
+ const url='https://example.com/search?q=%E4%B8%AD%E6%96%87&from=1',html=render('来源 '+url);
+ const anchor=html.match(/<a class="kb-detail-source-link" href="([^"]+)"[^>]*title="([^"]+)"/);
+ assert.ok(anchor);assert.equal(anchor[1],url.replace(/&/g,'&amp;'));assert.equal(anchor[2],anchor[1]);
+ assert.doesNotMatch(html,/class="num"/);assert.equal((html.match(/<a\b/g)||[]).length,1);
+});
+
+test('each repeated original URL is restored in its original paragraph or table position',()=>{
+ const url='https://example.com/100km/report?q=%E4%B8%AD&from=1';
+ const html=render('第一处 '+url+'\n第二处 '+url+'\n| 来源 | '+url+' |');
+ const links=[...html.matchAll(/<a class="kb-detail-source-link" href="([^"]+)"[^>]*>/g)].map(m=>m[1]);
+ assert.deepEqual(links,Array(3).fill(url.replace(/&/g,'&amp;')));
+ assert.match(html,/第一处 <a\b/);assert.match(html,/第二处 <a\b/);assert.match(html,/<t[dh]><a\b/);
+ assert.doesNotMatch(html,/HXZDETAILSOURCE/);
+});
+
+test('input resembling internal URL placeholders remains literal without replacing text or hrefs',()=>{
+ const tokens=['HXZDETAILSOURCE0END','HXZDETAILSOURCEX0END','HXZDETAILSOURCEXX1END'];
+ const url='https://example.com/HXZDETAILSOURCE0END/100km?q=%E4%B8%AD&from=1';
+ const input=tokens.join('\n')+'\n来源 '+url,html=render(input);
+ for(const token of tokens)assert.match(html,new RegExp('<p>'+token+'<\\/p>'));
+ const links=[...html.matchAll(/<a class="kb-detail-source-link" href="([^"]+)"[^>]*>/g)].map(m=>m[1]);
+ assert.deepEqual(links,[url.replace(/&/g,'&amp;')]);assert.equal((html.match(/<a\b/g)||[]).length,1);
+});
+
+test('bottom of the real scroll range selects the final section even before its top reaches the threshold',()=>{
+ const h=navigationHarness();h.positions.splice(0,3,50,130,500);h.sc.scrollTop=697;
+ h.c.kbUpdateDetailIndex();assert.deepEqual(h.buttons.map(b=>b.attrs['aria-current']),[undefined,undefined,'location','location',undefined,undefined]);
+ h.sc.scrollTop=699;h.c.kbUpdateDetailIndex();
+ assert.deepEqual(h.buttons.map(b=>b.attrs['aria-current']),[undefined,undefined,undefined,undefined,'location','location']);
+ h.sc.scrollTop=670;h.c.kbUpdateDetailIndex();
+ assert.deepEqual(h.buttons.map(b=>b.attrs['aria-current']),[undefined,undefined,'location','location',undefined,undefined]);assert.equal(h.calls.length,0);
 });
