@@ -1954,7 +1954,8 @@ function kbDetailDecorateHtml(html){
   return html.split(/(<[^>]+>)/g).map(function(part){
     if(part.charAt(0)==='<')return part;
     return part.replace(/(来源\s*(?:\[\d+\])+)/g,'<span class="kb-detail-citation">$1</span>')
-      .replace(/（((?:发布年份|统计年份)[^（）<>]*)）/g,'<span class="kb-detail-note">（$1）</span>');
+      .replace(/（((?:发布年份|统计年份)[^（）<>]*)）/g,'<span class="kb-detail-note">（$1）</span>')
+      .replace(/(待核实|待核验|待确认|待校核)/g,'<span class="kb-detail-caution">$1</span>');
   }).join('');
 }
 function kbDetailTextHtml(value){
@@ -2004,6 +2005,7 @@ function kbUpdateDetailIndex(){
 function kbDetail(i){
   var k=P().kb[i]; if(!k) return;
   curKb=i;
+  var detailTheme=['indigo','teal','violet','amber'][i]||'indigo';
 
   // 已知条目列表。显示规则（用户 2026-09-18 定）：
   //   用户补充(全部) + 待确认⚠️(全部) + 精选6条(其余里挑)
@@ -2061,7 +2063,7 @@ function kbDetail(i){
       '<button class="is-danger" onclick="deleteKbItem('+i+','+pair.origIdx+')" title="删除该条">✕ 删除</button></div></details>';
     var confirm=warn&&!confirmed?'<button class="kb-detail-confirm" onclick="confirmKbItem('+i+','+pair.origIdx+')">✓ 确认'+(duplicateCount?'（'+(duplicateCount+1)+' 条）':'')+'</button>':'';
     return '<section id="kb-card-'+i+'-'+pair.origIdx+'" class="kb-detail-article" data-kb-section="'+pair.origIdx+'">'+
-      '<header class="kb-detail-article-head"><div class="kb-detail-meta"><span>资料 '+meta.number+'</span><span title="'+kbEscape(meta.file||meta.source)+'">'+kbEscape(meta.source)+'</span>'+
+      '<header class="kb-detail-article-head"><div class="kb-detail-meta"><span class="kb-detail-section-label">资料 '+meta.number+'</span><span class="kb-detail-source-label" title="'+kbEscape(meta.file||meta.source)+'">'+kbEscape(meta.source)+'</span>'+
       (state?'<span class="kb-detail-state '+(warn&&!confirmed?'is-pending':'')+'">'+state+'</span>':'')+'</div>'+
       '<h3>'+kbEscape(meta.title)+'</h3></header>'+
       '<div class="kb-detail-richtext">'+kbDetailTextHtml(raw)+'</div>'+
@@ -2080,10 +2082,11 @@ function kbDetail(i){
 
   var modalHtml=
     '<div id="kbDetailModal" onclick="if(event.target.id===\'kbDetailModal\')closeKbDetail()" class="kb-detail-overlay">'+
-      '<div class="kb-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="kbDetailTitle">'+
-        '<header class="kb-detail-header"><div><span class="kb-detail-eyebrow">城市智库 / 资料阅读</span>'+
+      '<div class="kb-detail-dialog" data-kb-theme="'+detailTheme+'" role="dialog" aria-modal="true" aria-labelledby="kbDetailTitle">'+
+        '<header class="kb-detail-header"><div class="kb-detail-heading"><span class="kb-detail-eyebrow">城市智库 / 资料阅读</span>'+
           '<h2 id="kbDetailTitle">'+kbEscape(k.t)+'</h2>'+
           '<p>'+kbEscape(_getDisplaySub(i)||k.sub)+'</p></div>'+
+          '<div class="kb-detail-mosaic" aria-hidden="true"><span></span><span></span><span></span><span></span></div>'+
           '<button class="kb-detail-close" aria-label="关闭知识详情" onclick="closeKbDetail()">✕</button></header>'+
         '<div class="kb-detail-layout">'+
           '<aside class="kb-detail-index"><p>本页目录 <span>'+_displayPairs.length+'</span></p><nav aria-label="资料目录">'+indexHtml+'</nav>'+
