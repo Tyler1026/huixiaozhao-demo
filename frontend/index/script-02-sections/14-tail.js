@@ -1768,10 +1768,13 @@ function confirmKbItem(kbIdx,itemIdx){
 
 /* 编辑框附件上传：读取文本内容填充 textarea */
 function editPickFile(kbIdx,itemIdx){
+  var session=kbEditSession;if(!kbEditorContextCurrent(session)||session.kbIdx!==kbIdx||session.itemIdx!==itemIdx)return;
+  var locationVersion=session.segmentVersion;
   var inp=document.createElement('input');
   inp.type='file'; inp.multiple=true;
   inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
   inp.onchange=function(){
+    if(kbEditSession!==session||!kbEditorContextCurrent(session)||session.segmentVersion!==locationVersion)return;
     var files=Array.from(inp.files||[]);
     if(!files.length)return;
     processEditFiles(files,kbIdx,itemIdx);
@@ -1787,113 +1790,207 @@ function editDropFile(e,kbIdx,itemIdx){
 }
 
 function processEditFiles(files,kbIdx,itemIdx){
-  var key=cur,epoch=originalUploadEpoch(),hint=document.getElementById('kb-file-hint-'+kbIdx+'-'+itemIdx);
+  var key=cur,epoch=originalUploadEpoch(),session=kbEditSession,hint=document.getElementById('kb-file-hint-'+kbIdx+'-'+itemIdx);
+  var locationVersion=session&&session.segmentVersion;
   var ta=document.getElementById('kb-edit-'+kbIdx+'-'+itemIdx);
+  if(!kbEditorContextCurrent(session)||session.kbIdx!==kbIdx||session.itemIdx!==itemIdx)return Promise.resolve([]);
   if(hint)hint.textContent='正在保存附件原件…';
   return ingestFiles(files,kbIdx).then(function(saved){
-    if(!originalUploadSessionCurrent(epoch)||cur!==key)return;
+    if(!originalUploadSessionCurrent(epoch)||cur!==key||kbEditSession!==session||!kbEditorContextCurrent(session))return;
+    if(session.segmentVersion!==locationVersion){if(hint)hint.textContent='附件已保存；编辑位置已变化，摘要未插入正文。';return;}
     if(hint)hint.textContent='已保存 '+saved.length+' 个附件原件'+(saved.length<files.length?'，部分文件失败，请查看原因':'');
     if(ta)saved.forEach(function(f){
       var text=(f._originalReceipt.fileChunks||[]).map(function(c){return c.text;}).join(' ').slice(0,500);
       ta.value+=(ta.value?'\n':'')+'['+f.name+'] '+text;
     });
+    kbEditorChanged();
   });
 }
 
-function editKbItem(kbIdx,itemIdx){
-  // 把对应条目替换为 inline 编辑框
-  var cardId='kb-card-'+kbIdx+'-'+itemIdx;
-  var card=document.getElementById(cardId);
-  if(!card)return;
-  var p=P();if(!p)return;
-  var k=p.kb[kbIdx];if(!k)return;
-  var _raw=k.known[itemIdx]||''; var orig=kbDetailSourceText(_raw);
-  card.innerHTML=
-    '<div style="padding:10px 13px">'+
-      '<div style="font-size:11px;color:#6366f1;font-weight:650;margin-bottom:6px">修改内容（确认后写入知识库）</div>'+
-      '<textarea id="kb-edit-'+kbIdx+'-'+itemIdx+'" '+
-        'style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #6366f1;border-radius:8px;font-size:13px;line-height:1.6;color:#1e293b;resize:vertical;min-height:72px;outline:none" '+
-        'onkeydown="if(event.key===\'Enter\'&&event.metaKey)saveKbEdit('+kbIdx+','+itemIdx+')">'+kbEscape(orig)+'</textarea>'+
-      '<div style="margin:8px 0 0;padding:8px 10px;background:#f8faff;border:1.5px dashed #c7d2fe;border-radius:8px;cursor:pointer;text-align:center;font-size:12px;color:#4f46e5" '+
-        'onclick="editPickFile('+kbIdx+','+itemIdx+')" '+
-        'ondragover="event.preventDefault();this.style.background=\'#eef2ff\'" '+
-        'ondragleave="this.style.background=\'#f8faff\'" '+
-        'ondrop="editDropFile(event,'+kbIdx+','+itemIdx+')">'+
-        '<span id="kb-file-hint-'+kbIdx+'-'+itemIdx+'">📎 上传附件辅助修改（PDF/Word/TXT · 拖拽或点击）</span>'+
-      '</div>'+
-      '<div style="display:flex;gap:8px;margin-top:8px">'+
-        '<button onclick="saveKbEdit('+kbIdx+','+itemIdx+')" '+
-          'style="flex:1;padding:8px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer">'+
-          '\u2713 保存修改</button>'+
-        '<button onclick="pickLocalFile('+kbIdx+')" '+
-          'style="padding:8px 12px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12.5px;color:#166534;cursor:pointer;font-weight:600">'+
-          '📎 更多文件</button>'+
-        '<button onclick="kbDetail('+kbIdx+')" '+
-          'style="padding:8px 12px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;color:#4a5568;cursor:pointer">取消</button>'+
-      '</div>'+
-    '</div>';
-  card.style.border='1.5px solid #6366f1';
-  card.style.background='#faf5ff';
-  var ta=document.getElementById('kb-edit-'+kbIdx+'-'+itemIdx);
-  if(ta){ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}
-}
-
-function saveKbEdit(kbIdx,itemIdx){
-  var ta=document.getElementById('kb-edit-'+kbIdx+'-'+itemIdx);
-  if(!ta)return;
-  var newText=ta.value.trim();
-  if(!newText){toast('内容不能为空');return;}
-  var p=P();if(!p)return;
-  var k=p.kb[kbIdx];if(!k)return;
-  // 写回 known，添加 ✅ 已确认标记（保留对象格式）
-  // 【2026-09-29】account 记录真实登录账号(AUTH.user)，管理端渲染徽标时据此显示
-  // 具体是谁确认/修正的，不再是笼统的"用户"
-  var _confirmAccount=(AUTH&&AUTH.user)||'';
-  var _oldItem=k.known[itemIdx]; if(_oldItem&&typeof _oldItem==='object'){_oldItem.text='\u2705 '+newText;_oldItem.origin='user';_oldItem.nature=_oldItem.nature||'fix';_oldItem.ts=Date.now();_oldItem.account=_confirmAccount;k.known[itemIdx]=_oldItem;}else{k.known[itemIdx]={text:'\u2705 '+newText,origin:'user',nature:'fix',ts:Date.now(),account:_confirmAccount};}
-  if(!KB_CONFIRMS[cur])KB_CONFIRMS[cur]={};
-  if(!KB_CONFIRMS[cur][kbIdx])KB_CONFIRMS[cur][kbIdx]={};
-  KB_CONFIRMS[cur][kbIdx][itemIdx]={status:'edited',text:newText,ts:Date.now()};
-  persist();
-  buildKBCorpus(p.city);
-  var _sc=document.querySelector('#kbDetailModal .kb-detail-scroll');
-  var _st=_sc?_sc.scrollTop:0;
-  kbDetail(kbIdx);
-  var _sc2=document.querySelector('#kbDetailModal .kb-detail-scroll');
-  if(_sc2)_sc2.scrollTop=_st;
-  refreshKbProgress();
-  toast('\u2705 已更新并写入知识库');
-}
-
-function addKbItem(kbIdx){
-  // 领导手动新增一条 known 条目
-  var p=P();if(!p)return;
-  var k=p.kb[kbIdx];if(!k)return;
-  var itemIdx=k.known.length;
-  var newEntry='\u26a0\ufe0f （新补充结论）';
-  k.known.push(newEntry);
-  // 直接在弹窗底部插入编辑框（不依赖kbDetail重新渲染，避免被_isJunkKbItem过滤）
-  var listContainer=document.getElementById('kbDetailList-'+kbIdx);
-  if(listContainer){
-    var cardHtml='<div id="kb-card-'+kbIdx+'-'+itemIdx+'" style="margin-bottom:4px;padding:10px 13px">'+
-      '<div style="font-size:11px;color:#6366f1;font-weight:650;margin-bottom:6px">补充结论（确认后写入知识库）</div>'+
-      '<textarea id="kb-edit-'+kbIdx+'-'+itemIdx+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #6366f1;border-radius:8px;font-size:13px;line-height:1.6;color:#1e293b;resize:vertical;min-height:72px;outline:none" placeholder="输入补充内容…"></textarea>'+
-      '<div style="display:flex;gap:8px;margin-top:8px">'+
-        '<button onclick="saveKbEdit('+kbIdx+','+itemIdx+')" style="flex:1;padding:8px;background:#6366f1;color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer">保存</button>'+
-        '<button onclick="k=P().kb['+kbIdx+'];k.known.splice('+itemIdx+',1);kbDetail('+kbIdx+')" style="padding:8px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12.5px;color:#dc2626;cursor:pointer">取消</button>'+
-      '</div>'+
-    '</div>';
-    listContainer.insertAdjacentHTML('beforeend', cardHtml);
-    // 滚动到底部
-    var modal=listContainer.closest('[style*="overflow"]')||listContainer.parentNode;
-    if(modal) modal.scrollTop=modal.scrollHeight;
-    // 聚焦输入框
-    var ta=document.getElementById('kb-edit-'+kbIdx+'-'+itemIdx);
-    if(ta) ta.focus();
-  } else {
-    // fallback: 用kbDetail重新渲染
-    kbDetail(kbIdx);
-    setTimeout(function(){editKbItem(kbIdx,k.known.length-1);},100);
+var kbEditSession=null;
+var kbEditSequence=0;
+function kbEditorNormalize(text){return String(text).replace(/\r\n?/g,'\n');}
+function kbEditorSegments(text){
+  text=String(text);var parts=[],lines=/[^\r\n]+/g,line;
+  while((line=lines.exec(text))){
+    if(!line[0].trim())continue;
+    var start=line.index,end=start+line[0].length,at=start;
+    // Keep source offsets stable; separators remain in the original text.
+    var protectedRanges=[],links=/https?:\/\/[^\s<>"'“”，。；！？、]+|`[^`\r\n]*`/g,m;
+    while((m=links.exec(line[0])))protectedRanges.push([start+m.index,start+m.index+m[0].length]);
+    var markdown=/\[[^\]\r\n]*\]\(/g;
+    while((m=markdown.exec(line[0]))){
+      var depth=1,pos=markdown.lastIndex;
+      for(;pos<line[0].length&&depth;pos++){if(line[0][pos]==='\\'){pos++;continue;}if(line[0][pos]==='(')depth++;else if(line[0][pos]===')')depth--;}
+      if(!depth)protectedRanges.push([start+m.index,start+pos]);
+    }
+    while(at<end){
+      var points=Array.from(text.slice(at,end)),cut=end;
+      if(points.length>420){
+        cut=at+points.slice(0,420).join('').length;
+        var sample=text.slice(at,cut),boundary=-1,re=/[。！？；.!?;]\s*/g,match;
+        while((match=re.exec(sample))){if(Array.from(sample.slice(0,match.index+match[0].length)).length>=180)boundary=at+match.index+match[0].length;}
+        if(boundary>at)cut=boundary;
+        protectedRanges.forEach(function(range){if(cut>range[0]&&cut<range[1])cut=range[0]>at?range[0]:range[1];});
+      }
+      var value=text.slice(at,cut),label=value.trim().replace(/^#{1,6}\s+|^[-*]\s+/,'');
+      parts.push({start:at,end:cut,original:value,draft:value,label:Array.from(label).slice(0,42).join('')});at=cut;
+    }
   }
+  return parts;
+}
+function kbEditorJoinParts(s){
+  var text='',at=0;s.parts.forEach(function(part){text+=s.segmentSource.slice(at,part.start)+part.draft;at=part.end;});
+  return text+s.segmentSource.slice(at);
+}
+function kbEditorSync(s){
+  var ta=document.getElementById('kb-edit-'+s.kbIdx+'-'+s.itemIdx);if(!ta)return;
+  var original=s.segmentIndex<0?s.fullOrigin:s.parts[s.segmentIndex].original;
+  var value=ta.value===kbEditorNormalize(original)?original:ta.value.replace(/\n/g,original.indexOf('\r\n')>=0?'\r\n':original.indexOf('\r')>=0?'\r':'\n');
+  if(s.segmentIndex<0)s.fullDraft=value;else s.parts[s.segmentIndex].draft=value;
+}
+function kbEditorCurrentText(s){return s.segmentIndex<0?s.fullDraft:kbEditorJoinParts(s);}
+function kbEditorHasChanges(s){kbEditorSync(s);return kbEditorCurrentText(s)!==s.source;}
+function kbEditorNavigation(s){
+  return '<p>选择要修改的短段 <span>'+s.parts.length+'</span></p><nav aria-label="编辑段落">'+s.parts.map(function(part,index){
+    return '<button type="button" data-kb-edit-part="'+index+'" aria-current="'+(index===s.segmentIndex?'true':'false')+'" onclick="kbSelectEditorPart('+index+')"><b>'+String(index+1).padStart(2,'0')+'</b><span>'+kbEscape(part.label||'空白段落')+'</span></button>';
+  }).join('')+'</nav><button class="kb-editor-whole" onclick="kbSelectEditorPart(-1)" aria-pressed="'+(s.segmentIndex<0)+'">编辑全文</button>';
+}
+function kbSelectEditorPart(index){
+  var s=kbEditSession;if(!s||document.getElementById('kbEditorDiscard')||!Number.isInteger(index)||index< -1||index>=s.parts.length)return;
+  kbEditorSync(s);
+  if(index<0&&s.segmentIndex>=0){s.fullOrigin=s.fullDraft=kbEditorJoinParts(s);}
+  else if(index>=0&&s.segmentIndex<0){s.segmentSource=s.fullDraft;s.parts=kbEditorSegments(s.segmentSource);index=s.parts.length?Math.min(index,s.parts.length-1):-1;}
+  s.segmentIndex=index;s.segmentVersion++;
+  var value=index<0?s.fullDraft:s.parts[index].draft;
+  s.initial=kbEditorNormalize(index<0?s.fullOrigin:s.parts[index].original);
+  var ta=document.getElementById('kb-edit-'+s.kbIdx+'-'+s.itemIdx);if(ta)ta.value=kbEditorNormalize(value);
+  var nav=document.getElementById('kbEditorSegments');if(nav)nav.innerHTML=kbEditorNavigation(s);
+  var where=document.getElementById('kbEditorLocation');if(where)where.textContent=index<0?'全文编辑':'第 '+(index+1)+' / '+s.parts.length+' 段 · 只修改当前短段';
+  kbSetEditorMode('edit');kbEditorChanged();
+}
+function kbEditBeforeUnload(event){
+  var s=kbEditSession;if(s&&kbEditorHasChanges(s)){event.preventDefault();event.returnValue='';}
+}
+if(typeof window.addEventListener==='function')window.addEventListener('beforeunload',kbEditBeforeUnload);
+function editKbItem(kbIdx,itemIdx){return kbOpenEditor(kbIdx,itemIdx,false);}
+function kbOpenEditor(kbIdx,itemIdx,isNew){
+  if(!Number.isInteger(kbIdx)||!Number.isInteger(itemIdx))return false;
+  var p=P(),k=p&&p.kb&&p.kb[kbIdx];
+  if(!k||!Array.isArray(k.known)||itemIdx<0||(!isNew&&itemIdx>=k.known.length))return false;
+  if(kbEditSession&&!kbCancelEdit(false,function(){kbOpenEditor(kbIdx,itemIdx,isNew);}))return false;
+  var modal=document.getElementById('kbDetailModal');
+  if(!modal){kbDetail(kbIdx);modal=document.getElementById('kbDetailModal');}
+  var dialog=modal&&modal.querySelector('.kb-detail-dialog');if(!dialog)return false;
+  var raw=isNew?null:k.known[itemIdx],source=isNew?'':kbDetailSourceText(raw),parts=kbEditorSegments(source),partIndex=!isNew&&parts.length>1?0:-1;
+  var orig=kbEditorNormalize(partIndex<0?source:parts[partIndex].draft);
+  var meta=isNew?{title:'补充结论',source:k.t}:kbDetailMeta(raw,itemIdx);
+  kbEditSession={id:++kbEditSequence,key:cur,project:p,topic:k,known:k.known,kbIdx:kbIdx,itemIdx:itemIdx,isNew:!!isNew,raw:raw,snapshot:JSON.stringify(raw),initial:orig,source:source,segmentSource:source,parts:parts,segmentIndex:partIndex,segmentVersion:0,fullOrigin:source,fullDraft:source,epoch:originalUploadEpoch(),obscured:[]};
+  var panel=document.createElement('div');panel.id='kbEditorPanel';panel.className='kb-editor-panel';
+  panel.setAttribute('role','region');panel.setAttribute('aria-label',isNew?'补充知识资料':'修改知识资料');
+  panel.setAttribute('data-mode','edit');panel.setAttribute('onkeydown','kbEditKey(event)');
+  panel.innerHTML='<header class="kb-editor-header"><div><span class="kb-detail-eyebrow">'+(isNew?'新增资料':'编辑资料')+'</span><h2>'+kbEscape(meta.title)+'</h2><p>'+kbEscape(meta.source)+' · 保存后更新知识库</p></div>'+
+    '<button class="kb-detail-close" aria-label="取消编辑" onclick="kbCancelEdit()">✕</button></header>'+
+    '<div class="kb-editor-toolbar"><div role="tablist" aria-label="编辑视图"><button id="kbEditorTabEdit" role="tab" aria-selected="true" aria-controls="kbEditorInput" onclick="kbSetEditorMode(\'edit\')">编辑原文</button><button id="kbEditorTabPreview" role="tab" aria-selected="false" aria-controls="kbEditorPreview" onclick="kbSetEditorMode(\'preview\')">预览效果</button></div><span id="kbEditorCount"></span></div>'+
+    '<div class="kb-editor-workspace">'+(!isNew&&parts.length>1?'<aside id="kbEditorSegments" class="kb-editor-segments">'+kbEditorNavigation(kbEditSession)+'</aside>':'')+
+    '<div class="kb-editor-content"><div id="kbEditorInput" role="tabpanel" aria-labelledby="kbEditorTabEdit"><label class="kb-editor-label" for="kb-edit-'+kbIdx+'-'+itemIdx+'">'+(isNew?'补充内容':'资料正文')+' <span id="kbEditorLocation">'+(partIndex<0?'全文编辑':'第 1 / '+parts.length+' 段 · 只修改当前短段')+'</span></label><textarea id="kb-edit-'+kbIdx+'-'+itemIdx+'" class="kb-editor-textarea" placeholder="输入内容，可保留分段、编号和来源链接…" oninput="kbEditorChanged()">'+kbEscape(orig)+'</textarea><p class="kb-editor-help">切换段落会保留草稿；保存时仅替换改动的部分，其他正文和来源不变。</p></div>'+
+    '<div id="kbEditorPreview" class="kb-detail-richtext kb-editor-preview" role="tabpanel" aria-labelledby="kbEditorTabPreview" hidden></div></div></div>'+
+    '<details class="kb-editor-attachments"><summary>添加参考附件</summary><p>附件会单独保存，取消正文编辑不会删除已上传附件。</p><button onclick="editPickFile('+kbIdx+','+itemIdx+')">选择附件</button><span id="kb-file-hint-'+kbIdx+'-'+itemIdx+'">支持 PDF、Word、TXT 等资料</span></details>'+
+    '<footer class="kb-editor-footer"><span id="kbEditorStatus" role="status"></span><div><button class="kb-detail-secondary" onclick="kbCancelEdit()">取消</button><button id="kbEditorSave" class="kb-detail-ask" onclick="saveKbEdit('+kbIdx+','+itemIdx+')">保存并返回</button></div><small>Ctrl / ⌘ + Enter 保存</small></footer>';
+  Array.from(dialog.children).forEach(function(node){kbEditSession.obscured.push({node:node,inert:node.hasAttribute('inert')});node.setAttribute('inert','');});
+  dialog.classList.add('is-editing');dialog.appendChild(panel);
+  kbEditorChanged();
+  var ta=document.getElementById('kb-edit-'+kbIdx+'-'+itemIdx);if(ta){ta.focus();ta.setSelectionRange(0,0);}
+  return true;
+}
+function kbEditorContextCurrent(session){
+  var p=P();return !!session&&kbEditSession===session&&cur===session.key&&p===session.project&&p.kb&&p.kb[session.kbIdx]===session.topic&&originalUploadSessionCurrent(session.epoch);
+}
+function kbEditorChanged(){
+  var s=kbEditSession;if(!s)return;
+  var ta=document.getElementById('kb-edit-'+s.kbIdx+'-'+s.itemIdx);if(!ta)return;
+  var count=document.getElementById('kbEditorCount'),status=document.getElementById('kbEditorStatus'),save=document.getElementById('kbEditorSave');
+  kbEditorSync(s);
+  if(count)count.textContent=(s.segmentIndex<0?'':'本段 ')+Array.from(ta.value).length.toLocaleString()+' 字符';
+  if(status)status.textContent=kbEditorCurrentText(s)!==s.source?'有未保存修改':s.isNew?'请输入补充内容':'尚未修改';
+  if(save)save.disabled=!kbEditorCurrentText(s).trim();
+}
+function kbSetEditorMode(mode){
+  if(!kbEditSession||(mode!=='edit'&&mode!=='preview'))return;
+  var s=kbEditSession,panel=document.getElementById('kbEditorPanel'),ta=document.getElementById('kb-edit-'+s.kbIdx+'-'+s.itemIdx),input=document.getElementById('kbEditorInput'),preview=document.getElementById('kbEditorPreview');
+  if(!panel||!ta||!input||!preview)return;
+  panel.setAttribute('data-mode',mode);input.hidden=mode!=='edit';preview.hidden=mode!=='preview';
+  if(mode==='preview')preview.innerHTML=ta.value.trim()?kbDetailTextHtml(ta.value):'<p class="kb-detail-empty">输入内容后，可在这里预览。</p>';
+  ['Edit','Preview'].forEach(function(name){var tab=document.getElementById('kbEditorTab'+name);if(tab)tab.setAttribute('aria-selected',String(mode===name.toLowerCase()));});
+  if(mode==='edit')ta.focus();
+}
+function kbCancelEdit(force,afterDiscard){
+  var s=kbEditSession;if(!s)return true;
+  var ta=document.getElementById('kb-edit-'+s.kbIdx+'-'+s.itemIdx);
+  if(!force&&ta&&kbEditorHasChanges(s)){
+    s.afterDiscard=afterDiscard||null;
+    var panel=document.getElementById('kbEditorPanel'),prompt=document.getElementById('kbEditorDiscard');
+    if(!prompt&&panel){
+      prompt=document.createElement('div');prompt.id='kbEditorDiscard';prompt.className='kb-editor-discard';
+      prompt.setAttribute('role','alertdialog');prompt.setAttribute('aria-modal','true');prompt.setAttribute('aria-labelledby','kbEditorDiscardTitle');
+      prompt.innerHTML='<div><h3 id="kbEditorDiscardTitle">有尚未保存的修改</h3><p>继续编辑可保留当前草稿，放弃后将恢复原内容。</p><footer><button class="kb-editor-discard-action" onclick="kbDiscardEdit()">放弃修改</button><button class="kb-detail-ask" onclick="kbKeepEditing()">继续编辑</button></footer></div>';
+      panel.appendChild(prompt);var keep=prompt.querySelector('.kb-detail-ask');if(keep)keep.focus();
+    }
+    return false;
+  }
+  var panel=document.getElementById('kbEditorPanel'),dialog=panel&&panel.parentNode;
+  s.obscured.forEach(function(entry){if(!entry.inert)entry.node.removeAttribute('inert');});
+  if(panel)panel.remove();if(dialog)dialog.classList.remove('is-editing');kbEditSession=null;
+  var trigger=document.querySelector('#kb-card-'+s.kbIdx+'-'+s.itemIdx+' .kb-detail-edit');if(trigger)trigger.focus();
+  return true;
+}
+function kbKeepEditing(){
+  var prompt=document.getElementById('kbEditorDiscard');if(prompt)prompt.remove();
+  if(kbEditSession){kbEditSession.afterDiscard=null;kbSetEditorMode('edit');}
+}
+function kbDiscardEdit(){
+  var action=kbEditSession&&kbEditSession.afterDiscard;kbCancelEdit(true);if(action)action();
+}
+function kbEditKey(event){
+  if(!kbEditSession||event.isComposing||event.keyCode===229)return;
+  if(event.key==='Tab'){
+    var panel=document.getElementById('kbEditorDiscard')||document.getElementById('kbEditorPanel');
+    var controls=panel?Array.from(panel.querySelectorAll('button,textarea,input,[tabindex]')).filter(function(node){return !node.disabled&&node.getClientRects().length;}):[];
+    if(controls.length){
+      var first=controls[0],last=controls[controls.length-1];
+      if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+      else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
+    }
+    return;
+  }
+  if(event.key==='Escape'){event.preventDefault();event.stopPropagation();if(document.getElementById('kbEditorDiscard'))kbKeepEditing();else kbCancelEdit();}
+  else if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();if(!document.getElementById('kbEditorDiscard'))saveKbEdit(kbEditSession.kbIdx,kbEditSession.itemIdx);}
+}
+function saveKbEdit(kbIdx,itemIdx){
+  if(document.getElementById('kbEditorDiscard'))return;
+  var s=kbEditSession;if(!s||s.kbIdx!==kbIdx||s.itemIdx!==itemIdx)return;
+  var ta=document.getElementById('kb-edit-'+kbIdx+'-'+itemIdx);if(!ta)return;
+  kbEditorSync(s);var newText=kbEditorCurrentText(s);if(!newText.trim()){toast('内容不能为空');return;}
+  var p=P(),k=p&&p.kb&&p.kb[kbIdx];
+  if(!kbEditorContextCurrent(s)){toast('工作区或登录状态已变化，请保留草稿并重新打开资料。');return;}
+  if(k.known!==s.known||(!s.isNew&&(k.known[itemIdx]!==s.raw||JSON.stringify(k.known[itemIdx])!==s.snapshot))){toast('这条资料已更新，请保留草稿并重新打开后修改。');return;}
+  if(!s.isNew&&newText===s.source){kbCancelEdit(true);toast('内容未修改');return;}
+  var _confirmAccount=(AUTH&&AUTH.user)||'',savedIdx=s.isNew?k.known.length:itemIdx;
+  var old=s.isNew?null:k.known[itemIdx];
+  if(old&&typeof old==='object'){old.text='\u2705 '+newText;old.origin='user';old.nature=old.nature||'fix';old.ts=Date.now();old.account=_confirmAccount;k.known[savedIdx]=old;}
+  else{k.known[savedIdx]={text:'\u2705 '+newText,origin:'user',nature:'fix',ts:Date.now(),account:_confirmAccount};}
+  if(!KB_CONFIRMS[cur])KB_CONFIRMS[cur]={};if(!KB_CONFIRMS[cur][kbIdx])KB_CONFIRMS[cur][kbIdx]={};
+  KB_CONFIRMS[cur][kbIdx][savedIdx]={status:'edited',text:newText,ts:Date.now()};
+  persist();buildKBCorpus(p.city);kbCancelEdit(true);
+  var sc=document.querySelector('#kbDetailModal .kb-detail-scroll'),st=sc?sc.scrollTop:0;
+  kbDetail(kbIdx);var sc2=document.querySelector('#kbDetailModal .kb-detail-scroll');
+  var savedCard=document.getElementById('kb-card-'+kbIdx+'-'+savedIdx);
+  if(sc2){sc2.scrollTop=st;if(savedCard)sc2.scrollTop=Math.max(0,sc2.scrollTop+savedCard.getBoundingClientRect().top-sc2.getBoundingClientRect().top-20);}
+  if(typeof refreshKbProgress==='function')refreshKbProgress();toast('修改已在当前页面生效');
+}
+function addKbItem(kbIdx){
+  var p=P(),k=p&&p.kb&&p.kb[kbIdx];if(!k||!Array.isArray(k.known))return;
+  return kbOpenEditor(kbIdx,k.known.length,true);
 }
 
 /* 删除某条 known 条目（待确认/已确认均可）。同步删除其确认记录，并把后续条目的
@@ -2003,6 +2100,7 @@ function kbUpdateDetailIndex(){
 }
 
 function kbDetail(i){
+  if(kbEditSession&&!kbCancelEdit(false,function(){kbDetail(i);}))return;
   var k=P().kb[i]; if(!k) return;
   curKb=i;
   var detailTheme=['indigo','teal','violet','amber'][i]||'indigo';
@@ -2058,14 +2156,13 @@ function kbDetail(i){
     var isUser=raw&&typeof raw==='object'&&raw.origin==='user';
     var state=confirmed?'已确认':warn?'待确认':isUser?'用户补充':'';
     var duplicateCount=((window.__kbDupMap&&window.__kbDupMap[i]&&window.__kbDupMap[i][pair.origIdx])||[]).length;
-    var manage='<details class="kb-detail-manage"><summary>修改或删除</summary><div class="kb-detail-manage-actions">'+
-      '<button onclick="editKbItem('+i+','+pair.origIdx+')">✎ 修改内容</button>'+
+    var manage='<details class="kb-detail-manage"><summary>更多操作</summary><div class="kb-detail-manage-actions">'+
       '<button class="is-danger" onclick="deleteKbItem('+i+','+pair.origIdx+')" title="删除该条">✕ 删除</button></div></details>';
     var confirm=warn&&!confirmed?'<button class="kb-detail-confirm" onclick="confirmKbItem('+i+','+pair.origIdx+')">✓ 确认'+(duplicateCount?'（'+(duplicateCount+1)+' 条）':'')+'</button>':'';
     return '<section id="kb-card-'+i+'-'+pair.origIdx+'" class="kb-detail-article" data-kb-section="'+pair.origIdx+'">'+
       '<header class="kb-detail-article-head"><div class="kb-detail-meta"><span class="kb-detail-section-label">资料 '+meta.number+'</span><span class="kb-detail-source-label" title="'+kbEscape(meta.file||meta.source)+'">'+kbEscape(meta.source)+'</span>'+
       (state?'<span class="kb-detail-state '+(warn&&!confirmed?'is-pending':'')+'">'+state+'</span>':'')+'</div>'+
-      '<h3>'+kbEscape(meta.title)+'</h3></header>'+
+      '<div class="kb-detail-title-row"><h3>'+kbEscape(meta.title)+'</h3><button class="kb-detail-edit" onclick="editKbItem('+i+','+pair.origIdx+')" aria-label="修改'+kbEscape(meta.title)+'">✎ 修改</button></div></header>'+
       '<div class="kb-detail-richtext">'+kbDetailTextHtml(raw)+'</div>'+
       (duplicateCount&&warn&&!confirmed?'<p class="kb-detail-duplicate">合并了 '+(duplicateCount+1)+' 条同义表述，确认时将一并更新。</p>':'')+
       '<footer class="kb-detail-article-actions">'+confirm+manage+'</footer></section>';
@@ -2113,7 +2210,7 @@ function kbDetail(i){
             '</div></div>';
         })()+
         '<footer class="kb-detail-footer">'+
-          '<button class="kb-detail-ask" onclick="closeKbDetail();askAboutKb('+i+')">基于此主题提问 →</button>'+
+          '<button class="kb-detail-ask" onclick="if(closeKbDetail())askAboutKb('+i+')">基于此主题提问 →</button>'+
           '<button class="kb-detail-secondary" onclick="addKbItem('+i+')">+ 补充结论</button>'+
           '<button class="kb-detail-secondary" onclick="pickLocalFile('+i+')">上传材料</button>'+
         '</footer></div></div>';
@@ -2133,8 +2230,10 @@ function kbDetail(i){
 }
 
 function closeKbDetail(){
+  if(!kbCancelEdit(false,function(){closeKbDetail();}))return false;
   var m=document.getElementById('kbDetailModal');
   if(m)m.remove();
+  return true;
 }
 
 function kbRefreshTopicScope(){
@@ -2168,7 +2267,7 @@ function askAboutKb(i){
     '政策、规划与领导关注':p.city+'在「'+p.topic+'」方向，政策支持最强、待干部确认的关键事项有哪些？'
   };
   var query=qMap[k.t]||('请结合「'+k.t+'」主题数据，分析'+p.city+'的现状与优先推进的招引方向。');
-  closeKbDetail();if(view!=='knowledge'){view='knowledge';render();}
+  if(closeKbDetail()===false)return;if(view!=='knowledge'){view='knowledge';render();}
   setKbActiveTopic(i,k);
   kbDraftQuestion(query);
 }
