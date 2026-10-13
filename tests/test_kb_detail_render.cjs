@@ -151,7 +151,8 @@ test('duplicate warnings preserve representative source indexes and data layer',
 
 test('detail markup exposes its dialog and responsive content hooks',()=>{
  const h=harness([{t:'政策',icon:'📜',known:['完整正文包含适用条件与来源说明。']}]),html=h.render();
- assert.match(html,/class="kb-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="kbDetailTitle"/);
+ const dialogTag=html.match(/<div class="kb-detail-dialog"[^>]*>/)?.[0]||'';
+ assert.match(dialogTag,/role="dialog"/);assert.match(dialogTag,/aria-modal="true"/);assert.match(dialogTag,/aria-labelledby="kbDetailTitle"/);
  assert.match(html,/class="kb-detail-scroll"/);assert.match(html,/class="kb-detail-richtext"/);
  assert.match(html,/onclick="closeKbDetail\(\);askAboutKb\(0\)"/);
  const css=fs.readFileSync(path.join(root,'frontend/index/style-01.css'),'utf8');
@@ -323,7 +324,7 @@ test('scroll position updates both directories aria-current within the active mo
  assert.equal(outside.attrs['aria-current'],'outside');assert.equal(h.calls.length,0);
 });
 
-test('document sections remove decorative cards and duplicate figures while managing actions stay collapsed',()=>{
+test('document sections retain one original fact per body while managing actions stay collapsed',()=>{
  const known=[{text:'## 项目投入\n项目总投资100亿元，具体条件仍需核实。',origin:'report'},
   {text:'⚠️ ## 核验事项\n申报适用范围需要确认。',origin:'report'}];
  const html=harness([{t:'资料',known}]).render();
@@ -336,8 +337,8 @@ test('document sections remove decorative cards and duplicate figures while mana
  }
  const pending=sections.find(section=>section.includes('confirmKbItem'));
  assert.ok(pending);assert.match(pending.replace(/<details\b[^>]*>[\s\S]*?<\/details>/,''),/confirmKbItem\(0,1\)/);
- const css=fs.readFileSync(path.join(root,'frontend/index/style-01.css'),'utf8'),article=css.match(/\.kb-detail-article\{([^}]+)\}/)?.[1]||'';
- assert.doesNotMatch(article,/background|box-shadow|border-radius/);
+ assert.equal((html.match(/class="kb-detail-richtext"/g)||[]).length,known.length);
+ assert.equal((visibleText(html).match(/项目总投资100亿元，具体条件仍需核实。/g)||[]).length,1);
 });
 
 test('numeric distance inside a real URL remains an exact unsplit href',()=>{
@@ -379,4 +380,69 @@ test('bottom of the real scroll range selects the final section even before its 
  assert.deepEqual(h.buttons.map(b=>b.attrs['aria-current']),[undefined,undefined,undefined,undefined,'location','location']);
  h.sc.scrollTop=670;h.c.kbUpdateDetailIndex();
  assert.deepEqual(h.buttons.map(b=>b.attrs['aria-current']),[undefined,undefined,'location','location',undefined,undefined]);assert.equal(h.calls.length,0);
+});
+
+test('four topic themes and fallback change only the dialog theme without mutating source content',()=>{
+ const raw='## 原始资料\n全部正文与条件保持不变。',kb=freeze(Array.from({length:6},(_,i)=>({t:'主题'+i,known:[{text:raw,origin:'report'}]}))),h=harness(kb),before=JSON.stringify(kb);
+ const expected=['indigo','teal','violet','amber','indigo','indigo'];
+ expected.forEach((theme,index)=>{
+  const html=h.render(index),tag=html.match(/<div class="kb-detail-dialog"[^>]*>/)?.[0]||'';
+  assert.match(tag,new RegExp('data-kb-theme="'+theme+'"'));
+  assert.equal((html.match(/id="kb-card-/g)||[]).length,1);assert.match(html,new RegExp('id="kb-card-'+index+'-0"'));
+  assert.match(html,/<h2>原始资料<\/h2>/);assert.equal((html.match(/全部正文与条件保持不变。/g)||[]).length,1);
+ });
+ assert.equal(JSON.stringify(kb),before);
+});
+
+test('mosaic is four empty hidden decorative pieces and does not introduce controls or text',()=>{
+ const html=harness([{t:'政策',known:['正文包含真实政策条件。']}]).render();
+ const mosaic=html.match(/<div class="kb-detail-mosaic"([^>]*)>([\s\S]*?)<\/div>/);
+ assert.ok(mosaic);assert.match(mosaic[1],/aria-hidden="true"/);assert.equal((mosaic[2].match(/<span><\/span>/g)||[]).length,4);
+ assert.equal(visibleText(mosaic[2]).trim(),'');assert.doesNotMatch(mosaic[0],/tabindex|onclick|<button|<a\b|role=/);
+});
+
+test('section and source labels style existing metadata without duplicating their numbers',()=>{
+ const html=harness([{t:'资料',known:[{text:'## 条款资料\n金额为157亿元，条件待核实。',sourceFile:'04_policy_trends.md',origin:'report'}]}]).render();
+ assert.equal((html.match(/class="kb-detail-section-label"/g)||[]).length,1);
+ assert.match(html,/<span class="kb-detail-section-label">资料 01<\/span>/);
+ assert.equal((html.match(/class="kb-detail-source-label"/g)||[]).length,1);
+ assert.match(html,/<span class="kb-detail-source-label" title="04_policy_trends\.md">政策与规划<\/span>/);
+ assert.equal((html.match(/资料 01/g)||[]).length,1);assert.equal((html.match(/157亿元/g)||[]).length,1);
+});
+
+test('caution accents preserve each original phrase along with citation and year notes',()=>{
+ const original='待核实、待核验、待确认、待校核。来源[1][7]（统计年份2025，待核实）';
+ const html=render(original),marks=[...html.matchAll(/<span class="kb-detail-caution">([^<]+)<\/span>/g)].map(m=>m[1]);
+ assert.deepEqual(marks,['待核实','待核验','待确认','待校核','待核实']);assert.equal(visibleText(html),original);
+ assert.match(html,/<span class="kb-detail-citation">来源\[1\]\[7\]<\/span>/);
+ assert.match(html,/<span class="kb-detail-note">（统计年份2025，/);
+});
+
+test('caution decoration skips attributes and protected URL targets while keeping rich-text emphasis',()=>{
+ const c=harness().c,input='<p title="待核实" data-note="待确认">待核验</p>',decorated=c.kbDetailDecorateHtml(input);
+ assert.match(decorated,/<p title="待核实" data-note="待确认">/);
+ assert.equal((decorated.match(/class="kb-detail-caution"/g)||[]).length,1);
+ assert.match(decorated,/<span class="kb-detail-caution">待核验<\/span>/);
+ const url='https://example.com/待确认?kind=待核实&from=1',html=render('**待校核** '+url);
+ assert.match(html,/<strong><span class="kb-detail-caution">待校核<\/span><\/strong>/);
+ assert.equal((html.match(/class="kb-detail-caution"/g)||[]).length,1);
+ assert.ok(html.includes('href="'+url.replace(/&/g,'&amp;')+'"'));assert.ok(html.includes('title="'+url.replace(/&/g,'&amp;')+'"'));
+});
+
+function cssRuleParents(css,selector){
+ css=css.replace(/\/\*[\s\S]*?\*\//g,'');const matches=[];let stack=[],start=0,quote=null;
+ for(let i=0;i<css.length;i++){
+  const c=css[i];if(quote){if(c==='\\')i++;else if(c===quote)quote=null;continue;}if(c==='"'||c==="'"){quote=c;continue;}
+  if(c==='{'){
+   const name=css.slice(start,i).trim();if(name===selector)matches.push(stack.slice());stack.push(name);start=i+1;
+  }else if(c==='}'){stack.pop();start=i+1;}
+ }
+ return matches;
+}
+test('all topic palettes and the decorative mosaic apply at desktop as well as mobile widths',()=>{
+ const css=fs.readFileSync(path.join(root,'frontend/index/style-01.css'),'utf8');
+ for(const selector of ['.kb-detail-dialog[data-kb-theme="teal"]','.kb-detail-dialog[data-kb-theme="violet"]','.kb-detail-dialog[data-kb-theme="amber"]','.kb-detail-mosaic']){
+  assert.ok(cssRuleParents(css,selector).some(parents=>!parents.some(p=>/^@media\b/.test(p))),selector+' needs a viewport-independent rule');
+ }
+ assert.match(css,/\.kb-detail-mosaic\{[^}]*pointer-events:none/);
 });
