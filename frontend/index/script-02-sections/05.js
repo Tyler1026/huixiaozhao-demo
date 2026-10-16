@@ -31,6 +31,7 @@ function syncDetailPane(){
 
 function render(){
   document.body.classList.toggle('kb-view',view==='knowledge'&&!!AUTH);
+  document.body.classList.toggle('industry-view',view==='report'&&!!AUTH);
   if(typeof kbCancelHiddenRequests==='function')kbCancelHiddenRequests();
   // 跳过重渲染：用户正在查看校验结果或冲突面板时不重建DOM
   if(AUTH&&_authState==='ready'&&(window._verifyInProgress || document.getElementById('conflictModal'))) return;

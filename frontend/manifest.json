@@ -1,9 +1,10 @@
 {
   "index.html": {
-    "sha256": "8b65480b851430ff83ef751e91b892cb3c9b03a8b0eb46b62f3a5a373e5e91bd",
+    "sha256": "9d8133722eee31117e4df760f13b69c4b3d51bf54e14d58e68df194b8d2513e0",
     "parts": [
       "frontend/index/markup-01.html",
       "frontend/index/style-01.css",
+      "frontend/index/industry.css",
       "frontend/index/markup-02.html",
       "frontend/index/script-01.js",
       "frontend/index/markup-03.html",

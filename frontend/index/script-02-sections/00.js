@@ -26,17 +26,17 @@ function viewCurrentReport(){
   }
 
   setReportAreaHtml(area,
-    '<div style="border-radius:14px;border:1.5px solid #bfdbfe;overflow:hidden;margin-bottom:8px">'+
-      '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
-        '<span style="font-size:13px;font-weight:700;color:#1d4ed8">📊 产业分析报告（当前正文）</span>'+
-        '<span style="font-size:11.5px;color:#8492a6">'+context.topic.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>'+
-        '<span style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f0fdf4;color:#166534">'+topicScoreDisplay(context.topic)+'</span>'+
+    '<div class="industry-report" style="border-radius:14px;border:1.5px solid #bfdbfe;overflow:hidden;margin-bottom:8px">'+
+      '<div class="industry-report-head" style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
+        '<span class="industry-report-title" style="font-size:13px;font-weight:700;color:#1d4ed8">📊 产业分析报告（当前正文）</span>'+
+        '<span class="industry-report-topic" style="font-size:11.5px;color:#8492a6">'+context.topic.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>'+
+        '<span class="industry-report-score" style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f0fdf4;color:#166534">'+topicScoreDisplay(context.topic)+'</span>'+
         '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
       '</div>'+
-      '<div style="padding:18px 20px;font-size:13px;line-height:1.85;color:#1e293b">'+
+      '<div class="industry-prose" style="padding:18px 20px;font-size:13px;line-height:1.85;color:#1e293b">'+
         reportMdToHtml(context.text)+
       '</div>'+
-      '<div style="padding:10px 16px;background:#f9fafb;border-top:1px solid #f0f4ff;font-size:11px;color:#9aa5b5">'+
+      '<div class="industry-report-foot" style="padding:10px 16px;background:#f9fafb;border-top:1px solid #f0f4ff;font-size:11px;color:#9aa5b5">'+
         '生成时间：'+new Date(rs.ts).toLocaleDateString('zh-CN')+' · '+
         '数据来源：慧小招实测报告+DeepSeek分析 · '+topicScoreDisplay(context.topic)+
       '</div>'+

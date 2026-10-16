@@ -457,6 +457,237 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 @media(max-height:600px){.kb-editor-header{padding-top:12px;padding-bottom:10px}.kb-editor-header h2{margin:3px 0;font-size:17px}.kb-editor-header p,.kb-editor-help,.kb-editor-footer small{display:none}.kb-editor-toolbar{padding-top:7px;padding-bottom:7px}.kb-editor-content{padding-top:9px;padding-bottom:9px}.kb-editor-textarea{min-height:0}.kb-editor-attachments{margin-bottom:7px;padding-top:7px;padding-bottom:7px}.kb-editor-footer{padding-top:9px;padding-bottom:9px}.kb-editor-label{margin-bottom:5px}}
 @media(max-width:720px){.kb-editor-workspace{flex-direction:column}.kb-editor-segments{width:auto;padding:8px 14px;max-height:120px;border-right:0;border-bottom:1px solid #e5ebf2;gap:6px}.kb-editor-segments>p{display:none}.kb-editor-segments nav{flex-direction:row;flex:none;overflow:auto}.kb-editor-segments nav button{min-width:145px;max-width:180px;padding:7px;flex:none}.kb-editor-whole{padding:5px}.kb-editor-content{min-height:100px}}
 @media(max-height:500px){.kb-editor-segments{max-height:78px}.kb-editor-segments nav span{-webkit-line-clamp:1}.kb-editor-content{min-height:0}.kb-editor-attachments{display:none}}
+/* Industry analysis: restrained research workspace, scoped to this view. */
+body.industry-view{--sidebar-width:184px;--detail-width:284px}
+body.industry-view .detail-pane{flex-basis:284px;width:284px;max-width:30%}
+body.industry-view .sidebar{padding-inline:10px}
+body.industry-view .nav-item{gap:11px;padding-inline:13px}
+body.industry-view .nav-copy strong{font-size:14px}
+body.industry-view .nav-copy small{font-size:10px}
+.industry-page{--ind-ink:#172d48;--ind-copy:#425571;--ind-muted:#7d8b9e;--ind-blue:#2269a4;--ind-line:#e4eaf1;--ind-surface:#f7f9fc;background:#fff}
+.industry-page .industry-scroll{padding:24px 30px 28px!important;scroll-padding-top:20px;background:#f8fafc;overflow-x:hidden;overflow-y:auto}
+.industry-page .industry-header{position:relative;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:25px 31px 23px;background:#fff;border-bottom:1px solid var(--ind-line)}
+.industry-page .industry-kicker{display:block;font-size:9px;line-height:16px;font-weight:700;letter-spacing:2.5px;color:#6889a7}
+.industry-page .industry-heading{margin:5px 0 7px;color:var(--ind-ink);font-size:27px;font-weight:650;line-height:1.3;letter-spacing:1px}
+.industry-page .industry-header p{margin:0;color:var(--ind-muted);font-size:12px;line-height:1.7}
+.industry-page .industry-header-mark{flex:none;display:grid;grid-template-columns:21px 21px;gap:5px;margin-right:6px;transform:rotate(-7deg)}
+.industry-page .industry-header-mark i{width:21px;height:21px;background:#e8f0f8;border:1px solid #dce7f3;border-radius:5px}
+.industry-page .industry-header-mark i:nth-child(2){background:#dae8f6;transform:translateY(-5px)}
+.industry-page .industry-header-mark i:nth-child(3){background:#fff;border-color:#bdd1e5}
+.industry-page .industry-header-mark i:nth-child(4){background:#92b7d8;border-color:#92b7d8}
+.industry-page .industry-phase{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid #dce7f2;border-radius:5px;background:#f5f9fd;color:#527492;font-size:10px;line-height:1.4;white-space:nowrap}
+.industry-page .industry-readiness{flex:0 0 auto;gap:16px!important;margin:0;padding:13px 31px!important;background:#fff!important;border-bottom:1px solid var(--ind-line)!important}
+.industry-page .industry-readiness>div>div:first-child{gap:8px!important;flex-wrap:wrap;margin-bottom:7px!important}
+.industry-page .industry-readiness>div>div:first-child>span{font-size:10px!important}
+.industry-page .industry-readiness>div>div:first-child>span:first-child{font-size:11px!important;font-weight:600!important}
+.industry-page .industry-readiness>div>div:first-child>span:nth-child(2){font-weight:700!important}
+.industry-page .industry-readiness>div>div:nth-child(2){height:3px!important;max-width:400px;background:#edf1f5!important}
+.industry-page .industry-readiness>span{font-size:10px!important}
+.industry-page .industry-topics{padding-bottom:22px!important}
+.industry-page .industry-section-caption{display:flex;align-items:center;gap:9px;margin:0 0 12px!important;color:#40546e!important;font-size:11px!important;font-weight:650!important;letter-spacing:.6px!important}
+.industry-page .industry-section-caption:before{content:"";width:3px;height:11px;border-radius:1px;background:#6b98bf}
+.industry-page .industry-topic-grid{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px!important;margin-bottom:11px!important}
+.industry-page .industry-topic-card{position:relative;min-width:0!important;min-height:110px;flex:initial!important;padding:15px 15px 13px!important;border:1px solid #e2e8f0!important;border-radius:10px!important;background:#fff!important;box-shadow:0 2px 4px #16365303!important;text-align:left;transition:border-color .18s,box-shadow .18s,transform .18s!important}
+.industry-page .industry-topic-card:hover{border-color:#aac4dd!important;box-shadow:0 5px 15px #24496a09!important;transform:translateY(-2px)}
+.industry-page .industry-topic-card.is-active{border-color:#91b4d3!important;background:#f2f7fc!important;box-shadow:inset 0 3px #5688b2,0 3px 8px #24496a05!important}
+.industry-page .industry-topic-card>span{min-width:0;overflow-wrap:anywhere}
+.industry-page .industry-topic-card>span:not([data-del]):first-of-type{font-size:19px!important;margin-bottom:9px!important}
+.industry-page .industry-topic-card>span[style*="font-weight:700"]{font-size:13px!important;font-weight:650!important;color:#29496b!important;line-height:1.5!important}
+.industry-page .industry-topic-card>span:last-of-type{font-size:10px!important;line-height:1.65!important;color:#7a8b9d!important;margin-top:3px!important}
+.industry-page .industry-topic-card>span[data-del]{border:1px solid #e4eaf0!important;background:#f7f9fb!important;color:#a1afbc!important;border-radius:5px!important;width:19px!important;height:19px!important;top:7px!important;right:7px!important;font-size:12px!important}
+.industry-page .industry-topic-card>span[data-del]:hover{color:#b57474!important;background:#fcf2f2!important}
+.industry-page .industry-topic-card>div:last-child{position:absolute;right:13px;bottom:14px;width:5px!important;height:5px!important;margin:0!important;background:#6895bb!important}
+.industry-page .industry-custom-topic{gap:9px!important}
+.industry-page .industry-custom-topic input{height:37px;padding:8px 12px!important;border:1px solid #dde5ee!important;border-radius:7px!important;background:#fff;color:#354f6b!important;font-size:11px!important}
+.industry-page .industry-custom-topic input::placeholder{color:#97a3b2}
+.industry-page button{max-width:100%;border-radius:7px;line-height:1.5;transition:background-color .16s,border-color .16s,box-shadow .16s}
+.industry-page button:focus-visible,.industry-page input:focus-visible,.industry-page textarea:focus-visible,.industry-detail button:focus-visible{outline:3px solid #83b5df77!important;outline-offset:3px!important}
+.industry-page input:focus,.industry-page textarea:focus{border-color:#87aacb!important;box-shadow:0 0 0 3px #2371b00c}
+.industry-page button:disabled{opacity:.57;cursor:not-allowed}
+.industry-page .industry-custom-topic button,.industry-page .industry-readiness button{min-height:36px;padding:8px 12px!important;border:1px solid #c7d8e8!important;border-radius:7px!important;background:#fff!important;color:#38648c!important;font-size:11px!important;font-weight:600!important;box-shadow:none!important}
+.industry-page .industry-custom-topic button:hover,.industry-page .industry-readiness button:hover{background:#eef5fc!important;border-color:#94b4d1!important}
+.industry-page #reportArea{min-width:0}
+.industry-page .industry-report{margin-bottom:18px!important;border:1px solid #dfe7f0!important;border-radius:11px!important;background:#fff!important;box-shadow:0 4px 20px #1b385806!important;overflow:visible!important}
+.industry-page .industry-report-head{gap:9px!important;flex-wrap:wrap;padding:16px 22px!important;border-bottom:1px solid #e6ecf3!important;border-radius:11px 11px 0 0;background:#fff!important}
+.industry-page .industry-report-title{color:#325b80!important;font-size:11px!important;font-weight:700!important;letter-spacing:.5px}
+.industry-page .industry-report-topic{color:#8995a6!important;font-size:10px!important;line-height:1.6}
+.industry-page .industry-report-score{font-size:9px!important;background:#f5f7f9!important;border:1px solid #e7ebef;border-radius:4px!important;padding:3px 6px!important;white-space:nowrap}
+.industry-page .industry-report-head button{min-height:29px;padding:4px 9px!important;border:1px solid #dbe5ee!important;border-radius:5px!important;color:#5b7894!important;background:#fff!important;font-size:10px!important;white-space:nowrap}
+.industry-page .industry-prose{min-width:0;max-width:920px;margin-inline:auto;padding:25px 28px 30px!important;font-size:13px!important;line-height:1.95!important;color:var(--ind-copy)!important;overflow-wrap:anywhere}
+.industry-page .industry-prose>:first-child{margin-top:0!important}
+.industry-page .industry-prose>:last-child{margin-bottom:0!important}
+.industry-page .industry-prose h1{margin:4px 0 25px!important;font-size:22px!important;font-weight:650!important;line-height:1.55!important;letter-spacing:.4px;color:#213e5c!important}
+.industry-page .industry-prose h2{position:relative;margin:33px 0 16px!important;padding:0 0 11px!important;border-bottom:1px solid #e6edf5!important;color:#26496c!important;font-size:16px!important;font-weight:650!important;line-height:1.6!important;letter-spacing:.3px}
+.industry-page .industry-prose h3{margin:24px 0 10px!important;padding:0!important;color:#32536f!important;font-size:14px!important;font-weight:650!important;line-height:1.7!important}
+.industry-page .industry-prose h4{margin:18px 0 8px!important;color:#35526c!important;font-size:13px!important}
+.industry-page .industry-prose p{margin:10px 0!important;color:var(--ind-copy)!important;font-size:inherit!important;line-height:inherit!important}
+.industry-page .industry-prose strong{color:#254b70;font-weight:650}
+.industry-page .industry-prose .num{color:#226796!important;font-weight:650;font-variant-numeric:tabular-nums}
+.industry-page .industry-prose ul,.industry-page .industry-prose ol{margin:10px 0 16px!important;padding-left:21px!important}
+.industry-page .industry-prose li{padding-left:3px;margin:6px 0!important;line-height:1.85!important}
+.industry-page .industry-prose li::marker{color:#7798b7}
+.industry-page .industry-prose blockquote{margin:18px 0!important;padding:12px 16px!important;border:0!important;border-left:3px solid #adc7df!important;border-radius:0 6px 6px 0;background:#f5f8fc!important;color:#59718a!important}
+.industry-page .industry-prose blockquote p{margin:0!important;color:inherit!important;font-size:12px!important}
+.industry-page .industry-prose hr{margin:26px 0!important;border:0!important;border-top:1px solid #e7edf3!important}
+.industry-page .industry-prose table{display:block;width:100%!important;max-width:100%;margin:18px 0 22px!important;overflow-x:auto;border:1px solid #e0e8f1!important;border-spacing:0;border-collapse:separate!important;border-radius:7px;background:#fff;font-size:11px!important;line-height:1.7!important;scrollbar-width:thin}
+.industry-page .industry-prose th{padding:10px 13px!important;border:0!important;border-right:1px solid #e4ebf3!important;border-bottom:1px solid #dde6f0!important;background:#eff4f9!important;color:#3d5a76!important;font-weight:650!important;text-align:left;white-space:nowrap}
+.industry-page .industry-prose td{min-width:90px;padding:10px 13px!important;border:0!important;border-right:1px solid #edf1f6!important;border-bottom:1px solid #edf1f6!important;color:#52657c!important;vertical-align:top}
+.industry-page .industry-prose th:last-child,.industry-page .industry-prose td:last-child{border-right:0!important}
+.industry-page .industry-prose tbody tr:last-child td{border-bottom:0!important}
+.industry-page .industry-prose tbody tr:nth-child(even){background:#fafbfd}
+.industry-page .industry-report-foot{padding:12px 22px!important;border-top:1px solid #e9eef4!important;border-radius:0 0 11px 11px;background:#fafbfd!important;color:#91a0af!important;font-size:10px!important;line-height:1.7}
+.industry-page .industry-history{margin:0 0 17px!important;padding:0!important}
+.industry-page .industry-history>div{border:1px solid #e2e9f1!important;border-radius:8px!important;background:#fff!important;box-shadow:none!important}
+.industry-page .industry-history>div:first-child{padding:0 1px 4px;border:0!important;border-radius:0!important;background:transparent!important;font-size:10px!important;color:#7d8fa1!important}
+.industry-page .industry-history>div:not(:first-child)>div:first-child{flex-wrap:wrap;gap:6px!important;padding:11px 13px!important;background:#fff!important}
+.industry-page .industry-history>div:not(:first-child)>div:first-child>span{font-size:10px!important}
+.industry-page .industry-history>div:not(:first-child)>div:first-child>span:nth-child(2){padding:2px 5px!important;border-radius:4px!important;background:#eef4fa!important;color:#7491ac!important;font-size:9px!important;font-weight:500!important}
+.industry-page .industry-history>div:not(:first-child)>div:first-child>span:nth-child(3){font-weight:550!important;color:#59748e!important}
+.industry-page .industry-history button{border:1px solid #d8e4ef!important;border-radius:5px!important;background:#f8fbfe!important;color:#587b9c!important;font-size:10px!important}
+.industry-page .industry-confirm{margin-top:20px!important;border:1px solid #e0e7ef!important;border-radius:10px!important;box-shadow:none!important;overflow:visible!important;background:#fff}
+.industry-page .industry-confirm-head{gap:11px!important;padding:17px 20px!important;border-bottom:1px solid #e5ebf1!important;border-radius:10px 10px 0 0;background:#f5f8fc!important}
+.industry-page .industry-confirm-head>div>div:first-child{color:#36546e!important;font-size:13px!important;font-weight:650!important}
+.industry-page .industry-confirm-head>div>div:nth-child(2){color:#8a98a8!important;font-size:10px!important;margin-top:3px!important}
+.industry-page .industry-confirm-head>div:last-child>span{color:#6886a3!important;font-size:11px!important}
+.industry-page .industry-confirm-head>div:last-child>div{width:56px!important;height:4px!important;background:#e0e8f0!important}
+.industry-page .industry-confirm-head>div:last-child>div>div{background:#79a4c9!important}
+.industry-page .industry-confirm-items{padding:17px!important;gap:11px!important;border-radius:0 0 10px 10px}
+.industry-page .industry-confirm-row{position:relative;border:1px solid #e3e9f0!important;border-radius:8px!important;overflow:visible!important;box-shadow:none!important;background:#fff!important}
+.industry-page .industry-confirm-row.is-pending{border-left:3px solid #d3b786!important}
+.industry-page .industry-confirm-row.is-done{border-left:3px solid #97baa9!important;padding:14px!important;background:#fcfefd!important}
+.industry-page .industry-confirm-row.is-pending>div:first-child{padding:15px!important}
+.industry-page .industry-confirm-row.is-pending>div:first-child>div:first-child>span{width:22px!important;height:22px!important;border:0!important;background:#faf5e9!important;font-size:10px!important}
+.industry-page .industry-confirm-text{font-size:12px!important;line-height:1.9!important;color:#4b5f74!important;font-weight:400!important}
+.industry-page .industry-confirm-row.is-done>span{color:#70a58b!important}
+.industry-page .industry-confirm-row.is-done>div>div:nth-child(2){margin-top:5px!important;color:#8aa998!important;font-size:10px!important}
+.industry-page .industry-confirm-row.is-done>button{padding:4px 9px!important;border:1px solid #dce8e2!important;color:#6c8a7b!important;background:#fff!important;font-size:10px!important}
+.industry-page .industry-confirm-actions{justify-content:flex-end;flex-wrap:wrap;gap:8px!important;padding:10px 14px!important;border-top:1px solid #edf1f5!important;border-radius:0 0 8px 8px;background:#fafbfd!important}
+.industry-page .industry-confirm-actions button{flex:0 1 auto!important;min-width:81px;min-height:30px;padding:6px 12px!important;border:1px solid #d4e1ec!important;border-radius:5px!important;background:#fff!important;color:#58718a!important;font-size:11px!important;font-weight:500!important}
+.industry-page .industry-confirm-actions button:first-child{background:#edf5f1!important;color:#4a8469!important;border-color:#d4e4da!important}
+.industry-page .industry-confirm-actions button:hover{box-shadow:0 2px 5px #28455b0c!important;border-color:#91b2cb!important}
+.industry-page .industry-confirm-edit textarea{padding:12px!important;border:1px solid #bacfe2!important;border-radius:6px!important;background:#fbfdff!important;color:#3d5770!important;font-size:12px!important;line-height:1.85!important}
+.industry-page .industry-confirm-edit>div[onclick]{padding:14px!important;border:1px dashed #c7d8e7!important;background:#f7fafe!important;border-radius:6px!important;color:#7894ad!important;font-size:11px!important}
+.industry-page .industry-confirm-edit button{min-height:32px;border:1px solid #d8e2eb!important;border-radius:5px!important;font-size:11px!important;background:#f6f9fc!important;color:#61778b!important}
+.industry-page .industry-confirm-edit button:first-child{background:#386d9b!important;border-color:#386d9b!important;color:#fff!important}
+.industry-page .industry-confirm-foot{padding:13px 18px!important;background:#f9fbfd!important;border-top:1px solid #e9eef4!important;border-radius:0 0 10px 10px;line-height:1.7;text-align:center}
+.industry-page .industry-confirm-foot span{color:#8293a4!important;font-size:11px!important;font-weight:400!important}
+.industry-page .industry-confirm-foot strong{color:#ab8757!important;font-weight:600!important}
+.industry-page .industry-bottom-bar{flex:0 0 auto;flex-wrap:wrap;gap:8px!important;padding:14px 30px!important;border-top:1px solid #e1e9f2!important;background:#fff!important;box-shadow:0 -5px 16px #29476d03}
+.industry-page .industry-bottom-bar>div{min-width:120px;font-size:11px!important;line-height:1.7;color:#8a7a5d!important;background:#fbf9f4!important;border-color:#eee5d7!important}
+.industry-page .industry-bottom-bar button{flex:0 1 auto!important;min-height:37px;padding:8px 13px!important;border:1px solid #dce5ee!important;border-radius:6px!important;background:#f8fafc!important;color:#5c7288!important;font-size:11px!important;font-weight:550!important;box-shadow:none!important;white-space:normal!important}
+.industry-page .industry-bottom-bar button[onclick="startAiInterview()"],.industry-page .industry-bottom-bar button[onclick="viewCurrentReport()"],.industry-page .industry-bottom-bar button[onclick="triggerReport(2)"]{background:#2e628e!important;color:#fff!important;border-color:#2e628e!important}
+.industry-page .industry-bottom-bar button[onclick="downloadReport('full')"]{border-color:#b8cedf!important;color:#3f7299!important;background:#f1f7fc!important}
+.industry-page .industry-bottom-bar button:hover:not(:disabled){border-color:#98b7ce!important;filter:brightness(.98)}
+.industry-page .industry-bottom-bar button:disabled{background:#f0f3f6!important;border-color:#e1e7ed!important;color:#8d9aaa!important}
+.industry-page .industry-chain{margin-top:21px!important;margin-bottom:20px;border:1px solid #e0e8f0!important;border-radius:11px!important;box-shadow:0 4px 16px #183b5a04!important;background:#fff;overflow:visible!important}
+.industry-page .industry-chain-head{flex-wrap:wrap;gap:10px!important;padding:18px 21px!important;background:#fff!important;border-bottom:1px solid #e7edf4;border-radius:11px 11px 0 0}
+.industry-page .industry-chain-head>span{font-size:17px!important}
+.industry-page .industry-chain-head>div>div:first-child{color:#325675!important;font-size:13px!important;font-weight:650!important}
+.industry-page .industry-chain-head>div>div:nth-child(2){color:#97a5b4!important;font-size:10px!important;margin-top:4px!important}
+.industry-page .industry-chain-head>div:last-child{gap:5px!important}
+.industry-page .industry-chain-head>div:last-child span{padding:3px 7px!important;border-radius:4px!important;font-size:9px!important;font-weight:500!important}
+.industry-page .industry-chain-head>div:last-child span:nth-child(1){background:#eaf4ee!important;color:#638973!important}
+.industry-page .industry-chain-head>div:last-child span:nth-child(2){background:#faf4e7!important;color:#a28b60!important}
+.industry-page .industry-chain-head>div:last-child span:nth-child(3){background:#fbefec!important;color:#b78275!important}
+.industry-page .industry-chain-body{gap:15px!important;padding:20px!important;border-radius:0 0 11px 11px;background:#f9fbfd!important}
+.industry-page .industry-chain-row{gap:10px!important;min-width:0}
+.industry-page .industry-chain-label{width:38px!important;min-width:38px;padding:12px 3px!important;border:1px solid #dee7ef!important;border-radius:6px!important;background:#edf3f9!important;gap:8px!important}
+.industry-page .industry-chain-label>span:first-child{color:#587594!important;font-size:11px!important;font-weight:600!important;letter-spacing:3px!important}
+.industry-page .industry-chain-label>span:last-child{color:#7993ad!important;opacity:.7!important;font-size:6px!important}
+.industry-page .industry-chain-nodes{min-width:0;gap:0!important;padding-bottom:5px!important;scrollbar-width:thin;scrollbar-color:#d0dce7 transparent}
+.industry-page .industry-chain-node{min-width:143px!important;padding:13px 10px!important;border:1px solid #dfe7ee!important;border-top-width:3px!important;border-radius:7px!important;background:#fff!important}
+.industry-page .industry-chain-node.is-strong{border-top-color:#91b6a0!important}
+.industry-page .industry-chain-node.is-mid{border-top-color:#ceb481!important}
+.industry-page .industry-chain-node.is-weak{border-top-color:#d2a298!important}
+.industry-page .industry-chain-node.is-unknown{border-top-color:#b4c3d2!important}
+.industry-page .industry-chain-node>span:first-child{padding:2px 6px!important;border-radius:4px!important;font-size:9px!important;font-weight:500!important}
+.industry-page .industry-chain-node.is-strong>span:first-child{background:#edf5ef!important;color:#638d73!important}
+.industry-page .industry-chain-node.is-mid>span:first-child{background:#faf5e9!important;color:#aa9061!important}
+.industry-page .industry-chain-node.is-weak>span:first-child{background:#faf0ed!important;color:#b57d70!important}
+.industry-page .industry-chain-node.is-unknown>span:first-child{background:#eff3f6!important;color:#7e94a9!important}
+.industry-page .industry-chain-node>div:nth-child(2){margin:5px 0 7px!important;font-size:12px!important;line-height:1.5!important;color:#415c76!important;font-weight:650!important}
+.industry-page .industry-chain-node>div:nth-child(3){font-size:9px!important;border-width:0!important;padding:2px 5px!important;background:#f8fafc!important;border-radius:4px!important;white-space:normal!important}
+.industry-page .industry-chain-node>div{overflow-wrap:anywhere;max-width:100%}
+.industry-page .industry-chain-node>div[style*="border-top"]{border-top:1px solid #e8edf3!important;margin-top:10px!important;padding-top:9px!important}
+.industry-page .industry-chain-node>div[style*="border-top"]>div:first-child{font-size:9px!important;color:#91a0ae!important;font-weight:400!important}
+.industry-page .industry-chain-node>div[style*="border-top"] span{border:1px solid #e0e8ef!important;border-radius:4px!important;color:#6e8294!important;white-space:normal!important;font-size:9px!important;padding:2px 5px!important}
+.industry-page .industry-chain-node a{color:#7392b0!important;font-size:9px!important;text-underline-offset:3px}
+.industry-page .industry-interview{margin-top:2px;padding:22px!important;border:1px solid #dfe8f1;border-radius:11px;background:#fff;box-shadow:0 4px 20px #1b385806}
+.industry-page .industry-interview-head{gap:11px!important;flex-wrap:wrap;margin-bottom:20px!important}
+.industry-page .industry-interview-head>div:first-child{width:35px!important;height:35px!important;border:1px solid #cadceb;border-radius:9px!important;color:#467aa5!important;background:#eef5fb!important;font-size:12px!important;font-weight:650!important}
+.industry-page .industry-interview-head>div:nth-child(2)>div:first-child{font-size:14px!important;font-weight:650!important;color:#325470!important}
+.industry-page .industry-interview-head>div:nth-child(2)>div:nth-child(2){margin-top:3px;color:#8c9bab!important;font-size:10px!important}
+.industry-page .industry-interview-head>div[style*="width:120px"]{width:72px!important;height:4px!important;background:#edf2f7!important}
+.industry-page .industry-interview-head>div[style*="width:120px"]>div{background:#79a6c9!important}
+.industry-page .industry-interview-answers{max-height:145px!important;margin:0 0 19px!important;padding-right:5px;scrollbar-width:thin}
+.industry-page .industry-interview-answers>div{margin-bottom:7px!important;padding:10px 13px!important;border-left:2px solid #d2e0ed;border-radius:0 5px 5px 0!important;background:#f8fafc!important;font-size:11px!important;line-height:1.7}
+.industry-page .industry-interview-answers>div>div:first-child{color:#96a2b0!important;font-size:10px!important}
+.industry-page .industry-interview-answers>div>div:last-child{color:#63788e!important}
+.industry-page .industry-interview-question{padding:20px!important;border:1px solid #e2e9f2!important;border-radius:8px!important;background:#fcfdff!important}
+.industry-page .industry-interview-question>div{font-size:14px!important;color:#365671!important;line-height:1.85!important;margin-bottom:16px!important}
+.industry-page .industry-interview-question textarea{min-height:132px!important;padding:14px!important;border:1px solid #d6e1ed!important;border-radius:6px!important;background:#fff;font-size:12px!important;line-height:1.85!important;color:#48627d}
+.industry-page .industry-interview-question textarea::placeholder{color:#a0acb8}
+.industry-page .industry-interview-actions{flex-wrap:wrap;gap:9px!important}
+.industry-page .industry-interview-actions button{min-height:36px;padding:8px 14px!important;border:1px solid #dce6ee!important;border-radius:6px!important;background:#f9fbfd!important;color:#6d8296!important;font-size:11px!important;font-weight:500!important}
+.industry-page .industry-interview-actions button[onclick="interviewNext()"],.industry-page .industry-interview-actions button[onclick="interviewDone()"]{background:#326995!important;color:#fff!important;border-color:#326995!important}
+.industry-page .industry-empty{padding:48px 28px!important;border:1px dashed #d9e4ef;border-radius:11px;background:#fff}
+.industry-page .industry-empty>div:first-child{font-size:30px!important;opacity:.72;margin-bottom:16px!important}
+.industry-page .industry-empty>div:nth-child(2){font-size:13px!important;color:#506b86!important;font-weight:550!important;line-height:1.8}
+.industry-page .industry-empty>div:nth-child(3){margin-top:8px;font-size:11px!important;line-height:2!important;color:#94a2b2!important}
+.industry-page .industry-demand{padding:20px 22px!important;border:1px solid #dae6f0!important;border-radius:10px!important;background:#f2f7fc!important;color:#446882;font-size:12px;line-height:1.85}
+.industry-page .industry-demand strong{font-size:13px;font-weight:650}
+.industry-page .industry-demand p{color:#8195a8;font-size:11px}
+.industry-page .industry-demand button{min-height:34px;padding:7px 13px;border:1px solid #c1d6e8;border-radius:6px;background:#fff;color:#426f93;font-size:11px}
+.industry-page .industry-report.is-generating>div:first-child{padding:16px 22px!important;background:#f6f9fc!important;border-bottom-color:#e3eaf2!important;border-radius:11px 11px 0 0}
+.industry-page .industry-report.is-generating>div:first-child>div:last-child{color:#607f9c!important;font-size:12px!important}
+.industry-detail{background:#fff;color:#526982}
+.industry-detail .detail-header{min-height:82px;padding:21px 43px 19px 21px}
+.industry-detail .detail-header h2{color:#35536f;font-size:15px;line-height:1.6;font-weight:600}
+.industry-detail .detail-header .eyebrow{font-size:8px;letter-spacing:1.5px;color:#8ca3ba}
+.industry-detail .detail-header p{font-size:10px;color:#97a5b3}
+.industry-detail .detail-scroll{padding:4px 21px 24px;scrollbar-width:thin}
+.industry-detail .detail-block{padding:19px 0;border-color:#eaf0f5}
+.industry-detail .detail-block h3{margin-bottom:13px;color:#627b92;font-size:11px;letter-spacing:.4px;font-weight:600}
+.industry-detail .detail-block p,.industry-detail .detail-copy{font-size:11px;line-height:1.9;color:#8193a4}
+.industry-detail .outline-list{gap:11px}
+.industry-detail .outline-list li{font-size:11px;color:#647d94;line-height:1.7}
+.industry-detail .outline-list li:before{width:18px;height:18px;border-color:#d1dfeb;background:#f5f9fc;color:#8a9fb3;font-size:8px}
+.industry-detail .fact-with-icon{gap:11px}
+.industry-detail .fact-with-icon>i{font-size:20px;color:#8aa5bd}
+.industry-detail .fact-with-icon strong{font-size:11px;color:#58728b;font-weight:550;line-height:1.8}
+.industry-detail .fact-with-icon span{font-size:10px;line-height:1.7;color:#96a5b4}
+.industry-detail .info-callout,.industry-detail .warning-callout{padding:12px;border:1px solid #e1e9f1;border-radius:7px;background:#f8fafc;color:#8496a9;font-size:10px;line-height:1.9}
+.industry-detail .warning-callout strong{color:#8e805f;font-weight:550}
+.industry-detail .detail-actions-stack{padding:17px 21px 20px;border-color:#e8eef4}
+.industry-detail .primary-button,.industry-detail .secondary-button{min-height:37px;border-radius:6px;font-size:11px;font-weight:550}
+.industry-detail .primary-button{background:#386a95;border-color:#386a95}
+.industry-detail .secondary-button{background:#f7fafc;border-color:#dde6ee;color:#678099}
+.industry-detail .detail-actions-stack small{font-size:9px;color:#9ba9b7}
+@media(min-width:1440px){.industry-page .industry-scroll{padding-inline:38px!important}.industry-page .industry-header{padding-inline:39px}.industry-page .industry-readiness{padding-inline:39px!important}.industry-page .industry-bottom-bar{padding-inline:38px!important}.industry-page .industry-prose{padding:30px 38px 38px!important;font-size:13.5px!important;line-height:2!important}.industry-page .industry-topic-card{min-height:115px}}
+@media(min-width:1101px) and (max-width:1279px){body.industry-view .detail-pane{flex-basis:270px;width:270px}.industry-page .industry-scroll{padding-inline:25px!important}}
+@media(min-width:768px) and (max-width:1100px){body.industry-view .detail-pane{flex-basis:248px;width:248px;max-width:30%}.industry-page .industry-scroll{padding:22px!important}.industry-page .industry-header{padding:21px 23px}.industry-page .industry-readiness{padding-inline:23px!important}.industry-page .industry-topic-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.industry-page .industry-topic-card{min-height:106px}.industry-page .industry-prose{padding:23px!important;font-size:12.5px!important}.industry-page .industry-report-head{padding:14px 18px!important}.industry-page .industry-bottom-bar{padding:12px 22px!important}.industry-page .industry-bottom-bar button{padding-inline:11px!important}.industry-detail .detail-header{padding-left:17px}.industry-detail .detail-scroll{padding-inline:17px}.industry-detail .detail-actions-stack{padding-inline:17px}.industry-page .industry-confirm-head{padding:14px!important}.industry-page .industry-confirm-items{padding:12px!important}.industry-page .industry-chain-body{padding:15px!important}}
+@media(max-width:767px){body.industry-view .detail-pane{flex:0 0 auto;width:100%;max-width:none}.industry-page .industry-header{padding:21px 18px 18px;gap:12px}.industry-page .industry-heading{font-size:23px;margin:4px 0 6px}.industry-page .industry-kicker{font-size:8px;letter-spacing:1.9px}.industry-page .industry-header p{font-size:10px;line-height:1.8;max-width:205px}.industry-page .industry-header-mark{grid-template-columns:17px 17px;gap:4px;margin-right:0}.industry-page .industry-header-mark i{width:17px;height:17px;border-radius:4px}.industry-page .industry-readiness{padding:12px 17px!important;gap:7px!important;flex-wrap:wrap}.industry-page .industry-readiness>div{flex-basis:100%!important}.industry-page .industry-readiness>div>div:first-child{gap:5px!important}.industry-page .industry-readiness>span{font-size:9px!important}.industry-page .industry-readiness button{min-height:27px;padding:4px 8px!important;font-size:10px!important}.industry-page .industry-scroll{padding:19px 14px 22px!important}.industry-page .industry-section-caption{font-size:10px!important;margin-bottom:10px!important}.industry-page .industry-topics{padding-bottom:18px!important}.industry-page .industry-topic-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px!important}.industry-page .industry-topic-card{min-height:118px;padding:12px 11px 10px!important;border-radius:8px!important}.industry-page .industry-topic-card>div:nth-child(2){font-size:12px!important}.industry-page .industry-topic-card>div:nth-child(3){font-size:9px!important}.industry-page .industry-custom-topic{gap:6px!important}.industry-page .industry-custom-topic input{font-size:10px!important;padding-inline:9px!important;min-width:0;height:34px}.industry-page .industry-custom-topic button{min-height:34px;padding:6px 8px!important;font-size:10px!important}.industry-page .industry-report{border-radius:9px!important}.industry-page .industry-report-head{gap:6px!important;padding:13px!important;border-radius:9px 9px 0 0}.industry-page .industry-report-title{font-size:10px!important}.industry-page .industry-report-topic{font-size:9px!important;max-width:120px;overflow-wrap:anywhere}.industry-page .industry-report-score{margin-left:0!important;font-size:8px!important}.industry-page .industry-report-head button{min-height:26px;font-size:9px!important;padding:3px 7px!important}.industry-page .industry-prose{padding:21px 16px 25px!important;font-size:12px!important;line-height:1.95!important}.industry-page .industry-prose h1{font-size:18px!important;margin-bottom:21px!important}.industry-page .industry-prose h2{font-size:15px!important;margin-top:28px!important;padding-bottom:9px!important}.industry-page .industry-prose h3{font-size:13px!important}.industry-page .industry-prose table{font-size:10px!important}.industry-page .industry-prose th,.industry-page .industry-prose td{padding:9px 10px!important}.industry-page .industry-report-foot{padding:11px 14px!important;font-size:9px!important}.industry-page .industry-confirm-head{padding:13px!important;gap:8px!important;flex-wrap:wrap}.industry-page .industry-confirm-head>div>div:first-child{font-size:12px!important}.industry-page .industry-confirm-head>div>div:nth-child(2){font-size:9px!important}.industry-page .industry-confirm-head>div:last-child{gap:5px!important}.industry-page .industry-confirm-head>div:last-child>div{width:40px!important}.industry-page .industry-confirm-items{padding:10px!important;gap:10px!important}.industry-page .industry-confirm-row.is-pending>div:first-child{padding:12px 10px!important}.industry-page .industry-confirm-text{font-size:11px!important;line-height:1.85!important}.industry-page .industry-confirm-row.is-done{padding:12px 10px!important;gap:7px!important}.industry-page .industry-confirm-row.is-done>button{font-size:9px!important;padding:3px 6px!important}.industry-page .industry-confirm-actions{padding:9px 10px!important;gap:7px!important}.industry-page .industry-confirm-actions button{min-width:70px;padding:5px 10px!important;font-size:10px!important}.industry-page .industry-confirm-foot{padding:11px!important}.industry-page .industry-confirm-foot span{font-size:10px!important}.industry-page .industry-bottom-bar{padding:11px 14px!important;gap:7px!important}.industry-page .industry-bottom-bar button{min-height:34px;padding:7px 10px!important;font-size:10px!important;flex:1 1 95px!important}.industry-page .industry-bottom-bar>div{flex-basis:100%!important;font-size:10px!important;padding:7px 10px!important}.industry-page .industry-chain-head{padding:15px!important;gap:8px!important}.industry-page .industry-chain-head>div>div:first-child{font-size:12px!important}.industry-page .industry-chain-head>div>div:nth-child(2){font-size:9px!important}.industry-page .industry-chain-head>div:last-child{margin-left:0!important}.industry-page .industry-chain-body{gap:12px!important;padding:13px 10px!important}.industry-page .industry-chain-row{gap:7px!important}.industry-page .industry-chain-label{min-width:30px!important;width:30px!important}.industry-page .industry-chain-label>span:first-child{font-size:10px!important}.industry-page .industry-chain-node{min-width:133px!important;padding:11px 8px!important}.industry-page .industry-interview{padding:16px 13px!important}.industry-page .industry-interview-head{gap:9px!important}.industry-page .industry-interview-head>div[style*="width:120px"]{width:45px!important}.industry-page .industry-interview-head>div:nth-child(2)>div:first-child{font-size:13px!important}.industry-page .industry-interview-head>div:nth-child(2)>div:nth-child(2){font-size:9px!important}.industry-page .industry-interview-question{padding:15px 12px!important}.industry-page .industry-interview-question>div{font-size:12px!important}.industry-page .industry-interview-question textarea{padding:11px!important;font-size:11px!important;min-height:135px!important}.industry-page .industry-interview-actions{gap:7px!important}.industry-page .industry-interview-actions button{font-size:10px!important;min-height:34px;padding:7px 10px!important}.industry-page .industry-empty{padding:36px 18px!important}.industry-page .industry-empty>div:nth-child(2){font-size:12px!important}.industry-page .industry-empty>div:nth-child(3){font-size:10px!important}.industry-page .industry-demand{padding:16px!important}.industry-detail .detail-header{padding:17px 50px 15px 20px;min-height:68px}.industry-detail .detail-scroll{padding-inline:20px}.industry-detail .detail-block{padding-block:16px}}
+@media(prefers-reduced-motion:reduce){.industry-page *{transition:none!important}}
+/* Preserve the entire material-coverage summary when the navigation collapses. */
+@media(max-width:1279px){
+  body.industry-view #kbProgressBox{width:100%;min-width:0;margin-top:auto;text-align:center}
+  body.industry-view #kbProgressBox>div{padding:10px 2px 8px!important}
+  body.industry-view #kbProgressBox>div>div:first-child{flex-direction:column;gap:6px;align-items:center!important;margin-bottom:7px!important}
+  body.industry-view #kbProgressBox>div>div:first-child>span:first-child{width:100%;font-size:9px!important;line-height:1.6;letter-spacing:0!important;word-break:normal;overflow-wrap:anywhere;color:#899bac!important}
+  body.industry-view #kbProgressBox>div>div:first-child>span:last-child{font-size:10px!important;line-height:1.5}
+  body.industry-view #kbProgressBox>div>div:nth-child(2){height:3px!important;background:#edf2f6!important}
+  body.industry-view #kbProgressBox>div>div:last-child{font-size:8px!important;line-height:1.7;letter-spacing:0!important;overflow-wrap:anywhere;word-break:normal;margin-top:7px!important}
+}
+@media(max-width:767px){
+  body.industry-view .nav-item{padding-inline:0}
+  body.industry-view #kbProgressBox>div{padding-inline:0!important}
+  .industry-page .industry-topic-card>span[style*="font-weight:700"]{font-size:12px!important}
+  .industry-page .industry-topic-card>span:last-of-type{font-size:10px!important}
+  .industry-page .industry-history>div:not(:first-child)>div:first-child{gap:6px!important;padding:10px!important}
+  .industry-page .industry-history>div:not(:first-child)>div:first-child>span:nth-child(3){flex:1 1 100px!important;min-width:0;max-width:100%;font-size:10px!important}
+  .industry-page .industry-history>div:not(:first-child)>div:first-child>span:nth-child(4){margin-left:0!important;font-size:9px!important}
+  .industry-page .industry-history button{margin-left:0!important;padding:3px 6px!important;font-size:9px!important}
+}
 </style><script>
 window.onerror = function(msg, src, line, col, err) {
   if(document.getElementById('root') && !document.getElementById('root').innerHTML.trim()){
@@ -504,17 +735,17 @@ function viewCurrentReport(){
   }
 
   setReportAreaHtml(area,
-    '<div style="border-radius:14px;border:1.5px solid #bfdbfe;overflow:hidden;margin-bottom:8px">'+
-      '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
-        '<span style="font-size:13px;font-weight:700;color:#1d4ed8">📊 产业分析报告（当前正文）</span>'+
-        '<span style="font-size:11.5px;color:#8492a6">'+context.topic.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>'+
-        '<span style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f0fdf4;color:#166534">'+topicScoreDisplay(context.topic)+'</span>'+
+    '<div class="industry-report" style="border-radius:14px;border:1.5px solid #bfdbfe;overflow:hidden;margin-bottom:8px">'+
+      '<div class="industry-report-head" style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
+        '<span class="industry-report-title" style="font-size:13px;font-weight:700;color:#1d4ed8">📊 产业分析报告（当前正文）</span>'+
+        '<span class="industry-report-topic" style="font-size:11.5px;color:#8492a6">'+context.topic.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>'+
+        '<span class="industry-report-score" style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f0fdf4;color:#166534">'+topicScoreDisplay(context.topic)+'</span>'+
         '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
       '</div>'+
-      '<div style="padding:18px 20px;font-size:13px;line-height:1.85;color:#1e293b">'+
+      '<div class="industry-prose" style="padding:18px 20px;font-size:13px;line-height:1.85;color:#1e293b">'+
         reportMdToHtml(context.text)+
       '</div>'+
-      '<div style="padding:10px 16px;background:#f9fafb;border-top:1px solid #f0f4ff;font-size:11px;color:#9aa5b5">'+
+      '<div class="industry-report-foot" style="padding:10px 16px;background:#f9fafb;border-top:1px solid #f0f4ff;font-size:11px;color:#9aa5b5">'+
         '生成时间：'+new Date(rs.ts).toLocaleDateString('zh-CN')+' · '+
         '数据来源：慧小招实测报告+DeepSeek分析 · '+topicScoreDisplay(context.topic)+
       '</div>'+
@@ -1687,6 +1918,7 @@ function syncDetailPane(){
 
 function render(){
   document.body.classList.toggle('kb-view',view==='knowledge'&&!!AUTH);
+  document.body.classList.toggle('industry-view',view==='report'&&!!AUTH);
   if(typeof kbCancelHiddenRequests==='function')kbCancelHiddenRequests();
   // 跳过重渲染：用户正在查看校验结果或冲突面板时不重建DOM
   if(AUTH&&_authState==='ready'&&(window._verifyInProgress || document.getElementById('conflictModal'))) return;
@@ -5275,7 +5507,7 @@ function selectTopic(val, isCustom){
     } else {
       // 当前方向无报告，清空报告区显示空状态
       _ra.innerHTML='<div id="reportHistoryArea"></div>'+
-        '<div style="text-align:center;padding:48px 20px">'+
+        '<div class="industry-empty" style="text-align:center;padding:48px 20px">'+
           '<div style="font-size:40px;margin-bottom:12px">📊</div>'+
           '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">'+
             '选择上方产业分析方向，点击「产业智能分析」'+
@@ -5290,7 +5522,7 @@ function selectTopic(val, isCustom){
   var _dp=document.querySelector('.detail-pane');
   if(_dp){
     _dp.innerHTML='<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button>'+
-      '<div class="detail-page">'+detailReport(p)+'</div>';
+      '<div class="detail-page industry-detail">'+detailReport(p)+'</div>';
   }
   // 刷新历史报告（只显示当前方向的）
   var _ra2=document.getElementById('reportArea');
@@ -5514,7 +5746,7 @@ function renderHistoryReports(key, topicFilter){
   // 无任何历史报告则整块隐藏；有历史但当前方向为空时仍显示切换入口
   if(!totalCount){container.innerHTML='';return;}
   var otherCount=totalCount-list.length;
-  var h='<div style="margin-bottom:12px">';
+  var h='<div class="industry-history" style="margin-bottom:12px">';
   h+='<div style="font-size:11.5px;font-weight:700;color:#64748b;letter-spacing:.3px;margin-bottom:6px;display:flex;align-items:center;gap:6px">';
   h+='<span style="display:inline-block;width:3px;height:12px;background:#94a3b8;border-radius:2px"></span>';
   h+='<span>历史报告（'+list.length+' 份）</span>';
@@ -5573,24 +5805,24 @@ function renderConfirmPanel(items, projKey){
       : '';
 
     if(isDone){
-      return '<div id="ci-'+projKey+'-'+idx+'" style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px">'+
+      return '<div class="industry-confirm-row is-done" id="ci-'+projKey+'-'+idx+'" style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px">'+
         '<span style="color:#22c55e;font-size:16px;flex-shrink:0;margin-top:1px">✓</span>'+
         '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
+          '<div class="industry-confirm-text" style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
           (item.status==='edited'?'<div style="font-size:11px;color:#22c55e;margin-top:3px">已修改并确认</div>':'<div style="font-size:11px;color:#22c55e;margin-top:3px">已确认</div>')+
         '</div>'+
         '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#22c55e;cursor:pointer;flex-shrink:0">撤回</button>'+
       '</div>';
     }
 
-    return '<div id="ci-'+projKey+'-'+idx+'" style="border-radius:12px;background:#fffbeb;border:1.5px solid #fed7aa;overflow:hidden;transition:box-shadow .2s" onmouseenter="this.style.boxShadow=\'0 2px 8px rgba(245,158,11,0.15)\'" onmouseleave="this.style.boxShadow=\'none\'">'+
+    return '<div class="industry-confirm-row is-pending" id="ci-'+projKey+'-'+idx+'" style="border-radius:12px;background:#fffbeb;border:1.5px solid #fed7aa;overflow:hidden;transition:box-shadow .2s" onmouseenter="this.style.boxShadow=\'0 2px 8px rgba(245,158,11,0.15)\'" onmouseleave="this.style.boxShadow=\'none\'">'+
       '<div style="padding:13px 15px">'+
         '<div style="display:flex;gap:10px;align-items:flex-start">'+
           '<span style="flex-shrink:0;width:22px;height:22px;background:#fef3c7;border:1.5px solid #fcd34d;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;margin-top:1px">⚠️</span>'+
-          '<div id="ci-text-'+projKey+'-'+idx+'" style="flex:1;font-size:13px;color:#78350f;line-height:1.7;font-weight:500">'+displayText+'</div>'+
+          '<div class="industry-confirm-text" id="ci-text-'+projKey+'-'+idx+'" style="flex:1;font-size:13px;color:#78350f;line-height:1.7;font-weight:500">'+displayText+'</div>'+
         '</div>'+
         // 编辑框（默认隐藏）
-        '<div id="ci-edit-'+projKey+'-'+idx+'" style="display:none;margin-top:10px">'+
+        '<div class="industry-confirm-edit" id="ci-edit-'+projKey+'-'+idx+'" style="display:none;margin-top:10px">'+
           '<textarea id="ci-ta-'+projKey+'-'+idx+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #6366f1;border-radius:8px;font-size:13px;color:#1e293b;resize:vertical;min-height:64px;outline:none;line-height:1.6">'+displayText+'</textarea>'+
           // 附件上传
           '<div id="ci-drop-'+projKey+'-'+idx+'" '+
@@ -5609,7 +5841,7 @@ function renderConfirmPanel(items, projKey){
         '</div>'+
       '</div>'+
       // 操作栏
-      '<div style="padding:10px 15px;background:linear-gradient(135deg,#fefce8,#fef9c3);border-top:1px solid #fde68a;display:flex;gap:8px">'+
+      '<div class="industry-confirm-actions" style="padding:10px 15px;background:linear-gradient(135deg,#fefce8,#fef9c3);border-top:1px solid #fde68a;display:flex;gap:8px">'+
         '<button onclick="cfmItem(\''+projKey+'\','+idx+')" style="flex:1;padding:8px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1.5px solid #86efac;border-radius:10px;font-size:12.5px;font-weight:700;color:#166534;cursor:pointer;transition:all .15s" onmouseenter="this.style.background=\'#dcfce7\'" onmouseleave="this.style.background=\'linear-gradient(135deg,#f0fdf4,#dcfce7)\'">✓ 确认</button>'+
         '<button onclick="ciShowEdit(\''+projKey+'\','+idx+')" style="flex:1;padding:8px;background:linear-gradient(135deg,#f5f3ff,#ede9fe);border:1.5px solid #c4b5fd;border-radius:10px;font-size:12.5px;font-weight:600;color:#6d28d9;cursor:pointer" onmouseenter="this.style.background=\'#ede9fe\'" onmouseleave="this.style.background=\'linear-gradient(135deg,#f5f3ff,#ede9fe)\'">✎ 修改内容</button>'+
       '</div>'+
@@ -5625,8 +5857,8 @@ function renderConfirmPanel(items, projKey){
   if(window.__cpCollapsed[projKey]==null) window.__cpCollapsed[projKey]=allDone;
   var collapsed=window.__cpCollapsed[projKey];
 
-  return '<div id="confirmPanel-'+projKey+'" style="margin-top:20px;border-radius:16px;border:1.5px solid #fde68a;overflow:hidden;box-shadow:0 2px 10px rgba(245,158,11,0.1)">'+
-    '<div onclick="toggleConfirmPanel(\''+projKey+'\')" style="padding:13px 18px;background:linear-gradient(135deg,#fffbeb,#fef9c3);border-bottom:1px solid #fde68a;display:flex;align-items:center;gap:10px;cursor:pointer">'+
+  return '<div class="industry-confirm" id="confirmPanel-'+projKey+'" style="margin-top:20px;border-radius:16px;border:1.5px solid #fde68a;overflow:hidden;box-shadow:0 2px 10px rgba(245,158,11,0.1)">'+
+    '<div class="industry-confirm-head" onclick="toggleConfirmPanel(\''+projKey+'\')" style="padding:13px 18px;background:linear-gradient(135deg,#fffbeb,#fef9c3);border-bottom:1px solid #fde68a;display:flex;align-items:center;gap:10px;cursor:pointer">'+
       '<span style="font-size:18px">📋</span>'+
       '<div style="flex:1">'+
         '<div style="font-size:13px;font-weight:800;color:#92400e;letter-spacing:.2px">待确认事项</div>'+
@@ -5641,8 +5873,8 @@ function renderConfirmPanel(items, projKey){
       '</div>'+
     '</div>'+
     '<div id="cp-body-'+projKey+'" style="display:'+(collapsed?'none':'block')+'">'+
-      '<div style="padding:12px 16px;display:flex;flex-direction:column;gap:8px;background:#fff" id="cp-items-'+projKey+'">'+rows+'</div>'+
-      '<div id="cp-unlock-'+projKey+'" style="padding:12px 18px;background:'+(allDone?'linear-gradient(135deg,#f0fdf4,#dcfce7)':'#f9fafb')+';border-top:1px solid '+(allDone?'#86efac':'#f0f4ff')+';display:flex;align-items:center;justify-content:center;gap:8px">'+
+      '<div class="industry-confirm-items" style="padding:12px 16px;display:flex;flex-direction:column;gap:8px;background:#fff" id="cp-items-'+projKey+'">'+rows+'</div>'+
+      '<div class="industry-confirm-foot" id="cp-unlock-'+projKey+'" style="padding:12px 18px;background:'+(allDone?'linear-gradient(135deg,#f0fdf4,#dcfce7)':'#f9fafb')+';border-top:1px solid '+(allDone?'#86efac':'#f0f4ff')+';display:flex;align-items:center;justify-content:center;gap:8px">'+
         (allDone
           ? '<span style="font-size:13px;font-weight:700;color:#166534">✓ 所有事项已确认，请点击下方蓝色按钮生成完整报告</span>'
           : '<span style="font-size:12.5px;color:#9aa5b5">还有 <strong style="color:#f59e0b">'+(total-done)+'</strong> 条事项待确认</span>'
@@ -5723,10 +5955,11 @@ function cfmItem(projKey, idx){
     var item = PENDING_CONFIRMS[projKey][idx];
     var displayText = item.editedText || item.text;
     var filesBadge = item.files&&item.files.length?'<span style="margin-left:6px;padding:1px 7px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:10.5px;border:1px solid #86efac">'+item.files.length+' 个附件</span>':'';
+    if(card.classList){card.classList.remove('is-pending');card.classList.add('industry-confirm-row','is-done');}
     card.style.cssText='display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px';
     card.innerHTML=
       '<span style="color:#22c55e;font-size:16px;flex-shrink:0;margin-top:1px">✓</span>'+
-      '<div style="flex:1;min-width:0"><div style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
+      '<div style="flex:1;min-width:0"><div class="industry-confirm-text" style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
       '<div style="font-size:11px;color:#22c55e;margin-top:3px">已确认</div></div>'+
       '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#22c55e;cursor:pointer;flex-shrink:0">撤回</button>';
   }
@@ -5787,10 +6020,11 @@ function ciSave(projKey, idx){
   if(card){
     var displayText = item.editedText;
     var filesBadge = item.files&&item.files.length?'<span style="margin-left:6px;padding:1px 7px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:10.5px;border:1px solid #86efac">'+item.files.length+' 个附件</span>':'';
+    if(card.classList){card.classList.remove('is-pending');card.classList.add('industry-confirm-row','is-done');}
     card.style.cssText='display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px';
     card.innerHTML=
       '<span style="color:#22c55e;font-size:16px;flex-shrink:0;margin-top:1px">✓</span>'+
-      '<div style="flex:1;min-width:0"><div style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
+      '<div style="flex:1;min-width:0"><div class="industry-confirm-text" style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
       '<div style="font-size:11px;color:#22c55e;margin-top:3px">已修改并确认</div></div>'+
       '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#22c55e;cursor:pointer;flex-shrink:0">撤回</button>';
   }
@@ -5859,7 +6093,7 @@ function restoreActionItems(){
   var demandKey=p.isDemand===true?cur:_findExistingDemand(p.city,p.topic);
   var submitted=demandKey&&demandSubmissionState(demandKey)==='submitted';
   var message=submitted?'需求已递交，资源端正在开展当前方向的企业核验与推荐。':'完整研判已生成。提交后，管理端将基于当前方向核验并推荐企业。';
-  return '<section style="margin-top:16px;padding:16px;border:1px solid #dbeafe;border-radius:12px;background:#f8faff"><strong>'+escapeChainText(p.topic)+'</strong><p>'+message+'报告和线索中的待核结论不代表投资意向已确认。</p>'+reportDemandActionButton(p)+'</section>';
+  return '<section class="industry-demand" style="margin-top:16px;padding:16px;border:1px solid #dbeafe;border-radius:12px;background:#f8faff"><strong>'+escapeChainText(p.topic)+'</strong><p>'+message+'报告和线索中的待核结论不代表投资意向已确认。</p>'+reportDemandActionButton(p)+'</section>';
 }
 
 /* 从报告文本解析TOP3招引方向（供渲染与切换方向时复用） */
@@ -6088,7 +6322,7 @@ function topicCardHtml(t, isActive){
         'style="position:absolute;top:8px;right:8px;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;'+
         'border-radius:50%;background:#fef2f2;border:1px solid #fecaca;color:#dc2626;font-size:13px;line-height:1;cursor:pointer;z-index:2">×</span>'
     : '';
-  return '<button onclick="selectTopic(this.getAttribute(\'data-v\'))" data-v="'+String(t.label).replace(/"/g,'&quot;')+'" style="'+
+  return '<button class="industry-topic-card '+(isActive?'is-active':'')+'" onclick="selectTopic(this.getAttribute(\'data-v\'))" data-v="'+String(t.label).replace(/"/g,'&quot;')+'" style="'+
     'position:relative;display:flex;flex-direction:column;align-items:flex-start;padding:14px 16px;'+
     'background:'+(isActive?'linear-gradient(135deg,#eff6ff,#f0f9ff)':'#fff')+';'+
     'border:2px solid '+(isActive?'#1a56db':'#e8edf5')+';'+
@@ -6198,8 +6432,8 @@ function renderInterviewUI(){
   }).filter(Boolean).join('');
 
   area.innerHTML =
-    '<div style="padding:20px">'+
-      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'+
+    '<div class="industry-interview" style="padding:20px">'+
+      '<div class="industry-interview-head" style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'+
         '<div style="width:36px;height:36px;background:linear-gradient(135deg,#1a56db,#6366f1);border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:800">AI</div>'+
         '<div>'+
           '<div style="font-size:15px;font-weight:700;color:#0b183b">产业分析访谈</div>'+
@@ -6211,12 +6445,12 @@ function renderInterviewUI(){
         '</div>'+
         '<span style="font-size:11px;color:#9aa5b5">'+cur+'/'+total+'</span>'+
       '</div>'+
-      (answeredHtml?'<div style="margin-bottom:12px;max-height:120px;overflow-y:auto">'+answeredHtml+'</div>':'')+
-      '<div style="background:#fff;border:1.5px solid #e8edf5;border-radius:14px;padding:20px;margin-bottom:16px">'+
+      (answeredHtml?'<div class="industry-interview-answers" style="margin-bottom:12px;max-height:120px;overflow-y:auto">'+answeredHtml+'</div>':'')+
+      '<div class="industry-interview-question" style="background:#fff;border:1.5px solid #e8edf5;border-radius:14px;padding:20px;margin-bottom:16px">'+
         '<div style="font-size:14px;color:#1e293b;line-height:1.8;margin-bottom:16px">'+q.q+'</div>'+
         '<textarea id="interviewAnswer" placeholder="输入您的回答…（如暂时不清楚可点击跳过）" style="width:100%;box-sizing:border-box;min-height:100px;padding:12px;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;line-height:1.7;outline:none;resize:vertical" >'+(_interviewState.answers[_interviewState.currentQ]?(_interviewState.answers[_interviewState.currentQ].text||''):'')+'</textarea>'+
       '</div>'+
-      '<div style="display:flex;gap:10px;align-items:center">'+
+      '<div class="industry-interview-actions" style="display:flex;gap:10px;align-items:center">'+
         (_interviewState.currentQ>0?'<button onclick="interviewPrev()" style="padding:10px 20px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer;font-weight:600">← 上一题</button>':'')+
         '<div style="flex:1"></div>'+
         '<button onclick="interviewSkip()" style="padding:10px 20px;background:#fff;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#9aa5b5;cursor:pointer">跳过</button>'+
@@ -6403,7 +6637,7 @@ function triggerReport(phase){
   var chunks;
   try{
     var corpus=buildKBCorpus(p.city);chunks=kbSearch(query,corpus,phase===1?8:20);
-    setReportAreaHtml(area,'<div class="report-document"><h2>'+(phase===1?'初步研判草稿':'完整产业研判')+'</h2><p id="reportRunStatus">正在读取当前方向材料，生成结果将即时显示…</p><div id="reportContent"></div></div>');
+    setReportAreaHtml(area,'<div class="report-document industry-report industry-prose"><h2>'+(phase===1?'初步研判草稿':'完整产业研判')+'</h2><p id="reportRunStatus">正在读取当前方向材料，生成结果将即时显示…</p><div id="reportContent"></div></div>');
   }catch(error){delete window._topicReportJobs[jobKey];updateReportBusy();toast('读取本地材料未完成，请重试');return Promise.resolve();}
   function active(){return PROJECTS[key] && (PROJECTS[key].reportRequestId||'')===requestId && (epoch===null || epoch===_authEpoch);}
   function visible(){return active() && cur===key && P() && P().topic===topic;}
@@ -6863,8 +7097,8 @@ function _renderRichChain(topic, segments, recs, p){
     '中游':{bg:'#f0fdf4',fc:'#166534',bd:'#bbf7d0',tag:'MIDSTREAM'},
     '下游':{bg:'#fff7ed',fc:'#9a3412',bd:'#fed7aa',tag:'DOWNSTREAM'}
   };
-  var h='<div style="margin-top:16px;border-radius:16px;border:1.5px solid #e2e8f0;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.06)">';
-  h+='<div style="padding:12px 18px;background:linear-gradient(135deg,#1e3a5f,#1a56db);display:flex;align-items:center;gap:10px">';
+  var h='<div class="industry-chain" style="margin-top:16px;border-radius:16px;border:1.5px solid #e2e8f0;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.06)">';
+  h+='<div class="industry-chain-head" style="padding:12px 18px;background:linear-gradient(135deg,#1e3a5f,#1a56db);display:flex;align-items:center;gap:10px">';
   h+='<span style="font-size:20px">\ud83d\udcca</span>';
   h+='<div><div style="font-size:13.5px;font-weight:800;color:#fff;letter-spacing:.3px">'+topic+' 产业链图谱</div>';
   h+='<div style="font-size:11px;color:rgba(255,255,255,0.7);margin-top:1px">上游 → 中游 → 下游 · 当前产业分析方向「'+topic+'」</div></div>';
@@ -6873,19 +7107,19 @@ function _renderRichChain(topic, segments, recs, p){
     h+='<span style="background:'+lg.bg+';color:#fff;border-radius:20px;padding:2px 9px;font-size:10.5px;font-weight:700">'+lg.t+'</span>';
   });
   h+='</div></div>';
-  h+='<div style="padding:16px;background:#f8faff;display:flex;flex-direction:column;gap:12px">';
+  h+='<div class="industry-chain-body" style="padding:16px;background:#f8faff;display:flex;flex-direction:column;gap:12px">';
   segments.forEach(function(seg){
     var sm=SEGMETA[seg.seg]||SEGMETA['中游'];
-    h+='<div style="display:flex;gap:12px;align-items:stretch">';
-    h+='<div style="flex-shrink:0;width:44px;border-radius:10px;background:'+sm.bg+';border:1.5px solid '+sm.bd+';display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:8px 2px">';
+    h+='<div class="industry-chain-row" style="display:flex;gap:12px;align-items:stretch">';
+    h+='<div class="industry-chain-label" style="flex-shrink:0;width:44px;border-radius:10px;background:'+sm.bg+';border:1.5px solid '+sm.bd+';display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:8px 2px">';
     h+='<span style="font-size:13px;font-weight:800;color:'+sm.fc+';letter-spacing:2px;writing-mode:vertical-rl">'+seg.seg+'</span>';
     h+='<span style="font-size:7.5px;color:'+sm.fc+';opacity:.55;letter-spacing:.5px;writing-mode:vertical-rl">'+sm.tag+'</span>';
     h+='</div>';
-    h+='<div style="flex:1;display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:2px">';
+    h+='<div class="industry-chain-nodes" style="flex:1;display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:2px">';
     if(!(seg.nodes||[]).length)h+='<div style="flex:1;padding:18px;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b;font-size:12px;line-height:1.7">资料待补：当前方向尚无可引用的环节原句和来源链接，不能据此判断该环节不存在。</div>';
     (seg.nodes||[]).forEach(function(nd,i){
       var lv=LEVEL[nd.level]||LEVEL.unknown;
-      h+='<div style="flex:1;min-width:96px;background:'+lv.bg+';border:2px solid '+lv.bd+';border-radius:12px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;text-align:center">';
+      h+='<div class="industry-chain-node is-'+nd.level+'" style="flex:1;min-width:96px;background:'+lv.bg+';border:2px solid '+lv.bd+';border-radius:12px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;text-align:center">';
       h+='<span style="background:'+lv.tbg+';color:'+lv.tfc+';border-radius:10px;padding:1px 8px;font-size:10px;font-weight:800;margin-bottom:5px">'+lv.tag+'</span>';
       h+='<div style="font-size:12px;font-weight:700;color:'+lv.fc+';line-height:1.35;margin-bottom:5px">'+escapeChainText(nd.name)+'</div>';
       if(nd.level==='strong'){
@@ -6970,14 +7204,14 @@ function reportHtml(p){
   var rs=REPORTSTATE[cur]; if(!rs) return '';
   var r=kbReadiness();
 
-  return '<div style="border-radius:14px;border:1.5px solid #e8edf5;overflow:hidden;margin-bottom:8px">'+
-    '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
-      '<span style="font-size:12px;font-weight:650;color:#1a56db">📋 产业分析报告</span>'+
-      '<span style="font-size:11.5px;color:#4a5568">'+escapeChainText(p.topic)+'</span>'+
-      '<span style="margin-left:auto;font-size:11px;color:'+(topicScore(p.topic)>=80?'#22c55e':'#f59e0b')+'">'+topicScoreDisplay(p.topic)+'</span>'+
+  return '<div class="industry-report" style="border-radius:14px;border:1.5px solid #e8edf5;overflow:hidden;margin-bottom:8px">'+
+    '<div class="industry-report-head" style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
+      '<span class="industry-report-title" style="font-size:12px;font-weight:650;color:#1a56db">'+(topicHasFullReport(p.topic)?'完整产业报告':'初步研判草稿')+'</span>'+
+      '<span class="industry-report-topic" style="font-size:11.5px;color:#4a5568">'+escapeChainText(p.topic)+'</span>'+
+      '<span class="industry-report-score" style="margin-left:auto;font-size:11px;color:'+(topicScore(p.topic)>=80?'#22c55e':'#f59e0b')+'">'+topicScoreDisplay(p.topic)+'</span>'+
       '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
     '</div>'+
-    '<div style="padding:16px 18px;font-size:13px;color:#1e293b;line-height:1.8">'+
+    '<div class="industry-prose" style="padding:16px 18px;font-size:13px;color:#1e293b;line-height:1.8">'+
       // 按方向取报告正文：项目级 rs.text 是单例，切到未生成报告的新方向会串显旧方向正文
       reportMdToHtml(alignChainToReport((typeof reportTextForTopic==='function'?reportTextForTopic(p.topic):null)||''))+
     '</div>'+
@@ -7189,7 +7423,7 @@ function homePage(p){
 
   // ── 可靠性横幅 ──
   var reliabilityBanner=
-    '<div style="display:flex;align-items:center;gap:12px;padding:12px 18px;background:'+(r.score>=80?'#f0fdf4':'#fffbeb')+';border-bottom:1px solid '+(r.score>=80?'#86efac':'#fde68a')+'">'+
+    '<div class="industry-readiness" style="display:flex;align-items:center;gap:12px;padding:12px 18px;background:'+(r.score>=80?'#f0fdf4':'#fffbeb')+';border-bottom:1px solid '+(r.score>=80?'#86efac':'#fde68a')+'">'+
       '<div style="flex:1;min-width:0">'+
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'+
           '<span style="font-size:12px;font-weight:650;color:'+(r.score>=80?'#166534':'#92400e')+'">从城市智库继承数据</span>'+
@@ -7234,10 +7468,10 @@ function homePage(p){
   }
 
   var topicSelector=
-    '<div style="padding:0 0 20px">'+
-      '<div style="font-size:12px;font-weight:650;color:#4a5568;margin-bottom:10px;letter-spacing:.3px">选择产业分析方向</div>'+
-      '<div id="topicCardGrid" style="display:flex;gap:10px;margin-bottom:12px">'+topicCards+'</div>'+
-      '<div style="display:flex;align-items:center;gap:8px">'+
+    '<div class="industry-topics" style="padding:0 0 20px">'+
+      '<div class="industry-section-caption" style="font-size:12px;font-weight:650;color:#4a5568;margin-bottom:10px;letter-spacing:.3px">选择产业分析方向</div>'+
+      '<div id="topicCardGrid" class="industry-topic-grid" style="display:flex;gap:10px;margin-bottom:12px">'+topicCards+'</div>'+
+      '<div class="industry-custom-topic" style="display:flex;align-items:center;gap:8px">'+
         '<div style="flex:1;position:relative">'+
           '<input id="topicCustomInput" placeholder="或输入自定义方向…" value="" '+
             'style="width:100%;box-sizing:border-box;padding:10px 14px;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#0b183b;outline:none;transition:border .15s" '+
@@ -7259,18 +7493,18 @@ function homePage(p){
     '<div id="reportArea">'+
       '<div id="reportHistoryArea"></div>'+
       (window._reportGenerating
-        ? '<div style="border-radius:16px;border:1.5px solid #fed7aa;overflow:hidden;margin-bottom:8px">'+
+        ? '<div class="industry-report is-generating" style="border-radius:16px;border:1.5px solid #fed7aa;overflow:hidden;margin-bottom:8px">'+
             '<div style="padding:14px 18px;background:linear-gradient(135deg,#fffbeb,#fef3c7);border-bottom:1px solid #fde68a;display:flex;align-items:center;gap:10px">'+
               '<div style="width:18px;height:18px;border:2.5px solid #e2e8f0;border-top-color:#f59e0b;border-radius:50%;animation:spin 1s linear infinite"></div>'+
               '<div style="font-size:13px;font-weight:700;color:#92400e">初步研判草稿生成中…</div>'+
             '</div>'+
-            '<div id="reportContent" style="padding:20px 22px;font-size:13px;color:#1e293b;line-height:1.85;min-height:80px"></div>'+
+            '<div id="reportContent" class="industry-prose" style="padding:20px 22px;font-size:13px;color:#1e293b;line-height:1.85;min-height:80px"></div>'+
           '</div>'
         : (REPORTSTATE[cur]&&REPORTSTATE[cur].phaseByTopic&&REPORTSTATE[cur].phaseByTopic[p.topic]===2)
         ? reportHtml(p)+'<div id="chainMapBlock" style="animation:fadeIn .6s ease-out">'+chainMapHtml(p)+'</div>'+'<div id="actionItemsBlock" style="animation:fadeIn .8s ease-out .3s both">'+restoreActionItems()+'</div>'+restoreConfirmPanel()
         : (REPORTSTATE[cur]&&REPORTSTATE[cur].text)||(PENDING_CONFIRMS[cur]&&PENDING_CONFIRMS[cur].length)||(REPORTSTATE[cur]&&p&&_findPendingForTopic(REPORTSTATE[cur],p.topic).length)
         ? reportHtml(p)+restoreConfirmPanel()
-        : '<div style="text-align:center;padding:48px 20px">'+
+        : '<div class="industry-empty" style="text-align:center;padding:48px 20px">'+
             '<div style="font-size:40px;margin-bottom:12px">📋</div>'+
             '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">'+
               '选择上方产业分析方向，点击「🔍 产业智能分析」'+
@@ -7294,14 +7528,15 @@ function homePage(p){
 
 
 
-  return '<div class="page">'+
+  return '<div class="page industry-page">'+
+    '<header class="industry-header"><div><span class="industry-kicker">INDUSTRY RESEARCH</span><h1 class="industry-heading">产业分析</h1><p>以城市智库为基础，梳理产业方向与招引机会</p></div><div class="industry-header-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></div></header>'+
     reliabilityBanner+
-    '<div class="conversation-scroll" style="padding:16px 22px 0">'+
+    '<div class="conversation-scroll industry-scroll" style="padding:16px 22px 0">'+
       topicSelector+
       reportArea+
     '</div>'+
     // 底部行动栏（替代 composer）—— 内容按当前方向渲染，切换方向时同步刷新
-    '<div class="report-bottom-bar" style="border-top:1px solid #f0f4ff;background:#fff;padding:12px 22px;display:flex;gap:10px;align-items:center">'+
+    '<div class="report-bottom-bar industry-bottom-bar" style="border-top:1px solid #f0f4ff;background:#fff;padding:12px 22px;display:flex;gap:10px;align-items:center">'+
       reportBottomBarInner(p)+
     '</div>'+
   '</div>';
@@ -7858,7 +8093,7 @@ function detailPane(p){
   else if(view==='knowledge'){body=detailKbIntro(p);}
   else{body=detailReport(p);}                          // report产业分析→本次研判
   return '<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button>'+
-    '<div class="detail-page">'+body+'</div>';
+    '<div class="detail-page '+(view==='report'?'industry-detail':'')+'">'+body+'</div>';
 }
 // 我的需求页 → 右侧：需求汇总统计
 function detailNeeds(p){
@@ -8083,7 +8318,7 @@ function toggleDetail(){
 // 返回：按当前视图回到对应右栏（报告页→本次研判，项目页→项目详情），而不是永远跳旧的通用分析栏
 function backToAnalysis(){detailData=null;var dp=$('.detail-pane');
   var back=view==='report'?detailReport(P()):(view==='subwork'&&subprojOf(cur)[curSub])?detailSub(subprojOf(cur)[curSub]):detailAnalysis(P());
-  if(dp){dp.innerHTML='<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button><div class="detail-page">'+back+'</div>';}else render();}
+  if(dp){dp.innerHTML='<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button><div class="detail-page industry-detail">'+back+'</div>';}else render();}
 /* ===== 对话流交互 ===== */
 // localStorage 持久化：报告版本状态 + 上传材料历史（关掉页面第二天还在）
 function saveReportState(){try{localStorage.setItem('hxz_reportstate',JSON.stringify(REPORTSTATE))}catch(e){}}
