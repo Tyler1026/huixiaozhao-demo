@@ -187,6 +187,125 @@ class ExplanationAssessmentTests(unittest.TestCase):
         self.assertEqual(out['assessment']['level'], 'unknown')
 
 
+class NodeJudgmentTests(unittest.TestCase):
+    def run_node(self, quote, name='飞控系统', title='闵行区产业调研资料', topic=None, model=None):
+        bundle = research([quote], titles=[title])
+        context = dict(CONTEXT, topic=topic or CONTEXT['topic'])
+        bundle['topic'] = context['topic']
+        node = {'id': 'node', 'name': name, 'status': 'planned', 'level': 'unknown',
+                'evidence_ids': [bundle['evidence'][0]['id']]}
+        graph = {'chain': [{'nodes': [node]}], 'unclassified': []}
+        out = build_assessment(context, bundle, graph, model or (lambda *args: {'findings': []}))
+        return out, out['node_assessments']['node']
+
+    def assert_bound(self, assessment):
+        ids = {f['evidence_id'] for f in assessment['findings']}
+        self.assertTrue(set(assessment['judgment']['evidence_ids']) <= ids)
+
+    def test_local_plan_is_yellow_without_changing_fact_level(self):
+        quote = '加快研制飞控系统，培育低空航空器关键配套，具体建设计划另行安排。'
+        out, node = self.run_node(quote, title='闵行区低空产业行动计划', topic='低空经济整机配套承接集聚')
+        self.assertEqual(node['judgment']['level'], 'mid')
+        self.assertEqual(node['judgment']['basis'], 'local_plan')
+        self.assertEqual(node['level'], 'unknown')
+        self.assertEqual(node['findings'][0]['kind'], 'plan')
+        self.assertEqual(node['findings'][0]['quote'], quote)
+        self.assert_bound(node)
+        self.assertIn('重点培育1项', out['assessment']['judgment']['reason'])
+
+    def test_local_completed_production_is_green(self):
+        _, node = self.run_node('闵行区飞控系统产线已建成并实现量产，相关生产情况由原始资料披露。')
+        self.assertEqual(node['level'], 'supported')
+        self.assertEqual(node['judgment']['level'], 'strong')
+        self.assertEqual(node['judgment']['basis'], 'local_capability')
+        self.assert_bound(node)
+
+    def test_real_local_industry_inventory_supports_existing_basis_not_competitive_advantage(self):
+        quote = '作为上海生物医药先导产业核心承载区，闵行已形成“北部研发总部、东部高端制造、南部创新策源”的“3+X”产业格局，全区集聚生物医药企业900余家，其中高新技术企业273家，覆盖原料药供应、医疗器械、生物药、中药及医药全链条服务。'
+        _, node = self.run_node(quote, name='原料药供应', title='聚焦生物医药，闵行探索产业生态圈党建', topic='生物医药上游耗材国产替代招引')
+        self.assertEqual(node['judgment']['level'], 'strong')
+        self.assertEqual(node['level'], 'supported')
+        self.assertEqual(node['findings'][0]['scope'], 'local')
+        self.assertNotIn('优势', node['judgment']['reason'])
+
+    def test_real_service_center_established_before_later_plan_is_existing_basis(self):
+        quote = '同时，闵行组建全市首家区级低空飞行服务中心，出台低空经济专项扶持政策，设百亿级产业引导基金，从空域保障、场景开放、资金扶持、人才引育等维度，构建全周期产业支撑体系，持续吸引低空产业链企业集聚。'
+        _, node = self.run_node(quote, name='低空飞行服务中心', title='低空机载产业“旗舰店”上线！全国首个选型中心落户闵行吴泾', topic='低空经济整机配套承接集聚')
+        self.assertEqual(node['judgment']['level'], 'strong')
+        self.assertEqual(node['findings'][0]['kind'], 'capability')
+        self.assertNotIn('量产', node['judgment']['reason'])
+
+    def test_local_gap_is_red_but_existing_fact_level_remains_attention(self):
+        _, node = self.run_node('闵行区飞控系统本地供应不足，现有调查披露了具体供应约束。')
+        self.assertEqual(node['judgment']['level'], 'weak')
+        self.assertEqual(node['judgment']['basis'], 'local_gap')
+        self.assertEqual(node['level'], 'attention')
+        self.assert_bound(node)
+
+    def test_industry_challenge_is_yellow_without_local_gap(self):
+        _, node = self.run_node('聚变装置内壁材料需要耐受高温和中子轰击，材料研发目前仍是严峻挑战。',
+            name='聚变装置内壁材料', title='聚变能源技术研究', topic='聚变能源前沿赛道培育招商')
+        self.assertEqual(node['judgment']['level'], 'mid')
+        self.assertEqual(node['judgment']['basis'], 'industry_risk')
+        self.assertEqual(node['level'], 'unknown')
+
+    def test_definition_without_production_or_plan_remains_unknown(self):
+        _, node = self.run_node('高端医疗器械主要包括智能医疗机器人、高端影像设备和体外诊断仪器。',
+            name='智能医疗机器人', title='闵行区生物医药产业说明', topic='生物医药上游耗材国产替代招引')
+        self.assertEqual(node['judgment']['level'], 'unknown')
+        self.assertEqual(node['judgment']['basis'], 'insufficient')
+
+    def test_negation_and_foreign_factory_never_become_local_green_or_red(self):
+        for quote in ['闵行区尚未建成飞控系统生产线，项目仍处于论证阶段，具体情况待核。',
+                      '闵行区飞控系统并非供应不足，调查报告并未发现所传缺口。',
+                      '苏州市飞控系统生产线已建成并实现量产，相关资料明确生产基地在苏州。',
+                      '某公司总部位于闵行区，在苏州工厂已实现飞控系统量产，生产地点不在闵行。']:
+            with self.subTest(quote=quote):
+                _, node = self.run_node(quote)
+                self.assertNotIn(node['judgment']['level'], ('strong', 'weak'))
+
+    def test_whole_chain_problem_is_never_copied_to_named_nodes(self):
+        _, node = self.run_node('闵行区产业链总体供应不足，飞控系统被列为本次调研的参考方向。')
+        self.assertEqual(node['findings'], [])
+        self.assertEqual(node['judgment']['level'], 'unknown')
+
+    def test_typographic_parentheses_match_but_semantic_near_names_do_not(self):
+        _, node = self.run_node('闵行区计划发展合同研发生产组织(CMO)，具体项目建设安排仍需后续落实。',
+            name='合同研发生产组织（CMO）', title='闵行区生物医药行动计划', topic='生物医药上游耗材国产替代招引')
+        self.assertEqual(node['judgment']['level'], 'mid')
+        self.assertEqual(node['findings'][0]['matched_name'], '合同研发生产组织(CMO)')
+        for name, quote in [('聚变堆材料', '闵行区计划发展聚变堆结构材料，具体建设项目需要后续落实。'),
+                            ('飞控系统', '闵行区计划发展飞控系统芯片，具体项目建设需要后续落实。')]:
+            _, node = self.run_node(quote, name=name)
+            self.assertEqual(node['judgment']['level'], 'unknown')
+
+    def test_direct_node_evidence_does_not_depend_on_model_selection_or_status(self):
+        def failed(*args): raise RuntimeError('selection failed')
+        out, node = self.run_node('闵行区飞控系统生产线已实现量产，原始材料披露了已完成的生产设施。', model=failed)
+        self.assertEqual(node['judgment']['level'], 'strong')
+        self.assertEqual(out['assessment']['state'], 'ready')
+        self.assertTrue(node['findings'])
+
+    def test_local_cluster_plan_inherits_into_same_sentence_product_list(self):
+        _, node = self.run_node('重点集聚航电系统、飞控系统、起落架系统等机载系统，以及主控芯片、核心传感器等基础元器件。',
+            name='核心传感器', title='上海市闵行区人民政府网站', topic='低空经济整机配套承接集聚')
+        self.assertEqual(node['judgment']['level'], 'mid')
+        self.assertEqual(node['judgment']['basis'], 'local_plan')
+
+    def test_parent_shortboard_does_not_make_child_planned_product_red(self):
+        _, node = self.run_node('闵行区补齐火箭发动机产业链短板，支持液氧甲烷发动机批量化生产，逐步培育相关配套。',
+            name='液氧甲烷发动机')
+        self.assertEqual(node['judgment']['level'], 'mid')
+        self.assertFalse(any(f['kind'] == 'gap' for f in node['findings']))
+        self.assertEqual(node['level'], 'unknown')
+
+    def test_national_policy_does_not_become_local_plan(self):
+        _, node = self.run_node('全国计划加强飞控系统关键技术研发，具体建设内容另行安排。',
+            title='闵行区转载全国航空产业政策')
+        self.assertEqual(node['judgment']['level'], 'unknown')
+        self.assertFalse(any(f['scope'] == 'local' for f in node['findings']))
+
+
 class LocalAssessmentTests(unittest.TestCase):
     def test_real_minhang_rocket_supply_and_coordination_diagnosis_is_chain_only(self):
         quote='闵行已集聚航天航空“国家队”龙头企业，初步形成研发、制造、运维全链条布局，但仍存在产业市场竞争力需不断提升、产业链上下游协同机制有待加强、市场应用场景有待进一步培育、产业链基础设施建设有待加快等问题。据此，九三学社区委提交了《关于加快推进闵行航空产业高质量发展的建议》，其中提到“链衔接较松散、配套能力不足、融合度不高”等。'

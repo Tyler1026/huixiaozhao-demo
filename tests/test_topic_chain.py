@@ -506,7 +506,7 @@ class ChainResearchCoverageTests(unittest.TestCase):
         self.assertEqual(len(search_plan('闵行区', TOPIC, 'draft')), 3)
         self.assertEqual(len(search_plan('闵行区', TOPIC, 'full')), 5)
         queries = search_plan('闵行区', TOPIC, 'chain')
-        self.assertEqual(len(queries), 7)
+        self.assertEqual(len(queries), 9)
         self.assertIn('上游', queries[0]); self.assertIn('总装', queries[1]); self.assertIn('下游', queries[2])
         self.assertIn('行动方案 全文', queries[3])
         self.assertTrue(all(research_facets(TOPIC).values()))

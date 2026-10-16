@@ -22,9 +22,9 @@ AERO_DIAGNOSIS = ('闵行已集聚航天航空“国家队”龙头企业，初�
 
 
 class AssessmentParagraphTests(unittest.TestCase):
-    def test_chain_adds_two_public_queries_without_changing_other_modes(self):
+    def test_chain_queries_cover_existing_supply_and_constraints_without_private_input(self):
         queries = search_plan('闵行区', TOPIC, 'chain')
-        self.assertEqual(len(queries), 7)
+        self.assertEqual(len(queries), 9)
         self.assertIn('上游', queries[0])
         self.assertIn('中游', queries[1])
         self.assertIn('下游', queries[2])
@@ -32,6 +32,9 @@ class AssessmentParagraphTests(unittest.TestCase):
         self.assertIn('规划 建成 投产 原文', queries[4])
         self.assertIn('短板 配套不足 供应缺口 外部依赖', queries[5])
         self.assertIn('本地产能 研发中试 量产 协同配套 现状', queries[6])
+        self.assertIn('现有企业 生产基地 已投产 已交付', queries[7])
+        self.assertNotIn('国产替代招引', queries[7])
+        self.assertIn('上下游 配套产品 研发制造 已形成', queries[8])
         self.assertEqual(len(search_plan('闵行区', TOPIC, 'draft')), 3)
         self.assertEqual(len(search_plan('闵行区', TOPIC, 'full')), 5)
 
@@ -41,11 +44,22 @@ class AssessmentParagraphTests(unittest.TestCase):
         self.assertIn('评价', rows[0]['chain_facets'])
         self.assertNotIn('level', rows[0])
 
+    def test_existing_supply_survives_a_pool_dominated_by_plans(self):
+        plans = [{'id': f'plan-{i}', 'quote': '计划推进培养基项目建设及配套研发，实施进度和当地供给规模仍需要核查。',
+                  'chain_facets': ['评价', '上游'], 'relevance_score': 100} for i in range(30)]
+        quote = '闵行已形成生物医药产业基础，全区集聚相关企业，产业链覆盖原料药供应和医药研发等环节。'
+        foundation = select_source_paragraphs(quote, TOPIC, mode='chain')[0]
+        foundation['id'] = 'existing-supply'
+        self.assertIn('基础', foundation['chain_facets'])
+        picked = _balanced_chain_rows(plans + [foundation], 6, 4000)
+        self.assertIn(foundation, picked)
+        self.assertEqual(foundation['quote'], quote)
+
     def test_matching_industry_title_supplies_context_for_real_bio_diagnosis(self):
         rows = select_source_paragraphs(BIO_DIAGNOSIS, TOPIC, mode='chain',
                                         source_title='从现状剖析到落地行动，多方智慧共绘闵行生物医药新蓝图')
         self.assertEqual([r['quote'] for r in rows], [BIO_DIAGNOSIS])
-        self.assertEqual(rows[0]['chain_facets'], ['评价'])
+        self.assertEqual(rows[0]['chain_facets'], ['评价', '约束'])
         self.assertEqual(rows[0]['topic_context'], 'source_title')
         self.assertTrue(rows[0]['title_match_terms'])
 
@@ -91,7 +105,7 @@ class AssessmentParagraphTests(unittest.TestCase):
                 rows.append({'id': lane + str(i), 'quote': lane * 100,
                              'chain_facets': [lane], 'relevance_score': 100})
         diagnosis = {'id': 'late-diagnosis', 'quote': BIO_DIAGNOSIS,
-                     'chain_facets': ['评价'], 'relevance_score': 0}
+                     'chain_facets': ['评价', '约束'], 'relevance_score': 0}
         rows.append(diagnosis)
         picked = _balanced_chain_rows(rows, 8, 4000)
         self.assertIn(diagnosis, picked)
@@ -108,12 +122,12 @@ class AssessmentResearchTests(unittest.TestCase):
         result = research_topic('闵行区', TOPIC, mode='chain', provider=provider,
                                 basis=['SECRET_PRIVATE_MATERIAL'], questions=['SECRET_ANSWER'])
         self.assertEqual(result['status'], 'ready')
-        self.assertEqual(len(provider.calls), 7)
+        self.assertEqual(len(provider.calls), 9)
         self.assertNotIn('SECRET', json.dumps(provider.calls))
         self.assertEqual(len(result['evidence']), 1)
         row = result['evidence'][0]
         self.assertEqual(row['quote'], BIO_DIAGNOSIS)
-        self.assertEqual(row['chain_facets'], ['评价'])
+        self.assertEqual(row['chain_facets'], ['评价', '约束'])
         archive = result['sources'][row['source_id']]
         self.assertIn(row['quote'], archive['fulltext'])
         self.assertEqual(archive['fulltext_sha256'], hashlib.sha256(archive['fulltext'].encode()).hexdigest())
@@ -138,13 +152,13 @@ class AssessmentResearchTests(unittest.TestCase):
         self.assertLessEqual(sum(len(json.dumps(r, ensure_ascii=False)) for r in result['evidence']), 40000)
         self.assertTrue(any(row['quote'] == BIO_DIAGNOSIS for row in result['evidence']))
 
-    def test_seven_queries_share_existing_deadline_and_three_workers(self):
+    def test_nine_queries_share_existing_deadline_and_three_workers(self):
         provider = FakeSearch(delay=.06)
         started = time.monotonic()
         result = research_topic('闵行区', TOPIC, mode='chain', provider=provider,
                                 deadline_seconds=.015)
         self.assertLess(time.monotonic()-started, .15)
-        self.assertEqual(len(result['queries']), 7)
+        self.assertEqual(len(result['queries']), 9)
         self.assertTrue(any(e['code'] == 'research_deadline' for e in result['errors']))
         time.sleep(.08)
         self.assertLessEqual(provider.metrics['maximum'], 3)

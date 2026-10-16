@@ -73,7 +73,7 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
         event('research.status', stage='classification', message='正在核对原文、环节归类和规划状态')
         result = build(context, findings, complete)
         from .chain_assessment import build_assessment, unavailable_assessment
-        event('research.status', stage='assessment', message='正在区分本地短板、已有支撑与证据不足')
+        event('research.status', stage='assessment', message='正在逐环节研判已有基础、培育方向与补链短板')
         try:
             assessment_result = (assessment_builder or build_assessment)(context, findings, result, complete)
         except Exception:

@@ -286,3 +286,13 @@ body.industry-view .nav-copy small{font-size:10px}
 @media(max-width:600px){.chain-assessment-panel{margin-inline:10px!important;padding:13px!important}.chain-assessment-dimensions{grid-template-columns:repeat(2,minmax(0,1fr))!important}.chain-assessment-dimension .chain-assessment-badge{font-size:10px!important}.chain-assessment-dimension .chain-evidence-badge{display:block!important;width:max-content;margin:5px 0 0!important}}
 
 .chain-assessment-tags .chain-evidence-badge{margin-left:0!important;font-weight:400}
+
+/* Three-color action judgment; factual evidence remains in disclosures. */
+.industry-page .industry-chain-node.judgment-strong{background:#f4faf6!important;border-color:#b9d5c5!important;border-top-color:#76ae8c!important}
+.industry-page .industry-chain-node.judgment-mid{background:#fffcef!important;border-color:#e6d9a7!important;border-top-color:#d3b45d!important}
+.industry-page .industry-chain-node.judgment-weak{background:#fff6f3!important;border-color:#e9c9c0!important;border-top-color:#d38270!important}
+.industry-page .industry-chain-node.judgment-unknown{background:#fff!important;border-color:#d9e2e9!important;border-top-color:#c5d1da!important}
+.industry-page .chain-priority-panel{padding:13px 16px!important;background:#f8fbfd!important}
+.chain-priority-count.is-strong{color:#498262}.chain-priority-count.is-mid{color:#9a7629}.chain-priority-count.is-weak{color:#b35c4b}.chain-priority-count.is-unknown{color:#8b9aa7}
+.industry-page .industry-chain-node .chain-node-judgment-reason{font-size:11px!important;margin:8px 0!important;font-weight:400!important}
+.chain-priority-panel .chain-assessment-details>summary,.chain-priority-panel .chain-assessment-criteria>summary,.chain-priority-panel .chain-factual-dimensions>summary{font-size:10px;color:#70889c;font-weight:500!important}

@@ -52,6 +52,8 @@ _CHAIN_ASSESSMENT = re.compile(
     r'供需对接|供应缺口|供给缺口|配套能力|协同机制|中试资源|技术成熟度|成熟(?:产品|机载|配套)|'
     r'已(?:形成|建成|投产|具备|集聚|实现)|量产|批量(?:化)?生产|产能|研发能力|'
     r'研发平台|中试平台|供应体系|配套体系|完善的产业生态')
+_CHAIN_BASE = re.compile(r'已(?:经)?(?:形成|建成|投产|具备|集聚|实现|交付)|组建|量产|批量(?:化)?生产|现有.{0,12}(?:企业|供应|产能)|覆盖.{0,12}(?:研发|生产|供应)')
+_CHAIN_CONSTRAINT = re.compile(r'不足|短缺|缺乏|短板|瓶颈|不畅|脱节|受制|受限|进口依赖|依赖进口|对外依存')
 # Only used when a diagnostic paragraph borrows its industry context from the
 # source title. A city name or a generic government-site title is insufficient.
 _INDUSTRY_CONTEXT_TERMS = (
@@ -87,13 +89,18 @@ def search_plan(city, topic, mode='draft'):
     if mode == 'chain':
         from .topic_chain import research_facets
         facets = research_facets(topic)
+        # Intent words otherwise bias every query toward future action plans.
+        # These two shorter queries explicitly look for existing local supply.
+        subject = re.sub(r'本地化|国产替代|前沿赛道|补链|强链|招引|招商|承接|集聚|培育', '', topic).strip() or topic
         return [f'{common} 产业链 上游 材料 关键部件 '+ ' '.join(facets['上游'][:5]),
                 f'{common} 产业链 中游 研制 制造 总装 测试 '+ ' '.join(facets['中游'][:5]),
                 f'{common} 产业链 下游 运营 应用 服务 '+ ' '.join(facets['下游'][:5]),
                 f'{common} 产业链 行动方案 全文 site:gov.cn',
                 f'{common} 产业链 规划 建成 投产 原文',
                 f'{common} 本地产业链 短板 配套不足 供应缺口 外部依赖 原文',
-                f'{common} 本地产能 研发中试 量产 协同配套 现状 原文']
+                f'{common} 本地产能 研发中试 量产 协同配套 现状 原文',
+                f'{city} {subject} 现有企业 生产基地 已投产 已交付',
+                f'{city} {subject} 上下游 配套产品 研发制造 已形成']
     queries = [f'{common} 产业基础 重点企业 官方发布',
                f'{common} 产业政策 行动方案 适用条件 site:gov.cn',
                f'{common} 企业官网 年度报告 项目建设']
@@ -138,7 +145,7 @@ def _balanced_chain_rows(candidates, limit, char_limit=None):
     """Keep whole diagnostic excerpts alongside the three industrial lanes."""
     selected, seen, size = [], set(), 0
     buckets = {lane: [row for row in candidates if lane in row.get('chain_facets', [])]
-               for lane in ('评价', '上游', '中游', '下游')}
+               for lane in ('约束', '基础', '评价', '上游', '中游', '下游')}
     def key(row):
         return row.get('id') or row['quote']
     def accept(row):
@@ -211,6 +218,10 @@ def select_source_paragraphs(text, topic, *, limit=None, mode='draft', source_ti
                 candidate['chain_facets'] = [lane for lane, found in facet_matches.items() if found]
                 if assessment:
                     candidate['chain_facets'].append('评价')
+                if _CHAIN_BASE.search(paragraph):
+                    candidate['chain_facets'].append('基础')
+                if _CHAIN_CONSTRAINT.search(paragraph):
+                    candidate['chain_facets'].append('约束')
                 if from_title and not matches:
                     candidate['topic_context'] = 'source_title'
                     candidate['title_match_terms'] = title_matches
