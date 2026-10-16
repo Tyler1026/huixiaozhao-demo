@@ -41,6 +41,76 @@ def assess(bundle, rows):
     return build_assessment(CONTEXT, bundle, CHAIN, lambda *args: {'findings':rows})
 
 
+def indexed(bundle, sentence_index, **kwargs):
+    row = selected(bundle, **kwargs)
+    row.pop('quote')
+    row.pop('scope_label')
+    row['sentence_index'] = sentence_index
+    return row
+
+
+class SentenceIndexAssessmentTests(unittest.TestCase):
+    def test_index_selects_archived_sentence_and_retains_full_plan_qualification(self):
+        quote = '到2027年，计划建立新型供给体系。闵行区飞控系统供应不足问题将得到研究。'
+        bundle = research([quote])
+        before = copy.deepcopy(bundle)
+        node = assess(bundle, [indexed(bundle, 1)])['node_assessments']['n-control']
+        self.assertEqual(node['level'], 'unknown')
+        self.assertEqual(node['findings'][0]['kind'], 'plan')
+        self.assertEqual(node['findings'][0]['quote'], quote)
+        self.assertEqual(node['findings'][0]['source']['quote'], quote)
+        self.assertEqual(bundle, before)
+
+    def test_index_is_bound_to_selected_evidence_not_another_source(self):
+        bundle = research(['闵行区开展产业调研。闵行区飞控系统供应严重不足。',
+                           '闵行区飞控系统供应充足，资料未披露其他情况。'])
+        self.assertEqual(assess(bundle, [indexed(bundle, 1, index=0)])['assessment']['level'], 'weak')
+        out = assess(bundle, [indexed(bundle, 1, index=1)])
+        self.assertEqual(out['assessment']['findings'], [])
+        self.assertEqual(out['sources'], [])
+
+    def test_invalid_indices_and_forged_id_never_fall_back_to_quote(self):
+        bundle = research(['闵行区飞控系统供应严重不足，调查资料保留相关口径。'])
+        for index in (-1, 1, True, False, '0', 0.0, None, [], {}):
+            with self.subTest(index=index):
+                row = selected(bundle, sentence_index=index)
+                self.assertEqual(assess(bundle, [row])['assessment']['findings'], [])
+        row = indexed(bundle, 0)
+        row['evidence_id'] = 'tr_' + '0' * 20
+        self.assertEqual(assess(bundle, [row])['assessment']['findings'], [])
+
+    def test_both_selection_forms_must_agree(self):
+        first = '闵行区飞控系统供应严重不足。'
+        second = '闵行区飞控系统已实现量产。'
+        bundle = research([first + second])
+        matching = selected(bundle, quote=first, sentence_index=0)
+        self.assertEqual(assess(bundle, [matching])['assessment']['level'], 'weak')
+        for conflicting in (second, first + second, '供应严重不足'):
+            with self.subTest(quote=conflicting):
+                row = selected(bundle, quote=conflicting, sentence_index=0)
+                self.assertEqual(assess(bundle, [row])['assessment']['findings'], [])
+
+    def test_prompt_uses_compact_sentence_catalog_and_selection_output(self):
+        quote = '闵行区开展产业调研。闵行区飞控系统供应严重不足。'
+        bundle = research([quote])
+        calls = []
+        def complete(*args):
+            calls.append(args)
+            return {'findings': [indexed(bundle, 1)]}
+        out = build_assessment(CONTEXT, bundle, CHAIN, complete)
+        system, prompt, max_tokens = calls[0]
+        evidence = json.loads(prompt)['evidence'][0]
+        self.assertEqual(set(evidence), {'id', 'title', 'published_at', 'sentences'})
+        self.assertEqual(evidence['id'], bundle['evidence'][0]['id'])
+        self.assertEqual(evidence['sentences'], [
+            {'index': 0, 'text': '闵行区开展产业调研。'},
+            {'index': 1, 'text': '闵行区飞控系统供应严重不足。'}])
+        self.assertIn('sentence_index', system)
+        self.assertNotIn('"quote":', system)
+        self.assertEqual(max_tokens, 3000)
+        self.assertEqual(out['assessment']['level'], 'weak')
+
+
 class LocalAssessmentTests(unittest.TestCase):
     def test_real_minhang_rocket_supply_and_coordination_diagnosis_is_chain_only(self):
         quote='闵行已集聚航天航空“国家队”龙头企业，初步形成研发、制造、运维全链条布局，但仍存在产业市场竞争力需不断提升、产业链上下游协同机制有待加强、市场应用场景有待进一步培育、产业链基础设施建设有待加快等问题。据此，九三学社区委提交了《关于加快推进闵行航空产业高质量发展的建议》，其中提到“链衔接较松散、配套能力不足、融合度不高”等。'
@@ -294,6 +364,16 @@ class IntegrityAssessmentTests(unittest.TestCase):
         self.assertEqual(result['level'],'unknown')
         self.assertEqual(result['evidence_strength'],'insufficient')
         self.assertEqual(len(result['dimensions']),4)
+
+    def test_unfinished_evaluation_does_not_claim_evidence_is_insufficient(self):
+        unavailable=unavailable_assessment(CONTEXT)
+        self.assertEqual(unavailable['summary'],'本次评价未完成，已保留图谱；请重试评价或补充原始材料。')
+        bundle=research(['闵行区开展飞控系统产业调研，相关供需事实有待后续材料说明。'])
+        ready=assess(bundle,[])['assessment']
+        self.assertEqual(ready['state'],'ready')
+        self.assertEqual(ready['level'],'unknown')
+        self.assertIn('现有材料不足以评价',ready['summary'])
+        self.assertNotEqual(ready['summary'],unavailable['summary'])
 
     def test_prompt_does_not_expose_private_material_or_accept_scores(self):
         bundle=research(['闵行区飞控系统供应严重不足，相关资料保留原始调查口径。'])
