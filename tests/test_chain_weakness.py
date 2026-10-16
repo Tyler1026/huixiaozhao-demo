@@ -1,7 +1,7 @@
 import copy
 import unittest
 
-from backend.chain_weakness import build_weakness, _usable_roles, _candidate
+from backend.chain_weakness import build_weakness, _usable_roles, _candidate, _mentions_node
 from backend.topic_chain import chain_source_catalog
 from tests.test_chain_reasoning import research, premise, CONTEXT, CHAIN, FALLBACK
 
@@ -178,6 +178,42 @@ class WeaknessTests(unittest.TestCase):
         bundle = research(['闵行区飞控系统仍处于样机验证阶段，尚未量产。闵行区航空电机生产线已投产并批量交付。'])
         row = candidate(bundle, roles=[premise(bundle, 'maturity'), premise(bundle, 'operation', sentence=1, subject='航空电机')])
         self.assertIsNone(_candidate(row, {'control': '飞控系统'}, chain_source_catalog(bundle, CONTEXT), CONTEXT))
+
+    def test_unique_facility_demonstrative_does_not_inherit_other_facilities(self):
+        row = {'statement': '这一基地已正式运营。', 'sentence_index': 1,
+               'quote': '闵行区飞控测试基地已经建成。这一基地已正式运营。'}
+        self.assertTrue(_mentions_node('飞控测试基地', row))
+        row['quote'] = '飞控测试基地和航空试飞基地均已建成。这一基地已正式运营。'
+        self.assertFalse(_mentions_node('飞控测试基地', row))
+
+    def test_local_company_prefix_resolves_unique_business_short_name(self):
+        bundle = research(['来自闵行的上海青松科技有限公司已开展业务。青松科技的飞控系统已实现批量交付。'])
+        row = candidate(bundle, roles=[premise(bundle, 'local_affiliation', subject='闵行的上海青松科技有限公司'),
+                                      premise(bundle, 'operation', sentence=1)])
+        row['scope'] = 'local_enterprise'
+        out, _ = run(bundle, [row])
+        self.assertEqual(out['node_judgments']['control']['level'], 'strong')
+
+    def test_built_production_line_support_is_limited_to_facility_maturity(self):
+        bundle = research(['闵行区已建成飞控系统产线，实际产量与交付规模需要继续核查。'])
+        row = candidate(bundle, roles=[premise(bundle, 'operation', subject='飞控系统产线')])
+        row['dimension'] = 'maturity'
+        c = _candidate(row, {'control': '飞控系统产线'}, chain_source_catalog(bundle, CONTEXT), CONTEXT)
+        self.assertIsNotNone(c)
+        self.assertIn('建成不等于量产', c['comparison'])
+        self.assertIsNone(_candidate(row, {'control': '飞控系统'}, chain_source_catalog(bundle, CONTEXT), CONTEXT))
+
+    def test_adoption_requires_the_same_named_site_to_be_operating(self):
+        bundle = research(['闵行区青松工厂已建成并投入运行，正在为客户提供服务。',
+                           '青松工厂采用飞控系统，形成测试能力和配套服务。'])
+        row = candidate(bundle, roles=[premise(bundle, 'local_site', subject='青松工厂'),
+              premise(bundle, 'operation', subject='青松工厂'), premise(bundle, 'operation', 1)])
+        self.assertIsNotNone(_candidate(row, {'control':'飞控系统'}, chain_source_catalog(bundle, CONTEXT), CONTEXT))
+        other = research(['闵行区蓝天工厂已建成并投入运行，正在为客户提供服务。',
+                          '青松工厂采用飞控系统，形成测试能力和配套服务。'])
+        row['premises'] = [premise(other, 'local_site', subject='蓝天工厂'),
+                          premise(other, 'operation', subject='蓝天工厂'), premise(other, 'operation', 1)]
+        self.assertIsNone(_candidate(row, {'control':'飞控系统'}, chain_source_catalog(other, CONTEXT), CONTEXT))
 
     def test_review_sees_related_counter_source_even_if_proposal_omits_it(self):
         import json

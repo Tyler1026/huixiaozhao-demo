@@ -18,11 +18,11 @@ from .topic_chain import chain_source_catalog, _topic_supports
 LEVELS = ('strong', 'mid', 'weak', 'unknown')
 DIMENSIONS = ('supply', 'dependency', 'maturity', 'coordination')
 SCOPES = ('local', 'local_enterprise', 'industry_shared')
-_ACTUAL = re.compile(r'已|现有|目前|生产|制造|运行|运营|投运|投产|承制|发射|建成|并网|供货|交付|研制|试制|中试|首飞|在轨|组建|成立|工厂|车间')
-_DELIVERY = re.compile(r'量产|批产|批量|投产|投运|并网|供货|交付|运行|运营|生产|制造|承制|成功.{0,8}(?:发射|首飞)|在轨')
+_ACTUAL = re.compile(r'已|现有|目前|生产|制造|运行|运营|投运|投产|承制|发射|建成|并网|供货|交付|研制|试制|中试|首飞|在轨|组建|成立|工厂|车间|采用')
+_DELIVERY = re.compile(r'(?:已(?:经)?|正式|成功|实现|完成|目前|如今|现已|正在)[^，。；;]{0,15}(?:投产|投运|并网|运营|运行|交付|供货|量产|批产|批量生产|首飞|发射|在轨)|投产|投运|并网|落地运营|落地运行|批量生产|批量交付|承制')
 _DEPENDENCY = re.compile(r'依赖|进口|外购|受制|单一来源|国产化率|国产率|国产替代|境外.{0,12}(?:供货|供应)|供应商集中')
-_MATURITY = re.compile(r'尚未|仍处于|仍在|处于|在研|研发阶段|研究阶段|试验阶段|验证阶段|试制|样机|中试|首飞|首台|示范|未.{0,6}(?:商用|商业|量产|投产)|商业化.{0,8}(?:困难|挑战|瓶颈|尚早)')
-_CONSTRAINT = re.compile(r'不足|短缺|缺口|瓶颈|挑战|难题|受制|制约|受限|难以|无法|尚未|依赖|进口|外购|尚无|停产|停止生产|供货中断|周期.{0,8}(?:长|月|年)|成本.{0,8}(?:高|贵)|试制|样机|验证阶段|在研|中试')
+_MATURITY = re.compile(r'尚未|在研|研发阶段|研究阶段|试验阶段|验证阶段|试制|样机|中试(?!平台|基地|服务|中心)|首飞|未.{0,6}(?:商用|商业|量产|投产)|商业化.{0,8}(?:困难|挑战|瓶颈|尚早)')
+_CONSTRAINT = re.compile(r'不足|短缺|缺口|瓶颈|挑战|难题|受制|制约|受限|难以|无法|尚未|依赖|进口|外购|尚无|停产|停止生产|供货中断|周期.{0,8}(?:长|月|年)|成本.{0,8}(?:高|贵)|试制|样机|验证阶段|在研|中试(?!平台|基地|服务|中心)')
 _FUTURE = re.compile(r'拟(?:建|设|投|达)|计划(?:建|设|投|达)|力争|到20\d{2}年|将(?:建成|投产|实现)|鼓励|支持.{0,12}(?:研发|建设|发展|集聚)')
 _POLICY_ONLY = re.compile(r'补齐|补强|重点解决|加快|着力|规划|培育|推动|布局|鼓励')
 _EXCLUDED_ROLES = {'policy_target', 'local_presence', 'enterprise_capability', 'local_affiliation', 'local_site'}
@@ -86,6 +86,13 @@ def _literal_record(row, catalog, context):
         if role == 'local_site' and (not re.search(r'电厂|工厂|基地|码头|产线|试验场|项目', subject)
                                       or subject in ('独立储能电站', '生产基地', '测试项目', '建设项目')):
             return None
+        if role == 'local_site':
+            for city in _aliases(context.get('city')):
+                if subject.startswith(city):
+                    short = subject[len(city):].removeprefix('的')
+                    if len(short) >= 4 and not re.match(r'试飞|测试|生产|中试|研发|产业', short):
+                        subject = short
+                        break
         return {'evidence_id': row['evidence_id'], 'sentence_index': index, 'role': role,
                 'subject': subject, 'statement': sentence, 'quote': source['quote'],
                 'source': copy.deepcopy(source), 'scope': role,
@@ -138,6 +145,21 @@ def _literal_record(row, catalog, context):
             'source': copy.deepcopy(source), 'scope': scope, 'scope_label': label}
 
 
+def _mentions_node(name, premise):
+    if _literal_span(name, premise['statement']):
+        return True
+    # A demonstrative can refer to the unique same-kind facility in the
+    # immediately preceding sentence. Different products never inherit facts.
+    match = re.match(r'^(?:该|这一|这座|本)(基地|产线|电站|中心|项目)', premise['statement'])
+    index = premise.get('sentence_index')
+    sentences = _sentences(premise['quote'])
+    if not match or type(index) is not int or index < 1 or index >= len(sentences):
+        return False
+    noun = match.group(1)
+    previous = sentences[index-1]
+    return name.endswith(noun) and previous.count(noun) == 1 and bool(_literal_span(name, previous))
+
+
 def _candidate(row, names, catalog, context):
     if not isinstance(row, dict) or not isinstance(row.get('node_id'), str) or row.get('node_id') not in names:
         return None
@@ -166,7 +188,7 @@ def _candidate(row, names, catalog, context):
     if any(p is None for p in premises + opposition):
         return None
     actual = [p for p in premises if p['role'] not in _EXCLUDED_ROLES]
-    if not any(_literal_span(names[row['node_id']], p['statement']) for p in premises
+    if not any(_mentions_node(names[row['node_id']], p) for p in premises
                if p['role'] not in ('local_presence', 'local_affiliation', 'local_site')):
         return None
     local = [p for p in actual if p['scope'] == 'local']
@@ -184,7 +206,14 @@ def _candidate(row, names, catalog, context):
             core = re.sub(r'^(?:上海市|上海)', '', core)
             same_paragraph = (anchor['role'] == 'local_affiliation' and len(core) >= 4
                               and anchor['quote'] == fact['quote'] and core in fact['statement'])
-            if not direct and not same_paragraph:
+            entity_index = context.get('_entity_index') or {}
+            shared = set(entity_index.get(anchor['evidence_id'], [])) & set(entity_index.get(fact['evidence_id'], []))
+            anchor_name = anchor['subject']
+            for city in _aliases(context.get('city')):
+                anchor_name = re.sub('^' + re.escape(city) + r'(?:的企业|企业|的)', '', anchor_name)
+            verified_alias = (anchor['role'] == 'local_affiliation'
+                              and any(anchor_name == name for name in shared))
+            if not direct and not same_paragraph and not verified_alias:
                 continue
             if anchor['role'] == 'local_site':
                 local.append(fact)
@@ -201,8 +230,21 @@ def _candidate(row, names, catalog, context):
     if level == 'strong':
         # A business portfolio or a project announcement cannot be green.
         support = local if scope == 'local' else actual if scope == 'local_enterprise' and links else []
-        if not any(p['role'] == 'operation' and _DELIVERY.search(p['statement'])
-                   and _literal_span(names[row['node_id']], p['statement']) for p in support):
+        direct = any(p['role'] == 'operation' and _DELIVERY.search(p['statement'])
+                     and _mentions_node(names[row['node_id']], p) for p in support)
+        facility = (dimension == 'maturity' and re.search(r'(?:产线|生产线|工厂)$', names[row['node_id']])
+                    and any(p['role'] == 'operation' and _mentions_node(names[row['node_id']], p)
+                            and re.search(r'建成[^。]{0,35}(?:产线|生产线|工厂)', p['statement']) for p in support))
+        adopted = False
+        if scope == 'local':
+            for site in (p['subject'] for p in premises if p['role'] == 'local_site'):
+                has_operation = any(p['role'] == 'operation' and site in p['statement']
+                                    and _DELIVERY.search(p['statement']) for p in local)
+                has_configuration = any(p['role'] == 'operation' and site in p['statement']
+                                        and _mentions_node(names[row['node_id']], p)
+                                        and '采用' in p['statement'] for p in local)
+                adopted = adopted or (has_operation and has_configuration)
+        if not (direct or facility or adopted):
             return None
     if level in ('mid', 'weak'):
         if not any(p['role'] in ('dependency', 'maturity', 'constraint') for p in actual):
@@ -222,7 +264,8 @@ def _candidate(row, names, catalog, context):
     if any(n not in numbers for n in _NUMBER.findall('\n'.join([reason, comparison, action, *missing, *limits]))):
         return None
     if level == 'strong':
-        comparison = '以是否已有实际运行、生产或交付实践为基准；绿色仅表示已有支撑，不推断供需充足或其他地区的总体水平。'
+        comparison = ('以生产设施是否已建成为基准；建成不等于量产、满产或稳定交付。' if facility and not direct else
+                      '以是否已有实际运行、生产或交付实践为基准；绿色仅表示已有支撑，不推断供需充足或其他地区的总体水平。')
     return {'node_id': row['node_id'], 'name': names[row['node_id']], 'level': level,
             'dimension': dimension, 'scope': scope, 'reason': reason, 'comparison': comparison,
             'action': action, 'missing': missing, 'limitations': limits,
@@ -287,6 +330,8 @@ def build_weakness(context, research, chain_result, assessment_result, complete)
         return (sid not in retained, -bool(_ACTUAL.search(text) and not _FUTURE.search(text)),
                 -sum(name in text for name in names.values()))
     catalog = dict(sorted(available.items(), key=priority)[:96])
+    from .public_research import _companion_index, _city_terms
+    binding_context = dict(context, _entity_index=_companion_index(list(catalog.values()), _city_terms(context['city'])))
     result = {'node_judgments': {k: unknown() for k in names}, 'sources': [], 'review_diagnostics': []}
     system = '''你负责评价产业环节实际薄弱程度，不是政策重要性。只用给定原文，返回严格JSON：
 {"nodes":[{"node_id":"给定id","level":"strong|mid|weak|unknown","dimension":"supply|dependency|maturity|coordination","scope":"local|local_enterprise|industry_shared","premises":[{"evidence_id":"给定id","sentence_index":0,"role":"operation|dependency|maturity|constraint|benchmark|industry_fact|local_presence|enterprise_capability|local_affiliation|local_site","subject":"原文主体"}],"counter_evidence":[],"reason":"150字内具体判断","comparison":"180字内比较基准及能力/约束差异","action":"140字内行动","missing":["还缺什么"],"limitations":["结论边界"]}]}。
@@ -356,7 +401,7 @@ local_presence用于正式披露的注册/办公关联，subject为同一原段�
                         or any(not isinstance(k, str) or k not in fact_refs for k in ids + against)):
                     continue
                 row = dict(row, premises=[fact_refs[k] for k in ids], counter_evidence=[fact_refs[k] for k in against])
-            candidate = _candidate(row, names, catalog, context)
+            candidate = _candidate(row, names, catalog, binding_context)
             if not candidate:
                 continue
             if key in proposals:
@@ -374,18 +419,29 @@ local_presence用于正式披露的注册/办公关联，subject为同一原段�
                    for p in fact_refs.values()):
                 continue
             for ref in fact_refs.values():
-                if (ref['role'] != 'operation'
-                        or not _literal_span(name, _sentences(catalog[ref['evidence_id']]['quote'])[ref['sentence_index']])):
+                bound = _literal_record(ref, catalog, binding_context)
+                if ref['role'] != 'operation' or not bound or not _mentions_node(name, bound):
                     continue
                 refs = [ref] + [p for p in fact_refs.values()
                                 if p['evidence_id'] == ref['evidence_id'] and p['role'] in ('local_site', 'local_affiliation')][:2]
+                if '采用' in bound['statement']:
+                    for location in (p for p in fact_refs.values() if p['role'] == 'local_site'):
+                        site = _literal_record(location, catalog, binding_context)
+                        if site and site['subject'] in bound['statement']:
+                            operation = next((p for p in fact_refs.values() if p['role'] == 'operation'
+                                and site['subject'] in _sentences(catalog[p['evidence_id']]['quote'])[p['sentence_index']]
+                                and _DELIVERY.search(_sentences(catalog[p['evidence_id']]['quote'])[p['sentence_index']])), None)
+                            if operation:
+                                refs = [ref, location, operation]
+                                break
                 for scope in ('local', 'local_enterprise'):
-                    baseline = dict(node_id=key, level='strong', dimension='supply', scope=scope, premises=refs,
-                        counter_evidence=[], reason='原文披露本环节已有实际运行、生产或交付支撑。',
+                    built = bool(re.search(r'(?:产线|生产线|工厂)$', name) and re.search(r'建成[^。]{0,35}(?:产线|生产线|工厂)', bound['statement']))
+                    baseline = dict(node_id=key, level='strong', dimension='maturity' if built else 'supply', scope=scope, premises=refs,
+                        counter_evidence=[], reason='原文披露本环节已有实际设施基础。' if built else '原文披露本环节已有实际运行、生产或交付支撑。',
                         comparison='以是否已有运行或交付实践为基准；已有支撑不等于供需充足。',
                         action='继续核对当前供需规模与稳定交付情况。', missing=[],
                         limitations=['仅证明已有支撑，不能排除其他维度的约束。'])
-                    candidate = _candidate(baseline, names, catalog, context)
+                    candidate = _candidate(baseline, names, catalog, binding_context)
                     if candidate:
                         proposals[key] = candidate
                         break

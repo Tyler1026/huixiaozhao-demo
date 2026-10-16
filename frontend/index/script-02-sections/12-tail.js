@@ -3246,7 +3246,7 @@ function actualWeaknessView(value){
   var j=value&&value.judgment;if(!value||value.contract!=='chain-assessment-v1'||!j||j.contract!=='chain-judgment-v3')return null;
   var styles={strong:{label:'已有支撑',color:'#2c7951',bg:'#eaf7ef',border:'#8aba9e',card:'#f4faf6'},mid:{label:'存在短板',color:'#8f6416',bg:'#fff4cf',border:'#d8bc69',card:'#fffcef'},weak:{label:'明显薄弱',color:'#b24738',bg:'#fdebe5',border:'#db8d7e',card:'#fff6f3'},unknown:{label:'尚不能评价',color:'#738293',bg:'#f5f7fa',border:'#cbd4de',card:'#fff'}};
   var valid=Object.prototype.hasOwnProperty.call(styles,j.level),level=valid?j.level:'unknown',s=styles[level];
-  var scopes={local:'本地实际条件',local_enterprise:'关联企业风险',industry_shared:'行业共性约束'},dimensions={supply:'实际供给',dependency:'关键依赖',maturity:'交付成熟度',coordination:'配套协同'};
+  var scopes={local:'本地实际条件',local_enterprise:'关联企业风险',industry_shared:'行业共性约束'},dimensions={supply:'实际供给',dependency:'关键依赖',maturity:'工程成熟度',coordination:'配套协同'};
   var ids=Array.isArray(j.evidence_ids)?j.evidence_ids:[],facts={weak:'明显薄弱',attention:'存在短板',supported:'已有支撑',unknown:'证据不足'};
   return {available:true,judgment:valid,actual:true,reasoning:true,level:level,label:s.label,color:s.color,bg:s.bg,border:s.border,card:s.card,reason:j.reason||'',basis:j.dimension||'',basisLabel:[dimensions[j.dimension],scopes[j.scope]].filter(Boolean).join(' · '),evidenceCount:ids.filter(function(id,i){return ids.indexOf(id)===i;}).length,confidence:({high:'较高',medium:'中等',low:'较低'}[j.confidence]||''),method:'实际评价',action:j.action||'',comparison:j.comparison||'',factLabel:facts[value.level]||'尚未评价',evidence:({multiple_sources:'多源材料',single_source:'单源材料',insufficient:'待补证'}[value.evidence_strength]||'待补证')};
 }

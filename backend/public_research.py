@@ -309,6 +309,9 @@ def _entity_names(text, cities):
                 name = re.sub('^' + re.escape(city) + r'(?:的)?企业', '', name)
             while _NAME_PREFIX.match(name):
                 name = _NAME_PREFIX.sub('', name, count=1)
+            for city in sorted(cities, key=len, reverse=True):
+                name = re.sub(r'^来自(?=' + re.escape(city) + r'(?:的|企业))', '', name)
+                name = re.sub('^' + re.escape(city) + r'(?:的企业|企业|的)', '', name)
             if len(name) >= 5:
                 names.add(name)
     return names
