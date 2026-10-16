@@ -413,6 +413,85 @@ class ChainModelContractTests(unittest.TestCase):
                 build_chain(CONTEXT, bundle, lambda *args: raw)
 
 
+class ConstraintSubjectSelectionTests(unittest.TestCase):
+    def fixture(self, quote):
+        return research([quote, '计划研制星载计算单元，建设商业火箭总装测试平台，发展卫星运营服务，实施条件仍待核实。'])
+
+    def initial(self, bundle, extra=()):
+        return plan(bundle, ['星载计算单元', '商业火箭总装测试', '卫星运营服务', *extra])
+
+    def test_named_constraint_parent_is_added_and_retained_beside_child_same_source(self):
+        quote='补齐火箭发动机产业链短板，支持液氧甲烷火箭发动机批量化生产，相关实施安排将另行公布。'
+        bundle=self.fixture(quote)
+        calls=[]
+        def complete(*args):
+            calls.append(args)
+            return self.initial(bundle,['液氧甲烷火箭发动机']) if len(calls)==1 else plan(bundle,['火箭发动机'])
+        out=build_chain(CONTEXT,bundle,complete)
+        self.assertEqual(len(calls),2)
+        self.assertEqual(calls[1][2],1600)
+        request=json.loads(calls[1][1])
+        self.assertEqual([r['id'] for r in request['constraint_sources']],[bundle['evidence'][0]['id']])
+        by_name={n['name']:n for n in nodes(out)}
+        self.assertIn('火箭发动机',by_name)
+        self.assertIn('液氧甲烷火箭发动机',by_name)
+        self.assertEqual(by_name['火箭发动机']['extraction_method'],'constraint_selection')
+        self.assertEqual(by_name['火箭发动机']['level'],'unknown')
+        self.assertEqual(by_name['火箭发动机']['sources'][0]['quote'],quote)
+        self.assertEqual(out['edges'],[])
+
+    def test_parent_without_distinct_constraint_still_deduplicates(self):
+        bundle=self.fixture('研发火箭发动机和液氧甲烷火箭发动机等配套产品，相关计划和条件将另行确认。')
+        out=normalize_chain_plan(plan(bundle,['火箭发动机','液氧甲烷火箭发动机']),bundle,CONTEXT)
+        self.assertEqual([n['name'] for n in nodes(out)],['液氧甲烷火箭发动机'])
+
+    def test_general_chain_shortage_cannot_be_distributed_to_listed_product(self):
+        bundle=self.fixture('产业链整体仍有短板。火箭发动机是本次产业目录列举的研究产品，具体条件另行核实。')
+        first=self.initial(bundle)
+        calls=[]
+        def complete(*args):
+            calls.append(args)
+            return first if len(calls)==1 else plan(bundle,['火箭发动机'])
+        out=build_chain(CONTEXT,bundle,complete)
+        self.assertEqual(out,normalize_chain_plan(first,bundle,CONTEXT))
+
+    def test_test_service_constraint_does_not_select_tested_product(self):
+        quote='重点解决卫星通信载荷测试服务能力的瓶颈问题，计划建设相应测试系统，实施条件将另行确认。'
+        bundle=self.fixture(quote)
+        calls=[]
+        def complete(*args):
+            calls.append(args)
+            return self.initial(bundle) if len(calls)==1 else plan(bundle,['卫星通信载荷','卫星通信载荷测试服务'])
+        out=build_chain(CONTEXT,bundle,complete)
+        names={n['name'] for n in nodes(out)}
+        self.assertIn('卫星通信载荷测试服务',names)
+        self.assertNotIn('卫星通信载荷',names)
+
+    def test_optional_selection_failures_keep_original_graph(self):
+        bundle=self.fixture('补齐火箭发动机产业链短板，相关技术和项目安排仍须进一步研究明确。')
+        first=self.initial(bundle)
+        for bad in [RuntimeError('provider failed'),'not-json',{'nodes':'bad'},
+                    {'nodes':[{'name':'火箭发动机','evidence_ids':['forged']}]}]:
+            with self.subTest(bad=repr(bad)):
+                calls=[]
+                def complete(*args):
+                    calls.append(args)
+                    if len(calls)==1:return first
+                    if isinstance(bad,Exception):raise bad
+                    return bad
+                self.assertEqual(build_chain(CONTEXT,bundle,complete),normalize_chain_plan(first,bundle,CONTEXT))
+
+    def test_constraint_selection_is_capped_at_six_without_industry_specific_rules(self):
+        names=[f'{char}型发动机' for char in '甲乙丙丁戊己庚辛']
+        bundle=self.fixture('。'.join('补齐'+name+'产业链短板' for name in names)+'。相关实施计划待后续确定。')
+        calls=[]
+        def complete(*args):
+            calls.append(args)
+            return self.initial(bundle) if len(calls)==1 else plan(bundle,names)
+        out=build_chain(CONTEXT,bundle,complete)
+        self.assertEqual(sum(n['name'] in names for n in nodes(out)),6)
+
+
 class LiteralFallbackTests(unittest.TestCase):
     topic = '低空经济整机配套承接集聚'
 
@@ -431,7 +510,7 @@ class LiteralFallbackTests(unittest.TestCase):
     def test_real_flight_control_enumeration_fills_one_from_same_original_catalog(self):
         quote = '面向未来，闵行区将聚力搭建三大核心平台。技术创新平台依托产业联盟、供应链对接会等，聚力突破航电、电机材料、飞控系统等卡脖子技术；场景落地平台打造超大城市低空综合场景示范基地；生态共建平台支持eVTOL产业发展。'
         result, calls = self.generate(quote)
-        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(calls), 3)
         upstream = result['chain'][0]['nodes']
         self.assertEqual(len(upstream), 1)
         self.assertEqual(upstream[0]['name'], '飞控系统')

@@ -5,6 +5,16 @@ function assessment(overrides={}){return {contract:'chain-assessment-v1',state:'
 function judgment(level,overrides={}){return {contract:'chain-judgment-v1',level,basis:'明确材料与本地条件的研判',reason:'结合现有基础，优先核对配套和实施条件。',evidence_ids:['S1'],...overrides};}
 function finding(overrides={}){return {id:'f1',target_id:'n1',dimension:'supply',kind:'gap',scope:'local',scope_label:'本地实际条件',quote:'当地关键配套仍存在缺口，需核对建设及投产状态。',evidence_id:'S1',source:{id:'S1',url:'https://official.example/source',title:'地方正式披露',published_at:'2026-09-09T00:00:00.000Z',retrieved_at:'2026-10-16T06:24:43.303057+00:00'},severity:'high',...overrides};}
 for(const app of ['index','ops']){
+ test(app+' reviewed reasoning shows action, premises and boundaries without upgrading factual state',()=>{
+  const {c}=setup(app),premise={evidence_id:'S1',role:'policy_target',subject:'火箭发动机',quote:'行动方案提出补齐火箭发动机产业链短板。',source:{url:'https://official.example/plan',title:'行动方案',published_at:'2025-01-02'}};
+  const value=assessment({judgment:{contract:'chain-judgment-v2',level:'weak',rule:'policy_bottleneck',method:'inference',confidence:'medium',reason:'政策明确识别该环节补链需求。',action:'核对项目进展及现有配套能力。',premises:[premise],evidence_ids:['S1'],limitations:['政策识别不等于当前实测缺口。']}}),before=JSON.stringify(value);
+  const html=c.chainNodeCardHtml({name:'火箭发动机',assessment:value}),main=html.split('<details')[0];
+  for(const text of ['优先补链','分析推论','中等把握','政策识别的补链重点','核对项目进展'])assert.ok(main.includes(text),text);
+  for(const text of ['判断依据链',premise.quote,'政策识别不等于当前实测缺口','事实层评价：证据不足'])assert.ok(html.includes(text),text);
+  assert.equal(JSON.stringify(value),before);
+  value.judgment.action='<img src=x onerror=x>';value.judgment.limitations=['<script>bad</script>'];value.judgment.premises[0].subject='<svg onload=x>';
+  const escaped=c.chainNodeCardHtml({name:'环节',assessment:value});assert.doesNotMatch(escaped,/<img|<script|<svg/);assert.match(escaped,/&lt;img/);assert.match(escaped,/&lt;script/);assert.match(escaped,/&lt;svg/);
+ });
  test(app+' assessment labels use a separate bounded vocabulary and never infer from legacy levels',()=>{
   const {c}=setup(app),labels={weak:'优先补链',attention:'优先补链',supported:'已有基础',unknown:'待研判'};
   for(const [level,label] of Object.entries(labels)){const html=c.chainNodeCardHtml({name:'测试环节',level:'strong',status:'reported',assessment:assessment({level})});assert.ok(html.includes('>'+label+'</span>'));assert.match(html,/材料披露 · 待核/);assert.doesNotMatch(html,/相对完善|>无风险<|本地优势/);}

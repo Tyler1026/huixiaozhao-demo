@@ -2105,7 +2105,8 @@ function homePage(p){
       'border-radius:14px;cursor:pointer;text-align:left;transition:all .15s;flex:1;min-width:0">'+
       '<div style="font-size:20px;margin-bottom:6px">'+t.icon+'</div>'+
       '<div style="font-size:13px;font-weight:700;color:#0b183b;margin-bottom:4px">'+t.label+'</div>'+
-      '<div style="font-size:11.5px;color:#8492a6;line-height:1.4">'+t.desc+'</div>'+
+      '<div style="font-size:11.5px;color:#8492a6;line-height:1.4">'+escapeChainText(t.desc)+'</div>'+
+      (t.desc?'<span style="font-size:9px;color:#9aa6b5;margin-top:4px">原始方向摘要 · 待核</span>':'')+
       (isActive?'<div style="margin-top:8px;width:8px;height:8px;border-radius:50%;background:#1a56db"></div>':'')+
     '</button>';
   }).join('');
@@ -2584,7 +2585,7 @@ function generateChainFromReport(topic, reportText, city, force){
   if(!force&&currentEvidenceChain(topic,key))return Promise.resolve(true);
   var exact=(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'');
   if(!exact||exact.trim().length<100){rs.chainErrorByTopic=rs.chainErrorByTopic||{};rs.chainErrorByTopic[topic]='当前报告正文不足 100 字，请先完善当前方向报告后再生成图谱。';if(typeof toast==='function')toast(rs.chainErrorByTopic[topic]);return Promise.resolve(false);}
-  var controller=new AbortController(),timer=setTimeout(function(){controller.abort();},180000);
+  var controller=new AbortController(),timer=setTimeout(function(){controller.abort();},360000);
   _chainGenInFlight[inflight]={message:'正在确认当前材料已保存…'};
   function active(){return PROJECTS[key]&&savedEvidenceIdentity(key,topic)===sourceIdentity&&(PROJECTS[key].reportRequestId||REPORTSTATE[key].reportRequestId||'')===requestId&&(epoch===null||epoch===_authEpoch);}
   function show(){if(cur===key&&P()&&P().topic===topic&&view==='report')render();}
@@ -2640,7 +2641,7 @@ function chainNodeSources(node){
   var seen={},rows=[];
   all.forEach(function(source){if(!source||typeof source!=='object')return;var urls=Array.isArray(source.urls)?source.urls:[source.url||source.source_url];urls=urls.map(chainSafeSourceUrl).filter(Boolean);
     var quote=typeof source.quote==='string'?source.quote:'',id=source.id||'',sig=JSON.stringify([id,urls,quote]);if(seen[sig])return;seen[sig]=true;
-    rows.push({id:id,urls:urls,quote:quote,title:source.title||source.cite||'',date:source.published_at||source.date||'',retrieved:source.retrieved_at||''});});
+    rows.push({id:id,urls:urls,quote:quote,title:source.title||source.cite||'',date:source.published_at||source.date||'',retrieved:source.retrieved_at||'',archived:source.archived===true,fulltextScope:source.fulltext_scope||''});});
   return rows;
 }
 
@@ -2657,21 +2658,22 @@ function chainAssessmentView(value){
   var styles={strong:{label:'已有基础',color:'#2c7951',bg:'#eaf7ef',border:'#8aba9e',card:'#f4faf6'},mid:{label:'重点培育',color:'#8f6416',bg:'#fff4cf',border:'#d8bc69',card:'#fffcef'},weak:{label:'优先补链',color:'#b24738',bg:'#fdebe5',border:'#db8d7e',card:'#fff6f3'},unknown:{label:'待研判',color:'#738293',bg:'#f5f7fa',border:'#cbd4de',card:'#fff'}};
   var factLabels={weak:'明显薄弱',attention:'存在短板',supported:'已有支撑',unknown:'证据不足'},materials={multiple_sources:'多源材料',single_source:'单源材料',insufficient:'待补证'};
   var container=value&&value.contract==='chain-assessment-v1',facts=container&&value.state==='ready';
-  var judgment=container&&value.judgment&&value.judgment.contract==='chain-judgment-v1'?value.judgment:null;
+  var judgment=container&&value.judgment&&['chain-judgment-v1','chain-judgment-v2'].indexOf(value.judgment.contract)>=0?value.judgment:null;
   var legacy={weak:'weak',attention:'weak',supported:'strong',unknown:'unknown'};
   var level=judgment?(Object.prototype.hasOwnProperty.call(styles,judgment.level)?judgment.level:'unknown'):(facts&&Object.prototype.hasOwnProperty.call(legacy,value.level)?legacy[value.level]:'unknown');
-  var bases={local_gap:'本地短板',local_capability:'本地基础',local_plan:'规划培育',industry_risk:'行业风险',insufficient:'依据待补充'};
+  var bases={existing_basis:'本地基础',enterprise_presence:'企业业务布局',local_constraint:'本地约束',capacity_mismatch:'供需不匹配',dependency_exposure:'依赖风险',policy_bottleneck:'政策识别的补链重点',policy_priority:'政策培育',industry_challenge:'行业挑战',insufficient:'依据待补充',aggregate:'综合研判',local_gap:'本地短板',local_capability:'本地基础',local_plan:'规划培育',industry_risk:'行业风险',insufficient:'依据待补充'};
   var style=styles[level],ids=judgment&&Array.isArray(judgment.evidence_ids)?judgment.evidence_ids.slice():[];
   if(!ids.length&&facts){(Array.isArray(value.findings)?value.findings:[]).forEach(function(row){if(row&&typeof row.evidence_id==='string')ids.push(row.evidence_id);});}
   var unique=ids.filter(function(id,index){return typeof id==='string'&&id&&ids.indexOf(id)===index;});
   return {available:!!judgment||!!facts,judgment:!!judgment&&Object.prototype.hasOwnProperty.call(styles,judgment.level),level:level,label:style.label,color:style.color,bg:style.bg,border:style.border,card:style.card,
-    reason:judgment&&typeof judgment.reason==='string'?judgment.reason:facts&&typeof value.summary==='string'?value.summary:'',basis:judgment&&typeof judgment.basis==='string'?judgment.basis:'',basisLabel:judgment&&typeof judgment.basis==='string'?(Object.prototype.hasOwnProperty.call(bases,judgment.basis)?bases[judgment.basis]:judgment.basis):'',evidenceCount:unique.length,
-    factLabel:facts&&Object.prototype.hasOwnProperty.call(factLabels,value.level)?factLabels[value.level]:'尚未评价',evidence:facts&&Object.prototype.hasOwnProperty.call(materials,value.evidence_strength)?materials[value.evidence_strength]:'待补证'};
+    reason:judgment&&typeof judgment.reason==='string'?judgment.reason:facts&&typeof value.summary==='string'?value.summary:'',basis:judgment&&(judgment.rule||judgment.basis)||'',basisLabel:judgment&&(judgment.rule||judgment.basis)?(bases[judgment.rule||judgment.basis]||judgment.rule||judgment.basis):'',evidenceCount:unique.length,
+    reasoning:!!judgment&&judgment.contract==='chain-judgment-v2',confidence:judgment&&({high:'较高',medium:'中等',low:'较低'}[judgment.confidence]||''),method:judgment&&judgment.method==='inference'?'分析推论':'直接依据',action:judgment&&typeof judgment.action==='string'?judgment.action:'',factLabel:facts&&Object.prototype.hasOwnProperty.call(factLabels,value.level)?factLabels[value.level]:'尚未评价',evidence:facts&&Object.prototype.hasOwnProperty.call(materials,value.evidence_strength)?materials[value.evidence_strength]:'待补证'};
 }
 
 function chainAssessmentBadge(value){
   var v=chainAssessmentView(value);
   return '<span class="chain-judgment-badge" style="display:inline-block;padding:4px 9px;border-radius:6px;background:'+v.bg+';color:'+v.color+';font-size:11px;font-weight:700;white-space:nowrap">'+v.label+'</span>'+
+    (v.confidence?'<span class="chain-confidence" style="font-size:10px;color:#7e8d9b;margin-left:6px">'+v.method+' · '+v.confidence+'把握</span>':'')+
     (v.evidenceCount?'<span class="chain-source-count" style="font-size:10px;color:#8795a2;margin-left:7px;white-space:nowrap">依据 '+v.evidenceCount+' 条</span>':'');
 }
 
@@ -2701,7 +2703,8 @@ function chainAssessmentFindingHtml(finding){
   return '<article class="chain-assessment-finding" style="padding:11px 0;border-top:1px solid #e1e8ef;overflow-wrap:anywhere"><div style="font-size:10px;color:#7b8e9f">范围：'+scope+escapeChainText(scopeLabel)+(dims[finding.dimension]?' · '+dims[finding.dimension]:'')+'</div>'+
     (quote?'<blockquote style="margin:6px 0;padding:8px 10px;border-left:2px solid #bccddd;background:#f8fafc;white-space:pre-wrap;color:#50677d">'+escapeChainText(quote)+'</blockquote>':'<p>尚缺可展示的原句。</p>')+
     (source.title?'<div style="font-size:11px;color:#657d92">'+escapeChainText(source.title)+'</div>':'')+
-    '<div style="font-size:10px;color:#8294a5;margin-top:3px">发布：'+escapeChainText(published||'日期未知')+(retrieved?' · 检索：'+escapeChainText(retrieved)+'（本地）':'')+'</div>'+
+    '<div style="font-size:10px;color:#8294a5;margin-top:3px">发布：'+escapeChainText(published||'日期未知')+(retrieved?' · '+(source.archived===true?'原文归档：':'检索：')+escapeChainText(retrieved)+'（本地）':'')+'</div>'+
+    (source.archived===true?'<div style="font-size:10px;color:#8294a5">公开原文库命中 · 非本次联网抓取'+(source.fulltext_scope?' · PDF摘录范围：'+escapeChainText(source.fulltext_scope):'')+'</div>':'')+
     (url?'<a href="'+escapeChainText(url)+'" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:5px;font-size:11px">打开原文来源</a>':'<span style="font-size:10px;color:#8294a5">来源链接待补充</span>')+'</article>';
 }
 
@@ -2710,14 +2713,18 @@ function chainAssessmentDetails(value,node){
   var view=chainAssessmentView(value),findings=chainAssessmentFindings(value),groups=[{key:'local_gap',label:'本地短板依据',rows:[]},{key:'local_capability',label:'本地支撑依据',rows:[]},{key:'plan',label:'规划补强 · 尚未落地',rows:[]},{key:'industry',label:'行业背景 · 不代表本地情况',rows:[]},{key:'context',label:'其他材料与范围待核',rows:[]}];
   findings.forEach(function(finding){var key=finding.kind==='plan'?'plan':finding.scope==='industry'?'industry':finding.scope==='local'&&finding.kind==='gap'?'local_gap':finding.scope==='local'&&finding.kind==='capability'?'local_capability':'context';groups.find(function(group){return group.key===key;}).rows.push(finding);});
   var summary=typeof value.summary==='string'?value.summary:'',checks=(Array.isArray(value.next_checks)?value.next_checks:[]).filter(function(text){return typeof text==='string'&&text.trim();});
+  var analysis=value.judgment&&value.judgment.contract==='chain-judgment-v2'?value.judgment:null;
+  var premises=analysis&&Array.isArray(analysis.premises)?analysis.premises:[],limitations=analysis&&Array.isArray(analysis.limitations)?analysis.limitations:[];
+  var analysisHtml=analysis?'<section class="chain-analysis-premises"><strong>判断依据链</strong>'+premises.map(function(p){var labels={local_basis:'本地基础',local_presence:'企业所在地',enterprise_capability:'企业产品业务',local_demand:'本地需求',industry_requirement:'产业要求',policy_target:'政策目标',constraint:'约束条件'};return '<p style="margin:8px 0 0"><b>'+escapeChainText(labels[p.role]||p.role||'依据')+'</b> · '+escapeChainText(p.subject||'')+'</p>'+chainAssessmentFindingHtml(p);}).join('')+(view.action?'<p><strong>补链建议：</strong>'+escapeChainText(view.action)+'</p>':'')+(limitations.length?'<strong>判断边界</strong><ul>'+limitations.map(function(x){return '<li>'+escapeChainText(x)+'</li>';}).join('')+'</ul>':'')+'</section>':'';
   var sources=node?chainNodeSources(node):[],nature=node?(node.negated===true?'否定或排除表述':node.status==='planned'?'规划 / 计划':node.status==='reported'?'材料披露':'材料属性待核'):'';
   return '<details class="chain-assessment-details" style="margin-top:9px;font-size:11px;color:#5b7389;line-height:1.75"><summary style="cursor:pointer;font-weight:600">研判依据'+(findings.length?'（'+findings.length+'条）':'')+'</summary><div style="max-height:320px;overflow:auto;overscroll-behavior:contain;margin-top:7px">'+
     (view.reason?'<p style="margin:0 0 8px"><strong>研判建议：</strong>'+escapeChainText(view.reason)+'</p>':'')+
+    analysisHtml+
     (view.basis?'<p style="margin:0 0 8px">依据类型：'+escapeChainText(view.basisLabel)+'</p>':'')+
     '<div style="font-size:10px;color:#8a9aa7;margin-bottom:6px">以引用材料对应时间为准，不代表实时认证。</div><div class="chain-fact-assessment" style="padding:7px 9px;border-radius:6px;background:#f4f7fa;font-size:10px">事实层评价：'+view.factLabel+' · '+view.evidence+(nature?' · '+nature:'')+'</div>'+
     (summary&&summary!==view.reason?'<p style="margin:8px 0">'+escapeChainText(summary)+'</p>':'')+
     groups.filter(function(group){return group.rows.length;}).map(function(group){return '<section class="chain-finding-group '+group.key+'"><strong style="display:block;margin-top:10px;color:#425d76">'+group.label+'</strong>'+group.rows.map(chainAssessmentFindingHtml).join('')+'</section>';}).join('')+
-    (sources.length?'<section style="margin-top:10px"><strong>节点原文与来源</strong>'+sources.map(function(row){var published=chainAssessmentDate(row.date,false),retrieved=chainAssessmentDate(row.retrieved,true);return '<div style="padding:9px 0;border-top:1px solid #e3e9ee;overflow-wrap:anywhere">'+(row.title?'<strong>'+escapeChainText(row.title)+'</strong>':'')+(row.quote?'<blockquote style="margin:6px 0;padding-left:8px;border-left:2px solid #c6d2dd;white-space:pre-wrap">'+escapeChainText(row.quote)+'</blockquote>':'')+'<div style="font-size:10px;color:#8697a7">发布：'+escapeChainText(published||'日期未知')+(retrieved?' · 检索：'+escapeChainText(retrieved)+'（本地）':'')+'</div>'+row.urls.map(function(url){return '<a href="'+escapeChainText(url)+'" target="_blank" rel="noopener noreferrer">打开原文来源</a>';}).join(' · ')+'</div>';}).join('')+'</section>':'')+
+    (sources.length?'<section style="margin-top:10px"><strong>节点原文与来源</strong>'+sources.map(function(row){var published=chainAssessmentDate(row.date,false),retrieved=chainAssessmentDate(row.retrieved,true);return '<div style="padding:9px 0;border-top:1px solid #e3e9ee;overflow-wrap:anywhere">'+(row.title?'<strong>'+escapeChainText(row.title)+'</strong>':'')+(row.quote?'<blockquote style="margin:6px 0;padding-left:8px;border-left:2px solid #c6d2dd;white-space:pre-wrap">'+escapeChainText(row.quote)+'</blockquote>':'')+'<div style="font-size:10px;color:#8697a7">发布：'+escapeChainText(published||'日期未知')+(retrieved?' · '+(row.archived?'原文归档：':'检索：')+escapeChainText(retrieved)+'（本地）':'')+'</div>'+row.urls.map(function(url){return '<a href="'+escapeChainText(url)+'" target="_blank" rel="noopener noreferrer">打开原文来源</a>';}).join(' · ')+'</div>';}).join('')+'</section>':'')+
     (!findings.length&&!sources.length?'<p>暂无可展示的研判原句，请结合原文来源继续核对。</p>':'')+
     (checks.length?'<strong>后续核查与补证</strong><ul style="padding-left:18px;margin:5px 0">'+checks.map(function(text){return '<li>'+escapeChainText(text)+'</li>';}).join('')+'</ul>':'')+'</div></details>';
 }
@@ -2733,7 +2740,7 @@ function chainAssessmentPanel(value,nodes,unclassifiedCount){
     (view.reason?'<p class="chain-priority-reason" style="font-size:12px;line-height:1.75;color:#506d84;margin:8px 0 9px">'+escapeChainText(view.reason)+'</p>':'')+
     '<div class="chain-assessment-distribution" style="display:flex;flex-wrap:wrap;gap:8px 17px;margin-top:8px">'+distribution+'<span style="font-size:10px;color:#93a1ad">本次 '+nodes.length+' 个材料节点'+(unclassifiedCount?'（含待归类 '+unclassifiedCount+' 项）':'')+'</span></div>'+
     '<div style="font-size:10px;color:#8a9aa7;margin-top:7px">黄色表示规划培育或行业风险关注，不代表已确认本地缺口。引用材料对应时间及证据质量见详情。</div>'+
-    ((!view.judgment||nodes.some(function(node){return !chainAssessmentView(node.assessment).judgment;}))?'<p style="font-size:10px;color:#7b8e9e;margin:8px 0 0">部分节点尚未完成新研判。 <button class="chain-assessment-update" onclick="requestChainGeneration()" style="font-size:10px;padding:3px 7px;border:1px solid #d2dee7;border-radius:5px;color:#607f96;background:#fff">更新研判</button></p>':'')+
+    ((!view.judgment||nodes.some(function(node){return !chainAssessmentView(node.assessment).judgment;}))?'<p style="font-size:10px;color:#7b8e9e;margin:8px 0 0">部分节点仍需补充深入研判。 <button class="chain-assessment-update" onclick="requestChainGeneration()" style="font-size:10px;padding:3px 7px;border:1px solid #d2dee7;border-radius:5px;color:#607f96;background:#fff">更新研判</button></p>':'')+
     '<div class="chain-assessment-explain" style="display:flex;flex-wrap:wrap;gap:0 17px;align-items:flex-start">'+(details?'<div style="flex:1 1 220px;min-width:0">'+details+'</div>':'')+criteria+four+'</div></section>';
 }
 
@@ -2743,13 +2750,14 @@ function chainNeedsAssessment(nodes,value){
 
 function chainNodeCardHtml(node){
   var view=chainAssessmentView(node.assessment),basisTags={local_gap:'本地短板',local_capability:'本地基础',local_plan:'规划培育',industry_risk:'行业风险'};
-  var nature=view.judgment&&Object.prototype.hasOwnProperty.call(basisTags,view.basis)?basisTags[view.basis]:'';
+  var nature=view.reasoning?view.basisLabel:view.judgment&&Object.prototype.hasOwnProperty.call(basisTags,view.basis)?basisTags[view.basis]:'';
   var classification=node.classification&&typeof node.classification==='object'?node.classification:{},reason=classification.why||classification.reason;
   var exceptionReason=reason&&!/按通用.*口径分类/.test(reason)?reason:'';
   return '<div class="industry-chain-node judgment-'+view.level+'" style="align-self:start;min-width:0;background:'+view.card+';border:1px solid '+view.border+';border-top:3px solid '+view.border+';border-radius:9px;padding:13px 12px;text-align:left;overflow-wrap:anywhere">'+
     '<div class="chain-node-name" style="font-size:13px;font-weight:700;line-height:1.6;color:#304e68">'+escapeChainText(node.name||'未命名材料项')+'</div>'+
     '<div class="chain-assessment-tags" style="margin-top:7px;display:flex;flex-wrap:wrap;gap:5px">'+chainAssessmentBadge(node.assessment)+'</div>'+
     (view.reason?'<p class="chain-node-judgment-reason" title="'+escapeChainText(view.reason)+'" style="font-size:11px;color:#5c7589;line-height:1.7;margin:8px 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">'+escapeChainText(view.reason)+'</p>':'')+
+    (view.action?'<p class="chain-node-action" style="font-size:10px;color:#60798b;line-height:1.7;margin:6px 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden"><b>建议：</b>'+escapeChainText(view.action)+'</p>':'')+
     (nature?'<div class="chain-material-status" style="font-size:10px;color:#8d9ca9;margin-top:7px">'+nature+'</div>':'')+
     (exceptionReason?'<div style="font-size:10px;color:#8799a8;margin-top:7px">分组说明：'+escapeChainText(exceptionReason)+'</div>':'')+
     chainAssessmentDetails(node.assessment,node)+chainNodeSourcesHtml(node)+'</div>';

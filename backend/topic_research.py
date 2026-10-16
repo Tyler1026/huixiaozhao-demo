@@ -122,6 +122,24 @@ def search_plan(city, topic, mode='draft'):
     return queries
 
 
+def node_search_plan(city, topic, node_targets):
+    """Public server-selected node labels only; never private questionnaire text."""
+    city = _public_label(city, 40)
+    _public_label(topic, 100)
+    names = []
+    for value in node_targets:
+        if not isinstance(value, str):
+            continue
+        value = re.sub(r'[^\u3400-\u9fffA-Za-z0-9（）()·、， ,+\-]', ' ', value).strip()
+        if value and len(value) <= 100 and value not in names:
+            names.append(_public_label(value, 100))
+        if len(names) == 6:
+            break
+    return [query for name in names for query in (
+        f'{city} {name} 企业 产品 产线 供应 需求 已投产',
+        f'{name} 国产化 进口依赖 技术瓶颈 年度报告')]
+
+
 def _publisher(url):
     host = (urlsplit(url).hostname or '').lower()
     parts = host.split('.')
@@ -247,7 +265,8 @@ def select_source_paragraphs(text, topic, *, limit=None, mode='draft', source_ti
 
 
 def research_topic(city, topic, *, mode='draft', questions=(), basis=(), provider=None,
-                   trusted_company_domains=(), now=None, progress=None, deadline_seconds=None):
+                   trusted_company_domains=(), now=None, progress=None, deadline_seconds=None,
+                   node_targets=()):
     """Search public sources and return an auditable, JSON-serializable bundle.
 
     ``trusted_company_domains`` must be derived by the server from established
@@ -259,7 +278,7 @@ def research_topic(city, topic, *, mode='draft', questions=(), basis=(), provide
               'errors': [], 'city': city, 'topic': topic, 'mode': mode,
               'automatic_research': False, 'automatic_cross_check': False}
     try:
-        queries = search_plan(city, topic, mode)
+        queries = node_search_plan(city, topic, node_targets) if node_targets else search_plan(city, topic, mode)
         live = copy.copy(provider) if provider is not None else providers.OpenAIResearchProvider.from_env(configured_environment(os.environ))
         if not live.enabled:
             raise ValueError('research_disabled')
