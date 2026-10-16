@@ -357,7 +357,8 @@ def _overall(nodes, previous, catalog):
         ids = list(dict.fromkeys(ids + [sid for sid in previous.get('evidence_ids', []) if sid in catalog]))
     return {'contract': 'chain-judgment-v2', 'level': chosen_level, 'rule': 'aggregate',
             'status': 'provisional', 'method': 'inference', 'confidence': 'medium',
-            'reason': f"已有基础{counts['strong']}项、重点培育{counts['mid']}项、优先补链{counts['weak']}项、待研判{counts['unknown']}项。",
+            'reason': (f"已有基础{counts['strong']}项、重点培育{counts['mid']}项、优先补链{counts['weak']}项、待研判{counts['unknown']}项。"
+                       + ('另有整链级补链提示，尚不能下放为具体节点结论。' if chosen_level == 'weak' and not counts['weak'] else '')),
             'action': '按节点论证和置信度核实补链顺序，不将整体判断下放为各节点事实。',
             'limitations': ['三色表示分析建议；事实核验状态保持独立。', '未将未检索到材料视为产业缺失。'],
             'premises': list(materials.values()), 'evidence_ids': ids}
