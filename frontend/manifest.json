@@ -1,6 +1,6 @@
 {
   "index.html": {
-    "sha256": "fe96b20f7ddfad4bbcd649267f929c255c219a1612513b367d6922ef43b43ab7",
+    "sha256": "ae416c724da1871c64346bd1d08fcfd67e4e6f25437ff89524b9368dff91d840",
     "parts": [
       "frontend/index/markup-01.html",
       "frontend/index/style-01.css",
@@ -40,7 +40,7 @@
     ]
   },
   "ops.html": {
-    "sha256": "9698590fadb5c6c1073e872f72f90b3e0945dd325280add3a00ca422359bc34f",
+    "sha256": "40db98c3b0aadfb38cabceefa2d2be335d5a1e3b573b0449c39ddb3f0d368ff2",
     "parts": [
       "frontend/ops/markup-01.html",
       "frontend/ops/style-01.css",

@@ -107,8 +107,84 @@ class SentenceIndexAssessmentTests(unittest.TestCase):
             {'index': 1, 'text': '闵行区飞控系统供应严重不足。'}])
         self.assertIn('sentence_index', system)
         self.assertNotIn('"quote":', system)
+        self.assertIn('先检查整链四个维度', system)
+        self.assertIn('同一原句支持两个维度时可各选一条', system)
         self.assertEqual(max_tokens, 3000)
         self.assertEqual(out['assessment']['level'], 'weak')
+
+
+class ExplanationAssessmentTests(unittest.TestCase):
+    def evaluate(self, topic, quotes, titles, rows, nodes=()):
+        bundle = research(quotes, titles=titles)
+        bundle['topic'] = topic
+        chain = {'chain': [{'nodes': [{'id': key, 'name': name} for key, name in nodes]}]}
+        # Use archived source indices, not generated quotes, like production.
+        selections = [indexed(bundle, sentence, index=index, target=target, dimension=dimension)
+                      for index, target, dimension, sentence in rows]
+        return build_assessment(dict(CONTEXT, topic=topic), bundle, chain,
+                                lambda *args: {'findings': selections})
+
+    def test_low_altitude_common_validation_constraint_is_visible_industry_context(self):
+        quote = '低空经济腾飞的最大瓶颈之一，在于城市核心区缺乏安全可靠的飞行验证环境。闵行低空测试基地的正式启动，正是破解这一世界级难题的“闵行答案”，标志着上海低空基础设施布局从政策设计迈向实质性建设。'
+        out = self.evaluate('低空经济整机配套承接集聚', [quote],
+            ['位于吴泾！闵行低空测试基地项目启动'], [(0, 'chain', 'coordination', 0)])
+        findings = out['assessment']['findings']
+        self.assertTrue(findings)
+        self.assertTrue(all(f['scope'] == 'industry' and f['kind'] == 'context' for f in findings))
+        self.assertEqual(findings[0]['quote'], quote)
+        self.assertEqual(out['assessment']['level'], 'unknown')
+
+    def test_fusion_material_challenge_binds_same_sentence_node_without_local_rating(self):
+        quote = '翌曦科技董事长金之俭表示，聚变装置内壁材料不仅需要耐受高温，更面临高能量中子的轰击，材料研发目前仍是严峻挑战。传统材料研发依赖大量实验试错，周期长、成本高。'
+        out = self.evaluate('聚变能源前沿赛道培育招商', [quote],
+            ['聚变能源迎来“加速时刻”——上海国投三年“织就”完整产业链'],
+            [(0, 'wall', 'capacity', 0), (0, 'unrelated', 'capacity', 0)],
+            [('wall', '聚变装置内壁材料'), ('unrelated', '高温超导带材')])
+        node = out['node_assessments']['wall']
+        self.assertEqual(node['level'], 'unknown')
+        self.assertTrue(node['findings'])
+        self.assertTrue(all(f['scope'] == 'industry' and f['kind'] == 'context' for f in node['findings']))
+        self.assertEqual(out['node_assessments']['unrelated']['findings'], [])
+
+    def test_fusion_scientific_problem_and_maturity_are_visible_without_local_rating(self):
+        quote = '中国聚变公司总工程师钟武律介绍，托卡马克这一主流路线可分为聚变堆主机与运行、燃料生产与循环、核安全体系、数字托卡马克四大技术领域，包含19个技术方向、50项关键技术和346项技术细目。目前，11项技术成熟度较低，30项技术成熟度中等，9项技术成熟度较高。他将这些挑战提炼为等离子体稳态自持燃烧、聚变堆结构材料、氚增殖与自持循环三大科学问题，以及大型强场磁体技术、等离子体运行与控制、热量传导与转化三大工程技术。'
+        out = self.evaluate('聚变能源前沿赛道培育招商', [quote],
+            ['“聚变生态联盟”在沪成立 国资引领打造 核聚变能高地'],
+            [(0, 'chain', 'capacity', 1), (0, 'material', 'capacity', 2)],
+            [('material', '聚变堆结构材料')])
+        self.assertTrue(out['assessment']['findings'])
+        self.assertTrue(out['node_assessments']['material']['findings'])
+        self.assertTrue(all(f['scope'] == 'industry' and f['kind'] == 'context'
+                            for f in out['assessment']['findings']))
+        self.assertEqual(out['assessment']['level'], 'unknown')
+
+    def test_energy_shortboard_remedy_and_supply_channel_expansion_are_plans(self):
+        quotes = ['吸引绿氢制备、储氢设备、加氢站建设、氢能应用场景运营等企业集聚，补全产业链短板。',
+                  '针对氢基能源制储输加用、聚变能源实验研发、长时储能装备生产等场景，压实企业责任；支持企业拓展供应渠道、推动关键原材料自主研制。']
+        out = self.evaluate('氢基能源与长时储能装备补链', quotes,
+            ['闵行区推进先进能源装备及绿色低碳产业高质量发展“十五五”规划'] * 2,
+            [(0, 'chain', 'supply', 0), (1, 'chain', 'dependency', 0)])
+        findings = out['assessment']['findings']
+        self.assertEqual({f['dimension'] for f in findings if f['kind'] == 'plan'}, {'supply', 'dependency'})
+        self.assertFalse(any(f['kind'] in ('gap', 'capability') for f in findings))
+        self.assertEqual(out['assessment']['level'], 'unknown')
+
+    def test_explanation_language_never_promotes_local_severity_or_foreign_topic(self):
+        out = self.evaluate('聚变能源前沿赛道培育招商', ['闵行区聚变材料研发目前仍面临严峻挑战，相关研究正在推进。'],
+            ['闵行区聚变产业调研'], [(0, 'chain', 'capacity', 0)])
+        self.assertTrue(out['assessment']['findings'])
+        self.assertEqual(out['assessment']['level'], 'unknown')
+        self.assertTrue(all(f['severity'] is None for f in out['assessment']['findings']))
+        foreign = self.evaluate('低空经济整机配套承接集聚', ['聚变装置材料研发目前仍面临严峻挑战，相关研究正在推进。'],
+            ['闵行低空产业调研'], [(0, 'chain', 'capacity', 0)])
+        self.assertEqual(foreign['assessment']['findings'], [])
+
+    def test_same_original_sentence_can_explain_two_dimensions_without_rating(self):
+        out = self.evaluate('低空经济整机配套承接集聚',
+            ['低空经济腾飞的瓶颈之一，在于城市核心区缺乏安全可靠的飞行验证环境。'],
+            ['闵行低空产业调研'], [(0, 'chain', 'coordination', 0), (0, 'chain', 'capacity', 0)])
+        self.assertEqual({f['dimension'] for f in out['assessment']['findings']}, {'coordination', 'capacity'})
+        self.assertEqual(out['assessment']['level'], 'unknown')
 
 
 class LocalAssessmentTests(unittest.TestCase):
@@ -306,6 +382,15 @@ class ModalityAssessmentTests(unittest.TestCase):
 
 
 class IntegrityAssessmentTests(unittest.TestCase):
+    def test_limit_applies_after_validation_and_input_scan_is_bounded(self):
+        bundle=research([f'闵行区飞控系统供应不足，编号{i}的原始调查披露了本地供需问题。' for i in range(25)])
+        bad=dict(indexed(bundle,0),evidence_id='tr_'+'0'*20)
+        out=assess(bundle,[bad]*24+[indexed(bundle,0)])
+        self.assertEqual(len(out['assessment']['findings']),1)
+        valid=[indexed(bundle,0,index=i) for i in range(25)]
+        self.assertEqual(len(assess(bundle,valid)['assessment']['findings']),24)
+        self.assertEqual(assess(bundle,[bad]*96+[indexed(bundle,0)])['assessment']['findings'],[])
+
     def test_mirror_origin_is_single_source_and_different_origins_are_multiple(self):
         quotes=['闵行区飞控系统供应严重不足，原始调研资料记录本地供需口径。',
                 '闵行区飞控系统供应严重不足，另一份材料记录了相同产业问题。']

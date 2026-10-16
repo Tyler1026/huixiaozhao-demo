@@ -23,6 +23,12 @@ for(const app of ['index','ops']){
   assert.match(html,/本次 5 个节点/);assert.match(html,/资料披露的薄弱线索与支撑/);assert.match(html,/以引用材料对应时间为准，不代表实时认证/);assert.match(html,/关键依赖仍需核查/);assert.match(html,/明显薄弱 <b[^>]*>1<\/b>/);assert.match(html,/尚未评价 <b[^>]*>1<\/b>/);assert.match(html,/更新图谱并评价/);
   const capacity=html.match(/data-dimension="capacity"([\s\S]*?)<\/div><div class="chain-assessment-dimension"/)[1];assert.match(capacity,/尚未评价/);assert.doesNotMatch(capacity,/存在短板/);
  });
+ test(app+' compact assessment criteria remain collapsed and explain all four non-numeric rules',()=>{
+  const {c}=setup(app),html=c.chainAssessmentPanel(assessment(),[]);
+  const detail=html.match(/<details class="chain-assessment-criteria"([^>]*)>([\s\S]*?)<\/details>/);assert.ok(detail);assert.doesNotMatch(detail[1],/\bopen\b/);
+  for(const text of ['评价口径','明显薄弱','严重约束','存在短板','现实不足或协同约束','已有支撑','不代表没有短板','证据不足','不等于薄弱','非百分制','不按来源数量评分','规划与行业背景不计作本地短板'])assert.ok(detail[2].includes(text),text);
+  assert.ok(html.indexOf('评价依据')<html.indexOf('评价口径'));
+ });
  test(app+' evidence expansion separates local gaps, capability, plans and industry context with complete quotes',()=>{
   const {c}=setup(app),local=finding(),plan=finding({id:'plan',kind:'plan',quote:'规划配套升级，不能证明已落地。'}),industry=finding({id:'industry',scope:'industry',quote:'行业总体约束，不证明本地存在短板。'}),capability=finding({id:'capability',kind:'capability',quote:'已有配套服务，但不表示能够覆盖全部需求。'});
   const value=assessment({findings:[local,plan,industry,capability],dimensions:[{key:'supply',findings:[local]}],next_checks:['核对产能、投产时间及适用范围。']});

@@ -3272,7 +3272,7 @@ function chainAssessmentFindings(value){
 }
 
 function chainAssessmentFindingHtml(finding){
-  var dims={supply:'供给能力',dependency:'关键依赖',capacity:'产能承载',coordination:'协同配套'},source=finding.source&&typeof finding.source==='object'?finding.source:{};
+  var dims={supply:'本地供给',dependency:'外部依赖',capacity:'研发与产能',coordination:'产业协同'},source=finding.source&&typeof finding.source==='object'?finding.source:{};
   var scope=finding.scope==='local'?'本地':finding.scope==='industry'?'行业背景':'范围待核',scopeLabel=typeof finding.scope_label==='string'&&finding.scope_label?' · '+finding.scope_label:'';
   var quote=typeof finding.quote==='string'?finding.quote:typeof source.quote==='string'?source.quote:'';
   var url=chainSafeSourceUrl(source.url),published=chainAssessmentDate(source.published_at||source.date,false),retrieved=chainAssessmentDate(source.retrieved_at,true);
@@ -3299,15 +3299,17 @@ function chainAssessmentDetails(value){
 function chainAssessmentPanel(value,nodes){
   var view=chainAssessmentView(value),counts={weak:0,attention:0,supported:0,unknown:0,missing:0};
   nodes.forEach(function(node){counts[chainAssessmentView(node.assessment).level]++;});
-  var dimensions=[{key:'supply',label:'供给能力'},{key:'dependency',label:'关键依赖'},{key:'capacity',label:'产能承载'},{key:'coordination',label:'协同配套'}],received=value&&Array.isArray(value.dimensions)?value.dimensions:[];
+  var dimensions=[{key:'supply',label:'本地供给'},{key:'dependency',label:'外部依赖'},{key:'capacity',label:'研发与产能'},{key:'coordination',label:'产业协同'}],received=value&&Array.isArray(value.dimensions)?value.dimensions:[];
   var summary=value&&typeof value.summary==='string'?value.summary:'';
   var distribution=[['weak','明显薄弱'],['attention','存在短板'],['supported','已有支撑'],['unknown','证据不足'],['missing','尚未评价']].map(function(item){return '<span style="display:inline-flex;gap:5px;align-items:center;font-size:11px;color:#627a90;white-space:nowrap">'+item[1]+' <b style="color:#304c65;font-size:13px">'+counts[item[0]]+'</b></span>';}).join('');
+  var criteria='<details class="chain-assessment-criteria" style="flex:1 1 220px;min-width:0;margin-top:9px;font-size:11px;color:#5b7389;line-height:1.75"><summary style="cursor:pointer;font-weight:600">评价口径</summary><div style="margin-top:7px;max-height:320px;overflow:auto"><ul style="padding-left:17px;margin:0"><li><strong>明显薄弱</strong>：原文明示严重约束。</li><li><strong>存在短板</strong>：原文明示现实不足或协同约束。</li><li><strong>已有支撑</strong>：材料披露本地已具备能力，不代表没有短板。</li><li><strong>证据不足</strong>：缺少对应本地材料，不等于薄弱。</li></ul><p style="margin:8px 0 0">非百分制，不按来源数量评分；规划与行业背景不计作本地短板。</p></div></details>';
+  var details=chainAssessmentDetails(value);
   return '<section class="chain-assessment-panel" style="margin:0 16px 16px;padding:17px 18px;border:1px solid #dce7ee;border-radius:10px;background:linear-gradient(135deg,#f4f8fc,#fff)"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><strong style="font-size:14px;color:#274863">资料披露的薄弱线索与支撑</strong><div>'+chainAssessmentBadge(value)+'</div></div>'+
     '<p style="font-size:12px;line-height:1.8;color:#627a90;margin:10px 0">'+(summary?escapeChainText(summary):view.available?'评价仅反映当前材料中的支撑情况，仍需核对实际条件与风险。':'当前保存图谱尚未包含可用评价，可更新图谱并评价。')+'<br><span style="font-size:10px;color:#8294a5">以引用材料对应时间为准，不代表实时认证。</span></p>'+
     '<div class="chain-assessment-dimensions" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:9px">'+dimensions.map(function(expected){var d=received.find(function(item){return item&&item.key===expected.key;}),v=d&&view.available?{contract:'chain-assessment-v1',state:'ready',level:d.level,evidence_strength:d.evidence_strength}:null,label=d&&typeof d.label==='string'?d.label:expected.label;return '<div class="chain-assessment-dimension" data-dimension="'+expected.key+'" style="background:#fff;padding:11px;border:1px solid #e1e9ef;border-radius:8px"><div style="font-size:11px;color:#74899b;margin-bottom:7px">'+escapeChainText(label)+'</div>'+chainAssessmentBadge(v)+'</div>';}).join('')+'</div>'+
     '<div class="chain-assessment-distribution" style="display:flex;flex-wrap:wrap;gap:8px 15px;margin-top:13px;padding-top:11px;border-top:1px solid #e1e9ef"><span style="font-size:11px;color:#7d90a1">本次 '+nodes.length+' 个节点</span>'+distribution+'</div>'+
     ((!view.available||counts.missing)?'<p style="font-size:11px;color:#7b8e9e;margin:10px 0 0">'+(view.available?'部分节点尚未评价。':'当前图谱尚未评价，更新后可查看评价结果。')+' <button class="chain-assessment-update" onclick="requestChainGeneration()" style="padding:4px 8px;margin-left:5px;border:1px solid #c7d8e5;border-radius:6px;color:#466e8c;background:#fff;font-size:11px;cursor:pointer">更新图谱并评价</button></p>':'')+
-    chainAssessmentDetails(value)+'</section>';
+    '<div class="chain-assessment-explain" style="display:flex;flex-wrap:wrap;gap:0 18px;align-items:flex-start">'+(details?'<div style="flex:1 1 220px;min-width:0">'+details+'</div>':'')+criteria+'</div></section>';
 }
 
 function chainNeedsAssessment(nodes,value){
