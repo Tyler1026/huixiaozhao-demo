@@ -215,6 +215,39 @@ class WeaknessTests(unittest.TestCase):
                           premise(other, 'operation', subject='蓝天工厂'), premise(other, 'operation', 1)]
         self.assertIsNone(_candidate(row, {'control':'飞控系统'}, chain_source_catalog(other, CONTEXT), CONTEXT))
 
+    def test_local_company_does_not_locate_its_foreign_factory(self):
+        for place in ['外地', '境外', '苏州市', '自贡市']:
+            with self.subTest(place=place):
+                bundle = research(['闵行区青松公司在' + place + '青松工厂生产飞控系统，并已实现批量交付。'])
+                row = candidate(bundle, roles=[premise(bundle, 'local_site', subject='青松工厂'),
+                                               premise(bundle, 'operation')])
+                self.assertIsNone(_candidate(row, {'control':'飞控系统'},
+                                             chain_source_catalog(bundle, CONTEXT), CONTEXT))
+
+    def test_local_site_anchor_cannot_override_explicit_foreign_activity(self):
+        for place in ['外地', '境外', '苏州市', '自贡市']:
+            with self.subTest(place=place):
+                bundle = research(['青松工厂位于闵行区。',
+                                   '青松工厂在' + place + '生产飞控系统，并已实现批量交付。'])
+                row = candidate(bundle, roles=[premise(bundle, 'local_site', subject='青松工厂'),
+                                               premise(bundle, 'operation', 1)])
+                self.assertIsNone(_candidate(row, {'control':'飞控系统'},
+                                             chain_source_catalog(bundle, CONTEXT), CONTEXT))
+
+    def test_wujing_operating_site_can_support_its_adopted_battery(self):
+        context = dict(CONTEXT, topic='氢能与新型储能')
+        bundle = research(['此前，奉贤星火综合新型储能示范基地、闵行吴泾电厂、石洞口电厂等项目已建成并网。',
+                           '吴泾电厂独立储能项目则走了另一条路线，采用“磷酸铁锂+全钒液流电池”混合方案。'])
+        bundle['topic'] = context['topic']
+        row = candidate(bundle, roles=[premise(bundle, 'local_site', subject='闵行吴泾电厂'),
+                                       premise(bundle, 'operation', subject='吴泾电厂'),
+                                       premise(bundle, 'operation', 1, subject='全钒液流电池')])
+        result = _candidate(row, {'control':'全钒液流电池'}, chain_source_catalog(bundle, context), context)
+        self.assertIsNotNone(result)
+        self.assertEqual(result['scope'], 'local')
+        self.assertEqual(result['premises'][0]['subject'], '吴泾电厂')
+        self.assertTrue(any(p.get('local_site_binding') for p in result['premises']))
+
     def test_missing_identity_reference_is_joined_from_verified_same_company(self):
         bundle = research(['闵行企业上海青松科技有限公司已开展低空研发业务。',
                            '上海青松科技有限公司的飞控系统已实现批量交付，提供稳定供货。'])
@@ -223,6 +256,27 @@ class WeaknessTests(unittest.TestCase):
         out, _ = run(bundle, [row])
         self.assertEqual(out['node_judgments']['control']['level'], 'strong')
         self.assertTrue(out['node_judgments']['control']['enterprise_links'])
+
+    def test_identity_in_another_topic_only_joins_the_same_company(self):
+        import json
+        context = dict(CONTEXT, topic='可控核聚变')
+        chain = {'chain': [{'nodes': [{'id':'control', 'name':'高温超导磁体'}]}], 'unclassified': []}
+        for business_company, expected in [('上海青松科技有限公司', 'strong'),
+                                            ('上海蓝天科技有限公司', 'unknown')]:
+            with self.subTest(company=business_company):
+                bundle = research(['来自闵行的上海青松科技有限公司开展低空飞行器研究，已完成企业登记。',
+                                   business_company + '研制的聚变高温超导磁体已实现批量交付。'],
+                                  titles=['闵行区企业登记信息', '企业产品交付情况'])
+                bundle['topic'] = context['topic']
+                row = candidate(bundle, roles=[premise(bundle, 'operation', 1, subject='高温超导磁体')])
+                row['scope'] = 'local_enterprise'
+                def complete(system, payload, tokens):
+                    data = json.loads(payload)
+                    if 'proposals' in data:
+                        return {'verdicts': [{'node_id':p['node_id'], 'valid':True} for p in data['proposals']]}
+                    return {'nodes':[row]}
+                out = build_weakness(context, bundle, chain, FALLBACK, complete)
+                self.assertEqual(out['node_judgments']['control']['level'], expected)
 
     def test_review_sees_related_counter_source_even_if_proposal_omits_it(self):
         import json
