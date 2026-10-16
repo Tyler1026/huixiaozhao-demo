@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { performance } = require('node:perf_hooks');
+const { setTimeout: delay } = require('node:timers/promises');
 const root = path.join(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'frontend/index/script-02-sections/12-tail.js'), 'utf8');
 function declaration(name, input = source) {
@@ -49,7 +51,9 @@ function environment(reply = response(fullText), implementation = source) {
 }
 
 async function untilRequestStarted(check){
-  for(let i=0;i<100&&!check();i++)await new Promise(setImmediate);
+  // Native WebCrypto completion depends on worker scheduling, not event-loop ticks.
+  const deadline=performance.now()+5000;
+  while(!check()&&performance.now()<deadline)await delay(10);
   assert.ok(check(),'fingerprinting should complete before testing an in-flight response');
 }
 
@@ -131,6 +135,25 @@ test('repeat click shares one current-topic job and failure releases the lock fo
   const retry = c.triggerReport(2); await untilRequestStarted(()=>events.fetch.length===2); assert.equal(events.fetch.length, 2);
   finish(response(fullText)); await retry;
   assert.deepEqual(Object.keys(c.window._topicReportJobs), []);
+});
+
+test('retry waits for delayed native fingerprint completion before resolving its response', async () => {
+  let finish, fingerprints=0;
+  const {c, events} = environment(() => new Promise(resolve => {finish = resolve;}));
+  const digest=c.crypto.subtle.digest.bind(c.crypto.subtle);
+  c.crypto={subtle:{async digest(...args){
+    if(++fingerprints===2)await delay(80);
+    return digest(...args);
+  }}};
+  const first=c.triggerReport(2);
+  await untilRequestStarted(()=>events.fetch.length===1);
+  finish(response('partial', 'length'));await first;
+  const retry=c.triggerReport(2);
+  await untilRequestStarted(()=>events.fetch.length===2);
+  assert.equal(events.fetch.length,2);
+  finish(response(fullText));await retry;
+  assert.equal(c.REPORTSTATE.p.aiReportByTopic['核电配套'],fullText);
+  assert.deepEqual(Object.keys(c.window._topicReportJobs),[]);
 });
 
 test('demand report snapshot rejects draft and binds only the exact completed direction', () => {
