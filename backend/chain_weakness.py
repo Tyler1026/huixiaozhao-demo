@@ -35,7 +35,12 @@ def _planned_fact(sentence, source):
     # paragraph. "未来科学城" is a place name, not a future tense marker.
     if re.search(r'(?:已(?:经)?(?:成功)?|正式|成功).{0,8}(?:投运|投产|建成|运行|运营|发射|交付|供货|完成|并网)|批量(?:生产|交付)|承制', sentence):
         return False
-    return _planned(sentence, sentence, source)
+    # In biochemical descriptions, a target product/protein is the physical
+    # output of a process, not a future production target. Keep real dates,
+    # plans and capacity targets subject to the ordinary planning guards.
+    semantic_sentence = re.sub(r'目标(?=产物|蛋白|化合物)', '', sentence)
+    semantic_source = dict(source, quote=re.sub(r'目标(?=产物|蛋白|化合物)', '', source['quote']))
+    return _planned(semantic_sentence, semantic_sentence, semantic_source)
 
 
 def unknown(reason='未取得足以比较本环节实际能力与需求的证据。'):
@@ -391,6 +396,9 @@ def _usable_roles(sentence, source, context):
             roles.extend(['operation', 'industry_fact', 'benchmark'])
         if source.get('source_type') in ('company', 'disclosure'):
             roles.append('enterprise_capability')
+            # Product descriptions can identify the object of a separately
+            # quoted input dependency. This supplies context, never operation.
+            roles.append('industry_fact')
     for role, pattern in [('dependency', _DEPENDENCY), ('maturity', _MATURITY), ('constraint', _CONSTRAINT)]:
         if (pattern.search(sentence) and (not planned or re.search(r'目前|当前|仍|尚未|长期以来', sentence))
                 and (not _FUTURE.search(sentence) or re.search(r'目前|当前|仍|尚未', sentence))

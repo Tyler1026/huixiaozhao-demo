@@ -3,7 +3,7 @@ import copy
 import json
 import unittest
 
-from backend.chain_weakness import _judgment, build_weakness
+from backend.chain_weakness import _judgment, build_weakness, _planned_fact, _usable_roles
 from tests.test_chain_reasoning import research, premise, CONTEXT, FALLBACK
 
 
@@ -49,6 +49,24 @@ class SourceIndependenceTests(unittest.TestCase):
         rows = [self.source('https://example.com/a', 'origin-a', 'a'),
                 self.source('https://another.example.com/b', 'origin-b', 'b')]
         self.assertEqual(result_for_sources(rows)['confidence'], 'medium')
+
+
+class TechnicalProductContextTests(unittest.TestCase):
+    def test_target_product_is_not_a_future_production_target(self):
+        description = '一次性生物反应袋是细胞生长并生成目标产物的载体。'
+        activity = '企业采用进口膜材，在生产环境下进行生产和验证。'
+        source = {'quote': description + activity, 'title': '一次性生物反应袋', 'source_type': 'company'}
+        self.assertFalse(_planned_fact(description, source))
+        self.assertFalse(_planned_fact(activity, source))
+        self.assertIn('industry_fact', _usable_roles(description, source, CONTEXT))
+        self.assertNotIn('operation', _usable_roles(description, source, CONTEXT))
+        self.assertIn('dependency', _usable_roles(activity, source, CONTEXT))
+
+    def test_real_capacity_target_remains_planned(self):
+        sentence = '目标在未来形成生物反应袋生产能力，计划采用国产膜材。'
+        source = {'quote': sentence, 'title': '建设计划', 'source_type': 'company'}
+        self.assertTrue(_planned_fact(sentence, source))
+        self.assertNotIn('industry_fact', _usable_roles(sentence, source, CONTEXT))
 
 
 class ReviewScopeTests(unittest.TestCase):
