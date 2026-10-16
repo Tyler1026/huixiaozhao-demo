@@ -105,11 +105,12 @@ class ChainRouteTests(unittest.TestCase):
         return {'projectKey': 'p', 'topic': '商业火箭', 'reportRequestId': 'r1',
                 'sourceIdentity': identity_json(chain_input_identity(handler._scoped_state, 'p', '商业火箭')),
                 'purpose': 'chain_map', 'mode': 'chain', 'stream': True}
-    def run_route(self, h, research=None, build=diagram, principal=None, body=None):
+    def run_route(self, h, research=None, build=diagram, principal=None, body=None, assessment_builder=None):
         audits = []
         with patch('backend.topic_chain_route.require_session', return_value=principal or h._principal):
             serve_topic_chain(h, body or self.body(h), complete=lambda *args: {}, audit=audits.append,
-                              research=research or (lambda *args, **kwargs: findings()), build=build)
+                              research=research or (lambda *args, **kwargs: findings()), build=build,
+                              assessment_builder=assessment_builder)
         return h.wfile.getvalue().decode(), audits
 
     def test_persisted_server_result_precedes_completion_and_uses_v2_contract(self):
@@ -163,6 +164,61 @@ class ChainRouteTests(unittest.TestCase):
         text, _ = self.run_route(h, research=changed)
         self.assertIn('evidence_validation_failed', text); self.assertEqual(h.writes, 0)
         self.assertNotIn('chain.result', text)
+
+    def test_assessment_and_its_additional_sources_are_saved_together(self):
+        h = Handler(state())
+        extra = findings()
+        quote = '闵行区商业火箭产业链上下游协同机制有待加强，配套能力仍不足。'
+        source = {'id': 'tr_'+'2'*20, 'source_id': 'b', 'url': 'https://www.shanghai.gov.cn/b',
+                  'quote': quote, 'status': 'source'}
+        extra['evidence'].append(source)
+        extra['sources']['b'] = {'url': source['url'], 'fulltext': quote,
+                                 'fulltext_sha256': hashlib.sha256(quote.encode()).hexdigest()}
+        assessment = {'contract': 'chain-assessment-v1', 'state': 'ready',
+                      'level': 'attention', 'dimensions': [], 'findings': [source]}
+        def identified(*args):
+            result = diagram(); result['chain'][1]['nodes'][0]['id'] = 'node-1'
+            return result
+        def evaluate(*args):
+            return {'assessment': assessment, 'node_assessments': {'node-1': {'level': 'unknown'}},
+                    'sources': [source]}
+        text, audits = self.run_route(h, research=lambda *a, **k: extra, build=identified,
+                                      assessment_builder=evaluate)
+        self.assertIn('[DONE]', text)
+        stored = h.data['REPORTSTATE']['p']
+        self.assertEqual(stored['chainEvidenceByTopic']['商业火箭']['assessment'], assessment)
+        self.assertEqual(len(stored['chainEvidenceByTopic']['商业火箭']['sources']), 2)
+        self.assertEqual(stored['chainByTopic']['商业火箭'][1]['nodes'][0]['assessment']['level'], 'unknown')
+        self.assertEqual(audits[-1]['assessment_level'], 'attention')
+
+    def test_assessment_source_cannot_bypass_archive_validation(self):
+        h = Handler(state())
+        def forged(*args):
+            source = dict(findings()['evidence'][0], url='https://example.org/forged')
+            return {'assessment': {'level': 'weak'}, 'node_assessments': {}, 'sources': [source]}
+        text, _ = self.run_route(h, assessment_builder=forged)
+        self.assertIn('evidence_validation_failed', text)
+        self.assertNotIn('chain.result', text)
+        self.assertEqual(h.writes, 0)
+
+    def test_failed_assessment_keeps_valid_diagram_without_rating_it_weak(self):
+        h = Handler(state())
+        def failed(*args):
+            raise ValueError('provider failed')
+        text, _ = self.run_route(h, assessment_builder=failed)
+        self.assertIn('[DONE]', text)
+        assessment = h.data['REPORTSTATE']['p']['chainEvidenceByTopic']['商业火箭']['assessment']
+        self.assertEqual(assessment['state'], 'unavailable')
+        self.assertEqual(assessment['level'], 'unknown')
+
+    def test_material_change_during_assessment_prevents_saving_old_result(self):
+        h = Handler(state())
+        def changed(*args):
+            h.data['KB_EDITS'] = {'p': {'x': {'text': '新的产业材料'}}}
+            return {'assessment': {'level': 'unknown'}, 'node_assessments': {}, 'sources': []}
+        text, _ = self.run_route(h, assessment_builder=changed)
+        self.assertIn('evidence_changed', text)
+        self.assertEqual(h.writes, 0)
 
 
 if __name__ == '__main__': unittest.main()

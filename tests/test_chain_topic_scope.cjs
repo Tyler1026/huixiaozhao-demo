@@ -4,7 +4,7 @@ const {setup,topic}=require('./chain_v2_fixture.cjs');
 for(const app of ['index','ops']){
  test(app+' empty results disclose insufficient materials and permit regeneration without false strength legends',async()=>{
   const e=setup(app);e.setTransform(event=>{event.chain=['上游','中游','下游'].map(seg=>({seg,nodes:[]}));event.status='empty';return event;});await e.c.requestChainGeneration();
-  const html=e.c.chainMapHtml(e.c.P());assert.equal(e.c.REPORTSTATE.p.chainStatusByTopic[topic],'empty');assert.equal((html.match(/资料待补/g)||[]).length,3);assert.match(html,/不能据此判断/);assert.match(html,/补充材料后重新生成/);assert.doesNotMatch(html,/材料称优势|材料称培育|材料称薄弱/);
+  const html=e.c.chainMapHtml(e.c.P());assert.equal(e.c.REPORTSTATE.p.chainStatusByTopic[topic],'empty');assert.equal((html.match(/资料待补/g)||[]).length,3);assert.match(html,/不能据此判断/);assert.match(html,/更新图谱并评价/);assert.doesNotMatch(html,/材料称优势|材料称培育|材料称薄弱/);
  });
  test(app+' unknown nodes use only a pending legend and parallel cards without inferred edges',async()=>{
   const e=setup(app);e.setTransform(event=>{event.chain[0].nodes.push({name:'重要耗材',level:'unknown',status:'reported'});return event;});await e.c.requestChainGeneration();const html=e.c.chainMapHtml(e.c.P());assert.match(html,/待核/);assert.doesNotMatch(html,/→|本地优势|培育中|材料称优势|材料称薄弱/);assert.match(html,/不代表已证实的供应或工序连接/);assert.match(html,/公开分类依据，不表示本地已有能力/);

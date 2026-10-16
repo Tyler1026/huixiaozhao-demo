@@ -47,6 +47,17 @@ _COMPLETE = re.compile(r'启用|投产|建成|竣工|落地|交付|已形成|已
 _PROMISE = re.compile(r'(?:落地即|即可|必将|保证|确保|锁定).{0,35}(?:订单|采购|收益|补贴|营收)')
 _ABSENCE = re.compile(r'❌\s*(?:\*\*)?\s*缺失|本地.{0,12}(?:不存在|缺失|空白)|全部外购|零布局')
 _LOCATION = re.compile(r'(?P<name>[\u3400-\u9fffA-Za-z0-9（）()·]{2,50}?(?:股份有限公司|有限责任公司|有限公司|公司|集团))\s*(?:的)?\s*(?P<kind>注册地址|注册地|住所|办公地址|总部)\s*(?:为|在|位于|：|:)?\s*(?P<place>[^，。；;\n]{2,55})')
+_CHAIN_ASSESSMENT = re.compile(
+    r'薄弱|短板|不足|短缺|缺乏|瓶颈|卡脖子|外部依赖|进口依赖|依赖进口|对外依存|'
+    r'供需对接|供应缺口|供给缺口|配套能力|协同机制|中试资源|技术成熟度|成熟(?:产品|机载|配套)|'
+    r'已(?:形成|建成|投产|具备|集聚|实现)|量产|批量(?:化)?生产|产能|研发能力|'
+    r'研发平台|中试平台|供应体系|配套体系|完善的产业生态')
+# Only used when a diagnostic paragraph borrows its industry context from the
+# source title. A city name or a generic government-site title is insufficient.
+_INDUSTRY_CONTEXT_TERMS = (
+    '低空', '航空', '航天', '火箭', '卫星', '生物医药', '医药', '制药', '医疗',
+    '能源', '储能', '氢能', '聚变', '半导体', '芯片', '集成电路', '汽车',
+    '钢铁', '农业', '房地产', '文旅', '旅游', '教育')
 
 
 def _digest(value):
@@ -80,7 +91,9 @@ def search_plan(city, topic, mode='draft'):
                 f'{common} 产业链 中游 研制 制造 总装 测试 '+ ' '.join(facets['中游'][:5]),
                 f'{common} 产业链 下游 运营 应用 服务 '+ ' '.join(facets['下游'][:5]),
                 f'{common} 产业链 行动方案 全文 site:gov.cn',
-                f'{common} 产业链 规划 建成 投产 原文']
+                f'{common} 产业链 规划 建成 投产 原文',
+                f'{common} 本地产业链 短板 配套不足 供应缺口 外部依赖 原文',
+                f'{common} 本地产能 研发中试 量产 协同配套 现状 原文']
     queries = [f'{common} 产业基础 重点企业 官方发布',
                f'{common} 产业政策 行动方案 适用条件 site:gov.cn',
                f'{common} 企业官网 年度报告 项目建设']
@@ -122,10 +135,10 @@ def _same_origin(a, b):
 
 
 def _balanced_chain_rows(candidates, limit, char_limit=None):
-    """Round-robin complete excerpts, including late-query downstream hits."""
+    """Keep whole diagnostic excerpts alongside the three industrial lanes."""
     selected, seen, size = [], set(), 0
     buckets = {lane: [row for row in candidates if lane in row.get('chain_facets', [])]
-               for lane in ('上游', '中游', '下游')}
+               for lane in ('评价', '上游', '中游', '下游')}
     def key(row):
         return row.get('id') or row['quote']
     def accept(row):
@@ -150,7 +163,7 @@ def _balanced_chain_rows(candidates, limit, char_limit=None):
     return selected
 
 
-def select_source_paragraphs(text, topic, *, limit=None, mode='draft'):
+def select_source_paragraphs(text, topic, *, limit=None, mode='draft', source_title=''):
     """Relevant whole source paragraphs; never split a sentence to fit.
 
     A long, unsegmented page yields no quote instead of a misleading fragment.
@@ -164,6 +177,10 @@ def select_source_paragraphs(text, topic, *, limit=None, mode='draft'):
     terms = topic_terms(topic)
     from .topic_chain import research_facets
     facets = research_facets(topic) if mode == 'chain' else {}
+    title_matches = ([term for term in terms if term.casefold() in source_title.casefold()]
+                     if mode == 'chain' and isinstance(source_title, str) else [])
+    own_context = {word for word in _INDUSTRY_CONTEXT_TERMS
+                   if any(word in term for term in terms)}
     max_chars = 5000 if mode == 'chain' else MAX_EXCERPT_CHARS
     if not terms:
         return []
@@ -181,17 +198,26 @@ def select_source_paragraphs(text, topic, *, limit=None, mode='draft'):
             matches = [term for term in terms if term.casefold() in paragraph.casefold()]
             facet_matches = {lane: [term for term in vocabulary if term.casefold() in paragraph.casefold()]
                              for lane, vocabulary in facets.items()}
-            if not matches and not any(facet_matches.values()):
+            assessment = mode == 'chain' and bool(_CHAIN_ASSESSMENT.search(paragraph))
+            foreign_context = any(word in paragraph and word not in own_context
+                                  for word in _INDUSTRY_CONTEXT_TERMS)
+            from_title = assessment and bool(title_matches) and not foreign_context
+            if not matches and not any(facet_matches.values()) and not from_title:
                 continue
             seen.add(paragraph)
             candidate = {'quote': paragraph, 'match_terms': matches,
                          'relevance_score': sum(min(8, len(t)) for t in matches)}
             if facets:
                 candidate['chain_facets'] = [lane for lane, found in facet_matches.items() if found]
+                if assessment:
+                    candidate['chain_facets'].append('评价')
+                if from_title and not matches:
+                    candidate['topic_context'] = 'source_title'
+                    candidate['title_match_terms'] = title_matches
             candidates.append(candidate)
     candidates.sort(key=lambda entry: -entry['relevance_score'])
     if facets:
-        # Select whole paragraphs across all three roles before repeated high
+        # Select whole paragraphs across all four roles before repeated high
         # keyword-score passages can consume one page's entire allowance.
         return _balanced_chain_rows(candidates, limit)
     return candidates[:limit]
@@ -264,7 +290,7 @@ def research_topic(city, topic, *, mode='draft', questions=(), basis=(), provide
     per_url_limit = MAX_CHAIN_QUOTES_PER_URL if mode == 'chain' else 3
     # Keep a bounded candidate pool until all public lane queries return. The
     # final 48-row output is balanced globally, not filled by the first query.
-    candidate_limit = 300 if mode == 'chain' else source_limit
+    candidate_limit = len(queries) * 5 * per_url_limit if mode == 'chain' else source_limit
     executor = ThreadPoolExecutor(max_workers=3)
     try:
         pending = [executor.submit(retrieve, query) for query in queries]
@@ -302,7 +328,8 @@ def research_topic(city, topic, *, mode='draft', questions=(), basis=(), provide
                 fulltext = grounding._eligible_body(raw_text).strip()
                 if len(fulltext) > MAX_FULLTEXT_CHARS:
                     continue
-                paragraphs = select_source_paragraphs(fulltext, topic, limit=per_url_limit, mode=mode)
+                paragraphs = select_source_paragraphs(fulltext, topic, limit=per_url_limit,
+                                                      mode=mode, source_title=item.get('title', ''))
                 canonical = contract.canonical_url(url)
                 if not paragraphs:
                     if len(output['candidates']) < MAX_SOURCES:

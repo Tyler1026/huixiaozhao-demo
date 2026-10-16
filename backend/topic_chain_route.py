@@ -21,7 +21,7 @@ from .topic_chain import TopicChainError
 
 
 def serve_topic_chain(handler, body, *, complete, audit, research=research_topic,
-                      build=None, clock=time.monotonic):
+                      build=None, assessment_builder=None, clock=time.monotonic):
     if build is None:
         from .topic_chain import build_chain
         build = build_chain
@@ -72,6 +72,24 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
                             progress=lambda progress: event('research.status', **progress))
         event('research.status', stage='classification', message='正在核对原文、环节归类和规划状态')
         result = build(context, findings, complete)
+        from .chain_assessment import build_assessment, unavailable_assessment
+        event('research.status', stage='assessment', message='正在区分本地短板、已有支撑与证据不足')
+        try:
+            assessment_result = (assessment_builder or build_assessment)(context, findings, result, complete)
+        except Exception:
+            # A failed evaluation must remain visibly unevaluated; it must not
+            # turn into a weak rating or discard a valid source-bound diagram.
+            assessment_result = {'assessment': unavailable_assessment(context),
+                                 'node_assessments': {}, 'sources': []}
+        result['assessment'] = assessment_result['assessment']
+        node_assessments = assessment_result.get('node_assessments') or {}
+        for node in [n for group in result['chain'] for n in group['nodes']] + result.get('unclassified', []):
+            if node.get('id') in node_assessments:
+                node['assessment'] = node_assessments[node['id']]
+        combined_sources = {row['id']: row for row in result.get('sources', [])}
+        for row in assessment_result.get('sources', []):
+            combined_sources[row['id']] = row
+        result['sources'] = list(combined_sources.values())
         # Validate every quote, including qualitative statements that do not
         # trigger the numeric/policy claim checker below.
         retrieved = {row.get('id'): row for row in findings.get('evidence', [])}
@@ -121,6 +139,7 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
                     'verificationStatus': 'unreviewed', 'researchStatus': findings.get('status'),
                     'queries': findings.get('queries', []), 'errors': findings.get('errors', []),
                     'taxonomy': result.get('taxonomy', {}), 'coverage': result.get('coverage', {}),
+                    'assessment': result['assessment'],
                     'edges': []}
             # Authoritative writes happen only here, after rechecking access and
             # every effective input while holding the normal state transaction.
@@ -137,6 +156,7 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
         payload = {'chain': result['chain'], 'unclassified': result.get('unclassified', []),
                    'evidence': meta, 'status': status, 'taxonomy': meta['taxonomy'],
                    'coverage': meta['coverage'], 'saved': True}
+        payload['assessment'] = meta['assessment']
         if stream:
             event('chain.result', **payload)
             send({'choices': [{'delta': {'content': json.dumps(result['chain'], ensure_ascii=False)},
@@ -148,6 +168,8 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
             handler.wfile.write(json.dumps(dict(payload, runId=run_id), ensure_ascii=False).encode())
         record('completed', status=status, node_count=sum(len(group['nodes']) for group in result['chain']),
                unclassified_count=len(result.get('unclassified', [])),
+               assessment_level=result['assessment'].get('level'),
+               assessment_state=result['assessment'].get('state'),
                source_ids=[row['id'] for row in result.get('sources', [])],
                source_hashes=[row.get('fulltext_sha256') for row in result.get('sources', [])])
     except (BrokenPipeError, ConnectionResetError):

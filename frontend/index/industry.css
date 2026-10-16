@@ -143,8 +143,8 @@ body.industry-view .nav-copy small{font-size:10px}
 .industry-page .industry-chain-node.is-mid>span:first-child{background:#faf5e9!important;color:#aa9061!important}
 .industry-page .industry-chain-node.is-weak>span:first-child{background:#faf0ed!important;color:#b57d70!important}
 .industry-page .industry-chain-node.is-unknown>span:first-child{background:#eff3f6!important;color:#7e94a9!important}
-.industry-page .industry-chain-node>div:nth-child(2){margin:5px 0 7px!important;font-size:12px!important;line-height:1.5!important;color:#415c76!important;font-weight:650!important}
-.industry-page .industry-chain-node>div:nth-child(3){font-size:9px!important;border-width:0!important;padding:2px 5px!important;background:#f8fafc!important;border-radius:4px!important;white-space:normal!important}
+.industry-page .industry-chain-node>div:nth-child(2):not(.chain-assessment-tags){margin:5px 0 7px!important;font-size:12px!important;line-height:1.5!important;color:#415c76!important;font-weight:650!important}
+.industry-page .industry-chain-node>div:nth-child(3):not(.chain-material-status){font-size:9px!important;border-width:0!important;padding:2px 5px!important;background:#f8fafc!important;border-radius:4px!important;white-space:normal!important}
 .industry-page .industry-chain-node>div{overflow-wrap:anywhere;max-width:100%}
 .industry-page .industry-chain-node>div[style*="border-top"]{border-top:1px solid #e8edf3!important;margin-top:10px!important;padding-top:9px!important}
 .industry-page .industry-chain-node>div[style*="border-top"]>div:first-child{font-size:9px!important;color:#91a0ae!important;font-weight:400!important}
@@ -272,3 +272,17 @@ body.industry-view .nav-copy small{font-size:10px}
 
 .industry-page .industry-chain-label{align-self:flex-start;min-height:76px}
 .industry-page .industry-chain-label>span:only-child{font-size:12px!important;opacity:1!important}
+
+/* Assessment and source coverage remain separate from material wording. */
+.industry-page .industry-chain-node.assessment-weak{border-top-color:#c97863!important}
+.industry-page .industry-chain-node.assessment-attention{border-top-color:#c7a264!important}
+.industry-page .industry-chain-node.assessment-supported{border-top-color:#7bab9d!important}
+.industry-page .industry-chain-node.assessment-unknown{border-top-color:#8c9dc5!important}
+.industry-page .industry-chain-node.assessment-missing{border-top-color:#a9bacb!important}
+.industry-page .industry-chain-node .chain-node-name{font-size:13px!important;margin:0!important}
+.industry-page .industry-chain-node .chain-assessment-tags{font-size:11px!important;margin:8px 0 0!important;padding:0!important;font-weight:400!important;line-height:1.5!important;gap:5px!important;align-items:center}
+.industry-page .industry-chain-node .chain-material-status{font-size:10px!important;background:none!important;padding:0!important;margin-top:8px!important;color:#8294a4!important}
+.chain-assessment-details>summary{list-style-position:inside;text-underline-offset:3px}
+@media(max-width:600px){.chain-assessment-panel{margin-inline:10px!important;padding:13px!important}.chain-assessment-dimensions{grid-template-columns:repeat(2,minmax(0,1fr))!important}.chain-assessment-dimension .chain-assessment-badge{font-size:10px!important}.chain-assessment-dimension .chain-evidence-badge{display:block!important;width:max-content;margin:5px 0 0!important}}
+
+.chain-assessment-tags .chain-evidence-badge{margin-left:0!important;font-weight:400}
