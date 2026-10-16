@@ -413,6 +413,75 @@ class ChainModelContractTests(unittest.TestCase):
                 build_chain(CONTEXT, bundle, lambda *args: raw)
 
 
+class LiteralFallbackTests(unittest.TestCase):
+    topic = '低空经济整机配套承接集聚'
+
+    def generate(self, quote, *, title=None):
+        mid = '低空产业计划发展无人机整机制造，相关建设条件由主管单位进一步核实。'
+        bundle = research([mid, quote], topic=self.topic)
+        if title is not None:
+            for source in bundle['sources'].values(): source['title'] = title
+        calls = []
+        def complete(*args):
+            calls.append(args)
+            return plan(bundle, ['无人机整机制造']) if len(calls) == 1 else {'nodes': []}
+        result = build_chain({'city':'闵行区','topic':self.topic}, bundle, complete)
+        return result, calls
+
+    def test_real_flight_control_enumeration_fills_one_from_same_original_catalog(self):
+        quote = '面向未来，闵行区将聚力搭建三大核心平台。技术创新平台依托产业联盟、供应链对接会等，聚力突破航电、电机材料、飞控系统等卡脖子技术；场景落地平台打造超大城市低空综合场景示范基地；生态共建平台支持eVTOL产业发展。'
+        result, calls = self.generate(quote)
+        self.assertEqual(len(calls), 2)
+        upstream = result['chain'][0]['nodes']
+        self.assertEqual(len(upstream), 1)
+        self.assertEqual(upstream[0]['name'], '飞控系统')
+        self.assertEqual(upstream[0]['extraction_method'], 'literal_fallback')
+        self.assertEqual(upstream[0]['status'], 'planned')
+        self.assertEqual(upstream[0]['sources'][0]['quote'], quote)
+        self.assertEqual(upstream[0]['level'], 'unknown')
+        self.assertEqual(upstream[0]['verification_status'], 'unverified')
+        self.assertEqual(upstream[0]['local_leaders'], [])
+        self.assertEqual(result['edges'], [])
+
+    def test_general_aviation_without_explicit_low_altitude_scope_stays_empty(self):
+        quote = '民用航空研发目录列举航空发动机、飞控系统等技术，重点支持大飞机和干线航空项目。'
+        result, calls = self.generate(quote)
+        self.assertEqual(result['chain'][0]['nodes'], [])
+        self.assertEqual(len(calls), 2)
+
+    def test_flight_control_chip_is_not_shortened_to_whole_flight_control_system(self):
+        result, calls = self.generate('低空产业研发目录包括飞控系统芯片，相关研发项目和供需关系需要进一步核实。')
+        self.assertEqual(result['chain'][0]['nodes'], [])
+        self.assertEqual(len(calls), 2)
+
+    def test_current_domain_in_other_sentence_does_not_override_foreign_medical_clause(self):
+        quote = '医疗器械研发目录列有飞控系统等术语。本地区低空发展仍在研究，低空物流服务需求另行调查。'
+        result, _ = self.generate(quote)
+        self.assertEqual(result['chain'][0]['nodes'], [])
+
+    def test_negation_in_source_is_preserved_without_local_capability_claim(self):
+        quote = '低空产业尚未开展航电、飞控系统等部件的研发工作，相关需求仍需要进一步核实。'
+        result, _ = self.generate(quote)
+        node = result['chain'][0]['nodes'][0]
+        self.assertTrue(node['negated'])
+        self.assertEqual(node['status'], 'unverified')
+        self.assertEqual(node['sources'][0]['quote'], quote)
+        self.assertEqual(node['local_leaders'], [])
+
+    def test_only_one_per_missing_lane_even_when_multiple_literals_exist(self):
+        result, _ = self.generate('低空产品目录包括航空发动机、飞控系统、动力电池，所有产品研发计划仍须论证。')
+        self.assertEqual(len(result['chain'][0]['nodes']), 1)
+        self.assertEqual(result['chain'][0]['nodes'][0]['extraction_method'], 'literal_fallback')
+
+    def test_no_original_archive_cannot_trigger_literal_generation(self):
+        bundle = research(['低空研发目录包含飞控系统，相关实施条件和研发安排另行明确。'], topic=self.topic)
+        bundle['sources'] = {}
+        calls = []
+        with self.assertRaises(TopicChainError):
+            build_chain({'city':'闵行区','topic':self.topic}, bundle, lambda *args: calls.append(args))
+        self.assertEqual(calls, [])
+
+
 class FakeSearch:
     enabled = True
     search_provider = 'exa'

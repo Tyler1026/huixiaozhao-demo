@@ -83,6 +83,7 @@ _DOMAIN_CUES = {
     'energy-equipment-v1': r'氢能|氢基|制氢|储氢|储能|燃料电池|光伏|风电|电网',
     'fusion-v1': r'聚变|托卡马克|仿星器|氚|等离子体',
 }
+_LITERAL_BOUNDARY = re.compile(r'[\s，,、。；;：:（）()\[\]“”「」\'"—\-•等]')
 
 
 def _digest(text):
@@ -353,6 +354,58 @@ def normalize_chain_plan(raw, research, context):
         'rejected_count': rejected, 'omitted_count': len(nodes)-count}
 
 
+def _literal_fallback(context, research, missing):
+    """Extract at most one already-written complete taxonomy noun per lane.
+
+    No source text is composed here. Explicit industry scope and both lexical
+    boundaries are required in addition to the ordinary node/source guards.
+    """
+    topic = context.get('topic')
+    taxonomy = taxonomy_for_topic(topic)
+    cue = _DOMAIN_CUES.get(taxonomy['id'])
+    if not cue:
+        return []
+    catalog = chain_source_catalog(research, context)
+    selected = []
+    for lane in missing:
+        terms = sorted((term for term in taxonomy['terms'][lane] if len(term) >= 4), key=len, reverse=True)
+        found = None
+        for term in terms:
+            if classify_node(term, topic)['lane'] != lane:
+                continue
+            for sid, source in catalog.items():
+                quote = source['quote']
+                title = source.get('title') if isinstance(source.get('title'), str) else ''
+                if len(quote) > 1600 or not (re.search(cue, quote, re.I) or re.search(cue, title, re.I)):
+                    continue
+                # Low-altitude sources sometimes share a document with large
+                # civil-aircraft projects; that background is not a low-altitude
+                # component claim merely because the document title is broad.
+                if taxonomy['id'] == 'low-altitude-v1' and re.search(r'大飞机|大型客机|民用航空发动机|干线航空|客运飞机', quote):
+                    continue
+                bounded = any((match.start() == 0 or _LITERAL_BOUNDARY.fullmatch(quote[match.start()-1]))
+                              and (match.end() == len(quote) or _LITERAL_BOUNDARY.fullmatch(quote[match.end()]))
+                              for match in re.finditer(re.escape(term), quote))
+                if not bounded or not _topic_supports(term, quote, topic):
+                    continue
+                candidate = {'name': term, 'evidence_ids': [sid]}
+                checked = normalize_chain_plan({'nodes': [candidate]}, research, context)
+                if any(group['seg'] == lane and group['nodes'] for group in checked['chain']):
+                    found = candidate
+                    break
+            if found:
+                break
+        if found:
+            selected.append(found)
+    return selected
+
+
+def _retained_selection(result):
+    return [{'name': node['name'], 'evidence_ids': node['evidence_ids']}
+            for group in result['chain'] for node in group['nodes']] + [
+            {'name': node['name'], 'evidence_ids': node['evidence_ids']} for node in result['unclassified']]
+
+
 def build_chain(context, research, complete):
     if research.get('status') not in ('ready', 'pending') or not chain_source_catalog(research, context):
         raise TopicChainError('chain_research_unavailable', '本次未取得可追溯的产业链原始资料，已有图谱保留。')
@@ -385,16 +438,21 @@ def build_chain(context, research, complete):
                          for group in checked['chain'] if group['seg'] in missing
                          for node in group['nodes'][:3]]
             if additions:
-                retained = [{'name': node['name'], 'evidence_ids': node['evidence_ids']}
-                            for group in result['chain'] for node in group['nodes']]
-                retained += [{'name': node['name'], 'evidence_ids': node['evidence_ids']}
-                             for node in result['unclassified']]
-                merged = {'nodes': retained + additions}
+                merged = {'nodes': _retained_selection(result) + additions}
                 result = normalize_chain_plan(merged, research, context)
         except Exception:
             # Retrieval, archive validation and the first result remain valid;
             # a failed optional supplement never turns them into a failed run.
             pass
+        remaining = result['coverage']['missing_lanes']
+        literal = _literal_fallback(context, research, remaining)
+        if literal:
+            result = normalize_chain_plan({'nodes': _retained_selection(result) + literal}, research, context)
+            extracted = {(row['name'], tuple(row['evidence_ids'])) for row in literal}
+            for group in result['chain']:
+                for node in group['nodes']:
+                    if (node['name'], tuple(node['evidence_ids'])) in extracted:
+                        node['extraction_method'] = 'literal_fallback'
     if research.get('status') == 'pending' and result['status'] != 'empty':
         result['status'] = result['coverage']['status'] = 'partial'
         result['coverage']['research_partial'] = True
