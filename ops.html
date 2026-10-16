@@ -5297,11 +5297,11 @@ function chainNodeSources(node){
 
 function chainNodeSourcesHtml(node){
   var rows=chainNodeSources(node);if(!rows.length)return '<p style="font-size:11px;color:#64748b">来源待补充，当前表述尚未核实。</p>';
-  return '<details class="industry-chain-sources" style="width:100%;margin-top:10px;text-align:left;font-size:11px;line-height:1.7"><summary>查看原文与来源（'+rows.length+'）</summary>'+rows.map(function(row){
+  return '<details class="industry-chain-sources" style="width:100%;margin-top:10px;text-align:left;font-size:11px;line-height:1.7"><summary>查看原文与来源（'+rows.length+'）</summary><div class="industry-chain-source-scroll" style="max-height:320px;overflow:auto;overscroll-behavior:contain;margin-top:6px">'+rows.map(function(row){
     return '<div style="padding:10px 0;border-top:1px solid #e2e8f0;overflow-wrap:anywhere">'+(row.title?'<strong>'+escapeChainText(row.title)+'</strong>':'')+
       (row.quote?'<blockquote style="margin:6px 0;padding-left:8px;border-left:2px solid #cbd5e1;white-space:pre-wrap">'+escapeChainText(row.quote)+'</blockquote>':'')+
       row.urls.map(function(url,index){return '<a href="'+escapeChainText(url)+'" target="_blank" rel="noopener noreferrer" style="margin-right:10px">打开来源 '+(index+1)+'</a>';}).join('')+'</div>';
-  }).join('')+'</details>';
+  }).join('')+'</div></details>';
 }
 
 function chainNodeCardHtml(node){
@@ -5310,7 +5310,7 @@ function chainNodeCardHtml(node){
   var nature=negated?'否定或排除表述 · 待核':planned?'规划 / 计划 · 待核':node.status==='reported'?'材料披露 · 待核':'待核';
   var classification=node.classification&&typeof node.classification==='object'?node.classification:{},reason=classification.why||classification.reason;
   var exceptionReason=reason&&!/按通用.*口径分类/.test(reason)?reason:'';
-  return '<div class="industry-chain-node is-'+level+'" style="min-width:0;background:#fff;border:1px solid #dfe7ee;border-radius:9px;padding:14px;text-align:left;overflow-wrap:anywhere">'+
+  return '<div class="industry-chain-node is-'+level+'" style="align-self:start;min-width:0;background:#fff;border:1px solid #dfe7ee;border-radius:9px;padding:14px;text-align:left;overflow-wrap:anywhere">'+
     '<span style="display:inline-block;border-radius:5px;padding:2px 6px;background:#eef2f6;color:#475569;font-size:10px">'+nature+'</span>'+
     '<div style="font-size:13px;font-weight:700;line-height:1.6;margin-top:7px">'+escapeChainText(node.name||'未命名材料项')+'</div>'+
     (exceptionReason?'<div style="font-size:10px;color:#7c8b9c;margin-top:8px">分组说明：'+escapeChainText(exceptionReason)+'</div>':'')+
@@ -5333,10 +5333,10 @@ function _renderRichChain(topic, segments, recs, p, unclassified, status, eviden
   h+='<p class="industry-chain-notice" style="padding:12px 18px;margin:0;color:#64748b;font-size:12px;line-height:1.8">'+'本次资料中的代表环节，非完整行业清单。内容未独立核实；规划不代表已落地，分类不代表本地能力。'+(notice?'<br>'+notice:'')+(taxonomy.description?'<br>分类口径：'+escapeChainText(taxonomy.description):'')+'</p>';
   h+='<div class="industry-chain-body" style="padding:16px;display:flex;flex-direction:column;gap:14px;background:#f8fafc">';
   ['上游','中游','下游'].forEach(function(name){var segment=segments.find(function(item){return item.seg===name;})||{nodes:[]};
-    h+='<div class="industry-chain-row" style="display:flex;gap:12px;align-items:stretch"><div class="industry-chain-label" style="width:44px;flex-shrink:0;padding:10px 3px;border:1px solid #dfe7ee;border-radius:7px;display:flex;align-items:center;justify-content:center"><span style="writing-mode:vertical-rl;font-size:12px;letter-spacing:3px">'+name+'</span></div><div class="industry-chain-nodes" style="flex:1;min-width:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">'+
+    h+='<div class="industry-chain-row" style="display:flex;gap:12px;align-items:stretch"><div class="industry-chain-label" style="align-self:flex-start;min-height:76px;width:44px;flex-shrink:0;padding:10px 3px;border:1px solid #dfe7ee;border-radius:7px;display:flex;align-items:center;justify-content:center"><span style="writing-mode:vertical-rl;font-size:12px;opacity:1;letter-spacing:3px">'+name+'</span></div><div class="industry-chain-nodes" style="flex:1;min-width:0;display:grid;align-items:start;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">'+
       ((segment.nodes||[]).length?segment.nodes.map(chainNodeCardHtml).join(''):'<div style="padding:18px;border:1px dashed #cbd5e1;border-radius:8px;font-size:12px;color:#64748b">资料待补：当前材料不足以说明该分组的环节，不能据此判断不存在。</div>')+'</div></div>';
   });
-  if(unclassified.length)h+='<section class="industry-chain-unclassified" style="padding:14px;border:1px dashed #cbd5e1;border-radius:8px"><strong style="font-size:13px">尚未分类的材料项</strong><p style="font-size:12px;color:#64748b">现有材料不足以确定其产业环节，保留原文供核对。</p><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">'+unclassified.map(chainNodeCardHtml).join('')+'</div></section>';
+  if(unclassified.length)h+='<section class="industry-chain-unclassified" style="padding:14px;border:1px dashed #cbd5e1;border-radius:8px"><strong style="font-size:13px">尚未分类的材料项</strong><p style="font-size:12px;color:#64748b">现有材料不足以确定其产业环节，保留原文供核对。</p><div style="display:grid;align-items:start;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">'+unclassified.map(chainNodeCardHtml).join('')+'</div></section>';
   return h+'</div></section>';
 }
 
