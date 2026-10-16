@@ -204,7 +204,9 @@ class StreamBoundaryTests(unittest.TestCase):
         exec(compile(ast.Module(body=nodes,type_ignores=[]),'helpers','exec'),ns)
         saved=self.h.state();saved.update(sample());self.h.replace(saved)
 
-    def request(self,raw,mode='draft',extra=None):
+    def request(self,raw,mode='research',extra=None):
+        # These generic stream tests cover the legacy completion adapter.
+        # draft/full now belong to the dedicated, source-bound report route.
         self.h.ns['DS_OPENER'].open.return_value=FakeResponse(raw)
         body={'question':'测试证据','mode':mode,'chunks':[],'stream':True,'projectKey':'a','topic':'液体火箭'}
         body.update(extra or {})
@@ -256,12 +258,24 @@ class StreamBoundaryTests(unittest.TestCase):
         self.assertIn('有直接业务关联',prompt)
 
     def test_full_gate_rejects_unconfirmed_before_upstream_call(self):
-        status,data=self.request(b'',extra={'purpose':'topic_full','projectKey':'a','topic':'液体火箭','confirmations':[]})
-        self.assertEqual(status,409);self.h.ns['DS_OPENER'].open.assert_not_called()
+        status,data=self.request(b'',mode='full',extra={'purpose':'topic_full','projectKey':'a','topic':'液体火箭','reportRequestId':'r1','confirmations':[]})
+        self.assertEqual(status,409);self.assertEqual(json.loads(data)['error'],'confirmation_required')
+        self.h.ns['DS_OPENER'].open.assert_not_called()
+        self.assertEqual(self.h.topic_research_calls,[]);self.assertEqual(self.h.topic_plan_calls,[])
 
     def test_full_without_purpose_cannot_bypass_confirmation(self):
-        status,data=self.request(b'',mode='full',extra={'confirmations':[]})
-        self.assertEqual(status,409);self.h.ns['DS_OPENER'].open.assert_not_called()
+        status,data=self.request(b'',mode='full',extra={'reportRequestId':'r1','confirmations':[]})
+        self.assertEqual(status,409);self.assertEqual(json.loads(data)['error'],'confirmation_required')
+        self.h.ns['DS_OPENER'].open.assert_not_called()
+        self.assertEqual(self.h.topic_research_calls,[]);self.assertEqual(self.h.topic_plan_calls,[])
+
+    def test_http_fixture_blocks_real_draft_research_without_faking_success(self):
+        status,data=self.request(b'',mode='draft',extra={'reportRequestId':'r1'})
+        self.assertEqual(status,200)
+        self.assertIn('"error"',data);self.assertNotIn('[DONE]',data)
+        self.assertEqual(len(self.h.topic_research_calls),1)
+        self.assertEqual(self.h.topic_plan_calls,[])
+        self.h.ns['DS_OPENER'].open.assert_not_called()
 
     def test_enterprise_endpoint_forces_admin_search_draft_not_report_mode(self):
         self.h.ns['DS_OPENER'].open.return_value=FakeResponse(b'data: {"type":"response.output_text.delta","delta":"{}"}\n\ndata: {"type":"response.completed","response":{"status":"completed"}}\n\n')

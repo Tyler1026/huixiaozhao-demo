@@ -588,7 +588,7 @@ C=优先本地化（有协同但不硬依赖）
 对每个TOP缺口描述：
 - 目标企业类型（规模/技术路线/上市/非上市）
 - 核心诉求（为什么要来这里）
-- 开口话术：「[城市]的[不可复制资产]正是您最需要的[企业具体需求]，落地即能锁定[链主名]的[XX亿]采购订单。」
+- 开口话术只能提出有证据的对接问题；无采购合同或公开承诺，不得保证订单、投资、补贴或收益。
 
 ### 五、待确认事项
 列出需要确认的关键事项（专项资金/园区地块/政策口径）。
@@ -743,6 +743,24 @@ SYSTEM_FUNNEL = """你是慧小招招商情报分析师。针对某个具体的�
 6. faction 是稀缺信息：只有当你确有可信线索（公开可考的校友/籍贯/商会/任职关联）时才填，并写清依据；绝大多数企业此项应留空——【严禁为了凑数编造领导背景或人际关联】。找不到就留空，这是正常的，不强求。
 7. total_scanned 写你本轮实际扫描评估的企业规模（约等于 companies 长度或更多）。
 8. 全部用中文。这是 AI 推理结果，前端会标注"待人工核验"。核心底线：所有企业、分数、信号、扩张需求、派系关联都必须基于真实公开信息或合理推断，绝不编造虚假数据；宁可留空、宁可少列，也不许造假。"""
+
+
+def _complete_topic_plan(system, user, max_tokens):
+    from backend.topic_reports import TopicReportError
+    if not DS_KEY:
+        raise TopicReportError('model_unavailable', '报告模型未配置，请联系管理员。')
+    payload = {"model": MODEL, "max_tokens": max_tokens, "stream": False,
+               "temperature": 0, "thinking": {"type": "disabled"},
+               "response_format": {"type": "json_object"},
+               "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+    req = urllib.request.Request(DS_URL, data=json.dumps(payload).encode(), method='POST',
+                                 headers={'Content-Type': 'application/json', 'Authorization': 'Bearer '+DS_KEY})
+    with DS_OPENER.open(req, timeout=65) as response:
+        data = json.loads(response.read())
+    choice = (data.get('choices') or [{}])[0]
+    if choice.get('finish_reason') != 'stop':
+        raise TopicReportError('incomplete_report_plan', '本次报告整理未完成，已有报告已保留，请重试。')
+    return (choice.get('message') or {}).get('content', '')
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1215,7 +1233,14 @@ class Handler(BaseHTTPRequestHandler):
             mode = "full"
 
         if not q:
-            self.send_error(400, "question required"); return
+            return error_response(self, AuthError(400, 'question_required', '请填写问题'))
+
+        if mode in ('draft', 'full') and body.get('purpose') != 'chain_map':
+            from backend.topic_report_route import serve_topic_report
+            return serve_topic_report(
+                self, body,
+                read_state=lambda: load_state(bool(_PG_AVAIL and DATABASE_URL), _db_get, SYNC_PATH),
+                complete=_complete_topic_plan, audit=audit_log)
 
         chat_request = mode == 'chat' and not enterprise_draft and body.get('purpose') != 'chain_map'
         chat_scope = {'projectKey': '', 'topic': ''}
