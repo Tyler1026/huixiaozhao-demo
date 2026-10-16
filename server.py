@@ -755,7 +755,7 @@ def _complete_topic_plan(system, user, max_tokens):
                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
     req = urllib.request.Request(DS_URL, data=json.dumps(payload).encode(), method='POST',
                                  headers={'Content-Type': 'application/json', 'Authorization': 'Bearer '+DS_KEY})
-    with DS_OPENER.open(req, timeout=65) as response:
+    with DS_OPENER.open(req, timeout=110 if max_tokens >= 9000 else 65) as response:
         data = json.loads(response.read())
     choice = (data.get('choices') or [{}])[0]
     if choice.get('finish_reason') != 'stop':

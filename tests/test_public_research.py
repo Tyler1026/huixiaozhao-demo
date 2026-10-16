@@ -62,17 +62,43 @@ class PublicResearchTests(unittest.TestCase):
     def test_seed_data_are_only_verifiable_original_sources_and_work_in_chain_catalog(self):
         loaded = load_public_research()
         self.assertEqual(loaded['rejected_count'], 0)
-        self.assertEqual(len(loaded['evidence']), 5)
+        self.assertTrue(loaded['evidence'])
         self.assertIn('tofflon.com', loaded['trusted_company_domains'])
         out = enrich_public_research({'city': '闵行区', 'topic': '生物医药'}, '闵行区', '生物医药')
-        self.assertEqual(len(chain_source_catalog(out, {'city': '闵行区', 'topic': '生物医药'})), 5)
+        catalog = chain_source_catalog(out, {'city': '闵行区', 'topic': '生物医药'})
+        self.assertTrue(catalog)
+        enriched = {row['id']: row for row in out['evidence']}
+        for evidence_id, item in catalog.items():
+            self.assertIn(evidence_id, enriched)
+            self.assertEqual(item['quote'], enriched[evidence_id]['quote'])
+            self.assertEqual(item['url'], enriched[evidence_id]['url'])
         filter_quote = next(row['quote'] for row in out['evidence'] if '1225360022' in row['url'])
         self.assertTrue(filter_quote.strip().endswith('需求。'))
+        source_ids, evidence_ids = set(), set()
         for path in Path(__file__).resolve().parents[1].joinpath('data/public-research').glob('*.json'):
             value = json.loads(path.read_text())
-            self.assertEqual(set(value), {'schema', 'sources', 'evidence'})
+            self.assertTrue({'sources', 'evidence'} <= set(value) <= {'schema', 'sources', 'evidence'})
             for text in ('claim_links', 'candidate_links', 'numeric_scope_notes', 'judgment'):
                 self.assertNotIn(text, json.dumps(value))
+            for source_id, source in value['sources'].items():
+                with self.subTest(file=path.name, source=source_id):
+                    self.assertEqual(source['id'], source_id)
+                    self.assertEqual(source['fulltext_sha256'], digest(source['fulltext']))
+                    self.assertEqual(source_id, 'source_' + digest(
+                        canonical_url(source['url']) + '\0' + source['fulltext'])[:20])
+                    self.assertEqual(source['retrieval'], 'fetched')
+                    source_ids.add(source_id)
+            for row in value['evidence']:
+                with self.subTest(file=path.name, evidence=row['id']):
+                    source = value['sources'][row['source_id']]
+                    self.assertEqual(row['url'], source['url'])
+                    self.assertIn(row['quote'], source['fulltext'])
+                    self.assertEqual(row['id'], 'tr_' + digest(row['url'] + '\0' + row['quote'])[:20])
+                    self.assertEqual(row['retrieval'], 'fetched')
+                    self.assertEqual(row['retrieved_at'], source['retrieved_at'])
+                    evidence_ids.add(row['id'])
+        self.assertEqual(set(loaded['sources']), source_ids)
+        self.assertEqual({row['id'] for row in loaded['evidence']}, evidence_ids)
 
     def test_enrichment_is_deep_copy_preserves_fetch_time_and_live_status(self):
         self.write(combine(identity(), product()))
@@ -102,6 +128,114 @@ class PublicResearchTests(unittest.TestCase):
         self.assertEqual({r['id'] for r in out['evidence']},
                          {proof['evidence'][0]['id'], item['evidence'][0]['id']})
         self.assertEqual(out['public_research']['trusted_company_domains'], ['example.com'])
+
+    def test_topic_fact_brings_only_matching_local_company_context(self):
+        fact = document('https://www.shanghai.gov.cn/fact',
+                        '上海云岚设备有限公司研制聚变磁体，并已交付实验装置开展实际运行测试。')
+        local = document('https://www.shanghai.gov.cn/local',
+                         '闵行区企业上海云岚设备有限公司已设立研发中心，并在区内开展技术活动。')
+        other = document('https://www.shanghai.gov.cn/other',
+                         '闵行区企业上海星岚设备有限公司已设立研发中心，并在区内开展技术活动。')
+        self.write(combine(fact, local, other))
+        out = self.enrich(topic='聚变能源')
+        self.assertEqual({r['id'] for r in out['evidence']},
+                         {fact['evidence'][0]['id'], local['evidence'][0]['id']})
+        self.assertEqual(out['public_research']['companion_evidence_ids'], [local['evidence'][0]['id']])
+        self.assertNotIn('local_production', json.dumps(out))
+
+    def test_qualified_short_name_matches_one_legal_entity(self):
+        fact = document('https://www.shanghai.gov.cn/fact',
+                        '云岚超导科技董事长介绍，聚变装置内壁材料仍面临中子辐照验证难题。')
+        local = document('https://www.shanghai.gov.cn/local',
+                         '闵行区企业上海云岚超导科技发展有限公司参加区域创新交流，介绍公司发展情况。')
+        self.write(combine(fact, local))
+        self.assertIn(local['evidence'][0]['id'], {r['id'] for r in self.enrich(topic='聚变能源')['evidence']})
+        ambiguous = document('https://www.shanghai.gov.cn/ambiguous',
+                             '闵行区企业北京云岚超导科技发展有限公司参加区域创新交流，介绍公司发展情况。')
+        self.write(combine(fact, local, ambiguous))
+        self.assertEqual({r['id'] for r in self.enrich(topic='聚变能源')['evidence']},
+                         {fact['evidence'][0]['id']})
+
+    def test_shared_words_do_not_link_unrelated_legal_entities(self):
+        fact = document('https://www.shanghai.gov.cn/fact',
+                        '上海新源生物科技有限公司已交付生物医药耗材，现有产品进入客户验证。')
+        unrelated = document('https://www.shanghai.gov.cn/unrelated',
+                             '闵行区企业上海新源科技装备有限公司设立总部，并已开展日常经营活动。')
+        self.write(combine(fact, unrelated))
+        self.assertEqual({r['id'] for r in self.enrich()['evidence']}, {fact['evidence'][0]['id']})
+
+    def test_legal_name_prefix_is_not_removed_as_a_connective(self):
+        fact = document('https://www.shanghai.gov.cn/fact',
+                        '联合电子有限公司已交付核聚变电源，并完成实际运行验证。')
+        unrelated = document('https://www.shanghai.gov.cn/unrelated',
+                             '闵行区企业电子有限公司设立总部，并已开展日常经营活动。')
+        self.write(combine(fact, unrelated))
+        self.assertEqual({r['id'] for r in self.enrich(topic='聚变能源')['evidence']},
+                         {fact['evidence'][0]['id']})
+
+    def test_single_issuer_page_brings_identity_for_unnamed_product_fact(self):
+        text = ('公司名称 示例设备有限公司\n注册地址 闵行区示例路1号\n'
+                '本公司已交付核聚变电源系统，并完成连续运行测试。')
+        url = 'https://static.cninfo.com.cn/finalpage/2026-01-01/1234567890.PDF'
+        identity_row = document(url, text, quote=text.split('\n本公司')[0])
+        fact = document(url, text, quote='本公司' + text.split('\n本公司')[1])
+        self.write(combine(identity_row, fact))
+        self.assertEqual({r['id'] for r in self.enrich(topic='聚变能源')['evidence']},
+                         {identity_row['evidence'][0]['id'], fact['evidence'][0]['id']})
+
+    def test_shared_url_does_not_transfer_another_companys_location(self):
+        text = ('上海云岚设备有限公司已交付核聚变电源，完成连续运行测试。\n'
+                '闵行区企业上海星岚设备有限公司在区内设立办公总部并开展日常经营活动。')
+        url = 'https://www.shanghai.gov.cn/companies'
+        fact = document(url, text, quote=text.split('\n')[0])
+        other = document(url, text, quote=text.split('\n')[1])
+        self.write(combine(fact, other))
+        self.assertEqual({r['id'] for r in self.enrich(topic='聚变能源')['evidence']},
+                         {fact['evidence'][0]['id']})
+
+    def test_valid_live_topic_fact_still_gets_context_but_forged_one_does_not(self):
+        fact = document('https://www.shanghai.gov.cn/fact',
+                        '上海云岚设备有限公司已交付核聚变电源，并完成实际运行验证。')
+        local = document('https://www.shanghai.gov.cn/local',
+                         '闵行区企业上海云岚设备有限公司设立总部，并已开展日常经营活动。')
+        self.write(combine(fact, local))
+        base = dict(copy.deepcopy(fact), city='闵行区', topic='聚变能源', status='ready')
+        out = self.enrich(base, topic='聚变能源')
+        self.assertEqual(len(out['evidence']), 2)
+        self.assertEqual(out['status'], 'ready')
+        for key, value in base['evidence'][0].items():
+            self.assertEqual(out['evidence'][0][key], value)
+        forged = copy.deepcopy(base)
+        forged['evidence'][0]['quote'] = '伪造但复用原始ID的陈述，不得触发任何相关身份段落。'
+        self.assertEqual(self.enrich(forged, topic='聚变能源')['evidence'], forged['evidence'])
+
+    def test_context_expansion_is_one_hop_and_budgeted(self):
+        fact = document('https://www.shanghai.gov.cn/fact',
+                        '上海云岚设备有限公司已交付核聚变电源，并完成实际运行验证。')
+        local = document('https://www.shanghai.gov.cn/local',
+                         '闵行区企业上海云岚设备有限公司与上海星岚设备有限公司参加交流活动。')
+        secondary = document('https://www.shanghai.gov.cn/secondary',
+                             '闵行区企业上海星岚设备有限公司设立总部，提供日常服务并参加区域活动。')
+        self.write(combine(fact, local, secondary))
+        out = self.enrich(topic='聚变能源')
+        self.assertEqual({r['id'] for r in out['evidence']},
+                         {fact['evidence'][0]['id'], local['evidence'][0]['id']})
+        again = self.enrich(out, topic='聚变能源')
+        self.assertEqual(again['evidence'], out['evidence'])
+        with patch('backend.public_research.MAX_ARCHIVE_ROWS', 1):
+            self.assertEqual(self.enrich(topic='聚变能源')['evidence'], [])
+        with patch('backend.public_research.MAX_COMPANION_ROWS', 0):
+            self.assertEqual({r['id'] for r in self.enrich(topic='聚变能源')['evidence']},
+                             {fact['evidence'][0]['id']})
+
+    def test_real_fusion_context_survives_topic_filter_without_becoming_a_fact(self):
+        out = enrich_public_research({'city': '闵行区', 'topic': '聚变能源'}, '闵行区', '聚变能源')
+        companion_id = 'tr_c010225bb1105405db31'
+        self.assertIn(companion_id, out['public_research']['companion_evidence_ids'])
+        row = next(r for r in out['evidence'] if r['id'] == companion_id)
+        self.assertIn('上海翌曦科技发展有限公司', row['quote'])
+        self.assertNotIn('judgment', row)
+        self.assertNotIn('claim_scope', row)
 
     def test_unrelated_topic_does_not_import_company_or_identity(self):
         self.write(combine(identity(), product()))

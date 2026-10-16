@@ -5,6 +5,23 @@ function assessment(overrides={}){return {contract:'chain-assessment-v1',state:'
 function judgment(level,overrides={}){return {contract:'chain-judgment-v1',level,basis:'明确材料与本地条件的研判',reason:'结合现有基础，优先核对配套和实施条件。',evidence_ids:['S1'],...overrides};}
 function finding(overrides={}){return {id:'f1',target_id:'n1',dimension:'supply',kind:'gap',scope:'local',scope_label:'本地实际条件',quote:'当地关键配套仍存在缺口，需核对建设及投产状态。',evidence_id:'S1',source:{id:'S1',url:'https://official.example/source',title:'地方正式披露',published_at:'2026-09-09T00:00:00.000Z',retrieved_at:'2026-10-16T06:24:43.303057+00:00'},severity:'high',...overrides};}
 for(const app of ['index','ops']){
+ test(app+' actual weakness uses evidence and comparison while policy stays a neutral context',()=>{
+  const {c}=setup(app),p={evidence_id:'S1',role:'dependency',subject:'膜材',quote:'该企业采用进口膜材，仍需核对替代条件。',source:{url:'https://official.example/fact',title:'产品说明'}};
+  const value=assessment({judgment:{contract:'chain-judgment-v3',level:'mid',rule:'actual_weakness',scope:'local_enterprise',dimension:'dependency',reason:'袋子制造已有支撑，膜材仍需进口。',comparison:'按关键膜材自主供应能力评价。',action:'核查同规格国产膜材验证进度。',premises:[p],counter_evidence:[{...p,role:'operation',quote:'已有袋子工厂生产。'}],evidence_ids:['S1'],missing:['本地产线采购比例'],limitations:['不推广为全区比例。'],policy_context:['S2']}});
+  const html=c.chainNodeCardHtml({name:'生物反应袋',assessment:value});
+  for(const word of ['存在短板','关键依赖','关联企业风险','比较基准','按关键膜材自主供应能力','相反证据','本地产线采购比例','不参与判色'])assert.ok(html.includes(word),word);
+  assert.doesNotMatch(html.split('<details')[0],/优先补链|重点培育/);
+  const panel=c.chainAssessmentPanel(value,[{assessment:value}],0);assert.match(panel,/实际薄弱程度/);assert.match(panel,/政策提及不参与主颜色/);
+  assert.doesNotMatch(panel,/黄色表示规划培育/);
+ });
+ test(app+' actual view keeps unassessed materials in an expandable list without changing data',()=>{
+  const {c}=setup(app),rated=assessment({judgment:{contract:'chain-judgment-v3',level:'strong',rule:'actual_weakness',reason:'已投运',premises:[]}}),pending=assessment({judgment:{contract:'chain-judgment-v3',level:'unknown',rule:'actual_weakness',reason:'待补事实',premises:[]}});
+  const segments=[{seg:'上游',nodes:[{name:'已运行设备',assessment:rated},{name:'仅规划材料',assessment:pending}]}],before=JSON.stringify(segments);
+  const html=c._renderRichChain('测试方向',segments,null,{},[], 'partial',{assessment:rated});
+  assert.match(html,/待补事实的材料项（1）/);assert.match(html,/仅规划材料/);assert.match(html,/先展示已有事实评价的环节/);
+  assert.doesNotMatch(html,/<details class="chain-pending-facts"[^>]*\bopen\b/);
+  assert.equal(JSON.stringify(segments),before);
+ });
  test(app+' reviewed reasoning shows action, premises and boundaries without upgrading factual state',()=>{
   const {c}=setup(app),premise={evidence_id:'S1',role:'policy_target',subject:'火箭发动机',quote:'行动方案提出补齐火箭发动机产业链短板。',source:{url:'https://official.example/plan',title:'行动方案',published_at:'2025-01-02'}};
   const value=assessment({judgment:{contract:'chain-judgment-v2',level:'weak',rule:'policy_bottleneck',method:'inference',confidence:'medium',reason:'政策明确识别该环节补链需求。',action:'核对项目进展及现有配套能力。',premises:[premise],evidence_ids:['S1'],limitations:['政策识别不等于当前实测缺口。']}}),before=JSON.stringify(value);

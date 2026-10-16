@@ -70,6 +70,16 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
         event('research.status', stage='retrieval', message='正在分别检索上游、中游和下游的公开原文')
         findings = research(context['city'], topic, mode='chain', basis=context['chunks'],
                             progress=lambda progress: event('research.status', **progress))
+        # Validate incoming retrieval before enrichment. A valid archive must
+        # not hide a corrupted live source behind an otherwise empty graph.
+        for row in findings.get('evidence', []):
+            original = (findings.get('sources') or {}).get(row.get('source_id')) or {}
+            fulltext, quote = original.get('fulltext'), row.get('quote')
+            if (not isinstance(fulltext, str) or not isinstance(quote, str) or not quote.strip()
+                    or row.get('url') != original.get('url')
+                    or original.get('fulltext_sha256') != hashlib.sha256(fulltext.encode()).hexdigest()
+                    or re.sub(r'\s+', '', quote) not in re.sub(r'\s+', '', fulltext)):
+                raise TopicReportError('evidence_validation_failed', '图谱原文与检索归档不一致，结果未保存')
         from .public_research import enrich_public_research
         findings = enrich_public_research(findings, context['city'], topic)
         event('research.status', stage='classification', message='正在核对原文、环节归类和规划状态')
@@ -84,15 +94,18 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
             assessment_result = {'assessment': unavailable_assessment(context),
                                  'node_assessments': {}, 'sources': []}
         from .chain_node_research import select_node_targets, merge_node_research
-        targets = select_node_targets(result, assessment_result)
-        budget = min(40, max(0, 150 - (clock() - started)))
-        if targets and budget >= 5:
-            event('research.status', stage='node_research', message='正在补查关键环节的本地供给、需求与技术约束')
+        targets = select_node_targets(result, assessment_result, limit=30, include_supported=True)
+        batches = [targets[i:i+6] for i in range(0, len(targets), 6)]
+        for batch_index, batch in enumerate(batches):
+            budget = min(25, max(0, 190 - (clock() - started)))
+            if budget < 5:
+                break
+            event('research.status', stage='node_research', message=f'正在核验实际供给与约束：第{batch_index+1}/{len(batches)}组')
             try:
                 extra = research(context['city'], topic, mode='chain',
-                                 node_targets=[node['name'] for node in targets], deadline_seconds=budget,
+                                 node_targets=[node['name'] for node in batch], deadline_seconds=budget,
                                  progress=lambda progress: event('research.status', **progress))
-                findings = merge_node_research(findings, extra, targets)
+                findings = merge_node_research(findings, extra, batch)
                 # Supplemental originals can fill a previously empty lane.
                 # Reuse the strict literal fallback; do not fabricate nodes
                 # or leave new evidence disconnected from the displayed map.
@@ -112,18 +125,21 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
                                     node['extraction_method'] = methods[node['id']]
             except Exception:
                 # An optional public supplement never discards the original graph.
-                findings['node_research'] = {'targets': targets, 'status': 'unavailable'}
+                findings['node_research'] = {'targets': targets, 'status': 'partial'}
         event('research.status', stage='reasoning', message='正在对比本地基础与产业要求，并交叉核对补链判断')
         try:
-            from .chain_reasoning import build_reasoning
-            reasoned = (reasoning_builder or build_reasoning)(context, findings, result, assessment_result, complete)
+            from .chain_weakness import build_weakness
+            reasoned = (reasoning_builder or build_weakness)(context, findings, result, assessment_result, complete)
             if reasoned.get('judgment'):
                 assessment_result['assessment']['judgment'] = reasoned['judgment']
             for node_id, judgment in (reasoned.get('node_judgments') or {}).items():
                 assessment_result.setdefault('node_assessments', {}).setdefault(node_id, unavailable_assessment(context))['judgment'] = judgment
             assessment_result['sources'] = list(assessment_result.get('sources') or []) + list(reasoned.get('sources') or [])
         except Exception:
-            pass  # Keep the existing evidence-bound judgment if analytical review fails.
+            from .chain_weakness import unknown
+            assessment_result['assessment']['judgment'] = unknown('本次实际薄弱程度复核未完成，保留事实材料。')
+            for node in [n for group in result['chain'] for n in group['nodes']] + result.get('unclassified', []):
+                assessment_result.setdefault('node_assessments', {}).setdefault(node['id'], unavailable_assessment(context))['judgment'] = unknown()
         result['assessment'] = assessment_result['assessment']
         node_assessments = assessment_result.get('node_assessments') or {}
         for node in [n for group in result['chain'] for n in group['nodes']] + result.get('unclassified', []):

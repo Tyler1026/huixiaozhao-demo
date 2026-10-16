@@ -3165,7 +3165,7 @@ function generateChainFromReport(topic, reportText, city, force){
   if(!force&&currentEvidenceChain(topic,key))return Promise.resolve(true);
   var exact=(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'');
   if(!exact||exact.trim().length<100){rs.chainErrorByTopic=rs.chainErrorByTopic||{};rs.chainErrorByTopic[topic]='当前报告正文不足 100 字，请先完善当前方向报告后再生成图谱。';if(typeof toast==='function')toast(rs.chainErrorByTopic[topic]);return Promise.resolve(false);}
-  var controller=new AbortController(),timer=setTimeout(function(){controller.abort();},360000);
+  var controller=new AbortController(),timer=setTimeout(function(){controller.abort();},480000);
   _chainGenInFlight[inflight]={message:'正在确认当前材料已保存…'};
   function active(){return PROJECTS[key]&&savedEvidenceIdentity(key,topic)===sourceIdentity&&(PROJECTS[key].reportRequestId||REPORTSTATE[key].reportRequestId||'')===requestId&&(epoch===null||epoch===_authEpoch);}
   function show(){if(cur===key&&P()&&P().topic===topic&&view==='report')render();}
@@ -3242,7 +3242,17 @@ function chainNodeSourcesHtml(node){
   }).join('')+(!rows.length?'<p>来源待补充，当前表述尚未核实。</p>':'')+'</div></details>';
 }
 
+function actualWeaknessView(value){
+  var j=value&&value.judgment;if(!value||value.contract!=='chain-assessment-v1'||!j||j.contract!=='chain-judgment-v3')return null;
+  var styles={strong:{label:'已有支撑',color:'#2c7951',bg:'#eaf7ef',border:'#8aba9e',card:'#f4faf6'},mid:{label:'存在短板',color:'#8f6416',bg:'#fff4cf',border:'#d8bc69',card:'#fffcef'},weak:{label:'明显薄弱',color:'#b24738',bg:'#fdebe5',border:'#db8d7e',card:'#fff6f3'},unknown:{label:'尚不能评价',color:'#738293',bg:'#f5f7fa',border:'#cbd4de',card:'#fff'}};
+  var valid=Object.prototype.hasOwnProperty.call(styles,j.level),level=valid?j.level:'unknown',s=styles[level];
+  var scopes={local:'本地实际条件',local_enterprise:'关联企业风险',industry_shared:'行业共性约束'},dimensions={supply:'实际供给',dependency:'关键依赖',maturity:'交付成熟度',coordination:'配套协同'};
+  var ids=Array.isArray(j.evidence_ids)?j.evidence_ids:[],facts={weak:'明显薄弱',attention:'存在短板',supported:'已有支撑',unknown:'证据不足'};
+  return {available:true,judgment:valid,actual:true,reasoning:true,level:level,label:s.label,color:s.color,bg:s.bg,border:s.border,card:s.card,reason:j.reason||'',basis:j.dimension||'',basisLabel:[dimensions[j.dimension],scopes[j.scope]].filter(Boolean).join(' · '),evidenceCount:ids.filter(function(id,i){return ids.indexOf(id)===i;}).length,confidence:({high:'较高',medium:'中等',low:'较低'}[j.confidence]||''),method:'实际评价',action:j.action||'',comparison:j.comparison||'',factLabel:facts[value.level]||'尚未评价',evidence:({multiple_sources:'多源材料',single_source:'单源材料',insufficient:'待补证'}[value.evidence_strength]||'待补证')};
+}
+
 function chainAssessmentView(value){
+  var actual=actualWeaknessView(value);if(actual)return actual;
   var styles={strong:{label:'已有基础',color:'#2c7951',bg:'#eaf7ef',border:'#8aba9e',card:'#f4faf6'},mid:{label:'重点培育',color:'#8f6416',bg:'#fff4cf',border:'#d8bc69',card:'#fffcef'},weak:{label:'优先补链',color:'#b24738',bg:'#fdebe5',border:'#db8d7e',card:'#fff6f3'},unknown:{label:'待研判',color:'#738293',bg:'#f5f7fa',border:'#cbd4de',card:'#fff'}};
   var factLabels={weak:'明显薄弱',attention:'存在短板',supported:'已有支撑',unknown:'证据不足'},materials={multiple_sources:'多源材料',single_source:'单源材料',insufficient:'待补证'};
   var container=value&&value.contract==='chain-assessment-v1',facts=container&&value.state==='ready';
@@ -3300,15 +3310,18 @@ function chainAssessmentDetails(value,node){
   var view=chainAssessmentView(value),findings=chainAssessmentFindings(value),groups=[{key:'local_gap',label:'本地短板依据',rows:[]},{key:'local_capability',label:'本地支撑依据',rows:[]},{key:'plan',label:'规划补强 · 尚未落地',rows:[]},{key:'industry',label:'行业背景 · 不代表本地情况',rows:[]},{key:'context',label:'其他材料与范围待核',rows:[]}];
   findings.forEach(function(finding){var key=finding.kind==='plan'?'plan':finding.scope==='industry'?'industry':finding.scope==='local'&&finding.kind==='gap'?'local_gap':finding.scope==='local'&&finding.kind==='capability'?'local_capability':'context';groups.find(function(group){return group.key===key;}).rows.push(finding);});
   var summary=typeof value.summary==='string'?value.summary:'',checks=(Array.isArray(value.next_checks)?value.next_checks:[]).filter(function(text){return typeof text==='string'&&text.trim();});
-  var analysis=value.judgment&&value.judgment.contract==='chain-judgment-v2'?value.judgment:null;
+  var analysis=value.judgment&&['chain-judgment-v2','chain-judgment-v3'].indexOf(value.judgment.contract)>=0?value.judgment:null;
   var premises=analysis&&Array.isArray(analysis.premises)?analysis.premises:[],limitations=analysis&&Array.isArray(analysis.limitations)?analysis.limitations:[];
-  var analysisHtml=analysis?'<section class="chain-analysis-premises"><strong>判断依据链</strong>'+premises.map(function(p){var labels={local_basis:'本地基础',local_presence:'企业所在地',enterprise_capability:'企业产品业务',local_demand:'本地需求',industry_requirement:'产业要求',policy_target:'政策目标',constraint:'约束条件'};return '<p style="margin:8px 0 0"><b>'+escapeChainText(labels[p.role]||p.role||'依据')+'</b> · '+escapeChainText(p.subject||'')+'</p>'+chainAssessmentFindingHtml(p);}).join('')+(view.action?'<p><strong>补链建议：</strong>'+escapeChainText(view.action)+'</p>':'')+(limitations.length?'<strong>判断边界</strong><ul>'+limitations.map(function(x){return '<li>'+escapeChainText(x)+'</li>';}).join('')+'</ul>':'')+'</section>':'';
+  var comparisonHtml=view.actual&&view.comparison?'<p><strong>比较基准：</strong>'+escapeChainText(view.comparison)+'</p>':'';
+  var counterHtml=analysis&&Array.isArray(analysis.counter_evidence)&&analysis.counter_evidence.length?'<strong>已核对的相反证据</strong>'+analysis.counter_evidence.map(chainAssessmentFindingHtml).join(''):'';
+  var missingHtml=analysis&&Array.isArray(analysis.missing)&&analysis.missing.length?'<p><strong>仍缺：</strong>'+analysis.missing.map(escapeChainText).join('；')+'</p>':'';
+  var analysisHtml=analysis?comparisonHtml+counterHtml+missingHtml+'<section class="chain-analysis-premises"><strong>判断依据链</strong>'+premises.map(function(p){var labels={operation:'实际生产/运营',dependency:'实际依赖',maturity:'当前工程阶段',constraint:'实际约束',benchmark:'比较基准',industry_fact:'行业事实',local_basis:'本地基础',local_presence:'企业所在地',local_affiliation:'本地企业关联',local_site:'设施所在地',enterprise_capability:'企业产品业务',local_demand:'本地需求',industry_requirement:'产业要求',policy_target:'政策目标',constraint:'约束条件'};return '<p style="margin:8px 0 0"><b>'+escapeChainText(labels[p.role]||p.role||'依据')+'</b> · '+escapeChainText(p.subject||'')+'</p>'+chainAssessmentFindingHtml(p);}).join('')+(view.action?'<p><strong>补链建议：</strong>'+escapeChainText(view.action)+'</p>':'')+(limitations.length?'<strong>判断边界</strong><ul>'+limitations.map(function(x){return '<li>'+escapeChainText(x)+'</li>';}).join('')+'</ul>':'')+'</section>':'';
   var sources=node?chainNodeSources(node):[],nature=node?(node.negated===true?'否定或排除表述':node.status==='planned'?'规划 / 计划':node.status==='reported'?'材料披露':'材料属性待核'):'';
   return '<details class="chain-assessment-details" style="margin-top:9px;font-size:11px;color:#5b7389;line-height:1.75"><summary style="cursor:pointer;font-weight:600">研判依据'+(findings.length?'（'+findings.length+'条）':'')+'</summary><div style="max-height:320px;overflow:auto;overscroll-behavior:contain;margin-top:7px">'+
     (view.reason?'<p style="margin:0 0 8px"><strong>研判建议：</strong>'+escapeChainText(view.reason)+'</p>':'')+
     analysisHtml+
     (view.basis?'<p style="margin:0 0 8px">依据类型：'+escapeChainText(view.basisLabel)+'</p>':'')+
-    '<div style="font-size:10px;color:#8a9aa7;margin-bottom:6px">以引用材料对应时间为准，不代表实时认证。</div><div class="chain-fact-assessment" style="padding:7px 9px;border-radius:6px;background:#f4f7fa;font-size:10px">事实层评价：'+view.factLabel+' · '+view.evidence+(nature?' · '+nature:'')+'</div>'+
+    '<div style="font-size:10px;color:#8a9aa7;margin-bottom:6px">以引用材料对应时间为准，不代表实时认证。</div><div class="chain-fact-assessment" style="'+(view.actual?'display:none;':'')+'padding:7px 9px;border-radius:6px;background:#f4f7fa;font-size:10px">事实层评价：'+view.factLabel+' · '+view.evidence+(nature?' · '+nature:'')+'</div>'+
     (summary&&summary!==view.reason?'<p style="margin:8px 0">'+escapeChainText(summary)+'</p>':'')+
     groups.filter(function(group){return group.rows.length;}).map(function(group){return '<section class="chain-finding-group '+group.key+'"><strong style="display:block;margin-top:10px;color:#425d76">'+group.label+'</strong>'+group.rows.map(chainAssessmentFindingHtml).join('')+'</section>';}).join('')+
     (sources.length?'<section style="margin-top:10px"><strong>节点原文与来源</strong>'+sources.map(function(row){var published=chainAssessmentDate(row.date,false),retrieved=chainAssessmentDate(row.retrieved,true);return '<div style="padding:9px 0;border-top:1px solid #e3e9ee;overflow-wrap:anywhere">'+(row.title?'<strong>'+escapeChainText(row.title)+'</strong>':'')+(row.quote?'<blockquote style="margin:6px 0;padding-left:8px;border-left:2px solid #c6d2dd;white-space:pre-wrap">'+escapeChainText(row.quote)+'</blockquote>':'')+'<div style="font-size:10px;color:#8697a7">发布：'+escapeChainText(published||'日期未知')+(retrieved?' · '+(row.archived?'原文归档：':'检索：')+escapeChainText(retrieved)+'（本地）':'')+'</div>'+row.urls.map(function(url){return '<a href="'+escapeChainText(url)+'" target="_blank" rel="noopener noreferrer">打开原文来源</a>';}).join(' · ')+'</div>';}).join('')+'</section>':'')+
@@ -3319,16 +3332,17 @@ function chainAssessmentDetails(value,node){
 function chainAssessmentPanel(value,nodes,unclassifiedCount){
   var view=chainAssessmentView(value),counts={strong:0,mid:0,weak:0,unknown:0};nodes.forEach(function(node){counts[chainAssessmentView(node.assessment).level]++;});
   var dimensions=[{key:'supply',label:'本地供给'},{key:'dependency',label:'外部依赖'},{key:'capacity',label:'研发与产能'},{key:'coordination',label:'产业协同'}],received=value&&Array.isArray(value.dimensions)?value.dimensions:[];
-  var distribution=[['weak','优先补链'],['mid','重点培育'],['strong','已有基础'],['unknown','待研判']].map(function(item){return '<span class="chain-priority-count is-'+item[0]+'" style="display:inline-flex;gap:5px;align-items:center;font-size:11px;white-space:nowrap">'+item[1]+' <b style="font-size:13px">'+counts[item[0]]+'</b></span>';}).join('');
+  var distribution=(view.actual?[['weak','明显薄弱'],['mid','存在短板'],['strong','已有支撑'],['unknown','尚不能评价']]:[['weak','优先补链'],['mid','重点培育'],['strong','已有基础'],['unknown','待研判']]).map(function(item){return '<span class="chain-priority-count is-'+item[0]+'" style="display:inline-flex;gap:5px;align-items:center;font-size:11px;white-space:nowrap">'+item[1]+' <b style="font-size:13px">'+counts[item[0]]+'</b></span>';}).join('');
   var criteria='<details class="chain-assessment-criteria" style="flex:1 1 220px;min-width:0;margin-top:8px;font-size:11px;color:#687f92;line-height:1.75"><summary style="cursor:pointer;font-weight:600">三色研判口径</summary><div style="margin-top:7px;max-height:320px;overflow:auto"><ul style="padding-left:17px;margin:0"><li><strong>优先补链（红）</strong>：优先处理的补链方向，需结合依据核实约束与对接条件。</li><li><strong>重点培育（黄）</strong>：规划培育或行业风险的关注建议，不代表已确认现实缺口或中等能力。</li><li><strong>已有基础（绿）</strong>：已有能力或支撑线索，建议巩固拓展，不代表完整成熟或无风险。</li><li><strong>待研判（灰）</strong>：尚未形成有效研判，不等于薄弱，不强行归入三色。</li></ul><p style="margin:8px 0 0">三色为研判建议，非百分制，不按来源数量评分；规划与行业背景不计作已确认的本地短板。事实评价与证据质量见研判依据。</p></div></details>';
   var four='<details class="chain-factual-dimensions" style="flex:1 1 220px;min-width:0;margin-top:8px;font-size:11px;color:#687f92;line-height:1.75"><summary style="cursor:pointer;font-weight:600">四维事实评价</summary><div class="chain-assessment-dimensions" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:8px;margin-top:8px">'+dimensions.map(function(expected){var d=received.find(function(item){return item&&item.key===expected.key;}),v=d&&value&&value.contract==='chain-assessment-v1'&&value.state==='ready'?chainAssessmentView({contract:'chain-assessment-v1',state:'ready',level:d.level,evidence_strength:d.evidence_strength}):chainAssessmentView(null),label=d&&typeof d.label==='string'?d.label:expected.label;return '<div class="chain-assessment-dimension" data-dimension="'+expected.key+'" style="background:#fff;padding:9px;border:1px solid #e3eaf0;border-radius:7px"><div style="font-size:10px;color:#7a8e9f">'+escapeChainText(label)+'</div><div style="font-size:11px;margin-top:5px">'+v.factLabel+'</div><small style="color:#8a9ba9">'+v.evidence+'</small></div>';}).join('')+'</div></details>';
+  if(view.actual)criteria='<details class="chain-assessment-criteria" style="margin-top:8px;font-size:11px;color:#687f92;line-height:1.75"><summary>实际薄弱程度口径</summary><p>绿色：已有真实生产、交付或在用支撑。黄色：存在已披露的具体短板或验证限制。红色：关键依赖或交付能力受到明显制约。灰色：尚不足以比较实际能力。</p><p>评价须给出具体依据和比较基准；政策支持、企业注册地址和未检索到供应商均不用于单独判色。行业共性与关联企业风险单独标注，不当作全区统一水平。</p></details>';
   var details=chainAssessmentDetails(value);
-  return '<section class="chain-assessment-panel chain-priority-panel" style="margin:0 16px 14px;padding:13px 16px;border:1px solid #dfe8ef;border-radius:10px;background:#f8fbfd"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><strong style="font-size:14px;color:#294b63">补链研判 <small style="font-size:10px;color:#8799a8;font-weight:400">建议优先级</small></strong><div>'+chainAssessmentBadge(value)+'</div></div>'+
+  return '<section class="chain-assessment-panel chain-priority-panel" style="margin:0 16px 14px;padding:13px 16px;border:1px solid #dfe8ef;border-radius:10px;background:#f8fbfd"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><strong style="font-size:14px;color:#294b63">'+(view.actual?'实际薄弱程度':'补链研判')+' <small style="font-size:10px;color:#8799a8;font-weight:400">'+(view.actual?'按实际能力与约束评价':'建议优先级')+'</small></strong><div>'+(view.actual&&value.judgment.status==='summary'?'逐环节评价':chainAssessmentBadge(value))+'</div></div>'+
     (view.reason?'<p class="chain-priority-reason" style="font-size:12px;line-height:1.75;color:#506d84;margin:8px 0 9px">'+escapeChainText(view.reason)+'</p>':'')+
     '<div class="chain-assessment-distribution" style="display:flex;flex-wrap:wrap;gap:8px 17px;margin-top:8px">'+distribution+'<span style="font-size:10px;color:#93a1ad">本次 '+nodes.length+' 个材料节点'+(unclassifiedCount?'（含待归类 '+unclassifiedCount+' 项）':'')+'</span></div>'+
-    '<div style="font-size:10px;color:#8a9aa7;margin-top:7px">黄色表示规划培育或行业风险关注，不代表已确认本地缺口。引用材料对应时间及证据质量见详情。</div>'+
+    '<div style="font-size:10px;color:#8a9aa7;margin-top:7px">'+(view.actual?'政策提及不参与主颜色。评价范围、比较基准、原文与相反证据见各节点详情。':'黄色表示规划培育或行业风险关注，不代表已确认本地缺口。引用材料对应时间及证据质量见详情。')+'</div>'+
     ((!view.judgment||nodes.some(function(node){return !chainAssessmentView(node.assessment).judgment;}))?'<p style="font-size:10px;color:#7b8e9e;margin:8px 0 0">部分节点仍需补充深入研判。 <button class="chain-assessment-update" onclick="requestChainGeneration()" style="font-size:10px;padding:3px 7px;border:1px solid #d2dee7;border-radius:5px;color:#607f96;background:#fff">更新研判</button></p>':'')+
-    '<div class="chain-assessment-explain" style="display:flex;flex-wrap:wrap;gap:0 17px;align-items:flex-start">'+(details?'<div style="flex:1 1 220px;min-width:0">'+details+'</div>':'')+criteria+four+'</div></section>';
+    '<div class="chain-assessment-explain" style="display:flex;flex-wrap:wrap;gap:0 17px;align-items:flex-start">'+(details?'<div style="flex:1 1 220px;min-width:0">'+details+'</div>':'')+criteria+(view.actual?'':four)+'</div></section>';
 }
 
 function chainNeedsAssessment(nodes,value){
@@ -3336,7 +3350,7 @@ function chainNeedsAssessment(nodes,value){
 }
 
 function chainNodeCardHtml(node){
-  var view=chainAssessmentView(node.assessment),basisTags={local_gap:'本地短板',local_capability:'本地基础',local_plan:'规划培育',industry_risk:'行业风险'};
+  var view=chainAssessmentView(node.assessment),policyContext=view.actual&&node.assessment.judgment.policy_context&&node.assessment.judgment.policy_context.length,basisTags={local_gap:'本地短板',local_capability:'本地基础',local_plan:'规划培育',industry_risk:'行业风险'};
   var nature=view.reasoning?view.basisLabel:view.judgment&&Object.prototype.hasOwnProperty.call(basisTags,view.basis)?basisTags[view.basis]:'';
   var classification=node.classification&&typeof node.classification==='object'?node.classification:{},reason=classification.why||classification.reason;
   var exceptionReason=reason&&!/按通用.*口径分类/.test(reason)?reason:'';
@@ -3345,6 +3359,7 @@ function chainNodeCardHtml(node){
     '<div class="chain-assessment-tags" style="margin-top:7px;display:flex;flex-wrap:wrap;gap:5px">'+chainAssessmentBadge(node.assessment)+'</div>'+
     (view.reason?'<p class="chain-node-judgment-reason" title="'+escapeChainText(view.reason)+'" style="font-size:11px;color:#5c7589;line-height:1.7;margin:8px 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">'+escapeChainText(view.reason)+'</p>':'')+
     (view.action?'<p class="chain-node-action" style="font-size:10px;color:#60798b;line-height:1.7;margin:6px 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden"><b>建议：</b>'+escapeChainText(view.action)+'</p>':'')+
+    (policyContext?'<div style="font-size:10px;color:#7c8b9b;margin-top:6px">另有政策规划材料 · 不参与判色</div>':'')+
     (nature?'<div class="chain-material-status" style="font-size:10px;color:#8d9ca9;margin-top:7px">'+nature+'</div>':'')+
     (exceptionReason?'<div style="font-size:10px;color:#8799a8;margin-top:7px">分组说明：'+escapeChainText(exceptionReason)+'</div>':'')+
     chainAssessmentDetails(node.assessment,node)+chainNodeSourcesHtml(node)+'</div>';
@@ -3362,12 +3377,19 @@ function _renderRichChain(topic, segments, recs, p, unclassified, status, eviden
   var notice=status==='empty'?'当前材料不足以形成有来源的环节图谱。请补充材料后重试；不能据此判断现实中不存在相关产业。':status==='partial'?'本次仅能整理部分环节，其余材料仍待补充或分类。':'';
   h+='<details class="industry-chain-notice" style="padding:8px 18px;margin:0;color:#8798a6;font-size:10px;line-height:1.8"><summary style="cursor:pointer">图谱范围与分类口径</summary><p style="margin:5px 0">本次资料中的代表环节，非完整行业清单。内容未独立核实；规划不代表已落地，分类不代表本地能力。'+(notice?'<br>'+notice:'')+(taxonomy.description?'<br>分类口径：'+escapeChainText(taxonomy.description):'')+'</p></details>';
   h+=chainAssessmentPanel(evidence.assessment,nodes,unclassified.length);
+  var actual=chainAssessmentView(evidence.assessment).actual,pending=[];
+  if(actual&&nodes.some(function(node){return chainAssessmentView(node.assessment).level!=='unknown';})){
+    segments=segments.map(function(segment){return Object.assign({},segment,{nodes:(segment.nodes||[]).filter(function(node){if(chainAssessmentView(node.assessment).level==='unknown'){pending.push({node:node,segment:segment.seg});return false;}return true;}).slice().sort(function(a,b){var ranks={weak:0,mid:1,strong:2};return ranks[chainAssessmentView(a.assessment).level]-ranks[chainAssessmentView(b.assessment).level];})});});
+    unclassified=unclassified.filter(function(node){if(chainAssessmentView(node.assessment).level==='unknown'){pending.push({node:node,segment:'待归类'});return false;}return true;});
+    h+='<p style="margin:0 18px 10px;font-size:11px;color:#60798b">先展示已有事实评价的环节；尚不能评价的 '+pending.length+' 项保留在下方待补清单。</p>';
+  }
   h+='<div class="industry-chain-body" style="padding:16px;display:flex;flex-direction:column;gap:14px;background:#f8fafc">';
   ['上游','中游','下游'].forEach(function(name){var segment=segments.find(function(item){return item.seg===name;})||{nodes:[]};
     h+='<div class="industry-chain-row" style="display:flex;gap:12px;align-items:stretch"><div class="industry-chain-label" style="align-self:flex-start;min-height:76px;width:44px;flex-shrink:0;padding:10px 3px;border:1px solid #dfe7ee;border-radius:7px;display:flex;align-items:center;justify-content:center"><span style="writing-mode:vertical-rl;font-size:12px;opacity:1;letter-spacing:3px">'+name+'</span></div><div class="industry-chain-nodes" style="flex:1;min-width:0;display:grid;align-items:start;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">'+
-      ((segment.nodes||[]).length?segment.nodes.map(chainNodeCardHtml).join(''):'<div style="padding:18px;border:1px dashed #cbd5e1;border-radius:8px;font-size:12px;color:#64748b">资料待补：当前材料不足以说明该分组的环节，不能据此判断不存在。</div>')+'</div></div>';
+      ((segment.nodes||[]).length?segment.nodes.map(chainNodeCardHtml).join(''):'<div style="padding:18px;border:1px dashed #cbd5e1;border-radius:8px;font-size:12px;color:#64748b">' +(pending.length?'该分组暂未形成可展示的环节评价；待补材料保留在清单中，不能据此判断现实中不存在。':'资料待补：当前材料不足以说明该分组的环节，不能据此判断不存在。')+'</div>')+'</div></div>';
   });
   if(unclassified.length)h+='<section class="industry-chain-unclassified" style="padding:14px;border:1px dashed #cbd5e1;border-radius:8px"><strong style="font-size:13px">尚未分类的材料项</strong><p style="font-size:12px;color:#64748b">现有材料不足以确定其产业环节，保留原文供核对。</p><div style="display:grid;align-items:start;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">'+unclassified.map(chainNodeCardHtml).join('')+'</div></section>';
+  if(pending.length)h+='<details class="chain-pending-facts" style="padding:14px;border:1px solid #dfe7ee;border-radius:9px;background:#fff"><summary style="cursor:pointer;color:#61768a;font-size:12px;font-weight:650">待补事实的材料项（'+pending.length+'）</summary><p style="font-size:11px;color:#8291a1;line-height:1.8">这些材料尚不支持实际强弱结论。政策方向与待核事项保留可查，不参与三色评价。</p><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px">'+pending.map(function(item){return '<section><div style="font-size:10px;color:#8291a1;margin:0 0 5px">'+escapeChainText(item.segment)+'</div>'+chainNodeCardHtml(item.node)+'</section>';}).join('')+'</div></details>';
   return h+'</div></section>';
 }
 
@@ -3391,7 +3413,7 @@ function chainPriorityMarkdown(){
   if(!segments)return '';
   var labels={weak:'缺口',mid:'培育',strong:'优势',unknown:'待核'}, rows=[];
   segments.forEach(function(seg){(seg.nodes||[]).forEach(function(nd){
-    rows.push('| '+(rows.length+1)+' | '+String(nd.name||'').replace(/\|/g,'／')+' | '+(labels[nd.level]||'待核')+' | '+(nd.benchmark||[]).join('、').replace(/\|/g,'／')+' |');
+    rows.push('| '+(rows.length+1)+' | '+String(nd.name||'').replace(/\|/g,'／')+' | '+(nd.assessment?chainAssessmentView(nd.assessment).label:(labels[nd.level]||'待核'))+' | '+(nd.benchmark||[]).join('、').replace(/\|/g,'／')+' |');
   });});
   return '## 产业链材料研判（独立视图，不替代报告正文）\n\n| 序号 | 环节 | 研判 | 对标材料 |\n|---|---|---|---|\n'+rows.join('\n');
 }

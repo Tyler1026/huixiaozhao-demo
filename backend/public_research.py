@@ -12,6 +12,7 @@ import datetime as dt
 import hashlib
 import json
 import re
+import unicodedata
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -29,6 +30,9 @@ MAX_QUOTE_CHARS = 5_000
 MAX_ARCHIVE_ROWS = 32
 MAX_MERGED_ROWS = 96
 MAX_ARCHIVE_QUOTE_CHARS = 40_000
+MAX_COMPANION_ROWS = 8
+MAX_COMPANIONS_PER_ROW = 2
+MAX_COMPANION_QUOTE_CHARS = 8_000
 # These are disclosure publishers, never an allow-list of researched companies.
 _DISCLOSURE_HOSTS = ('cninfo.com.cn', 'sse.com.cn', 'szse.cn', 'hkexnews.hk')
 _WEBSITE = re.compile(
@@ -280,6 +284,110 @@ def _city_terms(city):
     return {word for word in (city, short) if len(word) >= 2}
 
 
+_ENTITY = re.compile(r'[\u3400-\u9fffA-Za-z0-9·（）()]{2,50}?'
+                     r'(?:股份有限公司|有限责任公司|有限公司|研究院|研究所|大学)')
+_LEGAL_END = re.compile(r'(?:股份有限公司|有限责任公司|有限公司|研究院|研究所|大学)$')
+# Do not strip single-character connectives or words such as 联合: they can
+# legitimately begin a legal name (for example 联合电子).
+_NAME_PREFIX = re.compile(r'^(?:其中|以及|包括|旗下|所属|据悉)')
+_ENTITY_USE = r'(?:董事长|总经理|负责人|首席|创始人|CEO|公司|集团|团队)'
+_CONTEXT = re.compile(r'公司(?:的中文)?名称|中文简称|公司简称|公司网址|注册(?:地址|地)|'
+                      r'办公地址|总部|生产地址|生产基地|该(?:公司|企业|项目|基地|装置)|前者|后者|位于|坐落于')
+
+
+def _normalized(value):
+    return re.sub(r'\s+', '', unicodedata.normalize('NFKC', value))
+
+
+def _entity_names(text, cities):
+    names = set()
+    # Punctuation prevents a name from swallowing an earlier unrelated clause.
+    for clause in re.split(r'[，,。！？!?；;：:\n、]', text):
+        for match in _ENTITY.finditer(clause):
+            name = _normalized(match.group())
+            for city in sorted(cities, key=len, reverse=True):
+                name = re.sub('^' + re.escape(city) + r'(?:的)?企业', '', name)
+            while _NAME_PREFIX.match(name):
+                name = _NAME_PREFIX.sub('', name, count=1)
+            if len(name) >= 5:
+                names.add(name)
+    return names
+
+
+def _companion_index(rows, cities):
+    """Resolve exact legal names and unambiguous, explicitly used short names.
+
+    Short-name candidates come from the legal name, but may only match a
+    separate clause when followed by an entity role/action.  Thus merely
+    sharing an industry word, or mentioning another company's product, does
+    not connect two records.  Ambiguous aliases are never used.
+    """
+    formal = {row['id']: _entity_names(row['quote'] + '\n' + row.get('title', ''), cities)
+              for row in rows}
+    owners, declared = {}, set()
+    for row in rows:
+        names = formal[row['id']]
+        for name in names:
+            stem = _LEGAL_END.sub('', name)
+            stems = {stem, re.sub(r'(?:发展|技术|集团|控股)$', '', stem)}
+            for base in stems:
+                for offset in range(min(6, max(0, len(base) - 3)) + 1):
+                    alias = base[offset:]
+                    if len(alias) >= 4:
+                        owners.setdefault(alias, set()).add(name)
+            pattern = re.escape(name) + r'[（(](?:以下简称|简称|下称)[“"\']?([\u3400-\u9fffA-Za-z0-9]{2,24})'
+            for alias in re.findall(pattern, _normalized(row['quote'])):
+                owners.setdefault(alias, set()).add(name)
+                declared.add(alias)
+        if len(names) == 1:
+            for alias in re.findall(r'(?:公司的中文简称|公司简称|中文简称)\s*[:：]?\s*'
+                                    r'([\u3400-\u9fffA-Za-z0-9]{2,24})', row['quote']):
+                owners.setdefault(alias, set()).update(names)
+                declared.add(alias)
+    aliases = {alias: next(iter(names)) for alias, names in owners.items() if len(names) == 1}
+    entities = {}
+    for row in rows:
+        found = set(formal[row['id']])
+        text = unicodedata.normalize('NFKC', row['quote'] + '\n' + row.get('title', ''))
+        for alias, name in aliases.items():
+            suffix = r'(?=$|[\s，,。；;：:、）)“”"\'])' if alias in declared else '(?=' + _ENTITY_USE + ')'
+            if re.search(r'(?:^|[\s，,。；;：:、（(“”"\'])' + re.escape(alias) + suffix, text):
+                found.add(name)
+        entities[row['id']] = found
+    return entities
+
+
+def _companion_rows(primary, rows, sources, entities, cities):
+    """Return bounded local identity/activity and necessary same-page context."""
+    url = full_contract.canonical_url(primary['url'])
+    related = set(entities[primary['id']])
+    same_page = [row for row in rows if full_contract.canonical_url(row['url']) == url]
+    page_entities = set().union(*(entities[row['id']] for row in same_page))
+    # A single-issuer document may omit its own name in product paragraphs.
+    if not related and len(page_entities) == 1:
+        related = page_entities
+    result = []
+    for row in rows:
+        if row['id'] == primary['id']:
+            continue
+        same_url = full_contract.canonical_url(row['url']) == url
+        shared = bool(related & entities[row['id']])
+        local = any(word in row['quote'] or word in row.get('title', '') for word in cities)
+        identity_or_activity = bool(re.search(r'企业|公司|集团|大学|研究院|研究所|总部|注册|办公|'
+                                             r'研发|研制|制造|生产|经营|投运|并网|落地|成立', row['quote']))
+        necessary = bool(_CONTEXT.search(row['quote']))
+        # Even on a shared URL, an explicitly different entity is unrelated.
+        same_document_context = (same_url and necessary and
+                                 (shared or (not entities[row['id']] and bool(related))))
+        if (shared and local and identity_or_activity) or same_document_context:
+            distance = 10**9
+            if row['source_id'] == primary['source_id']:
+                text = sources[row['source_id']]['fulltext']
+                distance = abs(text.find(row['quote']) - text.find(primary['quote']))
+            result.append((not local, not necessary, distance, row['id'], row))
+    return [row for *_, row in sorted(result)[:MAX_COMPANIONS_PER_ROW]]
+
+
 def enrich_public_research(research, city, topic, directory=None):
     """Deep-copy ``research`` and append relevant validated archive excerpts.
 
@@ -298,7 +406,8 @@ def enrich_public_research(research, city, topic, directory=None):
     meta = {'status': 'no_match', 'retrieval': 'archive', 'network_requested': False,
             'added_evidence_ids': [], 'files': library['files'],
             'rejected_count': library['rejected_count'],
-            'trusted_company_domains': [], 'domain_evidence': []}
+            'trusted_company_domains': [], 'domain_evidence': [],
+            'companion_evidence_ids': []}
     merged['public_research'] = meta
     terms = [t.casefold() for t in topic_terms(topic)]
     cities = _city_terms(city)
@@ -328,22 +437,43 @@ def enrich_public_research(research, city, topic, directory=None):
                 and isinstance(source.get('fulltext'), str)
                 and _digest(source['fulltext']) == row['fulltext_sha256'])
     rows_by_id = {row['id']: row for row in library['evidence']}
+    entities = _companion_index(library['evidence'], cities)
     remaining = min(MAX_ARCHIVE_ROWS, max(0, MAX_MERGED_ROWS - len(evidence)))
-    added, size = [], 0
+    added, size, companion_count, companion_size = [], 0, 0, 0
     for _, _, _, row in sorted(candidates):
         if row['id'] in existing_ids:
             if not valid_existing(row):
                 meta['rejected_count'] += 1
-            continue
-        group = [row]
-        attestation = row.get('website_attestation')
-        if attestation:
-            attestation_row = rows_by_id[attestation['evidence_id']]
-            if attestation['evidence_id'] not in existing_ids:
-                group.insert(0, attestation_row)
-            elif not valid_existing(attestation_row):
-                meta['rejected_count'] += 1
                 continue
+        companions = []
+        for related in _companion_rows(row, library['evidence'], library['sources'], entities, cities):
+            if related['id'] in existing_ids:
+                continue
+            if (companion_count + len(companions) >= MAX_COMPANION_ROWS
+                    or companion_size + sum(len(r['quote']) for r in companions) + len(related['quote'])
+                    > MAX_COMPANION_QUOTE_CHARS):
+                break
+            companions.append(related)
+        group, group_ids, attestations, invalid = [], set(), [], False
+        for item in [row, *companions]:
+            attestation = item.get('website_attestation')
+            if attestation:
+                proof = rows_by_id[attestation['evidence_id']]
+                if proof['id'] in existing_ids and not valid_existing(proof):
+                    invalid = True
+                    break
+                if proof['id'] not in existing_ids and proof['id'] not in group_ids:
+                    group.append(proof)
+                    group_ids.add(proof['id'])
+                attestations.append(attestation)
+            if item['id'] not in existing_ids and item['id'] not in group_ids:
+                group.append(item)
+                group_ids.add(item['id'])
+        if invalid:
+            meta['rejected_count'] += 1
+            continue
+        if not group:
+            continue
         if len(group) > remaining or size + sum(len(r['quote']) for r in group) > MAX_ARCHIVE_QUOTE_CHARS:
             continue
         if any(r['source_id'] in sources and
@@ -365,7 +495,11 @@ def enrich_public_research(research, city, topic, directory=None):
             added.append(new_row['id'])
             size += len(new_row['quote'])
             remaining -= 1
-        if attestation:
+        selected_companions = [r for r in companions if r['id'] in group_ids]
+        companion_count += len(selected_companions)
+        companion_size += sum(len(r['quote']) for r in selected_companions)
+        meta['companion_evidence_ids'].extend(r['id'] for r in selected_companions)
+        for attestation in attestations:
             meta['trusted_company_domains'].append(attestation['domain'])
             meta['domain_evidence'].append(copy.deepcopy(attestation))
     meta['added_evidence_ids'] = added

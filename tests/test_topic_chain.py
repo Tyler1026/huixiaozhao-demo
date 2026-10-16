@@ -491,6 +491,155 @@ class ConstraintSubjectSelectionTests(unittest.TestCase):
         out=build_chain(CONTEXT,bundle,complete)
         self.assertEqual(sum(n['name'] in names for n in nodes(out)),6)
 
+    def test_current_material_challenge_or_dependency_selects_exact_physical_subject(self):
+        topic = '聚变能源关键材料研发'
+        context = {'city': '闵行区', 'topic': topic}
+        name = '聚变装置内壁材料'
+        initial_names = ['高温超导带材', '聚变装置', '聚变发电']
+        for quote in [
+            '聚变装置内壁材料不仅需要耐受高温，更面临高能量中子的轰击，材料研发目前仍是严峻挑战。',
+            '聚变装置内壁材料目前仍依赖进口，相关供应情况需要持续跟踪。',
+        ]:
+            with self.subTest(quote=quote):
+                bundle = research([quote, '计划研发高温超导带材和聚变装置，探索聚变发电应用。'], topic=topic)
+                calls = []
+                def complete(*args):
+                    calls.append(args)
+                    return plan(bundle, initial_names if len(calls) == 1 else [name])
+                out = build_chain(context, bundle, complete)
+                self.assertEqual(len(calls), 2)
+                selected = next(n for n in nodes(out) if n['name'] == name)
+                self.assertEqual(selected['classification']['lane'], '上游')
+                self.assertEqual(selected['extraction_method'], 'constraint_selection')
+                self.assertEqual(selected['level'], 'unknown')
+                self.assertEqual(selected['sources'][0]['quote'], quote)
+
+    def test_future_tackling_or_other_subject_challenge_cannot_select_material(self):
+        topic = '聚变能源关键材料研发'
+        context = {'city': '闵行区', 'topic': topic}
+        name = '聚变装置内壁材料'
+        initial_names = ['高温超导带材', '聚变装置', '聚变发电']
+        for quote in [
+            '目前计划攻关聚变装置内壁材料难题，未来突破相关严峻挑战。',
+            '聚变装置内壁材料属于研发目录，设备运行目前仍面临严峻挑战。',
+            '聚变装置内壁材料没有当前依赖进口的难题，后续工作安排另行确认。',
+        ]:
+            with self.subTest(quote=quote):
+                bundle = research([quote, '计划研发高温超导带材和聚变装置，探索聚变发电应用。',
+                                   '补齐高温超导带材产业链短板，相关安排待进一步研究。'], topic=topic)
+                calls = []
+                def complete(*args):
+                    calls.append(args)
+                    return plan(bundle, initial_names if len(calls) == 1 else [name])
+                out = build_chain(context, bundle, complete)
+                self.assertNotIn(name, {n['name'] for n in nodes(out)})
+
+
+class ActualSubjectSelectionTests(unittest.TestCase):
+    def fixture(self, quote):
+        return research([quote, '计划研制星载计算单元，建设商业火箭总装测试平台，发展卫星运营服务，实施条件仍待核实。'])
+
+    def initial(self, bundle):
+        return plan(bundle, ['星载计算单元', '商业火箭总装测试', '卫星运营服务'])
+
+    def test_completed_activity_is_selected_from_same_archive_without_strength_claim(self):
+        quote = '闵行商业航天火箭运输码头已正式投入使用，服务星箭运输。'
+        bundle = self.fixture(quote)
+        calls = []
+        def complete(*args):
+            calls.append(args)
+            return self.initial(bundle) if len(calls) == 1 else plan(bundle, ['火箭运输码头'])
+        out = build_chain(CONTEXT, bundle, complete)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[-1][2], 2000)
+        request = json.loads(calls[-1][1])
+        self.assertEqual([r['id'] for r in request['actual_sources']], [bundle['evidence'][0]['id']])
+        node = next(n for n in nodes(out) if n['name'] == '火箭运输码头')
+        self.assertEqual(node['extraction_method'], 'actual_selection')
+        self.assertEqual(node['sources'][0]['quote'], quote)
+        self.assertEqual(node['level'], 'unknown')
+        self.assertEqual(node['local_leaders'], [])
+        self.assertEqual(out['edges'], [])
+
+    def test_operating_nodes_are_not_crowded_out_by_thirty_long_policy_names(self):
+        ups = [f'第{i}代高性能星载芯片' for i in range(14)]
+        mids = [f'第{i}代商业火箭总装测试平台' for i in range(14)]
+        downs = [f'第{i}代高性能卫星运营服务' for i in range(14)]
+        actual = [f'{char}型星载芯片' for char in '甲乙丙丁戊己庚辛']
+        bundle = research(['计划发展'+'、'.join(ups+mids+downs)+'，相关项目仍需论证。',
+                           '。'.join(name+'已实现批量交付' for name in actual)+'。'])
+        calls = []
+        def complete(*args):
+            calls.append(args)
+            return plan(bundle, ups+mids+downs) if len(calls) == 1 else plan(bundle, actual)
+        out = build_chain(CONTEXT, bundle, complete)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(nodes(out)), 30)
+        self.assertTrue(set(actual).issubset({n['name'] for n in nodes(out)}))
+        self.assertTrue(all(group['nodes'] for group in out['chain']))
+
+    def test_actual_clause_does_not_lend_status_to_plans_negation_or_tested_product(self):
+        bundle = self.fixture('星载计算单元已经完成交付，未来计划研制星载芯片。'
+                              '卫星通信载荷测试服务已正式投入运行。卫星平台尚未完成交付。'
+                              '到2027年形成运营体系。火箭运输码头投运。')
+        calls = []
+        def complete(*args):
+            calls.append(args)
+            return self.initial(bundle) if len(calls) == 1 else plan(bundle, [
+                '星载芯片', '卫星通信载荷', '卫星通信载荷测试服务', '卫星平台', '火箭运输码头'])
+        out = build_chain(CONTEXT, bundle, complete)
+        names = {n['name'] for n in nodes(out)}
+        self.assertIn('卫星通信载荷测试服务', names)
+        self.assertFalse({'星载芯片', '卫星通信载荷', '卫星平台', '火箭运输码头'} & names)
+
+    def test_optional_actual_selection_failure_or_forged_id_preserves_original(self):
+        bundle = self.fixture('商业航天火箭运输码头已经正式投入使用，开展配套运输服务。')
+        first = self.initial(bundle)
+        for bad in (RuntimeError('provider failed'), 'invalid-json', {'nodes': 'invalid'},
+                    {'nodes': [{'name': '火箭运输码头', 'evidence_ids': ['forged']}]}):
+            with self.subTest(bad=repr(bad)):
+                calls = []
+                def complete(*args):
+                    calls.append(args)
+                    if len(calls) == 1:
+                        return first
+                    if isinstance(bad, Exception):
+                        raise bad
+                    return bad
+                self.assertEqual(build_chain(CONTEXT, bundle, complete), normalize_chain_plan(first, bundle, CONTEXT))
+
+    def test_actual_selection_is_capped_at_eight_and_rejects_enterprise_names(self):
+        actual = [f'{char}型星载芯片' for char in '甲乙丙丁戊己庚辛壬癸']
+        bundle = self.fixture('。'.join(name+'已完成批量交付' for name in actual)+
+                              '。星箭科技有限公司已完成交付工作。')
+        calls = []
+        def complete(*args):
+            calls.append(args)
+            return self.initial(bundle) if len(calls) == 1 else plan(bundle, actual+['星箭科技有限公司'])
+        out = build_chain(CONTEXT, bundle, complete)
+        self.assertEqual(sum(n['name'] in actual for n in nodes(out)), 8)
+        self.assertNotIn('星箭科技有限公司', {n['name'] for n in nodes(out)})
+
+    def test_operating_research_facility_does_not_imply_product_delivery(self):
+        bundle = self.fixture('星载芯片研发中心已建成。火箭运输码头已经投运并用于星载计算芯片研发。')
+        calls = []
+        def complete(*args):
+            calls.append(args)
+            return self.initial(bundle) if len(calls) == 1 else plan(bundle, [
+                '星载芯片', '星载芯片研发中心', '星载计算芯片'])
+        out = build_chain(CONTEXT, bundle, complete)
+        names = {n['name'] for n in nodes(out)}
+        self.assertIn('星载芯片研发中心', names)
+        self.assertNotIn('星载芯片', names)
+        self.assertNotIn('星载计算芯片', names)
+
+    def test_planning_only_sources_do_not_trigger_actual_selection(self):
+        bundle = self.fixture('计划建设火箭运输码头，投运后服务星箭运输，具体安排尚需论证。')
+        calls = []
+        out = build_chain(CONTEXT, bundle, lambda *args: calls.append(args) or self.initial(bundle))
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn('火箭运输码头', {n['name'] for n in nodes(out)})
+
 
 class LiteralFallbackTests(unittest.TestCase):
     topic = '低空经济整机配套承接集聚'
