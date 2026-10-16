@@ -598,6 +598,31 @@ def _actual_selection(context, research, result, complete):
     return additions[:8]
 
 
+def _dependency_selection(context, research, result):
+    """Retain literal products beside observed input dependencies.
+
+    This is node coverage only. The separate evaluator must still bind the
+    dependency to that product and local entity before assigning any level.
+    """
+    catalog = chain_source_catalog(research, context)
+    terms = {term for lane in taxonomy_for_topic(context.get('topic'))['terms'].values()
+             for term in lane if len(term) >= 4}
+    existing = {_name_key(row['name']) for row in _retained_selection(result)}
+    additions = []
+    for sid, source in catalog.items():
+        observed = any(re.search(r'(?:采用|使用|依赖|采购).{0,16}(?:进口|外购)', clause)
+                       and not _ACTUAL_PENDING.search(clause)
+                       and not _NEGATED.search(clause)
+                       for clause in re.split(r'[。！？!?；;\n]', source['quote']))
+        if not observed:
+            continue
+        for term in sorted(terms, key=len, reverse=True):
+            if term in source['quote'] and _name_key(term) not in existing:
+                additions.append({'name': term, 'evidence_ids': [sid]})
+                existing.add(_name_key(term))
+    return additions[:8]
+
+
 def build_chain(context, research, complete):
     if research.get('status') not in ('ready', 'pending') or not chain_source_catalog(research, context):
         raise TopicChainError('chain_research_unavailable', '本次未取得可追溯的产业链原始资料，已有图谱保留。')
@@ -676,6 +701,18 @@ def build_chain(context, research, complete):
     except Exception:
         # A failed optional actual-fact selection preserves the grounded map.
         pass
+    additions = _dependency_selection(context, research, result)
+    if additions:
+        methods = {node['id']: node.get('extraction_method') for node in
+                   [node for group in result['chain'] for node in group['nodes']] + result['unclassified']
+                   if node.get('extraction_method')}
+        result = normalize_chain_plan({'nodes': _retained_selection(result) + additions}, research, context)
+        added = {_name_key(row['name']) for row in additions}
+        for node in [node for group in result['chain'] for node in group['nodes']] + result['unclassified']:
+            if _name_key(node['name']) in added:
+                node['extraction_method'] = 'literal_dependency'
+            elif node['id'] in methods:
+                node['extraction_method'] = methods[node['id']]
     if research.get('status') == 'pending' and result['status'] != 'empty':
         result['status'] = result['coverage']['status'] = 'partial'
         result['coverage']['research_partial'] = True

@@ -795,4 +795,23 @@ class ChainResearchCoverageTests(unittest.TestCase):
         self.assertTrue(all(row['quote'] in originals for row in out['evidence']))
 
 
+class ObservedDependencyCoverageTests(unittest.TestCase):
+    def test_product_description_with_observed_imports_is_retained(self):
+        from backend.topic_chain import _dependency_selection
+        topic = '生物医药上游耗材国产替代招引'
+        context = {'city': '闵行区', 'topic': topic}
+        bundle = research(['生物反应袋作为细胞生长并生成目标产物的载体。企业采用进口膜材，在生产环境下进行生产和验证。'], topic=topic)
+        empty = normalize_chain_plan({'nodes': []}, bundle, context)
+        self.assertEqual(_dependency_selection(context, bundle, empty),
+                         [{'name': '生物反应袋', 'evidence_ids': [bundle['evidence'][0]['id']]}])
+
+    def test_planned_imports_do_not_trigger_dependency_coverage(self):
+        from backend.topic_chain import _dependency_selection
+        topic = '生物医药上游耗材国产替代招引'
+        context = {'city': '闵行区', 'topic': topic}
+        bundle = research(['未来计划建设生物反应袋产线，拟采用进口膜材，具体安排需要论证。'], topic=topic)
+        empty = normalize_chain_plan({'nodes': []}, bundle, context)
+        self.assertEqual(_dependency_selection(context, bundle, empty), [])
+
+
 if __name__ == '__main__': unittest.main()
