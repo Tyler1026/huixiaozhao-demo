@@ -5,7 +5,7 @@ import time
 import unittest
 
 from backend.topic_research import (
-    _balanced_chain_rows, research_topic, search_plan, select_source_paragraphs,
+    _balanced_chain_rows, _document_title, research_topic, search_plan, select_source_paragraphs,
 )
 from test_topic_research import FakeSearch
 
@@ -22,6 +22,12 @@ AERO_DIAGNOSIS = ('闵行已集聚航天航空“国家队”龙头企业，初�
 
 
 class AssessmentParagraphTests(unittest.TestCase):
+    def test_recover_policy_heading_from_generic_government_site_title(self):
+        heading = '《关于协同打造商业航天产业集群行动方案（征求意见稿）》'
+        self.assertEqual(_document_title('某区人民政府网站', '某区人民政府网站\n\n'+heading+'\n\n正文'), heading)
+        self.assertEqual(_document_title('生物医药现状调研', heading), '生物医药现状调研')
+        self.assertEqual(_document_title('某区人民政府网站', '正文提到'+heading+'，随后讨论'), '某区人民政府网站')
+
     def test_chain_queries_cover_existing_supply_and_constraints_without_private_input(self):
         queries = search_plan('闵行区', TOPIC, 'chain')
         self.assertEqual(len(queries), 9)

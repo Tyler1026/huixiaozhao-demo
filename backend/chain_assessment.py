@@ -25,7 +25,7 @@ _GEO = re.compile(r'[\u3400-\u9fff]{1,10}(?:省|市(?!场)|区(?!域|别|分)|�
 _DENIAL = re.compile(r'并非|并无|不是|不构成|不严重|不依赖|不再|已解决|已消除|未出现|无需进口|无需外购|摆脱.{0,8}依赖|没有.{0,8}(?:缺口|短板|不足|依赖|瓶颈)|不存在.{0,8}(?:缺口|短板|不足|依赖|瓶颈)|不足以证明|尚无(?:证据|材料)|未(?:见|披露|明确)|无从判断|无法判断')
 _UNCERTAIN = re.compile(r'可能|或许|据称|推测|待核|未核|有待核实|尚需核实|不详|缺少数据|数据不足|尚不明确|是否')
 _CONDITIONAL = re.compile(r'如果|假如|假设|倘若|一旦|若(?:未|不|无|无法|缺乏|出现|发生|存在)|在.{0,30}情况下')
-_PLAN = re.compile(r'到20\d{2}年|未来|计划|规划|目标|力争|拟|将|支持|鼓励|吸引|着力|加快|补齐|补强|推动|推进|提升|突破|攻关|打造|完善|建设|启动|开工')
+_PLAN = re.compile(r'到20\d{2}年|未来|计划|规划|目标|力争|拟|将|支持|鼓励|吸引|重点解决|着力解决|着力|加快|补齐|补强|推动|推进|提升|突破|攻关|打造|完善|建设|启动|开工')
 _FUTURE_SCOPE = re.compile(r'到20\d{2}年|未来|计划|规划|目标|力争|拟|将')
 _GENERAL_SCOPE = re.compile(r'城市核心区|城市中心区|世界级|共性|普遍性|(?:经济|产业|行业).{0,8}瓶颈之一')
 _POLICY_TITLE = re.compile(r'规划|行动(?:方案|计划)|实施意见')
@@ -287,6 +287,15 @@ def _derive(clause, sentence, source, dimension, scope):
     return 'context', None
 
 
+def _node_gap_object_matches(name, clause):
+    """A product mention is not the subject of a testing-service deficit."""
+    services = r'(?:测试|检测|认证)(?:服务|能力)'
+    if re.search(services, name):
+        return True
+    start = clause.find(name)
+    return start < 0 or not re.search(services, clause[start+len(name):])
+
+
 def _normalize(raw, catalog, context, node_names):
     if not isinstance(raw, dict) or not isinstance(raw.get('findings'), list):
         raise ValueError('invalid assessment selection')
@@ -324,6 +333,8 @@ def _normalize(raw, catalog, context, node_names):
                                     and bool(_GAPS[dimension].search(clause)))
                 scope, label = _scope(clause, source, context.get('city'), node_names.get(target), title_diagnostic)
                 kind, severity = _derive(clause, sentence, source, dimension, scope)
+                if kind == 'gap' and target != 'chain' and not _node_gap_object_matches(node_names[target], clause):
+                    kind, severity = 'context', None
                 if (kind == 'context' and explanation and _EXPLANATION_PLAN.search(clause)
                         and not (_DENIAL.search(sentence) or _UNCERTAIN.search(sentence) or _CONDITIONAL.search(sentence))):
                     kind = 'plan'
@@ -465,6 +476,8 @@ def _direct_node_findings(catalog, context, chain_result):
                         dimensions = ['supply' if '供应' in matched or '供给' in matched else 'capacity']
                     for dimension in dimensions:
                         kind, severity = _derive(clause, sentence, source, dimension, scope)
+                        if kind == 'gap' and not _node_gap_object_matches(matched, clause):
+                            kind, severity = 'context', None
                         if scope == 'local' and not local_plan and _direct_capability(sentence, clause, matched):
                             # Preserve an explicit constraint even if the same
                             # clause discloses some existing production.

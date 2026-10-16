@@ -305,6 +305,29 @@ class NodeJudgmentTests(unittest.TestCase):
         self.assertEqual(node['judgment']['level'], 'unknown')
         self.assertFalse(any(f['scope'] == 'local' for f in node['findings']))
 
+    def test_key_service_bottleneck_resolution_is_a_plan_not_a_product_gap(self):
+        quote='闵行区重点解决低轨互联网通信载荷和地面通信终端测试服务能力的瓶颈问题，技术服务中心将建成相应测试系统。'
+        for wording in ('重点解决', '着力解决'):
+            _, node=self.run_node(quote.replace('重点解决',wording),name='通信载荷')
+            self.assertEqual(node['judgment']['level'],'mid')
+            self.assertFalse(any(f['kind']=='gap' for f in node['findings']))
+
+    def test_testing_service_shortage_is_not_assigned_to_product_in_either_path(self):
+        quote='闵行区通信载荷测试服务能力不足，相关现实约束已在调查中披露。'
+        bundle=research([quote])
+        for dimension in ('capacity','coordination'):
+            row=selected(bundle,target='n-control',dimension=dimension)
+            graph={'chain':[{'nodes':[{'id':'n-control','name':'通信载荷','evidence_ids':[bundle['evidence'][0]['id']]}]}]}
+            out=build_assessment(CONTEXT,bundle,graph,lambda *args:{'findings':[row]})
+            node=out['node_assessments']['n-control']
+            self.assertNotEqual(node['judgment']['level'],'weak')
+            self.assertFalse(any(f['kind']=='gap' for f in node['findings']))
+
+    def test_explicit_testing_service_node_can_have_its_own_local_gap(self):
+        _, node=self.run_node('闵行区通信载荷测试服务能力不足，相关现实约束已在调查中披露。',name='通信载荷测试服务')
+        self.assertEqual(node['judgment']['level'],'weak')
+        self.assertEqual(node['judgment']['basis'],'local_gap')
+
 
 class LocalAssessmentTests(unittest.TestCase):
     def test_real_minhang_rocket_supply_and_coordination_diagnosis_is_chain_only(self):

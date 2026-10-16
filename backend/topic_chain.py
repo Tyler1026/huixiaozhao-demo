@@ -179,6 +179,7 @@ def chain_prompt(context, research):
 选择当前产业直接相关的具体材料、部件、设备、制造集成或应用服务；不要把政府单位、企业名称、标题、目标数字、判断句当环节。
 多个环节仅在各自有完整名词时拆分；共享后缀的并列短语保留原文整体，不能拆出碱性、液态、运行、循环、控制、辅助、分系统、零部件等残词。
 按facet_sources分别检查上游、中游、下游原文，每类优先选择3至8个有代表性的完整环节。已有对应下游原文时须覆盖运营和应用服务，不可只枚举大量上游部件；无来源则留空，不能凑齐。
+existing_basis_sources列出可能披露现有基础的材料；逐条检查，优先保留其中直接相关的已建成、组建、运行、供应或生产环节，再补规划代表项。不能有现有基础原文却只选择规划产品；也不能将整段的已建成状态推广到每个产品。
 区分同文中的航空、航天、低空等不同产业，不能把明确属于航空产业链的发动机、机载系统、先进材料归给火箭卫星。聚变堆材料属于材料，不能因为名字含聚变堆就当作整堆。
 不得输出企业归属、强弱等级、边、完成状态或自由说明；分类和原文限定由服务端处理。
 每节点只引用确实含该完整短语的证据ID，总计最多30节点，含义不清的待归类项最多6个；不要选试剂/耗材及其多个重复上位词，无合适证据返回nodes空数组。"""
@@ -187,8 +188,11 @@ def chain_prompt(context, research):
     facet_sources = {lane: [sid for sid, row in catalog.items()
                            if any(term in row['quote'] and _topic_supports(term, row['quote'], context.get('topic')) for term in terms)]
                     for lane, terms in facets.items()}
+    existing = [sid for sid, row in catalog.items()
+                if re.search(r'已(?:经)?(?:建成|形成|投产|具备|集聚|交付)|组建|正式(?:上线|投运)|落地运行|覆盖.{0,20}供应', row['quote'])]
     return system, json.dumps({'city': context.get('city'), 'topic': context.get('topic'),
-        'taxonomy': public, 'facet_sources': facet_sources, 'evidence': list(catalog.values())}, ensure_ascii=False)
+        'taxonomy': public, 'facet_sources': facet_sources, 'existing_basis_sources': existing,
+        'evidence': list(catalog.values())}, ensure_ascii=False)
 
 
 def _name_key(name):

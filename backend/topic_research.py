@@ -80,6 +80,18 @@ def _public_label(value, limit):
     return value
 
 
+def _document_title(title, fulltext):
+    """Recover a displayed document heading when search only returns site chrome."""
+    if not re.search(r'人民政府(?:网站)?$|政府网站$|门户网站$|^首页$|^无标题$', title or ''):
+        return title
+    for line in fulltext[:1500].splitlines()[:12]:
+        heading = line.strip().lstrip('#').strip()
+        if (12 <= len(heading) <= 140 and heading.startswith('《') and heading.endswith('》')
+                and re.search(r'方案|规划|意见|办法|通知', heading)):
+            return heading
+    return title
+
+
 def search_plan(city, topic, mode='draft'):
     """No questionnaire answers, materials, company secrets or model text."""
     city, topic = _public_label(city, 40), _public_label(topic, 100)
@@ -339,8 +351,9 @@ def research_topic(city, topic, *, mode='draft', questions=(), basis=(), provide
                 fulltext = grounding._eligible_body(raw_text).strip()
                 if len(fulltext) > MAX_FULLTEXT_CHARS:
                     continue
+                source_title = _document_title(item.get('title', ''), fulltext)
                 paragraphs = select_source_paragraphs(fulltext, topic, limit=per_url_limit,
-                                                      mode=mode, source_title=item.get('title', ''))
+                                                      mode=mode, source_title=source_title)
                 canonical = contract.canonical_url(url)
                 if not paragraphs:
                     if len(output['candidates']) < MAX_SOURCES:
@@ -349,7 +362,7 @@ def research_topic(city, topic, *, mode='draft', questions=(), basis=(), provide
                             'reason': 'no_complete_topic_relevant_paragraph'})
                     continue
                 source_id = 'source_' + _digest(canonical+'\0'+fulltext)[:20]
-                metadata = {'url': url, 'title': item.get('title', ''),
+                metadata = {'url': url, 'title': source_title,
                          'published_at': item.get('published', '发布日期未知'),
                          'published': item.get('published', '发布日期未知'), 'retrieved_at': stamp,
                          'retrieval': 'fetched', 'retrieval_provider': live.search_provider,
