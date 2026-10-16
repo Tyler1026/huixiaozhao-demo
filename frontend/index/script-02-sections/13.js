@@ -10,7 +10,7 @@ function detailPane(p){
   else if(view==='knowledge'){body=detailKbIntro(p);}
   else{body=detailReport(p);}                          // report产业分析→本次研判
   return '<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button>'+
-    '<div class="detail-page">'+body+'</div>';
+    '<div class="detail-page '+(view==='report'?'industry-detail':'')+'">'+body+'</div>';
 }
 // 我的需求页 → 右侧：需求汇总统计
 function detailNeeds(p){
@@ -235,4 +235,4 @@ function toggleDetail(){
 // 返回：按当前视图回到对应右栏（报告页→本次研判，项目页→项目详情），而不是永远跳旧的通用分析栏
 function backToAnalysis(){detailData=null;var dp=$('.detail-pane');
   var back=view==='report'?detailReport(P()):(view==='subwork'&&subprojOf(cur)[curSub])?detailSub(subprojOf(cur)[curSub]):detailAnalysis(P());
-  if(dp){dp.innerHTML='<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button><div class="detail-page">'+back+'</div>';}else render();}
+  if(dp){dp.innerHTML='<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button><div class="detail-page industry-detail">'+back+'</div>';}else render();}

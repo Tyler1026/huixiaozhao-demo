@@ -1544,7 +1544,7 @@ function selectTopic(val, isCustom){
     } else {
       // 当前方向无报告，清空报告区显示空状态
       _ra.innerHTML='<div id="reportHistoryArea"></div>'+
-        '<div style="text-align:center;padding:48px 20px">'+
+        '<div class="industry-empty" style="text-align:center;padding:48px 20px">'+
           '<div style="font-size:40px;margin-bottom:12px">📊</div>'+
           '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">'+
             '选择上方产业分析方向，点击「产业智能分析」'+
@@ -1559,7 +1559,7 @@ function selectTopic(val, isCustom){
   var _dp=document.querySelector('.detail-pane');
   if(_dp){
     _dp.innerHTML='<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button>'+
-      '<div class="detail-page">'+detailReport(p)+'</div>';
+      '<div class="detail-page industry-detail">'+detailReport(p)+'</div>';
   }
   // 刷新历史报告（只显示当前方向的）
   var _ra2=document.getElementById('reportArea');
@@ -1783,7 +1783,7 @@ function renderHistoryReports(key, topicFilter){
   // 无任何历史报告则整块隐藏；有历史但当前方向为空时仍显示切换入口
   if(!totalCount){container.innerHTML='';return;}
   var otherCount=totalCount-list.length;
-  var h='<div style="margin-bottom:12px">';
+  var h='<div class="industry-history" style="margin-bottom:12px">';
   h+='<div style="font-size:11.5px;font-weight:700;color:#64748b;letter-spacing:.3px;margin-bottom:6px;display:flex;align-items:center;gap:6px">';
   h+='<span style="display:inline-block;width:3px;height:12px;background:#94a3b8;border-radius:2px"></span>';
   h+='<span>历史报告（'+list.length+' 份）</span>';
@@ -1842,24 +1842,24 @@ function renderConfirmPanel(items, projKey){
       : '';
 
     if(isDone){
-      return '<div id="ci-'+projKey+'-'+idx+'" style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px">'+
+      return '<div class="industry-confirm-row is-done" id="ci-'+projKey+'-'+idx+'" style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px">'+
         '<span style="color:#22c55e;font-size:16px;flex-shrink:0;margin-top:1px">✓</span>'+
         '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
+          '<div class="industry-confirm-text" style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
           (item.status==='edited'?'<div style="font-size:11px;color:#22c55e;margin-top:3px">已修改并确认</div>':'<div style="font-size:11px;color:#22c55e;margin-top:3px">已确认</div>')+
         '</div>'+
         '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#22c55e;cursor:pointer;flex-shrink:0">撤回</button>'+
       '</div>';
     }
 
-    return '<div id="ci-'+projKey+'-'+idx+'" style="border-radius:12px;background:#fffbeb;border:1.5px solid #fed7aa;overflow:hidden;transition:box-shadow .2s" onmouseenter="this.style.boxShadow=\'0 2px 8px rgba(245,158,11,0.15)\'" onmouseleave="this.style.boxShadow=\'none\'">'+
+    return '<div class="industry-confirm-row is-pending" id="ci-'+projKey+'-'+idx+'" style="border-radius:12px;background:#fffbeb;border:1.5px solid #fed7aa;overflow:hidden;transition:box-shadow .2s" onmouseenter="this.style.boxShadow=\'0 2px 8px rgba(245,158,11,0.15)\'" onmouseleave="this.style.boxShadow=\'none\'">'+
       '<div style="padding:13px 15px">'+
         '<div style="display:flex;gap:10px;align-items:flex-start">'+
           '<span style="flex-shrink:0;width:22px;height:22px;background:#fef3c7;border:1.5px solid #fcd34d;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;margin-top:1px">⚠️</span>'+
-          '<div id="ci-text-'+projKey+'-'+idx+'" style="flex:1;font-size:13px;color:#78350f;line-height:1.7;font-weight:500">'+displayText+'</div>'+
+          '<div class="industry-confirm-text" id="ci-text-'+projKey+'-'+idx+'" style="flex:1;font-size:13px;color:#78350f;line-height:1.7;font-weight:500">'+displayText+'</div>'+
         '</div>'+
         // 编辑框（默认隐藏）
-        '<div id="ci-edit-'+projKey+'-'+idx+'" style="display:none;margin-top:10px">'+
+        '<div class="industry-confirm-edit" id="ci-edit-'+projKey+'-'+idx+'" style="display:none;margin-top:10px">'+
           '<textarea id="ci-ta-'+projKey+'-'+idx+'" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #6366f1;border-radius:8px;font-size:13px;color:#1e293b;resize:vertical;min-height:64px;outline:none;line-height:1.6">'+displayText+'</textarea>'+
           // 附件上传
           '<div id="ci-drop-'+projKey+'-'+idx+'" '+
@@ -1878,7 +1878,7 @@ function renderConfirmPanel(items, projKey){
         '</div>'+
       '</div>'+
       // 操作栏
-      '<div style="padding:10px 15px;background:linear-gradient(135deg,#fefce8,#fef9c3);border-top:1px solid #fde68a;display:flex;gap:8px">'+
+      '<div class="industry-confirm-actions" style="padding:10px 15px;background:linear-gradient(135deg,#fefce8,#fef9c3);border-top:1px solid #fde68a;display:flex;gap:8px">'+
         '<button onclick="cfmItem(\''+projKey+'\','+idx+')" style="flex:1;padding:8px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1.5px solid #86efac;border-radius:10px;font-size:12.5px;font-weight:700;color:#166534;cursor:pointer;transition:all .15s" onmouseenter="this.style.background=\'#dcfce7\'" onmouseleave="this.style.background=\'linear-gradient(135deg,#f0fdf4,#dcfce7)\'">✓ 确认</button>'+
         '<button onclick="ciShowEdit(\''+projKey+'\','+idx+')" style="flex:1;padding:8px;background:linear-gradient(135deg,#f5f3ff,#ede9fe);border:1.5px solid #c4b5fd;border-radius:10px;font-size:12.5px;font-weight:600;color:#6d28d9;cursor:pointer" onmouseenter="this.style.background=\'#ede9fe\'" onmouseleave="this.style.background=\'linear-gradient(135deg,#f5f3ff,#ede9fe)\'">✎ 修改内容</button>'+
       '</div>'+
@@ -1894,8 +1894,8 @@ function renderConfirmPanel(items, projKey){
   if(window.__cpCollapsed[projKey]==null) window.__cpCollapsed[projKey]=allDone;
   var collapsed=window.__cpCollapsed[projKey];
 
-  return '<div id="confirmPanel-'+projKey+'" style="margin-top:20px;border-radius:16px;border:1.5px solid #fde68a;overflow:hidden;box-shadow:0 2px 10px rgba(245,158,11,0.1)">'+
-    '<div onclick="toggleConfirmPanel(\''+projKey+'\')" style="padding:13px 18px;background:linear-gradient(135deg,#fffbeb,#fef9c3);border-bottom:1px solid #fde68a;display:flex;align-items:center;gap:10px;cursor:pointer">'+
+  return '<div class="industry-confirm" id="confirmPanel-'+projKey+'" style="margin-top:20px;border-radius:16px;border:1.5px solid #fde68a;overflow:hidden;box-shadow:0 2px 10px rgba(245,158,11,0.1)">'+
+    '<div class="industry-confirm-head" onclick="toggleConfirmPanel(\''+projKey+'\')" style="padding:13px 18px;background:linear-gradient(135deg,#fffbeb,#fef9c3);border-bottom:1px solid #fde68a;display:flex;align-items:center;gap:10px;cursor:pointer">'+
       '<span style="font-size:18px">📋</span>'+
       '<div style="flex:1">'+
         '<div style="font-size:13px;font-weight:800;color:#92400e;letter-spacing:.2px">待确认事项</div>'+
@@ -1910,8 +1910,8 @@ function renderConfirmPanel(items, projKey){
       '</div>'+
     '</div>'+
     '<div id="cp-body-'+projKey+'" style="display:'+(collapsed?'none':'block')+'">'+
-      '<div style="padding:12px 16px;display:flex;flex-direction:column;gap:8px;background:#fff" id="cp-items-'+projKey+'">'+rows+'</div>'+
-      '<div id="cp-unlock-'+projKey+'" style="padding:12px 18px;background:'+(allDone?'linear-gradient(135deg,#f0fdf4,#dcfce7)':'#f9fafb')+';border-top:1px solid '+(allDone?'#86efac':'#f0f4ff')+';display:flex;align-items:center;justify-content:center;gap:8px">'+
+      '<div class="industry-confirm-items" style="padding:12px 16px;display:flex;flex-direction:column;gap:8px;background:#fff" id="cp-items-'+projKey+'">'+rows+'</div>'+
+      '<div class="industry-confirm-foot" id="cp-unlock-'+projKey+'" style="padding:12px 18px;background:'+(allDone?'linear-gradient(135deg,#f0fdf4,#dcfce7)':'#f9fafb')+';border-top:1px solid '+(allDone?'#86efac':'#f0f4ff')+';display:flex;align-items:center;justify-content:center;gap:8px">'+
         (allDone
           ? '<span style="font-size:13px;font-weight:700;color:#166534">✓ 所有事项已确认，请点击下方蓝色按钮生成完整报告</span>'
           : '<span style="font-size:12.5px;color:#9aa5b5">还有 <strong style="color:#f59e0b">'+(total-done)+'</strong> 条事项待确认</span>'
@@ -1992,10 +1992,11 @@ function cfmItem(projKey, idx){
     var item = PENDING_CONFIRMS[projKey][idx];
     var displayText = item.editedText || item.text;
     var filesBadge = item.files&&item.files.length?'<span style="margin-left:6px;padding:1px 7px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:10.5px;border:1px solid #86efac">'+item.files.length+' 个附件</span>':'';
+    if(card.classList){card.classList.remove('is-pending');card.classList.add('industry-confirm-row','is-done');}
     card.style.cssText='display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px';
     card.innerHTML=
       '<span style="color:#22c55e;font-size:16px;flex-shrink:0;margin-top:1px">✓</span>'+
-      '<div style="flex:1;min-width:0"><div style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
+      '<div style="flex:1;min-width:0"><div class="industry-confirm-text" style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
       '<div style="font-size:11px;color:#22c55e;margin-top:3px">已确认</div></div>'+
       '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#22c55e;cursor:pointer;flex-shrink:0">撤回</button>';
   }
@@ -2056,10 +2057,11 @@ function ciSave(projKey, idx){
   if(card){
     var displayText = item.editedText;
     var filesBadge = item.files&&item.files.length?'<span style="margin-left:6px;padding:1px 7px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:10.5px;border:1px solid #86efac">'+item.files.length+' 个附件</span>':'';
+    if(card.classList){card.classList.remove('is-pending');card.classList.add('industry-confirm-row','is-done');}
     card.style.cssText='display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px';
     card.innerHTML=
       '<span style="color:#22c55e;font-size:16px;flex-shrink:0;margin-top:1px">✓</span>'+
-      '<div style="flex:1;min-width:0"><div style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
+      '<div style="flex:1;min-width:0"><div class="industry-confirm-text" style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
       '<div style="font-size:11px;color:#22c55e;margin-top:3px">已修改并确认</div></div>'+
       '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#22c55e;cursor:pointer;flex-shrink:0">撤回</button>';
   }
@@ -2128,7 +2130,7 @@ function restoreActionItems(){
   var demandKey=p.isDemand===true?cur:_findExistingDemand(p.city,p.topic);
   var submitted=demandKey&&demandSubmissionState(demandKey)==='submitted';
   var message=submitted?'需求已递交，资源端正在开展当前方向的企业核验与推荐。':'完整研判已生成。提交后，管理端将基于当前方向核验并推荐企业。';
-  return '<section style="margin-top:16px;padding:16px;border:1px solid #dbeafe;border-radius:12px;background:#f8faff"><strong>'+escapeChainText(p.topic)+'</strong><p>'+message+'报告和线索中的待核结论不代表投资意向已确认。</p>'+reportDemandActionButton(p)+'</section>';
+  return '<section class="industry-demand" style="margin-top:16px;padding:16px;border:1px solid #dbeafe;border-radius:12px;background:#f8faff"><strong>'+escapeChainText(p.topic)+'</strong><p>'+message+'报告和线索中的待核结论不代表投资意向已确认。</p>'+reportDemandActionButton(p)+'</section>';
 }
 
 /* 从报告文本解析TOP3招引方向（供渲染与切换方向时复用） */
@@ -2357,7 +2359,7 @@ function topicCardHtml(t, isActive){
         'style="position:absolute;top:8px;right:8px;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;'+
         'border-radius:50%;background:#fef2f2;border:1px solid #fecaca;color:#dc2626;font-size:13px;line-height:1;cursor:pointer;z-index:2">×</span>'
     : '';
-  return '<button onclick="selectTopic(this.getAttribute(\'data-v\'))" data-v="'+String(t.label).replace(/"/g,'&quot;')+'" style="'+
+  return '<button class="industry-topic-card '+(isActive?'is-active':'')+'" onclick="selectTopic(this.getAttribute(\'data-v\'))" data-v="'+String(t.label).replace(/"/g,'&quot;')+'" style="'+
     'position:relative;display:flex;flex-direction:column;align-items:flex-start;padding:14px 16px;'+
     'background:'+(isActive?'linear-gradient(135deg,#eff6ff,#f0f9ff)':'#fff')+';'+
     'border:2px solid '+(isActive?'#1a56db':'#e8edf5')+';'+
@@ -2467,8 +2469,8 @@ function renderInterviewUI(){
   }).filter(Boolean).join('');
 
   area.innerHTML =
-    '<div style="padding:20px">'+
-      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'+
+    '<div class="industry-interview" style="padding:20px">'+
+      '<div class="industry-interview-head" style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'+
         '<div style="width:36px;height:36px;background:linear-gradient(135deg,#1a56db,#6366f1);border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:800">AI</div>'+
         '<div>'+
           '<div style="font-size:15px;font-weight:700;color:#0b183b">产业分析访谈</div>'+
@@ -2480,12 +2482,12 @@ function renderInterviewUI(){
         '</div>'+
         '<span style="font-size:11px;color:#9aa5b5">'+cur+'/'+total+'</span>'+
       '</div>'+
-      (answeredHtml?'<div style="margin-bottom:12px;max-height:120px;overflow-y:auto">'+answeredHtml+'</div>':'')+
-      '<div style="background:#fff;border:1.5px solid #e8edf5;border-radius:14px;padding:20px;margin-bottom:16px">'+
+      (answeredHtml?'<div class="industry-interview-answers" style="margin-bottom:12px;max-height:120px;overflow-y:auto">'+answeredHtml+'</div>':'')+
+      '<div class="industry-interview-question" style="background:#fff;border:1.5px solid #e8edf5;border-radius:14px;padding:20px;margin-bottom:16px">'+
         '<div style="font-size:14px;color:#1e293b;line-height:1.8;margin-bottom:16px">'+q.q+'</div>'+
         '<textarea id="interviewAnswer" placeholder="输入您的回答…（如暂时不清楚可点击跳过）" style="width:100%;box-sizing:border-box;min-height:100px;padding:12px;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;line-height:1.7;outline:none;resize:vertical" >'+(_interviewState.answers[_interviewState.currentQ]?(_interviewState.answers[_interviewState.currentQ].text||''):'')+'</textarea>'+
       '</div>'+
-      '<div style="display:flex;gap:10px;align-items:center">'+
+      '<div class="industry-interview-actions" style="display:flex;gap:10px;align-items:center">'+
         (_interviewState.currentQ>0?'<button onclick="interviewPrev()" style="padding:10px 20px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#4a5568;cursor:pointer;font-weight:600">← 上一题</button>':'')+
         '<div style="flex:1"></div>'+
         '<button onclick="interviewSkip()" style="padding:10px 20px;background:#fff;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#9aa5b5;cursor:pointer">跳过</button>'+
@@ -2672,7 +2674,7 @@ function triggerReport(phase){
   var chunks;
   try{
     var corpus=buildKBCorpus(p.city);chunks=kbSearch(query,corpus,phase===1?8:20);
-    setReportAreaHtml(area,'<div class="report-document"><h2>'+(phase===1?'初步研判草稿':'完整产业研判')+'</h2><p id="reportRunStatus">正在读取当前方向材料，生成结果将即时显示…</p><div id="reportContent"></div></div>');
+    setReportAreaHtml(area,'<div class="report-document industry-report industry-prose"><h2>'+(phase===1?'初步研判草稿':'完整产业研判')+'</h2><p id="reportRunStatus">正在读取当前方向材料，生成结果将即时显示…</p><div id="reportContent"></div></div>');
   }catch(error){delete window._topicReportJobs[jobKey];updateReportBusy();toast('读取本地材料未完成，请重试');return Promise.resolve();}
   function active(){return PROJECTS[key] && (PROJECTS[key].reportRequestId||'')===requestId && (epoch===null || epoch===_authEpoch);}
   function visible(){return active() && cur===key && P() && P().topic===topic;}
@@ -3132,8 +3134,8 @@ function _renderRichChain(topic, segments, recs, p){
     '中游':{bg:'#f0fdf4',fc:'#166534',bd:'#bbf7d0',tag:'MIDSTREAM'},
     '下游':{bg:'#fff7ed',fc:'#9a3412',bd:'#fed7aa',tag:'DOWNSTREAM'}
   };
-  var h='<div style="margin-top:16px;border-radius:16px;border:1.5px solid #e2e8f0;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.06)">';
-  h+='<div style="padding:12px 18px;background:linear-gradient(135deg,#1e3a5f,#1a56db);display:flex;align-items:center;gap:10px">';
+  var h='<div class="industry-chain" style="margin-top:16px;border-radius:16px;border:1.5px solid #e2e8f0;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.06)">';
+  h+='<div class="industry-chain-head" style="padding:12px 18px;background:linear-gradient(135deg,#1e3a5f,#1a56db);display:flex;align-items:center;gap:10px">';
   h+='<span style="font-size:20px">\ud83d\udcca</span>';
   h+='<div><div style="font-size:13.5px;font-weight:800;color:#fff;letter-spacing:.3px">'+topic+' 产业链图谱</div>';
   h+='<div style="font-size:11px;color:rgba(255,255,255,0.7);margin-top:1px">上游 → 中游 → 下游 · 当前产业分析方向「'+topic+'」</div></div>';
@@ -3142,19 +3144,19 @@ function _renderRichChain(topic, segments, recs, p){
     h+='<span style="background:'+lg.bg+';color:#fff;border-radius:20px;padding:2px 9px;font-size:10.5px;font-weight:700">'+lg.t+'</span>';
   });
   h+='</div></div>';
-  h+='<div style="padding:16px;background:#f8faff;display:flex;flex-direction:column;gap:12px">';
+  h+='<div class="industry-chain-body" style="padding:16px;background:#f8faff;display:flex;flex-direction:column;gap:12px">';
   segments.forEach(function(seg){
     var sm=SEGMETA[seg.seg]||SEGMETA['中游'];
-    h+='<div style="display:flex;gap:12px;align-items:stretch">';
-    h+='<div style="flex-shrink:0;width:44px;border-radius:10px;background:'+sm.bg+';border:1.5px solid '+sm.bd+';display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:8px 2px">';
+    h+='<div class="industry-chain-row" style="display:flex;gap:12px;align-items:stretch">';
+    h+='<div class="industry-chain-label" style="flex-shrink:0;width:44px;border-radius:10px;background:'+sm.bg+';border:1.5px solid '+sm.bd+';display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:8px 2px">';
     h+='<span style="font-size:13px;font-weight:800;color:'+sm.fc+';letter-spacing:2px;writing-mode:vertical-rl">'+seg.seg+'</span>';
     h+='<span style="font-size:7.5px;color:'+sm.fc+';opacity:.55;letter-spacing:.5px;writing-mode:vertical-rl">'+sm.tag+'</span>';
     h+='</div>';
-    h+='<div style="flex:1;display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:2px">';
+    h+='<div class="industry-chain-nodes" style="flex:1;display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:2px">';
     if(!(seg.nodes||[]).length)h+='<div style="flex:1;padding:18px;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b;font-size:12px;line-height:1.7">资料待补：当前方向尚无可引用的环节原句和来源链接，不能据此判断该环节不存在。</div>';
     (seg.nodes||[]).forEach(function(nd,i){
       var lv=LEVEL[nd.level]||LEVEL.unknown;
-      h+='<div style="flex:1;min-width:96px;background:'+lv.bg+';border:2px solid '+lv.bd+';border-radius:12px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;text-align:center">';
+      h+='<div class="industry-chain-node is-'+nd.level+'" style="flex:1;min-width:96px;background:'+lv.bg+';border:2px solid '+lv.bd+';border-radius:12px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;text-align:center">';
       h+='<span style="background:'+lv.tbg+';color:'+lv.tfc+';border-radius:10px;padding:1px 8px;font-size:10px;font-weight:800;margin-bottom:5px">'+lv.tag+'</span>';
       h+='<div style="font-size:12px;font-weight:700;color:'+lv.fc+';line-height:1.35;margin-bottom:5px">'+escapeChainText(nd.name)+'</div>';
       if(nd.level==='strong'){
@@ -3239,14 +3241,14 @@ function reportHtml(p){
   var rs=REPORTSTATE[cur]; if(!rs) return '';
   var r=kbReadiness();
 
-  return '<div style="border-radius:14px;border:1.5px solid #e8edf5;overflow:hidden;margin-bottom:8px">'+
-    '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
-      '<span style="font-size:12px;font-weight:650;color:#1a56db">📋 产业分析报告</span>'+
-      '<span style="font-size:11.5px;color:#4a5568">'+escapeChainText(p.topic)+'</span>'+
-      '<span style="margin-left:auto;font-size:11px;color:'+(topicScore(p.topic)>=80?'#22c55e':'#f59e0b')+'">'+topicScoreDisplay(p.topic)+'</span>'+
+  return '<div class="industry-report" style="border-radius:14px;border:1.5px solid #e8edf5;overflow:hidden;margin-bottom:8px">'+
+    '<div class="industry-report-head" style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
+      '<span class="industry-report-title" style="font-size:12px;font-weight:650;color:#1a56db">'+(topicHasFullReport(p.topic)?'完整产业报告':'初步研判草稿')+'</span>'+
+      '<span class="industry-report-topic" style="font-size:11.5px;color:#4a5568">'+escapeChainText(p.topic)+'</span>'+
+      '<span class="industry-report-score" style="margin-left:auto;font-size:11px;color:'+(topicScore(p.topic)>=80?'#22c55e':'#f59e0b')+'">'+topicScoreDisplay(p.topic)+'</span>'+
       '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
     '</div>'+
-    '<div style="padding:16px 18px;font-size:13px;color:#1e293b;line-height:1.8">'+
+    '<div class="industry-prose" style="padding:16px 18px;font-size:13px;color:#1e293b;line-height:1.8">'+
       // 按方向取报告正文：项目级 rs.text 是单例，切到未生成报告的新方向会串显旧方向正文
       reportMdToHtml(alignChainToReport((typeof reportTextForTopic==='function'?reportTextForTopic(p.topic):null)||''))+
     '</div>'+
@@ -3458,7 +3460,7 @@ function homePage(p){
 
   // ── 可靠性横幅 ──
   var reliabilityBanner=
-    '<div style="display:flex;align-items:center;gap:12px;padding:12px 18px;background:'+(r.score>=80?'#f0fdf4':'#fffbeb')+';border-bottom:1px solid '+(r.score>=80?'#86efac':'#fde68a')+'">'+
+    '<div class="industry-readiness" style="display:flex;align-items:center;gap:12px;padding:12px 18px;background:'+(r.score>=80?'#f0fdf4':'#fffbeb')+';border-bottom:1px solid '+(r.score>=80?'#86efac':'#fde68a')+'">'+
       '<div style="flex:1;min-width:0">'+
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'+
           '<span style="font-size:12px;font-weight:650;color:'+(r.score>=80?'#166534':'#92400e')+'">从城市智库继承数据</span>'+
@@ -3503,10 +3505,10 @@ function homePage(p){
   }
 
   var topicSelector=
-    '<div style="padding:0 0 20px">'+
-      '<div style="font-size:12px;font-weight:650;color:#4a5568;margin-bottom:10px;letter-spacing:.3px">选择产业分析方向</div>'+
-      '<div id="topicCardGrid" style="display:flex;gap:10px;margin-bottom:12px">'+topicCards+'</div>'+
-      '<div style="display:flex;align-items:center;gap:8px">'+
+    '<div class="industry-topics" style="padding:0 0 20px">'+
+      '<div class="industry-section-caption" style="font-size:12px;font-weight:650;color:#4a5568;margin-bottom:10px;letter-spacing:.3px">选择产业分析方向</div>'+
+      '<div id="topicCardGrid" class="industry-topic-grid" style="display:flex;gap:10px;margin-bottom:12px">'+topicCards+'</div>'+
+      '<div class="industry-custom-topic" style="display:flex;align-items:center;gap:8px">'+
         '<div style="flex:1;position:relative">'+
           '<input id="topicCustomInput" placeholder="或输入自定义方向…" value="" '+
             'style="width:100%;box-sizing:border-box;padding:10px 14px;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#0b183b;outline:none;transition:border .15s" '+
@@ -3528,18 +3530,18 @@ function homePage(p){
     '<div id="reportArea">'+
       '<div id="reportHistoryArea"></div>'+
       (window._reportGenerating
-        ? '<div style="border-radius:16px;border:1.5px solid #fed7aa;overflow:hidden;margin-bottom:8px">'+
+        ? '<div class="industry-report is-generating" style="border-radius:16px;border:1.5px solid #fed7aa;overflow:hidden;margin-bottom:8px">'+
             '<div style="padding:14px 18px;background:linear-gradient(135deg,#fffbeb,#fef3c7);border-bottom:1px solid #fde68a;display:flex;align-items:center;gap:10px">'+
               '<div style="width:18px;height:18px;border:2.5px solid #e2e8f0;border-top-color:#f59e0b;border-radius:50%;animation:spin 1s linear infinite"></div>'+
               '<div style="font-size:13px;font-weight:700;color:#92400e">初步研判草稿生成中…</div>'+
             '</div>'+
-            '<div id="reportContent" style="padding:20px 22px;font-size:13px;color:#1e293b;line-height:1.85;min-height:80px"></div>'+
+            '<div id="reportContent" class="industry-prose" style="padding:20px 22px;font-size:13px;color:#1e293b;line-height:1.85;min-height:80px"></div>'+
           '</div>'
         : (REPORTSTATE[cur]&&REPORTSTATE[cur].phaseByTopic&&REPORTSTATE[cur].phaseByTopic[p.topic]===2)
         ? reportHtml(p)+'<div id="chainMapBlock" style="animation:fadeIn .6s ease-out">'+chainMapHtml(p)+'</div>'+'<div id="actionItemsBlock" style="animation:fadeIn .8s ease-out .3s both">'+restoreActionItems()+'</div>'+restoreConfirmPanel()
         : (REPORTSTATE[cur]&&REPORTSTATE[cur].text)||(PENDING_CONFIRMS[cur]&&PENDING_CONFIRMS[cur].length)||(REPORTSTATE[cur]&&p&&_findPendingForTopic(REPORTSTATE[cur],p.topic).length)
         ? reportHtml(p)+restoreConfirmPanel()
-        : '<div style="text-align:center;padding:48px 20px">'+
+        : '<div class="industry-empty" style="text-align:center;padding:48px 20px">'+
             '<div style="font-size:40px;margin-bottom:12px">📋</div>'+
             '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">'+
               '选择上方产业分析方向，点击「🔍 产业智能分析」'+
@@ -3563,14 +3565,15 @@ function homePage(p){
 
 
 
-  return '<div class="page">'+
+  return '<div class="page industry-page">'+
+    '<header class="industry-header"><div><span class="industry-kicker">INDUSTRY RESEARCH</span><h1 class="industry-heading">产业分析</h1><p>以城市智库为基础，梳理产业方向与招引机会</p></div><div class="industry-header-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></div></header>'+
     reliabilityBanner+
-    '<div class="conversation-scroll" style="padding:16px 22px 0">'+
+    '<div class="conversation-scroll industry-scroll" style="padding:16px 22px 0">'+
       topicSelector+
       reportArea+
     '</div>'+
     // 底部行动栏（替代 composer）—— 内容按当前方向渲染，切换方向时同步刷新
-    '<div class="report-bottom-bar" style="border-top:1px solid #f0f4ff;background:#fff;padding:12px 22px;display:flex;gap:10px;align-items:center">'+
+    '<div class="report-bottom-bar industry-bottom-bar" style="border-top:1px solid #f0f4ff;background:#fff;padding:12px 22px;display:flex;gap:10px;align-items:center">'+
       reportBottomBarInner(p)+
     '</div>'+
   '</div>';
