@@ -215,6 +215,15 @@ class WeaknessTests(unittest.TestCase):
                           premise(other, 'operation', subject='蓝天工厂'), premise(other, 'operation', 1)]
         self.assertIsNone(_candidate(row, {'control':'飞控系统'}, chain_source_catalog(other, CONTEXT), CONTEXT))
 
+    def test_missing_identity_reference_is_joined_from_verified_same_company(self):
+        bundle = research(['闵行企业上海青松科技有限公司已开展低空研发业务。',
+                           '上海青松科技有限公司的飞控系统已实现批量交付，提供稳定供货。'])
+        row = candidate(bundle, roles=[premise(bundle, 'operation', 1)])
+        row['scope'] = 'local_enterprise'
+        out, _ = run(bundle, [row])
+        self.assertEqual(out['node_judgments']['control']['level'], 'strong')
+        self.assertTrue(out['node_judgments']['control']['enterprise_links'])
+
     def test_review_sees_related_counter_source_even_if_proposal_omits_it(self):
         import json
         bundle = research(['闵行区飞控系统生产线已投产并批量交付，相关产品正在运行。',
