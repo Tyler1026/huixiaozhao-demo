@@ -108,6 +108,8 @@ function _safeProfiles(profiles){
 function _safeSyncSnapshot(raw){
   var data=Object.assign({},raw||{});
   ['KB_EDITS','USER_PROFILES','CITY_ACCOUNTS','INVITE_CODES','CITY_WORKSPACES','ACCOUNTS','AUTH','auth','password','pwd','token'].forEach(function(k){delete data[k];});
+  if(data.REPORTSTATE){data.REPORTSTATE=Object.assign({},data.REPORTSTATE);Object.keys(data.REPORTSTATE).forEach(function(key){var state=Object.assign({},data.REPORTSTATE[key]);Object.keys(state).forEach(function(field){if(/^chain/.test(field)||field==='pendingChainSaves')delete state[field];});data.REPORTSTATE[key]=state;});}
+  if(data.PROJECTS){data.PROJECTS=Object.assign({},data.PROJECTS);Object.keys(data.PROJECTS).forEach(function(key){data.PROJECTS[key]=Object.assign({},data.PROJECTS[key]);delete data.PROJECTS[key].segmentLevels;});}
   if(data.huixiaozhao_kb_v1)data.huixiaozhao_kb_v1=_safeSyncSnapshot(data.huixiaozhao_kb_v1);
   return data;
 }

@@ -1235,6 +1235,10 @@ class Handler(BaseHTTPRequestHandler):
         if not q:
             return error_response(self, AuthError(400, 'question_required', '请填写问题'))
 
+        if body.get('purpose') == 'chain_map':
+            from backend.topic_chain_route import serve_topic_chain
+            return serve_topic_chain(self, body, complete=_complete_topic_plan, audit=audit_log)
+
         if mode in ('draft', 'full') and body.get('purpose') != 'chain_map':
             from backend.topic_report_route import serve_topic_report
             return serve_topic_report(

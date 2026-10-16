@@ -14,6 +14,7 @@ from __future__ import annotations
 import datetime as dt
 import copy
 import hashlib
+import json
 import os
 import math
 import re
@@ -30,6 +31,9 @@ from report_service.hosted import configured_environment
 from report_service.full_provider import FullLiveProvider
 
 MAX_SOURCES = 20
+MAX_CHAIN_SOURCES = 48
+MAX_CHAIN_QUOTES_PER_URL = 12
+MAX_CHAIN_EVIDENCE_CHARS = 40000
 MAX_EXCERPT_CHARS = 1600
 MAX_FULLTEXT_CHARS = 120000
 MAX_CHECKS = 80
@@ -66,9 +70,17 @@ def _public_label(value, limit):
 def search_plan(city, topic, mode='draft'):
     """No questionnaire answers, materials, company secrets or model text."""
     city, topic = _public_label(city, 40), _public_label(topic, 100)
-    if mode not in ('draft', 'full'):
+    if mode not in ('draft', 'full', 'chain'):
         raise ValueError('invalid_mode')
     common = f'{city} {topic}'
+    if mode == 'chain':
+        from .topic_chain import research_facets
+        facets = research_facets(topic)
+        return [f'{common} 产业链 上游 材料 关键部件 '+ ' '.join(facets['上游'][:5]),
+                f'{common} 产业链 中游 研制 制造 总装 测试 '+ ' '.join(facets['中游'][:5]),
+                f'{common} 产业链 下游 运营 应用 服务 '+ ' '.join(facets['下游'][:5]),
+                f'{common} 产业链 行动方案 全文 site:gov.cn',
+                f'{common} 产业链 规划 建成 投产 原文']
     queries = [f'{common} 产业基础 重点企业 官方发布',
                f'{common} 产业政策 行动方案 适用条件 site:gov.cn',
                f'{common} 企业官网 年度报告 项目建设']
@@ -109,7 +121,36 @@ def _same_origin(a, b):
     return bool(aa and bb and len(aa & bb) / min(len(aa), len(bb)) >= .82)
 
 
-def select_source_paragraphs(text, topic, *, limit=3):
+def _balanced_chain_rows(candidates, limit, char_limit=None):
+    """Round-robin complete excerpts, including late-query downstream hits."""
+    selected, seen, size = [], set(), 0
+    buckets = {lane: [row for row in candidates if lane in row.get('chain_facets', [])]
+               for lane in ('上游', '中游', '下游')}
+    def key(row):
+        return row.get('id') or row['quote']
+    def accept(row):
+        nonlocal size
+        seen.add(key(row))
+        cost = len(json.dumps(row, ensure_ascii=False))
+        if char_limit is not None and size + cost > char_limit:
+            return
+        selected.append(row); size += cost
+    while any(buckets.values()) and len(selected) < limit:
+        for lane in buckets:
+            while buckets[lane] and key(buckets[lane][0]) in seen:
+                buckets[lane].pop(0)
+            if buckets[lane] and len(selected) < limit:
+                row = buckets[lane].pop(0)
+                accept(row)
+    for row in candidates:
+        if len(selected) >= limit:
+            break
+        if key(row) not in seen:
+            accept(row)
+    return selected
+
+
+def select_source_paragraphs(text, topic, *, limit=None, mode='draft'):
     """Relevant whole source paragraphs; never split a sentence to fit.
 
     A long, unsegmented page yields no quote instead of a misleading fragment.
@@ -119,7 +160,11 @@ def select_source_paragraphs(text, topic, *, limit=3):
     from .topic_evidence import topic_terms
     if not isinstance(text, str):
         return []
+    limit = (MAX_CHAIN_QUOTES_PER_URL if mode == 'chain' else 3) if limit is None else limit
     terms = topic_terms(topic)
+    from .topic_chain import research_facets
+    facets = research_facets(topic) if mode == 'chain' else {}
+    max_chars = 5000 if mode == 'chain' else MAX_EXCERPT_CHARS
     if not terms:
         return []
     body = grounding._eligible_body(text).strip()
@@ -128,18 +173,27 @@ def select_source_paragraphs(text, topic, *, limit=3):
     for block in blocks:
         # Newlines already supplied by the source are valid boundaries. An
         # oversized single line is omitted, not cut at an arbitrary character.
-        lines = block.splitlines() if len(block) > MAX_EXCERPT_CHARS else [block]
+        lines = block.splitlines() if len(block) > max_chars else [block]
         for paragraph in lines:
             paragraph = paragraph.strip()
-            if not 35 <= len(paragraph) <= MAX_EXCERPT_CHARS or paragraph in seen:
+            if not 35 <= len(paragraph) <= max_chars or paragraph in seen:
                 continue
             matches = [term for term in terms if term.casefold() in paragraph.casefold()]
-            if not matches:
+            facet_matches = {lane: [term for term in vocabulary if term.casefold() in paragraph.casefold()]
+                             for lane, vocabulary in facets.items()}
+            if not matches and not any(facet_matches.values()):
                 continue
             seen.add(paragraph)
-            candidates.append({'quote': paragraph, 'match_terms': matches,
-                               'relevance_score': sum(min(8, len(t)) for t in matches)})
+            candidate = {'quote': paragraph, 'match_terms': matches,
+                         'relevance_score': sum(min(8, len(t)) for t in matches)}
+            if facets:
+                candidate['chain_facets'] = [lane for lane, found in facet_matches.items() if found]
+            candidates.append(candidate)
     candidates.sort(key=lambda entry: -entry['relevance_score'])
+    if facets:
+        # Select whole paragraphs across all three roles before repeated high
+        # keyword-score passages can consume one page's entire allowance.
+        return _balanced_chain_rows(candidates, limit)
     return candidates[:limit]
 
 
@@ -206,6 +260,11 @@ def research_topic(city, topic, *, mode='draft', questions=(), basis=(), provide
         return query, normalized, texts
 
     evidence, seen, per_url = [], set(), {}
+    source_limit = MAX_CHAIN_SOURCES if mode == 'chain' else MAX_SOURCES
+    per_url_limit = MAX_CHAIN_QUOTES_PER_URL if mode == 'chain' else 3
+    # Keep a bounded candidate pool until all public lane queries return. The
+    # final 48-row output is balanced globally, not filled by the first query.
+    candidate_limit = 300 if mode == 'chain' else source_limit
     executor = ThreadPoolExecutor(max_workers=3)
     try:
         pending = [executor.submit(retrieve, query) for query in queries]
@@ -230,8 +289,8 @@ def research_topic(city, topic, *, mode='draft', questions=(), basis=(), provide
                     providers.validate_https_url(url)
                 except (ValueError, TypeError):
                     continue
-                if (per_url.get(contract.canonical_url(url), 0) >= 3
-                        or len(evidence) >= MAX_SOURCES):
+                if (per_url.get(contract.canonical_url(url), 0) >= per_url_limit
+                        or len(evidence) >= candidate_limit):
                     continue
                 kind = _primary_type(url, domains)
                 raw_text = texts.get(url)
@@ -243,7 +302,7 @@ def research_topic(city, topic, *, mode='draft', questions=(), basis=(), provide
                 fulltext = grounding._eligible_body(raw_text).strip()
                 if len(fulltext) > MAX_FULLTEXT_CHARS:
                     continue
-                paragraphs = select_source_paragraphs(fulltext, topic)
+                paragraphs = select_source_paragraphs(fulltext, topic, limit=per_url_limit, mode=mode)
                 canonical = contract.canonical_url(url)
                 if not paragraphs:
                     if len(output['candidates']) < MAX_SOURCES:
@@ -264,7 +323,7 @@ def research_topic(city, topic, *, mode='draft', questions=(), basis=(), provide
                                if _same_origin(source_probe, {'url': s['url'], 'quote': s['fulltext']})), None)
                 origin = origin or 'origin_' + _digest(fulltext)[:20]
                 for paragraph in paragraphs:
-                    if per_url.get(canonical, 0) >= 3 or len(evidence) >= MAX_SOURCES:
+                    if per_url.get(canonical, 0) >= per_url_limit or len(evidence) >= candidate_limit:
                         break
                     quote = paragraph['quote']
                     entry = dict(metadata, **paragraph, excerpt=quote, source_id=source_id,
@@ -280,7 +339,11 @@ def research_topic(city, topic, *, mode='draft', questions=(), basis=(), provide
     finally:
         closed.set()
         executor.shutdown(wait=False, cancel_futures=True)
-    output['evidence'] = evidence[:MAX_SOURCES]
+    if mode == 'chain':
+        evidence = _balanced_chain_rows(evidence, source_limit, MAX_CHAIN_EVIDENCE_CHARS)
+        used_sources = {entry['source_id'] for entry in evidence}
+        output['sources'] = {key: value for key, value in output['sources'].items() if key in used_sources}
+    output['evidence'] = evidence[:source_limit]
     if not evidence:
         output['errors'].append({'code': 'original_evidence_missing', 'message': '未取得可核查的官方或企业原始正文'})
         output['status'] = 'pending' if not output['errors'][:-1] else 'unavailable'

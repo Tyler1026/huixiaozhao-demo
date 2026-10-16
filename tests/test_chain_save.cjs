@@ -1,85 +1,67 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const root=path.resolve(__dirname,'..'),topic='核电换热设备',body='完整的当前方向正文以及已保存材料。'.repeat(12);
-const clone=x=>JSON.parse(JSON.stringify(x));
-function fn(source,name){const i=source.search(new RegExp('(?:async )?function '+name+'\\('));assert.ok(i>=0,name);const n=source.slice(i+1).search(/\n(?:async )?function /);return source.slice(i,n<0?undefined:i+1+n);}
-function gate(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
-function setup(app){
- const file=app==='index'?'frontend/index/script-02-sections/12-tail.js':'frontend/ops/script-03-sections/12-tail.js',source=fs.readFileSync(path.join(root,file),'utf8');
- const events={model:0,posts:[],reads:0,renders:0},storage={};let server={},postGate=null,failure=null,readTransform=x=>x,storageWorks=true;
- const c={PROJECTS:{p:{topic,city:'闵行区',reportRequestId:'r1'}},REPORTSTATE:{p:{topic,text:body,aiReportByTopic:{[topic]:body},ts:100}},cur:'p',view:'report',_authEpoch:1,_chainGenInFlight:{},window:{},LS_KEY:'state',KB_API:'/api/kb-chat',source:'source-1',Date,JSON,AbortController,
-  P:()=>c.PROJECTS[c.cur],localStorage:{getItem:k=>storage[k]||null},
-  persist(){if(storageWorks)storage.state=JSON.stringify({PROJECTS:c.PROJECTS,REPORTSTATE:c.REPORTSTATE});},render(){events.renders++;},setTimeout:()=>1,clearTimeout(){},document:{getElementById:()=>null},reportTextForTopic:t=>c.REPORTSTATE.p.aiReportByTopic[t],escapeChainText:s=>s,
-  async fetch(url,init){if(url!=='/api/sync'){events.model++;return {ok:true};}if(init&&init.method==='POST'){const payload=JSON.parse(init.body);events.posts.push(payload);if(postGate)await postGate.promise;if(failure instanceof Error)throw failure;if(failure)return {ok:failure.http!==false,status:failure.status,json:async()=>({ok:false})};server=Object.assign({},clone({PROJECTS:c.PROJECTS,REPORTSTATE:c.REPORTSTATE}),{PROJECTS:clone(c.PROJECTS),REPORTSTATE:clone(c.REPORTSTATE)});Object.assign(server.REPORTSTATE.p,payload.REPORTSTATE.p);return {ok:true,json:async()=>({ok:true})};}events.reads++;return {ok:true,json:async()=>readTransform(clone(server))};},
-  readTopicReportStream:async()=>({text:'[]'})};
- vm.createContext(c);
- const authSource=fs.readFileSync(path.join(root,'frontend',app,app==='index'?'script-02-sections':'script-03-sections',app==='index'?'03.js':'17.js'),'utf8');vm.runInContext(fn(authSource,'_safeSyncSnapshot'),c);
- const shared=fs.readFileSync(path.join(root,'frontend',app,app==='index'?'script-02-sections':'script-03-sections','12-part-00.js'),'utf8');vm.runInContext(fn(shared,'savedEvidenceIdentity'),c);
- for(const n of ['_correctChainLevel','_normalizeChain','currentEvidenceChain','chainSnapshotIdentity','chainSourceIdentity','chainEvidenceIdentity','chainSavedSourceMatches','chainSaveCurrent','savePendingChain','syncTopicReportInputs','generateChainFromReport','requestChainGeneration','_renderRichChain','chainMapHtml'])vm.runInContext(fn(source,n),c);
- return {c,events,storage,setGate:g=>postGate=g,setFailure:x=>failure=x,setRead:f=>readTransform=f,setStorage:x=>storageWorks=x,server:()=>server};
-}
-function pending(c){return c.REPORTSTATE.p.pendingChainSaves[topic];}
-function oldCache(c){c.REPORTSTATE.p.chainByTopic={[topic]:[{seg:'中游',nodes:[{name:'旧图'}]}]};c.REPORTSTATE.p.chainEvidenceByTopic={[topic]:{scope:'legacy'}};return clone(c.REPORTSTATE.p.chainByTopic);}
+const {setup,gate,modelStarted,cache,clone,topic,report,fn}=require('./chain_v2_fixture.cjs');
 for(const app of ['index','ops']){
- test(app+' waits for save acknowledgement; exact captured snapshot survives restore and five-second stale timer',async()=>{
-  const e=setup(app),{c,events,storage}=e,g=gate();e.setGate(g);const work=c.generateChainFromReport(topic);await new Promise(setImmediate);
-  assert.equal(events.model,1);assert.equal(events.posts.length,1);assert.equal(c.REPORTSTATE.p.chainStatusByTopic[topic],'saving');assert.equal(c.currentEvidenceChain(topic),null);assert.match(c.chainMapHtml(c.P()),/正在保存/);
-  const target=events.posts[0].REPORTSTATE.p;assert.equal(target.chainStatusByTopic[topic],'ready');assert.equal(target.chainEvidenceByTopic[topic].topic,topic);assert.ok(Number.isInteger(target.chainEvidenceByTopic[topic].generatedAt));assert.equal(target.ts,undefined);assert.equal(target.text,undefined);assert.equal(events.posts[0].PROJECTS.p.kb,undefined);
-  // Simulate an equal-ts restore and a timer overwriting localStorage while POST waits.
-  c.REPORTSTATE.p={topic,text:body,aiReportByTopic:{[topic]:body},ts:100};storage.state='{}';g.resolve();await work;
-  assert.equal(c.REPORTSTATE.p.chainStatusByTopic[topic],'ready');assert.equal(c.currentEvidenceChain(topic).length,3);assert.equal(events.model,1);
-  c.REPORTSTATE=clone(e.server().REPORTSTATE);assert.equal(c.currentEvidenceChain(topic).length,3);assert.equal(events.reads,1);
+ test(app+' syncs plain inputs before generation and adopts only the server-owned result',async()=>{
+  const e=setup(app),g=gate();cache(e);e.c.PROJECTS.p.segmentLevels={legacy:true};e.setSyncGate(g);
+  const work=e.c.requestChainGeneration();await new Promise(setImmediate);assert.equal(e.events.models,0);assert.equal(e.events.posts.length,1);
+  const posted=e.events.posts[0];assert.equal(posted.PROJECTS.p.segmentLevels,undefined);assert.ok(Object.keys(posted.REPORTSTATE.p).every(k=>!k.startsWith('chain')&&k!=='pendingChainSaves'));
+  assert.match(e.c.chainMapHtml(e.c.P()),/aria-busy="true"/);g.resolve();assert.equal(await work,true);
+  assert.equal(e.events.models,1);assert.equal(e.events.posts.length,1);assert.equal(e.events.requests[0].purpose,'chain_map');
+  assert.equal(e.c.REPORTSTATE.p.chainStatusByTopic[topic],'partial');assert.deepEqual(clone(e.c.REPORTSTATE.p.chainByTopic[topic]),e.server().REPORTSTATE.p.chainByTopic[topic]);
+  assert.ok(e.c.currentEvidenceChain(topic));assert.equal(e.c.REPORTSTATE.p.aiReportByTopic[topic],report);
  });
- test(app+' retry after HTTP, JSON or network save failure uses saved graph without another model request',async()=>{
-  for(const failure of [{http:false},{http:true},new Error('network')]){const e=setup(app),{c,events}=e,old=oldCache(c);e.setFailure(failure);await c.generateChainFromReport(topic);
-   assert.equal(events.model,1);assert.equal(c.REPORTSTATE.p.chainStatusByTopic[topic],'save_failed');assert.deepEqual(clone(c.REPORTSTATE.p.chainByTopic),old);assert.match(c.chainMapHtml(c.P()),/重试保存图谱/);assert.ok(pending(c));
-   const version=pending(c).evidence.generatedAt;e.setFailure(null);await c.requestChainGeneration();assert.equal(events.model,1);assert.equal(events.posts.length,2);assert.equal(c.REPORTSTATE.p.chainEvidenceByTopic[topic].generatedAt,version);assert.equal(c.currentEvidenceChain(topic).length,3);
+ test(app+' missing commit event, interrupted stream and SSE error never replace an existing graph',async()=>{
+  for(const stream of [{omitResult:true},{finish:null},{finish:'length'},{error:'服务端保存失败'}]){
+   const e=setup(app),old=cache(e);e.setStream(stream);assert.equal(await e.c.requestChainGeneration(),false);
+   assert.deepEqual(clone(e.c.REPORTSTATE.p.chainByTopic),old);assert.equal(e.c.REPORTSTATE.p.chainStatusByTopic[topic],'ready');assert.ok(e.c.REPORTSTATE.p.chainErrorByTopic[topic]);assert.ok(e.c.currentEvidenceChain(topic));
   }
  });
- test(app+' a server acknowledgement without the exact saved bundle remains pending',async()=>{
-  const e=setup(app),{c}=e;e.setRead(x=>{delete x.REPORTSTATE.p.chainByTopic;return x;});await c.generateChainFromReport(topic);assert.equal(c.REPORTSTATE.p.chainStatusByTopic[topic],'save_failed');assert.equal(c.currentEvidenceChain(topic),null);assert.ok(pending(c));
- });
- test(app+' reordered JSON properties from server do not invalidate an identical graph',async()=>{
-  const e=setup(app),{c}=e;e.setRead(x=>{const meta=x.REPORTSTATE.p.chainEvidenceByTopic[topic];x.REPORTSTATE.p.chainEvidenceByTopic[topic]=Object.fromEntries(Object.entries(meta).reverse());return x;});await c.generateChainFromReport(topic);assert.equal(c.REPORTSTATE.p.chainStatusByTopic[topic],'ready');
- });
- test(app+' changed body, topic, source, request or auth during save cannot promote old results',async()=>{
-  for(const change of [c=>c.REPORTSTATE.p.aiReportByTopic[topic]+='变更',c=>{c.PROJECTS.p.topic='其他方向';c.PROJECTS.p.kb=[{known:['topic changed']}];},c=>c.PROJECTS.p.kb=[{known:['new-source']}],c=>c.PROJECTS.p.reportRequestId='r2',c=>c._authEpoch++]){
-   const e=setup(app),{c}=e,g=gate(),old=oldCache(c);e.setGate(g);const work=c.generateChainFromReport(topic);await new Promise(setImmediate);change(c);g.resolve();await work;assert.deepEqual(clone(c.REPORTSTATE.p.chainByTopic),old);assert.equal(c.currentEvidenceChain(topic),null);
+ test(app+' wrong source, report, scope, topic or missing fingerprint rejects result without a client save',async()=>{
+  for(const field of ['sourceIdentity','reportText','scope','contract','topic','requestId','inputFingerprint','saved']){
+   const e=setup(app),old=cache(e);e.setTransform(event=>{if(field==='saved')event.saved=false;else event.evidence[field]=field==='inputFingerprint'?'':'wrong';return event;});
+   assert.equal(await e.c.requestChainGeneration(),false);assert.deepEqual(clone(e.c.REPORTSTATE.p.chainByTopic),old);assert.equal(e.events.posts.length,1);
   }
  });
- test(app+' pending result with wrong topic, body, scope or source cannot be saved directly',async()=>{
-  const e=setup(app),{c,events}=e;e.setFailure(new Error('offline'));await c.generateChainFromReport(topic);e.setFailure(null);
-  const valid=clone(pending(c));for(const field of ['topic','reportText','scope','sourceIdentity','requestId','contract']){c.REPORTSTATE.p.pendingChainSaves[topic]=clone(valid);c.REPORTSTATE.p.pendingChainSaves[topic].evidence[field]='wrong';const count=events.posts.length;assert.equal(await c.savePendingChain('p',topic,1),false);assert.equal(events.posts.length,count);}
+ test(app+' all source edits and auth changes reject an in-flight old graph',async()=>{
+  const changes=[c=>c.KB_EDITS.p={a:{text:'修订'}},c=>c.KB_CONFIRMS.p={a:'确认'},c=>c.KB_CONFIRM_TOMBS.p={a:1},c=>c.KB_ITEM_TOMBS.p={a:1},c=>c.UPLOADS.p=[{name:'新上传'}],c=>c.UPLOAD_TOMBS['p::old.pdf']=1,c=>c.KB_FILE_CHUNKS.p=[{text:'新正文'}],c=>c.PROJECTS.p.kb.push({known:['新增']}),c=>c.REPORTSTATE.p.aiReportByTopic[topic]+='新报告',c=>c.PROJECTS.p.reportRequestId='r2',c=>c._authEpoch++];
+  for(const change of changes){const e=setup(app),g=gate(),old=cache(e);e.setModelGate(g);const work=e.c.requestChainGeneration();await modelStarted(e);change(e.c);g.resolve();assert.equal(await work,false);assert.deepEqual(clone(e.c.REPORTSTATE.p.chainByTopic),old);assert.equal(Object.keys(e.c._chainGenInFlight).length,0);}
  });
- test(app+' local snapshot failure cannot block a scoped server save',async()=>{
-  const e=setup(app),{c,events}=e;e.setStorage(false);await c.generateChainFromReport(topic);assert.equal(events.posts.length,1);assert.equal(c.REPORTSTATE.p.chainStatusByTopic[topic],'ready');assert.equal(events.model,1);assert.ok(events.posts[0].REPORTSTATE.p.chainByTopic);assert.equal(events.posts[0].PROJECTS.p.kb,undefined);
+ test(app+' switching selected direction preserves the original direction result without cross-display',async()=>{
+  const e=setup(app),g=gate();e.setModelGate(g);const work=e.c.requestChainGeneration();await modelStarted(e);
+  e.c.PROJECTS.p.topic='其他方向';g.resolve();assert.equal(await work,true);assert.ok(e.c.currentEvidenceChain(topic));assert.equal(e.c.currentEvidenceChain('其他方向'),null);assert.doesNotMatch(e.c.chainMapHtml(e.c.P()),/核级换热器/);
+  e.c.PROJECTS.p.topic=topic;assert.match(e.c.chainMapHtml(e.c.P()),/核级换热器/);
  });
- test(app+' forbidden base write keeps the generated graph and gives a refresh message, not a model error',async()=>{
-  const e=setup(app),{c,events}=e;e.setFailure({http:false,status:403});await c.generateChainFromReport(topic);assert.ok(pending(c));assert.equal(events.model,1);assert.match(c.chainMapHtml(c.P()),/报告基础版本已更新，请刷新后重试保存/);assert.doesNotMatch(c.chainMapHtml(c.P()),/图谱生成未完成/);
+ test(app+' failed input sync never calls the model, and retry can succeed',async()=>{
+  const e=setup(app);e.setSyncFailure(Error('材料保存失败'));assert.equal(await e.c.requestChainGeneration(),false);assert.equal(e.events.models,0);assert.equal(Object.keys(e.c._chainGenInFlight).length,0);assert.match(e.c.chainMapHtml(e.c.P()),/材料保存失败/);
+  e.setSyncFailure(null);assert.equal(await e.c.requestChainGeneration(),true);
  });
- test(app+' authoritative source change is never overwritten by a local stale base package',async()=>{
-  const e=setup(app),{c,events}=e;e.setRead(x=>{x.PROJECTS.p.kb=[{known:['server latest source']}];return x;});await c.generateChainFromReport(topic);assert.equal(c.currentEvidenceChain(topic),null);assert.match(c.chainMapHtml(c.P()),/材料或报告已更新/);assert.equal(events.posts[0].PROJECTS.p.kb,undefined);assert.deepEqual(Object.keys(events.posts[0].REPORTSTATE.p).sort(),['chainByTopic','chainEvidenceByTopic','chainStatusByTopic']);
+ test(app+' source conflicts stay actionable and preserve completed graph content',async()=>{
+  const e=setup(app),old=cache(e);e.setModelFailure({status:409,body:{error:'evidence_changed'}});assert.equal(await e.c.requestChainGeneration(),false);assert.deepEqual(clone(e.c.REPORTSTATE.p.chainByTopic),old);assert.match(e.c.chainMapHtml(e.c.P()),/材料已更新/);
  });
- test(app+' JSON source reserialization on readback preserves save success and refreshed cache reuse',async()=>{
-  const e=setup(app),{c}=e;const reformat=x=>{const m=x.REPORTSTATE.p.chainEvidenceByTopic[topic];m.sourceIdentity=JSON.stringify(JSON.parse(m.sourceIdentity),null,2).replace(/[\u0080-\uffff]/g,ch=>'\\u'+ch.charCodeAt(0).toString(16).padStart(4,'0'));return x;};
-  e.setRead(reformat);await c.generateChainFromReport(topic);assert.equal(c.REPORTSTATE.p.chainStatusByTopic[topic],'ready');const fresh=reformat(clone(e.server()));c.REPORTSTATE=fresh.REPORTSTATE;assert.equal(c.currentEvidenceChain(topic).length,3);
+ test(app+' local quota failure does not block an in-memory input sync or server-owned result',async()=>{
+  const e=setup(app);e.setStorage(false);assert.equal(await e.c.requestChainGeneration(),true);assert.equal(e.events.posts.length,1);assert.ok(e.c.currentEvidenceChain(topic));
  });
- test(app+' changing parsed source content still fails readback even when formatting is valid JSON',async()=>{
-  const e=setup(app),{c}=e;e.setRead(x=>{const m=x.REPORTSTATE.p.chainEvidenceByTopic[topic],identity=JSON.parse(m.sourceIdentity);identity.kb=[['wrong material']];m.sourceIdentity=JSON.stringify(identity);return x;});await c.generateChainFromReport(topic);assert.equal(c.REPORTSTATE.p.chainStatusByTopic[topic],'save_failed');assert.equal(c.currentEvidenceChain(topic),null);
+ test(app+' result restores after JSON reserialization, while legacy v1 caches never qualify',async()=>{
+  const e=setup(app);await e.c.requestChainGeneration();e.c.REPORTSTATE=clone(e.server().REPORTSTATE);const m=e.c.REPORTSTATE.p.chainEvidenceByTopic[topic];m.sourceIdentity=JSON.stringify(JSON.parse(m.sourceIdentity),null,2);assert.ok(e.c.currentEvidenceChain(topic));m.contract='saved-excerpts-v1';m.scope='current-topic-v1';assert.equal(e.c.currentEvidenceChain(topic),null);assert.match(e.c.chainMapHtml(e.c.P()),/版本已变化/);
  });
- test(app+' actual page persist quota failure does not block the bounded graph write',async()=>{
-  const e=setup(app),{c,events,storage}=e;let quotaFailures=0,safeSnapshotCalls=0;
-  const actualSafeSnapshot=c._safeSyncSnapshot;c._safeSyncSnapshot=raw=>{safeSnapshotCalls++;return actualSafeSnapshot(raw);};
-  Object.assign(c,{AUTH:{user:'alice',scope:'admin'},_authState:'ready',RESET_GEN:'g1',KB_CONFIRMS:{},KB_CONFIRM_TOMBS:{},KB_ITEM_TOMBS:{},KB_FILE_CHUNKS:{},KB_UNLOCKED:{},PENDING_CONFIRMS:{},DOCK_LOGS:{},KB_CHAT:{},KB_CHAT_TOMBS:{},UPLOAD_TOMBS:{},UPLOADS:{},REPORT_HISTORY:{},CITY_BASE_PACKAGES:{},OPS_ENT:[],DEMANDS:[],REPORT_REQUESTS:[],_slimUploads:()=>({}),console:{warn(){}}});
-  c.window._opsDataReady=true;c.window._serverSyncLock=true;
-  c.localStorage.setItem=(key,value)=>{if(value.length*2>1024){quotaFailures++;const err=new Error('quota');err.name='QuotaExceededError';throw err;}storage[key]=value;};
-  const actual=fs.readFileSync(path.join(root,'frontend',app,app==='index'?'script-02-sections':'script-03-sections','14-part-00.js'),'utf8');vm.runInContext(fn(actual,'persist'),c);
-  await c.generateChainFromReport(topic);assert.ok(quotaFailures>0);assert.ok(safeSnapshotCalls>0);assert.equal(c.REPORTSTATE.p.chainStatusByTopic[topic],'ready');assert.equal(c.currentEvidenceChain(topic).length,3);assert.equal(events.model,1);
-  const bounded=events.posts.find(p=>p.REPORTSTATE&&Object.keys(p.REPORTSTATE.p).length===3);assert.ok(bounded);assert.equal(bounded.PROJECTS.p.kb,undefined);assert.equal(bounded.RESET_GEN,'g1');assert.equal(bounded.clientUser,'alice');assert.equal(bounded.AUTH,undefined);
-  const resetSource=fs.readFileSync(path.join(root,'frontend',app,app==='index'?'script-02-sections':'script-03-sections',app==='index'?'14-part-00.js':'14-tail.js'),'utf8');assert.match(resetSource,/var RESET_GEN=null/);
+ test(app+' short reports show a reason and never display a nonfunctional generation action',async()=>{
+  const e=setup(app);e.c.REPORTSTATE.p.aiReportByTopic[topic]='短报告';assert.equal(await e.c.requestChainGeneration(),false);assert.equal(e.events.posts.length,0);assert.equal(e.events.models,0);assert.match(e.c.chainMapHtml(e.c.P()),/不足 100 字/);assert.doesNotMatch(e.c.chainMapHtml(e.c.P()),/onclick="requestChainGeneration/);assert.equal(e.events.toasts.length,1);
  });
- test(app+' no-argument input sync still reads current local storage for full generation',async()=>{
-  const e=setup(app),{c,events}=e;c.persist();await c.syncTopicReportInputs();assert.equal(events.posts.length,1);assert.equal(events.posts[0].REPORTSTATE.p.text,body);
+ test(app+' all generic sync snapshots strip graph writes without mutating local cached results',()=>{
+  const e=setup(app);cache(e);e.c.REPORTSTATE.p.pendingChainSaves={a:{chain:[]}};const original=e.snapshot();const safe=e.c._safeSyncSnapshot(original);assert.ok(Object.keys(safe.REPORTSTATE.p).every(k=>!k.startsWith('chain')&&k!=='pendingChainSaves'));assert.ok(original.REPORTSTATE.p.chainByTopic);assert.equal(safe.REPORTSTATE.p.text,report);
+ });
+ test(app+' identity covers parent material and tombstones but ignores selected direction and graph outputs',()=>{
+  const e=setup(app),c=e.c;c.PROJECTS.root={kb:[],onboarding:{}};c.PROJECTS.p.workspaceId='root';const before=c.savedEvidenceIdentity('p',topic);assert.deepEqual(Object.keys(JSON.parse(before).state).sort(),['fileChunks','kbConfirmTombs','kbConfirms','kbEdits','kbItemTombs','uploadTombs','uploads'].sort());c.PROJECTS.p.topic='other';cache(e);assert.equal(c.savedEvidenceIdentity('p',topic),before);c.KB_EDITS.root={x:{text:'父级修订'}};assert.notEqual(c.savedEvidenceIdentity('p',topic),before);
+  c.KB_EDITS.root={};c.UPLOADS.root=[{name:'a',dataUrl:'one'}];const uploaded=c.savedEvidenceIdentity('p',topic);c.UPLOADS.root[0].dataUrl='two';assert.equal(c.savedEvidenceIdentity('p',topic),uploaded);c.UPLOAD_TOMBS['other::a']=1;assert.equal(c.savedEvidenceIdentity('p',topic),uploaded);c.UPLOAD_TOMBS['root::a']=2;assert.notEqual(c.savedEvidenceIdentity('p',topic),uploaded);
  });
 }
+
+test('actual admin persist filters graph writes while preserving the local cache',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');const e=setup('ops'),c=e.c;cache(e);
+ Object.assign(c,{AUTH:{user:'reviewer',scope:'admin'},OPS_ENT:[],CITY_BASE_PACKAGES:{},KB_UNLOCKED:{},PENDING_CONFIRMS:{},DOCK_LOGS:{},DEMANDS:[],REPORT_REQUESTS:[],RESET_GEN:'generation'});
+ c.window._opsDataReady=true;c.localStorage.setItem=(key,value)=>e.storage[key]=value;
+ vm.runInContext(fn(fs.readFileSync(path.join(__dirname,'../frontend/ops/script-03-sections/14-part-00.js'),'utf8'),'persist'),c);
+ c.persist();await new Promise(setImmediate);assert.equal(e.events.posts.length,1);assert.ok(e.c.REPORTSTATE.p.chainByTopic);
+ assert.ok(JSON.parse(e.storage.state).REPORTSTATE.p.chainByTopic);assert.ok(Object.keys(e.events.posts[0].REPORTSTATE.p).every(k=>!k.startsWith('chain')));
+});

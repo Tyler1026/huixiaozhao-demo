@@ -22,8 +22,10 @@ class SyncBoundaryTests(unittest.TestCase):
                     return None
                 return self.generic_visit(node)
             def visit_If(self,node):
-                # Only remove the three graph-map branches; compare every other
+                # Only remove the server-owned graph branches; compare every other
                 # inherited merge node exactly with the old baseline.
+                if '_CHAIN_MAPS' in ast.unparse(node.test):
+                    return None
                 if (isinstance(node.test,ast.Compare) and isinstance(node.test.left,ast.Name)
                         and node.test.left.id=='fk' and any(isinstance(x,ast.Name) and x.id=='_CHAIN_MAPS' for x in node.test.comparators)):
                     return None

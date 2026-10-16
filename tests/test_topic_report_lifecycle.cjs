@@ -193,12 +193,13 @@ test('native identity cannot promote a newly generated unreviewed draft to a ful
 
 test('graph cache requires exact report and request provenance, and never rewrites the report text', () => {
   const {c} = environment();
-  vm.runInContext(['currentEvidenceChain', 'chainSourceIdentity', 'chainSnapshotIdentity', 'alignChainToReport'].map(n=>declaration(n)).join('\n'), c);
+  vm.runInContext(['currentEvidenceChain', 'chainEvidenceMatches', 'chainSourceIdentity', 'chainSnapshotIdentity', 'alignChainToReport'].map(n=>declaration(n)).join('\n'), c);
   const rs = c.REPORTSTATE.p;
   rs.aiReportByTopic['核电配套'] = fullText;
   rs.chainByTopic = {'核电配套':[{seg:'上游',nodes:[]}]};
   assert.equal(c.currentEvidenceChain('核电配套'), null);
-  rs.chainEvidenceByTopic = {'核电配套':{contract:'saved-excerpts-v1',scope:'current-topic-v1',requestId:'request-1',reportText:fullText,sourceIdentity:c.savedEvidenceIdentity('p','核电配套')}};
+  rs.chainEvidenceByTopic = {'核电配套':{contract:'source-bound-chain-v2',scope:'current-topic-v2',topic:'核电配套',requestId:'request-1',reportText:fullText,inputFingerprint:'server-fingerprint',sourceIdentity:c.savedEvidenceIdentity('p','核电配套')}};
+  rs.chainStatusByTopic={'核电配套':'empty'};
   assert.equal(c.currentEvidenceChain('核电配套').length, 1);
   rs.aiReportByTopic['核电配套'] += '新版';
   assert.equal(c.currentEvidenceChain('核电配套'), null);
@@ -262,7 +263,7 @@ test('request replacement while streaming rejects writes to the new report', asy
 });
 
 test('graph failure stays retryable and no embedded demo facts render',()=>{
- const {c}=environment();Object.assign(c,{_chainGenInFlight:{},reportTextForTopic:()=>fullText});
+ const {c}=environment();Object.assign(c,{_chainGenInFlight:{},reportTextForTopic:()=>fullText.repeat(2)});
  vm.runInContext(['currentEvidenceChain','chainMapHtml','escapeChainText'].map(n=>declaration(n)).join('\n'),c);
  c.REPORTSTATE.p.chainStatusByTopic={'核电配套':'failed'};
  const html=c.chainMapHtml(c.PROJECTS.p);assert.match(html,/重试生成图谱/);assert.doesNotMatch(html,/香菇|随州|本地优势|外省企业/);
@@ -275,8 +276,8 @@ test('admin graph and report selection use exact current evidence without legacy
  vm.runInContext(['currentEvidenceChain','chainMapHtml','escapeChainText'].map(n=>declaration(n,ops)).join('\n')+'\n'+['getTopicReport','reportTextForTopic'].map(n=>declaration(n,helpers)).join('\n'),c);
  c.REPORTSTATE.p.topic='other';c.REPORTSTATE.p.text='unrelated body';
  assert.equal(c.reportTextForTopic('核电配套'),null);
- c.REPORTSTATE.p.aiReportByTopic['核电配套']=fullText;
- assert.equal(c.reportTextForTopic('核电配套'),fullText);
+ c.REPORTSTATE.p.aiReportByTopic['核电配套']=fullText.repeat(2);
+ assert.equal(c.reportTextForTopic('核电配套'),fullText.repeat(2));
  assert.match(c.chainMapHtml(c.PROJECTS.p),/生成产业链图谱/);
  assert.doesNotMatch(c.chainMapHtml(c.PROJECTS.p),/随州|香菇/);
 });

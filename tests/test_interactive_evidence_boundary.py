@@ -114,21 +114,12 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(out['preference']['industry']['items'],['高端装备'])
         self.assertEqual(out['preference']['industry']['source'],'stated')
 
-    def test_chain_missing_evidence_does_not_create_a_named_node(self):
-        c=context();out=ground_chain([{'seg':'上游','nodes':[{'name':'甲烷发动机','level':'weak','note':'不存在','local_leaders':['虚构企业']}]}],evidence_catalog(c['chunks']),c)
-        self.assertEqual([row['seg'] for row in out], ['上游', '中游', '下游'])
-        self.assertTrue(all(not row['nodes'] for row in out))
-
-    def test_chain_strength_and_local_company_do_not_cross_subject_clauses(self):
+    def test_legacy_chain_cannot_create_nodes_or_upgrade_strength_or_enterprises(self):
         c=context();c['city']='甲区'
-        cat=evidence_catalog([{'id':'mixed','topic':c['topic'],'text':'液氧甲烷发动机为本地核心优势，液氧煤油发动机存在短板；甲区企业为甲企业，乙区企业为乙企业。来源 https://official.example/industry'}])
-        node=ground_chain([{'seg':'上游','nodes':[{'name':'液氧煤油发动机','level':'strong','local_leaders':['乙企业','甲企业'],'evidence_ids':[cat[0]['id']]}]}],cat,c)[0]['nodes'][0]
-        self.assertEqual(node['level'],'weak')
-        self.assertEqual(node['local_leaders'],[])
-        cat=evidence_catalog([{'id':'positive','topic':c['topic'],'text':'甲区的甲企业从事液氧煤油发动机研发。来源 https://official.example/local'}])
-        node=ground_chain([{'seg':'上游','nodes':[{'name':'液氧煤油发动机','local_leaders':['甲企业'],'evidence_ids':[cat[0]['id']]}]}],cat,c)[0]['nodes'][0]
-        self.assertEqual(node['level'],'unknown')
-        self.assertEqual(node['local_leaders'],['甲企业'])
+        cat=evidence_catalog([{'id':'mixed','topic':c['topic'],'text':'液氧煤油发动机并非本地核心优势；甲区甲企业未从事发动机研发。来源 https://official.example/industry'}])
+        for payload in ([], [{'seg':'上游','nodes':[{'name':'液氧煤油发动机','level':'strong','local_leaders':['甲企业'],'evidence_ids':[cat[0]['id']]}]}]):
+            with self.assertRaisesRegex(ValueError, 'legacy_chain_disabled'):
+                ground_chain(payload,cat,c)
 
     def test_review_rechecks_current_evidence_and_deduplicates_pending_clue(self):
         s=sample();s['REPORTSTATE']['a']['phaseByTopic']['液体火箭']=2

@@ -9,58 +9,50 @@ import test_interactive_evidence_boundary as boundary
 class InteractiveChainContractTests(unittest.TestCase):
     setUp = boundary.StreamBoundaryTests.setUp
 
-    def _request(self, model, purpose='chain_map'):
-        # This is current-direction evidence, not a generic enterprise-library
-        # row from the base city report.
-        saved=self.h.state()
-        saved['PROJECTS']['a']['kb'][0]['t']='液体火箭'
-        self.h.replace(saved)
-        self.h.ns['SYSTEM_RESEARCH_CHAIN']='LEGACY_CHAIN_OBJECT_PROMPT: return {chain,segments:[{name}]}'
-        self.h.ns['DS_OPENER'].open.return_value=boundary.FakeResponse(json.dumps({'choices':[{'message':{'content':json.dumps(model)},'finish_reason':'stop'}]}).encode())
-        body={'question':'整理当前证据产业链','mode':'chain','projectKey':'a','topic':'液体火箭','reportRequestId':'r1','stream':True}
-        if purpose:
-            body['purpose']=purpose
-        status,_,raw=self.h.request('POST','/api/kb-chat',body,cookie=self.cookie)
-        payload=json.loads(self.h.ns['DS_OPENER'].open.call_args.args[0].data)
-        return status,raw.decode(),payload
+    def _request(self, model, broken_archive=False):
+        from unittest.mock import patch
+        from backend import topic_chain_route
+        from test_topic_chain import research
+        bundle = research(['同城区计划建设液体火箭总装测试平台，拟在规划期内按程序推进相关工作。'], topic='液体火箭')
+        bundle['city'] = '同城区'
+        if broken_archive:
+            next(iter(bundle['sources'].values()))['fulltext'] = '不匹配的正文'
+        self.h.ns['_complete_topic_plan'] = lambda *args: model(bundle) if callable(model) else model
+        original = topic_chain_route.serve_topic_chain
+        def routed(*args, **kwargs):
+            kwargs['research'] = lambda *args, **kwargs: bundle
+            return original(*args, **kwargs)
+        body={'question':'整理当前证据产业链','mode':'chain','purpose':'chain_map',
+              'projectKey':'a','topic':'液体火箭','reportRequestId':'r1','stream':True}
+        with patch.object(topic_chain_route, 'serve_topic_chain', routed):
+            status,_,raw=self.h.request('POST','/api/kb-chat',body,cookie=self.cookie)
+        return status,raw.decode()
 
-    def test_map_payload_uses_array_contract_and_validated_result_completes(self):
-        ref=next(x for x in evidence_catalog(boundary.context()['chunks']) if '星河' in x['quote'])
-        model=[{'seg':'上游','nodes':[{'name':'液氧煤油发动机','level':'strong','local_leaders':['星河动力公司'],'evidence_ids':[ref['id']]}]}]
-        status,text,payload=self._request(model)
+    def test_map_is_source_bound_and_saved_on_server_before_success(self):
+        status,text=self._request(lambda b: {'nodes':[{'name':'液体火箭总装测试','evidence_ids':[b['evidence'][0]['id']]}]})
         self.assertEqual(status,200)
-        system=payload['messages'][0]['content']
-        self.assertIn('顶层 JSON 数组',system)
-        self.assertIn('"seg":"上游"',system)
-        self.assertNotIn('LEGACY_CHAIN_OBJECT_PROMPT',system)
-        self.assertFalse(payload['stream'])
-        self.assertEqual(payload['max_tokens'],self.h.ns['MAX_TOKENS_CHAIN'])
-        self.assertIn('[DONE]',text)
-        event=json.loads(next(line[6:] for line in text.splitlines() if line.startswith('data: {')))
-        result=json.loads(event['choices'][0]['delta']['content'])
-        self.assertIsInstance(result,list)
-        node=result[0]['nodes'][0]
-        self.assertEqual(node['level'],'unknown')
-        self.assertEqual(node['local_leaders'],[])
-        self.assertEqual(node['urls'],['https://official.example/engine'])
-        self.assertEqual(self.audits[-1]['outcome'],'completed')
-        self.assertEqual(self.h.ns['DS_OPENER'].open.call_count,1)
+        event=next(json.loads(line[6:]) for line in text.splitlines() if line.startswith('data: {') and json.loads(line[6:]).get('type')=='chain.result')
+        self.assertEqual(event['evidence']['contract'],'source-bound-chain-v2')
+        self.assertTrue(event['saved']);self.assertIn('[DONE]',text)
+        node=event['chain'][1]['nodes'][0]
+        self.assertEqual(node['level'],'unknown');self.assertEqual(node['local_leaders'],[])
+        self.assertEqual(node['status'],'planned')
+        self.assertEqual(self.h.state()['REPORTSTATE']['a']['chainByTopic']['液体火箭'],event['chain'])
+        self.assertEqual(self.h.ns['DS_OPENER'].open.call_count,0)
 
-    def test_empty_array_completes_as_three_material_gaps(self):
-        status,text,_=self._request([])
+    def test_empty_nodes_return_explicit_empty_not_full_coverage(self):
+        status,text=self._request({'nodes':[]})
         self.assertEqual(status,200)
+        event=next(json.loads(line[6:]) for line in text.splitlines() if line.startswith('data: {') and json.loads(line[6:]).get('type')=='chain.result')
+        self.assertEqual(event['status'],'empty');self.assertEqual(event['coverage']['missing_lanes'],['上游','中游','下游'])
         self.assertIn('[DONE]',text)
-        event=json.loads(next(line[6:] for line in text.splitlines() if line.startswith('data: {')))
-        result=json.loads(event['choices'][0]['delta']['content'])
-        self.assertEqual(result,[{'seg':name,'nodes':[]} for name in ('上游','中游','下游')])
-        self.assertEqual(self.audits[-1]['outcome'],'completed')
 
-    def test_legacy_object_or_malformed_segments_stay_fail_closed(self):
-        for bad in ({'chain':'液体火箭','segments':[]},[{'seg':'上游','nodes':'not-a-list'}]):
-            status,text,_=self._request(bad)
-            self.assertEqual(status,502)
-            self.assertNotIn('[DONE]',text)
-            self.assertEqual(self.audits[-1]['outcome'],'failed')
+    def test_legacy_object_bad_plan_or_unbound_archive_cannot_complete(self):
+        for bad, broken in [({'chain':'液体火箭','segments':[]},False), ([{'seg':'上游','nodes':[]}],False), ({'nodes':[]},True)]:
+            status,text=self._request(bad,broken)
+            self.assertEqual(status,200)
+            self.assertNotIn('[DONE]',text);self.assertNotIn('chain.result',text)
+            self.assertEqual(self.audits[-1]['outcome'],'incomplete')
 
     def test_legacy_chain_prompt_remains_unchanged(self):
         self.h.ns['SYSTEM_RESEARCH_CHAIN']='LEGACY_CHAIN_OBJECT_PROMPT: return {chain,segments:[{name}]}'

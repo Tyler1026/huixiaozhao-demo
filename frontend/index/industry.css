@@ -127,9 +127,6 @@ body.industry-view .nav-copy small{font-size:10px}
 .industry-page .industry-chain-head>div>div:nth-child(2){color:#97a5b4!important;font-size:10px!important;margin-top:4px!important}
 .industry-page .industry-chain-head>div:last-child{gap:5px!important}
 .industry-page .industry-chain-head>div:last-child span{padding:3px 7px!important;border-radius:4px!important;font-size:9px!important;font-weight:500!important}
-.industry-page .industry-chain-head>div:last-child span:nth-child(1){background:#eaf4ee!important;color:#638973!important}
-.industry-page .industry-chain-head>div:last-child span:nth-child(2){background:#faf4e7!important;color:#a28b60!important}
-.industry-page .industry-chain-head>div:last-child span:nth-child(3){background:#fbefec!important;color:#b78275!important}
 .industry-page .industry-chain-body{gap:15px!important;padding:20px!important;border-radius:0 0 11px 11px;background:#f9fbfd!important}
 .industry-page .industry-chain-row{gap:10px!important;min-width:0}
 .industry-page .industry-chain-label{width:38px!important;min-width:38px;padding:12px 3px!important;border:1px solid #dee7ef!important;border-radius:6px!important;background:#edf3f9!important;gap:8px!important}
@@ -262,3 +259,13 @@ body.industry-view .nav-copy small{font-size:10px}
 .industry-sources blockquote{margin:7px 0 0;padding:9px 12px;border-left:2px solid #d2e1ed;background:#f7fafc;color:#60798e;font-size:11px;white-space:pre-wrap}
 @media(min-width:1440px){.industry-page .industry-topic-card{min-height:91px}.industry-page .industry-prose{padding-top:24px!important}}
 @media(max-width:767px){.industry-page .industry-header{padding-block:12px}.industry-page .industry-topic-card{min-height:90px}.industry-run-banner{padding:10px 16px;font-size:11px}.industry-page .industry-sources{padding:0 16px 18px}.industry-source-heading{align-items:flex-start}.industry-page .industry-bottom-bar>.industry-bottom-progress{flex-basis:100%}}
+
+/* Source-bound graph nodes are parallel material records, not inferred edges. */
+.industry-page .industry-chain-nodes{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px!important;overflow:visible}
+.industry-page .industry-chain-node{min-width:0!important;text-align:left!important}
+.industry-page .industry-chain-head .industry-chain-legend .is-strong{background:#edf5ef!important;color:#638d73!important}
+.industry-page .industry-chain-head .industry-chain-legend .is-mid{background:#faf5e9!important;color:#aa9061!important}
+.industry-page .industry-chain-head .industry-chain-legend .is-weak{background:#faf0ed!important;color:#b57d70!important}
+.industry-page .industry-chain-head .industry-chain-legend .is-unknown{background:#eff3f6!important;color:#65798d!important}
+.industry-chain-sources summary{cursor:pointer;color:#496a8a;font-weight:600}
+@media(max-width:600px){.industry-page .industry-chain-nodes{grid-template-columns:minmax(0,1fr)!important}.industry-page .industry-chain-node{min-width:0!important}}
