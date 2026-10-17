@@ -3080,19 +3080,17 @@ function _renderRichChain(topic, segments, recs, p, unclassified, status, eviden
   var notice=status==='empty'?'当前材料不足以形成有来源的环节图谱。请补充材料后重试；不能据此判断现实中不存在相关产业。':status==='partial'?'本次仅能整理部分环节，其余材料仍待补充或分类。':'';
   h+='<details class="industry-chain-notice" style="padding:8px 18px;margin:0;color:#8798a6;font-size:10px;line-height:1.8"><summary style="cursor:pointer">图谱范围与分类口径</summary><p style="margin:5px 0">本次资料中的代表环节，非完整行业清单。内容未独立核实；规划不代表已落地，分类不代表本地能力。'+(notice?'<br>'+notice:'')+(taxonomy.description?'<br>分类口径：'+escapeChainText(taxonomy.description):'')+'</p></details>';
   h+=chainAssessmentPanel(evidence.assessment,nodes,unclassified.length);
-  var actual=chainAssessmentView(evidence.assessment).actual,pending=[];
-  if(actual&&nodes.some(function(node){return chainAssessmentView(node.assessment).level!=='unknown';})){
-    segments=segments.map(function(segment){return Object.assign({},segment,{nodes:(segment.nodes||[]).filter(function(node){if(chainAssessmentView(node.assessment).level==='unknown'){pending.push({node:node,segment:segment.seg});return false;}return true;}).slice().sort(function(a,b){var ranks={weak:0,mid:1,strong:2};return ranks[chainAssessmentView(a.assessment).level]-ranks[chainAssessmentView(b.assessment).level];})});});
-    unclassified=unclassified.filter(function(node){if(chainAssessmentView(node.assessment).level==='unknown'){pending.push({node:node,segment:'待归类'});return false;}return true;});
-    h+='<p style="margin:0 18px 10px;font-size:11px;color:#60798b">先展示已有事实评价的环节；尚不能评价的 '+pending.length+' 项保留在下方待补清单。</p>';
+  var actual=chainAssessmentView(evidence.assessment).actual;
+  if(actual){
+    segments=segments.map(function(segment){return Object.assign({},segment,{nodes:(segment.nodes||[]).slice().sort(function(a,b){var ranks={weak:0,mid:1,strong:2,unknown:3};return ranks[chainAssessmentView(a.assessment).level]-ranks[chainAssessmentView(b.assessment).level];})});});
+    if(nodes.some(function(node){return chainAssessmentView(node.assessment).level==='unknown';}))h+='<p style="margin:0 18px 10px;font-size:11px;color:#60798b">已归类的待核节点保留在对应泳道，以灰色显示；尚不能评价不等于薄弱，也不能据此推断现实缺失。</p>';
   }
   h+='<div class="industry-chain-body" style="padding:16px;display:flex;flex-direction:column;gap:14px;background:#f8fafc">';
   ['上游','中游','下游'].forEach(function(name){var segment=segments.find(function(item){return item.seg===name;})||{nodes:[]};
     h+='<div class="industry-chain-row" style="display:flex;gap:12px;align-items:stretch"><div class="industry-chain-label" style="align-self:flex-start;min-height:76px;width:44px;flex-shrink:0;padding:10px 3px;border:1px solid #dfe7ee;border-radius:7px;display:flex;align-items:center;justify-content:center"><span style="writing-mode:vertical-rl;font-size:12px;opacity:1;letter-spacing:3px">'+name+'</span></div><div class="industry-chain-nodes" style="flex:1;min-width:0;display:grid;align-items:start;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">'+
-      ((segment.nodes||[]).length?segment.nodes.map(chainNodeCardHtml).join(''):'<div style="padding:18px;border:1px dashed #cbd5e1;border-radius:8px;font-size:12px;color:#64748b">' +(pending.length?'该分组暂未形成可展示的环节评价；待补材料保留在清单中，不能据此判断现实中不存在。':'资料待补：当前材料不足以说明该分组的环节，不能据此判断不存在。')+'</div>')+'</div></div>';
+      ((segment.nodes||[]).length?segment.nodes.map(chainNodeCardHtml).join(''):'<div style="padding:18px;border:1px dashed #cbd5e1;border-radius:8px;font-size:12px;color:#64748b">资料待补：当前材料不足以说明该分组的环节，不能据此判断不存在。</div>')+'</div></div>';
   });
   if(unclassified.length)h+='<section class="industry-chain-unclassified" style="padding:14px;border:1px dashed #cbd5e1;border-radius:8px"><strong style="font-size:13px">尚未分类的材料项</strong><p style="font-size:12px;color:#64748b">现有材料不足以确定其产业环节，保留原文供核对。</p><div style="display:grid;align-items:start;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">'+unclassified.map(chainNodeCardHtml).join('')+'</div></section>';
-  if(pending.length)h+='<details class="chain-pending-facts" style="padding:14px;border:1px solid #dfe7ee;border-radius:9px;background:#fff"><summary style="cursor:pointer;color:#61768a;font-size:12px;font-weight:650">待补事实的材料项（'+pending.length+'）</summary><p style="font-size:11px;color:#8291a1;line-height:1.8">这些材料尚不支持实际强弱结论。政策方向与待核事项保留可查，不参与三色评价。</p><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px">'+pending.map(function(item){return '<section><div style="font-size:10px;color:#8291a1;margin:0 0 5px">'+escapeChainText(item.segment)+'</div>'+chainNodeCardHtml(item.node)+'</section>';}).join('')+'</div></details>';
   return h+'</div></section>';
 }
 

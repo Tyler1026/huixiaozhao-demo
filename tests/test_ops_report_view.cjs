@@ -59,3 +59,11 @@ test('both report status readers require a saved full-report phase, regardless o
     assert.equal(c.topicHasFullReport('current'),false,'new draft overrides previous full phase');
   }
 });
+
+test('admin refresh failure exposes retry instead of leaving the next tab in a loading state', () => {
+  let rendered=0, loaded=0;
+  const c={AUTH:{scope:'admin'},window:{_opsDataReady:true},render(){rendered++;},renderOpsV2(){loaded++;},restoreFromServer(callback){c.window._opsDataReady=false;callback(false);}};
+  c.render._opsRestored=true;vm.createContext(c);
+  vm.runInContext(declaration(source('frontend/ops/script-03-sections/17.js'),'opsRefreshData').split('\nrender();')[0],c);
+  c.opsRefreshData();assert.equal(rendered,1);assert.equal(c.render._opsRestored,false);assert.equal(c.render._opsLoadError,'unavailable');assert.equal(loaded,0);
+});

@@ -129,10 +129,14 @@ function render(){
   }
   renderOpsV2();
 }
+function opsRefreshData(){
+  if(AUTH&&AUTH.scope==='admin'&&window._opsDataReady)return restoreFromServer(function(ok){
+    if(ok){render._opsLoadError='';renderOpsV2();}
+    else{render._opsRestored=false;render._opsLoadError='unavailable';render();}
+  });
+}
 render();
-if(!window._opsAuthPoll)window._opsAuthPoll=setInterval(function(){
-  if(AUTH&&AUTH.scope==='admin'&&window._opsDataReady)restoreFromServer(function(ok){if(ok)renderOpsV2();});
-},15000);
+if(!window._opsAuthPoll)window._opsAuthPoll=setInterval(opsRefreshData,15000);
 
 
 

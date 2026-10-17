@@ -14,13 +14,34 @@ for(const app of ['index','ops']){
   const panel=c.chainAssessmentPanel(value,[{assessment:value}],0);assert.match(panel,/实际薄弱程度/);assert.match(panel,/政策提及不参与主颜色/);
   assert.doesNotMatch(panel,/黄色表示规划培育/);
  });
- test(app+' actual view keeps unassessed materials in an expandable list without changing data',()=>{
+ test(app+' actual view keeps classified unknown nodes in their lanes without changing data',()=>{
   const {c}=setup(app),rated=assessment({judgment:{contract:'chain-judgment-v3',level:'strong',rule:'actual_weakness',reason:'已投运',premises:[]}}),pending=assessment({judgment:{contract:'chain-judgment-v3',level:'unknown',rule:'actual_weakness',reason:'待补事实',premises:[]}});
   const segments=[{seg:'上游',nodes:[{name:'已运行设备',assessment:rated},{name:'仅规划材料',assessment:pending}]}],before=JSON.stringify(segments);
   const html=c._renderRichChain('测试方向',segments,null,{},[], 'partial',{assessment:rated});
-  assert.match(html,/待补事实的材料项（1）/);assert.match(html,/仅规划材料/);assert.match(html,/先展示已有事实评价的环节/);
-  assert.doesNotMatch(html,/<details class="chain-pending-facts"[^>]*\bopen\b/);
+  assert.match(html,/仅规划材料/);assert.match(html,/已归类的待核节点保留在对应泳道/);
+  assert.doesNotMatch(html,/chain-pending-facts/);
+  assert.ok(html.indexOf('仅规划材料')>html.indexOf('上游</span>'));
+  assert.ok(html.indexOf('仅规划材料')<html.indexOf('中游</span>'));
+  assert.match(html,/industry-chain-node judgment-unknown/);
   assert.equal(JSON.stringify(segments),before);
+ });
+ test(app+' one rated unclassified node never hides twenty eight classified unknown nodes',()=>{
+  const {c}=setup(app),rated=assessment({judgment:{contract:'chain-judgment-v3',level:'strong',rule:'actual_weakness',reason:'已建成设施',premises:[]}}),pending=assessment({judgment:{contract:'chain-judgment-v3',level:'unknown',rule:'actual_weakness',reason:'尚不能评价',premises:[]}});
+  const segments=['上游','中游','下游'].map((seg,index)=>({seg,nodes:Array.from({length:[11,10,7][index]},(_,i)=>({name:seg+'待核环节['+i+']',assessment:clone(pending)}))}));
+  const unclassified=[{name:'尚未归类的已有设施',assessment:rated}],before=JSON.stringify({segments,unclassified});
+  const html=c._renderRichChain('火箭方向',segments,null,{},unclassified,'partial',{assessment:rated});
+  assert.match(html,/本次 29 个材料节点（含待归类 1 项）/);
+  assert.match(html,/已有支撑 <b[^>]*>1<\/b>/);assert.match(html,/尚不能评价 <b[^>]*>28<\/b>/);
+  assert.equal((html.match(/industry-chain-node judgment-unknown/g)||[]).length,28);
+  for(const [index,segment] of segments.entries())for(const node of segment.nodes){
+    assert.ok(html.indexOf(node.name)>html.indexOf(segment.seg+'</span>'));
+    const end=index<2?html.indexOf(segments[index+1].seg+'</span>'):html.indexOf('尚未分类的材料项');
+    assert.ok(html.indexOf(node.name)<end);
+    assert.equal(html.split(node.name).length-1,1);
+  }
+  assert.match(html,/尚未归类的已有设施/);assert.doesNotMatch(html,/chain-pending-facts|暂未形成可展示的环节评价/);
+  assert.match(html,/不能据此推断现实缺失/);
+  assert.equal(JSON.stringify({segments,unclassified}),before);
  });
  test(app+' reviewed reasoning shows action, premises and boundaries without upgrading factual state',()=>{
   const {c}=setup(app),premise={evidence_id:'S1',role:'policy_target',subject:'火箭发动机',quote:'行动方案提出补齐火箭发动机产业链短板。',source:{url:'https://official.example/plan',title:'行动方案',published_at:'2025-01-02'}};
