@@ -2,6 +2,7 @@
 import copy
 import io
 import json
+import hashlib
 import unittest
 from unittest.mock import patch
 
@@ -82,7 +83,7 @@ class TopicProjectionTests(unittest.TestCase):
     def test_selection_json_is_small_and_draft_has_three_confirmable_questions(self):
         seen=[]
         result=build_report({'city': '闵行区', 'topic': '氢能'}, bundle(), 1, lambda *args: seen.append(args) or plan())
-        self.assertEqual(seen[0][2],2200)
+        self.assertEqual(seen[0][2],3200)
         self.assertEqual(result['text'].count('- ⚠️ '),3)
         self.assertNotIn('## 五、',result['text'])
 
@@ -189,6 +190,31 @@ class TopicRouteTests(unittest.TestCase):
         self.assertIn('[DONE]',text)
         self.assertEqual(audits[-1]['outcome'],'completed')
         self.assertEqual(audits[-1]['sourceFingerprint'],topic_report_context(self.body(),h._scoped_state)['sourceFingerprint'])
+        events=[json.loads(line[6:]) for line in text.splitlines() if line.startswith('data: {')]
+        finished=next(row for row in events if row.get('type')=='research.complete')
+        self.assertEqual(finished['analysis']['contract'],'topic-report-analysis-v2')
+        self.assertIn('publicResearch',finished)
+
+    def test_partial_search_still_finishes_with_hash_bound_facts_and_pending_metadata(self):
+        b=bundle();b['status']='pending';b['errors']=[{'code':'research_search_failed','query':'政策检索','message':'公开检索未完成'}]
+        b['sources']={}
+        for i,row in enumerate(b['evidence']):
+            row['source_id']='source_'+str(i)
+            b['sources'][row['source_id']]={'url':row['url'],'fulltext':row['quote'],
+                'fulltext_sha256':hashlib.sha256(row['quote'].encode()).hexdigest()}
+        h=Handler(state())
+        with patch('backend.public_research.enrich_public_research',side_effect=lambda b,*a:copy.deepcopy(b)):
+            text,audits=self.run_route(h,research=lambda *a,**kw:copy.deepcopy(b))
+        events=[json.loads(line[6:]) for line in text.splitlines() if line.startswith('data: {')]
+        completed=next(row for row in events if row.get('type')=='research.complete')
+        self.assertEqual(completed['researchStatus'],'pending')
+        self.assertFalse(completed['researchCoverage']['complete'])
+        self.assertEqual(completed['errors'],b['errors'])
+        self.assertTrue(completed['sources'])
+        for row in completed['sources']:
+            self.assertEqual(row['fulltext_sha256'],b['sources'][row['source_id']]['fulltext_sha256'])
+        self.assertEqual(audits[-1]['outcome'],'completed')
+        self.assertIn('本轮检索未完全完成',text)
 
     def test_missing_real_research_is_terminal_not_generic_fallback(self):
         h=Handler(state());text,audits=self.run_route(h,research=lambda *args,**kwargs:{'status':'unavailable','evidence':[]})

@@ -48,7 +48,9 @@ function restore(){
     var data=_safeSyncSnapshot(JSON.parse(raw));
     if(data.clientUser!==AUTH.user)return false;
     if(data.PROJECTS&&Object.keys(data.PROJECTS).length>0){
+      var topicLocalProjects=PROJECTS;
       PROJECTS=data.PROJECTS;
+      Object.keys(PROJECTS).forEach(function(k){PROJECTS[k]=mergeTopicProjectLifecycle(topicLocalProjects[k],PROJECTS[k]);});
       cur=data.cur||null;
       view=data.view||'setup';
       UPLOADS=data.UPLOADS||{};
@@ -58,8 +60,10 @@ function restore(){
       KB_CONFIRMS=_mergeConfirms(data.KB_CONFIRMS||{});
       KB_FILE_CHUNKS=data.KB_FILE_CHUNKS||{};
       KB_UNLOCKED=data.KB_UNLOCKED||{};
-      REPORTSTATE=data.REPORTSTATE||{};
+      REPORTSTATE=mergeTopicReportStates(REPORTSTATE,data.REPORTSTATE,PROJECTS);
       PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
+      REPORT_HISTORY=mergeTopicReportHistory(REPORT_HISTORY,data.REPORT_HISTORY,REPORTSTATE,PROJECTS);
+      applyTopicStateIntegrity();
       DOCK_LOGS=data.DOCK_LOGS||{};
       OPS_ENT=data.OPS_ENT||[];
       if(data.REPORT_REQUESTS) REPORT_REQUESTS=data.REPORT_REQUESTS;
@@ -101,7 +105,9 @@ function restoreFromServer(callback){
       if(callback)callback(false); return;
     }
     if(_acceptServerGeneration(srv))localENT=[];
+    var topicLocalProjects=PROJECTS;
     PROJECTS         = srv.PROJECTS         || {};
+    Object.keys(PROJECTS).forEach(function(k){PROJECTS[k]=mergeTopicProjectLifecycle(topicLocalProjects[k],PROJECTS[k]);});
     UPLOADS          = srv.UPLOADS          || {};
     _mergeKbItemTombs(srv.KB_ITEM_TOMBS);
     // 【2026-09-18】必须过滤 srv.PROJECTS 本体，而不是只过滤内存里的 PROJECTS。
@@ -113,7 +119,7 @@ function restoreFromServer(callback){
     KB_CONFIRMS      = _mergeConfirms(srv.KB_CONFIRMS || {});  // 只进不退
     KB_FILE_CHUNKS   = srv.KB_FILE_CHUNKS   || {};
     KB_UNLOCKED      = srv.KB_UNLOCKED      || {};
-    REPORTSTATE      = srv.REPORTSTATE      || {};
+    REPORTSTATE      = mergeTopicReportStates(REPORTSTATE,srv.REPORTSTATE,PROJECTS);
     PENDING_CONFIRMS = srv.PENDING_CONFIRMS || {};
     DOCK_LOGS        = srv.DOCK_LOGS        || {};
     if(srv.DEMANDS) DEMANDS = srv.DEMANDS;
@@ -124,7 +130,7 @@ function restoreFromServer(callback){
     INVITE_CODES=srv.INVITE_CODES||{};
     CITY_WORKSPACES=srv.CITY_WORKSPACES||{};
     CITY_BASE_PACKAGES=srv.CITY_BASE_PACKAGES||{};
-    REPORT_HISTORY=srv.REPORT_HISTORY||{};
+    REPORT_HISTORY=mergeTopicReportHistory(REPORT_HISTORY,srv.REPORT_HISTORY,REPORTSTATE,PROJECTS);
     if(srv.RESET_GEN){ RESET_GEN = srv.RESET_GEN; }  // reset代际:persist时带回,否则被服务端拒绝
     // 政府端移除的企业线索墓碑：读回后既不重复推送，也从拉到的 clues 里剔除
     if(srv.DELETED_CLUES){
@@ -138,7 +144,8 @@ function restoreFromServer(callback){
       }
     }
     cur  = srv.cur  || Object.keys(PROJECTS)[0] || null;
-    try{localStorage.setItem(LS_KEY,JSON.stringify(Object.assign(_safeSyncSnapshot(srv),{clientUser:AUTH.user})));}catch(e){}
+    applyTopicStateIntegrity();
+    try{localStorage.setItem(LS_KEY,JSON.stringify(Object.assign(_safeSyncSnapshot(srv),{clientUser:AUTH.user,PROJECTS:PROJECTS,REPORTSTATE:REPORTSTATE,REPORT_HISTORY:REPORT_HISTORY,PENDING_CONFIRMS:PENDING_CONFIRMS})));}catch(e){}
     window._opsServerHadData=true;
     window._opsDataReady=true;
 
@@ -227,6 +234,15 @@ function getTopicReport(topic){
   return (rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:null)||null;
 }
 function reportTextForTopic(topic){return getTopicReport(topic);}
+
+function topicHasFullReport(topic){
+  if(!topic || !cur) return false;
+  var state=REPORTSTATE[cur]||{};
+  if(Object.prototype.hasOwnProperty.call(state.phaseByTopic||{},topic)) return state.phaseByTopic[topic]===2;
+  if(state.topic===topic&&state.phase===2&&typeof state.text==='string'&&state.text.trim())return true;
+  if(typeof REPORT_HISTORY!=='undefined'&&(REPORT_HISTORY[cur]||[]).some(function(h){return h&&h.topic===topic&&h.phase===2&&h.text;}))return true;
+  return false;
+}
 
 function openHistory(){
   var st=REPORTSTATE[cur];var ups=UPLOADS[cur]||[];

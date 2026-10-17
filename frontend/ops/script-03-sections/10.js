@@ -175,13 +175,13 @@ function sidebar(){
     report: (function(){
       if(!p) return '生成缺口分析与招引方向';
       var rs=REPORTSTATE[cur];
-      if(!rs) return '待研判 · 选方向后点击生成';
-      if(rs.phase===1){
+      if(!rs || !reportTextForTopic(p.topic)) return '待研判 · 选方向后点击生成';
+      if(!topicHasFullReport(p.topic)){
         var pc=PENDING_CONFIRMS[cur]||[];
         var done=pc.filter(function(x){return x.status==='confirmed'||x.status==='edited';}).length;
         return done+'/'+pc.length+' 待确认 · 草稿已生成';
       }
-      return '✓ 完整报告已生成 · '+rs.score+'%置信度';
+      return '完整报告已生成 · '+topicScoreDisplay(p.topic,cur);
     })(),
     home: (function(){
       if(!p) return '报告派生项目·对接需求';

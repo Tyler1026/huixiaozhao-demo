@@ -199,6 +199,168 @@ import time as _chain_time
 _CHAIN_MAPS = ("chainByTopic", "chainEvidenceByTopic", "chainStatusByTopic",
                "chainUnclassifiedByTopic", "chainErrorByTopic")
 
+_REPORT_MAPS = ('aiReportByTopic', 'phaseByTopic', 'tsByTopic', 'researchByTopic',
+                'materialDirectoryByTopic', 'evidenceStatusByTopic', 'scoreByTopic',
+                'userGeneratedTopics', 'reportByTopic', 'actionItemsByTopic')
+_REPORT_AUX = ('pendingByTopic', 'pendingRevisionByTopic', 'pendingReportTsByTopic',
+               'partialByTopic')
+_REPORT_SHADOW = ('text', 'topic', 'phase', 'ts', 'score', 'finalized')
+
+
+def _stamp(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0
+    return value if _chain_math.isfinite(value) and value > 0 else 0
+
+
+def _max_stamps(*maps):
+    out = {}
+    for source in maps:
+        if isinstance(source, dict):
+            for key, value in source.items():
+                out[key] = max(out.get(key, 0), _stamp(value))
+    return out
+
+
+def _topic_lifecycle(*records):
+    deleted = _max_stamps(*(r.get('topicDeletedAt') for r in records if isinstance(r, dict)))
+    created = _max_stamps(*(r.get('topicCreatedAt') for r in records if isinstance(r, dict)))
+    for record in records:
+        for topic in (record.get('deletedTopics') or []) if isinstance(record, dict) else []:
+            if isinstance(topic, str):
+                deleted[topic] = max(deleted.get(topic, 0), 1)
+    return deleted, created
+
+
+def _report_stamp(state, topic):
+    value = (state.get('tsByTopic') or {}).get(topic)
+    return _stamp(value) or (_stamp(state.get('ts')) if state.get('topic') == topic else 0)
+
+
+def _merge_topic_project_map(merged, old, new):
+    for key, project in merged.items():
+        if not isinstance(project, dict):
+            continue
+        a, b = (old or {}).get(key) or {}, (new or {}).get(key) or {}
+        if not isinstance(a, dict) or not isinstance(b, dict):
+            continue
+        if not any(field in a or field in b for field in ('city', 'kb', 'customTopics', 'deletedTopics', 'stageByTopic', 'aiTopics')):
+            continue
+        deleted, created = _topic_lifecycle(a, b)
+        if not deleted and not created:
+            continue
+        project['topicDeletedAt'], project['topicCreatedAt'] = deleted, created
+        dead = {t for t, stamp in deleted.items() if stamp >= created.get(t, 0)}
+        project['deletedTopics'] = sorted(dead)
+        # Re-add is an explicit newer lifecycle; stale lists cannot resurrect it.
+        topics = list(dict.fromkeys((a.get('customTopics') or []) + (b.get('customTopics') or [])))
+        project['customTopics'] = [t for t in topics if t not in dead]
+        stages = dict(project.get('stageByTopic') or {})
+        for topic in set(deleted) | set(created):
+            if topic in dead:
+                stages.pop(topic, None)
+            elif created.get(topic, 0) > (a.get('topicCreatedAt') or {}).get(topic, 0):
+                stages[topic] = (b.get('stageByTopic') or {}).get(topic, 2)
+            elif created.get(topic, 0) > (b.get('topicCreatedAt') or {}).get(topic, 0):
+                stages[topic] = (a.get('stageByTopic') or {}).get(topic, 2)
+        project['stageByTopic'] = stages
+        if isinstance(project.get('aiTopics'), dict):
+            project['aiTopics'] = dict(project['aiTopics'])
+            project['aiTopics']['list'] = [t for t in project['aiTopics'].get('list', [])
+                                          if isinstance(t, dict) and t.get('label') not in dead]
+        if project.get('topic') in dead:
+            project['topic'], project['stage'] = '', 2
+        elif created.get(project.get('topic'), 0):
+            project['stage'] = stages.get(project.get('topic'), 2)
+    return merged
+
+
+def _merge_report_state(old, new, project=None):
+    """Select an atomic report per direction, with independently versioned edits."""
+    old, new, project = old or {}, new or {}, project or {}
+    skip = set(_REPORT_MAPS + _REPORT_AUX + _REPORT_SHADOW + _CHAIN_MAPS)
+    out = dict(old)
+    for field, value in new.items():
+        if field not in skip:
+            out[field] = _keep_nonempty(out.get(field), value)
+    deleted, created = _topic_lifecycle(project, old, new)
+    out['topicDeletedAt'], out['topicCreatedAt'] = deleted, created
+    out['historyDeletedAt'] = _max_stamps(old.get('historyDeletedAt'), new.get('historyDeletedAt'))
+    topics = {t for state in (old, new) for field in _REPORT_MAPS + _REPORT_AUX
+              for t in (state.get(field) or {})}
+    for field in _REPORT_MAPS + _REPORT_AUX:
+        out[field] = {}
+    for topic in topics:
+        tomb, birth = deleted.get(topic, 0), created.get(topic, 0)
+        if tomb and tomb >= birth:
+            continue
+        candidates = [state for state in (old, new)
+                      if not (birth and _report_stamp(state, topic) < birth)]
+        if not candidates:
+            continue
+        winner = max(candidates, key=lambda state: _report_stamp(state, topic))
+        version = _report_stamp(winner, topic)
+        for field in _REPORT_MAPS:
+            if topic in (winner.get(field) or {}):
+                out[field][topic] = winner[field][topic]
+        # Confirmation edits/withdrawals are newer operations, not a monotonic
+        # confirmed flag. Never apply edits belonging to a superseded report.
+        edits = [state for state in candidates
+                 if _report_stamp(state, topic) == version
+                 and (state.get('pendingReportTsByTopic') or {}).get(topic, version) == version]
+        if edits:
+            # Legacy clients have no edit revision. Keep their existing write
+            # behavior only until either side supplies the versioned protocol.
+            editor = max(edits, key=lambda state: _stamp((state.get('pendingRevisionByTopic') or {}).get(topic)))
+            if not any(_stamp((state.get('pendingRevisionByTopic') or {}).get(topic)) for state in edits):
+                editor = edits[-1]
+            for field in ('pendingByTopic', 'pendingRevisionByTopic', 'pendingReportTsByTopic'):
+                if topic in (editor.get(field) or {}):
+                    out[field][topic] = editor[field][topic]
+        parts = [(state.get('partialByTopic') or {}).get(topic) for state in candidates]
+        parts = [part for part in parts if isinstance(part, dict) and _stamp(part.get('ts')) > version
+                 and part.get('reportTs', version) == version]
+        if parts:
+            out['partialByTopic'][topic] = max(parts, key=lambda part: _stamp(part.get('ts')))
+    # Project-level fields are a view of the selected topic, never a separate
+    # longest-text competition. A new phase-1 report may replace phase 2.
+    topic = new.get('topic') or old.get('topic') or ''
+    if (deleted.get(topic, 0) and deleted[topic] >= created.get(topic, 0)):
+        topic = ''
+    out['topic'] = topic
+    for field in _CHAIN_MAPS:
+        if isinstance(out.get(field), dict):
+            out[field] = {t: value for t, value in out[field].items()
+                          if not (deleted.get(t, 0) and deleted[t] >= created.get(t, 0))
+                          and not (created.get(t, 0) and _report_stamp(old, t) < created[t])}
+    view_owner = new if _report_stamp(new, topic) >= _report_stamp(old, topic) else old
+    for field, map_field, default in [('text', 'aiReportByTopic', ''), ('phase', 'phaseByTopic', 1),
+                                      ('ts', 'tsByTopic', 0), ('score', 'scoreByTopic', None)]:
+        fallback = view_owner.get(field, old.get(field, default)) if view_owner.get('topic', topic) == topic else default
+        out[field] = out[map_field].get(topic, fallback if topic else default)
+    version = max(_report_stamp(old, topic), _report_stamp(new, topic))
+    out['finalized'] = bool(out['text'] and any(state.get('finalized') for state in (old, new)
+                              if state.get('topic') == topic and _report_stamp(state, topic) == version))
+    return out
+
+
+def _merge_report_history(old, new, reports, projects):
+    out = {}
+    for key in set(old or {}) | set(new or {}):
+        state, project = (reports or {}).get(key) or {}, (projects or {}).get(key) or {}
+        deleted, created = _topic_lifecycle(state, project)
+        tombs, rows = state.get('historyDeletedAt') or {}, {}
+        for entry in ((old or {}).get(key) or []) + ((new or {}).get(key) or []):
+            if not isinstance(entry, dict):
+                continue
+            topic, stamp = entry.get('topic', ''), _stamp(entry.get('ts'))
+            identity = topic + '\0' + str(int(stamp))
+            if identity in tombs or stamp <= deleted.get(topic, -1) or stamp < created.get(topic, 0):
+                continue
+            rows.setdefault(identity, entry)
+        out[key] = sorted(rows.values(), key=lambda entry: _stamp(entry.get('ts')), reverse=True)[:10]
+    return out
+
 
 def _chain_source_matches(meta, topic, report, projects, key):
     if not isinstance(projects, dict) or not isinstance(projects.get(key), dict):
@@ -285,8 +447,14 @@ def _merge_map(old, new, *, chain_projects=None):
                 for field in _CHAIN_MAPS:
                     merged[k].pop(field, None)
             continue
+        if any(field in v for field in _REPORT_MAPS + _REPORT_AUX):
+            merged[k] = _merge_report_state(base, v, (chain_projects or {}).get(k))
+            continue
         for fk, fv in v.items():
             if fk in _CHAIN_MAPS:
+                continue
+            if fk == 'historyDeletedAt':
+                base[fk] = _max_stamps(base.get(fk), fv)
                 continue
             if fk == "kb":
                 # 材料多的一方胜出（相等时接受新值，允许内容更新）
@@ -328,7 +496,7 @@ def _merge_map(old, new, *, chain_projects=None):
                     base[fk] = _cs
                 continue
             base[fk] = _keep_nonempty(base.get(fk), fv)
-    return merged
+    return _merge_topic_project_map(merged, old, new)
 
 
 def _merge_invite_codes(old, new):

@@ -59,7 +59,7 @@ for(const app of ['index','ops']){
 
 test('actual admin persist filters graph writes while preserving the local cache',async()=>{
  const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');const e=setup('ops'),c=e.c;cache(e);
- Object.assign(c,{AUTH:{user:'reviewer',scope:'admin'},OPS_ENT:[],CITY_BASE_PACKAGES:{},KB_UNLOCKED:{},PENDING_CONFIRMS:{},DOCK_LOGS:{},DEMANDS:[],REPORT_REQUESTS:[],RESET_GEN:'generation'});
+ Object.assign(c,{AUTH:{user:'reviewer',scope:'admin'},OPS_ENT:[],CITY_BASE_PACKAGES:{},KB_UNLOCKED:{},PENDING_CONFIRMS:{},REPORT_HISTORY:{},DOCK_LOGS:{},DEMANDS:[],REPORT_REQUESTS:[],RESET_GEN:'generation'});
  c.window._opsDataReady=true;c.localStorage.setItem=(key,value)=>e.storage[key]=value;
  vm.runInContext(fn(fs.readFileSync(path.join(__dirname,'../frontend/ops/script-03-sections/14-part-00.js'),'utf8'),'persist'),c);
  c.persist();await new Promise(setImmediate);assert.equal(e.events.posts.length,1);assert.ok(e.c.REPORTSTATE.p.chainByTopic);

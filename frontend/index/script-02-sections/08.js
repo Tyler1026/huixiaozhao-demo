@@ -319,15 +319,10 @@ function reportTextForTopic(topic){
    正指向该方向且为完整报告，才算“已分析过”。*/
 function topicHasFullReport(topic){
   if(!topic || !cur) return false;
-  var _rs=REPORTSTATE[cur];
-  // 方向级 phase 是权威判据（项目级 phase 是单例，切方向会污染）
-  if(_rs && _rs.phaseByTopic && Object.prototype.hasOwnProperty.call(_rs.phaseByTopic,topic)) return _rs.phaseByTopic[topic]===2;
-  // 兼容旧数据：无 phaseByTopic 记录时，回退到历史报告里该方向的完整报告
-  if(typeof REPORT_HISTORY!=='undefined' && REPORT_HISTORY[cur]){
-    if(REPORT_HISTORY[cur].some(function(h){return h && h.topic===topic && h.phase===2 && h.text;})) return true;
-  }
-  // 兼容旧数据兜底：该方向有 AI 报告缓存文本（修复前生成的方向 phaseByTopic 为空），视为已生成完整报告
-  if(_rs && _rs.aiReportByTopic && typeof _rs.aiReportByTopic[topic]==='string' && _rs.aiReportByTopic[topic].length>800) return true;
+  var state=REPORTSTATE[cur]||{};
+  if(Object.prototype.hasOwnProperty.call(state.phaseByTopic||{},topic)) return state.phaseByTopic[topic]===2;
+  if(state.topic===topic&&state.phase===2&&typeof state.text==='string'&&state.text.trim())return true;
+  if(typeof REPORT_HISTORY!=='undefined'&&(REPORT_HISTORY[cur]||[]).some(function(h){return h&&h.topic===topic&&h.phase===2&&h.text;}))return true;
   return false;
 }
 
