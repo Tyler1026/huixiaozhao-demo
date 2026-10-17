@@ -135,3 +135,12 @@ test('knowledge card and detail ignore stale generated summary tags and use this
 test('native export refuses a report whose published request no longer matches',()=>{
   const {c,state,printed}=boot();state.sourceReportId='stale-request';c.downloadReportPDF('full');assert.equal(printed.length,0);
 });
+
+test('report citations link to safe original URLs without allowing active or credential-bearing links',()=>{
+  const {c}=boot();
+  const html=c.reportMdToHtml('数据待核 [来源S1](https://issuer.example/2026/report?a=1&b=2)。\n\n[不安全](javascript:alert(1)) [凭证](https://name:password@issuer.example/a)');
+  assert.match(html,/href="https:\/\/issuer.example\/2026\/report\?a=1&amp;b=2"/);
+  assert.match(html,/rel="noopener noreferrer"/);assert.match(html,/>来源S1<\/a>/);
+  assert.doesNotMatch(html,/href="javascript:|href="https:\/\/name:password/);
+  assert.doesNotMatch(html,/href="[^\"]*<span/);
+});

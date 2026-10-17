@@ -10,6 +10,7 @@ COPY backend/ ./backend/
 COPY frontend/ ./frontend/
 COPY scripts/ ./scripts/
 COPY report_service/ ./report_service/
+COPY data/public-research/ ./data/public-research/
 RUN python3 scripts/build_frontend.py --check
 
 # 语法门禁：ops.html/index.html 内联<script>语法错误直接fail build，

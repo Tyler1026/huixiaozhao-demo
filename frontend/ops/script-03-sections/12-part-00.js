@@ -60,24 +60,31 @@ function _funnelInput(p){
 function savedEvidenceIdentity(key, topic, snapshot){
   var projects=snapshot?snapshot.PROJECTS||{}:PROJECTS,states=snapshot?snapshot.REPORTSTATE||{}:(typeof REPORTSTATE!=='undefined'?REPORTSTATE:{});
   var p=projects[key];if(!p)return null;
-  var rs=states[key]||{},root=p.workspaceId||key;
+  var rs=states[key]||{},root=p.workspaceId||key,keys=root===key?[key]:[root,key];
+  var input=snapshot||{KB_EDITS:typeof KB_EDITS!=='undefined'?KB_EDITS:{},KB_CONFIRMS:typeof KB_CONFIRMS!=='undefined'?KB_CONFIRMS:{},KB_CONFIRM_TOMBS:typeof KB_CONFIRM_TOMBS!=='undefined'?KB_CONFIRM_TOMBS:{},KB_ITEM_TOMBS:typeof KB_ITEM_TOMBS!=='undefined'?KB_ITEM_TOMBS:{},UPLOADS:typeof UPLOADS!=='undefined'?UPLOADS:{},KB_FILE_CHUNKS:typeof KB_FILE_CHUNKS!=='undefined'?KB_FILE_CHUNKS:{},UPLOAD_TOMBS:typeof UPLOAD_TOMBS!=='undefined'?UPLOAD_TOMBS:{}};
   function stable(v){
     if(Array.isArray(v))return v.map(stable);
     if(v&&typeof v==='object'){var out={};Object.keys(v).sort().forEach(function(k){if(v[k]!==undefined)out[k]=stable(v[k]);});return out;}
     return v;
   }
-  var keys=root===key?[key]:[root,key];
-  return JSON.stringify(stable({workspace:root,city:p.city||'',topic:topic,selectedTopic:p.topic||'',requestId:p.reportRequestId||rs.reportRequestId||'',
-    kb:keys.map(function(k){return (projects[k]||{}).kb||[];}),onboarding:p.onboarding||{},
-    report:(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'')||''}));
+  var state={};
+  [['kbEdits','KB_EDITS'],['kbConfirms','KB_CONFIRMS'],['kbConfirmTombs','KB_CONFIRM_TOMBS'],['kbItemTombs','KB_ITEM_TOMBS']].forEach(function(pair){state[pair[0]]=keys.map(function(k){return (input[pair[1]]||{})[k]||{};});});
+  state.fileChunks=keys.map(function(k){return (input.KB_FILE_CHUNKS||{})[k]||[];});
+  state.uploads=keys.map(function(k){return ((input.UPLOADS||{})[k]||[]).map(function(upload){if(!upload||typeof upload!=='object')return upload;var copy=Object.assign({},upload);delete copy.dataUrl;return copy;});});
+  state.uploadTombs={};Object.keys(input.UPLOAD_TOMBS||{}).forEach(function(k){if(keys.some(function(key){return k.indexOf(key+'::')===0;}))state.uploadTombs[k]=input.UPLOAD_TOMBS[k];});
+  return JSON.stringify(stable({schema:'saved-evidence-v2',workspace:root,city:p.city||'',topic:topic,requestId:p.reportRequestId||rs.reportRequestId||'',keys:keys,
+    kb:keys.map(function(k){return (projects[k]||{}).kb||[];}),onboarding:keys.map(function(k){return (projects[k]||{}).onboarding||{};}),
+    baseReportVersion:keys.map(function(k){var v=(projects[k]||{}).baseReportVersion;return v===undefined?null:v;}),
+    report:(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'')||'',state:state}));
 }
+
 function runAIFunnel(projKey, done, onProgress){
   var p=PROJECTS[projKey]; if(!p){ done&&done('no project'); return; }
   if(_funnelRunning[projKey])return;
   var run={},epoch=typeof _authEpoch==='number'?_authEpoch:0,requestId=p.reportRequestId||null,topic=p.topic||'';
   var sourceIdentity=savedEvidenceIdentity(projKey,topic);
   _funnelRunning[projKey]=run;
-  function current(){return savedEvidenceIdentity(projKey,topic)===sourceIdentity&&(typeof _authEpoch==='number'?_authEpoch:0)===epoch;}
+  function current(){return PROJECTS[projKey]&&(PROJECTS[projKey].topic||'')===topic&&savedEvidenceIdentity(projKey,topic)===sourceIdentity&&(typeof _authEpoch==='number'?_authEpoch:0)===epoch;}
   function release(){if(_funnelRunning[projKey]===run)delete _funnelRunning[projKey];}
   var q='针对当前方向 '+topic+'，从服务端提供的完整证据目录提取有来源的企业候选。每家必须给出 evidence_ids。只列材料中存在的企业，不为凑数量补入常识名单。业务匹配是待核推断；没有直接投资意向证据时 score_relocate=null。';
   fetch(KB_API_OPS,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,projectKey:projKey,topic:topic,reportRequestId:requestId,stream:true,mode:'funnel'})})

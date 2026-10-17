@@ -15,7 +15,7 @@ function env(app='index'){
   const state={topic:project.topic,text:full,aiReportByTopic:{[project.topic]:full},phaseByTopic:{[project.topic]:2},ts:1};
   const area={innerHTML:'',appendChild(){}},bar={innerHTML:''};
   const c={cur:'child',PROJECTS:{child:project,root:{id:'root',workspaceId:'root',reportRequestId:'r-new',kb:[{known:[{origin:'report',reportRequestId:'r-new',sourceFile:'parent-latest.md'}]}]}},REPORTSTATE:{child:state},UPLOADS:{},PENDING_CONFIRMS:{},DEMANDS:[],window:{},Date,JSON,URL,Blob,Promise,TextDecoder,AbortController,console,
-    _authEpoch:1,LS_KEY:'test',nativeReportState:()=>null,topicScoreDisplay:()=> '内容待核验',
+    _authEpoch:1,LS_KEY:'test',crypto:require('node:crypto').webcrypto,TextEncoder,nativeReportState:()=>null,topicScoreDisplay:()=> '内容待核验',
     P:()=>c.PROJECTS[c.cur],reportTextForTopic:t=>(c.REPORTSTATE[c.cur].aiReportByTopic||{})[t]||'',
     document:{getElementById:id=>id==='reportArea'?area:null,querySelector:()=>bar,createElement:()=>({})},
     setTimeout:()=>1,clearTimeout(){},toast(){},render(){},persist(){},renderHistoryReports(){},origReportFiles:()=>null,
@@ -106,13 +106,17 @@ function wire(text,finish='stop'){
   const s='data: '+JSON.stringify({choices:[{delta:{content:text}}]})+'\n\n'+'data: '+JSON.stringify({choices:[{delta:{},finish_reason:finish}]})+'\n\ndata: [DONE]';
   return {ok:true,text:async()=>s};
 }
-test('actual generation freezes its own pre-call directory and failed generation does not replace it',async()=>{
+test('actual generation rejects material changes, then freezes a stable directory without replacing it on failure',async()=>{
   const {c,project,state,tail}=env();state.phaseByTopic[project.topic]=1;state.pendingByTopic={[project.topic]:[{text:'确认方向',status:'confirmed'}]};
   c.syncTopicReportInputs=()=>Promise.resolve();c.setReportAreaHtml=()=>{};
   c.fetch=()=>{project.kb[0].known[0].sourceFile='new-live.md';return Promise.resolve(wire(full));};
-  ['fullReportConfirmation','topicReportMarkup','readTopicReportStream','isCompleteTopicReport','updateReportBusy','triggerReport'].forEach(n=>vm.runInContext(declaration(tail,n),c));
+  ['fullReportConfirmation','topicReportMarkup','reportMaterialIdentity','reportClientFingerprint','reportJobForTopic','reportRunBanner','refreshReportRunUi','reportStreamMetadataEvent','readTopicReportStream','isCompleteTopicReport','updateReportBusy','triggerReport'].forEach(n=>vm.runInContext(declaration(tail,n),c));
+  const old=state.aiReportByTopic[project.topic];
   await c.triggerReport(2);
-  const snapshot=state.materialDirectoryByTopic[project.topic];assert.equal(snapshot.reportText,full);assert.equal(snapshot.records[0].value,'old.md');
+  assert.equal(state.aiReportByTopic[project.topic],old);assert.equal(state.materialDirectoryByTopic,undefined);
+  c.fetch=()=>Promise.resolve(wire(full));
+  await c.triggerReport(2);
+  const snapshot=state.materialDirectoryByTopic[project.topic];assert.equal(snapshot.reportText,full);assert.equal(snapshot.records[0].value,'new-live.md');
   assert.equal(snapshot.contract,'saved-material-directory-v1');
   state.phaseByTopic[project.topic]=1;c.fetch=()=>Promise.resolve(wire('partial','length'));
   await c.triggerReport(2);assert.equal(state.materialDirectoryByTopic[project.topic],snapshot);

@@ -114,21 +114,12 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(out['preference']['industry']['items'],['高端装备'])
         self.assertEqual(out['preference']['industry']['source'],'stated')
 
-    def test_chain_missing_evidence_does_not_create_a_named_node(self):
-        c=context();out=ground_chain([{'seg':'上游','nodes':[{'name':'甲烷发动机','level':'weak','note':'不存在','local_leaders':['虚构企业']}]}],evidence_catalog(c['chunks']),c)
-        self.assertEqual([row['seg'] for row in out], ['上游', '中游', '下游'])
-        self.assertTrue(all(not row['nodes'] for row in out))
-
-    def test_chain_strength_and_local_company_do_not_cross_subject_clauses(self):
+    def test_legacy_chain_cannot_create_nodes_or_upgrade_strength_or_enterprises(self):
         c=context();c['city']='甲区'
-        cat=evidence_catalog([{'id':'mixed','topic':c['topic'],'text':'液氧甲烷发动机为本地核心优势，液氧煤油发动机存在短板；甲区企业为甲企业，乙区企业为乙企业。来源 https://official.example/industry'}])
-        node=ground_chain([{'seg':'上游','nodes':[{'name':'液氧煤油发动机','level':'strong','local_leaders':['乙企业','甲企业'],'evidence_ids':[cat[0]['id']]}]}],cat,c)[0]['nodes'][0]
-        self.assertEqual(node['level'],'weak')
-        self.assertEqual(node['local_leaders'],[])
-        cat=evidence_catalog([{'id':'positive','topic':c['topic'],'text':'甲区的甲企业从事液氧煤油发动机研发。来源 https://official.example/local'}])
-        node=ground_chain([{'seg':'上游','nodes':[{'name':'液氧煤油发动机','local_leaders':['甲企业'],'evidence_ids':[cat[0]['id']]}]}],cat,c)[0]['nodes'][0]
-        self.assertEqual(node['level'],'unknown')
-        self.assertEqual(node['local_leaders'],['甲企业'])
+        cat=evidence_catalog([{'id':'mixed','topic':c['topic'],'text':'液氧煤油发动机并非本地核心优势；甲区甲企业未从事发动机研发。来源 https://official.example/industry'}])
+        for payload in ([], [{'seg':'上游','nodes':[{'name':'液氧煤油发动机','level':'strong','local_leaders':['甲企业'],'evidence_ids':[cat[0]['id']]}]}]):
+            with self.assertRaisesRegex(ValueError, 'legacy_chain_disabled'):
+                ground_chain(payload,cat,c)
 
     def test_review_rechecks_current_evidence_and_deduplicates_pending_clue(self):
         s=sample();s['REPORTSTATE']['a']['phaseByTopic']['液体火箭']=2
@@ -204,7 +195,9 @@ class StreamBoundaryTests(unittest.TestCase):
         exec(compile(ast.Module(body=nodes,type_ignores=[]),'helpers','exec'),ns)
         saved=self.h.state();saved.update(sample());self.h.replace(saved)
 
-    def request(self,raw,mode='draft',extra=None):
+    def request(self,raw,mode='research',extra=None):
+        # These generic stream tests cover the legacy completion adapter.
+        # draft/full now belong to the dedicated, source-bound report route.
         self.h.ns['DS_OPENER'].open.return_value=FakeResponse(raw)
         body={'question':'测试证据','mode':mode,'chunks':[],'stream':True,'projectKey':'a','topic':'液体火箭'}
         body.update(extra or {})
@@ -256,12 +249,24 @@ class StreamBoundaryTests(unittest.TestCase):
         self.assertIn('有直接业务关联',prompt)
 
     def test_full_gate_rejects_unconfirmed_before_upstream_call(self):
-        status,data=self.request(b'',extra={'purpose':'topic_full','projectKey':'a','topic':'液体火箭','confirmations':[]})
-        self.assertEqual(status,409);self.h.ns['DS_OPENER'].open.assert_not_called()
+        status,data=self.request(b'',mode='full',extra={'purpose':'topic_full','projectKey':'a','topic':'液体火箭','reportRequestId':'r1','confirmations':[]})
+        self.assertEqual(status,409);self.assertEqual(json.loads(data)['error'],'confirmation_required')
+        self.h.ns['DS_OPENER'].open.assert_not_called()
+        self.assertEqual(self.h.topic_research_calls,[]);self.assertEqual(self.h.topic_plan_calls,[])
 
     def test_full_without_purpose_cannot_bypass_confirmation(self):
-        status,data=self.request(b'',mode='full',extra={'confirmations':[]})
-        self.assertEqual(status,409);self.h.ns['DS_OPENER'].open.assert_not_called()
+        status,data=self.request(b'',mode='full',extra={'reportRequestId':'r1','confirmations':[]})
+        self.assertEqual(status,409);self.assertEqual(json.loads(data)['error'],'confirmation_required')
+        self.h.ns['DS_OPENER'].open.assert_not_called()
+        self.assertEqual(self.h.topic_research_calls,[]);self.assertEqual(self.h.topic_plan_calls,[])
+
+    def test_http_fixture_blocks_real_draft_research_without_faking_success(self):
+        status,data=self.request(b'',mode='draft',extra={'reportRequestId':'r1'})
+        self.assertEqual(status,200)
+        self.assertIn('"error"',data);self.assertNotIn('[DONE]',data)
+        self.assertEqual(len(self.h.topic_research_calls),1)
+        self.assertEqual(self.h.topic_plan_calls,[])
+        self.h.ns['DS_OPENER'].open.assert_not_called()
 
     def test_enterprise_endpoint_forces_admin_search_draft_not_report_mode(self):
         self.h.ns['DS_OPENER'].open.return_value=FakeResponse(b'data: {"type":"response.output_text.delta","delta":"{}"}\n\ndata: {"type":"response.completed","response":{"status":"completed"}}\n\n')

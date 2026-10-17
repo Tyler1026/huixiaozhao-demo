@@ -13,6 +13,7 @@ from collections.abc import Mapping
 
 from .auth import AuthError, _active, _memberships, safe_profile
 from .city_workspaces import get_city_workspace, protect_city_sync
+from .sync_merge import _CHAIN_MAPS
 
 
 PROJECT_MAP_FIELDS = frozenset({
@@ -527,6 +528,19 @@ def guard_sync(raw_bytes, state, principal):
         _deny('invalid_sync', '同步数据格式不正确')
     if not isinstance(incoming, dict) or not isinstance(state, dict):
         _deny('invalid_sync', '同步数据格式不正确')
+    # Graphs are generated and saved by the server. Old full snapshots may
+    # echo them, so ignore every client value instead of rejecting the sync.
+    # Strip before scanning references/secrets: discarded graph content must
+    # neither gain write authority nor break unrelated, authorized edits.
+    for field in _CHAIN_MAPS:
+        incoming.pop(field, None)
+    for table in ('PROJECTS', 'REPORTSTATE', 'CITY_ACCOUNTS'):
+        values = incoming.get(table)
+        if isinstance(values, dict):
+            for record in values.values():
+                if isinstance(record, dict):
+                    for field in _CHAIN_MAPS:
+                        record.pop(field, None)
     protect_city_sync(incoming, state)
     _scan_payload(incoming)
     if scope == 'admin':

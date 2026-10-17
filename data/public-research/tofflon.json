@@ -1,0 +1,54 @@
+{
+  "schema": "public-research-v1",
+  "sources": {
+    "source_95c80213fc84a459f1e5": {
+      "url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+      "title": "东富龙科技集团股份有限公司2025年年度报告：第7页公司信息",
+      "published_at": "2026-04-29",
+      "retrieved_at": "2026-10-16T08:53:46.250294+00:00",
+      "fulltext": "东富龙科技集团股份有限公司 2025年年度报告全文 \n7 \n第二节 公司简介和主要财务指标 \n一、公司信息 \n股票简称 东富龙 股票代码 300171 \n公司的中文名称 东富龙科技集团股份有限公司 \n公司的中文简称 东富龙 \n公司的外文名称 Tofflon Science and Technology Group Co., Ltd. \n公司的外文名称缩写 Tofflon \n公司的法定代表人 郑效东 \n注册地址 上海市闵行区都会路 1509号 4幢 \n注册地址的邮政编码 201108 \n公司注册地址历史变更情况 不适用 \n办公地址 上海市闵行区都会路 1509号 \n办公地址的邮政编码 201108 \n公司网址 www.tofflon.com \n电子信箱 dfl@tofflon.com \n二、联系人和联系方式 \n 董事会秘书 证券事务代表 \n姓名 王艳 周厚仪 \n联系地址 上海市闵行区都会路 1509号 上海市闵行区都会路 1509号 \n电话 021-64909699 021-64909699 \n传真 021-64909369 021-64909369 \n电子信箱 dfl@tofflon.com dfl@tofflon.com \n三、信息披露及备置地点 \n公司披露年度报告的证券交易所网站 深圳证券交易所（http://www.szse.cn/） \n公司披露年度报告的媒体名称及网址 《中国证券报》 《上海证券报》 《证券时报》 《证券日\n报》 、巨潮资讯网（www.cninfo.com.cn） \n公司年度报告备置地点 上海市闵行区都会路 1509号公司董事会秘书办公室 \n四、其他有关资料 \n公司聘请的会计师事务所 ",
+      "fulltext_sha256": "bb9548274f44304c5fd59ee6a3a3646c36c38e246f102de03bab5da491b7458d",
+      "fulltext_scope": "pdf_page_7",
+      "pdf_page": 7,
+      "extraction": "pypdf page text; PDF retained locally",
+      "retrieval": "fetched",
+      "id": "source_95c80213fc84a459f1e5"
+    },
+    "source_16464977269a6632d43f": {
+      "url": "https://tofflon.com/api/products?id=584",
+      "title": "东富龙：一次性无菌袋",
+      "published_at": "发布日期未知",
+      "retrieved_at": "2026-10-16T08:53:46.250294+00:00",
+      "fulltext": "东富龙科技集团股份有限公司\n关于我们\n公司介绍\n全球布局\n企业文化\n质量理念\n品牌故事\n应用场景\n产品中心\n前沿案例\n投资者关系\n投资简介\n集团年报\n集团公告\n交流咨询\n新闻与媒体\n集团资讯\n市场活动\n联系我们\n国际市场\n中国市场\n服务支持\n加入我们\n校园招聘\n社会招聘\n人才建设\nCN\nJP\nEN\n首页\n关于我们\n公司介绍\n全球布局\n企业文化\n质量理念\n品牌故事\n应用场景\n产品中心\n前沿案例\n投资者关系\n投资简介\n集团年报\n投资者联络\n新闻与媒体\n集团咨询\n市场活动\n联系我们\n国际市场\n中国市场\n服务支持\n加入我们\n校园招聘\n社会招聘\n人才建设\n首页>产品中心>\n一次性技术>        一次性无菌袋\n一次性无菌袋\n一次性技术贯穿整个生物制药环节，包括原液制备以及制剂工艺。一次性生物反应袋作为细胞生长并生成目标产物的直接载体，对气密性、结构特性、生物相容性等参数要求高，影响着产品最终的一致性和稳定性。\n东富龙采用进口膜材，能保证相容性、稳定性等关键性能指标，在B+A或C+A的环境下进行生产和验证，所有产品均经过完整性测试，目前最大反应体积2000L，两个工厂合计年产85万套生物反应袋的产能，够保证企业的使用需求。\n蜂巢培养系统\n玻璃反应器\n摇摆式反应\nSUB一次性生物反应器\nSuBed-C一次性固定床生物反应器\n不锈钢生物反应器\n冻融系统\n蜂巢培养系统\n蜂巢培养系统\n蜂巢培养系统\n玻璃反应器\n平型罐反应器\n相关产品3\n相关产品4\n相关产品5\n先行者\n国内第一家上市的制药装备公司\n专业化\n深耕法规动态，与制药行业共同成长\n系统化\n全产业链布局，工艺和设备多维度支持\n先进的生产基地\n(M+E+C)&AI&\n依托于法规和工艺的理解，提供可靠的研发到商业化进程端到端的设备和设施；通过规划设计、采购管理、工程施工、系统验证等流程，一体化交付具有特定功能的工厂；提供培养基、填料、过滤器、一次性反应袋等核心工艺耗材，辅助工艺优化，解决原液生产难题；依托信息化、智能化的时间经验，提供具有前瞻性、专业性的数智化规划，助力企业数字化转型。\n关于我们\n应用场景\n产品中心\n前沿案例\n投资者关系\n新闻与媒体\n联系我们\n加入我们\n全国服务热线：\n021-64906201(营销) | 021-64905153(廉洁)\n联系邮箱：\nsales@tofflon.com | jiancha@tofflon.com(廉洁)\nCopyright © 东富龙科技集团股份有限公司 All Rights Reserved.          沪ICP备2021035355号-1",
+      "fulltext_sha256": "a7cf3842e7ea3a35d2c6f111aa2f04dd3df238f3d8aedb4b89d668f1845f74c4",
+      "fulltext_scope": "entire_html_visible_text",
+      "extraction": "Python HTMLParser from retained HTTPS HTML; script/style omitted",
+      "retrieval": "fetched",
+      "id": "source_16464977269a6632d43f"
+    }
+  },
+  "evidence": [
+    {
+      "url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+      "title": "东富龙科技集团股份有限公司2025年年度报告：第7页公司信息",
+      "published_at": "2026-04-29",
+      "retrieved_at": "2026-10-16T08:53:46.250294+00:00",
+      "retrieval": "fetched",
+      "fulltext_sha256": "bb9548274f44304c5fd59ee6a3a3646c36c38e246f102de03bab5da491b7458d",
+      "id": "tr_b67afeefed4cc22f24cf",
+      "source_id": "source_95c80213fc84a459f1e5",
+      "quote": "公司的中文名称 东富龙科技集团股份有限公司 \n公司的中文简称 东富龙 \n公司的外文名称 Tofflon Science and Technology Group Co., Ltd. \n公司的外文名称缩写 Tofflon \n公司的法定代表人 郑效东 \n注册地址 上海市闵行区都会路 1509号 4幢 \n注册地址的邮政编码 201108 \n公司注册地址历史变更情况 不适用 \n办公地址 上海市闵行区都会路 1509号 \n办公地址的邮政编码 201108 \n公司网址 www.tofflon.com \n电子信箱 dfl@tofflon.com"
+    },
+    {
+      "url": "https://tofflon.com/api/products?id=584",
+      "title": "东富龙：一次性无菌袋",
+      "published_at": "发布日期未知",
+      "retrieved_at": "2026-10-16T08:53:46.250294+00:00",
+      "retrieval": "fetched",
+      "fulltext_sha256": "a7cf3842e7ea3a35d2c6f111aa2f04dd3df238f3d8aedb4b89d668f1845f74c4",
+      "id": "tr_d352a8c49df4fedef999",
+      "source_id": "source_16464977269a6632d43f",
+      "quote": "一次性技术贯穿整个生物制药环节，包括原液制备以及制剂工艺。一次性生物反应袋作为细胞生长并生成目标产物的直接载体，对气密性、结构特性、生物相容性等参数要求高，影响着产品最终的一致性和稳定性。\n东富龙采用进口膜材，能保证相容性、稳定性等关键性能指标，在B+A或C+A的环境下进行生产和验证，所有产品均经过完整性测试，目前最大反应体积2000L，两个工厂合计年产85万套生物反应袋的产能，够保证企业的使用需求。"
+    }
+  ]
+}

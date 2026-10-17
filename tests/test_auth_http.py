@@ -58,6 +58,25 @@ class HttpFixture:
                        DATABASE_URL='', _NOISE_RE=[], _db_get=lambda: None, _db_conn=lambda: None,
                        _db_set=lambda value: False, SYNC_PATH=str(self.path),
                        _file_snapshot=lambda: None)
+        self.topic_research_calls = []
+        self.topic_plan_calls = []
+        def offline_topic_research(*args, **kwargs):
+            self.topic_research_calls.append((args, kwargs))
+            raise AssertionError('No real research is allowed in the HTTP fixture')
+        def offline_topic_plan(*args, **kwargs):
+            self.topic_plan_calls.append((args, kwargs))
+            raise AssertionError('No real model is allowed in the HTTP fixture')
+        self.ns['_complete_topic_plan'] = offline_topic_plan
+        # Run the real route's authentication, source and confirmation gates,
+        # but make accidental entry into research fail locally and explicitly.
+        # Patching only DS_OPENER no longer covers this dedicated report route.
+        from backend import topic_report_route
+        real_topic_route = topic_report_route.serve_topic_report
+        def offline_topic_route(*args, **kwargs):
+            kwargs['research'] = offline_topic_research
+            return real_topic_route(*args, **kwargs)
+        self.topic_route_patch = patch.object(topic_report_route, 'serve_topic_report', offline_topic_route)
+        self.topic_route_patch.start()
         self.ns.update({name: getattr(sync_merge, name) for name in dir(sync_merge)
                         if name.startswith('_') and not name.startswith('__')})
         exec(compile(ast.Module(body=nodes, type_ignores=[]), 'isolated-auth-handler', 'exec'), self.ns)
@@ -71,6 +90,7 @@ class HttpFixture:
         self.server.shutdown()
         self.server.server_close()
         self.thread.join()
+        self.topic_route_patch.stop()
         self.tmp.cleanup()
 
     def replace(self, state):

@@ -10,6 +10,8 @@ function _safeProfiles(profiles){
 function _safeSyncSnapshot(raw){
   var data=Object.assign({},raw||{});
   ['USER_PROFILES','CITY_ACCOUNTS','INVITE_CODES','CITY_WORKSPACES','ACCOUNTS','AUTH','auth','password','pwd','token'].forEach(function(k){delete data[k];});
+  if(data.REPORTSTATE){data.REPORTSTATE=Object.assign({},data.REPORTSTATE);Object.keys(data.REPORTSTATE).forEach(function(key){var state=Object.assign({},data.REPORTSTATE[key]);Object.keys(state).forEach(function(field){if(/^chain/.test(field)||field==='pendingChainSaves')delete state[field];});data.REPORTSTATE[key]=state;});}
+  if(data.PROJECTS){data.PROJECTS=Object.assign({},data.PROJECTS);Object.keys(data.PROJECTS).forEach(function(key){data.PROJECTS[key]=Object.assign({},data.PROJECTS[key]);delete data.PROJECTS[key].segmentLevels;});}
   if(data.huixiaozhao_kb_v1)data.huixiaozhao_kb_v1=_safeSyncSnapshot(data.huixiaozhao_kb_v1);
   return data;
 }
@@ -922,7 +924,7 @@ function cpGenerate(force){
   var key=cpProjKey();if(!key||cpBusy)return;
   var p=PROJECTS[key],city=p.city||key,topic=p.topic||'',requestId=p.reportRequestId||null,epoch=typeof _authEpoch==='number'?_authEpoch:0;
   var sourceIdentity=savedEvidenceIdentity(key,topic);
-  function current(){return savedEvidenceIdentity(key,topic)===sourceIdentity&&(typeof _authEpoch==='number'?_authEpoch:0)===epoch;}
+  function current(){return PROJECTS[key]&&(PROJECTS[key].topic||'')===topic&&savedEvidenceIdentity(key,topic)===sourceIdentity&&(typeof _authEpoch==='number'?_authEpoch:0)===epoch;}
   var corpus=cpCorpus(city);
   if(!corpus.length){cpErr='该城市暂无智库材料，无法生成画像';renderOpsV2();return;}
   cpBusy=true;cpErr='';cpRaw='';renderOpsV2();

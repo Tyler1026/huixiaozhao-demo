@@ -52,7 +52,7 @@ function persist(){
       _sendData=Object.assign({}, data);
       delete _sendData.OPS_ENT;
     }
-    try{ fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_sendData)})
+    try{ fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_safeSyncSnapshot(_sendData))})
       .then(function(r){return r.json();}).then(function(resp){
         if(resp&&resp.rejected==='stale-generation'){
           console.warn('[sync] write rejected by reset barrier, resyncing from server');

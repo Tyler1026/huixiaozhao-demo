@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { performance } = require('node:perf_hooks');
+const { setTimeout: delay } = require('node:timers/promises');
 const root = path.join(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'frontend/index/script-02-sections/12-tail.js'), 'utf8');
 function declaration(name, input = source) {
@@ -36,15 +38,23 @@ function environment(reply = response(fullText), implementation = source) {
     setReportAreaHtml(el, html) {el.innerHTML = html;},
     fetch(url, init) {if(url==='/api/sync')return Promise.resolve({ok:true,json:async()=>({ok:true})});events.fetch.push({url, body: JSON.parse(init.body)}); return typeof reply === 'function' ? reply() : Promise.resolve(reply);},
     localStorage: {getItem() {return '{}';}}, LS_KEY:'offline',
-    TextDecoder, AbortController, setTimeout() {return 1;}, clearTimeout() {}, Date, console,
+    TextDecoder, TextEncoder, URL, crypto: require('node:crypto').webcrypto, AbortController, setTimeout() {return 1;}, clearTimeout() {}, Date, console,
     nativeReportState() {return null;},
   };
   vm.createContext(context);
   const shared=fs.readFileSync(path.join(root,'frontend/index/script-02-sections/12-part-00.js'),'utf8');
   vm.runInContext(declaration('savedEvidenceIdentity',shared),context);
-  vm.runInContext(['fullReportConfirmation', 'topicReportMarkup', 'readTopicReportStream', 'syncTopicReportInputs', 'isCompleteTopicReport', 'updateReportBusy', 'triggerReport',
-    'demandReportSnapshot', 'demandSubmissionState', 'demandEffectiveStage'].map(n => declaration(n, implementation)).join('\n') + '\n' + ['_correctChainLevel', '_normalizeChain'].map(n => declaration(n)).join('\n'), context);
+  const added=['reportMaterialIdentity','reportClientFingerprint','reportJobForTopic','reportRunBanner','refreshReportRunUi','reportStreamMetadataEvent'];
+  vm.runInContext(['fullReportConfirmation', 'topicReportMarkup', ...added, 'escapeChainText', 'readTopicReportStream', 'syncTopicReportInputs', 'isCompleteTopicReport', 'updateReportBusy', 'triggerReport',
+    'demandReportSnapshot', 'demandSubmissionState', 'demandEffectiveStage'].map(n => declaration(n,added.includes(n)&&!implementation.includes('function '+n+'(')?source:implementation)).join('\n') + '\n' + ['_correctChainLevel', '_normalizeChain'].map(n => declaration(n)).join('\n'), context);
   return {c: context, events, elements};
+}
+
+async function untilRequestStarted(check){
+  // Native WebCrypto completion depends on worker scheduling, not event-loop ticks.
+  const deadline=performance.now()+5000;
+  while(!check()&&performance.now()<deadline)await delay(10);
+  assert.ok(check(),'fingerprinting should complete before testing an in-flight response');
 }
 
 test('unconfirmed, empty and wrong-topic confirmations cannot start a full report or set a busy flag', () => {
@@ -98,7 +108,7 @@ test('switching topic while streaming never replaces the current topic view or o
   let finish;
   const {c} = environment(() => new Promise(resolve => {finish = resolve;}));
   const work = c.triggerReport(2);
-  await new Promise(setImmediate);
+  await untilRequestStarted(()=>typeof finish==='function');
   c.PROJECTS.p.topic = '其他方向'; c.REPORTSTATE.p.text = 'other report';
   finish(response(fullText)); await work;
   assert.equal(c.REPORTSTATE.p.text, 'other report');
@@ -109,7 +119,7 @@ test('logout epoch prevents an old response from writing to new session storage'
   let finish;
   const {c, events} = environment(() => new Promise(resolve => {finish = resolve;}));
   const work = c.triggerReport(2), persisted = events.persist;
-  await new Promise(setImmediate);
+  await untilRequestStarted(()=>typeof finish==='function');
   c._authEpoch++; finish(response(fullText)); await work;
   assert.equal(events.persist, persisted);
   assert.equal(c.REPORTSTATE.p.aiReportByTopic['核电配套'], undefined);
@@ -119,12 +129,31 @@ test('repeat click shares one current-topic job and failure releases the lock fo
   let finish;
   const {c, events} = environment(() => new Promise(resolve => {finish = resolve;}));
   const work = c.triggerReport(2); c.triggerReport(2);
-  await new Promise(setImmediate);
+  await untilRequestStarted(()=>typeof finish==='function');
   assert.equal(events.fetch.length, 1);
   finish(response('partial', 'length')); await work;
-  const retry = c.triggerReport(2); await new Promise(setImmediate); assert.equal(events.fetch.length, 2);
+  const retry = c.triggerReport(2); await untilRequestStarted(()=>events.fetch.length===2); assert.equal(events.fetch.length, 2);
   finish(response(fullText)); await retry;
   assert.deepEqual(Object.keys(c.window._topicReportJobs), []);
+});
+
+test('retry waits for delayed native fingerprint completion before resolving its response', async () => {
+  let finish, fingerprints=0;
+  const {c, events} = environment(() => new Promise(resolve => {finish = resolve;}));
+  const digest=c.crypto.subtle.digest.bind(c.crypto.subtle);
+  c.crypto={subtle:{async digest(...args){
+    if(++fingerprints===2)await delay(80);
+    return digest(...args);
+  }}};
+  const first=c.triggerReport(2);
+  await untilRequestStarted(()=>events.fetch.length===1);
+  finish(response('partial', 'length'));await first;
+  const retry=c.triggerReport(2);
+  await untilRequestStarted(()=>events.fetch.length===2);
+  assert.equal(events.fetch.length,2);
+  finish(response(fullText));await retry;
+  assert.equal(c.REPORTSTATE.p.aiReportByTopic['核电配套'],fullText);
+  assert.deepEqual(Object.keys(c.window._topicReportJobs),[]);
 });
 
 test('demand report snapshot rejects draft and binds only the exact completed direction', () => {
@@ -187,12 +216,13 @@ test('native identity cannot promote a newly generated unreviewed draft to a ful
 
 test('graph cache requires exact report and request provenance, and never rewrites the report text', () => {
   const {c} = environment();
-  vm.runInContext(['currentEvidenceChain', 'chainSourceIdentity', 'chainSnapshotIdentity', 'alignChainToReport'].map(n=>declaration(n)).join('\n'), c);
+  vm.runInContext(['currentEvidenceChain', 'chainEvidenceMatches', 'chainSourceIdentity', 'chainSnapshotIdentity', 'alignChainToReport'].map(n=>declaration(n)).join('\n'), c);
   const rs = c.REPORTSTATE.p;
   rs.aiReportByTopic['核电配套'] = fullText;
   rs.chainByTopic = {'核电配套':[{seg:'上游',nodes:[]}]};
   assert.equal(c.currentEvidenceChain('核电配套'), null);
-  rs.chainEvidenceByTopic = {'核电配套':{contract:'saved-excerpts-v1',scope:'current-topic-v1',requestId:'request-1',reportText:fullText,sourceIdentity:c.savedEvidenceIdentity('p','核电配套')}};
+  rs.chainEvidenceByTopic = {'核电配套':{contract:'source-bound-chain-v2',scope:'current-topic-v2',topic:'核电配套',requestId:'request-1',reportText:fullText,inputFingerprint:'server-fingerprint',sourceIdentity:c.savedEvidenceIdentity('p','核电配套')}};
+  rs.chainStatusByTopic={'核电配套':'empty'};
   assert.equal(c.currentEvidenceChain('核电配套').length, 1);
   rs.aiReportByTopic['核电配套'] += '新版';
   assert.equal(c.currentEvidenceChain('核电配套'), null);
@@ -250,13 +280,13 @@ for (const [surface, file] of [['user','frontend/index/script-02-sections/12-tai
 
 test('request replacement while streaming rejects writes to the new report', async () => {
   let finish;const {c}=environment(()=>new Promise(resolve=>{finish=resolve;}));
-  const work=c.triggerReport(2);await new Promise(setImmediate);
+  const work=c.triggerReport(2);await untilRequestStarted(()=>typeof finish==='function');
   c.PROJECTS.p.reportRequestId='request-2';finish(response(fullText));await work;
   assert.equal(c.REPORTSTATE.p.aiReportByTopic['核电配套'],undefined);
 });
 
 test('graph failure stays retryable and no embedded demo facts render',()=>{
- const {c}=environment();Object.assign(c,{_chainGenInFlight:{},reportTextForTopic:()=>fullText});
+ const {c}=environment();Object.assign(c,{_chainGenInFlight:{},reportTextForTopic:()=>fullText.repeat(2)});
  vm.runInContext(['currentEvidenceChain','chainMapHtml','escapeChainText'].map(n=>declaration(n)).join('\n'),c);
  c.REPORTSTATE.p.chainStatusByTopic={'核电配套':'failed'};
  const html=c.chainMapHtml(c.PROJECTS.p);assert.match(html,/重试生成图谱/);assert.doesNotMatch(html,/香菇|随州|本地优势|外省企业/);
@@ -269,8 +299,8 @@ test('admin graph and report selection use exact current evidence without legacy
  vm.runInContext(['currentEvidenceChain','chainMapHtml','escapeChainText'].map(n=>declaration(n,ops)).join('\n')+'\n'+['getTopicReport','reportTextForTopic'].map(n=>declaration(n,helpers)).join('\n'),c);
  c.REPORTSTATE.p.topic='other';c.REPORTSTATE.p.text='unrelated body';
  assert.equal(c.reportTextForTopic('核电配套'),null);
- c.REPORTSTATE.p.aiReportByTopic['核电配套']=fullText;
- assert.equal(c.reportTextForTopic('核电配套'),fullText);
+ c.REPORTSTATE.p.aiReportByTopic['核电配套']=fullText.repeat(2);
+ assert.equal(c.reportTextForTopic('核电配套'),fullText.repeat(2));
  assert.match(c.chainMapHtml(c.PROJECTS.p),/生成产业链图谱/);
  assert.doesNotMatch(c.chainMapHtml(c.PROJECTS.p),/随州|香菇/);
 });
@@ -280,4 +310,97 @@ test('admin task and report views expose research attachments at the bound downl
  const view=fs.readFileSync(path.join(root,'frontend/ops/script-03-sections/00.js'),'utf8');
  assert.match(task,/downloadReqFile.*research/);assert.match(view,/downloadOrigReport.*research/);
  assert.match(declaration('downloadReqFile',view),/\/api\/report-file\?requestId=/);
+});
+
+test('research events preserve source metadata and expose status without treating it as report text',async()=>{
+  const {c}=environment(),seen=[];
+  const events=[{type:'research.status',message:'正在交叉核对来源'},
+    {type:'research.evidence',fingerprint:'server-source-v1',clientMaterialFingerprint:'client-v1',sources:[{id:'tr-long-id',label:'S1',url:'https://official.example/a',title:'原始资料',quote:'保留条件的原句',published_at:'2026-01-01',retrieved_at:'2026-10-16',support_status:'single_source'}]},
+    {type:'research.complete',runId:'run-1',researchStatus:'completed',verificationStatus:'single_source',errors:[],queries:['原始资料查询'],checks:{sources:1}},
+    {choices:[{delta:{content:fullText}}]},{choices:[{delta:{},finish_reason:'stop'}]}];
+  const r=await c.readTopicReportStream({text:async()=>events.map(e=>'data: '+JSON.stringify(e)).join('\n\n')+'\n\ndata: [DONE]'},null,e=>seen.push(e.type));
+  assert.equal(r.text,fullText);assert.equal(r.metadata.sources[0].id,'tr-long-id');assert.equal(r.metadata.sources[0].label,'S1');assert.equal(r.metadata.sources[0].support_status,'single_source');assert.equal(r.metadata.fingerprint,'server-source-v1');
+  assert.equal(r.metadata.runId,'run-1');assert.deepEqual(seen,['research.status','research.evidence','research.complete']);
+  assert.equal(r.metadata.researchStatus,'completed');assert.equal(r.metadata.verificationStatus,'single_source');
+  assert.deepEqual(Array.from(r.metadata.queries),['原始资料查询']);assert.equal(r.metadata.errors.length,0);
+});
+
+test('material revisions during research cannot replace a completed report or its source metadata',async()=>{
+  let finish;const {c,events}=environment(()=>new Promise(resolve=>{finish=resolve;}));
+  c.KB_EDITS={p:{e1:{text:'原材料'}}};c.REPORTSTATE.p.aiReportByTopic['核电配套']='保留的完整报告';
+  c.REPORTSTATE.p.researchByTopic={'核电配套':{fingerprint:'old'}};
+  const work=c.triggerReport(2);await untilRequestStarted(()=>typeof finish==='function');
+  assert.match(events.fetch[0].body.clientMaterialFingerprint,/^[a-f0-9]{64}$/);
+  c.KB_EDITS.p.e1.text='已经修改的材料';finish(response(fullText));await work;
+  assert.equal(c.REPORTSTATE.p.aiReportByTopic['核电配套'],'保留的完整报告');
+  assert.equal(c.REPORTSTATE.p.researchByTopic['核电配套'].fingerprint,'old');
+  assert.equal(c.REPORTSTATE.p.partialByTopic,undefined);
+  assert.match(events.toasts.at(-1),/材料或确认事项已更新/);
+});
+
+test('new source metadata is isolated to the completed topic and mismatched echo is rejected',async()=>{
+  const {c}=environment(()=>Promise.resolve({ok:true,text:async()=>[
+    'data: '+JSON.stringify({type:'research.evidence',fingerprint:'server-fp',sources:[{id:'S1',url:'https://official.example/a',quote:'原句'}]}),
+    'data: '+JSON.stringify({choices:[{delta:{content:fullText},finish_reason:'stop'}]}),'data: [DONE]'].join('\n\n')}));
+  c.REPORTSTATE.p.researchByTopic={other:{fingerprint:'unchanged'}};await c.triggerReport(2);
+  assert.equal(c.REPORTSTATE.p.researchByTopic['核电配套'].fingerprint,'server-fp');
+  assert.equal(c.REPORTSTATE.p.researchByTopic.other.fingerprint,'unchanged');
+  assert.equal(c.REPORTSTATE.p.researchByTopic['核电配套'].reportText,fullText);
+  const bad=environment(()=>Promise.resolve({ok:true,text:async()=>[
+    'data: '+JSON.stringify({type:'research.evidence',clientMaterialFingerprint:'wrong'}),
+    'data: '+JSON.stringify({choices:[{delta:{content:fullText},finish_reason:'stop'}]})].join('\n\n')}));
+  await bad.c.triggerReport(2);assert.equal(bad.c.REPORTSTATE.p.aiReportByTopic['核电配套'],undefined);
+});
+
+test('busy view replaces stale failure and generation actions with status and a disabled button',()=>{
+  const {c}=environment();c.window._topicReportProgress={'p\u0000核电配套':{phase:2,message:'正在检索来源'}};
+  c.REPORTSTATE.p.partialByTopic={'核电配套':{text:'上次未完成'}};
+  vm.runInContext(declaration('reportBottomBarInner'),c);
+  const html=c.reportBottomBarInner(c.PROJECTS.p);
+  assert.match(html,/正在检索来源/);assert.match(html,/disabled aria-busy="true"/);
+  assert.doesNotMatch(html,/上次生成未完成|onclick="triggerReport|待确认事项已完成/);
+  assert.match(c.reportRunBanner(c.PROJECTS.p),/完整报告生成中/);
+});
+
+test('sources panel binds to the exact report and escapes untrusted fields and credential URLs',()=>{
+  const {c}=environment();c.REPORTSTATE.p.aiReportByTopic['核电配套']=fullText;
+  c.REPORTSTATE.p.researchByTopic={'核电配套':{topic:'核电配套',reportText:fullText,sources:[{id:'S1',title:'<script>x</script>',url:'https://user:pass@example.com/a',quote:'<img src=x onerror=x>'},{id:'S2',url:'https://official.example/a',title:'原始资料'}]}};
+  vm.runInContext(['reportSafeSourceUrl','reportSourceDate','reportResearchSourcesHtml'].map(n=>declaration(n)).join('\n'),c);
+  const html=c.reportResearchSourcesHtml(c.PROJECTS.p);
+  assert.match(html,/href="https:\/\/official.example\/a"/);assert.doesNotMatch(html,/<script>|<img|user:pass/);
+  assert.match(html,/&lt;script&gt;/);c.REPORTSTATE.p.researchByTopic['核电配套'].reportText='old';
+  assert.equal(c.reportResearchSourcesHtml(c.PROJECTS.p),'');
+});
+
+test('source panel uses short labels and per-source support without certifying the whole report',()=>{
+  const {c}=environment();c.REPORTSTATE.p.aiReportByTopic['核电配套']=fullText;
+  c.REPORTSTATE.p.researchByTopic={'核电配套':{topic:'核电配套',reportText:fullText,sources:[
+    {id:'tr-long-a',label:'S1',title:'来源一',support_status:'cross_checked'},
+    {id:'tr-long-b',label:'S2',title:'来源二',support_status:'single_source'},
+    {id:'tr-long-c',label:'S3',title:'来源三',support_status:'unverified'}]}};
+  vm.runInContext(['reportSafeSourceUrl','reportSourceDate','reportResearchSourcesHtml'].map(n=>declaration(n)).join('\n'),c);
+  const html=c.reportResearchSourcesHtml(c.PROJECTS.p);
+  assert.match(html,/>S1<\/span>/);assert.match(html,/交叉支持/);assert.match(html,/单源待复核/);assert.match(html,/未核实/);
+  assert.doesNotMatch(html,/tr-long-|整篇已核验/);assert.match(html,/不等于事实已核验/);
+});
+
+test('source dates preserve publication days, localize retrieval minutes, and keep invalid values safe',()=>{
+  const {c}=environment();
+  vm.runInContext(['reportSafeSourceUrl','reportSourceDate','reportResearchSourcesHtml'].map(n=>declaration(n)).join('\n'),c);
+  assert.equal(c.reportSourceDate('2026-09-09T00:00:00.000Z',false),'2026-09-09');
+  assert.equal(c.reportSourceDate('2026-09-09T00:00:00+14:00',false),'2026-09-09');
+  const timestamp='2026-10-16T06:24:43.303057+00:00',local=new Date(timestamp);
+  const pad=n=>String(n).padStart(2,'0');
+  const expected=local.getFullYear()+'-'+pad(local.getMonth()+1)+'-'+pad(local.getDate())+' '+pad(local.getHours())+':'+pad(local.getMinutes());
+  assert.equal(c.reportSourceDate(timestamp,true),expected);
+  for(const invalid of ['2026-02-30','2026-13-01','2026','尚未公开','<img src=x onerror=x>'])assert.equal(c.reportSourceDate(invalid,true),invalid);
+  assert.equal(c.reportSourceDate('  ',true),'未知');assert.equal(c.reportSourceDate(null,false),'未知');
+  c.REPORTSTATE.p.aiReportByTopic['核电配套']=fullText;
+  c.REPORTSTATE.p.researchByTopic={'核电配套':{topic:'核电配套',reportText:fullText,sources:[
+    {label:'S1',published_at:'2026-09-09T00:00:00.000Z',retrieved_at:timestamp},
+    {label:'S2',published_at:'<img src=x onerror=x>',retrieved_at:'  '}]}};
+  const html=c.reportResearchSourcesHtml(c.PROJECTS.p);
+  assert.ok(html.includes('发布：2026-09-09 · 检索：'+expected));
+  assert.match(html,/检索时间为本地时间/);assert.match(html,/检索：未知/);
+  assert.match(html,/发布：&lt;img src=x onerror=x&gt;/);assert.doesNotMatch(html,/<img|T00:00|\.303057/);
 });

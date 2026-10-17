@@ -138,9 +138,12 @@ function detailReport(p){
   var _topicFull = topicHasFullReport(p.topic);
   var _topicText = (typeof reportTextForTopic==='function') ? reportTextForTopic(p.topic) : null;
   var _topicHasReport = _topicFull || !!_topicText || (st&&st.phaseByTopic&&st.phaseByTopic[p.topic]);
+  var running=typeof reportJobForTopic==='function'?reportJobForTopic(cur,p.topic):null;
   return '<div class="detail-header"><div><span class="eyebrow">CURRENT STUDY</span><h2>本次产业分析</h2><p>'+p.topic+'</p></div></div>'+
     '<div class="detail-scroll">'+
-      '<div class="detail-block"><h3>报告状态</h3>'+(_topicHasReport
+      '<div class="detail-block"><h3>报告状态</h3>'+(running
+        ? '<div class="industry-detail-progress" role="status"><span class="industry-run-spinner" aria-hidden="true"></span><strong>'+(running.phase===2?'完整报告生成中':'初步草稿生成中')+'</strong><p id="industryDetailRunMessage">'+escapeChainText(running.message||'正在准备材料…')+'</p></div>'
+        : _topicHasReport
         ? '<ul class="check-list">'+
             '<li><i class="i">'+(_topicFull?'✅':'✎')+'</i>'+(_topicFull?'完整报告已生成':'初步草稿')+' · '+topicScoreDisplay(p.topic)+'</li>'+
             '<li><i class="i"></i>产业分析方向：'+p.topic+'</li>'+
@@ -153,7 +156,7 @@ function detailReport(p){
       '<div class="detail-block"><h3>已上传材料</h3>'+(ups.length
         ? '<ul class="source-list">'+ups.map(function(u){return '<li><i class="i"></i>'+u.name+'<small style="color:#9aa5b5;margin-left:6px">'+Math.round(u.size/1024)+'KB</small></li>';}).join('')+'</ul>'
         : '<div style="font-size:12.5px;color:#9aa5b5">暂无上传材料</div>'      )+'</div>'+
-      (st&&st.phase===2
+      (!running&&_topicFull
         ? '<div class="detail-block">'+
       '<div style="display:flex;gap:8px">'+
       '<button onclick="viewCurrentReport()" style="flex:1;padding:9px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer;font-weight:600">📋 查看完整报告</button>'+

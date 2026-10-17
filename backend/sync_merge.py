@@ -1,4 +1,4 @@
-"""Pure snapshot merge rules, relocated without semantic changes."""
+"""Pure snapshot merge rules, including server-owned graph write protection."""
 def _keep_nonempty(existing_val, incoming_val):
     """入参为空（None/空串/空 list/dict）时不覆盖已有非空值——防止旧快照把刚同步的数据冲掉。"""
     if incoming_val is None:
@@ -196,7 +196,8 @@ import json as _chain_json
 import math as _chain_math
 import time as _chain_time
 
-_CHAIN_MAPS = ("chainByTopic", "chainEvidenceByTopic", "chainStatusByTopic")
+_CHAIN_MAPS = ("chainByTopic", "chainEvidenceByTopic", "chainStatusByTopic",
+               "chainUnclassifiedByTopic", "chainErrorByTopic")
 
 
 def _chain_source_matches(meta, topic, report, projects, key):
@@ -244,70 +245,19 @@ def _chain_source_matches(meta, topic, report, projects, key):
 
 
 def _chain_bundle(record, topic, report, projects=None, key=None):
-    """Validate a complete saved graph; this is provenance, not a fact verdict."""
-    if not isinstance(record, dict) or not isinstance(report, dict):
-        return None
-    chain = (record.get("chainByTopic") or {}).get(topic) if isinstance(record.get("chainByTopic"), dict) else None
-    meta = (record.get("chainEvidenceByTopic") or {}).get(topic) if isinstance(record.get("chainEvidenceByTopic"), dict) else None
-    status = (record.get("chainStatusByTopic") or {}).get(topic) if isinstance(record.get("chainStatusByTopic"), dict) else None
-    texts = report.get("aiReportByTopic")
-    text = texts.get(topic) if isinstance(texts, dict) else None
-    if not text and report.get("topic") == topic:
-        text = report.get("text")
-    if not isinstance(meta, dict) or not isinstance(text, str) or not text:
-        return None
-    version = meta.get("generatedAt")
-    if (meta.get("contract") != "saved-excerpts-v1" or meta.get("scope") != "current-topic-v1"
-            or meta.get("topic") != topic or meta.get("reportText") != text
-            or not isinstance(meta.get("requestId"), str)
-            or not isinstance(meta.get("sourceIdentity"), str) or not meta["sourceIdentity"]
-            or isinstance(version, bool) or not isinstance(version, int)
-            or version <= 0 or version > int(_chain_time.time() * 1000) + 300000
-            or status != "ready" or not isinstance(chain, list) or len(chain) != 3):
-        return None
-    if [segment.get("seg") if isinstance(segment, dict) else None for segment in chain] != ["上游", "中游", "下游"]:
-        return None
-    if any(not isinstance(segment.get("nodes"), list) for segment in chain):
-        return None
-    if not _chain_source_matches(meta, topic, report, projects, key):
-        return None
-    return chain, meta, status, version
+    """Client-supplied graph bundles never authorize graph persistence."""
+    return None
 
 
 def _merge_chain_maps(existing, incoming, report, projects=None, key=None):
-    """Merge graph/node/provenance/status atomically per topic, never whole maps.
+    """Keep server-owned graph fields unchanged during any client sync.
 
-    Legacy caches are retained but cannot displace a versioned current-topic
-    graph. Invalid/partial/stale writes do not change any of the three fields.
-    Graphs cannot create report text or revive a removed project/topic.
+    Report/source identities are freshness metadata, not authorization to write
+    graph facts. Only the dedicated, locked server generation route writes these
+    fields. Keep this legacy helper for callers, but never accept its incoming
+    bundle, including a well-formed or newer one.
     """
-    result = {field: dict(existing.get(field) or {}) if isinstance(existing.get(field), dict) else {}
-              for field in _CHAIN_MAPS}
-    topics = set()
-    for field in _CHAIN_MAPS:
-        if isinstance(incoming.get(field), dict):
-            topics.update(incoming[field])
-    for topic in topics:
-        if not isinstance(topic, str) or not topic:
-            continue
-        new = _chain_bundle(incoming, topic, report, projects, key)
-        if new is None:
-            continue
-        old = _chain_bundle(existing, topic, report, projects, key)
-        # Equal versions keep the saved bundle, even if a late tab changes it.
-        if old is not None and new[3] <= old[3]:
-            continue
-        # Even if the report has changed, an older page must not replace a
-        # newer saved graph; its old graph remains non-renderable by identity.
-        old_meta = result["chainEvidenceByTopic"].get(topic)
-        old_version = old_meta.get("generatedAt") if isinstance(old_meta, dict) else None
-        if (isinstance(old_version, int) and not isinstance(old_version, bool)
-                and 0 < old_version <= int(_chain_time.time() * 1000) + 300000
-                and old_version >= new[3]):
-            continue
-        for field, value in zip(_CHAIN_MAPS, new[:3]):
-            result[field][topic] = value
-    return result
+    return {field: existing[field] for field in _CHAIN_MAPS if field in existing}
 
 
 def _merge_map(old, new, *, chain_projects=None):
@@ -325,19 +275,16 @@ def _merge_map(old, new, *, chain_projects=None):
     merged = {k: (dict(v) if isinstance(v, dict) else v) for k, v in (old or {}).items()}
     for k, v in (new or {}).items():
         if not isinstance(v, dict):
+            if isinstance(merged.get(k), dict) and any(field in merged[k] for field in _CHAIN_MAPS):
+                continue
             merged[k] = v; continue
         base = merged.get(k)
         if not isinstance(base, dict):
             merged[k] = dict(v)
             if any(field in v for field in _CHAIN_MAPS):
-                bundles = _merge_chain_maps({}, v, merged[k], chain_projects, k)
                 for field in _CHAIN_MAPS:
                     merged[k].pop(field, None)
-                    if bundles[field]:
-                        merged[k][field] = bundles[field]
             continue
-        previous = dict(base)
-        chain_fields = any(field in v for field in _CHAIN_MAPS)
         for fk, fv in v.items():
             if fk in _CHAIN_MAPS:
                 continue
@@ -381,11 +328,6 @@ def _merge_map(old, new, *, chain_projects=None):
                     base[fk] = _cs
                 continue
             base[fk] = _keep_nonempty(base.get(fk), fv)
-        if chain_fields:
-            bundles = _merge_chain_maps(previous, v, base, chain_projects, k)
-            for field in _CHAIN_MAPS:
-                if field in previous or bundles[field]:
-                    base[field] = bundles[field]
     return merged
 
 

@@ -479,59 +479,13 @@ def review_and_push(body, state, actor):
 
 
 def ground_chain(obj, catalog, context):
-    if not isinstance(obj, list):
-        raise ValueError('invalid chain JSON')
-    groups = {name: [] for name in ('上游', '中游', '下游')}
-    valid_segments = 0
-    for segment in obj:
-        if (not isinstance(segment, dict) or segment.get('seg') not in groups
-                or not isinstance(segment.get('nodes'), list)):
-            continue
-        valid_segments += 1
-        nodes, seen = groups[segment['seg']], set()
-        for raw in segment.get('nodes') or []:
-            if not isinstance(raw, dict):
-                continue
-            name = str(raw.get('name') or '').strip()
-            if not name or len(name) > 80 or name in seen:
-                continue
-            seen.add(name)
-            refs = [x for x in _refs(raw, catalog, name)
-                    if x.get('topic') == context.get('topic') and context.get('topic')
-                    and name in x['quote'] and x['urls']]
-            # Unknown is a claim about verification, not permission to add a
-            # model-created or another direction's industrial segment.
-            if not refs:
-                continue
-            level = 'unknown'
-            if refs:
-                # Source wording, never model confidence, determines whether
-                # even a provisional strength label may be displayed.
-                clauses = [clause for x in refs if not _UNCERTAIN.search(x['quote']) for clause in re.split(r'[，,；;。！？!?\n]', x['quote']) if name in clause]
-                unambiguous = [q for q in clauses if not _UNCERTAIN.search(q)]
-                strong = any(re.search(r'本地强|优势环节|核心优势', q) for q in unambiguous)
-                weak = any(re.search(r'薄弱|短板', q) for q in unambiguous)
-                if strong != weak:
-                    if strong:
-                        level = 'strong'
-                    elif weak:
-                        level = 'weak'
-            leaders = []
-            for leader in raw.get('local_leaders') or []:
-                # The same short clause must identify the node, company and
-                # this city. Mentions elsewhere in a paragraph cannot establish
-                # that the company serves this local industrial segment.
-                city = context.get('city') or ''
-                if isinstance(leader, str) and leader and city and any(leader in q and city in q and name in q and len(q) <= 250 for r in refs if not _UNCERTAIN.search(r['quote']) for q in re.split(r'[，,；;。！？!?\n]', r['quote'])):
-                    leaders.append(leader)
-            nodes.append({'name': name, 'level': level,
-                'note': ('材料原文：'+'；'.join(x['quote'] for x in refs[:2])+'；强弱及落地状态仍待核实。') if refs else '待核节点：当前材料缺少可追溯依据，不能判定本地强弱或现实中不存在。',
-                'local_leaders': leaders, 'benchmark': [], 'evidence_ids': [x['id'] for x in refs], 'sourceRecords': _basis(refs), 'urls': list(dict.fromkeys(u for x in refs for u in x['urls']))})
-    if obj and not valid_segments:
-        raise ValueError('invalid chain segments')
-    # Empty current-topic evidence is a completed material-gap result, never
-    # a fabricated node or an assertion that this industry does not exist.
-    return [{'seg': name, 'nodes': nodes} for name, nodes in groups.items()]
+    """Retired: saved report lines cannot establish original chain evidence.
+
+    The interactive endpoint uses topic_chain.build_chain and server-owned
+    persistence. Reject legacy callers rather than reviving its semantic or
+    provenance shortcuts.
+    """
+    raise ValueError('legacy_chain_disabled: use source-bound chain generation')
 
 
 def enterprise_sources(event):

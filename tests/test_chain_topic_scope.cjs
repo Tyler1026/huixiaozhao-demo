@@ -1,68 +1,28 @@
-const test=require('node:test');
-const assert=require('node:assert/strict');
-const fs=require('node:fs');
-const path=require('node:path');
-const vm=require('node:vm');
-const root=path.join(__dirname,'..');
-function declaration(source,name){
-  const start=source.search(new RegExp('(?:async )?function '+name+'\\('));
-  assert.ok(start>=0,name);
-  const next=source.slice(start+1).search(/\n(?:async )?function /);
-  return source.slice(start,next<0?undefined:start+1+next);
-}
-function setup(file,result){
-  const source=fs.readFileSync(path.join(root,file),'utf8');
-  const report='本次核电换热设备报告保留原文、条件、主体和来源。'.repeat(8);
-  const events={calls:0,persist:0}, storage={};let stored={};
-  const c={PROJECTS:{p:{topic:'核电换热设备',city:'闵行区',reportRequestId:'r1'}},
-    REPORTSTATE:{p:{topic:'核电换热设备',aiReportByTopic:{'核电换热设备':report}}},
-    cur:'p',window:{},LS_KEY:'test',localStorage:{getItem:k=>storage[k]||null},Date,view:'report',_authEpoch:1,_chainGenInFlight:{},KB_API:'/api/kb-chat',
-    savedEvidenceIdentity:()=>JSON.stringify({workspace:'p',city:'闵行区',topic:'核电换热设备',selectedTopic:'核电换热设备',requestId:'r1',kb:[[]],onboarding:{},report}),P:()=>c.PROJECTS.p,persist:()=>{events.persist++;storage.test=JSON.stringify({PROJECTS:c.PROJECTS,REPORTSTATE:c.REPORTSTATE});},render:()=>{},
-    fetch:async(url,init)=>{if(url==='/api/sync'){if(init&&init.method==='POST'){const delta=JSON.parse(init.body);stored={PROJECTS:c.PROJECTS,REPORTSTATE:JSON.parse(JSON.stringify(c.REPORTSTATE))};Object.assign(stored.REPORTSTATE.p,delta.REPORTSTATE.p);return {ok:true,json:async()=>({ok:true})};}return {ok:true,json:async()=>stored};}events.calls++;return {ok:true};},
-    readTopicReportStream:async()=>({text:JSON.stringify(result)}),
-    setTimeout:()=>1,clearTimeout:()=>{},AbortController,
-    document:{getElementById:()=>null},reportTextForTopic:()=>report,
-    escapeChainText:s=>String(s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')};
-  vm.createContext(c);
-  vm.runInContext(['_correctChainLevel','_normalizeChain','currentEvidenceChain','chainSnapshotIdentity','chainSourceIdentity','chainEvidenceIdentity','chainSavedSourceMatches','chainSaveCurrent','savePendingChain','syncTopicReportInputs','generateChainFromReport','_renderRichChain','chainMapHtml'].map(n=>declaration(source,n)).join('\n'),c);
-  return {c,events,report};
-}
-for(const [surface,file] of [['user','frontend/index/script-02-sections/12-tail.js'],['admin','frontend/ops/script-03-sections/12-tail.js']]){
-  test(surface+' empty source-grounded graph completes and shows three generic material gaps',async()=>{
-    const {c,events}=setup(file,[]);
-    await c.generateChainFromReport('核电换热设备');
-    const rs=c.REPORTSTATE.p;
-    assert.equal(rs.chainStatusByTopic['核电换热设备'],'ready');
-    assert.equal(events.calls,1);
-    assert.equal(rs.chainByTopic['核电换热设备'].length,3);
-    assert.ok(rs.chainByTopic['核电换热设备'].every(s=>s.nodes.length===0));
-    const html=c.chainMapHtml(c.PROJECTS.p);
-    assert.equal((html.match(/资料待补/g)||[]).length,3);
-    assert.ok(!html.includes('生物医药'));
-    assert.ok(!html.includes('重试生成'));
-  });
-  test(surface+' partial graph keeps sourced node and gaps without inventing other names',async()=>{
-    const result=[{seg:'中游',nodes:[{name:'核级换热器',level:'unknown',note:'待核',sourceRecords:[{urls:['https://official.example/product']}]}]}];
-    const {c}=setup(file,result);
-    await c.generateChainFromReport('核电换热设备');
-    const html=c.chainMapHtml(c.PROJECTS.p);
-    assert.ok(html.includes('核级换热器'));
-    assert.ok(html.includes('https://official.example/product'));
-    assert.equal((html.match(/资料待补/g)||[]).length,2);
-    assert.equal(c.REPORTSTATE.p.chainEvidenceByTopic['核电换热设备'].scope,'current-topic-v1');
-  });
-  test(surface+' legacy same-report mixed-topic cache is not reused or destroyed',()=>{
-    const {c,report}=setup(file,[]),rs=c.REPORTSTATE.p;
-    rs.chainByTopic={'核电换热设备':[{seg:'中游',nodes:[{name:'生物医药出海环节'}]}]};
-    rs.chainEvidenceByTopic={'核电换热设备':{contract:'saved-excerpts-v1',requestId:'r1',reportText:report,sourceIdentity:report}};
-    assert.equal(c.currentEvidenceChain('核电换热设备'),null);
-    assert.ok(!c.chainMapHtml(c.PROJECTS.p).includes('生物医药出海环节'));
-    assert.equal(rs.chainByTopic['核电换热设备'][0].nodes[0].name,'生物医药出海环节');
-  });
-  test(surface+' malformed result stays incomplete and cannot store a completed map',async()=>{
-    const {c}=setup(file,{segments:[]});
-    await c.generateChainFromReport('核电换热设备');
-    assert.equal(c.REPORTSTATE.p.chainStatusByTopic['核电换热设备'],'failed');
-    assert.equal(c.currentEvidenceChain('核电换热设备'),null);
-  });
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {setup,topic}=require('./chain_v2_fixture.cjs');
+for(const app of ['index','ops']){
+ test(app+' empty results disclose insufficient materials and permit regeneration without false strength legends',async()=>{
+  const e=setup(app);e.setTransform(event=>{event.chain=['上游','中游','下游'].map(seg=>({seg,nodes:[]}));event.status='empty';return event;});await e.c.requestChainGeneration();
+  const html=e.c.chainMapHtml(e.c.P());assert.equal(e.c.REPORTSTATE.p.chainStatusByTopic[topic],'empty');assert.equal((html.match(/资料待补/g)||[]).length,3);assert.match(html,/不能据此判断/);assert.match(html,/更新图谱并评价/);assert.doesNotMatch(html,/材料称优势|材料称培育|材料称薄弱/);
+ });
+ test(app+' unknown nodes use only a pending legend and parallel cards without inferred edges',async()=>{
+  const e=setup(app);e.setTransform(event=>{event.chain[0].nodes.push({name:'重要耗材',level:'unknown',status:'reported'});return event;});await e.c.requestChainGeneration();const html=e.c.chainMapHtml(e.c.P());assert.match(html,/待核/);assert.doesNotMatch(html,/→|本地优势|培育中|材料称优势|材料称薄弱/);assert.match(html,/不代表已证实的供应或工序连接/);assert.match(html,/公开分类依据，不表示本地已有能力/);
+ });
+ test(app+' planned, negated and reported wording stays distinct from verification',async()=>{
+  const e=setup(app);e.setTransform(event=>{event.chain[0].nodes=[{name:'拟建环节',level:'strong',status:'planned'},{name:'否定项',level:'strong',status:'reported',negated:true},{name:'材料已提及',level:'unknown',status:'reported'}];return event;});await e.c.requestChainGeneration();const html=e.c.chainMapHtml(e.c.P());assert.match(html,/规划 \/ 计划/);assert.match(html,/否定或排除表述/);assert.match(html,/材料披露/);assert.match(html,/未独立核实/);assert.doesNotMatch(html,/材料称优势/);
+ });
+ test(app+' unclassified items stay separate and complete source quotes remain expandable',async()=>{
+  const e=setup(app),url='https://official.example/very/long/path?item=1';e.setTransform(event=>{event.unclassified=[{name:'跨界材料项',level:'unknown',status:'reported',note:'材料介绍 [官方来源]('+url+')',classification:{reason:'现有信息不足以判断上中下游'},sources:[{id:'S2',url,quote:'完整原文，不得截断。'.repeat(30),title:'正式披露'}]}];return event;});await e.c.requestChainGeneration();const html=e.c.chainMapHtml(e.c.P());assert.match(html,/尚未分类的材料项/);assert.match(html,/现有信息不足以判断上中下游/);assert.match(html,/<details class="industry-chain-sources"/);assert.ok(html.includes('完整原文，不得截断。'.repeat(30)));const node=e.c.chainNodeCardHtml(e.c.REPORTSTATE.p.chainUnclassifiedByTopic[topic][0]);assert.ok(!node.split('<details')[0].includes(url));assert.ok(node.includes('href="'+url+'"'));
+ });
+ test(app+' compact cards show status and sources while shared qualifications appear only in the header',()=>{
+  const e=setup(app),generic='按通用产业链口径分类，不代表本地已具备能力。',note='保留来源原文和限定；分类为分析口径，不代表本地能力、强弱或投资意向。';
+  const node={name:'代表环节',status:'reported',level:'unknown',note,classification:{lane:'上游',reason:generic},sources:[{url:'https://official.example/source',quote:'原文内容保留完整。'}]};
+  const card=e.c.chainNodeCardHtml(node);assert.match(card,/材料披露 · 待核/);assert.match(card,/查看原文与来源/);assert.ok(!card.includes(generic));assert.ok(!card.includes(note));
+  const html=e.c._renderRichChain(topic,[{seg:'上游',nodes:Array.from({length:30},()=>node)}],null,e.c.P(),[],'partial',{});
+  assert.equal((html.match(/本次资料中的代表环节，非完整行业清单/g)||[]).length,1);assert.equal((html.match(/内容未独立核实/g)||[]).length,1);
+ });
+ test(app+' title, node name and classification text are escaped and credential links are discarded',async()=>{
+  const e=setup(app);const html=e.c._renderRichChain('<img src=x onerror=alert(1)>',[{seg:'上游',nodes:[{name:'<script>x</script>',level:'bad" onclick="x',classification:{reason:'<b>raw</b>'},sources:[{url:'https://user:pass@example.com/a',quote:'<img src=x>'}]}]}],null,e.c.P(),[],'partial',{});assert.doesNotMatch(html,/<script>|<img|<b>|href="https:\/\/user/);assert.match(html,/&lt;img/);assert.match(html,/&lt;script/);assert.match(html,/&lt;b&gt;/);
+ });
 }
