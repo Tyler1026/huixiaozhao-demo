@@ -6,6 +6,7 @@ from contextlib import contextmanager
 import http.client
 import io
 import json
+import re
 from pathlib import Path
 import tempfile
 import threading
@@ -361,11 +362,11 @@ class HttpIntegrationTests(unittest.TestCase):
             path = Path(directory) / 'sync.json'; path.write_text(json.dumps(state()))
             tree = ast.parse((ROOT / 'server.py').read_text())
             nodes = [node for node in tree.body if isinstance(node, (ast.ClassDef, ast.FunctionDef))
-                     and node.name in ('Handler', '_clean_sync_data', '_is_noise_chunk')]
+                     and node.name in ('Handler', '_clean_sync_data', '_is_noise_chunk', '_clean_kb_text', '_is_junk_item')]
             namespace = dict(BaseHTTPRequestHandler=__import__('http.server', fromlist=['BaseHTTPRequestHandler']).BaseHTTPRequestHandler,
                 json=json, os=SimpleNamespace(environ={}), _PG_AVAIL=False, DATABASE_URL='',
                 SYNC_PATH=str(path), _file_snapshot=lambda: None, _db_get=lambda: None, _db_set=lambda value: False,
-                _NOISE_RE=[], PORT_OPS=-1)
+                _NOISE_RE=[], PORT_OPS=-1, _re=re)
             namespace.update({name: getattr(sync_merge, name) for name in dir(sync_merge)
                               if name.startswith('_') and not name.startswith('__')})
             exec(compile(ast.Module(body=nodes, type_ignores=[]), 'isolated-kb-edit-handler', 'exec'), namespace)
@@ -395,13 +396,13 @@ class HttpIntegrationTests(unittest.TestCase):
                 self.assertEqual(refreshed['KB_EDITS'][KEY][record['id']], record)
                 self.assertEqual(refreshed['PROJECTS'][KEY]['kb'], state()['PROJECTS'][KEY]['kb'])
                 summary_inputs = []
-                namespace['_clean_kb_text'] = lambda item: item['text'] if isinstance(item, dict) else item
-                namespace['_is_junk_item'] = lambda text: False
                 namespace['_classify_and_summarize'] = lambda city, sections, texts: summary_inputs.extend(texts)
                 status, _, summary = request('GET', '/api/kb-summary')
                 self.assertEqual(status, 200); self.assertTrue(summary['ok'])
-                self.assertIn(record['text'], summary_inputs)
-                self.assertNotIn(record['sourceItem']['text'], summary_inputs)
+                self.assertIn(namespace['_clean_kb_text'](record['text']), summary_inputs)
+                self.assertNotIn(namespace['_clean_kb_text'](record['sourceItem']['text']), summary_inputs)
+                self.assertTrue(all(isinstance(item, str) for item in summary_inputs))
+                self.assertNotIn('metadata', ' '.join(summary_inputs))
                 status, _, result = request('POST', '/api/kb-edit', body())
                 self.assertEqual(status, 409); self.assertEqual(result['error'], 'edit_conflict')
                 status, _, result = request('POST', '/api/sync', {'KB_EDITS': {}})

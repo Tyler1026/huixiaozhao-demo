@@ -57,6 +57,97 @@ def research(results, **kwargs):
 
 
 class TopicResearchTests(unittest.TestCase):
+    def test_draft_and_full_queries_cover_actual_supply_and_unresolved_demand(self):
+        for mode, count in [('draft', 3), ('full', 5)]:
+            queries = search_plan('闵行区', '生物医药', mode)
+            self.assertEqual(len(queries), count)
+            self.assertTrue(any(all(word in q for word in ('产品', '已投产', '已交付')) for q in queries))
+            self.assertTrue(any(all(word in q for word in ('需求', '进口依赖', '中试', '验证阶段')) for q in queries))
+            self.assertTrue(any('适用条件' in q for q in queries))
+
+    def _real_crosscheck_case(self, name):
+        path = Path(__file__).parent / 'fixtures' / 'topic_research_crosscheck_cases.json'
+        return json.loads(path.read_text())[name]
+
+    def test_real_medical_policy_is_not_confirmed_by_unrelated_product_capacity(self):
+        case = self._real_crosscheck_case('medical_policy_vs_products')
+        snapshot = copy.deepcopy(case)
+        checked = validate_report(case['claim'], case, require_citations=False)
+        self.assertEqual(checked['status'], 'single_source')
+        self.assertEqual([x['evidence_id'] for x in checked['checks'][0]['sources']],
+                         ['tr_81af31aa836623bfac88'])
+        self.assertFalse(checked['verified'])
+        self.assertEqual(case, snapshot, 'verification must not rewrite original source status')
+
+    def test_real_lowalt_policy_mirrors_are_not_independent_witnesses(self):
+        case = self._real_crosscheck_case('lowalt_policy_mirrors')
+        checked = validate_report(case['claim'], case, require_citations=False)
+        self.assertEqual(len(checked['checks'][0]['sources']), 3)
+        self.assertEqual(checked['status'], 'single_source')
+        self.assertFalse(checked['verified'])
+
+    def test_same_metric_different_object_predicate_time_or_condition_cannot_crosscheck(self):
+        claim = '2025年闵行区甲公司已交付年产能100万套的过滤器产线。'
+        alternatives = [
+            '2025年闵行区甲公司已交付年产能100万套的反应袋产线。',
+            '2025年闵行区甲公司拟建设年产能100万套的过滤器产线。',
+            '2024年闵行区甲公司已交付年产能100万套的过滤器产线。',
+            '2025年松江区甲公司已交付年产能100万套的过滤器产线。',
+            '2025年闵行区甲公司已交付年产能900万套的过滤器产线。',
+        ]
+        for alternative in alternatives:
+            with self.subTest(alternative=alternative):
+                rows = []
+                for i, quote in enumerate((claim, alternative)):
+                    rows.append({'id': 'tr_'+str(i)*20, 'url': f'https://agency{i}.gov.cn/fact',
+                                 'origin_id': f'origin_{i}', 'publisher_id': f'agency{i}.gov.cn',
+                                 'quote': quote, 'excerpt': quote, 'status': 'source', 'retrieval': 'fetched'})
+                checked = validate_report(claim, {'evidence': rows}, require_citations=False)
+                self.assertEqual(checked['status'], 'single_source')
+                self.assertEqual(len(checked['checks'][0]['sources']), 1)
+
+    def test_qualifications_and_negative_source_context_are_not_discarded(self):
+        claim = '甲公司已交付过滤器产线。'
+        for quote in ('尚未证实甲公司已交付过滤器产线。', '甲公司已交付过滤器产线的说法不实。',
+                      '如果甲公司已交付过滤器产线，项目才可进入验收。'):
+            row = {'id': 'tr_'+'1'*20, 'url': 'https://agency.gov.cn/fact', 'origin_id': 'one',
+                   'publisher_id': 'agency.gov.cn', 'quote': quote, 'excerpt': quote}
+            self.assertEqual(validate_report(claim, {'evidence': [row]}, require_citations=False)['status'], 'unsupported')
+
+    def test_snippet_or_pending_source_cannot_become_a_witness(self):
+        text = '2025年闵行区营业收入100亿元。'
+        row = {'id': 'tr_'+'1'*20, 'url': 'https://agency.gov.cn/fact', 'origin_id': 'one',
+               'publisher_id': 'agency.gov.cn', 'quote': text, 'excerpt': text}
+        for marker in ({'retrieval': 'snippet'}, {'status': 'pending'}):
+            with self.subTest(marker=marker):
+                checked = validate_report(text, {'evidence': [dict(row, **marker)]}, require_citations=False)
+                self.assertEqual(checked['status'], 'unsupported')
+
+    def test_productless_completion_is_not_an_independent_factual_identity(self):
+        claim = '生产基地已投产。'
+        rows = [
+            {'id': 'tr_'+str(i)*20, 'url': f'https://agency{i}.gov.cn/fact',
+             'origin_id': f'origin_{i}', 'publisher_id': f'agency{i}.gov.cn',
+             'quote': quote, 'excerpt': quote}
+            for i, quote in enumerate(('甲公司生产基地已投产。主营药用过滤器。',
+                                       '乙公司生产基地已投产。主营电池材料。'))]
+        checked = validate_report(claim, {'evidence': rows}, require_citations=False)
+        self.assertEqual(checked['status'], 'single_source')
+        self.assertFalse(checked['verified'])
+
+    def test_same_document_identity_blocks_disjoint_reprint_extracts(self):
+        claim = '2025年闵行区营业收入100亿元。'
+        rows = [
+            {'id': 'tr_'+str(i)*20, 'url': f'https://agency{i}.gov.cn/fact',
+             'origin_id': f'origin_{i}', 'publisher_id': f'agency{i}.gov.cn',
+             'title': '《闵行区产业高质量发展行动方案》',
+             'quote': quote, 'excerpt': quote}
+            for i, quote in enumerate((claim+'甲处负责专项统计并组织汇总工作。',
+                                       claim+'乙处组织专家评审并发布附表口径说明。'))]
+        checked = validate_report(claim, {'evidence': rows}, require_citations=False)
+        self.assertEqual(len(checked['checks'][0]['sources']), 2)
+        self.assertEqual(checked['status'], 'single_source')
+
     def test_paragraph_selection_requires_specific_industry_and_never_cuts(self):
         generic = '闵行区经济持续发展，营业收入100亿元。这里仅有地区名字和通用产业词，没有具体方向。'
         policy = '氢能装备政策：对具有自主知识产权、成立不满五年的初创期企业，按研发费用10%给予最高50万元支持。'

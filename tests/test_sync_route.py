@@ -35,7 +35,7 @@ class SyncRouteTests(unittest.TestCase):
         # 这条门禁的职责是"证明继承自旧版的逐字段合并逻辑一字未改"，不是"禁止任何新字段
         # 类型"——所以用 NodeTransformer 把这些新增内容从树里物理还原后再比较，而不是
         # 放宽比较标准去容纳它们。新增行为由下面 test_invite_codes_branch_* 单独验证。
-        NEW_KEYS = {'INVITE_CODES', 'CITY_BASE_PACKAGES'}
+        NEW_KEYS = {'INVITE_CODES', 'CITY_BASE_PACKAGES', 'REPORT_HISTORY'}
         class StripInviteCodesAdditions(ast.NodeTransformer):
             def visit_Expr(self,node):
                 if isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name) and node.value.func.id == 'protect_city_sync':
@@ -82,16 +82,24 @@ class SyncRouteTests(unittest.TestCase):
         extracted=StripEmptyWriteFix().visit(extracted)
         class StripChainSourceContext(ast.NodeTransformer):
             def visit_Assign(self,node):
-                if any(isinstance(t,ast.Name) and t.id=='_chain_projects' for t in node.targets):
+                if any(isinstance(t,ast.Name) and t.id in {'_chain_projects','_topic_tomb_reports'} for t in node.targets):
+                    return None
+                if isinstance(node.value,ast.Call) and isinstance(node.value.func,ast.Name) and node.value.func.id=='_merge_report_history':
                     return None
                 return self.generic_visit(node)
             def visit_If(self,node):
+                if isinstance(node.test,ast.Name) and node.test.id=='_topic_tomb_reports':
+                    return None
                 # The else is the exact original _merge_map call; only the new
                 # REPORTSTATE path supplies authoritative project provenance.
                 if (isinstance(node.test,ast.Compare) and isinstance(node.test.left,ast.Name)
                         and node.test.left.id=='k' and any(isinstance(c,ast.Constant) and c.value=='REPORTSTATE' for c in node.test.comparators)
                         and node.orelse):
                     return node.orelse
+                return self.generic_visit(node)
+            def visit_For(self,node):
+                if "state.get('pendingByTopic')" in ast.unparse(node):
+                    return None  # Tested by per-topic sync cases; unrelated loops remain pinned.
                 return self.generic_visit(node)
         extracted=StripChainSourceContext().visit(extracted)
         # 【2026-09-30】卡死任务手动取消功能：_rr_rank 状态排序字典新增

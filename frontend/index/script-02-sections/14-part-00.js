@@ -183,7 +183,9 @@ function restore(){
     var data=_safeSyncSnapshot(JSON.parse(raw));
     if(data.clientUser!==AUTH.user)return false;
     if(data.PROJECTS&&Object.keys(data.PROJECTS).length){
+      var topicLocalProjects=PROJECTS;
       PROJECTS=_authFilterProjects(data.PROJECTS);
+      Object.keys(PROJECTS).forEach(function(k){PROJECTS[k]=mergeTopicProjectLifecycle(topicLocalProjects[k],PROJECTS[k]);});
       cur=data.cur||null;
       view=data.view||'setup';
       UPLOADS=_mergeUploads(data.UPLOADS, UPLOADS);
@@ -191,7 +193,7 @@ function restore(){
       KB_CONFIRM_TOMBS=data.KB_CONFIRM_TOMBS||{};
       KB_FILE_CHUNKS=_mergeChunks(data.KB_FILE_CHUNKS, KB_FILE_CHUNKS);
       KB_UNLOCKED=data.KB_UNLOCKED||{};
-      REPORTSTATE=data.REPORTSTATE||{};
+      REPORTSTATE=mergeTopicReportStates(REPORTSTATE,data.REPORTSTATE,PROJECTS);
       PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
       DOCK_LOGS=data.DOCK_LOGS||{};
       // 【2026-09-21 修复】问答记忆消失根因：这里原本是裸覆盖 KB_CHAT=data.KB_CHAT||{}。
@@ -203,7 +205,8 @@ function restore(){
       _mergeUploadTombs(data.UPLOAD_TOMBS);
       KB_CHAT=_mergeKbChat(data.KB_CHAT, KB_CHAT);
       _applyUploadTombs();
-      if(data.REPORT_HISTORY) REPORT_HISTORY=data.REPORT_HISTORY;
+      REPORT_HISTORY=mergeTopicReportHistory(REPORT_HISTORY,data.REPORT_HISTORY,REPORTSTATE,PROJECTS);
+      applyTopicStateIntegrity();
 
       if(data.OPS_ENT) OPS_ENT=data.OPS_ENT;
       if(data.RESET_GEN) RESET_GEN=data.RESET_GEN;

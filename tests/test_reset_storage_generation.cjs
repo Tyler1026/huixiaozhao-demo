@@ -20,7 +20,10 @@ function boot(){
     render(){calls.push('render');},setTimeout(){},syncDemandStage(){}};
   for(const key of ['PROJECTS','UPLOADS','KB_CONFIRMS','KB_CONFIRM_TOMBS','KB_ITEM_TOMBS','KB_FILE_CHUNKS','KB_UNLOCKED','REPORTSTATE','REPORT_HISTORY','PENDING_CONFIRMS','DOCK_LOGS','KB_CHAT','KB_CHAT_TOMBS','UPLOAD_TOMBS','CITY_BASE_PACKAGES','CITY_WORKSPACES','SUBPROJ'])ctx[key]={};
   for(const key of ['OPS_ENT','DEMANDS','REPORT_REQUESTS','DELETED_PROJECTS','DELETED_CLUES'])ctx[key]=[];
-  ctx.window=ctx;vm.createContext(ctx);return {ctx,listeners,calls,disk};
+  ctx.window=ctx;vm.createContext(ctx);
+  const shared=fs.readFileSync(path.join(__dirname,'../frontend/index/script-02-sections/12-tail.js'),'utf8');
+  vm.runInContext(shared.slice(shared.indexOf('function reportStateFields('),shared.indexOf('function selectTopic(')),ctx);
+  return {ctx,listeners,calls,disk};
 }
 function storageBoot(){const h=boot(),text=source('index');vm.runInContext(text.slice(text.indexOf("window.addEventListener('storage'"),text.indexOf('\nvar UPLOADS={}')),h.ctx);return h;}
 function event(generation='old',user='offline-admin'){const data={clientUser:user,PROJECTS:{old:{city:'OFFLINE old data',kb:[]}},REPORTSTATE:{old:{text:'OFFLINE old report'}}};if(generation!==undefined)data.RESET_GEN=generation;return {key:'huixiaozhao_kb_v1',newValue:JSON.stringify(data)};}

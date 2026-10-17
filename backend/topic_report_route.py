@@ -76,6 +76,11 @@ def serve_topic_report(handler, body, *, read_state, complete, audit,
               local_source_count=len(context['chunks']))
         findings = research(context['city'], context['topic'], mode=mode,
                             basis=context['chunks'], questions=context['confirmations'], progress=progress)
+        # Archived public research is source material with preserved retrieval
+        # dates, not a claim that those pages were fetched by this request.
+        if findings.get('sources'):
+            from .public_research import enrich_public_research
+            findings = enrich_public_research(findings, context['city'], context['topic'])
         # Persist only bounded source/check metadata, never provider secrets.
         public_sources = findings.get('evidence') or []
         event('research.evidence', sources=public_sources,
@@ -88,6 +93,7 @@ def serve_topic_report(handler, body, *, read_state, complete, audit,
             saved['fulltext_sha256'] = original.get('fulltext_sha256')
             audit_sources.append(saved)
         record.update(research_sources=audit_sources, public_source_count=len(public_sources),
+                      public_research=findings.get('public_research', {}),
                       research_queries=findings.get('queries', []),
                       research_errors=findings.get('errors', []),
                       source_urls=[x.get('url') for x in public_sources],
@@ -127,10 +133,15 @@ def serve_topic_report(handler, body, *, read_state, complete, audit,
                     'issues': verification.get('issues', []), 'status': 'unreviewed', 'researchStatus': findings['status'],
                     'verificationStatus': verification['status'], 'fingerprint': fingerprint,
                     'clientMaterialFingerprint': client_fp, 'runId': run_id,
-                    'queries': findings.get('queries', []), 'errors': findings.get('errors', [])}
+                    'queries': findings.get('queries', []), 'errors': findings.get('errors', []),
+                    'analysis':report.get('analysis', {}),
+                    'researchCoverage':report.get('researchCoverage', {}),
+                    'publicResearch':findings.get('public_research', {})}
         if stream:
             event('research.evidence', sources=report['sources'], checks=metadata['checks'],
-                  verificationStatus=verification['status'], researchStatus=findings['status'])
+                  verificationStatus=verification['status'], researchStatus=findings['status'],
+                  analysis=metadata['analysis'], publicResearch=metadata['publicResearch'],
+                  researchCoverage=metadata['researchCoverage'])
             # Only source-projected text is streamed. There is no unverified
             # model prose briefly shown as factual content before validation.
             for block in report['text'].split('\n\n'):

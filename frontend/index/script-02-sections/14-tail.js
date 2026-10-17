@@ -83,7 +83,9 @@ function restoreFromServer(callback){
     var _localDemandProj={}, _localDemandRS={}, _localDemands=(typeof DEMANDS!=='undefined')?DEMANDS.slice():[];
     Object.keys(PROJECTS).forEach(function(k){ if(PROJECTS[k]&&PROJECTS[k].isDemand) _localDemandProj[k]=PROJECTS[k]; });
     Object.keys(REPORTSTATE||{}).forEach(function(k){ if(_localDemandProj[k]&&REPORTSTATE[k]) _localDemandRS[k]=REPORTSTATE[k]; });
+    var _topicLocalProjects=PROJECTS;
     PROJECTS         = _authFilterProjects(srv.PROJECTS);
+    Object.keys(PROJECTS).forEach(function(k){PROJECTS[k]=mergeTopicProjectLifecycle(_topicLocalProjects[k],PROJECTS[k]);});
     KB_EDITS         = srv.KB_EDITS || {};
     UPLOADS          = _mergeUploads(srv.UPLOADS, UPLOADS);
     _mergeKbItemTombs(srv.KB_ITEM_TOMBS);
@@ -97,16 +99,7 @@ function restoreFromServer(callback){
     KB_UNLOCKED      = srv.KB_UNLOCKED      || {};
     // REPORTSTATE：保护本地更新的报告。择优规则优先按 ts 择新（phase1 draft 短但新→不能被旧完整报告冲掉），
     // ts 相同或缺失时才回退到长的赢避免残缺覆盖完整。
-    (function(){
-      var _localRs=(cur&&REPORTSTATE&&REPORTSTATE[cur])?REPORTSTATE[cur]:null;
-      REPORTSTATE = srv.REPORTSTATE || {};
-      if(cur&&_localRs){
-        var _inRs=REPORTSTATE[cur];
-        var _lt=Number(_localRs&&_localRs.ts)||0, _it=Number(_inRs&&_inRs.ts)||0;
-        var _localWins = !_inRs || _lt>_it || (_lt===_it && String(_localRs.text||'').length > String((_inRs||{}).text||'').length);
-        if(_localWins) REPORTSTATE[cur]=_localRs;
-      }
-    })();
+    REPORTSTATE=mergeTopicReportStates(REPORTSTATE,srv.REPORTSTATE,PROJECTS);
     PENDING_CONFIRMS = srv.PENDING_CONFIRMS || {};
     DOCK_LOGS        = srv.DOCK_LOGS        || {};
     if(srv.DEMANDS) window.DEMANDS=srv.DEMANDS;
@@ -120,7 +113,7 @@ function restoreFromServer(callback){
     // 企业库：管理端录入的目标企业，供政府端产业链图谱关联展示
     if(srv.OPS_ENT) OPS_ENT = srv.OPS_ENT;
     // 历史报告：服务器有则用服务器，否则保留本地已加载的（避免旧记录被空值冲掉）
-    REPORT_HISTORY = srv.REPORT_HISTORY || {};
+    REPORT_HISTORY=mergeTopicReportHistory(REPORT_HISTORY,srv.REPORT_HISTORY,REPORTSTATE,PROJECTS);
     // 注册用户资料：合并服务器与本地(不丢本地新注册未同步的)
     USER_PROFILES=_safeProfiles(srv.USER_PROFILES);
     CITY_ACCOUNTS={};
@@ -254,6 +247,7 @@ function restoreFromServer(callback){
     _allK.forEach(function(k){var c=0;(PROJECTS[k].kb||[]).forEach(function(t){c+=(t.known||[]).length;});if(c>_bestKC){_bestKC=c;_bestK=k;}});
     cur = (_bestK && _bestKC > 0) ? _bestK : (srv.cur || _allK[0] || null);
     view = (_bestKC > 0) ? 'knowledge' : (srv.view || 'setup');
+    applyTopicStateIntegrity();
     // 写回 localStorage（统一扁平格式）
     var flat={cur:cur,view:view,PROJECTS:PROJECTS,UPLOADS:UPLOADS,
       KB_CONFIRMS:KB_CONFIRMS,KB_CONFIRM_TOMBS:KB_CONFIRM_TOMBS,KB_FILE_CHUNKS:KB_FILE_CHUNKS,
@@ -277,7 +271,7 @@ function restoreFromServer(callback){
     // 恢复用户当前操作状态：服务器数据不覆盖用户刚切换的方向
     if(_userCur && PROJECTS[_userCur]){
       cur = _userCur;
-      if(_userTopic) PROJECTS[_userCur].topic = _userTopic;
+      if(_userTopic&&(PROJECTS[_userCur].deletedTopics||[]).indexOf(_userTopic)<0) PROJECTS[_userCur].topic = _userTopic;
     }
     if(_userView) view = _userView;
     window._serverSyncLock=false;
@@ -402,29 +396,22 @@ window.addEventListener('storage', function(e){
       // 【2026-09-18】已删条目不得随快照回流。上方合并保护了
       // customTopics/stage/clues，但 kb.known 一直是裸赋值，造成删除后复活。
       _applyKbItemTombs(incoming);
+      Object.keys(incoming).forEach(function(k){incoming[k]=mergeTopicProjectLifecycle(PROJECTS[k],incoming[k]);});
       PROJECTS=incoming;
     })();
     // 删除墓碑过滤：其他标签页快照可能仍含已删项目
     (window.DELETED_PROJECTS||[]).forEach(function(dk){ delete PROJECTS[dk]; });
     // 恢复用户当前操作状态：管理端快照不覆盖用户正在操作的方向/阶段
     if(cur&&PROJECTS[cur]){
-      if(_keepTopic!=null) PROJECTS[cur].topic=_keepTopic;
-      if(_keepStage!=null) PROJECTS[cur].stage=_keepStage;
+      if(_keepTopic!=null&&(PROJECTS[cur].deletedTopics||[]).indexOf(_keepTopic)<0) PROJECTS[cur].topic=_keepTopic;
+      if(_keepStage!=null&&PROJECTS[cur].topic===_keepTopic) PROJECTS[cur].stage=_keepStage;
     }
     DEMANDS=data.DEMANDS||[];
     // REPORTSTATE 保护当前项目：管理端旧快照不得冲掉本地刚生成的报告状态。
     // 择优：先按 ts 择新，不然 phase1 draft(短但新) 会被同项目旧完整报告拖回去。
-    (function(){
-      var _localRs=REPORTSTATE[cur];
-      REPORTSTATE=data.REPORTSTATE||{};
-      if(cur&&_localRs){
-        var _inRs=REPORTSTATE[cur];
-        var _lt=Number(_localRs&&_localRs.ts)||0, _it=Number(_inRs&&_inRs.ts)||0;
-        var _localWins = !_inRs || _lt>_it || (_lt===_it && String(_localRs.text||'').length > String((_inRs||{}).text||'').length);
-        if(_localWins) REPORTSTATE[cur]=_localRs;
-      }
-      (window.DELETED_PROJECTS||[]).forEach(function(dk){ delete REPORTSTATE[dk]; });
-    })();
+    REPORTSTATE=mergeTopicReportStates(REPORTSTATE,data.REPORTSTATE,PROJECTS);
+    (window.DELETED_PROJECTS||[]).forEach(function(dk){ delete REPORTSTATE[dk]; });
+    REPORT_HISTORY=mergeTopicReportHistory(REPORT_HISTORY,data.REPORT_HISTORY,REPORTSTATE,PROJECTS);
     KB_FILE_CHUNKS=_mergeChunks(data.KB_FILE_CHUNKS, KB_FILE_CHUNKS);
     // 【2026-09-18 修复】确认只进不退：整体覆盖会把本地刚点、尚未同步出去的确认冲掉
     _mergeKbItemTombs(data.KB_ITEM_TOMBS);
@@ -432,6 +419,7 @@ window.addEventListener('storage', function(e){
     _mergeTombs(data.KB_CONFIRM_TOMBS);
     KB_CONFIRMS=_mergeConfirms(data.KB_CONFIRMS||{});
     PENDING_CONFIRMS=data.PENDING_CONFIRMS||{};
+    applyTopicStateIntegrity();
     DOCK_LOGS=data.DOCK_LOGS||{};
     KB_UNLOCKED=data.KB_UNLOCKED||{};
 

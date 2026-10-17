@@ -1565,7 +1565,7 @@ function opsDemandResults(){
         '</div>'
       : rs ?
         '<div style="padding:12px 20px;background:#f9fafb;border-bottom:1px solid #f0f4ff">' +
-          '<div style="font-size:12px;color:#8492a6">研判报告已生成（置信度 '+rs.score+'%），需求尚未提交</div>' +
+          '<div style="font-size:12px;color:#8492a6">'+_authEscape(topicScoreDisplay(p.topic,k))+'；需求尚未提交</div>' +
         '</div>'
       : '<div style="padding:12px 20px;background:#f9fafb;border-bottom:1px solid #f0f4ff">' +
           '<div style="font-size:12px;color:#b0bac8">尚未生成研判报告</div>' +
@@ -1849,57 +1849,21 @@ function opsDownloadFile(projKey, fname, originalId){
 
 /* 查看城市研判报告 */
 function opsViewCityReport(projKey){
-  var rs = REPORTSTATE[projKey];
-  if(!rs||!rs.text){ toast('暂无报告'); return; }
-  var p = PROJECTS[projKey];
-  function simpleMd(t){
-    var md=t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    md=md.replace(/\*\*([^*\n]+)\*\*/g,'<strong style="color:#0b183b">$1</strong>');
-    md=md.replace(/⚠️/g,'<span style="color:#d97706;font-weight:600">⚠️</span>');
-    md=md.replace(/✅/g,'<span style="color:#16a34a">✅</span>');
-    md=md.replace(/❌/g,'<span style="color:#dc2626">❌</span>');
-    md=md.replace(/★+/g,function(m){return '<span style="color:#f59e0b">'+m+'</span>';});
-    md=md.replace(/^#{0,3}\s*([一二三四五六七八九十]+)[、]\s*(.+)$/gm,
-      '<div style="display:flex;align-items:center;gap:10px;margin:18px 0 8px;padding-bottom:6px;border-bottom:2px solid #1a56db">'+
-        '<span style="display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;background:#1a56db;color:#fff;border-radius:50%;font-size:12px;font-weight:700">$1</span>'+
-        '<span style="font-size:14px;font-weight:750;color:#0b183b">$2</span></div>');
-    md=md.replace(/^###\s(.+)$/gm,'<div style="font-size:13px;font-weight:700;color:#4a5568;margin:10px 0 4px;padding-left:10px;border-left:3px solid #6366f1">$1</div>');
-    md=md.replace(/^##\s(.+)$/gm,'<div style="font-size:13.5px;font-weight:750;color:#0b183b;margin:12px 0 6px;padding:5px 12px;background:#f8faff;border-radius:8px;border-left:4px solid #1a56db">$1</div>');
-    var outLines=[]; var inTbl=false;
-    md.split('\n').forEach(function(line){
-      var tr=line.trim();
-      if(tr.charAt(0)==='|'&&tr.charAt(tr.length-1)==='|'){
-        if(tr.slice(1,-1).split('|').every(function(c){return /^[\s\-:]+$/.test(c);})) return;
-        var cells=tr.slice(1,-1).split('|').map(function(c){return c.trim();});
-        if(!inTbl){inTbl=true;outLines.push('<div style="overflow-x:auto;margin:10px 0"><table style="width:100%;border-collapse:collapse;font-size:12.5px">');
-          outLines.push('<thead><tr>'+cells.map(function(c){return '<th style="padding:7px 10px;background:#f0f4ff;border:1px solid #dbeafe;font-weight:700;color:#1e3a8a;text-align:left">'+c+'</th>';}).join('')+'</tr></thead><tbody>');}
-        else outLines.push('<tr>'+cells.map(function(c,ci){return '<td style="padding:7px 10px;border:1px solid #e8edf5;color:#1e293b;background:'+(ci===0?'#fafbff':'#fff')+'">'+c+'</td>';}).join('')+'</tr>');
-      } else {if(inTbl){outLines.push('</tbody></table></div>');inTbl=false;} outLines.push(line);}
-    });
-    if(inTbl)outLines.push('</tbody></table></div>');
-    md=outLines.join('\n');
-    md=md.replace(/^[-•]\s(.+)$/gm,'<li style="margin:4px 0;color:#1e293b;list-style:none">$1</li>');
-    var parts=md.split('\n\n');
-    md=parts.map(function(chunk){var c=chunk.trim();if(!c)return '';if(/^<(div|table|ul|li)/.test(c))return c;return '<p style="margin:5px 0;line-height:1.85;color:#1e293b">'+c.replace(/\n/g,'<br>')+'</p>';}).filter(Boolean).join('\n');
-    return md;
-  }
+  var rs=REPORTSTATE[projKey],p=PROJECTS[projKey];
+  if(!rs||!p){toast('暂无报告');return;}
+  var topic=p.topic||rs.topic||'',text=(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'');
+  if(!text){toast('当前方向暂无报告');return;}
+  var stamp=(rs.tsByTopic||{})[topic]||rs.ts;
+  var status=typeof topicScoreDisplay==='function'?topicScoreDisplay(topic,projKey):'内容待核验';
   var layer=document.createElement('div');
+  layer.setAttribute('role','dialog');layer.setAttribute('aria-modal','true');layer.setAttribute('aria-label','产业研判报告');
   layer.onclick=function(e){if(e.target===layer)layer.remove();};
   layer.style.cssText='position:fixed;inset:0;background:rgba(11,24,59,.4);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(3px)';
-  layer.innerHTML=
-    '<div style="background:#fff;border-radius:20px;width:100%;max-width:640px;max-height:85vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(11,24,59,.18)">' +
-      '<div style="padding:16px 20px;border-bottom:1px solid #f0f4ff;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">' +
-        '<div>' +
-          '<div style="font-size:14px;font-weight:750;color:#0b183b">' + p.city + ' · ' + rs.topic + '</div>' +
-          '<div style="font-size:12px;color:#9aa5b5;margin-top:2px">置信度 '+rs.score+'% · '+new Date(rs.ts).toLocaleDateString('zh-CN')+'</div>' +
-        '</div>' +
-        '<button onclick="this.closest(\'[style*=fixed]\').remove()" style="background:none;border:none;font-size:18px;color:#9aa5b5;cursor:pointer">✕</button>' +
-      '</div>' +
-      '<div style="flex:1;overflow-y:auto;padding:20px;font-size:13px;line-height:1.85;color:#1e293b"><p style="margin:0">'+simpleMd(rs.text)+'</p></div>' +
-    '</div>';
+  layer.innerHTML='<div style="background:#fff;border-radius:20px;width:100%;max-width:1000px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(11,24,59,.18)">'+
+    '<div style="padding:18px 24px;border-bottom:1px solid #e4ebf3;display:flex;align-items:center;justify-content:space-between;flex-shrink:0"><div><div style="font-size:16px;font-weight:750;color:#0b183b">'+escapeChainText(p.city)+' · '+escapeChainText(topic)+'</div><div style="font-size:12px;color:#64748b;margin-top:6px">'+escapeChainText(status)+(stamp?' · '+escapeChainText(new Date(stamp).toLocaleDateString('zh-CN')):'')+'</div></div><button aria-label="关闭报告" onclick="this.closest(&quot;[role=dialog]&quot;).remove()" style="background:none;border:1px solid #d9e2ec;border-radius:8px;padding:5px 10px;font-size:18px;color:#64748b;cursor:pointer">✕</button></div>'+
+    '<div style="flex:1;overflow-y:auto;padding:24px"><div class="report-document">'+topicReportMarkup(text)+'</div>'+reportResearchSourcesHtml(p,projKey)+'</div></div>';
   document.body.appendChild(layer);
 }
-
 
 /* == 客户管理：用户与邀请码各自拥有独立入口 == */
 function opsUsers(){

@@ -1400,12 +1400,132 @@ function cancelTopicEdit(){
 /* ── 研判需求页辅助函数 ── */
 
 // 选择研判方向（卡片点击 or 自定义输入）
+function reportStateFields(){
+  return ['aiReportByTopic','phaseByTopic','tsByTopic','researchByTopic','materialDirectoryByTopic','evidenceStatusByTopic','scoreByTopic','userGeneratedTopics','reportByTopic','actionItemsByTopic'];
+}
+
+
+function reportStateStamp(value){return typeof value==='number'&&isFinite(value)&&value>0?value:0;}
+
+function reportTopicStamp(state,topic){return reportStateStamp((state.tsByTopic||{})[topic])||(state.topic===topic?reportStateStamp(state.ts):0);}
+
+function mergeTopicStamps(){
+  var out={};Array.from(arguments).forEach(function(map){Object.keys(map||{}).forEach(function(t){out[t]=Math.max(out[t]||0,reportStateStamp(map[t]));});});return out;
+}
+
+
+function topicLifecycle(){
+  var rows=Array.from(arguments),deleted=mergeTopicStamps.apply(null,rows.map(function(r){return (r||{}).topicDeletedAt;})),created=mergeTopicStamps.apply(null,rows.map(function(r){return (r||{}).topicCreatedAt;}));
+  rows.forEach(function(r){((r||{}).deletedTopics||[]).forEach(function(t){deleted[t]=Math.max(deleted[t]||0,1);});});
+  return {deleted:deleted,created:created};
+}
+
+
+function mergeTopicProjectLifecycle(old,incoming){
+  old=old||{};incoming=incoming||{};var out=Object.assign({},incoming),life=topicLifecycle(old,incoming);
+  out.topicDeletedAt=life.deleted;out.topicCreatedAt=life.created;
+  out.deletedTopics=Object.keys(life.deleted).filter(function(t){return life.deleted[t]>=(life.created[t]||0);});
+  out.customTopics=Array.from(new Set((old.customTopics||[]).concat(incoming.customTopics||[]))).filter(function(t){return out.deletedTopics.indexOf(t)<0;});
+  out.stageByTopic=Object.assign({},old.stageByTopic||{},incoming.stageByTopic||{});
+  out.deletedTopics.forEach(function(t){delete out.stageByTopic[t];});
+  Object.keys(life.created).forEach(function(t){if(life.created[t]>((old.topicCreatedAt||{})[t]||0))out.stageByTopic[t]=(incoming.stageByTopic||{})[t]||2;});
+  Object.keys(life.created).forEach(function(t){if(life.created[t]>((incoming.topicCreatedAt||{})[t]||0))out.stageByTopic[t]=(old.stageByTopic||{})[t]||2;});
+  if(out.aiTopics)out.aiTopics=Object.assign({},out.aiTopics,{list:(out.aiTopics.list||[]).filter(function(t){return t&&out.deletedTopics.indexOf(t.label)<0;})});
+  if(out.deletedTopics.indexOf(out.topic)>=0){out.topic='';out.stage=2;}
+  else if(life.created[out.topic])out.stage=out.stageByTopic[out.topic]||2;
+  return out;
+}
+
+
+function mergeTopicReportState(old,incoming,project){
+  old=old||{};incoming=incoming||{};project=project||{};
+  var fields=reportStateFields(),aux=['pendingByTopic','pendingRevisionByTopic','pendingReportTsByTopic','partialByTopic'];
+  var out=Object.assign({},old,incoming),life=topicLifecycle(project,old,incoming),topics={};
+  out.topicDeletedAt=life.deleted;out.topicCreatedAt=life.created;
+  out.historyDeletedAt=mergeTopicStamps(old.historyDeletedAt,incoming.historyDeletedAt);
+  fields.concat(aux).forEach(function(f){Object.keys(old[f]||{}).concat(Object.keys(incoming[f]||{})).forEach(function(t){topics[t]=true;});out[f]={};});
+  Object.keys(topics).forEach(function(t){
+    var tomb=life.deleted[t]||0,birth=life.created[t]||0;if(tomb&&tomb>=birth)return;
+    var candidates=[old,incoming].filter(function(s){return !birth||reportTopicStamp(s,t)>=birth;});if(!candidates.length)return;
+    var winner=candidates.reduce(function(a,b){return reportTopicStamp(b,t)>reportTopicStamp(a,t)?b:a;}),version=reportTopicStamp(winner,t);
+    fields.forEach(function(f){if(Object.prototype.hasOwnProperty.call(winner[f]||{},t))out[f][t]=winner[f][t];});
+    var editors=candidates.filter(function(s){return reportTopicStamp(s,t)===version&&((s.pendingReportTsByTopic||{})[t]===undefined||s.pendingReportTsByTopic[t]===version);});
+    if(editors.length){var editor=editors.reduce(function(a,b){return reportStateStamp((b.pendingRevisionByTopic||{})[t])>reportStateStamp((a.pendingRevisionByTopic||{})[t])?b:a;});if(!editors.some(function(s){return reportStateStamp((s.pendingRevisionByTopic||{})[t]);}))editor=editors[editors.length-1];['pendingByTopic','pendingRevisionByTopic','pendingReportTsByTopic'].forEach(function(f){if(Object.prototype.hasOwnProperty.call(editor[f]||{},t))out[f][t]=editor[f][t];});}
+    var parts=candidates.map(function(s){return (s.partialByTopic||{})[t];}).filter(function(p){return p&&reportStateStamp(p.ts)>version&&(p.reportTs===undefined||p.reportTs===version);});
+    if(parts.length)out.partialByTopic[t]=parts.reduce(function(a,b){return reportStateStamp(b.ts)>reportStateStamp(a.ts)?b:a;});
+  });
+  var topic=incoming.topic||old.topic||'';if(life.deleted[topic]&&life.deleted[topic]>=(life.created[topic]||0))topic='';out.topic=topic;
+  var viewOwner=reportTopicStamp(incoming,topic)>=reportTopicStamp(old,topic)?incoming:old;
+  [['text','aiReportByTopic',''],['phase','phaseByTopic',1],['ts','tsByTopic',0],['score','scoreByTopic',null]].forEach(function(row){var fallback=viewOwner.topic===topic?(viewOwner[row[0]]===undefined?(old[row[0]]===undefined?row[2]:old[row[0]]):viewOwner[row[0]]):row[2];out[row[0]]=Object.prototype.hasOwnProperty.call(out[row[1]],topic)?out[row[1]][topic]:(topic?fallback:row[2]);});
+  ['chainByTopic','chainEvidenceByTopic','chainStatusByTopic','chainUnclassifiedByTopic','chainErrorByTopic'].forEach(function(f){
+    // Incoming server graph data remains authoritative; tombstones only remove.
+    if(out[f]){out[f]=Object.assign({},out[f]);Object.keys(out[f]).forEach(function(t){if((life.deleted[t]&&life.deleted[t]>=(life.created[t]||0))||((life.created[t]||0)>reportTopicStamp(out,t)))delete out[f][t];});}
+  });
+  var currentVersion=Math.max(reportTopicStamp(old,topic),reportTopicStamp(incoming,topic));
+  out.finalized=!!out.text&&[old,incoming].some(function(s){return s.topic===topic&&reportTopicStamp(s,topic)===currentVersion&&s.finalized;});return out;
+}
+
+
+function mergeTopicReportStates(old,incoming,projects){
+  var out={};Object.keys(Object.assign({},old||{},incoming||{})).forEach(function(k){
+    var a=(old||{})[k]||{},b=(incoming||{})[k]||{};
+    out[k]=reportStateFields().some(function(f){return a[f]||b[f];})?mergeTopicReportState(a,b,(projects||{})[k]):Object.assign({},a,b);
+  });return out;
+}
+
+
+function applyTopicStateIntegrity(){
+  Object.keys(PROJECTS||{}).forEach(function(k){PROJECTS[k]=mergeTopicProjectLifecycle(PROJECTS[k],PROJECTS[k]);});
+  REPORTSTATE=mergeTopicReportStates(REPORTSTATE,{},PROJECTS);
+  REPORT_HISTORY=mergeTopicReportHistory(REPORT_HISTORY,{},REPORTSTATE,PROJECTS);
+  Object.keys(REPORTSTATE).forEach(function(k){var state=REPORTSTATE[k],topic=(PROJECTS[k]||{}).topic;if(state.pendingByTopic)PENDING_CONFIRMS[k]=state.pendingByTopic[topic]||[];});
+}
+
+
+function mergeTopicReportHistory(old,incoming,states,projects){
+  var out={};Object.keys(Object.assign({},old||{},incoming||{})).forEach(function(k){
+    var state=(states||{})[k]||{},life=topicLifecycle(state,(projects||{})[k]),seen={};out[k]=[];
+    ((old||{})[k]||[]).concat((incoming||{})[k]||[]).forEach(function(h){
+      if(!h)return;var ts=reportStateStamp(h.ts),id=(h.topic||'')+'\u0000'+ts;
+      if(seen[id]||(state.historyDeletedAt||{})[id]||ts<=(life.deleted[h.topic]||-1)||ts<(life.created[h.topic]||0))return;
+      seen[id]=true;out[k].push(h);
+    });out[k].sort(function(a,b){return reportStateStamp(b.ts)-reportStateStamp(a.ts);});out[k]=out[k].slice(0,10);
+  });return out;
+}
+
+
+function topicOperationStamp(key,topic){
+  var p=PROJECTS[key]||{},s=REPORTSTATE[key]||{};
+  return Math.max(Date.now(),reportTopicStamp(s,topic)+1,((s.pendingRevisionByTopic||{})[topic]||0)+1,((p.topicDeletedAt||{})[topic]||0)+1,((p.topicCreatedAt||{})[topic]||0)+1);
+}
+
+
+function touchTopicPending(key,topic){
+  var state=REPORTSTATE[key];if(!state)return;
+  state.pendingRevisionByTopic=state.pendingRevisionByTopic||{};state.pendingReportTsByTopic=state.pendingReportTsByTopic||{};
+  state.pendingRevisionByTopic[topic]=topicOperationStamp(key,topic);state.pendingReportTsByTopic[topic]=reportTopicStamp(state,topic);
+}
+
+
+function clearTopicReportData(key,topic){
+  var state=REPORTSTATE[key]||{},p=PROJECTS[key]||{};
+  reportStateFields().concat(['pendingByTopic','pendingRevisionByTopic','pendingReportTsByTopic','partialByTopic','chainByTopic','chainEvidenceByTopic','chainStatusByTopic','chainUnclassifiedByTopic','chainErrorByTopic']).forEach(function(f){if(state[f])delete state[f][topic];});
+  if(state.topic===topic){state.text='';state.topic='';state.phase=1;state.ts=0;state.score=null;state.finalized=false;}
+  if(p.stageByTopic)delete p.stageByTopic[topic];
+  if(typeof REPORT_HISTORY!=='undefined'&&REPORT_HISTORY[key])REPORT_HISTORY[key]=REPORT_HISTORY[key].filter(function(h){return h&&h.topic!==topic;});
+  if(p.topic===topic&&typeof PENDING_CONFIRMS!=='undefined')PENDING_CONFIRMS[key]=[];
+}
+
+
 function selectTopic(val,isCustom){
   var p=P();if(!p||!val||!val.trim())return;
   var rs=REPORTSTATE[cur],old=p.topic;
   if(rs&&old){rs.pendingByTopic=rs.pendingByTopic||{};rs.pendingByTopic[old]=currentPendingItems(cur);}
   p.topic=val.trim();
-  if(isCustom){p.customTopics=p.customTopics||[];if(p.customTopics.indexOf(p.topic)<0)p.customTopics.push(p.topic);}
+  if(isCustom){
+    if((p.topicDeletedAt||{})[p.topic]||(p.deletedTopics||[]).indexOf(p.topic)>=0){var born=topicOperationStamp(cur,p.topic);clearTopicReportData(cur,p.topic);p.topicCreatedAt=p.topicCreatedAt||{};p.topicCreatedAt[p.topic]=born;}
+    p.deletedTopics=(p.deletedTopics||[]).filter(function(t){return t!==p.topic;});p.customTopics=p.customTopics||[];if(p.customTopics.indexOf(p.topic)<0)p.customTopics.push(p.topic);
+  }
   if(rs){rs.text=reportTextForTopic(p.topic)||'';rs.topic=p.topic;PENDING_CONFIRMS[cur]=(rs.pendingByTopic||{})[p.topic]||[];}
   persist();render();
 }
@@ -1498,13 +1618,14 @@ function reportHistoryScoreDisplay(rep,key){
   return score===null?'内容待核验':score+'%';
 }
 
-function archiveCurrentReport(key){
+function archiveCurrentReport(key,topic){
   var rs=REPORTSTATE[key];
   if(!rs) return;
-  var text=(rs.aiReportByTopic||{})[rs.topic]||rs.text;
+  topic=topic||rs.topic;
+  var text=(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'');
   if(!text) return;
   if(!REPORT_HISTORY[key]) REPORT_HISTORY[key]=[];
-  var record=reportHistoryRecord(key,rs.topic,text);
+  var record=reportHistoryRecord(key,topic,text);
   var existing=REPORT_HISTORY[key].findIndex(function(h){return h.topic===record.topic&&h.ts===record.ts;});
   if(existing>=0) REPORT_HISTORY[key][existing]=record;
   else REPORT_HISTORY[key].unshift(record);
@@ -1514,8 +1635,13 @@ function archiveCurrentReport(key){
 
 function deleteHistoryReport(key, idx){
   if(!REPORT_HISTORY[key]) return;
+  var _h=REPORT_HISTORY[key][idx]; var _label=_h&&_h.topic?('「'+_h.topic+'」'):'该条';
+  if(!confirm('确定删除'+_label+'历史报告？删除后无法恢复。')) return;
+  var state=REPORTSTATE[key]||(REPORTSTATE[key]={});state.historyDeletedAt=state.historyDeletedAt||{};
+  if(_h)state.historyDeletedAt[(_h.topic||'')+'\u0000'+(Number(_h.ts)||0)]=topicOperationStamp(key,_h.topic||'');
   REPORT_HISTORY[key].splice(idx,1);
   saveReportHistory();
+  persist();
   renderHistoryReports(key);
 }
 
@@ -1531,6 +1657,7 @@ function toggleHistoryReport(key, idx){
 function renderHistoryReports(key){
   var container=document.getElementById('reportHistoryArea');
   if(!container) return;
+  REPORT_HISTORY=mergeTopicReportHistory(REPORT_HISTORY,{},REPORTSTATE,PROJECTS);
   var list=REPORT_HISTORY[key]||[];
   if(!list.length){container.innerHTML='';return;}
   var h='<div style="margin-bottom:12px">';
@@ -1694,7 +1821,7 @@ function updateConfirmProgress(projKey){
 /* 确认一条 */
 function cfmItem(projKey, idx){
   var items=currentPendingItems(projKey);if(!items[idx])return;
-  items[idx].status = 'confirmed';
+  items[idx].status = 'confirmed';touchTopicPending(projKey,PROJECTS[projKey].topic);
   var card = document.getElementById('ci-'+projKey+'-'+idx);
   if(card){
     var item = PENDING_CONFIRMS[projKey][idx];
@@ -1715,7 +1842,7 @@ function cfmItem(projKey, idx){
 /* 撤回确认 */
 function uncfmItem(projKey, idx){
   var items=currentPendingItems(projKey);if(!items[idx])return;
-  items[idx].status = 'pending';
+  items[idx].status = 'pending';touchTopicPending(projKey,PROJECTS[projKey].topic);
   // 重新渲染整个面板
   var panel = document.getElementById('confirmPanel-'+projKey);
   if(panel){
@@ -1749,7 +1876,7 @@ function ciSave(projKey, idx){
   if(!ta||!ta.value.trim()) return;
   var item = currentPendingItems(projKey)[idx];if(!item)return;
   item.editedText = ta.value.trim();
-  item.status = 'edited';
+  item.status = 'edited';touchTopicPending(projKey,PROJECTS[projKey].topic);
   var card = document.getElementById('ci-'+projKey+'-'+idx);
   if(card){
     var displayText = item.editedText;
@@ -1780,13 +1907,14 @@ function ciFileSelected(inp, projKey, idx){
   if(files.length) ciAttachFiles(files, projKey, idx);
 }
 function ciAttachFiles(files, projKey, idx){
-  var epoch=originalUploadEpoch(),item=currentPendingItems(projKey)[idx];if(!item||cur!==projKey)return;
+  var epoch=originalUploadEpoch(),topic=(PROJECTS[projKey]||{}).topic,item=currentPendingItems(projKey)[idx];if(!item||cur!==projKey)return;
   var hint=document.getElementById('ci-file-hint-'+projKey+'-'+idx);
   if(hint)hint.textContent='正在保存附件原件…';
   return ingestFiles(files,null).then(function(saved){
     if(!originalUploadSessionCurrent(epoch))return;
     if(!item.files)item.files=[];
     saved.forEach(function(f){item.files.push(f._originalReceipt.upload);});
+    touchTopicPending(projKey,topic);
     if(cur===projKey&&hint)hint.textContent='已保存 '+saved.length+' 个附件原件';
     persist();
   });
@@ -1886,46 +2014,81 @@ function triggerReport(phase){
   if(window._topicReportJobs[jobKey]){toast('当前方向正在生成，请稍候');return;}
   var epoch=typeof _authEpoch==='undefined'?null:_authEpoch;
   var requestId=p.reportRequestId||'';
+  var baseReportTs=reportTopicStamp(REPORTSTATE[key]||{},topic);
+  var topicBirth=(p.topicCreatedAt||{})[topic]||0,topicDeath=(p.topicDeletedAt||{})[topic]||0;
+  var materialIdentity=reportMaterialIdentity(key,topic),clientFingerprint='';
+  var materialDirectory=typeof captureReportMaterialDirectory==='function'?captureReportMaterialDirectory(key,topic):null;
   var controller=new AbortController(),started=Date.now(),text='';
   window._topicReportJobs[jobKey]=controller;window._reportGenerating=true;
-  try{p.topic=topic;persist();}catch(error){delete window._topicReportJobs[jobKey];updateReportBusy();toast('本地保存未完成，请重试');return Promise.resolve();}
+  window._topicReportProgress=window._topicReportProgress||{};
+  window._topicReportProgress[jobKey]={phase:phase,message:'正在准备当前方向材料…',text:''};
+  try{p.topic=topic;persist();}catch(error){delete window._topicReportJobs[jobKey];delete window._topicReportProgress[jobKey];updateReportBusy();toast('本地保存未完成，请重试');return Promise.resolve();}
   var query=phase===1
     ? '请基于'+p.city+'城市智库，针对「'+topic+'」输出简短草稿：三个关键缺口、三个招引方向、三个以⚠️开头的待确认事项和证据边界。事实与推断分开，没有证据写待核，不能写成不存在。'+(window._interviewContext?'\n访谈补充：'+window._interviewContext:'')
     : '请基于'+p.city+'城市智库，针对「'+topic+'」输出五章招商研判：一、产业基础判断；二、产业链缺口分析；三、补链优先级清单；四、目标企业画像；五、待确认事项。数字、政策门槛和有效期必须保留原文完整条件，并给出来源。不得将未检索到改写为不存在，不得将待核或推断改成事实。已确认事项：\n'+gate.items.map(function(x){return x.editedText||x.text;}).join('\n');
   var chunks;
   try{
     var corpus=buildKBCorpus(p.city);chunks=kbSearch(query,corpus,phase===1?8:20);
-    setReportAreaHtml(area,'<div class="report-document"><h2>'+(phase===1?'初步研判草稿':'完整产业研判')+'</h2><p id="reportRunStatus">正在读取当前方向材料，生成结果将即时显示…</p><div id="reportContent"></div></div>');
-  }catch(error){delete window._topicReportJobs[jobKey];updateReportBusy();toast('读取本地材料未完成，请重试');return Promise.resolve();}
-  function active(){return PROJECTS[key] && (PROJECTS[key].reportRequestId||'')===requestId && (epoch===null || epoch===_authEpoch);}
+    setReportAreaHtml(area,'<div class="report-document industry-report industry-prose"><h2>'+(phase===1?'初步研判草稿':'完整产业研判')+'</h2><p id="reportRunStatus">正在读取当前方向材料，检索与来源核对完成后显示研判…</p><div id="reportContent"></div></div>');
+    refreshReportRunUi();
+  }catch(error){delete window._topicReportJobs[jobKey];delete window._topicReportProgress[jobKey];updateReportBusy();toast('读取本地材料未完成，请重试');return Promise.resolve();}
+  function active(){return PROJECTS[key] && (PROJECTS[key].reportRequestId||'')===requestId && ((PROJECTS[key].topicCreatedAt||{})[topic]||0)===topicBirth && ((PROJECTS[key].topicDeletedAt||{})[topic]||0)===topicDeath && (epoch===null || epoch===_authEpoch);}
   function visible(){return active() && cur===key && P() && P().topic===topic;}
-  function showStatus(message){if(visible()){var el=document.getElementById('reportRunStatus');if(el)el.textContent=message;}}
+  function materialsCurrent(){return reportMaterialIdentity(key,topic)===materialIdentity;}
+  function changedError(){var e=new Error('材料或确认事项已更新，本次结果未写入，请按最新材料重新生成');e.sourceChanged=true;return e;}
+  function showStatus(message){
+    var job=(window._topicReportProgress||{})[jobKey];if(job)job.message=message;
+    if(visible())refreshReportRunUi();
+  }
   function retainPartial(part,reason){
-    if(!active())return;
+    if(!active()||reportTopicStamp(REPORTSTATE[key]||{},topic)!==baseReportTs)return;
     var rs=REPORTSTATE[key]||(REPORTSTATE[key]={});
     rs.partialByTopic=rs.partialByTopic||{};
-    rs.partialByTopic[topic]={text:part||'',reason:reason,ts:Date.now(),phase:phase,status:'incomplete'};
+    rs.partialByTopic[topic]={text:part||'',reason:reason,ts:topicOperationStamp(key,topic),reportTs:baseReportTs,phase:phase,status:'incomplete'};
     persist();
   }
-  var timeout=setTimeout(function(){controller.abort();},phase===2?180000:90000);
-  return syncTopicReportInputs().then(function(){
+  var timeout=setTimeout(function(){controller.abort();},phase===2?240000:180000);
+  return reportClientFingerprint(materialIdentity).then(function(value){
+    clientFingerprint=value;
+    if(!materialsCurrent())throw changedError();
+    return syncTopicReportInputs();
+  }).then(function(){
     if(!active())throw new Error('登录状态已变更，本次生成已停止');
+    if(!materialsCurrent())throw changedError();
     return fetch('/api/kb-chat',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,
-    body:JSON.stringify({question:query,chunks:chunks,city:p.city,stream:true,mode:phase===1?'draft':'full',prefs:curOnbPrefs(),purpose:phase===2?'topic_full':'topic_draft',projectKey:key,topic:topic,reportRequestId:requestId||null,confirmations:phase===2?gate.items:[]})
+    body:JSON.stringify({question:query,chunks:chunks,city:p.city,stream:true,mode:phase===1?'draft':'full',prefs:curOnbPrefs(),purpose:phase===2?'topic_full':'topic_draft',projectKey:key,topic:topic,reportRequestId:requestId||null,confirmations:phase===2?gate.items:[],clientMaterialFingerprint:clientFingerprint})
     });
   }).then(function(response){
-    if(!response.ok)throw new Error('服务未接受请求（'+response.status+'）');
-    showStatus('正在生成，已返回内容实时展示');
-    return readTopicReportStream(response,function(value){text=value;if(visible()){var el=document.getElementById('reportContent');if(el)el.innerHTML=topicReportMarkup(value);}});
+    if(!response.ok){
+      return response.json().catch(function(){return {};}).then(function(error){throw new Error(typeof error.message==='string'?error.message.slice(0,500):'服务未接受请求（'+response.status+'）');});
+    }
+    showStatus('正在研究当前方向，检索与来源核对进展将在此显示');
+    return readTopicReportStream(response,function(value){
+      text=value;var job=(window._topicReportProgress||{})[jobKey];if(job)job.text=value;
+      if(visible()){var el=document.getElementById('reportContent');if(el)el.innerHTML=topicReportMarkup(value);}
+    },function(event,metadata){
+      if(metadata.clientMaterialFingerprint&&metadata.clientMaterialFingerprint!==clientFingerprint){controller.abort();throw changedError();}
+      if(event.type==='research.status'&&event.message)showStatus(event.message);
+      else if(event.type==='research.evidence')showStatus('已读取 '+metadata.sources.length+' 条来源，继续核对并整理研判');
+    });
   }).then(function(result){
     if(!active())return;
+    if(!materialsCurrent())throw changedError();
+    if(reportTopicStamp(REPORTSTATE[key]||{},topic)!==baseReportTs)throw changedError();
+    if(result.metadata&&result.metadata.clientMaterialFingerprint&&result.metadata.clientMaterialFingerprint!==clientFingerprint)throw changedError();
     text=result.text;
     if(phase===2 && !isCompleteTopicReport(text)){var e=new Error('本次正文未包含完整五章，已保留为未完成内容');e.partialText=text;throw e;}
     var rs=REPORTSTATE[key]||(REPORTSTATE[key]={});
-    if(typeof archiveCurrentReport==='function')archiveCurrentReport(key);
-    var now=Date.now();
+    if(typeof archiveCurrentReport==='function')archiveCurrentReport(key,topic);
+    var now=topicOperationStamp(key,topic);
     ['aiReportByTopic','phaseByTopic','tsByTopic','scoreByTopic','userGeneratedTopics','pendingByTopic'].forEach(function(field){rs[field]=rs[field]||{};});
     rs.aiReportByTopic[topic]=text;rs.phaseByTopic[topic]=phase;rs.tsByTopic[topic]=now;
+    rs.researchByTopic=rs.researchByTopic||{};
+    rs.researchByTopic[topic]=Object.assign({},result.metadata||{},{topic:topic,reportText:text,clientMaterialFingerprint:clientFingerprint,generatedAt:now});
+    if(materialDirectory){
+      materialDirectory.reportText=text;rs.materialDirectoryByTopic=rs.materialDirectoryByTopic||{};
+      rs.materialDirectoryByTopic[topic]=materialDirectory;
+    }
     rs.userGeneratedTopics[topic]=true;
     if(rs.chainByTopic)delete rs.chainByTopic[topic];
     if(rs.chainEvidenceByTopic)delete rs.chainEvidenceByTopic[topic];
@@ -1940,21 +2103,28 @@ function triggerReport(phase){
       rs.pendingByTopic[topic]=parsePendingItems(text).map(function(item){return previous.find(function(x){return x.text===item.text;})||item;});
       if(visible())PENDING_CONFIRMS[key]=rs.pendingByTopic[topic];
     }
-    if(visible()){rs.text=text;rs.topic=topic;rs.phase=phase;rs.ts=now;rs.score=null;}
-    persist();showStatus('生成完成 · '+Math.round((Date.now()-started)/1000)+'秒 · 请核对来源和待确认事项');
-    if(visible())toast(phase===1?'草稿已完成，请确认当前方向事项':'完整研判已完成');
+    touchTopicPending(key,topic);
+    if(visible()){rs.text=text;rs.topic=topic;rs.phase=phase;rs.ts=now;rs.score=null;rs.finalized=false;}
+    persist();showStatus('正文已生成，正在确认云端保存…');
+    return syncTopicReportInputs().then(function(){
+      var analysis=(rs.researchByTopic[topic]||{}).analysis||{};
+      var label=analysis.status==='evidence_only'?'资料摘要已保存 · 研判依据待补':analysis.status==='supported_analysis'?'研判已生成 · 结论待核验':phase===1?'草稿已保存，请确认当前方向事项':'报告已保存 · 请核对来源和结论';
+      showStatus(label+' · '+Math.round((Date.now()-started)/1000)+'秒');if(visible())toast(label);
+    },function(error){error.localReportSaved=true;throw error;});
   }).catch(function(error){
-    retainPartial(error.partialText||text,error.message);
-    showStatus('本次生成未完成，原正式报告已保留；可重试。');
+    if(error.localReportSaved){showStatus('报告已保存在本机，云端保存未确认；请重试同步。');if(visible())toast('报告已保存在本机，云端保存未确认；请重试同步。');return;}
+    if(!error.sourceChanged&&materialsCurrent())retainPartial(error.partialText||text,error.message);
+    showStatus(error.sourceChanged?error.message:'本次生成未完成，原正式报告已保留；可重试。');
     if(visible())toast(error.name==='AbortError'?'生成连接超时，未完成内容已保留':error.message);
   }).finally(function(){
     clearTimeout(timeout);delete window._topicReportJobs[jobKey];
+    delete window._topicReportProgress[jobKey];
     updateReportBusy();
     if(visible())render();
   });
 }
 
-// 提交招引需求到管理端需求池
+
 function submitDemand(){
   var p=P(); if(!p) return;
   var topic=p.topic;
@@ -2081,7 +2251,7 @@ function homePage(p){
           '<span style="font-size:12px;font-weight:650;color:'+(r.score>=80?'#166534':'#92400e')+'">从城市智库继承数据</span>'+
           '<span style="font-size:11px;color:'+(r.score>=80?'#22c55e':'#f59e0b')+';font-weight:700">'+r.score+'%</span>'+
           '<span style="font-size:11px;color:'+(r.score>=80?'#22c55e':'#f59e0b')+'">'+r.label+'</span>'+
-          '<span title="置信度计算：确认⚠️事项×60% + 上传材料×10%（上限40%）。确认全部4条→+60，上传2份材料→+20，合计80%自动解锁" style="font-size:11px;color:#9aa5b5;cursor:help;text-decoration:underline dotted;margin-left:4px">ⓘ 如何提升</span>'+
+          '<span title="仅表示材料覆盖与流程准备情况，不代表事实正确率。补充原始材料，并逐条核实待确认事项。" style="font-size:11px;color:#9aa5b5;cursor:help;text-decoration:underline dotted;margin-left:4px">ⓘ 如何提升</span>'+
         '</div>'+
         '<div style="height:4px;background:'+(r.score>=80?'#dcfce7':'#fef3c7')+';border-radius:2px;overflow:hidden">'+
           '<div style="height:100%;width:'+r.score+'%;background:'+(r.score>=80?'#22c55e':'#f59e0b')+';border-radius:2px;transition:width .4s"></div>'+
@@ -2196,7 +2366,7 @@ function kbPage(p){
           '</div>'+
           '<span style="font-size:12px;font-weight:700;color:'+r.color+'">'+r.score+'%</span>'+
           '<span style="font-size:11px;color:'+r.color+'">'+r.label+'</span>'+
-          '<span title="计算方式：确认⚠️事项×60% + 上传材料×10%（上限40%）" '+
+          '<span title="此进度只表示流程准备情况；确认操作和上传数量不能证明事实正确。" '+
             'style="font-size:11px;color:#9aa5b5;cursor:help;margin-left:2px">ⓘ</span>'+
         '</div>'+
         (r.score<80?'<p style="font-size:11.5px;color:#f59e0b;margin:5px 0 0">'+          '⚡ 上传越多材料、领导确认越多结论，研判数据可靠性越高（差 '+(80-r.score)+'% 自动解锁后续步骤）</p>':'')+
@@ -2283,6 +2453,120 @@ function topicReportMarkup(text){
 }
 
 
+function reportMaterialIdentity(key,topic){
+  var p=PROJECTS[key];if(!p)return null;
+  var rs=REPORTSTATE[key]||{},root=p.workspaceId||key,keys=root===key?[key]:[root,key];
+  function stable(v){
+    if(Array.isArray(v))return v.map(stable);
+    if(v&&typeof v==='object'){var out={};Object.keys(v).sort().forEach(function(k){if(v[k]!==undefined)out[k]=stable(v[k]);});return out;}
+    return v;
+  }
+  var materials=keys.map(function(k){return {key:k,kb:(PROJECTS[k]||{}).kb||[],
+    edits:typeof KB_EDITS!=='undefined'?KB_EDITS[k]||{}:{},
+    chunks:typeof KB_FILE_CHUNKS!=='undefined'?KB_FILE_CHUNKS[k]||[]:[],
+    uploads:typeof UPLOADS!=='undefined'?UPLOADS[k]||[]:[]};});
+  return JSON.stringify(stable({workspace:root,city:p.city||'',topic:topic,requestId:p.reportRequestId||'',
+    materials:materials,onboarding:p.onboarding||{},confirmations:(rs.pendingByTopic||{})[topic]||[],
+    previousReport:(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'')||''}));
+}
+
+async function reportClientFingerprint(identity){
+  var provider=typeof crypto!=='undefined'?crypto:(typeof window!=='undefined'?window.crypto:null);
+  if(!provider||!provider.subtle)throw new Error('当前浏览器无法校验材料版本，请使用安全连接后重试');
+  var bytes=await provider.subtle.digest('SHA-256',new TextEncoder().encode(identity));
+  return Array.from(new Uint8Array(bytes)).map(function(b){return ('0'+b.toString(16)).slice(-2);}).join('');
+}
+
+function reportJobForTopic(key,topic){
+  return (window._topicReportProgress||{})[key+'\u0000'+topic]||null;
+}
+
+function reportRunBanner(p){
+  var job=p&&reportJobForTopic(cur,p.topic);
+  if(!job)return '';
+  return '<div id="industryRunBanner" class="industry-run-banner" role="status" aria-live="polite">'+
+    '<span class="industry-run-spinner" aria-hidden="true"></span><div><strong>'+(job.phase===2?'完整报告生成中':'初步草稿生成中')+'</strong>'+
+    '<span id="industryRunMessage">'+escapeChainText(job.message||'正在准备当前方向材料…')+'</span></div></div>';
+}
+
+function refreshReportRunUi(){
+  var p=P();if(!p)return;
+  var job=reportJobForTopic(cur,p.topic),message=job&&job.message||'';
+  ['reportRunStatus','industryRunMessage','industryBottomRunMessage','industryDetailRunMessage'].forEach(function(id){
+    var el=document.getElementById(id);if(el&&job)el.textContent=message;
+  });
+  if(!document.querySelector)return;
+  var host=document.getElementById('industryRunHost');if(host)host.innerHTML=reportRunBanner(p);
+  var bar=document.querySelector('.report-bottom-bar');
+  if(bar&&typeof reportBottomBarInner==='function')bar.innerHTML=reportBottomBarInner(p);
+  var detail=document.querySelector('.detail-page');
+  if(detail&&typeof detailReport==='function')detail.innerHTML=detailReport(p);
+}
+
+function reportSourceDate(value,withTime){
+  var text=typeof value==='string'?value.trim():'';
+  if(!text)return '未知';
+  var parts=text.match(/^(\d{4})-(\d{2})-(\d{2})(?:[Tt ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:[Zz]|[+-]\d{2}:?\d{2})?)?$/);
+  if(!parts)return text;
+  var date=new Date(text),calendar=new Date(0);
+  calendar.setUTCFullYear(Number(parts[1]),Number(parts[2])-1,Number(parts[3]));
+  calendar.setUTCHours(0,0,0,0);
+  if(!Number.isFinite(date.getTime())||calendar.getUTCFullYear()!==Number(parts[1])||calendar.getUTCMonth()!==Number(parts[2])-1||calendar.getUTCDate()!==Number(parts[3]))return text;
+  if(!withTime)return parts[1]+'-'+parts[2]+'-'+parts[3];
+  function pad(n){return String(n).padStart(2,'0');}
+  return String(date.getFullYear()).padStart(4,'0')+'-'+pad(date.getMonth()+1)+'-'+pad(date.getDate())+' '+pad(date.getHours())+':'+pad(date.getMinutes());
+}
+
+function reportResearchSourcesHtml(p,key){
+  key=key||cur;if(!p)return '';
+  var rs=REPORTSTATE[key]||{},record=(rs.researchByTopic||{})[p.topic];
+  var text=(rs.aiReportByTopic||{})[p.topic]||(rs.topic===p.topic?rs.text:'');
+  if(!record||record.topic!==p.topic||record.reportText!==text||!Array.isArray(record.sources)||!record.sources.length)return '';
+  var rows=record.sources.map(function(source,index){
+    var url=reportSafeSourceUrl(source.url),label=escapeChainText(source.label||'S'+(index+1));
+    var support={cross_checked:'交叉支持',single_source:'单源待复核'}[source.support_status]||'未核实';
+    return '<li><div class="industry-source-heading"><span>'+label+'</span>'+
+      (source.archived===true?'<div style="font-size:10px;color:#8294a5">公开原文库命中 · 非本次联网抓取'+(source.fulltext_scope?' · PDF摘录范围：'+escapeChainText(source.fulltext_scope):'')+'</div>':'')+
+    (url?'<a href="'+escapeChainText(url)+'" target="_blank" rel="noopener noreferrer">'+escapeChainText(source.title||url)+'</a>':'<strong>'+escapeChainText(source.title||'来源未提供链接')+'</strong>')+'</div>'+
+      '<div class="industry-source-date">'+(source.published_at?'发布：'+escapeChainText(reportSourceDate(source.published_at,false))+' · ':'')+
+      (source.retrieved_at?'检索：'+escapeChainText(reportSourceDate(source.retrieved_at,true))+' · ':'')+support+'</div>'+
+      (source.quote?'<blockquote>'+escapeChainText(source.quote)+'</blockquote>':'')+'</li>';
+  }).join('');
+  return '<details class="industry-sources"><summary>本次报告来源 <span>'+record.sources.length+' 条</span></summary>'+
+    '<p>以下为本次生成保存的来源与摘录；来源可追溯不等于事实已核验。检索时间为本地时间。</p><ol>'+rows+'</ol></details>';
+}
+
+function reportSafeSourceUrl(value){
+  if(typeof value!=='string'||/[\s<>"'\\]/.test(value))return '';
+  try{var u=new URL(value);return /^https?:$/.test(u.protocol)&&!u.username&&!u.password?u.href:'';}catch(e){return '';}
+}
+
+function reportStreamMetadataEvent(metadata,event){
+  if(event.fingerprint)metadata.fingerprint=String(event.fingerprint).slice(0,256);
+  if(event.clientMaterialFingerprint)metadata.clientMaterialFingerprint=String(event.clientMaterialFingerprint).slice(0,256);
+  if(event.runId)metadata.runId=String(event.runId).slice(0,256);
+  ['researchStatus','verificationStatus'].forEach(function(k){if(typeof event[k]==='string')metadata[k]=event[k].slice(0,100);});
+  if(event.type==='research.status'&&typeof event.message==='string')metadata.message=event.message.slice(0,1000);
+  if(event.type==='research.evidence'&&Array.isArray(event.sources)){
+    metadata.sources=event.sources.slice(0,100).filter(function(x){return x&&typeof x==='object';}).map(function(x){
+      var row={};['id','label','url','title','published_at','retrieved_at','quote','status','support_status','source_status','verification_status','source_type','source_id','origin_id','publisher_id','archive_retrieved_at','fulltext_scope','fulltext_sha256','website_attestation'].forEach(function(k){if(typeof x[k]==='string')row[k]=x[k].slice(0,k==='quote'?16000:4096);});
+      if(typeof x.archived==='boolean')row.archived=x.archived;
+      if(typeof x.pdf_page==='string'||typeof x.pdf_page==='number')row.pdf_page=x.pdf_page;
+      if(x.website_attestation&&typeof x.website_attestation==='object'&&!Array.isArray(x.website_attestation)){
+        var attestation={};['domain','website_host','evidence_id','source_id','url','website_text'].forEach(function(k){if(typeof x.website_attestation[k]==='string')attestation[k]=x.website_attestation[k].slice(0,4096);});
+        if(Object.keys(attestation).length)row.website_attestation=attestation;
+      }
+      return row;
+    });
+  }
+  if(event.type==='research.complete'){
+    if(typeof event.status==='string')metadata.status=event.status.slice(0,100);
+    if(event.checks&&typeof event.checks==='object')metadata.checks=event.checks;
+    ['errors','queries','issues'].forEach(function(k){if(Array.isArray(event[k]))metadata[k]=event[k];});
+    ['analysis','publicResearch'].forEach(function(k){if(event[k]&&typeof event[k]==='object')metadata[k]=JSON.parse(JSON.stringify(event[k]));});
+  }
+}
+
 function viewPartialReport(){
   var p=P(), rs=REPORTSTATE[cur]||{};
   var part=p && rs.partialByTopic && rs.partialByTopic[p.topic];
@@ -2292,7 +2576,7 @@ function viewPartialReport(){
 
 
 async function readTopicReportStream(response, onText, onEvent){
-  var text='', finish='', failure='', buffer='', ended=false;
+  var text='', finish='', failure='', buffer='', ended=false,metadata={sources:[]};
   function line(raw){
     if(raw.indexOf('data:')!==0)return;
     var data=raw.slice(5).trim();
@@ -2300,6 +2584,10 @@ async function readTopicReportStream(response, onText, onEvent){
     if(data==='[DONE]'){ended=true;return;}
     var event;try{event=JSON.parse(data);}catch(e){failure='响应格式不完整';return;}
     if(event.error){failure=event.error&&typeof event.error.message==='string'?event.error.message.slice(0,500):'生成服务未完成本次请求';return;}
+    if(/^research\.(status|evidence|complete)$/.test(event.type||'')){
+      reportStreamMetadataEvent(metadata,event);
+      if(typeof onEvent==='function')onEvent(event,metadata);
+    }
     if(/^chain\.(result|status)$/.test(event.type||'')&&typeof onEvent==='function')onEvent(event);
     var choice=(event.choices||[])[0]||{};
     var delta=(choice.delta||{}).content;
@@ -2323,9 +2611,8 @@ async function readTopicReportStream(response, onText, onEvent){
     var error=new Error(failure||(!text.trim()?'服务未返回正文':'连接结束，但服务没有确认生成完成'));
     error.partialText=text;throw error;
   }
-  return {text:text,finishReason:finish,transportEnded:ended};
+  return {text:text,finishReason:finish,transportEnded:ended,metadata:metadata};
 }
-
 
 async function syncTopicReportInputs(capturedSnapshot){
   if(window._syncTimer){clearTimeout(window._syncTimer);window._syncTimer=null;}
@@ -2476,6 +2763,9 @@ function topicScoreLabel(topic, projKey){
 
 
 function topicScoreDisplay(topic,key){
+  var analysis=(((REPORTSTATE[key||cur]||{}).researchByTopic||{})[topic]||{}).analysis;
+  if(analysis&&analysis.status==='evidence_only')return '资料摘要 · 研判依据待补';
+  if(analysis&&analysis.status==='supported_analysis')return '研判已生成 · 结论待核验';
   var rs=REPORTSTATE[key||cur]||{},st=nativeReportState(topic,key),score=nativeReportScore(topic,key);
   if((rs.evidenceStatusByTopic||{})[topic]==='unreviewed')return '内容待核验';
   if(st&&st.scoreStatus==='unclassified')return '核验分类待校核';
@@ -2819,4 +3109,15 @@ function chainMapHtml(p){
     '<strong>'+escapeChainText(topic)+'</strong> · '+(legacy?'材料或图谱版本已变化，请重新生成。':'尚未生成基于当前材料的图谱。')+
     '<p>依据本次公开原文检索及保存材料背景整理；计划与材料披露均不代表已经落地，没有证据的连接不会绘制。</p>'+
     (short?'<p>当前报告正文不足 100 字，请先完善当前方向报告。</p>':'<button onclick="requestChainGeneration()">'+(legacy?'重新生成图谱':error||failed?'重试生成图谱':'生成产业链图谱')+'</button>')+'</div>';
+}
+
+function deleteCustomTopic(label){
+  var p=P();if(!p||!label||!confirm('确定删除自定义方向「'+label+'」？该方向下的报告与历史将一并清除。'))return;
+  var stamp=topicOperationStamp(cur,label);p.topicDeletedAt=p.topicDeletedAt||{};p.topicDeletedAt[label]=stamp;
+  p.deletedTopics=p.deletedTopics||[];if(p.deletedTopics.indexOf(label)<0)p.deletedTopics.push(label);
+  p.customTopics=(p.customTopics||[]).filter(function(t){return t!==label;});
+  if(p.aiTopics)p.aiTopics.list=(p.aiTopics.list||[]).filter(function(t){return t.label!==label;});
+  var state=REPORTSTATE[cur]||(REPORTSTATE[cur]={});state.topicDeletedAt=state.topicDeletedAt||{};state.topicDeletedAt[label]=stamp;
+  clearTopicReportData(cur,label);if(p.topic===label){p.topic='';p.stage=2;}
+  saveReportHistory();persist();render();
 }

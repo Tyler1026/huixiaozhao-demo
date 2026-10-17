@@ -1,0 +1,1143 @@
+{
+  "provenance": "2026-10-17 isolated live run; archived original quotes, unmodified. No new model/network calls.",
+  "bio": {
+    "context": {
+      "city": "闵行区",
+      "topic": "生物医药上游耗材国产替代招引"
+    },
+    "proposals": [
+      {
+        "node_id": "chn_94314dbd08ca816d5ffd",
+        "name": "生物反应袋",
+        "level": "mid",
+        "dimension": "dependency",
+        "scope": "local_enterprise",
+        "reason": "东富龙闵行注册，生物反应袋已生产并做完整性测试，最大2000L，但进口膜材构成明确关键输入依赖，国产替代环节存在具体约束。",
+        "comparison": "以进口膜材为基准，国产膜材在相容性、稳定性上尚未被本材料证明等效。",
+        "action": "推动膜材国产替代联合攻关与本地配套招引。",
+        "missing": [
+          "国产膜材性能对比数据"
+        ],
+        "limitations": [
+          "未区分闵行本地生产"
+        ],
+        "enterprise_links": [
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_d352a8c49df4fedef999",
+            "relation": "attested_website",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://tofflon.com/api/products?id=584"
+          },
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_d352a8c49df4fedef999",
+            "relation": "attested_website",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://tofflon.com/api/products?id=584"
+          },
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_d352a8c49df4fedef999",
+            "relation": "attested_website",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://tofflon.com/api/products?id=584"
+          },
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_d352a8c49df4fedef999",
+            "relation": "attested_website",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://tofflon.com/api/products?id=584"
+          },
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_d352a8c49df4fedef999",
+            "relation": "attested_website",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://tofflon.com/api/products?id=584"
+          },
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_d352a8c49df4fedef999",
+            "relation": "attested_website",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://tofflon.com/api/products?id=584"
+          }
+        ],
+        "premises": [
+          {
+            "evidence_id": "tr_b67afeefed4cc22f24cf",
+            "sentence_index": 5,
+            "role": "local_presence",
+            "subject": "东富龙科技集团股份有限公司",
+            "statement": "注册地址 上海市闵行区都会路 1509号 4幢",
+            "scope": "local_presence",
+            "scope_label": "闵行区注册/办公关联（非生产地）",
+            "_planned": false,
+            "_constraint": false,
+            "_basis": false
+          },
+          {
+            "evidence_id": "tr_d352a8c49df4fedef999",
+            "sentence_index": 2,
+            "role": "enterprise_capability",
+            "subject": "生物反应袋",
+            "statement": "东富龙采用进口膜材，能保证相容性、稳定性等关键性能指标，在B+A或C+A的环境下进行生产和验证，所有产品均经过完整性测试，目前最大反应体积2000L，两个工厂合计年产85万套生物反应袋的产能，够保证企业的使用需求。",
+            "scope": "enterprise",
+            "scope_label": "企业业务范围（生产地未核实）",
+            "_planned": false,
+            "_constraint": false,
+            "_basis": false
+          },
+          {
+            "evidence_id": "tr_d352a8c49df4fedef999",
+            "sentence_index": 2,
+            "role": "dependency",
+            "subject": "生物反应袋",
+            "statement": "东富龙采用进口膜材，能保证相容性、稳定性等关键性能指标，在B+A或C+A的环境下进行生产和验证，所有产品均经过完整性测试，目前最大反应体积2000L，两个工厂合计年产85万套生物反应袋的产能，够保证企业的使用需求。",
+            "scope": "industry",
+            "scope_label": "异地/地域未明确材料"
+          },
+          {
+            "evidence_id": "tr_d352a8c49df4fedef999",
+            "sentence_index": 2,
+            "role": "constraint",
+            "subject": "生物反应袋",
+            "statement": "东富龙采用进口膜材，能保证相容性、稳定性等关键性能指标，在B+A或C+A的环境下进行生产和验证，所有产品均经过完整性测试，目前最大反应体积2000L，两个工厂合计年产85万套生物反应袋的产能，够保证企业的使用需求。",
+            "scope": "industry",
+            "scope_label": "异地/地域未明确材料"
+          },
+          {
+            "evidence_id": "tr_b67afeefed4cc22f24cf",
+            "sentence_index": 8,
+            "role": "local_presence",
+            "subject": "东富龙科技集团股份有限公司",
+            "statement": "办公地址 上海市闵行区都会路 1509号",
+            "scope": "local_presence",
+            "scope_label": "闵行区注册/办公关联（非生产地）",
+            "_planned": false,
+            "_constraint": false,
+            "_basis": false
+          },
+          {
+            "evidence_id": "tr_d352a8c49df4fedef999",
+            "sentence_index": 0,
+            "role": "enterprise_capability",
+            "subject": "一次性技术贯穿整个生物制药环节",
+            "statement": "一次性技术贯穿整个生物制药环节，包括原液制备以及制剂工艺。",
+            "scope": "enterprise",
+            "scope_label": "企业业务范围（生产地未核实）",
+            "_planned": false,
+            "_constraint": false,
+            "_basis": false
+          }
+        ],
+        "counter_evidence": []
+      },
+      {
+        "node_id": "chn_042c16a93d6f422902c3",
+        "name": "细胞培养基",
+        "level": "mid",
+        "dimension": "dependency",
+        "scope": "local_enterprise",
+        "reason": "东富龙闵行注册且生物试剂板块实际商业化生产CHO、HEK293等培养基，但全国高端培养基进口厂商占超60%，进口垄断明显，本地企业面临高端依赖约束。",
+        "comparison": "以国产商业化培养基供应为基准，基础与部分无血清产品已供，高端培养基仍由进口主导。",
+        "action": "支持本地培养基企业高端配方开发与药企替换验证。",
+        "missing": [
+          "东富龙培养基在闵行的实际产线位置"
+        ],
+        "limitations": [
+          "进口份额为全国数据"
+        ],
+        "enterprise_links": [
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_417122a2f06affeac575",
+            "relation": "same_disclosure",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF"
+          },
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_8c77a0bd76c9e341e9a9",
+            "relation": "attested_website",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://www.tofflon.com/api/products?id=1429"
+          },
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_417122a2f06affeac575",
+            "relation": "same_disclosure",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF"
+          },
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_8c77a0bd76c9e341e9a9",
+            "relation": "attested_website",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://www.tofflon.com/api/products?id=1429"
+          }
+        ],
+        "premises": [
+          {
+            "evidence_id": "tr_b67afeefed4cc22f24cf",
+            "sentence_index": 5,
+            "role": "local_presence",
+            "subject": "东富龙科技集团股份有限公司",
+            "statement": "注册地址 上海市闵行区都会路 1509号 4幢",
+            "scope": "local_presence",
+            "scope_label": "闵行区注册/办公关联（非生产地）",
+            "_planned": false,
+            "_constraint": false,
+            "_basis": false
+          },
+          {
+            "evidence_id": "tr_417122a2f06affeac575",
+            "sentence_index": 5,
+            "role": "enterprise_capability",
+            "subject": "培养基",
+            "statement": "统、一次性罐装系统、细胞存储系统、实验室家具仪器、一次性无菌袋、培养基类生物试剂、层析填料、",
+            "scope": "enterprise",
+            "scope_label": "企业业务范围（生产地未核实）",
+            "_planned": false,
+            "_constraint": false,
+            "_basis": false
+          },
+          {
+            "evidence_id": "tr_8c77a0bd76c9e341e9a9",
+            "sentence_index": 0,
+            "role": "operation",
+            "subject": "培养基",
+            "statement": "东富龙生物试剂是国产化培养基的研发及商业化生产供应，在生物大分子方向，我们的主要产品有CHO、HEK293系列化学成分限定培养基及对应补料产品，昆虫、VERO、BHK、MDCK、LHM等无血清培养基以及DMEM\\MEM\\RPMI1640等基础培养基系列产品。",
+            "scope": "industry",
+            "scope_label": "异地/地域未明确材料"
+          },
+          {
+            "evidence_id": "tr_8c77a0bd76c9e341e9a9",
+            "sentence_index": 0,
+            "role": "enterprise_capability",
+            "subject": "培养基",
+            "statement": "东富龙生物试剂是国产化培养基的研发及商业化生产供应，在生物大分子方向，我们的主要产品有CHO、HEK293系列化学成分限定培养基及对应补料产品，昆虫、VERO、BHK、MDCK、LHM等无血清培养基以及DMEM\\MEM\\RPMI1640等基础培养基系列产品。",
+            "scope": "enterprise",
+            "scope_label": "企业业务范围（生产地未核实）",
+            "_planned": false,
+            "_constraint": false,
+            "_basis": true
+          },
+          {
+            "evidence_id": "tr_3c0875a852e858086229",
+            "sentence_index": 2,
+            "role": "dependency",
+            "subject": "细胞培养基",
+            "statement": "在我国细胞培养基市场格局中，同样是这三大进口厂商占据了超过60%的市场份额，在高端培养基领域，进口垄断的格局更为明显。",
+            "scope": "industry",
+            "scope_label": "全国/行业背景"
+          },
+          {
+            "evidence_id": "tr_3c0875a852e858086229",
+            "sentence_index": 2,
+            "role": "constraint",
+            "subject": "细胞培养基",
+            "statement": "在我国细胞培养基市场格局中，同样是这三大进口厂商占据了超过60%的市场份额，在高端培养基领域，进口垄断的格局更为明显。",
+            "scope": "industry",
+            "scope_label": "全国/行业背景"
+          }
+        ],
+        "counter_evidence": []
+      },
+      {
+        "node_id": "chn_e9044690b03105e3be99",
+        "name": "培养基",
+        "level": "mid",
+        "dimension": "dependency",
+        "scope": "industry_shared",
+        "reason": "东富龙等已有国产化培养基商业化生产供应，产品线覆盖CHO、HEK293等；但进口三大厂商占超60%份额，高端培养基进口垄断明显，属有支撑但受制。",
+        "comparison": "以高端无血清/化学成分限定培养基为基准，国产已有商业化产品，但进口厂商占60%以上份额，高端领域垄断更明显。",
+        "action": "招引高端培养基配方开发与规模化生产企业，重点补高端品类验证与客户导入。",
+        "missing": [
+          "本地培养基规模化产能",
+          "高端培养基国产替代验证数据"
+        ],
+        "limitations": [
+          "份额数据为全国市场，非本地"
+        ],
+        "enterprise_links": [
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_8c77a0bd76c9e341e9a9",
+            "relation": "attested_website",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://www.tofflon.com/api/products?id=1429"
+          },
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_8c77a0bd76c9e341e9a9",
+            "relation": "attested_website",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://www.tofflon.com/api/products?id=1429"
+          },
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_8c77a0bd76c9e341e9a9",
+            "relation": "attested_website",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://www.tofflon.com/api/products?id=1429"
+          },
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_8c77a0bd76c9e341e9a9",
+            "relation": "attested_website",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://www.tofflon.com/api/products?id=1429"
+          }
+        ],
+        "premises": [
+          {
+            "evidence_id": "tr_8c77a0bd76c9e341e9a9",
+            "sentence_index": 0,
+            "role": "operation",
+            "subject": "培养基",
+            "statement": "东富龙生物试剂是国产化培养基的研发及商业化生产供应，在生物大分子方向，我们的主要产品有CHO、HEK293系列化学成分限定培养基及对应补料产品，昆虫、VERO、BHK、MDCK、LHM等无血清培养基以及DMEM\\MEM\\RPMI1640等基础培养基系列产品。",
+            "scope": "industry",
+            "scope_label": "异地/地域未明确材料"
+          },
+          {
+            "evidence_id": "tr_8c77a0bd76c9e341e9a9",
+            "sentence_index": 0,
+            "role": "enterprise_capability",
+            "subject": "培养基",
+            "statement": "东富龙生物试剂是国产化培养基的研发及商业化生产供应，在生物大分子方向，我们的主要产品有CHO、HEK293系列化学成分限定培养基及对应补料产品，昆虫、VERO、BHK、MDCK、LHM等无血清培养基以及DMEM\\MEM\\RPMI1640等基础培养基系列产品。",
+            "scope": "enterprise",
+            "scope_label": "企业业务范围（生产地未核实）",
+            "_planned": false,
+            "_constraint": false,
+            "_basis": true
+          },
+          {
+            "evidence_id": "tr_3c0875a852e858086229",
+            "sentence_index": 2,
+            "role": "dependency",
+            "subject": "细胞培养基",
+            "statement": "在我国细胞培养基市场格局中，同样是这三大进口厂商占据了超过60%的市场份额，在高端培养基领域，进口垄断的格局更为明显。",
+            "scope": "industry",
+            "scope_label": "全国/行业背景"
+          },
+          {
+            "evidence_id": "tr_3c0875a852e858086229",
+            "sentence_index": 2,
+            "role": "constraint",
+            "subject": "细胞培养基",
+            "statement": "在我国细胞培养基市场格局中，同样是这三大进口厂商占据了超过60%的市场份额，在高端培养基领域，进口垄断的格局更为明显。",
+            "scope": "industry",
+            "scope_label": "全国/行业背景"
+          },
+          {
+            "evidence_id": "tr_b67afeefed4cc22f24cf",
+            "sentence_index": 5,
+            "role": "local_presence",
+            "subject": "东富龙科技集团股份有限公司",
+            "statement": "注册地址 上海市闵行区都会路 1509号 4幢",
+            "scope": "local_presence",
+            "scope_label": "闵行区注册/办公关联（非生产地）",
+            "_planned": false,
+            "_constraint": false,
+            "_basis": false
+          },
+          {
+            "evidence_id": "tr_b67afeefed4cc22f24cf",
+            "sentence_index": 8,
+            "role": "local_presence",
+            "subject": "东富龙科技集团股份有限公司",
+            "statement": "办公地址 上海市闵行区都会路 1509号",
+            "scope": "local_presence",
+            "scope_label": "闵行区注册/办公关联（非生产地）",
+            "_planned": false,
+            "_constraint": false,
+            "_basis": false
+          }
+        ],
+        "counter_evidence": []
+      },
+      {
+        "node_id": "chn_587fe3f10bfbd47fbf04",
+        "name": "一次性反应系统",
+        "level": "mid",
+        "dimension": "dependency",
+        "scope": "local_enterprise",
+        "reason": "东富龙注册闵行并具备一次性反应系统能力，其生物反应袋采用进口膜材，存在明确关键输入外购依赖；虽有两厂年产85万套产能，但膜材受制构成具体约束。",
+        "comparison": "基准为已具备产能但关键膜材进口；与全国产化相比，膜材环节仍受制于外部供应。",
+        "action": "招引膜材国产供应商或联合验证替代膜材，降低进口依赖。",
+        "missing": [
+          "进口膜材占比",
+          "国产膜材验证进度"
+        ],
+        "limitations": [
+          "产能数据来自企业自述网页"
+        ],
+        "enterprise_links": [
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_417122a2f06affeac575",
+            "relation": "same_disclosure",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF"
+          },
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_417122a2f06affeac575",
+            "relation": "same_disclosure",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF"
+          },
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_417122a2f06affeac575",
+            "relation": "same_disclosure",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF"
+          },
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_417122a2f06affeac575",
+            "relation": "same_disclosure",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF"
+          },
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_d352a8c49df4fedef999",
+            "relation": "attested_website",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://tofflon.com/api/products?id=584"
+          },
+          {
+            "company_subject": "东富龙科技集团股份有限公司",
+            "presence_evidence_id": "tr_b67afeefed4cc22f24cf",
+            "capability_evidence_id": "tr_d352a8c49df4fedef999",
+            "relation": "attested_website",
+            "identity_url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+            "business_url": "https://tofflon.com/api/products?id=584"
+          }
+        ],
+        "premises": [
+          {
+            "evidence_id": "tr_417122a2f06affeac575",
+            "sentence_index": 4,
+            "role": "enterprise_capability",
+            "subject": "一次性反应系统",
+            "statement": "化系统、配液系统、冻融系统、连续灭活系统等；一次性反应系统、灌流系统、一次性细胞分选处理系",
+            "scope": "enterprise",
+            "scope_label": "企业业务范围（生产地未核实）",
+            "_planned": false,
+            "_constraint": false,
+            "_basis": false
+          },
+          {
+            "evidence_id": "tr_d352a8c49df4fedef999",
+            "sentence_index": 2,
+            "role": "enterprise_capability",
+            "subject": "生物反应袋",
+            "statement": "东富龙采用进口膜材，能保证相容性、稳定性等关键性能指标，在B+A或C+A的环境下进行生产和验证，所有产品均经过完整性测试，目前最大反应体积2000L，两个工厂合计年产85万套生物反应袋的产能，够保证企业的使用需求。",
+            "scope": "enterprise",
+            "scope_label": "企业业务范围（生产地未核实）",
+            "_planned": false,
+            "_constraint": false,
+            "_basis": false
+          },
+          {
+            "evidence_id": "tr_d352a8c49df4fedef999",
+            "sentence_index": 2,
+            "role": "dependency",
+            "subject": "生物反应袋",
+            "statement": "东富龙采用进口膜材，能保证相容性、稳定性等关键性能指标，在B+A或C+A的环境下进行生产和验证，所有产品均经过完整性测试，目前最大反应体积2000L，两个工厂合计年产85万套生物反应袋的产能，够保证企业的使用需求。",
+            "scope": "industry",
+            "scope_label": "异地/地域未明确材料"
+          },
+          {
+            "evidence_id": "tr_d352a8c49df4fedef999",
+            "sentence_index": 2,
+            "role": "constraint",
+            "subject": "生物反应袋",
+            "statement": "东富龙采用进口膜材，能保证相容性、稳定性等关键性能指标，在B+A或C+A的环境下进行生产和验证，所有产品均经过完整性测试，目前最大反应体积2000L，两个工厂合计年产85万套生物反应袋的产能，够保证企业的使用需求。",
+            "scope": "industry",
+            "scope_label": "异地/地域未明确材料"
+          },
+          {
+            "evidence_id": "tr_b67afeefed4cc22f24cf",
+            "sentence_index": 5,
+            "role": "local_presence",
+            "subject": "东富龙科技集团股份有限公司",
+            "statement": "注册地址 上海市闵行区都会路 1509号 4幢",
+            "scope": "local_presence",
+            "scope_label": "闵行区注册/办公关联（非生产地）",
+            "_planned": false,
+            "_constraint": false,
+            "_basis": false
+          },
+          {
+            "evidence_id": "tr_b67afeefed4cc22f24cf",
+            "sentence_index": 8,
+            "role": "local_presence",
+            "subject": "东富龙科技集团股份有限公司",
+            "statement": "办公地址 上海市闵行区都会路 1509号",
+            "scope": "local_presence",
+            "scope_label": "闵行区注册/办公关联（非生产地）",
+            "_planned": false,
+            "_constraint": false,
+            "_basis": false
+          }
+        ],
+        "counter_evidence": []
+      }
+    ],
+    "catalog": {
+      "tr_417122a2f06affeac575": {
+        "title": "东富龙科技集团：2025年年报，第121页业务及地址",
+        "published_at": "2026-04-29",
+        "retrieved_at": "2026-10-16T08:55:03.568697+00:00",
+        "origin_id": "origin_c853058732adde2e09c5",
+        "publisher_id": "cninfo.com.cn",
+        "source_type": "disclosure",
+        "archived": true,
+        "archive_retrieved_at": "2026-10-16T08:55:03.568697+00:00",
+        "fulltext_scope": "PDF page 121",
+        "pdf_page": 121,
+        "website_attestation": "",
+        "id": "tr_417122a2f06affeac575",
+        "source_id": "source_c947277a07ec83cd6575",
+        "url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+        "quote": "本公司所属行业为制药专用设备制造业、机械设备制造业以及医疗器械制造业，基于公司产品的功\n能，主要业务分为四大板块，分别为生物工艺板块、制剂板块、工程整体解决方案板块、食品装备工程\n板块。生物工艺板块主要产品是发酵系统、精干包系统、中药提取系统等；不锈钢生物反应器、分离纯\n化系统、配液系统、冻融系统、连续灭活系统等；一次性反应系统、灌流系统、一次性细胞分选处理系\n统、一次性罐装系统、细胞存储系统、实验室家具仪器、一次性无菌袋、培养基类生物试剂、层析填料、\n滤器等。制剂板块主要产品有冻干机及冻干系统、特殊剂型配液系统、无菌灌装联动线、洗烘灌封联动\n线、无菌隔离系统、吹灌封系统等；固体制剂制备系统、智能化检查包装系统。工程整体解决方案板块，\n主要提供为客户提供 MES、WMS、QMS、SCADA 等各类信息化系统软件，为客户提供智能制造整体\n解决方案。为客户提供洁净室与空气净化系统、以及制药用水系统。食品工程板块主要产品有打浆机、\n榨汁机、大型无菌储罐、全自动发酵罐、全自动 UHT 杀菌机、多功能套管式杀菌机、全自动微生物发\n酵系统、全自动米酒机、蒸馏釜、BIB无菌灌装系统、全自动 CIP系统、全自动卸垛机、码垛机等。 ",
+        "retrieval": "fetched",
+        "fulltext_sha256": "901a8a0bad4daa8a759bb6c721cd82b7faa09a5757b5dedf3c814e98a84e0759",
+        "verification_status": "unverified"
+      },
+      "tr_d352a8c49df4fedef999": {
+        "title": "东富龙：一次性无菌袋",
+        "published_at": "发布日期未知",
+        "retrieved_at": "2026-10-16T08:53:46.250294+00:00",
+        "origin_id": "origin_522d6c880ed6d95ed906",
+        "publisher_id": "tofflon.com",
+        "source_type": "company",
+        "archived": true,
+        "archive_retrieved_at": "2026-10-16T08:53:46.250294+00:00",
+        "fulltext_scope": "entire_html_visible_text",
+        "pdf_page": "",
+        "website_attestation": {
+          "domain": "tofflon.com",
+          "website_host": "www.tofflon.com",
+          "evidence_id": "tr_b67afeefed4cc22f24cf",
+          "source_id": "source_95c80213fc84a459f1e5",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+          "website_text": "公司网址 www.tofflon.com"
+        },
+        "id": "tr_d352a8c49df4fedef999",
+        "source_id": "source_16464977269a6632d43f",
+        "url": "https://tofflon.com/api/products?id=584",
+        "quote": "一次性技术贯穿整个生物制药环节，包括原液制备以及制剂工艺。一次性生物反应袋作为细胞生长并生成目标产物的直接载体，对气密性、结构特性、生物相容性等参数要求高，影响着产品最终的一致性和稳定性。\n东富龙采用进口膜材，能保证相容性、稳定性等关键性能指标，在B+A或C+A的环境下进行生产和验证，所有产品均经过完整性测试，目前最大反应体积2000L，两个工厂合计年产85万套生物反应袋的产能，够保证企业的使用需求。",
+        "retrieval": "fetched",
+        "fulltext_sha256": "a7cf3842e7ea3a35d2c6f111aa2f04dd3df238f3d8aedb4b89d668f1845f74c4",
+        "verification_status": "unverified"
+      },
+      "tr_8c77a0bd76c9e341e9a9": {
+        "title": "东富龙科技集团股份有限公司",
+        "published_at": "",
+        "retrieved_at": "2026-10-16T09:34:01.819760+00:00",
+        "origin_id": "origin_7683ea4cc853a0642ecb",
+        "publisher_id": "tofflon.com",
+        "source_type": "company",
+        "archived": true,
+        "archive_retrieved_at": "2026-10-16T09:34:01.819760+00:00",
+        "fulltext_scope": "entire_html_visible_text",
+        "pdf_page": "",
+        "website_attestation": {
+          "domain": "tofflon.com",
+          "website_host": "www.tofflon.com",
+          "evidence_id": "tr_b67afeefed4cc22f24cf",
+          "source_id": "source_95c80213fc84a459f1e5",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+          "website_text": "公司网址 www.tofflon.com"
+        },
+        "id": "tr_8c77a0bd76c9e341e9a9",
+        "source_id": "source_684db6170f9e79c42391",
+        "url": "https://www.tofflon.com/api/products?id=1429",
+        "quote": "东富龙生物试剂是国产化培养基的研发及商业化生产供应，在生物大分子方向，我们的主要产品有CHO、HEK293系列化学成分限定培养基及对应补料产品，昆虫、VERO、BHK、MDCK、LHM等无血清培养基以及DMEM\\MEM\\RPMI1640等基础培养基系列产品。在细胞与基因治疗方向，我们的主要产品有T细胞，NK细胞以及间充质干细胞无血清培养基，细胞保存液，重组胰蛋白酶消化液以及细胞因子等。 我们致力于为生命科学研究及生物药开发生产提供全线关键试剂产品，打造生物药关键试剂的整体化解决方案，有效解决生物医药上游培养基的进口依赖，降低生物药生产成本。",
+        "retrieval": "fetched",
+        "fulltext_sha256": "4ae5eb3003400ad6cafd968317e7514d0d8adb469ea46cb6b46cd40639b0f8f5",
+        "verification_status": "unverified"
+      },
+      "tr_3c0875a852e858086229": {
+        "title": "南通市海门区人民政府",
+        "published_at": "2025-05-29T00:00:00.000Z",
+        "retrieved_at": "2026-10-17T06:22:56.404340+00:00",
+        "origin_id": "origin_29ee64008d2db0321725",
+        "publisher_id": "haimen.gov.cn",
+        "source_type": "government",
+        "archived": "",
+        "archive_retrieved_at": "",
+        "fulltext_scope": "",
+        "pdf_page": "",
+        "website_attestation": "",
+        "id": "tr_3c0875a852e858086229",
+        "source_id": "source_2c329f3d663db106705f",
+        "url": "https://www.haimen.gov.cn/hmsrmzf/shxw/content/579997ea-7582-41d1-a03d-3009a13622ca.html",
+        "quote": "无血清细胞培养基在生物制药领域扮演着重要的角色。从21世纪初开始，赛默飞、丹纳赫和默克等三大欧美品牌占据了全球约90%的培养基市场份额，覆盖了重组蛋白、疫苗和细胞基因治疗等各个领域。在我国细胞培养基市场格局中，同样是这三大进口厂商占据了超过60%的市场份额，在高端培养基领域，进口垄断的格局更为明显。",
+        "retrieval": "fetched",
+        "fulltext_sha256": "29ee64008d2db0321725818d880d201ab0c10ee9287cd822a782bd4db6a5f1e9",
+        "verification_status": "unverified"
+      },
+      "tr_b67afeefed4cc22f24cf": {
+        "title": "东富龙科技集团股份有限公司2025年年度报告：第7页公司信息",
+        "published_at": "2026-04-29",
+        "retrieved_at": "2026-10-16T08:53:46.250294+00:00",
+        "origin_id": "origin_c853058732adde2e09c5",
+        "publisher_id": "cninfo.com.cn",
+        "source_type": "disclosure",
+        "archived": true,
+        "archive_retrieved_at": "2026-10-16T08:53:46.250294+00:00",
+        "fulltext_scope": "pdf_page_7",
+        "pdf_page": 7,
+        "website_attestation": "",
+        "id": "tr_b67afeefed4cc22f24cf",
+        "source_id": "source_95c80213fc84a459f1e5",
+        "url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225237993.PDF",
+        "quote": "公司的中文名称 东富龙科技集团股份有限公司 \n公司的中文简称 东富龙 \n公司的外文名称 Tofflon Science and Technology Group Co., Ltd. \n公司的外文名称缩写 Tofflon \n公司的法定代表人 郑效东 \n注册地址 上海市闵行区都会路 1509号 4幢 \n注册地址的邮政编码 201108 \n公司注册地址历史变更情况 不适用 \n办公地址 上海市闵行区都会路 1509号 \n办公地址的邮政编码 201108 \n公司网址 www.tofflon.com \n电子信箱 dfl@tofflon.com",
+        "retrieval": "fetched",
+        "fulltext_sha256": "bb9548274f44304c5fd59ee6a3a3646c36c38e246f102de03bab5da491b7458d",
+        "verification_status": "unverified"
+      }
+    }
+  },
+  "energy": {
+    "context": {
+      "city": "闵行区",
+      "topic": "氢基能源与长时储能装备补链"
+    },
+    "proposals": [
+      {
+        "node_id": "chn_2331f6f75207bf74b92a",
+        "name": "电解槽",
+        "level": "mid",
+        "dimension": "maturity",
+        "scope": "industry_shared",
+        "reason": "电解槽已有实际应用与订单（质子交换膜电解水技术线全链条自主研发并获订单），但制氢成本仍受电解槽投资和运行效率制约，属有支撑但存在明确成本与效率约束。",
+        "comparison": "以规模化可再生能源制氢经济性为基准，电解槽已商用但投资与运营效率仍是成本瓶颈，处于商用早期而非完全成熟。",
+        "action": "依托闵行制氢装备布局，推进电解槽成本下降与效率提升，结合本地示范项目做运行数据积累。",
+        "missing": [
+          "闵行本地电解槽产能与出货量数据",
+          "本地电解槽实际制氢运行效率实测"
+        ],
+        "limitations": [
+          "订单与成本表述为全国层面，本地量产规模未披露"
+        ],
+        "enterprise_links": [],
+        "premises": [
+          {
+            "evidence_id": "tr_308b9f943027f5758841",
+            "sentence_index": 0,
+            "role": "operation",
+            "subject": "电解槽",
+            "statement": "当前可再生能源制氢成本较化石能源制氢仍然较高，核心受制于电力成本、电解槽投资和项目运行运营效率。",
+            "scope": "industry",
+            "scope_label": "异地/地域未明确材料"
+          },
+          {
+            "evidence_id": "tr_308b9f943027f5758841",
+            "sentence_index": 0,
+            "role": "dependency",
+            "subject": "电解槽",
+            "statement": "当前可再生能源制氢成本较化石能源制氢仍然较高，核心受制于电力成本、电解槽投资和项目运行运营效率。",
+            "scope": "industry",
+            "scope_label": "异地/地域未明确材料"
+          },
+          {
+            "evidence_id": "tr_308b9f943027f5758841",
+            "sentence_index": 0,
+            "role": "constraint",
+            "subject": "电解槽",
+            "statement": "当前可再生能源制氢成本较化石能源制氢仍然较高，核心受制于电力成本、电解槽投资和项目运行运营效率。",
+            "scope": "industry",
+            "scope_label": "异地/地域未明确材料"
+          },
+          {
+            "evidence_id": "tr_6f756c9769bdfe21ff64",
+            "sentence_index": 1,
+            "role": "operation",
+            "subject": "目前",
+            "statement": "目前，集团在闵行的主营业务涵盖能源装备、大型铸锻件、电梯、工业驱动和工业基础件等关键领域，同时积极布局重型燃机、工业燃机、绿色燃料、储能和制氢装备等战略性新兴产业，形成完整产业链。",
+            "scope": "local",
+            "scope_label": "闵行区"
+          }
+        ],
+        "counter_evidence": []
+      },
+      {
+        "node_id": "chn_d6fd9b094da2dab255e7",
+        "name": "镁基固态储氢产品",
+        "level": "strong",
+        "dimension": "supply",
+        "scope": "local_enterprise",
+        "reason": "闵行企业氢枫能源首批镁基固态储氢产品已完成装船出口交付至马来西亚客户，属真实交付，非意向订单。",
+        "comparison": "以是否已有实际运行、生产或交付实践为基准；绿色仅表示已有支撑，不推断供需充足或其他地区的总体水平。",
+        "action": "跟踪后续批量交付与产能爬坡，补齐本地配套。",
+        "missing": [
+          "交付批量、产能与后续订单持续性"
+        ],
+        "limitations": [
+          "单批出口交付，不能证明大规模量产能力"
+        ],
+        "enterprise_links": [
+          {
+            "company_subject": "上海氢枫能源技术有限公司",
+            "presence_evidence_id": "tr_9170c93a9eefda48d29d",
+            "capability_evidence_id": "tr_9170c93a9eefda48d29d",
+            "relation": "explicit_local_affiliation",
+            "identity_url": "https://touch.shio.gov.cn/jsp/zfxw_detail.jsp?id=20260319151207769",
+            "business_url": "https://touch.shio.gov.cn/jsp/zfxw_detail.jsp?id=20260319151207769"
+          },
+          {
+            "company_subject": "上海氢枫能源技术有限公司",
+            "presence_evidence_id": "tr_9170c93a9eefda48d29d",
+            "capability_evidence_id": "tr_9170c93a9eefda48d29d",
+            "relation": "explicit_local_affiliation",
+            "identity_url": "https://touch.shio.gov.cn/jsp/zfxw_detail.jsp?id=20260319151207769",
+            "business_url": "https://touch.shio.gov.cn/jsp/zfxw_detail.jsp?id=20260319151207769"
+          }
+        ],
+        "premises": [
+          {
+            "evidence_id": "tr_9170c93a9eefda48d29d",
+            "sentence_index": 0,
+            "role": "local_affiliation",
+            "subject": "上海氢枫能源技术有限公司",
+            "statement": "3月12日，闵行企业上海氢枫能源技术有限公司（以下简称“氢枫能源”）首批镁基固态储氢产品从上海外高桥港区四期码头装船完成出口交付，正式发运至马来西亚客户，标志着我国氢能储运出海迎来了全新路径。",
+            "scope": "local_affiliation",
+            "scope_label": "闵行区企业关联（非生产地）"
+          },
+          {
+            "evidence_id": "tr_9170c93a9eefda48d29d",
+            "sentence_index": 0,
+            "role": "operation",
+            "subject": "镁基固态储氢产品",
+            "statement": "3月12日，闵行企业上海氢枫能源技术有限公司（以下简称“氢枫能源”）首批镁基固态储氢产品从上海外高桥港区四期码头装船完成出口交付，正式发运至马来西亚客户，标志着我国氢能储运出海迎来了全新路径。",
+            "scope": "enterprise",
+            "scope_label": "本地企业业务（非生产地）"
+          },
+          {
+            "evidence_id": "tr_9170c93a9eefda48d29d",
+            "sentence_index": 0,
+            "role": "industry_fact",
+            "subject": "镁基固态储氢产品",
+            "statement": "3月12日，闵行企业上海氢枫能源技术有限公司（以下简称“氢枫能源”）首批镁基固态储氢产品从上海外高桥港区四期码头装船完成出口交付，正式发运至马来西亚客户，标志着我国氢能储运出海迎来了全新路径。",
+            "scope": "industry",
+            "scope_label": "全国/行业背景"
+          }
+        ],
+        "counter_evidence": []
+      },
+      {
+        "node_id": "chn_b5975c13053a578f8929",
+        "name": "全钒液流电池",
+        "level": "strong",
+        "dimension": "supply",
+        "scope": "local",
+        "reason": "原文披露本环节已有实际运行、生产或交付支撑。",
+        "comparison": "以是否已有实际运行、生产或交付实践为基准；绿色仅表示已有支撑，不推断供需充足或其他地区的总体水平。",
+        "action": "继续核对当前供需规模与稳定交付情况。",
+        "missing": [],
+        "limitations": [
+          "仅证明已有支撑，不能排除其他维度的约束。"
+        ],
+        "enterprise_links": [],
+        "premises": [
+          {
+            "evidence_id": "tr_d3a0147c76a624cc18c3",
+            "sentence_index": 0,
+            "role": "operation",
+            "subject": "全钒液流电池",
+            "statement": "吴泾电厂独立储能项目则走了另一条路线，采用“磷酸铁锂+全钒液流电池”混合方案。",
+            "scope": "local",
+            "scope_label": "闵行区具名设施关联",
+            "original_scope": "industry",
+            "local_site_binding": {
+              "evidence_id": "tr_7d0daf69a509165bf7d9",
+              "subject": "吴泾电厂"
+            }
+          },
+          {
+            "evidence_id": "tr_7d0daf69a509165bf7d9",
+            "sentence_index": 1,
+            "role": "local_site",
+            "subject": "吴泾电厂",
+            "statement": "此前，奉贤星火综合新型储能示范基地、闵行吴泾电厂、石洞口电厂等项目已建成并网。",
+            "scope": "local_site",
+            "scope_label": "闵行区设施所在地"
+          },
+          {
+            "evidence_id": "tr_7d0daf69a509165bf7d9",
+            "sentence_index": 1,
+            "role": "operation",
+            "subject": "闵行吴泾电厂",
+            "statement": "此前，奉贤星火综合新型储能示范基地、闵行吴泾电厂、石洞口电厂等项目已建成并网。",
+            "scope": "local",
+            "scope_label": "闵行区具名设施关联",
+            "original_scope": "local",
+            "local_site_binding": {
+              "evidence_id": "tr_7d0daf69a509165bf7d9",
+              "subject": "吴泾电厂"
+            }
+          }
+        ],
+        "counter_evidence": []
+      }
+    ],
+    "catalog": {
+      "tr_d3a0147c76a624cc18c3": {
+        "title": "城市“充电宝”为电网补位 上海多条技术路线独立储能项目并网",
+        "published_at": "2026-07-08",
+        "retrieved_at": "2026-10-16T09:34:02.977163+00:00",
+        "origin_id": "origin_e9273f7a75bf5d9cded7",
+        "publisher_id": "shanghai.gov.cn",
+        "source_type": "government",
+        "archived": true,
+        "archive_retrieved_at": "2026-10-16T09:34:02.977163+00:00",
+        "fulltext_scope": "entire_html_visible_text",
+        "pdf_page": "",
+        "website_attestation": "",
+        "id": "tr_d3a0147c76a624cc18c3",
+        "source_id": "source_4d6768721b5c87aaf1f4",
+        "url": "https://www.shanghai.gov.cn/nw4411/20260708/d68c08e4aeaf44a78b9bceac2c47721c.html",
+        "quote": "吴泾电厂独立储能项目则走了另一条路线，采用“磷酸铁锂+全钒液流电池”混合方案。记者了解到，全钒液流电池依靠不同价态钒离子在电解液中的循环反应，循环寿命可达1.3万至2万次，使用寿命通常超过20年，几乎不存在热失控风险。",
+        "retrieval": "fetched",
+        "fulltext_sha256": "4dcbb44230252cc38f6074cc4d30433fd0c02e88c2d2cd8eb84cd0277d33cab7",
+        "verification_status": "unverified"
+      },
+      "tr_308b9f943027f5758841": {
+        "title": "专家解读丨中国氢能发展：从试点探索进入有序破局新阶段---国家能源局",
+        "published_at": "2025-06-04",
+        "retrieved_at": "2026-10-16T09:32:55.365288+00:00",
+        "origin_id": "origin_6830db447dcb5bbbce60",
+        "publisher_id": "nea.gov.cn",
+        "source_type": "government",
+        "archived": true,
+        "archive_retrieved_at": "2026-10-16T09:32:55.365288+00:00",
+        "fulltext_scope": "entire_html_visible_text",
+        "pdf_page": "",
+        "website_attestation": "",
+        "id": "tr_308b9f943027f5758841",
+        "source_id": "source_3851312f2008e34075e6",
+        "url": "https://www.nea.gov.cn/20250604/ec7606c39c084f5b82505b2b4bab81d6/c.html",
+        "quote": "当前可再生能源制氢成本较化石能源制氢仍然较高，核心受制于电力成本、电解槽投资和项目运行运营效率。通过“风光氢储”一体化等机制创新降低电价水平，推动电解槽规模化生产降低单台成本，以及虚拟电厂、氢基燃料出口等商业模式等仍有待探索。",
+        "retrieval": "fetched",
+        "fulltext_sha256": "2055da57c92f05c1b9e496902bf1ae5940d39c2834051210023a3704ef222271",
+        "verification_status": "unverified"
+      },
+      "tr_9170c93a9eefda48d29d": {
+        "title": "各区新闻 | 感知上海 P1",
+        "published_at": "2026-03-19",
+        "retrieved_at": "2026-10-16T09:32:55.756703+00:00",
+        "origin_id": "origin_cf87685cf409069e1115",
+        "publisher_id": "shio.gov.cn",
+        "source_type": "government",
+        "archived": true,
+        "archive_retrieved_at": "2026-10-16T09:32:55.756703+00:00",
+        "fulltext_scope": "entire_html_visible_text",
+        "pdf_page": "",
+        "website_attestation": "",
+        "id": "tr_9170c93a9eefda48d29d",
+        "source_id": "source_dd101af1b7c04e2d9d9d",
+        "url": "https://touch.shio.gov.cn/jsp/zfxw_detail.jsp?id=20260319151207769",
+        "quote": "3月12日，闵行企业上海氢枫能源技术有限公司（以下简称“氢枫能源”）首批镁基固态储氢产品从上海外高桥港区四期码头装船完成出口交付，正式发运至马来西亚客户，标志着我国氢能储运出海迎来了全新路径。本次储氢罐体通过国内将氢气与罐内镁合金转化为金属氢化物实现固态储氢，海外释氢后罐体可运回循环使用，创新实现氢能“固态装运”出口。近年来，氢枫能源氢能装备出海势头强劲，2025年氢能设备及配件出口额快速增长。",
+        "retrieval": "fetched",
+        "fulltext_sha256": "52c6160a7d3754cb770f75362f18a0e5c9fe0c0e29c864d40e97418450ef0fec",
+        "verification_status": "unverified"
+      },
+      "tr_7d0daf69a509165bf7d9": {
+        "title": "城市“充电宝”为电网补位 上海多条技术路线独立储能项目并网",
+        "published_at": "2026-07-08",
+        "retrieved_at": "2026-10-16T09:34:02.977163+00:00",
+        "origin_id": "origin_e9273f7a75bf5d9cded7",
+        "publisher_id": "shanghai.gov.cn",
+        "source_type": "government",
+        "archived": true,
+        "archive_retrieved_at": "2026-10-16T09:34:02.977163+00:00",
+        "fulltext_scope": "entire_html_visible_text",
+        "pdf_page": "",
+        "website_attestation": "",
+        "id": "tr_7d0daf69a509165bf7d9",
+        "source_id": "source_4d6768721b5c87aaf1f4",
+        "url": "https://www.shanghai.gov.cn/nw4411/20260708/d68c08e4aeaf44a78b9bceac2c47721c.html",
+        "quote": "去年以来，上海已发布两批共计17个独立储能项目建设计划。此前，奉贤星火综合新型储能示范基地、闵行吴泾电厂、石洞口电厂等项目已建成并网。",
+        "retrieval": "fetched",
+        "fulltext_sha256": "4dcbb44230252cc38f6074cc4d30433fd0c02e88c2d2cd8eb84cd0277d33cab7",
+        "verification_status": "unverified"
+      },
+      "tr_6f756c9769bdfe21ff64": {
+        "title": "闵行区与上海电气集团就深化合作举行座谈交流",
+        "published_at": "2025-05-08T00:00:00.000Z",
+        "retrieved_at": "2026-10-17T06:25:05.345558+00:00",
+        "origin_id": "origin_b647f1df8352a7f0abb4",
+        "publisher_id": "shanghai.gov.cn",
+        "source_type": "government",
+        "archived": "",
+        "archive_retrieved_at": "",
+        "fulltext_scope": "",
+        "pdf_page": "",
+        "website_attestation": "",
+        "id": "tr_6f756c9769bdfe21ff64",
+        "source_id": "source_6cb7c53d9ebae35e4206",
+        "url": "https://www.shanghai.gov.cn/nw15343/20250508/1684333760584abb8743e3903ad3a908.html",
+        "quote": "上海电气集团是全球领先的工业级绿色智能系统解决方案提供商。目前，集团在闵行的主营业务涵盖能源装备、大型铸锻件、电梯、工业驱动和工业基础件等关键领域，同时积极布局重型燃机、工业燃机、绿色燃料、储能和制氢装备等战略性新兴产业，形成完整产业链。近年来，上海电气集团全力推动产业转型升级，大力发展新质生产力，承接并参与了核电、“两机专项”等国家重大战略专项任务，承担着大型铸锻件、航天航空轴承等国家“卡脖子”任务。",
+        "retrieval": "fetched",
+        "fulltext_sha256": "b647f1df8352a7f0abb42e524348af0010566643345641b7fb68d965917bb060",
+        "verification_status": "unverified"
+      }
+    }
+  },
+  "lowair": {
+    "context": {
+      "city": "闵行区",
+      "topic": "低空经济整机配套承接集聚"
+    },
+    "proposals": [
+      {
+        "node_id": "chn_7d5268cb8ddc0797df49",
+        "name": "航电系统",
+        "level": "weak",
+        "dimension": "dependency",
+        "scope": "industry_shared",
+        "reason": "行业层面明确我国航电系统等核心技术主要依赖进口、缺乏自主创新能力，构成明确关键输入受制。闵行虽有航空工业民机机载发布覆盖运行监管、互连传输等低空机载新品，但未单列航电系统装机交付，且发布不等于量产，故本地航电环节仍判weak。",
+        "comparison": "以低空整机航电系统自主供应与批量装机为基准，全国层面主要依赖进口；本地链主有技术下沉发布，但未见航电产品批量交付，能力介于行业依赖与本地发布之间。",
+        "action": "推动本地机载链主将航电新品在eVTOL整机上完成适航验证与批量供货，并披露国产化率。",
+        "missing": [
+          "航电系统本地装机与交付证据",
+          "航电国产化率数据"
+        ],
+        "limitations": [
+          "行业依赖句为全国层面，不能直接等同闵行本地缺口",
+          "发布产品未明确归属航电系统"
+        ],
+        "enterprise_links": [],
+        "premises": [
+          {
+            "evidence_id": "tr_fad86efb65a890142084",
+            "sentence_index": 1,
+            "role": "dependency",
+            "subject": "航电系统",
+            "statement": "以国产航空器为例，我国在航空发动机、航电系统等核心技术方面主要依赖进口，缺乏自主创新能力。",
+            "scope": "industry",
+            "scope_label": "全国/行业背景"
+          },
+          {
+            "evidence_id": "tr_fad86efb65a890142084",
+            "sentence_index": 1,
+            "role": "constraint",
+            "subject": "航电系统",
+            "statement": "以国产航空器为例，我国在航空发动机、航电系统等核心技术方面主要依赖进口，缺乏自主创新能力。",
+            "scope": "industry",
+            "scope_label": "全国/行业背景"
+          },
+          {
+            "evidence_id": "tr_441c10819ee32c79682e",
+            "sentence_index": 0,
+            "role": "industry_fact",
+            "subject": "创新成果集中发布环节",
+            "statement": "创新成果集中发布环节，航空工业民机机载集中推出多款低空机载核心新品，覆盖感知探测、运行监管、能源动力、飞行控制、互连传输五大关键赛道，构建“数字化平台+全谱系硬件产品”完整供给体系。",
+            "scope": "local",
+            "scope_label": "闵行区"
+          }
+        ],
+        "counter_evidence": []
+      },
+      {
+        "node_id": "chn_10c742fdb5ec16680f38",
+        "name": "闵行试飞基地",
+        "level": "mid",
+        "dimension": "maturity",
+        "scope": "local",
+        "reason": "吴泾已布局民用无人机试飞运行基地并落地运营，但城市核心区安全可靠飞行验证环境仍是行业最大瓶颈之一，试飞基地处于启动/建设阶段，尚未形成成熟验证能力。",
+        "comparison": "以城市核心区安全可靠飞行验证环境为基准，本地已有基地落地运营，但验证环境供给仍不足，处于建设推进阶段而非成熟运营。",
+        "action": "加快试飞基地空域审批与验证能力建设，形成可对外服务的常态化试飞验证能力。",
+        "missing": [
+          "试飞基地实际验证架次、服务企业数量等运营数据"
+        ],
+        "limitations": [
+          "基地运营表述较笼统，缺乏具体验证能力指标"
+        ],
+        "enterprise_links": [],
+        "premises": [
+          {
+            "evidence_id": "tr_80778e53915d48426d81",
+            "sentence_index": 2,
+            "role": "local_site",
+            "subject": "民用无人机试飞运行基地",
+            "statement": "吴泾镇以民用航空“国家队”链主单位及闵行民用无人机试飞运行基地为核心，联动紫竹高新区、中航机载“三中心一总部”及金领汇等载体，构建“研发策源—机载研制—试飞验证—展示运营”协同贯通的民用航空产业空间格局。",
+            "scope": "local_site",
+            "scope_label": "闵行区设施所在地"
+          },
+          {
+            "evidence_id": "tr_c6135d05952f92cd8c2b",
+            "sentence_index": 1,
+            "role": "operation",
+            "subject": "这一基地的落地运营",
+            "statement": "这一基地的落地运营，既是闵行践行航空强国战略的具体举措，也是吴泾赋能航空产业高质量发展的生动实践，更是吴泾发挥核心承载作用、链接产业资源的关键载体。",
+            "scope": "local",
+            "scope_label": "闵行区"
+          },
+          {
+            "evidence_id": "tr_b9aeec9605e6ba8bf730",
+            "sentence_index": 0,
+            "role": "constraint",
+            "subject": "低空经济腾飞的最大瓶颈之一",
+            "statement": "低空经济腾飞的最大瓶颈之一，在于城市核心区缺乏安全可靠的飞行验证环境。",
+            "scope": "industry",
+            "scope_label": "异地/地域未明确材料"
+          }
+        ],
+        "counter_evidence": []
+      }
+    ],
+    "catalog": {
+      "tr_80778e53915d48426d81": {
+        "title": "关于印发《闵行区推进航空航天产业高质量发展五年行动方案（2026-2030年）》的通知",
+        "published_at": "2026-09-09T00:00:00.000Z",
+        "retrieved_at": "2026-10-17T06:25:37.648941+00:00",
+        "origin_id": "origin_d0198e097636b882a715",
+        "publisher_id": "shanghai.gov.cn",
+        "source_type": "government",
+        "archived": "",
+        "archive_retrieved_at": "",
+        "fulltext_scope": "",
+        "pdf_page": "",
+        "website_attestation": "",
+        "id": "tr_80778e53915d48426d81",
+        "source_id": "source_3b49d7555589225adc47",
+        "url": "https://www.shanghai.gov.cn/tszczq-qtqj10/20260914/dbf113b82e794d2f961af018c663622b.html",
+        "quote": "2.打造莲花南路航空产业融合发展带。联动吴泾镇、梅陇镇、虹桥镇、虹桥商务区闵行部分等区域，重点发展航空发动机研发、航空零部件精密制造、航空设备总装调试、通用航空客户服务等环节，差异化布局低空经济全链条。吴泾镇以民用航空“国家队”链主单位及闵行民用无人机试飞运行基地为核心，联动紫竹高新区、中航机载“三中心一总部”及金领汇等载体，构建“研发策源—机载研制—试飞验证—展示运营”协同贯通的民用航空产业空间格局。梅陇镇重点推进双溪低空经济运营基地建设，提升低空领域定点考试与认证中心等平台功能，全力构建集研发制造、测试验证、场景应用于一体的全产业链生态。虹桥镇以漕河泾科技绿洲片区为核心，重点承载“低空总部运营+低空服务+低空数字方案”等功能。虹桥商务区闵行部分重点以打造虹桥长三角低空经济展贸中心（低空汇谷）为核心载体，设立虹桥国际低空产业展示交易中心，建设长三角产学研用与培训基地，集聚贸易、研发及运营等低空经济各类企业总部，打造集展示交流、产学研用、标准制定、贸易促进、总部办公等于一体的低空经济产业集聚区。（区经委、区科委、吴泾镇、梅陇镇、大零号湾集团、紫竹高新区）",
+        "retrieval": "fetched",
+        "fulltext_sha256": "d0198e097636b882a715a026293811e0449f264f994af5c7eedb7c9586cee53a",
+        "verification_status": "unverified"
+      },
+      "tr_c6135d05952f92cd8c2b": {
+        "title": "航空工业民机机载第一届客户大会在闵行召开！吴泾赋能添力，共启产业新篇",
+        "published_at": "2026-05-06",
+        "retrieved_at": "2026-10-16T09:33:27.646015+00:00",
+        "origin_id": "origin_40d8640e7f90bfbaa6bc",
+        "publisher_id": "shanghai.gov.cn",
+        "source_type": "government",
+        "archived": true,
+        "archive_retrieved_at": "2026-10-16T09:33:27.646015+00:00",
+        "fulltext_scope": "",
+        "pdf_page": "",
+        "website_attestation": "",
+        "id": "tr_c6135d05952f92cd8c2b",
+        "source_id": "source_1fd6871b0502d6ceb07e",
+        "url": "https://www.shanghai.gov.cn/nw15343/20260507/38c8863af26e4e2e9e4d5db879e9f30e.html",
+        "quote": "本次大会上，一个与航空产业发展、低空经济布局紧密相关的重要消息同步发布——位于吴泾镇的闵行试飞基地已正式启动。这一基地的落地运营，既是闵行践行航空强国战略的具体举措，也是吴泾赋能航空产业高质量发展的生动实践，更是吴泾发挥核心承载作用、链接产业资源的关键载体。",
+        "retrieval": "fetched",
+        "fulltext_sha256": "f7b0f342a6085becc68489c4a44dcae68edce4639a77f87ee66bb830641da18d",
+        "verification_status": "unverified"
+      },
+      "tr_fad86efb65a890142084": {
+        "title": "我国低空经济发展面临的问题与政策建议 - 国家信息中心互联网门户网站",
+        "published_at": "2024-12-30T00:00:00.000Z",
+        "retrieved_at": "2026-10-17T06:26:37.802467+00:00",
+        "origin_id": "origin_2d06ef1abc6eef7d38dc",
+        "publisher_id": "sic.gov.cn",
+        "source_type": "government",
+        "archived": "",
+        "archive_retrieved_at": "",
+        "fulltext_scope": "",
+        "pdf_page": "",
+        "website_attestation": "",
+        "id": "tr_fad86efb65a890142084",
+        "source_id": "source_752368a6154b879bf0cb",
+        "url": "https://www.sic.gov.cn/sic/81/455/1230/20241230150037500779676_pc.html",
+        "quote": "我国低空产业在关键技术、核心设备等方面对外依存度较高，难以形成竞争优势。以国产航空器为例，我国在航空发动机、航电系统等核心技术方面主要依赖进口，缺乏自主创新能力。同时，由于航空应用的特性，eVTOL对锂离子电池性能要求更高。根据高工锂电数据，新能源车锂电池的能量密度（电池单位重量提供的能量）为200Wh/kg，面向城市空中交通的eVTOL至少需要达到400Wh/kg；而目前成熟的eVTOL电池能量密度仅有285Wh/kg，远低于航空燃油的比能量，仅能勉强满足小型全电飞行器短程飞行需要。",
+        "retrieval": "fetched",
+        "fulltext_sha256": "2d06ef1abc6eef7d38dce99f8762212bad92fe9fc616b9128d9c33bb5cd5d82f",
+        "verification_status": "unverified"
+      },
+      "tr_441c10819ee32c79682e": {
+        "title": "低空机载产业“旗舰店”上线！全国首个选型中心落户闵行吴泾",
+        "published_at": "2026-07-27T00:00:00.000Z",
+        "retrieved_at": "2026-10-17T06:27:02.812027+00:00",
+        "origin_id": "origin_dada7e5ad1356ed1d040",
+        "publisher_id": "shanghai.gov.cn",
+        "source_type": "government",
+        "archived": "",
+        "archive_retrieved_at": "",
+        "fulltext_scope": "",
+        "pdf_page": "",
+        "website_attestation": "",
+        "id": "tr_441c10819ee32c79682e",
+        "source_id": "source_bc1f27da209abe6b73d5",
+        "url": "https://www.shanghai.gov.cn/nw15343/20260728/2ef6eeeaaa0d434580fc8661359982a3.html",
+        "quote": "创新成果集中发布环节，航空工业民机机载集中推出多款低空机载核心新品，覆盖感知探测、运行监管、能源动力、飞行控制、互连传输五大关键赛道，构建“数字化平台+全谱系硬件产品”完整供给体系。本次发布产品立足低空运行安全痛点，把大型客机成熟机载技术下沉适配低空飞行器，坚持航空级安全标准。",
+        "retrieval": "fetched",
+        "fulltext_sha256": "dada7e5ad1356ed1d0409ffdb4de8a0ed4d9963df9c8e0aa8dedd91d5bddac84",
+        "verification_status": "unverified"
+      },
+      "tr_d32f3b32d78d34b439f8": {
+        "title": "航空工业民机机载第一届客户大会在闵行召开！吴泾赋能添力，共启产业新篇",
+        "published_at": "2026-05-06T00:00:00.000Z",
+        "retrieved_at": "2026-10-17T06:27:02.812027+00:00",
+        "origin_id": "origin_50650f0d3661a1c90ea0",
+        "publisher_id": "shanghai.gov.cn",
+        "source_type": "government",
+        "archived": "",
+        "archive_retrieved_at": "",
+        "fulltext_scope": "",
+        "pdf_page": "",
+        "website_attestation": "",
+        "id": "tr_d32f3b32d78d34b439f8",
+        "source_id": "source_19dc61bca452aa31761a",
+        "url": "https://www.shanghai.gov.cn/nw15343/20260507/38c8863af26e4e2e9e4d5db879e9f30e.html",
+        "quote": "据了解，闵行试飞基地打造了专属一站式综合服务闭环生态，精准适配机载设备、无人机、eVTOL整机平台等多类型科研测试、符合性验证场景。值得重点关注的是，闵行试飞基地拥有城市场景低空飞行测试场，占据上海空域黄金走廊，是离上海市区最近的城市空中交通综合试飞示范区，也是面向未来空中交通前沿模式的系统验证与产业化孵化平台。该基地拥有14.2平方公里测试空域，重点开展eVTOL、无人机等新型航空器全链条技术验证，同时具备上不扰民航、下无次生灾害的黄金区位优势，可有效破解城市核心区缺乏安全可靠飞行验证环境的行业痛点，探索城市低空飞行的“闵行方案”。这与本次大会聚焦的机载产业、低空经济发展方向高度契合，将为产业发展提供关键的测试验证支撑。",
+        "retrieval": "fetched",
+        "fulltext_sha256": "50650f0d3661a1c90ea04124d8d8a675581d621232cc7bf10cd47866887cb50d",
+        "verification_status": "unverified"
+      },
+      "tr_b9aeec9605e6ba8bf730": {
+        "title": "位于吴泾！闵行低空测试基地项目启动",
+        "published_at": "2025-07-28T00:00:00.000Z",
+        "retrieved_at": "2026-10-17T06:27:02.812027+00:00",
+        "origin_id": "origin_6a1b62ef3e47513bd53d",
+        "publisher_id": "shanghai.gov.cn",
+        "source_type": "government",
+        "archived": "",
+        "archive_retrieved_at": "",
+        "fulltext_scope": "",
+        "pdf_page": "",
+        "website_attestation": "",
+        "id": "tr_b9aeec9605e6ba8bf730",
+        "source_id": "source_cc2a540d93196c850db4",
+        "url": "https://www.shanghai.gov.cn/nw15343/20250728/2e9c1a3cba884f84b461bd5fa740e815.html",
+        "quote": "低空经济腾飞的最大瓶颈之一，在于城市核心区缺乏安全可靠的飞行验证环境。闵行低空测试基地的正式启动，正是破解这一世界级难题的“闵行答案”，标志着上海低空基础设施布局从政策设计迈向实质性建设。",
+        "retrieval": "fetched",
+        "fulltext_sha256": "6a1b62ef3e47513bd53d1aef66acc2b41d471a73cb8dd9a27ce6501c4b3f420e",
+        "verification_status": "unverified"
+      }
+    }
+  }
+}

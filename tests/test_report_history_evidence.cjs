@@ -39,6 +39,8 @@ function harness(app) {
   const names = ['nativeReportState', 'nativeReportScore', 'topicScoreLabel', 'topicScoreDisplay'];
   if (app === 'index') names.push('topicScore');
   let code = names.map(name => declaration(native, name)).join('\n');
+  const helperStart=history.indexOf('function reportStateFields('),helperEnd=history.indexOf('function selectTopic(');
+  if(helperStart>=0&&helperEnd>helperStart)code+='\n'+history.slice(helperStart,helperEnd);
   code += '\n' + ['saveReportHistory', 'reportHistoryRecord', 'reportHistoryScoreDisplay',
     'archiveCurrentReport', 'renderHistoryReports'].map(name => declaration(history, name)).join('\n');
   if (app === 'index') code += '\n' + declaration(history, 'getReportHistoryForProject');

@@ -52,6 +52,8 @@ function harness(state) {
   context.P = () => context.PROJECTS[context.cur];
   context.persist = () => {local.offline = JSON.stringify({PROJECTS: context.PROJECTS, REPORTSTATE: context.REPORTSTATE, DEMANDS: context.DEMANDS});};
   vm.createContext(context);
+  const topicState=read('12-tail.js');
+  vm.runInContext(topicState.slice(topicState.indexOf('function reportStateFields('),topicState.indexOf('function selectTopic(')),context);
   vm.runInContext([
     ['03.js', '_authProjectKeys'], ['03.js', '_authWorkspaceOf'], ['03.js', '_projectWorkspaceId'],
     ['08.js', 'getEmbeddedReport'], ['08.js', 'getTopicReport'], ['08.js', 'reportTextForTopic'], ['08.js', 'topicHasFullReport'],

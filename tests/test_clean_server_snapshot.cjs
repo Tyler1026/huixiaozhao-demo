@@ -24,7 +24,10 @@ function context() {
     'KB_UNLOCKED','REPORTSTATE','REPORT_HISTORY','PENDING_CONFIRMS','DOCK_LOGS','KB_CHAT','KB_CHAT_TOMBS',
     'UPLOAD_TOMBS','CITY_BASE_PACKAGES','CITY_WORKSPACES']) ctx[key] = {old: {text: 'old private data'}};
   for (const key of ['OPS_ENT','DEMANDS','REPORT_REQUESTS','DELETED_PROJECTS','DELETED_CLUES']) ctx[key] = ['old'];
-  ctx.window = ctx; vm.createContext(ctx); return {ctx,disk};
+  ctx.window = ctx; vm.createContext(ctx);
+  const helpers=fs.readFileSync(path.join(__dirname,'../frontend/ops/script-03-sections/12-tail.js'),'utf8');
+  vm.runInContext(helpers.slice(helpers.indexOf('function reportStateFields('),helpers.indexOf('function selectTopic(')),ctx);
+  return {ctx,disk};
 }
 for (const app of ['ops','index']) test(app + ' clears cached business data across reset generations only', () => {
   const {ctx,disk}=context(); vm.runInContext(fn(source(app), '_acceptServerGeneration'),ctx);
