@@ -68,7 +68,7 @@ function rrSpecialistCard(f){
         'style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;'+
         'border:1px solid '+(isOpen?'#91b7e2':'#dce4ef')+';background:'+(isOpen?'#f3f8ff':'#fff')+';'+
         'border-radius:7px;color:#0757ad;font-size:10.5px;cursor:pointer;padding:5px 9px">'+
-        '<span>📚 数据来源 · '+srcs.length+' 项</span><span style="color:#8aa0bd">'+(isOpen?'▲':'▼')+'</span></button>'+
+        '<span><span data-ops-icon="source"></span> 数据来源 · '+srcs.length+' 项</span><span style="color:#8aa0bd">'+(isOpen?'▲':'▼')+'</span></button>'+
       menu+'</div></div>';
   }
   return '<div style="padding:7px 9px;border:1px solid #eef2f7;border-radius:8px;background:'+(st==='working'?'#f6faff':'#fff')+'">'+
@@ -104,7 +104,7 @@ function rrWaveRows(r){
   var byStage={};
   act.forEach(function(f){var s=RR_STAGE_OF[f.id];if(s==null)return;(byStage[s]=byStage[s]||[]).push(f);});
   var rows=r.waves.map(function(w,wi){
-    var ic=w.state==='done'?'✅':w.state==='running'?'<span class="rr-spin" style="width:11px;height:11px"></span>':'⚪';
+    var ic=w.state==='done'?'<span data-ops-icon="success" data-ops-icon-size="14"></span>':w.state==='running'?'<span class="rr-spin" style="width:11px;height:11px"></span>':'<span data-ops-icon="schedule" data-ops-icon-size="14"></span>';
     var col=w.state==='done'?'#0aa696':w.state==='running'?'#0757ad':'#9aa5b5';
     // 优先用专员卡片；无 activity 时回退到原章节芯片
     var body='';
@@ -117,8 +117,8 @@ function rrWaveRows(r){
         w.files.map(function(f){
           var fs=f.fstate||(f.done?'done':'missing');
           var sty,mark;
-          if(fs==='done'){sty='background:#e4f5f3;color:#006d70';mark='✓ ';}
-          else if(fs==='partial'){sty='background:#fdeef0;color:#b0364a;cursor:help';mark='⚠ ';}
+          if(fs==='done'){sty='background:#e4f5f3;color:#006d70';mark='<span data-ops-icon="success" data-ops-icon-size="12"></span> ';}
+          else if(fs==='partial'){sty='background:#fdeef0;color:#b0364a;cursor:help';mark='<span data-ops-icon="warning" data-ops-icon-size="12"></span> ';}
           else {sty='background:#eef1f5;color:#8492a6';mark='· ';}
           var tip=f.detail?' title="'+rrHtml(f.detail)+'"':'';
           return '<span'+tip+' style="font-size:10.5px;padding:2px 8px;border-radius:9px;'+sty+'">'+mark+rrHtml(f.n)+'</span>';
@@ -163,9 +163,9 @@ function rrProgress(r){
   var stale=staleMin!=null&&staleMin>5;
   var lastUpd=staleMin==null?'':staleMin<1?'刚更新':staleMin+' 分钟前更新';
   var gapBadge=ts.gap?('<span title="机器睡眠/离线导致的暂停时长（'+ts.gapCount+' 次断点），不计入有效运行时间" '+
-    'style="margin-left:8px;font-size:10.5px;padding:1px 7px;border-radius:9px;background:#fff0de;color:#a34c09;cursor:help">⏸ 断点 '+ts.gap+(ts.gapCount>1?' × '+ts.gapCount:'')+'</span>'):'';
+    'style="margin-left:8px;font-size:10.5px;padding:1px 7px;border-radius:9px;background:#fff0de;color:#a34c09;cursor:help"><span data-ops-icon="traceability" data-ops-icon-size="12"></span> 断点 '+ts.gap+(ts.gapCount>1?' × '+ts.gapCount:'')+'</span>'):'';
   var stallBadge=ts.stall?('<span title="机器在线但流水线产出停滞的时长（研判暂时停滞），不计入有效运行时间" '+
-    'style="margin-left:6px;font-size:10.5px;padding:1px 7px;border-radius:9px;background:#fdeef0;color:#b0364a;cursor:help">⚠ 空转 '+ts.stall+'</span>'):'';
+    'style="margin-left:6px;font-size:10.5px;padding:1px 7px;border-radius:9px;background:#fdeef0;color:#b0364a;cursor:help"><span data-ops-icon="warning" data-ops-icon-size="12"></span> 空转 '+ts.stall+'</span>'):'';
   gapBadge=stallBadge+gapBadge;
   return '<div style="margin-top:8px;padding:10px 12px;border:1px solid #e3ebf6;border-radius:8px;background:#f8fbff">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#3d5471;margin-bottom:7px">'+
@@ -185,7 +185,7 @@ function rrIssuesBanner(r){
   if(!iss.length) return '';
   return '<div style="margin-top:8px;padding:9px 12px;border:1px solid #f2c3cb;border-radius:8px;background:#fdeef0">'+
     '<div style="font-size:11.5px;font-weight:700;color:#b0364a;margin-bottom:5px;display:flex;align-items:center;gap:6px">'+
-      '<span>⚠ '+iss.length+' 个环节未达标</span>'+
+      '<span><span data-ops-icon="warning" data-ops-icon-size="14"></span> '+iss.length+' 个环节未达标</span>'+
       '<span style="font-weight:400;color:#c47080">需继续补全，当前进度已保留</span></div>'+
     '<div style="display:flex;flex-direction:column;gap:3px">'+
       iss.map(function(s){
@@ -222,7 +222,7 @@ function rrPanel(options){
     }
     var dlBtn='';
     if(r.status==='done' && r.files && r.files.length){
-      dlBtn='<button onclick="downloadReqFile(\''+rrInlineString(r.id)+'\',\'full\')" style="flex-shrink:0;padding:6px 12px;background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:8px;font-size:12px;color:#4338ca;cursor:pointer;font-weight:600;white-space:nowrap">⬇ 研判主报告（Word）</button>';
+      dlBtn='<button onclick="downloadReqFile(\''+rrInlineString(r.id)+'\',\'full\')" style="flex-shrink:0;padding:6px 12px;background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:8px;font-size:12px;color:#4338ca;cursor:pointer;font-weight:600;white-space:nowrap"><span data-ops-icon="download" data-ops-icon-size="16"></span> 研判主报告（Word）</button>';
       dlBtn+='<button onclick="downloadReqFile(\''+rrInlineString(r.id)+'\',\'short\')">快速简报（Word）</button>' +
         '<button onclick="downloadReqFile(\''+rrInlineString(r.id)+'\',\'research\')">完整研究附件（ZIP）</button>';
     }
@@ -231,13 +231,13 @@ function rrPanel(options){
       if(r.pushed){
         var workspace=typeof opsCityWorkspace==='function'?opsCityWorkspace(r.city):null;
         var primary=workspace&&(r.projectKey===workspace.projectKey||r.account===workspace.projectKey);
-        pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#166534;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:5px 11px;white-space:nowrap">'+(primary?'✓ 已发布至地区主工作区':'✓ 已发布 · 历史报告基础库')+'</span>';
+        pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#166534;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:5px 11px;white-space:nowrap">'+'<span data-ops-icon="success" data-ops-icon-size="14"></span> '+(primary?'已发布至地区主工作区':'已发布 · 历史报告基础库')+'</span>';
       } else if(r.engine!=='full-v1'){
         pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:5px 11px;white-space:nowrap">需重新生成后发布</span>';
       } else if(r.publicationSkipped==='newer-report-already-published'){
         pushCtrl='<span class="ops-ui-badge is-muted">已有更新版本</span>';
       } else if(r.pushRequested){
-        pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:5px 11px;white-space:nowrap">⏳ 推送中…</span>';
+        pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:5px 11px;white-space:nowrap"><span data-ops-icon="loading" data-ops-icon-size="14"></span> 推送中…</span>';
       } else {
         pushCtrl='<button onclick="pushReportToRag(\''+rrInlineString(r.id)+'\',this)" style="flex-shrink:0;padding:6px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap">发布到地区主工作区</button>';
       }
@@ -247,10 +247,10 @@ function rrPanel(options){
       cancelBtn='<button onclick="_rrDiscardBlocked(\''+rrInlineString(r.id)+'\')" style="flex-shrink:0;padding:6px 12px;border:1px solid #fca5a5;border-radius:8px;background:#fff;color:#dc2626;cursor:pointer">移除未提交项</button>';
     }
     if(!r.submissionPending&&(r.status==='pending'||r.status==='running')){
-      cancelBtn='<button onclick="cancelReportRequest(\''+rrInlineString(r.id)+'\',this)" style="flex-shrink:0;padding:6px 12px;background:#fff;border:1.5px solid #fca5a5;border-radius:8px;font-size:12px;color:#dc2626;cursor:pointer;font-weight:600;white-space:nowrap">✕ 取消</button>';
+      cancelBtn='<button onclick="cancelReportRequest(\''+rrInlineString(r.id)+'\',this)" style="flex-shrink:0;padding:6px 12px;background:#fff;border:1.5px solid #fca5a5;border-radius:8px;font-size:12px;color:#dc2626;cursor:pointer;font-weight:600;white-space:nowrap"><span data-ops-icon="error" data-ops-icon-size="16"></span> 取消</button>';
     }
     return '<div class="ops-row ops-ui-report-row" style="align-items:flex-start;flex-direction:column"><div class="ops-ui-report-row-head" style="display:flex;align-items:center;gap:10px;width:100%">'+
-      '<div class="r-ic"></div>'+
+      '<div class="r-ic"><span data-ops-icon="report" data-ops-icon-size="20"></span></div>'+
       '<div class="r-main"><div class="ops-ui-report-title" style="display:flex;align-items:center;gap:8px"><strong>'+escape(r.province)+' · '+escape(r.city)+'</strong>'+(r.submissionPending?'<span class="ops-badge orange">等待保存确认</span>':rrStatusBadge(r.status,r))+'</div>'+
       '<small>'+escape(r.by)+' · '+tm+' 发起'+(r.autoPublish===true&&/^\d{4}-\d{2}$/.test(r.scheduledMonth||'')?' · '+escape(r.scheduledMonth)+' 月度更新':'')+escape(doneInfo+serviceInfo)+(r.publicationSkipped==='newer-report-already-published'?' · 已有更新版本，保留当前资料':'')+(r.submissionPending?' · '+escape(r.submissionError||'正在确认，暂未进入生成队列'):'')+(r.status==='failed'&&r.failReason&&!serviceInfo?' · '+escape(r.failReason):'')+'</small></div>'+
       '<div class="ops-ui-report-actions" style="margin-left:auto;display:flex;align-items:center;gap:8px">'+dlBtn+pushCtrl+cancelBtn+'</div></div>'+

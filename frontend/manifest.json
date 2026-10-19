@@ -46,17 +46,20 @@
     ]
   },
   "ops.html": {
-    "sha256": "e1e415a9d4c447e64da9deb4e4389c34d6bf12ed484aa1553e821b8c97afc969",
+    "sha256": "9436e4ad395535d025c4fc6135054c90b0dda64ccdfabbc027742f945bd0bba0",
     "parts": [
       "frontend/ops/markup-01.html",
       "frontend/ops/style-01.css",
       "frontend/ops/docking-receiving.css",
       "frontend/shared/industry-chain.css",
+      "frontend/ops/brand.css",
       "frontend/ops/markup-02.html",
       "frontend/ops/script-01.js",
       "frontend/ops/markup-03.html",
       "frontend/ops/script-02.js",
       "frontend/ops/markup-04.html",
+      "frontend/ops/brand-icons.js",
+      "frontend/ops/brand-assets.js",
       "frontend/ops/script-03-sections/00.js",
       "frontend/ops/script-03-sections/01.js",
       "frontend/ops/script-03-sections/02.js",
