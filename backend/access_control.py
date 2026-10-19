@@ -530,6 +530,8 @@ def guard_sync(raw_bytes, state, principal):
         _deny('invalid_sync', '同步数据格式不正确')
     from .industry_demands import preserve_industry_demands
     preserve_industry_demands(incoming, state)
+    from .docking_actions import preserve_docking_actions
+    preserve_docking_actions(incoming, state, principal)
     # Graphs are generated and saved by the server. Old full snapshots may
     # echo them, so ignore every client value instead of rejecting the sync.
     # Strip before scanning references/secrets: discarded graph content must

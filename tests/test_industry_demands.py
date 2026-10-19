@@ -189,11 +189,13 @@ class IndustryDemandTests(unittest.TestCase):
             guarded = json.loads(guard_sync(json.dumps(incoming).encode(), data, principal))
             self.assertEqual(guarded['PROJECTS'][key]['selectedPriority'], result['project']['selectedPriority'])
             self.assertEqual(guarded['PROJECTS'][key]['topic'], '生物医药')
-            self.assertEqual(guarded['PROJECTS'][key]['stage'], 5)
+            # Stage changes require the acknowledged docking action endpoint,
+            # including for administrators; generic snapshots preserve it.
+            self.assertEqual(guarded['PROJECTS'][key]['stage'], result['project']['stage'])
             self.assertEqual(guarded['REPORTSTATE'][key], result['reportState'])
             self.assertEqual(guarded['DEMANDS'][0]['need'], result['demand']['need'])
             self.assertEqual(guarded['DEMANDS'][0]['domain'], result['demand']['domain'])
-            self.assertEqual(guarded['DEMANDS'][0]['res'], 'checking')
+            self.assertEqual(guarded['DEMANDS'][0]['res'], 'checking' if principal['scope'] == 'admin' else result['demand']['res'])
 
     def test_sync_cannot_attach_fresh_or_repurposed_legacy_receipt_to_concrete_demand(self):
         data = state(); result = create_industry_demand(request(data), data, PRINCIPAL)

@@ -30,6 +30,7 @@ function boot() {
     document:{getElementById:k=>inputs[k]},
     _authEscape: v => String(v ?? '').replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;'),
     persist(){calls.persist++;},render(){calls.render++;},
+    async opsSaveStageAction(key,target,note){calls.network++;const p=c.PROJECTS[key],from=c.demandEffectiveStage(key,p);p.stage=target;(p.stageLog||(p.stageLog=[])).unshift({from,to:target,note});calls.render++;return true;},
     toast(t){calls.toast.push(t);},
     fetch(){calls.network++;throw Error('No network in render test');},
     loadAIScanClues(){calls.analysis++;throw Error('Render must not run AI');},
@@ -82,6 +83,17 @@ test('other direction receipt does not promote a project without its own receipt
   assert.equal(firstBadge(c.opsDemandResults()),'确认需求');
 });
 
+test('direct demands never imply material preparation, AI analysis or confirmation milestones',()=>{
+  const {c,demand}=boot();demand.demandOrigin='direct';demand.demandSpec={source:'user_direct'};demand.demandContract='industry-demand-v1';
+  c.opsDemandSpecificationHtml=()=>'';
+  const before=JSON.stringify(demand),html=c.opsDemandResults();
+  assert.equal(firstBadge(html),'已提交需求');assert.match(html,/对接进展记录/);
+  assert.doesNotMatch(html,/✓ 资料准备|✓ AI 研判|✓ 确认需求/);
+  assert.match(displayedSelect(html),/value="5">推进到「招商对接」/);
+  assert.equal(JSON.stringify(demand),before);
+  demand.stage=5;const progressed=c.opsDemandResults();assert.match(progressed,/招商对接/);assert.doesNotMatch(progressed,/✓ 资料准备|✓ AI 研判|✓ 确认需求/);
+});
+
 test('city badge uses maximum effective progress across its actual child demands',()=>{
   const {c}=boot();
   c.PROJECTS.waiting={id:'waiting',isDemand:true,stage:3,city:'闵行区',topic:'另一方向',submissionState:'pending'};
@@ -101,23 +113,24 @@ test('later and custom stage labels remain visible in card, city badge and optio
   assert.equal(JSON.stringify(c.PROJECTS),before);
 });
 
-test('default advance moves submitted raw stage 3 to stage 5 and records effective origin',()=>{
+test('default advance requires an actual note instead of silently changing progress',()=>{
   const {c,demand,calls}=boot(),original=demand;
   c.advanceStage('demand');
   assert.equal(c.PROJECTS.demand,original);
-  assert.equal(demand.stage,5);
-  assert.equal(demand.stageLog[0].from,4);assert.equal(demand.stageLog[0].to,5);
-  assert.equal(calls.persist,1);assert.equal(calls.render,1);
+  assert.equal(demand.stage,3);
+  assert.equal(demand.stageLog,undefined);
+  assert.equal(calls.persist,0);assert.equal(calls.render,0);
+  assert.deepEqual(calls.toast,['请填写本次阶段变化的实际依据']);
   assert.equal(calls.network+calls.analysis,0);
 });
 
-test('explicit actual form selection writes original object only after user action',()=>{
+test('explicit actual form selection delegates to the acknowledged server action',async()=>{
   const {c,demand,calls,inputs}=boot();
   const html=c.opsDemandResults();assert.match(displayedSelect(html),/value="5"/);
   inputs['stage-target-demand']={value:'5'};inputs['stage-note-demand']={value:'  首次对接已安排  '};
-  c.saveStageAdvance('demand');
+  await c.saveStageAdvance('demand');
   assert.equal(demand.stage,5);assert.equal(demand.stageLog[0].note,'首次对接已安排');
-  assert.equal(demand.stageLog[0].from,4);assert.equal(calls.persist,1);
+  assert.equal(demand.stageLog[0].from,4);assert.equal(calls.persist,0);assert.equal(calls.network,1);
 });
 
 test('effective current stage and invalid advance are no-op writes',()=>{
@@ -129,12 +142,12 @@ test('effective current stage and invalid advance are no-op writes',()=>{
   assert.deepEqual(calls.toast,['已在该阶段','无效的阶段']);
 });
 
-test('pending default and custom default follow their own stage chain',()=>{
+test('explicit pending and custom advances follow their own stage chain',async()=>{
   const {c,demand,calls}=boot();demand.submissionState='pending';
-  c.advanceStage('demand');assert.equal(demand.stage,4);assert.equal(demand.stageLog[0].from,3);
+  await c.advanceStageTo('demand',4,'资料已确认');assert.equal(demand.stage,4);assert.equal(demand.stageLog[0].from,3);
   demand.submissionState='submitted';demand.stage=6;demand.customStages=['首场会议','实地考察'];
-  c.advanceStage('demand');assert.equal(demand.stage,7);assert.equal(demand.stageLog[0].from,6);
-  c.advanceStage('demand');assert.equal(demand.stage,7);assert.equal(calls.persist,2);
+  await c.advanceStageTo('demand',7,'安排实地考察');assert.equal(demand.stage,7);assert.equal(demand.stageLog[0].from,6);
+  c.advanceStage('demand');assert.equal(demand.stage,7);assert.equal(calls.persist,0);assert.equal(calls.network,2);
 });
 
 test('city/search filters continue isolating the rendered demands',()=>{

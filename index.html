@@ -756,6 +756,193 @@ body.industry-view .nav-copy small{font-size:10px}
 .chain-priority-count.is-strong{color:#498262}.chain-priority-count.is-mid{color:#9a7629}.chain-priority-count.is-weak{color:#b35c4b}.chain-priority-count.is-unknown{color:#8b9aa7}
 .industry-page .industry-chain-node .chain-node-judgment-reason{font-size:11px!important;margin:8px 0!important;font-weight:400!important}
 .chain-priority-panel .chain-assessment-details>summary,.chain-priority-panel .chain-assessment-criteria>summary,.chain-priority-panel .chain-factual-dimensions>summary{font-size:10px;color:#70889c;font-weight:500!important}
+/* Client docking: demand-led workspace. Keep every override local to this view. */
+body.docking-view .detail-pane,
+body.docking-view .workspace>.pane-divider,
+body.docking-view .reopen-detail,
+body.docking-view .progress-footer{display:none!important}
+body.docking-view .main-pane{flex:1 1 100%;width:100%;max-width:none;overflow:hidden;background:#f4f7fb}
+.docking-workspace{--dock-ink:#193a59;--dock-text:#405972;--dock-muted:#708399;--dock-line:#dce5ee;--dock-soft:#f4f7fb;--dock-blue:#1d537e;display:flex;flex-direction:column;width:100%;height:100%;min-width:0;min-height:0;padding:28px 30px 24px;overflow:hidden;color:var(--dock-text);background:linear-gradient(155deg,#f8fafc 0%,#f2f6fa 100%);font-size:14px;line-height:1.7}
+.docking-workspace h1,.docking-workspace h2,.docking-workspace h3,.docking-workspace p{margin:0}
+.docking-header{display:flex;flex:0 0 auto;align-items:center;justify-content:space-between;gap:24px;margin-bottom:22px}
+.docking-kicker{display:block;margin-bottom:5px;color:#788fa4;font-size:10px;font-weight:700;letter-spacing:1.65px;line-height:1.5}
+.docking-header h1{color:var(--dock-ink);font-size:27px;font-weight:650;letter-spacing:.3px;line-height:1.5}
+.docking-header p{margin-top:5px;color:var(--dock-muted);font-size:13px}
+.docking-header-actions,.docking-detail-actions{display:flex;flex-wrap:wrap;align-items:center;gap:9px}
+.docking-button{display:inline-flex;min-height:36px;align-items:center;justify-content:center;gap:7px;padding:8px 14px;border:1px solid #cbd9e6;border-radius:7px;color:#315876;background:#fff;font:inherit;font-size:12px;font-weight:550;line-height:1.5;text-align:center;cursor:pointer;transition:background .16s,border-color .16s,box-shadow .16s}
+.docking-button:hover{border-color:#9cb6cf;background:#f4f8fc}
+.docking-button.is-primary{border-color:#255b85;color:#fff;background:#255b85;box-shadow:0 2px 4px #183c5810}
+.docking-button.is-primary:hover{border-color:#194b73;background:#194b73}
+.docking-button.is-quiet{border-color:#dce5ee;color:#526e86;background:transparent}
+.docking-button.is-quiet:hover{border-color:#aac0d2;background:#edf3f8}
+.docking-button:disabled{opacity:.55;cursor:not-allowed;box-shadow:none}
+.docking-workspace button:focus-visible,.docking-workspace input:focus-visible,.docking-workspace a:focus-visible,.docking-workspace summary:focus-visible,.docking-action-form :is(input,select,textarea,button):focus-visible{outline:3px solid #7ca7ca66;outline-offset:3px}
+.docking-metrics{display:grid;flex:0 0 auto;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;margin-bottom:22px;overflow:hidden;border:1px solid var(--dock-line);border-radius:12px;background:var(--dock-line);box-shadow:0 3px 13px #21415b03}
+.docking-metric{position:relative;display:grid;grid-template-columns:1fr auto;column-gap:12px;align-items:center;padding:16px 20px;background:#ffffffee}
+.docking-metric small{color:#698095;font-size:12px;font-weight:500}
+.docking-metric strong{grid-column:2;grid-row:1/3;color:#234d71;font-size:30px;font-weight:550;line-height:1.3;font-variant-numeric:tabular-nums}
+.docking-metric>span{margin-top:3px;color:#8a99aa;font-size:10px}
+.docking-body{display:grid;flex:1 1 auto;grid-template-columns:290px minmax(0,1fr);gap:20px;min-height:0}
+.docking-list-panel{display:flex;min-height:0;flex-direction:column;overflow:hidden;border:1px solid var(--dock-line);border-radius:12px;background:#fbfcfe}
+.docking-list-tools{flex:0 0 auto;padding:19px 17px 15px;border-bottom:1px solid #e5ecf3;background:#fff}
+.docking-list-tools>label{display:block;margin-bottom:8px;color:#31506a;font-size:12px;font-weight:650}
+.docking-list-tools input{display:block;width:100%;height:37px;padding:8px 10px;border:1px solid #dbe4ed;border-radius:6px;color:#254967;background:#f8fafc;font:inherit;font-size:12px}
+.docking-list-tools input::placeholder{color:#96a4b1}
+.docking-filters{display:flex;gap:4px;margin-top:13px}
+.docking-filters button{flex:1;min-height:30px;padding:5px 6px;border:0;border-radius:5px;color:#71869a;background:transparent;font:inherit;font-size:11px;line-height:1.5;cursor:pointer;white-space:nowrap}
+.docking-filters button:hover{color:#345d7e;background:#f1f5f9}
+.docking-filters button.is-active{color:#255878;background:#eaf1f7;font-weight:650}
+.docking-demand-list{min-height:0;padding:9px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#ced9e3 transparent}
+.docking-demand-row{position:relative;display:flex;width:100%;flex-direction:column;align-items:flex-start;gap:7px;margin:0 0 5px;padding:16px 13px;border:1px solid transparent;border-radius:8px;color:var(--dock-text);background:transparent;text-align:left;cursor:pointer;transition:background .16s,border-color .16s}
+.docking-demand-row:hover{background:#f0f5f9}
+.docking-demand-row.is-active{border-color:#ccdeed;background:#edf4fa}
+.docking-demand-row.is-active:before{position:absolute;top:17px;bottom:17px;left:-1px;width:3px;border-radius:0 3px 3px 0;background:#3d729a;content:""}
+.docking-row-title{color:#294d6c;font-size:14px;font-weight:650;line-height:1.65;overflow-wrap:anywhere}
+.docking-row-meta{color:#8a98a7;font-size:10px}
+.docking-row-summary{display:flex;gap:8px;align-items:center;margin-top:2px;color:#6c8295;font-size:11px}
+.docking-row-summary>span{color:#adb9c5}
+.docking-badge{display:inline-flex;flex:0 0 auto;align-items:center;max-width:100%;padding:3px 8px;border:1px solid #dee5ec;border-radius:5px;color:#718295;background:#f3f6f9;font-size:10px;font-weight:550;line-height:1.6;white-space:nowrap}
+.docking-badge[data-tone=slate],.docking-badge[data-tone=neutral]{border-color:#dee5ec;color:#718295;background:#f3f6f9}
+.docking-badge[data-tone=amber]{border-color:#f0dfb7;color:#987223;background:#fbf5e8}
+.docking-badge[data-tone=blue]{border-color:#d4e2ee;color:#476f91;background:#eef4f9}
+.docking-badge[data-tone=green]{border-color:#cde4db;color:#387563;background:#eff8f3}
+.docking-detail-panel{min-height:0;padding:27px 28px 30px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#ced9e3 transparent;border:1px solid var(--dock-line);border-radius:12px;background:#fff;box-shadow:0 3px 13px #21415b03}
+.docking-detail-panel:focus{outline:none}
+.docking-detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;padding-bottom:23px;border-bottom:1px solid #e7edf3}
+.docking-detail-head h2{max-width:660px;color:var(--dock-ink);font-size:22px;font-weight:650;line-height:1.55;overflow-wrap:anywhere}
+.docking-detail-meta{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:11px}
+.docking-detail-meta>span:not(.docking-badge){color:#8a9baa;font-size:11px}
+.docking-detail-actions{flex:0 0 auto;padding-top:7px}
+.docking-overview-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:17px;margin:24px 0 27px}
+.docking-block{min-width:0;padding:18px 19px;border:1px solid #e0e8ef;border-radius:9px;background:#fcfdff}
+.docking-block h3{margin-bottom:10px;color:#355672;font-size:13px;font-weight:650}
+.docking-block>p{font-size:13px;line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere}
+.docking-block dl{display:grid;grid-template-columns:58px minmax(0,1fr);column-gap:12px;row-gap:10px;margin:0;font-size:12px;line-height:1.8}
+.docking-block dt{color:#8496a6}
+.docking-block dd{margin:0;color:#48637b;overflow-wrap:anywhere}
+.docking-condition{margin-top:15px;padding-top:12px;border-top:1px solid #e5edf4}
+.docking-condition strong{color:#7a8d9e;font-size:11px;font-weight:550}
+.docking-condition p{margin-top:5px;font-size:12px;line-height:1.85;white-space:pre-wrap;overflow-wrap:anywhere}
+.docking-workspace details{margin-top:13px;font-size:12px}
+.docking-workspace summary{width:fit-content;color:#567c9c;font-size:11px;cursor:pointer;line-height:1.7}
+.docking-workspace details[open]>summary{margin-bottom:12px}
+.docking-source{padding:10px 0;border-top:1px solid #e4ecf3}
+.docking-source p{color:#677f92;font-size:12px;line-height:1.85;white-space:pre-wrap;overflow-wrap:anywhere}
+.docking-evidence-link{display:inline-block;margin-top:5px;color:#527a9c;text-decoration:none;text-underline-offset:3px;font-size:11px;overflow-wrap:anywhere}
+.docking-evidence-link:hover{text-decoration:underline}
+.docking-section-head{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:14px}
+.docking-section-head h3{color:#2b4d68;font-size:15px;font-weight:650}
+.docking-section-head h3>span{display:inline-flex;min-width:22px;align-items:center;justify-content:center;margin-left:6px;padding:1px 5px;border-radius:4px;color:#7690a6;background:#f0f4f8;font-size:11px;font-weight:500;vertical-align:1px}
+.docking-section-head p{margin-top:4px;color:#8b9aa8;font-size:11px;line-height:1.7}
+.docking-clue-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.docking-clue-card{display:flex;min-width:0;flex-direction:column;padding:19px;border:1px solid #dce6ef;border-radius:9px;background:#fff}
+.docking-clue-card>header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:16px}
+.docking-clue-card>header>div{min-width:0}
+.docking-clue-card>header strong{display:block;color:#325772;font-size:14px;font-weight:650;line-height:1.6;overflow-wrap:anywhere}
+.docking-clue-meta{margin-top:5px;color:#8c9cab;font-size:10px;line-height:1.6;overflow-wrap:anywhere}
+.docking-clue-reason{padding:12px 13px;border-radius:6px;background:#f5f8fb}
+.docking-clue-reason small{display:block;margin-bottom:4px;color:#7b92a6;font-size:10px;font-weight:550}
+.docking-clue-reason p{color:#526e85;font-size:12px;line-height:1.85;white-space:pre-wrap;overflow-wrap:anywhere}
+.docking-clue-evidence{margin-bottom:12px}
+.docking-clue-evidence ul{margin:10px 0;padding-left:17px;color:#71879a;font-size:11px;line-height:1.85}
+.docking-clue-state{margin-top:auto!important;padding-top:5px;color:#8d9eac;font-size:10px;line-height:1.7}
+.docking-clue-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:15px;padding-top:14px;border-top:1px solid #edf1f5}
+.docking-clue-actions .docking-button{min-height:32px;padding:6px 10px;font-size:11px}
+.docking-records{margin-top:27px;padding-top:23px;border-top:1px solid #e6edf3}
+.docking-timeline{display:grid;gap:0;padding:3px 0 0 7px}
+.docking-timeline>article{position:relative;margin-left:2px;padding:0 0 22px 24px;border-left:1px solid #dde7ef}
+.docking-timeline>article:last-child{padding-bottom:2px;border-color:transparent}
+.docking-timeline>article:before{position:absolute;top:5px;left:-4px;width:7px;height:7px;border:2px solid #fff;border-radius:50%;background:#8caac0;box-shadow:0 0 0 1px #cfdeea;content:""}
+.docking-event-top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}
+.docking-event-kind{color:#4c6d89;font-size:12px;font-weight:650}
+.docking-event-top time{color:#96a4b2;font-size:10px;font-variant-numeric:tabular-nums}
+.docking-event-company{display:block;margin-bottom:4px;color:#59748c;font-size:12px;font-weight:600}
+.docking-timeline article>p{color:#688095;font-size:12px;line-height:1.85;white-space:pre-wrap;overflow-wrap:anywhere}
+.docking-event-actor{margin-top:7px;color:#99a6b2;font-size:10px;line-height:1.7}
+.docking-event-files{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+.docking-event-files .docking-button{min-height:29px;padding:4px 8px;font-size:10px}
+.docking-empty{display:flex;flex:1;min-height:210px;flex-direction:column;align-items:center;justify-content:center;padding:35px 24px;border:1px solid var(--dock-line);border-radius:12px;background:#ffffffd9;text-align:center}
+.docking-empty h2{margin:3px 0 9px;color:#315673;font-size:22px;font-weight:600;line-height:1.6}
+.docking-empty>p{max-width:470px;color:#8194a5;font-size:13px;line-height:1.9}
+.docking-empty>.docking-button{margin-top:23px}
+.docking-detail-panel>.docking-empty{height:100%;min-height:200px;border:0;background:transparent}
+.docking-inline-empty{padding:25px 22px;border:1px dashed #dce5ed;border-radius:8px;background:#f9fbfd}
+.docking-inline-empty>strong{color:#70889b;font-size:13px;font-weight:550}
+.docking-inline-empty>p{max-width:580px;margin-top:6px;color:#92a1ae;font-size:12px;line-height:1.85}
+.docking-inline-empty .docking-button{margin-top:15px}
+.docking-demand-list .docking-inline-empty{padding:21px 14px;border:0;background:transparent}
+.docking-muted{color:#8b9caa!important;font-size:11px!important;line-height:1.85!important}
+.docking-action-form{display:grid;gap:16px;color:#4b647b;font-size:13px;line-height:1.75}
+.docking-action-form label{display:grid;gap:7px;color:#526f86;font-size:12px;font-weight:550}
+.docking-action-form :is(input:not([type=checkbox]):not([type=radio]),select,textarea){width:100%;min-height:40px;padding:10px 11px;border:1px solid #d5e1ec;border-radius:7px;color:#31516c;background:#fcfdff;font:inherit;font-size:13px;font-weight:400;line-height:1.6}
+.docking-action-form textarea{min-height:120px;resize:vertical}
+.docking-action-form :is(input,textarea)::placeholder{color:#9dabb7}
+.docking-action-form :is(input,select,textarea):focus{border-color:#83a8c5;background:#fff}
+.docking-action-form input[type=file]{font-size:12px}
+.docking-action-form :is(small,.hint){color:#8a9caa;font-size:11px;font-weight:400}
+.docking-action-form .docking-inline-empty{padding:13px 15px}
+@media(min-width:1500px){.docking-workspace{padding-inline:36px}.docking-body{grid-template-columns:310px minmax(0,1fr);gap:24px}.docking-detail-panel{padding-inline:32px}.docking-metric{padding-inline:24px}}
+@media(max-width:1190px){.docking-workspace{padding:23px 22px 20px}.docking-body{grid-template-columns:270px minmax(0,1fr);gap:16px}.docking-metric{padding:14px 15px}.docking-metric strong{font-size:26px}.docking-metric>span{font-size:9px}.docking-detail-panel{padding:23px 21px}.docking-detail-head{flex-wrap:wrap;gap:12px}.docking-detail-actions{padding-top:0}.docking-overview-grid{grid-template-columns:1fr;gap:12px}.docking-clue-grid{grid-template-columns:1fr}}
+@media(max-width:1000px){.docking-body{grid-template-columns:240px minmax(0,1fr);gap:14px}.docking-workspace{padding:20px 18px 18px}.docking-header{gap:16px;margin-bottom:17px}.docking-header h1{font-size:24px}.docking-header p{font-size:12px}.docking-metrics{margin-bottom:17px}.docking-metric{padding:12px}.docking-metric strong{font-size:24px}.docking-metric>span{display:none}.docking-metric small{font-size:11px}.docking-list-tools{padding:16px 13px 13px}.docking-demand-row{padding:14px 11px}.docking-detail-panel{padding:21px 18px}.docking-detail-head h2{font-size:20px}.docking-detail-head .docking-kicker{font-size:9px}.docking-block{padding:16px}.docking-clue-card{padding:16px}}
+@media(max-width:760px){body.docking-view .app-shell{min-height:0}body.docking-view .workspace{min-height:0;overflow:hidden}body.docking-view .main-pane{min-height:0;flex:1 1 auto;overflow:auto}.docking-workspace{display:flex;height:auto;min-height:100%;padding:18px 14px;overflow:visible}.docking-header{align-items:flex-start;gap:10px}.docking-header h1{font-size:23px}.docking-header p{max-width:300px;font-size:11px;line-height:1.8}.docking-header-actions{padding-top:15px}.docking-header-actions .docking-button{padding:6px 9px;min-height:32px;font-size:10px;white-space:nowrap}.docking-kicker{font-size:8px;letter-spacing:1.1px}.docking-metrics{grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:14px;border-radius:9px}.docking-metric{padding:12px 14px}.docking-metric strong{font-size:23px}.docking-metric>span{display:block;font-size:9px}.docking-body{display:flex;flex:1;flex-direction:column;gap:14px;min-height:0}.docking-list-panel{flex:0 0 auto;max-height:250px;border-radius:9px}.docking-list-tools{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:9px;align-items:center;padding:12px}.docking-list-tools>label{display:none}.docking-list-tools input{min-width:0;height:34px;font-size:11px}.docking-filters{gap:2px;margin-top:0}.docking-filters button{min-height:30px;padding:5px 7px;font-size:10px}.docking-demand-list{display:flex;flex-direction:column;max-height:190px;padding:5px 8px;overflow:auto}.docking-demand-row{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:9px;row-gap:3px;margin-bottom:3px;padding:10px 11px;flex:0 0 auto}.docking-row-title{font-size:12px}.docking-row-meta{grid-column:1;grid-row:2;font-size:9px}.docking-demand-row>.docking-badge{grid-column:2;grid-row:1;align-self:center;justify-self:end;font-size:9px}.docking-row-summary{grid-column:2;grid-row:2;justify-content:flex-end;margin-top:0;font-size:9px;gap:5px}.docking-demand-row.is-active:before{top:10px;bottom:10px}.docking-detail-panel{min-height:0;padding:20px 16px;overflow:visible;border-radius:9px}.docking-detail-head{padding-bottom:18px;gap:13px}.docking-detail-head h2{font-size:20px}.docking-detail-meta{gap:8px;margin-top:8px}.docking-detail-actions{gap:7px}.docking-detail-actions .docking-button{min-height:33px;padding:6px 11px;font-size:11px}.docking-overview-grid{margin:19px 0 22px;gap:10px}.docking-block{padding:15px}.docking-block h3{font-size:12px}.docking-block>p{font-size:12px}.docking-block dl{grid-template-columns:53px minmax(0,1fr);column-gap:8px;font-size:11px}.docking-section-head{gap:10px;align-items:flex-start}.docking-section-head h3{font-size:14px}.docking-section-head p{font-size:10px}.docking-section-head>.docking-button{flex:0 0 auto;padding:6px 9px;min-height:30px;font-size:10px}.docking-clue-grid{gap:11px}.docking-clue-card{padding:15px}.docking-clue-card>header strong{font-size:13px}.docking-clue-card>header{gap:8px;margin-bottom:13px}.docking-clue-card>header .docking-badge{font-size:9px}.docking-clue-reason p{font-size:11px}.docking-clue-actions{gap:6px}.docking-clue-actions .docking-button{padding:6px 8px;font-size:10px}.docking-records{margin-top:22px;padding-top:19px}.docking-inline-empty{padding:20px 16px}.docking-inline-empty>strong{font-size:12px}.docking-inline-empty>p{font-size:11px}.docking-empty{min-height:240px;padding:26px 18px}.docking-empty h2{font-size:19px}.docking-empty>p{font-size:12px}.docking-event-top{align-items:flex-start}.docking-event-top time{font-size:9px}.docking-timeline article>p{font-size:11px}}
+@media(max-width:420px){.docking-workspace{padding:15px 10px}.docking-header{flex-wrap:wrap;gap:8px;margin-bottom:14px}.docking-header-actions{padding-top:0}.docking-metric{padding:10px 12px}.docking-metric>span{font-size:8px}.docking-list-tools{grid-template-columns:1fr;gap:8px}.docking-filters{justify-content:flex-start}.docking-filters button{flex:0 1 auto;padding-inline:13px}.docking-list-panel{max-height:250px}.docking-demand-list{max-height:150px}.docking-detail-panel{padding:17px 13px}.docking-row-summary{font-size:8px}.docking-row-title{font-size:11px}.docking-detail-head h2{font-size:18px}.docking-detail-meta>span:not(.docking-badge){font-size:10px}.docking-clue-card>header{flex-wrap:wrap}.docking-clue-card>header .docking-badge{justify-self:start}}
+@media(prefers-reduced-motion:reduce){.docking-workspace *{transition:none!important;scroll-behavior:auto!important}}
+/* Shared action dialogs are mounted outside the workspace element. */
+.docking-log-form{display:grid;grid-template-columns:1fr;gap:9px;color:#49667e;font-size:13px;line-height:1.75}
+.docking-log-context{display:grid;gap:4px;margin-bottom:11px;padding:15px 17px;border:1px solid #dce7f0;border-radius:9px;background:#f5f9fc}
+.docking-log-context>span{margin-top:5px;color:#8a9cac;font-size:10px}
+.docking-log-context>span:first-child{margin-top:0}
+.docking-log-context>strong{color:#355b79;font-size:13px;font-weight:600;overflow-wrap:anywhere}
+.docking-log-context>p{margin:4px 0 0;color:#7f94a6;font-size:11px;line-height:1.8}
+.docking-log-form>label{margin-top:8px;color:#4d6d85;font-size:12px;font-weight:600}
+.docking-log-form>label>span{color:#9aaab7;font-size:11px;font-weight:400}
+.docking-log-form :is(select,textarea,input[type=file]){display:block;box-sizing:border-box;width:100%;min-height:41px;padding:10px 12px;border:1px solid #d7e3ec;border-radius:7px;color:#355973;background:#fcfdff;font:inherit;font-size:13px;line-height:1.65}
+.docking-log-form textarea{min-height:138px;resize:vertical}
+.docking-log-form textarea::placeholder{color:#a2afbb;font-size:12px}
+.docking-log-form select{cursor:pointer}
+.docking-log-form :is(select,textarea,input[type=file]):focus-visible{outline:3px solid #7ca7ca4d;outline-offset:2px;border-color:#8db0cb;background:#fff}
+.docking-log-form input[type=file]{padding:9px;font-size:11px;color:#879cab}
+.docking-log-form input[type=file]::file-selector-button{margin-right:10px;padding:5px 10px;border:1px solid #d1dfeb;border-radius:5px;color:#4c7291;background:#f0f5f9;font:inherit;cursor:pointer}
+.docking-log-form input[type=file]::file-selector-button:hover{background:#e8f0f7}
+.docking-form-help{margin:0!important;color:#92a2b0;font-size:10px;line-height:1.8}
+.docking-form-error{margin:0!important;color:#ae4c48;font-size:12px;line-height:1.8}
+.docking-form-error:empty{display:none}
+.docking-draft-file{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:5px 0;padding:9px 11px;border:1px solid #e2eaf1;border-radius:6px;background:#f9fbfd}
+.docking-draft-file>span{min-width:0;color:#56768e;font-size:11px;overflow-wrap:anywhere}
+.docking-draft-file small{margin-left:6px;color:#99a9b7;font-size:10px;white-space:nowrap}
+.docking-draft-file>button{flex:0 0 auto;padding:4px 7px;border:0;border-radius:4px;color:#8b7a7b;background:transparent;font:inherit;font-size:10px;cursor:pointer}
+.docking-draft-file>button:hover{color:#ac5c56;background:#faf0ee}
+.docking-contact-material{color:#5c798e;font-size:12px;line-height:1.85}
+.docking-contact-material>p{margin:0 0 16px;color:#8599aa;font-size:11px;line-height:1.85}
+.docking-contact-material>section{margin-top:15px;padding:16px;border:1px solid #dfe8f0;border-radius:9px;background:#fafcfe}
+.docking-contact-material h3{margin:0 0 10px;color:#486c88;font-size:13px;font-weight:600}
+.docking-contact-material>section>p{margin:0;color:#8196a7;font-size:12px;line-height:1.85;white-space:pre-wrap;overflow-wrap:anywhere}
+.docking-contact-person{display:grid;gap:8px;padding:11px 0;border-top:1px solid #e2ebf2}
+.docking-contact-person:first-of-type{padding-top:2px;border-top:0}
+.docking-contact-person:last-child{padding-bottom:0}
+.docking-contact-person>div{display:grid;grid-template-columns:42px minmax(0,1fr);gap:10px;align-items:baseline;font-size:12px;line-height:1.8}
+.docking-contact-person span{color:#90a1af;font-size:11px}
+.docking-contact-person strong{color:#57758d;font-weight:500;overflow-wrap:anywhere;white-space:pre-wrap}
+@media(max-width:760px){.docking-log-context{padding:13px 14px}.docking-log-form textarea{min-height:122px}.docking-contact-material>section{padding:13px}.docking-log-form :is(select,textarea){font-size:13px}}
+
+/* Customer request ownership and feedback stay beside the original demand. */
+.docking-receiving{padding:20px 22px;margin:22px 0 0;border:1px solid #d7e5ef;border-radius:11px;background:linear-gradient(120deg,#f4f8fc,#fbfdff)}
+.docking-receiving-top{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:12px}
+.docking-receiving h3{font-size:15px;color:#2e5576;font-weight:650}
+.docking-receiving-reply{white-space:pre-wrap;font-size:13px;line-height:1.8;color:#4d6981}
+.docking-receiving dl{display:grid;grid-template-columns:70px minmax(0,1fr);gap:6px 14px;margin:15px 0;font-size:12px}
+.docking-receiving dt{color:#8498aa}.docking-receiving dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.docking-receiving>.docking-button{margin-top:14px}
+.docking-receiving[data-status=needs_info]{border-color:#e7d6ae;background:linear-gradient(120deg,#fffaf0,#fffdf8)}
+.docking-receiving[data-status=feedback]{border-color:#c7e2dc;background:linear-gradient(120deg,#f2faf7,#fcfefd)}
+.docking-verification-reply{margin:13px 0;padding:13px 14px;border:1px solid #dbe7ef;border-radius:7px;background:#f7fafc}
+.docking-verification-reply strong{font-size:11px;color:#50728d}.docking-verification-reply p{font-size:12px;line-height:1.8;white-space:pre-wrap;margin:7px 0!important}.docking-verification-reply small{color:#869aab;font-size:10px}
+.docking-badge[data-tone=rose]{color:#a85159;background:#f9eeee;border-color:#ecd3d6}
+.docking-form-columns{display:grid;grid-template-columns:1fr 1fr;gap:14px}.docking-form-columns label{display:block;margin:5px 0 7px;font-size:12px;color:#4d6d85;font-weight:600}.docking-form-columns label span{font-weight:400;color:#93a3b2}
+.docking-log-form input:not([type=file]){width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d7e3ec;border-radius:7px;color:#355973;background:#fcfdff;font:inherit;font-size:13px}
+@media(max-width:760px){.docking-receiving{padding:16px;margin-top:18px}.docking-receiving h3{font-size:13px}.docking-receiving dl{grid-template-columns:58px 1fr;gap:6px 10px;font-size:11px}.docking-receiving-reply{font-size:12px}.docking-form-columns{grid-template-columns:1fr}}
+
+.docking-log-form [hidden]{display:none!important}
 /* Shared chain explorer. Load after each application's existing styles.
    JavaScript owns view switching and disclosure state; this file only styles them. */
 .chain-explorer {
@@ -2735,6 +2922,7 @@ function syncDetailPane(){
 function render(){
   document.body.classList.toggle('kb-view',view==='knowledge'&&!!AUTH);
   document.body.classList.toggle('industry-view',view==='report'&&!!AUTH);
+  document.body.classList.toggle('docking-view',(view==='home'||view==='docking')&&!!AUTH);
   if(typeof kbCancelHiddenRequests==='function')kbCancelHiddenRequests();
   // 跳过重渲染：用户正在查看校验结果或冲突面板时不重建DOM
   if(AUTH&&_authState==='ready'&&(window._verifyInProgress || document.getElementById('conflictModal'))) return;
@@ -2796,6 +2984,7 @@ function render(){
   // 注意：必须用"本次重建前"刚捕获的位置来还原（_captureScroll 会写入 _scrollMemory），
   // 而不是上一轮的旧值，否则跨标签同步/异步 render 会把滚动错误还原到过时位置或顶部。
   var _chainDom=_captureChainExplorer();
+  var _dockingDom=typeof dockingCaptureView==='function'?dockingCaptureView():null;
   var _nextMarkup=
    '<div class="app-shell">'+
     topbar(p)+
@@ -2812,13 +3001,14 @@ function render(){
   // Background sync often changes no visible report data. Keep the live DOM,
   // including expanded evidence, focus and the graph drawer, in that case.
   var _nextKey=_viewScrollKey(),_nextGraphDataKey=view==='report'?_chainRenderDataKey():null;
-  if(view==='report'&&render._markup===_nextMarkup&&render._markupKey===_nextKey&&render._markupAuthEpoch===_authEpoch&&render._graphDataKey===_nextGraphDataKey&&_renderedScrollKey===_nextKey)return;
+  if((view==='report'||view==='home')&&render._markup===_nextMarkup&&render._markupKey===_nextKey&&render._markupAuthEpoch===_authEpoch&&render._graphDataKey===_nextGraphDataKey&&_renderedScrollKey===_nextKey)return;
   _captureScroll();
   var _prevScrollKey=_scrollMemory.key, _prevScrollTops=_scrollMemory.tops;
   $('#root').innerHTML=_nextMarkup;
   render._markup=_nextMarkup;render._markupKey=_nextKey;render._markupAuthEpoch=_authEpoch;render._graphDataKey=_nextGraphDataKey;
   _renderedScrollKey=_nextKey;
   _restoreChainExplorer(_chainDom);
+  if(typeof dockingRestoreView==='function')dockingRestoreView(_dockingDom);
   bind();
   if(cur && REPORT_HISTORY[cur]) { var _rha=document.getElementById('reportHistoryArea'); if(_rha) renderHistoryReports(cur); }
   // 城市智库对话：render 重建了 #kbConv，把已存的历史对话回放回去（切主题/切模块/刷新都不丢）
@@ -4042,7 +4232,7 @@ function topbar(p){
     '<div class="org-block"><i class="i">🏛️</i>'+
       '<strong style="font-weight:650">'+_authEscape(p.org)+' · '+_authEscape(p&&p.who||'—')+'</strong>'+
       '<span style="margin:0 10px;color:#cbd7e6">/</span>'+
-      '<strong id="topbarTopic" style="color:var(--blue-dark)">'+_authEscape(p.topic)+'</strong>'+
+      '<strong id="topbarTopic" style="color:var(--blue-dark)">'+_authEscape((view==='home'||view==='docking')?'招商对接工作区':p.topic)+'</strong>'+
     '</div>'+
     '<div class="top-meta"><span><i class="i">🛰️</i>'+_authEscape(p.city)+'城市智库已连接</span><span><i class="i">🕒</i>当前时间 '+nowLabel()+'</span>'+
       '<span style="position:relative;cursor:pointer" onclick="toggleNotif(event)"><i class="i">🔔</i>'+
@@ -4862,6 +5052,7 @@ function industryDemandButtonHtml(project,item){
 }
 function industryDemandSummaryHtml(project){
   var spec=project.demandSpec||{},priority=project.selectedPriority||{};
+  if(project.demandOrigin==='direct'||spec.source==='user_direct')return '<section class="industry-submitted-demand"><span class="industry-demand-eyebrow">机构直接提交</span><h3>'+escapeChainText(industryDemandProjectTitle(project))+'</h3><p>'+escapeChainText(spec.description||'')+'</p>'+(spec.conditions?'<h4>补充条件</h4><p>'+escapeChainText(spec.conditions)+'</p>':'')+'<p class="industry-demand-boundary">该需求由提交人说明，管理端将按具体诉求受理。</p></section>';
   return '<section class="industry-submitted-demand"><span class="industry-demand-eyebrow">独立招商需求</span><h3>'+escapeChainText(industryDemandProjectTitle(project))+'</h3><p>'+escapeChainText(spec.description||'')+'</p>'+(spec.conditions?'<h4>补充条件</h4><p>'+escapeChainText(spec.conditions)+'</p>':'')+'<div class="industry-demand-origin">来自分析：'+escapeChainText(project.sourceAnalysisTopic||project.topic)+'<br>对应建议：'+escapeChainText(priority.focus||'')+'</div><p class="industry-demand-boundary">以上为提交人确认的需求，原报告的事实核验状态保持不变。</p></section>';
 }
 function openIndustryDemandProject(key){
@@ -4915,6 +5106,342 @@ async function submitIndustryDemand(){
     toast(result.created?'这条招商需求已提交，可在招商对接中单独查看':'这条建议已有需求，已保留原提交内容');return true;
   }catch(exception){if((typeof _authEpoch==='number'?_authEpoch:0)===draft.epoch&&INDUSTRY_DEMAND_DRAFT===draft)fail(exception.message||'提交未完成，请重试。');return false;}
   finally{draft.pending=false;if(button&&button.isConnected!==false){button.disabled=false;button.textContent='确认提交本条需求';}}
+}
+
+/* A known customer need can enter the same receiving queue without a report. */
+var DIRECT_DEMAND_DRAFT=null;
+function directDemandWorkspaceKey(){
+  var keys=typeof cityKeys==='function'?cityKeys():[];
+  return keys.find(function(key){var p=PROJECTS[key];return p&&p.isDemand!==true&&(!p.workspaceId||p.workspaceId===key);})||null;
+}
+function openDirectDemandComposer(){
+  var key=directDemandWorkspaceKey();if(!key){toast('当前账号没有可提交需求的工作区，请重新登录核对。');return false;}
+  if(DIRECT_DEMAND_DRAFT&&DIRECT_DEMAND_DRAFT.pending){toast('上一条需求正在提交，请稍候。');return false;}
+  if(!DIRECT_DEMAND_DRAFT||!DIRECT_DEMAND_DRAFT.uncertain||DIRECT_DEMAND_DRAFT.key!==key||DIRECT_DEMAND_DRAFT.epoch!==dockingActionEpoch())DIRECT_DEMAND_DRAFT={key:key,epoch:dockingActionEpoch(),requestId:dockingRequestId(),pending:false,uncertain:false,attempt:null};
+  var body='<div class="docking-log-form"><div class="docking-log-context"><strong>直接提交明确的招商需求</strong><p>需求进入管理端受理队列。管理端会填写负责人、下一步及处理反馈，你可以在这里持续补充资料。</p></div><label for="directDemandTitle">需求名称</label><input id="directDemandTitle" maxlength="120" placeholder="填写具体的招引对象或合作需求"><label for="directDemandDescription">具体招引诉求</label><textarea id="directDemandDescription" maxlength="6000" rows="5" placeholder="说明需要什么类型的企业、产品或能力，以及希望达成的合作"></textarea><label for="directDemandConditions">承接条件与要求 <span>（选填）</span></label><textarea id="directDemandConditions" maxlength="2000" rows="3" placeholder="可填写园区载体、合作方式、时间要求和其他条件"></textarea><div class="docking-form-columns"><div><label for="directDemandContactName">对接人 <span>（选填）</span></label><input id="directDemandContactName" maxlength="80"></div><div><label for="directDemandContactMethod">联系方式 <span>（选填）</span></label><input id="directDemandContactMethod" maxlength="240" placeholder="电话、邮箱或其他联系方式"></div></div><p class="docking-form-help">以上内容按你提交的需求保存。提交后可继续补充相关材料。</p><p id="directDemandError" class="docking-form-error" role="alert"></p></div>';
+  openModal('提交招商需求',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button id="directDemandSubmit" class="primary-button" onclick="submitDirectDemand()">提交给管理端</button>');
+  if(DIRECT_DEMAND_DRAFT.values){var values=DIRECT_DEMAND_DRAFT.values;[['Title','title'],['Description','description'],['Conditions','conditions'],['ContactName','contactName'],['ContactMethod','contactMethod']].forEach(function(pair){var el=document.getElementById('directDemand'+pair[0]);if(el)el.value=values[pair[1]]||'';});}
+  return true;
+}
+async function submitDirectDemand(){
+  var draft=DIRECT_DEMAND_DRAFT;if(!draft||draft.pending)return false;
+  var error=document.getElementById('directDemandError'),button=document.getElementById('directDemandSubmit');
+  function fail(message){if(error)error.textContent=message;else toast(message);}
+  if(draft.epoch!==dockingActionEpoch()||directDemandWorkspaceKey()!==draft.key){fail('账号或工作区已变化，请重新打开需求表单。');return false;}
+  function value(id){var el=document.getElementById(id);return el&&typeof el.value==='string'?el.value.trim():'';}
+  var demand={title:value('directDemandTitle'),description:value('directDemandDescription'),conditions:value('directDemandConditions'),contactName:value('directDemandContactName'),contactMethod:value('directDemandContactMethod')};
+  if(!demand.title||demand.title.length>120||!demand.description||demand.description.length>6000){fail('请填写需求名称（120字以内）和具体招引诉求（6000字以内）。');return false;}
+  if(demand.conditions.length>2000||demand.contactName.length>80||demand.contactMethod.length>240){fail('补充内容超过长度限制，请精简后再提交。');return false;}
+  var body={mode:'direct',projectKey:draft.key,requestId:draft.requestId,demand:demand},attempt=JSON.stringify(body);
+  if(draft.uncertain&&draft.attempt!==attempt){fail('上次提交结果尚未确认，请先按原内容重试，避免产生重复需求。');return false;}
+  if(draft.attempt&&draft.attempt!==attempt){draft.requestId=dockingRequestId();body.requestId=draft.requestId;attempt=JSON.stringify(body);}
+  draft.values=JSON.parse(JSON.stringify(demand));draft.attempt=attempt;draft.pending=true;if(button){button.disabled=true;button.textContent='正在提交…';}fail('');
+  try{
+    var response=await fetch('/api/industry-demand',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),result;
+    try{result=await response.json();}catch(_){throw dockingActionError('未收到保存结果，请按原内容重试。');}
+    if(!response.ok||!result||result.ok!==true)throw dockingActionError(result&&result.message||'需求尚未保存，请重试。',response.status>=400&&response.status<500&&response.status!==408);
+    if(draft.epoch!==dockingActionEpoch()||directDemandWorkspaceKey()!==draft.key)return false;
+    if(!result.projectKey||result.projectKey===draft.key||!result.project||result.project.id!==result.projectKey||result.project.isDemand!==true||result.project.submissionState!=='submitted'||result.project.demandContract!=='industry-demand-v1'||result.project.workspaceId!==draft.key||result.project.demandOrigin!=='direct'||result.project.directRequestId!==body.requestId||!result.demand||result.demand.demandContract!=='industry-demand-v1'||result.demand.demandOrigin!=='direct'||result.demand.directRequestId!==body.requestId||!result.demand.id||result.demand.projKey!==result.projectKey||Object.keys(demand).some(function(field){return !result.project.demandSpec||result.project.demandSpec[field]!==demand[field]||!result.demand.demandSpec||result.demand.demandSpec[field]!==demand[field];}))throw dockingActionError('保存回执与本条需求不一致，请刷新核对。');
+    var forbidden=['selectedPriority','sourceProjectKey','sourceAnalysisTopic','sourcePriorityKey','sourceReportIdentity','sourceReportFingerprint'];
+    if(forbidden.some(function(field){return field in result.project||field in result.demand;})||result.project.demandTitle!==demand.title||result.project.topic!==demand.title||result.demand.need!==demand.description||result.demand.note!==demand.conditions||result.demand.demandTitle!==demand.title||result.project.demandSpec.source!=='user_direct'||result.project.demandSpec.verificationStatus!=='user_stated'||!result.reportState||Object.keys(result.reportState).length)throw dockingActionError('直接需求回执包含不一致的来源或内容，请刷新核对。');
+    var current=PROJECTS[result.projectKey];
+    if(current&&(current.directRequestId!==body.requestId||current.workspaceId!==draft.key||current.demandOrigin!=='direct'))throw dockingActionError('已有需求与回执不一致，请刷新核对。');
+    if(!current)PROJECTS[result.projectKey]=result.project;var index=DEMANDS.findIndex(function(row){return row.id===result.demand.id;});if(index<0)DEMANDS.push(result.demand);
+    if(typeof REPORTSTATE!=='undefined'&&!REPORTSTATE[result.projectKey])REPORTSTATE[result.projectKey]=result.reportState||{};
+    try{persist();}catch(_){}
+    if(DIRECT_DEMAND_DRAFT===draft){DIRECT_DEMAND_DRAFT=null;closeModal();window.__projOpen=result.projectKey;if(typeof dockingViewState==='function'){dockingViewState().selected=result.projectKey;dockingViewState().filter='all';dockingViewState().search='';}view='home';render();}
+    toast('招商需求已提交，等待管理端受理');return true;
+  }catch(exception){draft.uncertain=!exception.definitive;if(DIRECT_DEMAND_DRAFT===draft&&draft.epoch===dockingActionEpoch())fail(exception.message||'提交未完成，请重试。');return false;}
+  finally{draft.pending=false;if(button&&button.isConnected!==false){button.disabled=false;button.textContent='提交给管理端';}}
+}
+/* Explicit docking receipts: a request or a note never certifies an enterprise. */
+var DOCKING_LOG_DRAFT=null;
+var DOCKING_CLUE_DRAFT=null;
+var DOCKING_VERIFY_REQUESTS={};
+var DOCKING_FILE_TYPES={pdf:'application/pdf',png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',txt:'text/plain',csv:'text/csv',doc:'application/msword',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation'};
+function dockingActionText(value){return String(value==null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function dockingActionCall(name,args){return dockingActionText(name+'('+args.map(function(value){return JSON.stringify(value);}).join(',')+')');}
+function dockingLogRecords(key){
+  var rows=typeof DOCK_LOGS!=='undefined'&&DOCK_LOGS&&DOCK_LOGS[key];
+  return (Array.isArray(rows)?rows:[]).filter(function(row){return row&&typeof row==='object'&&!Array.isArray(row);}).slice().sort(function(a,b){return (Number(b.ts)||0)-(Number(a.ts)||0);});
+}
+function dockingMergeLogRecords(key,received){
+  var seen=Object.create(null),merged=[];
+  dockingLogRecords(key).concat(Array.isArray(received)?received:[]).forEach(function(row){
+    if(!row||typeof row!=='object'||Array.isArray(row))return;
+    var identity=typeof row.id==='string'&&row.id?'id:'+row.id:'legacy:'+JSON.stringify([row.ts==null?null:row.ts,row.type||'',row.note||'']);
+    if(seen[identity])return;seen[identity]=true;merged.push(row);
+  });
+  return merged.sort(function(a,b){return (Number(b.ts)||0)-(Number(a.ts)||0);});
+}
+function dockingClueState(key,clue){
+  if(!clue||typeof clue!=='object')return {key:'pending',label:'待核验',tone:'slate',detail:'尚未保存核验记录。',canRequest:false};
+  var hasId=typeof clue.id==='string'&&!!clue.id;
+  var request=clue.verificationRequest;
+  if(request&&request.contract==='docking-action-v1'&&typeof request.id==='string'&&request.id){
+    if(request.status==='processing')return {key:'processing',label:'核验处理中',tone:'blue',detail:request.reply||'资源团队正在核对本条企业线索。',canRequest:false};
+    if(request.status==='needs_info')return {key:'needs_info',label:'核验需补充资料',tone:'amber',detail:request.reply||'请补充企业资料或待核问题。',canRequest:false};
+    if(request.status==='completed'){var labels={further_contact:'建议进一步对接',not_suitable:'本次需求不适配',insufficient:'依据仍不足'};return {key:'completed',label:labels[request.outcome]||'已反馈核验结果',tone:request.outcome==='further_contact'?'teal':request.outcome==='not_suitable'?'rose':'amber',detail:request.reply||'核验记录已反馈，请查看具体依据。',canRequest:false};}
+    return {key:'requested',label:'已申请核验',tone:'amber',detail:'核验申请已保存，等待资源团队处理；尚未形成核验结论。',canRequest:false};
+  }
+  if(hasId&&dockingLogRecords(key).some(function(row){return row.contract==='docking-action-v1'&&row.kind==='contact_log'&&row.clueId===clue.id&&typeof row.id==='string'&&row.id;})){
+    return {key:'followed',label:'已记录跟进',tone:'blue',detail:'已保存这家企业的跟进记录，具体情况以记录内容为准，尚不代表核验通过。',canRequest:true};
+  }
+  if(clue.review&&clue.review.scope==='human_match_review_pending'&&clue.review.product&&clue.review.demand)return {key:'matched',label:'已核对产品适配',tone:'blue',detail:'已有产品与需求的人工适配意见，联系情况与投资意向仍待核实。',canRequest:hasId};
+  if(clue.tone==='teal'||clue.tone==='amber'||/核验通过|已核验|可安排|可沟通|核验中/.test(String(clue.status||''))){
+    return {key:'legacy',label:'历史状态待复核',tone:'slate',detail:'原有状态尚无对应的核验凭据，需要重新核对；颜色不作为核验结论。',canRequest:hasId};
+  }
+  return {key:'pending',label:'待核验',tone:'slate',detail:hasId?'尚未保存核验申请，可先核对产品依据并记录具体问题。':'线索标识缺失，请先完善企业资料。',canRequest:hasId};
+}
+function dockingActionEpoch(){return typeof _authEpoch==='number'?_authEpoch:0;}
+function dockingProjectIdentity(project){
+  if(!project)return '';
+  return JSON.stringify(['workspaceId','parentProjectKey','parentKey','sourceProjectKey','sourceAnalysisTopic','sourcePriorityKey','demandTitle','topic','submissionState'].map(function(key){return project[key]==null?null:project[key];}));
+}
+function dockingActionContext(key,clueId){
+  var project=typeof PROJECTS!=='undefined'&&PROJECTS[key];
+  if(!project||project.isDemand!==true){toast('请先选择已提交的具体招商需求');return null;}
+  var clue=clueId==null?null:(Array.isArray(project.clues)?project.clues:[]).find(function(item){return item&&item.id===clueId;});
+  if(clueId!=null&&!clue){toast('这条企业线索已变化，请刷新后重新选择');return null;}
+  return {key:key,clueId:clueId==null?null:clueId,epoch:dockingActionEpoch(),identity:dockingProjectIdentity(project)};
+}
+function dockingActionContextCurrent(context){
+  var project=typeof PROJECTS!=='undefined'&&PROJECTS[context.key];
+  return context.epoch===dockingActionEpoch()&&project&&project.isDemand===true&&dockingProjectIdentity(project)===context.identity&&(context.clueId==null||(Array.isArray(project.clues)?project.clues:[]).some(function(clue){return clue&&clue.id===context.clueId;}));
+}
+function dockingActionRequestId(){
+  if(typeof crypto!=='undefined'&&typeof crypto.randomUUID==='function')return 'dock-'+crypto.randomUUID();
+  return 'dock-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)+'-'+Math.random().toString(36).slice(2);
+}
+function dockingActionError(message,definitive){var error=new Error(message);error.definitive=!!definitive;return error;}
+async function dockingSendAction(context,body){
+  if(!dockingActionContextCurrent(context))throw dockingActionError('当前会话、需求或企业已变化，请重新打开后操作。',true);
+  var response=await fetch('/api/docking-action',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  var result;try{result=await response.json();}catch(_){throw dockingActionError('未收到保存结果，请按原内容重试。');}
+  if(!response.ok||!result||result.ok!==true)throw dockingActionError(result&&result.message||result&&result.error||'操作尚未保存，请重试。',response.status>=400&&response.status<500&&response.status!==408);
+  if(!dockingActionContextCurrent(context))return null;
+  if(result.projectKey!==context.key||!result.project||result.project.isDemand!==true||dockingProjectIdentity(result.project)!==context.identity||!Array.isArray(result.logs)||(result.demand&&result.demand.projKey!==context.key))throw dockingActionError('服务端返回的需求不一致，请刷新核对后重试。');
+  var kind=body.action==='request_verification'?'verification_request':'contact_log';
+  var receipt=result.logs.find(function(row){return row&&row.contract==='docking-action-v1'&&row.requestId===body.requestId&&row.kind===kind&&(row.clueId==null?null:row.clueId)===context.clueId;});
+  if(!receipt||!receipt.id)throw dockingActionError('服务端未返回本次保存凭据，请按原内容重试。');
+  if(body.record&&(receipt.type!==body.record.type||receipt.note!==body.record.note||JSON.stringify(receipt.files||[])!==JSON.stringify(body.record.files||[])))throw dockingActionError('返回的跟进内容与本次提交不一致，请刷新核对。');
+  if(body.action==='request_verification'){
+    var clue=(result.project.clues||[]).find(function(item){return item&&item.id===context.clueId;});
+    if(!clue||!clue.verificationRequest||clue.verificationRequest.contract!=='docking-action-v1'||clue.verificationRequest.id!==receipt.id||['requested','processing','needs_info','completed'].indexOf(clue.verificationRequest.status)<0)throw dockingActionError('未收到企业核验申请的保存凭据，请按原请求重试。');
+  }
+  // This response may predate a concurrent note, clue edit or stage update.
+  // Merge only the operation's immutable receipt into the current project.
+  if(body.action==='request_verification'){
+    var currentClue=(PROJECTS[context.key].clues||[]).find(function(item){return item&&item.id===context.clueId;});
+    if(currentClue){var savedRequest=currentClue.verificationRequest,returnedRequest=clue.verificationRequest;if(!savedRequest||savedRequest.contract!=='docking-action-v1'||(savedRequest.id===returnedRequest.id&&Number(returnedRequest.version||0)>Number(savedRequest.version||0)))currentClue.verificationRequest=JSON.parse(JSON.stringify(returnedRequest));}
+  }
+  if(typeof DOCK_LOGS==='undefined'||!DOCK_LOGS)DOCK_LOGS={};
+  DOCK_LOGS[context.key]=dockingMergeLogRecords(context.key,result.logs);
+  try{if(typeof persist==='function')persist();}catch(_){/* The server receipt remains authoritative when local storage is full. */}
+  return result;
+}
+function dockingLogError(message){var box=document.getElementById('dockingLogError');if(box)box.textContent=message;else toast(message);}
+function openDockingLog(key,clueId,operation){
+  var context=dockingActionContext(key,clueId);if(!context)return false;
+  if(DOCKING_LOG_DRAFT&&DOCKING_LOG_DRAFT.pending&&DOCKING_LOG_DRAFT.context.epoch===context.epoch){toast('正在保存上一条记录，请稍候');return false;}
+  var project=PROJECTS[key],clue=context.clueId==null?null:(project.clues||[]).find(function(item){return item.id===context.clueId;});
+  DOCKING_LOG_DRAFT={context:context,requestId:dockingActionRequestId(),files:[],pending:false,reading:false,attempt:null,uncertain:false};
+  var supplement=operation==='supplement_demand';if(supplement){DOCKING_LOG_DRAFT.operation=operation;DOCKING_LOG_DRAFT.expectedVersion=Number(dockingIntake(project).version)||0;}
+  var title=typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(project):project.demandTitle||project.topic||'';
+  var body='<div class="docking-log-form"><div class="docking-log-context"><span>招商需求</span><strong>'+dockingActionText(title)+'</strong>'+(clue?'<span>对应企业</span><strong>'+dockingActionText(clue.name||'名称未记录')+'</strong>':'<p>'+(supplement?'按照管理端反馈补充说明或材料，内容将回传到这条需求。':'本次记录归入这条需求，可在企业卡片中记录单家企业的跟进。')+'</p>')+'</div><label for="dockingLogType"'+(supplement?' hidden':'')+'>跟进方式</label><select id="dockingLogType"'+(supplement?' hidden disabled':'')+'><option value="visit">拜访交流</option><option value="call">电话沟通</option><option value="email">邮件沟通</option><option value="material">材料往来</option><option value="note">跟进备注</option></select><label for="dockingLogNote">'+(supplement?'补充说明':'实际情况')+'</label><textarea id="dockingLogNote" rows="5" maxlength="10000" placeholder="'+(supplement?'填写管理端要求的说明，或上传相关材料':'记录实际沟通内容、了解到的情况和下一步事项')+'"></textarea><label for="dockingLogFiles">附件 <span>（选填）</span></label><input id="dockingLogFiles" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.csv,.doc,.docx,.xlsx,.pptx" onchange="dockingAddLogFiles(this)"><p class="docking-form-help">最多 5 个附件，单个不超过 5 MB，合计不超过 10 MB。支持文档、图片和 UTF-8 文本。</p><div id="dockingLogFileList"></div><p class="docking-form-help">记录保存后可追溯；记录本身不代表企业核验通过或投资意向已确认。</p><p id="dockingLogError" class="docking-form-error" role="alert"></p></div>';
+  openModal(supplement?'补充需求资料':'记录真实跟进',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button id="dockingLogSave" class="primary-button" onclick="submitDockingLog()">'+(supplement?'提交补充资料':'保存跟进记录')+'</button>');return true;
+}
+function dockingLogFileList(){
+  var box=document.getElementById('dockingLogFileList'),draft=DOCKING_LOG_DRAFT;if(!box||!draft)return;
+  box.innerHTML=draft.files.map(function(file,index){return '<div class="docking-draft-file"><span>'+dockingActionText(file.name)+' <small>'+Math.max(1,Math.round(file.size/1024))+' KB</small></span><button type="button" aria-label="移除 '+dockingActionText(file.name)+'" onclick="dockingRemoveLogFile('+index+')">移除</button></div>';}).join('');
+}
+function dockingRemoveLogFile(index){var draft=DOCKING_LOG_DRAFT;if(!draft||draft.pending||draft.reading)return;draft.files.splice(index,1);dockingLogFileList();}
+function dockingValidateFiles(files){
+  if(!Array.isArray(files)||files.length>5)return '附件最多 5 个。';
+  var total=0;
+  for(var i=0;i<files.length;i++){
+    var file=files[i],name=file&&file.name,type=name&&DOCKING_FILE_TYPES[String(name).split('.').pop().toLowerCase()];
+    if(typeof name!=='string'||!name.trim()||name!==name.trim()||name.length>180||/[\\/\x00-\x1f\x7f]/.test(name)||!type)return '请选择支持的文档、图片或文本文件。';
+    if(!Number.isInteger(file.size)||file.size<=0||file.size>5*1024*1024)return '单个附件须大于 0 且不超过 5 MB。';
+    total+=file.size;if(total>10*1024*1024)return '附件合计不能超过 10 MB。';
+    if(file.dataUrl!=null&&(!new RegExp('^data:'+type.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+';base64,[A-Za-z0-9+/]*={0,2}$').test(file.dataUrl)))return '附件内容格式不正确，请重新选择文件。';
+  }
+  return '';
+}
+async function dockingAddLogFiles(input){
+  var draft=DOCKING_LOG_DRAFT;if(!draft||draft.pending||draft.reading)return false;
+  var files=Array.prototype.slice.call(input.files||[]),problem=dockingValidateFiles(draft.files.concat(files));
+  if(problem){dockingLogError(problem);input.value='';return false;}
+  draft.reading=true;input.disabled=true;
+  try{
+    var read=await Promise.all(files.map(function(file){return new Promise(function(resolve,reject){var reader=new FileReader();reader.onerror=function(){reject(new Error('附件读取失败，请重新选择。'));};reader.onload=function(){var value=String(reader.result||''),comma=value.indexOf(',');if(comma<0){reject(new Error('附件读取失败，请重新选择。'));return;}var mime=DOCKING_FILE_TYPES[file.name.split('.').pop().toLowerCase()];resolve({name:file.name,size:file.size,dataUrl:'data:'+mime+';base64,'+value.slice(comma+1)});};reader.readAsDataURL(file);});}));
+    if(DOCKING_LOG_DRAFT!==draft||!dockingActionContextCurrent(draft.context))return false;
+    var invalid=dockingValidateFiles(draft.files.concat(read));if(invalid)throw new Error(invalid);
+    draft.files=draft.files.concat(read);dockingLogFileList();dockingLogError('');return true;
+  }catch(error){if(DOCKING_LOG_DRAFT===draft)dockingLogError(error.message||'附件读取失败，请重试。');return false;}
+  finally{draft.reading=false;input.disabled=false;input.value='';}
+}
+function openDockingSupplement(key){return openDockingLog(key,null,'supplement_demand');}
+
+async function submitDockingLog(){
+  var draft=DOCKING_LOG_DRAFT;if(!draft||draft.pending)return false;
+  if(draft.reading){dockingLogError('附件正在读取，请稍候再保存。');return false;}
+  if(!dockingActionContextCurrent(draft.context)){dockingLogError('当前会话、需求或企业已变化，请重新打开后记录。');return false;}
+  var noteBox=document.getElementById('dockingLogNote'),typeBox=document.getElementById('dockingLogType'),button=document.getElementById('dockingLogSave');
+  var note=noteBox&&typeof noteBox.value==='string'?noteBox.value.trim():'',type=typeBox&&typeBox.value||'note';
+  if(['visit','call','email','material','note'].indexOf(type)<0||note.length>10000||(!note&&!draft.files.length)){dockingLogError('请填写实际跟进情况，或添加相关附件；正文不超过 10000 字。');return false;}
+  var fileError=dockingValidateFiles(draft.files);if(fileError){dockingLogError(fileError);return false;}
+  var body={projectKey:draft.context.key,action:'save_log',requestId:draft.requestId,record:{type:type,note:note,files:draft.files.map(function(file){return {name:file.name,size:file.size,dataUrl:file.dataUrl};})}};
+  if(draft.operation==='supplement_demand'){body.action='supplement_demand';body.expectedVersion=draft.expectedVersion;body.record={note:note,files:body.record.files};}
+  if(draft.context.clueId!=null)body.clueId=draft.context.clueId;
+  var fingerprint=JSON.stringify(body);
+  if(draft.uncertain&&draft.attempt!==fingerprint){dockingLogError('上次保存结果尚未确认，请先按原内容重试；确认保存后再补充新的记录。');return false;}
+  if(draft.attempt&&draft.attempt!==fingerprint){draft.requestId=dockingActionRequestId();body.requestId=draft.requestId;fingerprint=JSON.stringify(body);}
+  draft.attempt=fingerprint;draft.pending=true;dockingLogError('');
+  if(button){button.disabled=true;button.textContent='正在保存…';}
+  try{
+    var result=await (draft.operation==='supplement_demand'?dockingSendWorkflow(body):dockingSendAction(draft.context,body));if(!result)return false;
+    if(DOCKING_LOG_DRAFT===draft){DOCKING_LOG_DRAFT=null;closeModal();}
+    if(typeof render==='function')render();toast(draft.operation==='supplement_demand'?'补充资料已提交，管理端可在该需求下继续处理':result.created?'跟进记录已保存':'这条跟进记录已保存，没有重复创建');return true;
+  }catch(error){draft.uncertain=!error.definitive;if(DOCKING_LOG_DRAFT===draft&&draft.context.epoch===dockingActionEpoch())dockingLogError(error.message||'保存未完成，请按原内容重试。');return false;}
+  finally{draft.pending=false;if(button&&button.isConnected!==false){button.disabled=false;button.textContent=draft.operation==='supplement_demand'?'提交补充资料':'保存跟进记录';}}
+}
+async function requestDockingVerification(key,clueId){
+  var context=dockingActionContext(key,clueId);if(!context)return false;
+  var clue=(PROJECTS[key].clues||[]).find(function(item){return item&&item.id===clueId;});
+  if(!dockingClueState(key,clue).canRequest){toast('这条线索已申请核验，尚未形成核验结论');return false;}
+  var mapKey=JSON.stringify([context.epoch,key,clueId]),request=DOCKING_VERIFY_REQUESTS[mapKey];
+  if(request&&request.pending)return false;
+  if(!request||request.identity!==context.identity)request=DOCKING_VERIFY_REQUESTS[mapKey]={requestId:dockingActionRequestId(),identity:context.identity,pending:false};
+  request.pending=true;
+  try{
+    var result=await dockingSendAction(context,{projectKey:key,action:'request_verification',requestId:request.requestId,clueId:clueId});if(!result)return false;
+    delete DOCKING_VERIFY_REQUESTS[mapKey];if(typeof render==='function')render();toast(result.created?'核验申请已保存，等待资源团队处理':'核验申请已保存，没有重复创建');return true;
+  }catch(error){if(context.epoch===dockingActionEpoch())toast(error.message||'申请未保存，请重试。');return false;}
+  finally{request.pending=false;}
+}
+function recordDockingLegacyLog(key){
+  var note=document.getElementById('dock-note-'+key),text=note&&typeof note.value==='string'?note.value:'',files=typeof __dockFiles!=='undefined'&&__dockFiles[key]||[],type=typeof __dockType!=='undefined'&&__dockType[key]||'visit';
+  if(!openDockingLog(key))return false;
+  var noteBox=document.getElementById('dockingLogNote'),typeBox=document.getElementById('dockingLogType');if(noteBox)noteBox.value=text;if(typeBox&&['visit','call','email','material','note'].indexOf(type)>=0)typeBox.value=type;
+  DOCKING_LOG_DRAFT.files=files.map(function(file){return {name:file.name,size:file.size,dataUrl:file.dataUrl};});dockingLogFileList();return submitDockingLog().then(function(saved){
+    if(saved){if(note&&note.value===text)note.value='';if(typeof __dockFiles!=='undefined'&&__dockFiles[key]===files)__dockFiles[key]=[];}
+    return saved;
+  });
+}
+function dockingContactPathHtml(clue){
+  var text=clue&&(clue.contactPath||clue.contactRoute||clue.reachPath);
+  return '<section class="docking-contact-material"><h3>已存触达说明</h3><p>'+dockingActionText(typeof text==='string'&&text.trim()?text:'尚未提供触达路径。可在取得实际沟通信息后补充记录。')+'</p></section>';
+}
+function dockingContactPeopleHtml(clue){
+  clue=clue||{};var people=[];
+  if(Array.isArray(clue.contacts))people=clue.contacts.filter(function(item){return item&&typeof item==='object';});
+  if(clue.contact&&typeof clue.contact==='object'&&!Array.isArray(clue.contact))people.push(clue.contact);
+  if(clue.contactInfo&&typeof clue.contactInfo==='object'&&!Array.isArray(clue.contactInfo))people.push(clue.contactInfo);
+  if(typeof clue.contactName==='string'||typeof clue.contactPhone==='string'||typeof clue.contactEmail==='string')people.push({name:clue.contactName,phone:clue.contactPhone,email:clue.contactEmail,role:clue.contactRole});
+  var rows=people.map(function(person){return [['姓名',person.name],['职务',person.role||person.title],['单位',person.organization],['电话',person.phone],['邮箱',person.email],['来源',person.source]].filter(function(row){return typeof row[1]==='string'&&row[1].trim();}).map(function(row){return '<div><span>'+row[0]+'</span><strong>'+dockingActionText(row[1])+'</strong></div>';}).join('');}).filter(Boolean);
+  return '<section class="docking-contact-material"><h3>已存联系人资料 · 待核对</h3>'+(rows.length?rows.map(function(row){return '<div class="docking-contact-person">'+row+'</div>';}).join(''):'<p>尚未提供联系人资料。系统不会生成联系人或联系方式。</p>')+'</section>';
+}
+function dockingContactMaterialHtml(clue){return '<div class="docking-contact-material"><p>这里只展示已保存的资料。资料的存在不代表可达性、投资意向或核验结论已确认。</p>'+dockingContactPathHtml(clue)+dockingContactPeopleHtml(clue)+'</div>';}
+function showDockingContactCard(key,clueId){
+  var context=dockingActionContext(key,clueId);if(!context)return false;var project=PROJECTS[key],clue=(project.clues||[]).find(function(item){return item.id===clueId;});
+  openModal('已存联系资料 · '+dockingActionText(clue.name||'名称未记录'),dockingContactMaterialHtml(clue),'<button class="secondary-button" onclick="closeModal()">关闭</button><button class="primary-button" onclick="closeModal();'+dockingActionCall('openDockingLog',[key,clueId])+'">记录实际跟进</button>');return true;
+}
+function dockingIsManualClue(clue){return !!clue&&(clue.source==='manual_entry'||clue.source==='manual'||clue.source==='招商干部录入'||clue.status==='manual_entry');}
+function openDockingClueEditor(key,clueId){
+  var context=dockingActionContext(key,clueId);if(!context)return false;
+  if(DOCKING_CLUE_DRAFT&&DOCKING_CLUE_DRAFT.pending&&DOCKING_CLUE_DRAFT.context.epoch===context.epoch){toast('正在保存企业资料，请稍候');return false;}
+  var project=PROJECTS[key],clue=context.clueId==null?null:(project.clues||[]).find(function(item){return item.id===context.clueId;});
+  if(clue&&!dockingIsManualClue(clue)){
+    DOCKING_CLUE_DRAFT=null;
+    openModal('企业资料 · 只读','<div class="docking-log-form"><div class="docking-log-context"><strong>'+dockingActionText(clue.name||'名称未记录')+'</strong><p>'+dockingActionText([clue.kind,clue.region].filter(Boolean).join(' · '))+'</p></div><p>'+dockingActionText(clue.reason||'尚未保存匹配理由')+'</p><p class="docking-form-help">这条企业资料来自已保存的来源记录。补充核验情况请使用“记录跟进”，保留原始资料及其依据。</p></div>','<button class="secondary-button" onclick="closeModal()">关闭</button><button class="primary-button" onclick="closeModal();'+dockingActionCall('openDockingLog',[key,clueId])+'">记录跟进</button>');return true;
+  }
+  DOCKING_CLUE_DRAFT={context:context,id:clue?clue.id:'clue_manual_'+dockingActionRequestId(),pending:false,original:clue?JSON.stringify(clue):null};
+  var title=typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(project):project.demandTitle||project.topic||'';
+  var fields=[['name','企业名称',200],['kind','主营业务',200],['region','所在区域',200],['sourceURL','来源链接（选填）',2048]];
+  var body='<div class="docking-log-form"><div class="docking-log-context"><span>招商需求</span><strong>'+dockingActionText(title)+'</strong></div>'+fields.map(function(field){return '<label for="dockingClue-'+field[0]+'">'+field[1]+'</label><input id="dockingClue-'+field[0]+'" maxlength="'+field[2]+'" value="'+dockingActionText(clue&&clue[field[0]]||'')+'">';}).join('')+'<label for="dockingClue-reason">与本条需求的关系</label><textarea id="dockingClue-reason" maxlength="4000" rows="4" placeholder="填写已了解到的主营产品、与具体需求的关系和待核问题">'+dockingActionText(clue&&clue.reason||'')+'</textarea><p class="docking-form-help">手工录入的资料会标为待核验；来源链接不代表原文内容或企业能力已经核实。</p><p id="dockingClueError" class="docking-form-error" role="alert"></p></div>';
+  openModal(clue?'编辑手工企业资料':'录入企业资料',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button id="dockingClueSave" class="primary-button" onclick="saveDockingClue()">保存企业资料</button>');return true;
+}
+async function saveDockingClue(){
+  var draft=DOCKING_CLUE_DRAFT;if(!draft||draft.pending)return false;
+  var error=document.getElementById('dockingClueError'),button=document.getElementById('dockingClueSave');
+  function fail(message){if(error)error.textContent=message;else toast(message);}
+  if(!dockingActionContextCurrent(draft.context)){fail('当前会话、需求或企业已变化，请重新打开后操作。');return false;}
+  var fields={};for(var name of ['name','kind','region','reason','sourceURL']){var input=document.getElementById('dockingClue-'+name);fields[name]=input&&typeof input.value==='string'?input.value.trim():'';}
+  if(!fields.name||fields.name.length>200||fields.kind.length>200||fields.region.length>200||fields.reason.length>4000||fields.sourceURL.length>2048){fail('请填写企业名称，并将其他字段控制在表单长度范围内。');return false;}
+  if(fields.sourceURL){try{var url=new URL(fields.sourceURL);if(['http:','https:'].indexOf(url.protocol)<0||url.username||url.password)throw new Error();fields.sourceURL=url.href;}catch(_){fail('来源链接应为有效的 http 或 https 地址。');return false;}}
+  var project=JSON.parse(JSON.stringify(PROJECTS[draft.context.key])),clues=Array.isArray(project.clues)?project.clues:[],existing=clues.find(function(clue){return clue&&clue.id===draft.id;});
+  if(draft.original&&(!existing||!dockingIsManualClue(existing)||JSON.stringify(existing)!==draft.original)){fail('这条企业资料已更新，请重新打开后编辑。');return false;}
+  var targetBefore=existing?JSON.stringify(existing):null;
+  var next=Object.assign(existing||{id:draft.id,source:'manual_entry',status:'manual_entry',tone:'slate',investment_intent:'unknown',evidence:[],questions:[]},fields);
+  if(!existing)clues.push(next);project.clues=clues;
+  var payload={PROJECTS:{}};payload.PROJECTS[draft.context.key]=project;if(typeof RESET_GEN!=='undefined')payload.RESET_GEN=RESET_GEN;
+  draft.pending=true;if(button){button.disabled=true;button.textContent='正在保存…';}if(error)error.textContent='';
+  try{
+    var posted=await fetch('/api/sync',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-HXZ-Report-Client':'website'},body:JSON.stringify(payload)}),ack=await posted.json();
+    if(!posted.ok||!ack||ack.ok!==true)throw new Error(ack&&ack.message||ack&&ack.error||'企业资料尚未保存，请重试。');
+    if(!dockingActionContextCurrent(draft.context)){
+      if(draft.context.epoch===dockingActionEpoch())fail('企业资料已保存，但当前线索或需求已更新，请刷新核对。');return false;
+    }
+    var response=await fetch('/api/sync',{credentials:'same-origin',headers:{'X-HXZ-Report-Client':'website'}}),raw=await response.json();
+    if(!response.ok)throw new Error(raw&&raw.message||'无法核对保存结果，请重试。');
+    if(!dockingActionContextCurrent(draft.context)){
+      if(draft.context.epoch===dockingActionEpoch())fail('企业资料已保存，但当前线索或需求已更新，请刷新核对。');return false;
+    }
+    var state=raw&&raw.huixiaozhao_kb_v1&&raw.huixiaozhao_kb_v1.PROJECTS?raw.huixiaozhao_kb_v1:raw,saved=state&&state.PROJECTS&&state.PROJECTS[draft.context.key],rows=saved&&Array.isArray(saved.clues)?saved.clues.filter(function(clue){return clue&&clue.id===draft.id;}):[];
+    if(!saved||dockingProjectIdentity(saved)!==draft.context.identity||rows.length!==1||Object.keys(fields).some(function(field){return (rows[0][field]||'')!==fields[field];}))throw new Error('尚未核对到完整的企业资料，请重试；不会重复添加这家企业。');
+    var currentProject=PROJECTS[draft.context.key],currentClues=Array.isArray(currentProject.clues)?currentProject.clues:[],currentTarget=currentClues.find(function(clue){return clue&&clue.id===draft.id;});
+    if((currentTarget?JSON.stringify(currentTarget):null)!==targetBefore||(typeof isClueDeleted==='function'&&isClueDeleted(draft.context.key,rows[0]))){fail('企业资料已保存，但这条线索已有新的编辑或删除，请刷新核对。');return false;}
+    if(currentTarget)Object.keys(fields).forEach(function(field){currentTarget[field]=rows[0][field];});
+    else {currentClues.push(JSON.parse(JSON.stringify(rows[0])));currentProject.clues=currentClues;}
+    try{if(typeof persist==='function')persist();}catch(_){}
+    if(DOCKING_CLUE_DRAFT===draft){DOCKING_CLUE_DRAFT=null;closeModal();}
+    if(typeof render==='function')render();toast('企业资料已保存，后续仍需核验');return true;
+  }catch(exception){if(DOCKING_CLUE_DRAFT===draft&&draft.context.epoch===dockingActionEpoch())fail(exception.message||'保存未完成，请重试。');return false;}
+  finally{draft.pending=false;if(button&&button.isConnected!==false){button.disabled=false;button.textContent='保存企业资料';}}
+}
+
+/* Workflow acknowledgements merge only the server-owned state they changed. */
+function dockingRequestId(){return dockingActionRequestId();}
+function dockingIntake(project){
+  var value=project&&project.intake;
+  return value&&value.contract==='docking-action-v1'?value:{status:'submitted',version:0};
+}
+function dockingIntakeStatus(project){
+  var intake=dockingIntake(project);if(intake.status==='submitted'&&intake.lastSupplementAt)return {label:'已补充 · 待复核',tone:'blue',status:'submitted'};var states={submitted:['待受理','neutral'],processing:['处理中','blue'],needs_info:['待补充资料','amber'],feedback:['已反馈','teal']},choice=states[intake.status]||states.submitted;
+  return {label:choice[0],tone:choice[1],status:intake.status||'submitted'};
+}
+async function dockingSendWorkflow(body){
+  var context=dockingActionContext(body.projectKey,body.clueId);if(!context)throw dockingActionError('需求或企业已变化，请刷新后重试。',true);
+  var response=await fetch('/api/docking-action',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  var result;try{result=await response.json();}catch(_){throw dockingActionError('未收到保存结果，请按原内容重试。');}
+  if(!response.ok||!result||result.ok!==true)throw dockingActionError(result&&result.message||result&&result.error||'操作尚未保存，请重试。',response.status>=400&&response.status<500&&response.status!==408);
+  if(!dockingActionContextCurrent(context))return null;
+  if(result.projectKey!==context.key||!result.project||dockingProjectIdentity(result.project)!==context.identity||!Array.isArray(result.logs))throw dockingActionError('返回的需求不一致，请刷新核对。');
+  var receipt=result.logs.find(function(e){return e&&e.contract==='docking-action-v1'&&e.requestId===body.requestId&&e.kind===body.action&&(e.clueId||null)===(body.clueId||null);});
+  if(!receipt||!receipt.id)throw dockingActionError('尚未收到本次操作的保存凭据，请按原内容重试。');
+  var record=body.record||{},fields=body.action==='review_demand'?['status','owner','nextStep','note']:body.action==='review_verification'?['status','note','outcome','evidence']:body.action==='supplement_demand'?['note','files']:['note'];
+  if(fields.some(function(field){if(!(field in record))return false;return JSON.stringify(receipt[field])!==JSON.stringify(record[field]);})||(body.action==='advance_stage'&&receipt.to!==record.target)||!Number.isInteger(receipt.version))throw dockingActionError('保存凭据与本次提交内容不一致，请刷新核对。');
+  var project=PROJECTS[context.key],incoming=result.project;
+  if(body.action==='review_demand'||body.action==='supplement_demand'){
+    if(!incoming.intake||incoming.intake.contract!=='docking-action-v1'||!Number.isInteger(incoming.intake.version)||incoming.intake.version<receipt.version)throw dockingActionError('受理状态回执不完整，请刷新核对。');
+    if(incoming.intake.version===receipt.version&&((receipt.status!=null&&incoming.intake.status!==receipt.status)||(body.action==='review_demand'&&(incoming.intake.reply!==receipt.note||incoming.intake.owner!==receipt.owner||incoming.intake.nextStep!==receipt.nextStep))))throw dockingActionError('受理状态与保存凭据不一致，请刷新核对。');
+    if(incoming.intake.version>=(Number(dockingIntake(project).version)||0))project.intake=JSON.parse(JSON.stringify(incoming.intake));
+  }
+  if(body.action==='review_verification'){
+    var target=(project.clues||[]).find(function(c){return c.id===body.clueId;}),saved=(incoming.clues||[]).find(function(c){return c.id===body.clueId;}),request=saved&&saved.verificationRequest;
+    if(!target||!request||request.contract!=='docking-action-v1'||!Number.isInteger(request.version)||request.version<receipt.version)throw dockingActionError('核验处理回执不完整，请刷新核对。');
+    if(request.version===receipt.version&&(request.status!==receipt.status||request.reply!==receipt.note||(receipt.outcome!=null&&request.outcome!==receipt.outcome)||(receipt.evidence!=null&&request.evidence!==receipt.evidence)))throw dockingActionError('核验状态与保存凭据不一致，请刷新核对。');
+    if(request.version>=Number(target.verificationRequest&&target.verificationRequest.version||0))target.verificationRequest=JSON.parse(JSON.stringify(request));
+  }
+  if(body.action==='advance_stage'){
+    if(!Number.isInteger(incoming.stageVersion)||!Number.isInteger(incoming.stage)||incoming.stageVersion<receipt.version)throw dockingActionError('阶段更新回执不完整，请刷新核对。');
+    if(incoming.stageVersion===receipt.version&&incoming.stage!==receipt.to)throw dockingActionError('阶段状态与保存凭据不一致，请刷新核对。');
+    if(incoming.stageVersion>=Number(project.stageVersion||0)){project.stage=incoming.stage;project.stageVersion=incoming.stageVersion;project.stageLog=JSON.parse(JSON.stringify(incoming.stageLog||[]));if(incoming.stageByTopic)project.stageByTopic=JSON.parse(JSON.stringify(incoming.stageByTopic));}
+  }
+  if(typeof DOCK_LOGS==='undefined'||!DOCK_LOGS)DOCK_LOGS={};DOCK_LOGS[context.key]=dockingMergeLogRecords(context.key,result.logs);
+  try{if(typeof persist==='function')persist();}catch(_){}
+  return result;
 }
 
 function isClueDeleted(projKey, clue){
@@ -5116,73 +5643,28 @@ function toggleClue(id){
    导致政府端已到「资源匹配」，管理端仍显示「待研判」甚至没有进度 —— 即"管理端没同步"。
    res 取值须与 ops.html 的 RES_COLOR 一致：none / checking / matched。 */
 function syncDemandStage(projKey){
-  try{
-    var p=PROJECTS[projKey]; if(!p) return;
-    if(typeof DEMANDS==='undefined'||!Array.isArray(DEMANDS)) return;
-    var d=null;
-    for(var i=0;i<DEMANDS.length;i++){
-      var it=DEMANDS[i]; if(!it) continue;
-      if(it.projKey===projKey || it.id===projKey || it.id==='d'+projKey){ d=it; break; }
-    }
-    if(!d) return;
-    var clues=p.clues||[];
-    var teal=0,amber=0;
-    clues.forEach(function(c){ if(!c) return; if(c.tone==='teal')teal++; else if(c.tone==='amber')amber++; });
-    var st=Number(p.stage)||0;
-    // 阶段/线索 → 管理端资源状态（只进不退，避免旧快照把已推进的状态拉回）
-    var res='none', label='待研判';
-    if(st>=5 || teal>0){ res='matched'; label='已匹配'; }
-    else if(st>=4 || amber>0){ res='checking'; label='核验中'; }
-    else if(st>=3){ res='none'; label='待资源匹配'; }
-    var rank={none:1,checking:2,matched:3};
-    if((rank[res]||0)>=(rank[d.res]||0)){ d.res=res; d.resLabel=label; }
-    d.clues=clues.length;
-    if(p.topic!=null) d.topic=p.topic;
-    d.stage=st;
-    d.projKey=projKey;
-  }catch(_e){}
+  var p=PROJECTS[projKey];
+  if(!p||typeof DEMANDS==='undefined'||!Array.isArray(DEMANDS))return;
+  var d=DEMANDS.find(function(item){return item&&(item.projKey===projKey||item.id===projKey||item.id==='d'+projKey);});
+  if(!d)return;
+  d.clues=(typeof visibleClues==='function'?visibleClues(p,projKey):(Array.isArray(p.clues)?p.clues:[])).length;
+  d.projKey=projKey;
+  if(p.demandContract==='industry-demand-v1'){
+    d.topic=p.demandTitle||d.topic;
+    d.analysisTopic=p.sourceAnalysisTopic||p.topic;
+  }
 }
 function requestVerify(projKey, clueId){
-  var p = PROJECTS[projKey]; if(!p) return;
-  var c = (p.clues||[]).find(function(x){return x.id===clueId;});
-  if(!c) return;
-  c.tone = 'amber';
-  c.status = '资源核验中';
-  // 推进 stage 到 4（资源匹配）
-  p.stage = Math.max(p.stage, 4);
-  // 【2026-09-17】方向级进度同写，否则刷新后被 stageByTopic 旧值回灌，退回「确认需求」
-  if(!p.stageByTopic) p.stageByTopic={};
-  if(p.topic!=null) p.stageByTopic[p.topic]=Math.max(Number(p.stageByTopic[p.topic])||0, p.stage);
-  // 【2026-09-17】同步管理端需求池，修复"管理端没同步"
-  syncDemandStage(projKey);
-  persist();
-  render();
-  toast('✓ 已发起资源核验，等待团队回传');
+  return requestDockingVerification(projKey,clueId);
 }
 
 function arrangeDocking(projKey, clueId){
-  var p = PROJECTS[projKey]; if(!p) return;
-  var c = (p.clues||[]).find(function(x){return x.id===clueId;});
-  if(!c) return;
-  c.tone = 'teal';
-  c.status = '可安排首次沟通';
-  p.stage = Math.max(p.stage, 5);
-  if(!p.stageByTopic) p.stageByTopic={};
-  if(p.topic!=null) p.stageByTopic[p.topic]=Math.max(Number(p.stageByTopic[p.topic])||0, p.stage);
-  syncDemandStage(projKey);
-  persist();
-  render();
-  toast('✓ 已标记为可安排沟通，进入招商对接阶段');
-  showContactCard(projKey, clueId);
+  return openDockingLog(projKey,clueId);
 }
 
 /* ── 核验通过后弹出：如何联系这家企业（折叠卡片）── */
 function showContactCard(projKey, clueId){
-  var p = PROJECTS[projKey]; if(!p) return;
-  var c = (p.clues||[]).find(function(x){return x.id===clueId;});
-  if(!c) return;
-  window.__contactOpen = true;
-  openModal('可安排沟通 · 如何联系这家企业', contactCardBody(c), contactCardFoot());
+  return showDockingContactCard(projKey,clueId);
 }
 
 function toggleContactCard(){
@@ -5194,182 +5676,37 @@ function toggleContactCard(){
 }
 
 function contactCardBody(c){
-  var open = window.__contactOpen;
-  var head =
-    '<div style="display:flex;align-items:flex-start;gap:12px;padding:14px 16px;background:#f0fdf4;border:1px solid #86efac;border-radius:12px">'+
-      '<div style="width:36px;height:36px;border-radius:50%;background:#22c55e;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;flex-shrink:0">✓</div>'+
-      '<div style="flex:1;min-width:0">'+
-        '<div style="font-size:14px;font-weight:750;color:#065f46">核验通过 · 可安排首次沟通</div>'+
-        '<div style="font-size:12.5px;color:#166534;margin-top:3px;line-height:1.6">「'+c.name+'」已通过资源端可达性核验，下面是推荐的触达路径。</div>'+
-      '</div>'+
-    '</div>';
-  return '<div id="contactCardBox">'+ head + contactCardDetail(c) +'</div>';
+  return dockingContactMaterialHtml(c);
 }
 
 function contactCardDetail(c){
-  var open = window.__contactOpen;
-  var toggle =
-    '<button onclick="toggleContactCard()" style="width:100%;display:flex;align-items:center;gap:8px;margin-top:12px;padding:11px 14px;background:#fff;border:1.5px solid #e8edf5;border-radius:10px;cursor:pointer;text-align:left">'+
-      '<span style="font-size:13px;font-weight:700;color:#0b183b;flex:1">📇 如何联系这家企业</span>'+
-      '<span class="cc-arrow" style="font-size:12px;color:#9aa5b5">'+(open?'▲':'▼')+'</span>'+
-    '</button>';
-  var detail = '<div class="cc-detail" style="display:'+(open?'block':'none')+';margin-top:10px">'+
-    contactPathHtml(c) + contactPersonHtml(c) + contactBoundaryHtml() +
-  '</div>';
-  return toggle + detail;
+  return dockingContactMaterialHtml(c);
 }
 
 function contactPathHtml(c){
-  var steps = [
-    ['1','资源端移交对接窗口','资源团队已完成可达性核验，将脱敏企业「'+c.name+'」的对接窗口与关键人角色移交招商干部。'],
-    ['2','政企首次沟通','由招商干部或授权领导发起首次沟通，介绍'+((PROJECTS[cur]&&PROJECTS[cur].city)||'本地')+'承接条件与合作意向，确认企业投资意愿。'],
-    ['3','实地走访与落地洽谈','沟通达成初步意向后，安排企业实地走访承接园区，进入政策/选址/配套的正式洽谈。']
-  ];
-  var rows = steps.map(function(s){
-    return '<div style="display:flex;gap:12px">'+
-      '<div style="display:flex;flex-direction:column;align-items:center">'+
-        '<div style="width:24px;height:24px;border-radius:50%;background:#1a56db;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;flex-shrink:0">'+s[0]+'</div>'+
-        (s[0]!=='3'?'<div style="width:2px;flex:1;background:#e8edf5;margin:4px 0"></div>':'')+
-      '</div>'+
-      '<div style="padding:1px 0 '+(s[0]!=='3'?'14px':'2px')+'">'+
-        '<div style="font-size:13px;font-weight:650;color:#0b183b">'+s[1]+'</div>'+
-        '<div style="font-size:12px;color:#667590;margin-top:2px;line-height:1.6">'+s[2]+'</div>'+
-      '</div>'+
-    '</div>';
-  }).join('');
-  return '<div style="padding:14px 16px;border:1px solid #e8edf5;border-radius:12px;margin-bottom:10px">'+
-    '<div style="font-size:11px;font-weight:650;color:#6b7280;letter-spacing:.3px;margin-bottom:12px">推荐触达路径</div>'+
-    rows +
-  '</div>';
+  return dockingContactPathHtml(c);
 }
 function contactPersonHtml(c){
-  var rows = [
-    ['对接窗口','资源团队 · 项目对接专员','由资源端在核验通过后 1 个工作日内推送脱敏对接卡'],
-    ['企业关键人','决策层触达路径已核实','真实姓名/职务/联系方式由资源团队保管，线下移交'],
-    ['建议对接方','招商干部 + 授权领导','以政企身份发起首次沟通，规格匹配决策层']
-  ];
-  var body = rows.map(function(r){
-    return '<div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid #f3f4f6">'+
-      '<span style="width:64px;flex-shrink:0;font-size:12px;color:#8490a5">'+r[0]+'</span>'+
-      '<div style="flex:1;min-width:0">'+
-        '<div style="font-size:12.5px;font-weight:600;color:#1f2937">'+r[1]+'</div>'+
-        '<div style="font-size:11.5px;color:#8492a6;margin-top:1px;line-height:1.5">'+r[2]+'</div>'+
-      '</div>'+
-    '</div>';
-  }).join('');
-  return '<div style="padding:14px 16px;border:1px solid #e8edf5;border-radius:12px;margin-bottom:10px">'+
-    '<div style="font-size:11px;font-weight:650;color:#6b7280;letter-spacing:.3px;margin-bottom:6px">对接联系人（脱敏）</div>'+
-    body +
-  '</div>';
+  return dockingContactPeopleHtml(c);
 }
 function contactBoundaryHtml(){
-  return '<div style="display:flex;align-items:flex-start;gap:8px;padding:11px 13px;background:#f7f8fa;border-radius:10px;font-size:11px;color:#8492a6;line-height:1.6">'+
-    '<span style="flex-shrink:0">🔒</span>'+
-    '<span>使用边界：政府端仅展示脱敏对接窗口与触达路径；企业真实名称、关键人联系方式由资源团队线下保管移交，系统不自动联系企业、不跳过确认关口。</span>'+
-  '</div>';
+  return '<p class="docking-form-help">已存资料需要逐项核对；本页面不会自动联系企业，也不会生成联系人或核验结论。</p>';
 }
 
 function contactCardFoot(){
-  return '<button class="secondary-button" onclick="closeModal()">稍后处理</button>'+
-    '<button class="primary-button" onclick="closeModal();toast(\'✓ 已通知资源团队协调触达，请留意对接进度\')">通知资源团队协调</button>';
+  return '<button class="secondary-button" onclick="closeModal()">关闭</button>';
 }
 
 function editClue(projKey, clueId){
-  var p = PROJECTS[projKey]; if(!p) return;
-  var c = (p.clues||[]).find(function(x){return x.id===clueId;});
-  if(!c) return;
-
-  var layer = document.createElement('div');
-  layer.id = 'clueEditLayer';
-  layer.onclick = function(e){ if(e.target===layer) layer.remove(); };
-  layer.style.cssText = 'position:fixed;inset:0;background:rgba(11,24,59,.4);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;backdrop-filter:blur(4px)';
-
-  layer.innerHTML =
-    '<div style="background:#fff;border-radius:20px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 80px rgba(11,24,59,.18)">'+
-      '<div style="padding:20px 24px;border-bottom:1px solid #f0f4ff;display:flex;align-items:center;justify-content:space-between">'+
-        '<div style="font-size:15px;font-weight:750;color:#0b183b">编辑企业线索</div>'+
-        '<button onclick="document.getElementById(\'clueEditLayer\').remove()" style="background:none;border:none;font-size:18px;color:#9aa5b5;cursor:pointer">✕</button>'+
-      '</div>'+
-      '<div style="padding:20px 24px">'+
-        '<div style="margin-bottom:14px">'+
-          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:6px">企业名称（脱敏代号）</label>'+
-          '<input id="cedit-name" value="'+c.name.replace(/"/g,'&quot;')+'" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none" onfocus="this.style.border=\'1.5px solid #6366f1\'" onblur="this.style.border=\'1.5px solid #e8edf5\'"/>'+
-        '</div>'+
-        '<div style="margin-bottom:14px">'+
-          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:6px">企业方向</label>'+
-          '<input id="cedit-kind" value="'+c.kind.replace(/"/g,'&quot;')+'" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none" onfocus="this.style.border=\'1.5px solid #6366f1\'" onblur="this.style.border=\'1.5px solid #e8edf5\'"/>'+
-        '</div>'+
-        '<div style="margin-bottom:14px">'+
-          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:6px">区域</label>'+
-          '<input id="cedit-region" value="'+c.region+'" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none" onfocus="this.style.border=\'1.5px solid #6366f1\'" onblur="this.style.border=\'1.5px solid #e8edf5\'"/>'+
-        '</div>'+
-        '<div style="margin-bottom:14px">'+
-          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:6px">为什么值得核验</label>'+
-          '<textarea id="cedit-reason" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:13px;outline:none;resize:vertical;min-height:72px;line-height:1.6" onfocus="this.style.border=\'1.5px solid #6366f1\'" onblur="this.style.border=\'1.5px solid #e8edf5\'">'+c.reason+'</textarea>'+
-        '</div>'+
-        '<div style="margin-bottom:20px">'+
-          '<label style="font-size:12px;font-weight:650;color:#4a5568;display:block;margin-bottom:6px">核验状态</label>'+
-          '<div style="display:flex;gap:8px">'+
-            ['slate:待接触','amber:核验中','teal:可安排沟通'].map(function(s){
-              var parts=s.split(':'), val=parts[0], label=parts[1];
-              var isActive=c.tone===val;
-              return '<button onclick="this.parentNode.querySelectorAll(\'.tone-btn\').forEach(function(b){b.style.background=\'#f5f7fb\';b.style.fontWeight=\'400\'});this.style.background=\'#eff6ff\';this.style.fontWeight=\'700\';window.__clueEditTone=\''+val+'\'" '+
-                'class="tone-btn" '+
-                'style="flex:1;padding:7px 0;border:1.5px solid #e8edf5;border-radius:8px;font-size:12px;cursor:pointer;background:'+(isActive?'#eff6ff':'#f5f7fb')+';font-weight:'+(isActive?'700':'400')+';color:#0b183b">'+label+'</button>';
-            }).join('')+
-          '</div>'+
-        '</div>'+
-        '<button onclick="saveClueEdit(\''+projKey+'\',\''+clueId+'\')" '+
-          'style="width:100%;padding:12px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:650;cursor:pointer">'+
-          '保存修改</button>'+
-      '</div>'+
-    '</div>';
-
-  window.__clueEditTone = c.tone;
-  document.body.appendChild(layer);
+  return openDockingClueEditor(projKey,clueId);
 }
 
 function saveClueEdit(projKey, clueId){
-  var p = PROJECTS[projKey]; if(!p) return;
-  var c = (p.clues||[]).find(function(x){return x.id===clueId;});
-  if(!c) return;
-  var name   = document.getElementById('cedit-name');
-  var kind   = document.getElementById('cedit-kind');
-  var region = document.getElementById('cedit-region');
-  var reason = document.getElementById('cedit-reason');
-  if(name)   c.name   = name.value.trim() || c.name;
-  if(kind)   c.kind   = kind.value.trim() || c.kind;
-  if(region) c.region = region.value.trim() || c.region;
-  if(reason) c.reason = reason.value.trim() || c.reason;
-  c.tone = window.__clueEditTone || c.tone;
-  var toneStatusMap = {slate:'待接触',amber:'资源核验中',teal:'可安排首次沟通'};
-  c.status = toneStatusMap[c.tone] || c.status;
-  persist();
-  document.getElementById('clueEditLayer').remove();
-  render();
-  toast('✓ 线索已更新');
+  return saveDockingClue();
 }
 
 function addClueManual(projKey){
-  var p = PROJECTS[projKey]; if(!p) return;
-  if(!p.clues) p.clues = [];
-  var newClue = {
-    id: 'clue_manual_'+Date.now().toString(36),
-    name: '待填写企业名称',
-    kind: '待填写企业方向',
-    region: '待填写区域',
-    source: '招商干部录入',
-    status: '待资源核验',
-    tone: 'slate',
-    reason: '待填写核验理由',
-    signal: '来源：招商干部录入，需人工核验',
-    questions: ['核验企业主营方向','确认与本次招商需求的结合点','判断资源可达性与沟通窗口']
-  };
-  p.clues.push(newClue);
-  persist();
-  render();
-  // 自动打开编辑弹窗
-  setTimeout(function(){ editClue(projKey, newClue.id); }, 100);
+  return openDockingClueEditor(projKey);
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -5399,191 +5736,7 @@ function reportDemandActionButton(p){
   return '<button class="industry-priority-submit" type="button" onclick="chooseIndustryDemand()">'+(p.isDemand?'查看这条招商需求':'选择具体招引建议')+'</button>';
 }
 
-function projMgmtPage(p){
-  // 账号按城市独立：只显示当前登录城市（cur 项目所在城市）的项目
-  var _myCity = (cur && PROJECTS[cur] && PROJECTS[cur].city) ? PROJECTS[cur].city : null;
-  var projKeys = Object.keys(PROJECTS).filter(function(k){
-    var x = PROJECTS[k]; if(!x) return false;
-    if(_myCity && x.city !== _myCity) return false;
-    // 关键修复：招商对接只显示「已正式提交的招商需求」子项目。
-    // 父项目/城市产业分析工作区(如 sz、p*)的 topic 会随产业分析选中方向变化，
-    // 绝不能进列表——否则「招商对接第一条随选中方向变」。
-    // 兼容旧数据：老的立项子项目没有 isDemand 标记，用 isMainProject 兜底排除主项目，
-    // 并要求 stage>=3（真正提交过需求才会到确认需求阶段）。
-    if(x.isDemand === true) return true;
-    return false; // 只认isDemand===true，不再用stage>=3兜底（防止产业分析项目误入招商对接）
-  });
-  if(!projKeys.length){
-    return '<div class="page">'+
-      '<div class="page-header"><div><span class="eyebrow">PROJECTS</span><h1>招商对接</h1>'+
-      '<p>研判报告确认后，提交招商需求的方向会出现在这里。</p></div></div>'+
-      '<div class="knowledge-scroll"><div style="text-align:center;padding:60px 20px">'+
-        '<div style="font-size:36px;margin-bottom:12px">📂</div>'+
-        '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">暂无立项</div>'+
-        '<div style="font-size:13px;color:#8492a6;line-height:1.7;margin-bottom:20px">'+
-          '在「产业分析」生成完整产业报告后，<br>点击「🏁 可立项招引方向」中的「提交招商需求 →」按钮建立项目'+
-        '</div>'+
-        '<button onclick="go(\'report\')" style="padding:10px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:650;cursor:pointer">前往产业分析 →</button>'+
-      '</div></div></div>';
-  }
-
-  var groups = projKeys.map(function(k){
-    var x = PROJECTS[k];
-    x=Object.assign({},x,{stage:demandEffectiveStage(k,x)});
-    var sc = stColor(x.stage);
-    var expanded = (window.__projOpen === k);
-
-    // 政府端不再自动派生「脱敏企业」假线索——待接触企业只由管理端 AI 漏斗推送
-    // deriveCluesFromReport(k);
-    // 待接触企业只来自管理端 AI 漏斗推送(status:'gov_push')或干部手动录入，不注入任何假数据
-    if(PROJECTS[k] && !PROJECTS[k].clues) PROJECTS[k].clues=[];
-
-    var clues = visibleClues(x, k);
-    var teal  = clues.filter(function(c){return c.tone==='teal';}).length;
-    var amber = clues.filter(function(c){return c.tone==='amber';}).length;
-    var slate = clues.filter(function(c){return (c.tone||'slate')==='slate';}).length;
-
-    // 线索摘要标签
-    var cluesSummary = clues.length
-      ? (teal?'<span style="padding:2px 8px;background:#f0fdf4;color:#166534;border-radius:12px;font-size:11px;margin-left:4px">'+teal+'条可沟通</span>':'')
-        +(amber?'<span style="padding:2px 8px;background:#fffbeb;color:#92400e;border-radius:12px;font-size:11px;margin-left:4px">'+amber+'条核验中</span>':'')
-        +(slate?'<span style="padding:2px 8px;background:#f5f7fb;color:#6b7280;border-radius:12px;font-size:11px;margin-left:4px">'+slate+'条待接触</span>':'')
-      : '<span style="font-size:11px;color:#9aa5b5;margin-left:4px">待生成线索</span>';
-
-    // 展开内容
-    var expandedContent = '';
-    if(expanded){
-      // 进度条：标准5阶段 + 管理端为该项目新增的自定义阶段。
-      // 【2026-09-18 修复】原来这里写死 STAGES，管理端新增的「第一次会议」等阶段
-      // 只出现在右上角徽章（走 stageNameOf→projStages），蓝色进度条里看不到。
-      var _stagesX = projStages(x);
-      var _fsX = _stagesX.length > 6 ? '10px' : '11px';
-      var stageBar = '<div style="margin-bottom:16px">'+
-        '<div style="display:flex;gap:0;border-radius:8px;overflow:hidden;border:1px solid #e8edf5">'+
-        _stagesX.map(function(s,si){
-          var n=si+1;
-          var isDone = n < x.stage;
-          var isCur  = n === x.stage;
-          var bg = isDone?'#1a56db':isCur?'#eff6ff':'#f9fafb';
-          var color = isDone?'#fff':isCur?'#1a56db':'#9aa5b5';
-          var fw = isCur?'700':'400';
-          return '<div style="flex:1;min-width:0;padding:8px 6px;text-align:center;background:'+bg+';border-right:1px solid #e8edf5;cursor:'+(n<=x.stage?'default':'pointer')+';" '+
-            (n===x.stage+1?'onclick="advanceStage(\''+k+'\')" title=\"点击推进到下一阶段\"':'')+'>' +
-            '<div style="font-size:'+_fsX+';font-weight:'+fw+';color:'+color+';line-height:1.35;word-break:break-all">'+
-              (isDone?'✓ ':'')+(isCur?'⬤ ':'')+s[0]+
-            '</div>'+
-            (isCur&&s[1]?'<div style="font-size:9px;color:#6b7f9c;margin-top:2px;line-height:1.3">'+s[1]+'</div>':'')+
-          '</div>';
-        }).join('')+
-        '</div></div>';
-
-      // 历史报告
-      var reportHist = '';
-      var rs = REPORTSTATE[k];
-      if(rs){
-        reportHist = '<div style="margin-bottom:14px;padding:10px 14px;background:#f8faff;border-radius:10px;border:1px solid #e8edf5">'+
-          '<div style="display:flex;align-items:center;gap:8px">'+
-            '<span style="font-size:14px">📋</span>'+
-            '<div style="flex:1">'+
-              '<div style="font-size:13px;font-weight:650;color:#0b183b">产业分析报告</div>'+
-              '<div style="font-size:11.5px;color:#8492a6">'+topicScoreDisplay(rs.topic, k)+' · '+new Date(rs.ts).toLocaleDateString('zh-CN')+'</div>'+
-            '</div>'+
-            '<button onclick="cur=\''+k+'\';viewCurrentReport()" style="padding:5px 12px;background:#fff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer">查看报告</button>'+
-          '</div>'+
-        '</div>';
-      }
-
-      // stage=2 引导：前往产业分析生成本方向报告
-      var stageGuide = '';
-      if(x.stage===2){
-        // stage=2：报告已从父项目继承，直接引导确认方向
-        stageGuide=
-          '<div style="margin-bottom:16px;padding:14px 16px;background:linear-gradient(135deg,#eff6ff,#f0f9ff);border:1.5px solid #bfdbfe;border-radius:12px">'+
-            '<div style="display:flex;align-items:center;gap:10px">'+
-              '<span style="font-size:24px">🎯</span>'+
-              '<div style="flex:1">'+
-                '<div style="font-size:13.5px;font-weight:700;color:#1d4ed8;margin-bottom:3px">下一步：确认「'+escapeChainText(industryDemandProjectTitle(x))+'」研判方向</div>'+
-                '<div style="font-size:12px;color:#4a5568;line-height:1.6">研判报告已从母项目继承，可直接确认方向并提交招引需求。</div>'+
-              '</div>'+
-              '<button onclick="(function(){cur=\''+k+'\';view=\'report\';render();})()" '+
-                'style="padding:9px 18px;background:#1a56db;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer;white-space:nowrap;flex-shrink:0">'+
-                '查看并确认 →</button>'+
-            '</div>'+
-          '</div>';
-      } else if(x.stage===3){
-        stageGuide=
-          '<div style="margin-bottom:16px;padding:14px 16px;background:linear-gradient(135deg,#f0fdf4,#f0f9ff);border:1.5px solid #86efac;border-radius:12px">'+
-            '<div style="display:flex;align-items:center;gap:10px">'+
-              '<span style="font-size:24px">📤</span>'+
-              '<div style="flex:1">'+
-                '<div style="font-size:13.5px;font-weight:700;color:#166534;margin-bottom:3px">下一步：正式提交招引需求</div>'+
-                '<div style="font-size:12px;color:#4a5568;line-height:1.6">研判已完成。提交后候选企业线索自动派生，可发起资源核验。</div>'+
-              '</div>'+
-              '<button onclick="cur=\''+k+'\';submitDemand()" '+
-                'style="padding:9px 18px;background:#22c55e;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer;white-space:nowrap;flex-shrink:0">'+
-                '提交招引需求 →</button>'+
-            '</div>'+
-          '</div>';
-      } else if(x.stage>=4){
-        var _tealN=teal, _amberN=amber, _slateN=slate;
-        var _g=nextStepGuide(k,x,_tealN,_amberN,_slateN);
-        if(_g) stageGuide=_g;
-      }
-      // 线索列表
-      var cluesList = renderCluesTwoPanel(k)+
-        // 递交按钮
-        (x.stage>=3 && x.stage<4
-          ? '<button onclick="advanceStage(\''+k+'\')" style="width:100%;margin-top:12px;padding:11px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:650;cursor:pointer">📤 正式递交需求，进入资源匹配</button>'
-          : ''
-        );
-
-      // 对接进度（原招商对接模块，仅 stage>=3 显示）
-      var dockInline = (x.stage>=3) ? dockProgressInline(k) : '';
-
-      expandedContent = '<div style="padding:0 16px 16px">'+
-        stageBar+
-        stageGuide+
-        (x.demandContract==='industry-demand-v1'?industryDemandSummaryHtml(x):'')+
-        reportHist+
-        cluesList+
-        dockInline+
-      '</div>';
-    }
-
-    return '<div style="margin-bottom:12px;border-radius:14px;border:1.5px solid '+(expanded?'#bfdbfe':'#e8edf5')+';overflow:hidden;background:#fff">'+
-      '<button onclick="toggleProjGroup(\''+k+'\')" '+
-        'style="width:100%;display:flex;align-items:center;gap:12px;padding:14px 18px;background:'+(expanded?'#f8faff':'#fff')+';border:none;cursor:pointer;text-align:left">'+
-        '<span style="font-size:22px;flex-shrink:0">🎯</span>'+
-        '<div style="flex:1;min-width:0">'+
-          '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
-            '<strong style="font-size:14px;color:#0b183b">'+escapeChainText(industryDemandProjectTitle(x))+'</strong>'+
-            cluesSummary+
-          '</div>'+
-          '<div style="font-size:12px;color:#8492a6;margin-top:3px">'+x.city+' · '+stageNameOf(x,x.stage)+' · '+clues.length+'条线索</div>'+
-        '</div>'+
-        '<span style="padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:600;background:'+sc.bg+';color:'+sc.c+'">'+stageNameOf(x,x.stage)+'</span>'+
-        // sz 是城市智库主项目(承载 kb/城市报告)，不可删除；仅派生的招商方向项目可删
-        (isMainProject(k) ? '' :
-          '<span onclick="event.stopPropagation();confirmDeleteProject(\''+k+'\')" title="取消该方向的招商申请" '+
-          'style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;cursor:pointer;font-size:14px;line-height:1;flex-shrink:0;margin-left:2px">\u2715</span>')+
-        '<span style="font-size:13px;color:#9aa5b5;margin-left:4px">'+(expanded?'▲':'▼')+'</span>'+
-      '</button>'+
-      expandedContent+
-    '</div>';
-  }).join('');
-
-  return '<div class="page">'+
-    '<div class="page-header"><div>'+
-      '<span class="eyebrow">PROJECTS</span><h1>招商对接 · 企业线索</h1>'+
-      '<p>展开具体需求查看候选企业线索、来源报告与对接进度；发起资源核验或安排首次沟通。</p>'+
-    '</div></div>'+
-    '<div class="knowledge-scroll">'+
-      '<div style="width:100%">'+groups+'</div>'+
-      '<div style="margin-top:10px;padding:10px 14px;background:#f9fafb;border-radius:8px;border:1px solid #e8edf5;font-size:12px;color:#8492a6">'+
-        'ⓘ 企业线索展示企业名称、公开依据和待核问题；投资意向及联系方式由资源团队人工核验，系统不自动联系企业。'+
-      '</div>'+
-    '</div></div>';
-}
+function projMgmtPage(p){return dockingWorkspacePage(p);}
 
 /* 下一步引导条：根据当前阶段与线索状态给出"当前该做什么"+主操作 */
 function nextStepGuide(k,x,teal,amber,slate){
@@ -5619,19 +5772,7 @@ function nextStepGuide(k,x,teal,amber,slate){
 }
 /* 推进阶段 */
 function advanceStage(projKey){
-  var p = PROJECTS[projKey]; if(!p) return;
-  // 上限取项目实际阶段链长度（含管理端自定义阶段），不再写死 5
-  var current=demandEffectiveStage(projKey,p);
-  if(current < projStages(p).length){
-    p.stage=current+1;
-    if(!p.stageByTopic)p.stageByTopic={};
-    if(p.topic!=null)p.stageByTopic[p.topic]=p.stage;
-    syncDemandStage(projKey);
-    persist();
-    render();
-    var stageName = stageNameOf(p, p.stage);
-    toast('✓ 已推进到「' + stageName + '」阶段');
-  }
+  return openDockingLog(projKey);
 }
 
 function toggleProjGroup(k){
@@ -6250,22 +6391,7 @@ function dockDownloadAttach(projKey, ts, idx){
 }
 
 function saveDockLog(projKey){
-  var ta=document.getElementById('dock-note-'+projKey);
-  var files=__dockFiles[projKey]||[];
-  var note=ta?ta.value.trim():'';
-  if(!note && !files.length){toast('请填写对接记录内容或添加附件');return;}
-  if(!DOCK_LOGS[projKey]) DOCK_LOGS[projKey]=[];
-  DOCK_LOGS[projKey].unshift({
-    ts: Date.now(),
-    note: note||'（附件）',
-    type: __dockType[projKey]||'visit',
-    files: files.slice()
-  });
-  persist();
-  if(ta) ta.value='';
-  __dockFiles[projKey]=[];
-  refreshDockInline(projKey);
-  toast('\u2713 对接记录已保存');
+  return recordDockingLegacyLog(projKey);
 }
 
 // 局部刷新对接进度区，避免整页 render 导致滚动跳回顶部
@@ -9442,6 +9568,132 @@ function editOnboarding(){
     if(typeof render==='function')render();
     if(typeof toast==='function')toast('招商偏好已更新');
   }, p.city, true);   // 设置页进入：始终允许关闭（含首次「去填写」）
+}
+/* Client docking workspace: a selected demand, its candidates and saved events. */
+var DOCKING_VIEW_STATE={epoch:null,search:'',filter:'all',selected:null};
+function dockingViewState(){
+  var epoch=typeof _authEpoch==='number'?_authEpoch:0;
+  if(DOCKING_VIEW_STATE.epoch!==epoch){if(DOCKING_VIEW_STATE.epoch!==null)window.__projOpen=null;DOCKING_VIEW_STATE={epoch:epoch,search:'',filter:'all',selected:null};}
+  return DOCKING_VIEW_STATE;
+}
+function dockingText(value){return escapeChainText(value==null?'':String(value));}
+function dockingAction(name,args){return dockingText(name+'('+args.map(function(value){return JSON.stringify(value);}).join(',')+')');}
+function dockingDemandKeys(){
+  var keys=typeof cityKeys==='function'?cityKeys():Object.keys(PROJECTS||{});
+  return keys.filter(function(key){var p=PROJECTS[key];if(!p||p.isDemand!==true)return false;return typeof demandSubmissionState==='function'?demandSubmissionState(key)==='submitted':p.submissionState==='submitted'||(typeof DEMANDS!=='undefined'&&DEMANDS.some(function(d){return d.projKey===key;}));});
+}
+function dockingClues(key){return typeof visibleClues==='function'?visibleClues(PROJECTS[key],key):[];}
+function dockingEvents(key){return typeof dockingLogRecords==='function'?dockingLogRecords(key):[];}
+function dockingContactEvents(key){return dockingEvents(key).filter(function(event){return event.kind==='contact_log'||(!event.kind&&event.note);});}
+function dockingSummary(key){
+  var clues=dockingClues(key),events=dockingEvents(key),contacts=dockingContactEvents(key);
+  var requested=clues.filter(function(c){return ['requested','processing','needs_info'].indexOf(dockingClueState(key,c).key)>=0;}).length;
+  var pending=clues.filter(function(c){return dockingClueState(key,c).canRequest;}).length;
+  var latest=events.reduce(function(ts,e){var value=Number(e.ts)||0;return Math.max(ts,value);},Number(PROJECTS[key].submittedAt)||0);
+  return {clues:clues,events:events,contacts:contacts,requested:requested,pending:pending,latest:latest};
+}
+function dockingDate(value,short){var n=Number(value);if(!n||!isFinite(n))return '时间未记录';var d=new Date(n);if(isNaN(d.getTime()))return '时间未记录';return d.toLocaleString('zh-CN',short?{month:'numeric',day:'numeric'}:{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});}
+function dockingBadge(label,tone){return '<span class="docking-badge" data-tone="'+dockingText(tone||'neutral')+'">'+dockingText(label)+'</span>';}
+function dockingDemandStatus(key){return dockingIntakeStatus(PROJECTS[key]);}
+
+function dockingFilteredKeys(keys){
+  var ui=dockingViewState(),query=ui.search.trim().toLocaleLowerCase();
+  return keys.filter(function(key){
+    var p=PROJECTS[key],summary=dockingSummary(key),spec=p.demandSpec||{};
+    if(ui.filter==='receiving'&&dockingIntake(PROJECTS[key]).status!=='submitted')return false;
+    if(ui.filter==='needs_info'&&dockingIntake(PROJECTS[key]).status!=='needs_info')return false;
+    if(ui.filter==='verification'&&!summary.pending&&!summary.requested)return false;
+    if(ui.filter==='followed'&&!summary.contacts.length)return false;
+    var words=[industryDemandProjectTitle(p),p.sourceAnalysisTopic||p.topic,spec.description,spec.conditions].concat(summary.clues.map(function(c){return c.name;})).join(' ').toLocaleLowerCase();
+    return !query||words.indexOf(query)>=0;
+  });
+}
+function dockingSelectedKey(keys){
+  var ui=dockingViewState(),selected=ui.selected||window.__projOpen;
+  if(keys.indexOf(selected)<0)selected=keys[0]||null;
+  ui.selected=selected;return selected;
+}
+function dockingWorkspacePage(){
+  var keys=dockingDemandKeys(),ui=dockingViewState(),filtered=dockingFilteredKeys(keys),key=dockingSelectedKey(filtered);
+  var candidates=0,requested=0,contacts=0;
+  keys.forEach(function(k){var s=dockingSummary(k);candidates+=s.clues.length;requested+=s.requested;contacts+=s.contacts.length;});
+  var metrics=[[keys.length,'招商需求','按具体诉求独立跟进'],[candidates,'候选企业','仅统计已保存线索'],[requested,'待处理核验','已申请且尚未完成'],[contacts,'跟进记录','来自已保存的沟通记录']];
+  return '<section id="dockingWorkspace" class="docking-workspace" aria-label="招商对接工作区"><header class="docking-header"><div><span class="docking-kicker">INVESTMENT COOPERATION</span><h1>招商对接</h1><p>围绕具体需求，核对企业、记录沟通，推进每一次真实对接。</p></div><div class="docking-header-actions"><button class="docking-button is-primary" onclick="openDirectDemandComposer()">提交招商需求</button><button class="docking-button is-quiet" onclick="go(\'report\')">查看产业分析 <span aria-hidden="true">↗</span></button></div></header><div class="docking-metrics">'+metrics.map(function(m){return '<div class="docking-metric"><small>'+m[1]+'</small><strong>'+m[0]+'</strong><span>'+m[2]+'</span></div>';}).join('')+'</div>'+
+    (!keys.length?'<div class="docking-empty"><span class="docking-kicker">START WITH A DEMAND</span><h2>从一条具体的招商需求开始</h2><p>已有明确需求可以直接提交，也可以从产业分析报告中选择一条招引建议形成需求。</p><button class="docking-button is-primary" onclick="openDirectDemandComposer()">提交招商需求</button></div>':
+    '<div class="docking-body"><aside class="docking-list-panel" aria-label="招商需求列表"><div class="docking-list-tools"><label for="dockingDemandSearch">查找需求</label><input id="dockingDemandSearch" type="search" autocomplete="off" placeholder="需求名称、企业或关键词" value="'+dockingText(ui.search)+'" oninput="dockingSetSearch(this.value)"><div class="docking-filters" role="group" aria-label="需求筛选">'+[['all','全部'],['receiving','待受理'],['needs_info','待补充']].map(function(f){return '<button type="button" data-filter="'+f[0]+'" class="'+(ui.filter===f[0]?'is-active':'')+'" aria-pressed="'+(ui.filter===f[0])+'" onclick="dockingSetFilter(\''+f[0]+'\')">'+f[1]+'</button>';}).join('')+'</div></div><div id="dockingListResults" class="docking-demand-list">'+dockingDemandListHtml(filtered,key)+'</div></aside><main id="dockingDetailHost" class="docking-detail-panel" data-demand-key="'+dockingText(key||'')+'" aria-label="所选需求详情" tabindex="-1">'+dockingDetailHtml(key)+'</main></div>')+'</section>';
+}
+function dockingDemandListHtml(keys,selected){
+  if(!keys.length)return '<div class="docking-inline-empty"><strong>没有符合条件的需求</strong><p>换一个关键词，或查看全部需求。</p><button class="docking-button is-quiet" onclick="dockingClearFilters()">清除筛选</button></div>';
+  return keys.map(function(key){var p=PROJECTS[key],s=dockingSummary(key),status=dockingDemandStatus(key);return '<button type="button" class="docking-demand-row '+(key===selected?'is-active':'')+'" aria-current="'+(key===selected?'true':'false')+'" onclick="'+dockingAction('dockingSelect',[key])+'"><span class="docking-row-title">'+dockingText(industryDemandProjectTitle(p))+'</span><span class="docking-row-meta">'+dockingText(p.city)+' · '+dockingDate(s.latest,true)+'</span>'+dockingBadge(status.label,status.tone)+'<span class="docking-row-summary">'+s.clues.length+' 家候选 <span aria-hidden="true">·</span> '+s.contacts.length+' 条跟进</span></button>';}).join('');
+}
+function dockingDetailHtml(key){
+  if(!key)return '<div class="docking-empty"><h2>选择一条需求</h2><p>这里会显示对应的企业、依据和跟进记录。</p></div>';
+  var p=PROJECTS[key],s=dockingSummary(key),status=dockingDemandStatus(key),spec=p.demandSpec||{},priority=p.selectedPriority||{},ui=dockingViewState();
+  var sourceTopic=p.sourceAnalysisTopic||p.topic,description=spec.description||'';
+  if(!description){var demand=(typeof DEMANDS!=='undefined'?DEMANDS:[]).find(function(d){return d.projKey===key;});description=demand&&demand.need||'';}
+  var intro=description?'<p>'+dockingText(description)+'</p>':'<p class="docking-muted">历史需求尚未单独填写具体诉求，可查看原报告核对。</p>';
+  var direct=p.demandOrigin==='direct'||spec.source==='user_direct';
+  var origin=direct?'<dl><dt>提交方式</dt><dd>机构直接提交</dd><dt>需求性质</dt><dd>提交人说明的招商诉求</dd>'+(p.submittedAt?'<dt>提交时间</dt><dd>'+dockingDate(p.submittedAt)+'</dd>':'')+'</dl>':'<dl><dt>来源分析</dt><dd>'+dockingText(sourceTopic)+'</dd>'+(priority.focus?'<dt>原始建议</dt><dd>'+dockingText(priority.focus)+'</dd>':'')+(p.submittedAt?'<dt>提交时间</dt><dd>'+dockingDate(p.submittedAt)+'</dd>':'')+'</dl>';
+  return '<header class="docking-detail-head"><div><span class="docking-kicker">DEMAND WORKSPACE</span><h2>'+dockingText(industryDemandProjectTitle(p))+'</h2><div class="docking-detail-meta">'+dockingBadge(status.label,status.tone)+'<span>'+dockingText(p.city)+' · 独立需求</span></div></div><div class="docking-detail-actions"><button class="docking-button is-primary" onclick="'+dockingAction('openDockingLog',[key])+'">记录跟进</button>'+(direct?'':'<button class="docking-button is-quiet" onclick="'+dockingAction('dockingOpenReport',[key])+'">来源报告</button>')+'</div></header>'+dockingReceivingHtml(key)+'<div class="docking-overview-grid"><section class="docking-block"><h3>具体招引诉求</h3>'+intro+(spec.conditions?'<div class="docking-condition"><strong>补充条件</strong><p>'+dockingText(spec.conditions)+'</p></div>':'')+((spec.contactName||spec.contactMethod)?'<div class="docking-condition"><strong>需求对接人</strong><p>'+dockingText([spec.contactName,spec.contactMethod].filter(Boolean).join(' · '))+'</p></div>':'')+'</section><section class="docking-block"><h3>需求来源</h3>'+origin+(Array.isArray(priority.sources)&&priority.sources.length?'<details><summary>查看建议依据 · '+priority.sources.length+' 条</summary>'+dockingEvidenceHtml(priority.sources)+'</details>':'')+'</section></div><section class="docking-candidates"><div class="docking-section-head"><div><h3>候选企业 <span>'+s.clues.length+'</span></h3><p>查看产品依据与匹配理由，再记录核验和沟通情况。</p></div><button class="docking-button is-quiet" onclick="'+dockingAction('addClueManual',[key])+'">录入企业</button></div>'+(s.clues.length?'<div class="docking-clue-grid">'+s.clues.map(function(c){return dockingClueHtml(key,c);}).join('')+'</div>':'<div class="docking-inline-empty"><strong>尚未收到候选企业</strong><p>资源团队可围绕这条具体诉求核对并推送企业；也可录入已有企业线索。未出现候选不代表不存在相关企业。</p></div>')+'</section><section class="docking-records"><div class="docking-section-head"><div><h3>处理与跟进记录 <span>'+s.events.length+'</span></h3><p>按实际保存时间展示，记录本身不代表外部事实已核实。</p></div></div>'+dockingTimelineHtml(key,s.events)+'</section>';
+}
+function dockingEvidenceHtml(sources){
+  return sources.filter(function(row){return row&&typeof row.quote==='string'&&row.quote.trim();}).map(function(row){
+    var href='';try{var url=new URL(row.url);if(['https:','http:'].indexOf(url.protocol)>=0&&!url.username&&!url.password)href=url.href;}catch(_){}
+    return '<article class="docking-source"><p>'+dockingText(row.quote)+'</p>'+(href?'<a class="docking-evidence-link" href="'+dockingText(href)+'" target="_blank" rel="noopener noreferrer">'+dockingText(row.title||row.label||'查看原始来源')+' ↗</a>':'<span class="docking-muted">未提供可访问的来源链接</span>')+'</article>';
+  }).join('');
+}
+function dockingClueHtml(key,c){
+  var state=dockingClueState(key,c),evidence=Array.isArray(c.evidence)?c.evidence:[],contacts=dockingContactEvents(key).filter(function(e){return e.clueId===c.id;}),hasId=typeof c.id==='string'&&!!c.id;
+  var reason=c.reason||c.fit||'',meta=[c.kind,c.region].filter(Boolean).join(' · ');
+  var manualSource='';try{var sourceUrl=new URL(c.sourceURL||'');if(sourceUrl.protocol==='https:'||sourceUrl.protocol==='http:')manualSource='<p><a class="docking-evidence-link" target="_blank" rel="noopener noreferrer" href="'+dockingText(sourceUrl.href)+'">手工录入的来源链接 ↗</a><br><small>链接内容尚未独立核实。</small></p>';}catch(_){}
+  var evidenceRows=[];evidence.forEach(function(e){if(!e)return;var urls=Array.isArray(e.urls)?e.urls:[e.url];evidenceRows.push({quote:e.quote||'',url:urls[0]||'',title:e.title||e.label||''});});
+  return '<article class="docking-clue-card"><header><div><strong>'+dockingText(c.name||'名称未记录')+'</strong><div class="docking-clue-meta">'+dockingText(meta||'业务与地域信息待补充')+'</div></div>'+dockingBadge(state.label,state.tone)+'</header><div class="docking-clue-reason"><small>与本条需求的关联</small><p>'+dockingText(reason||'尚未保存匹配理由，需要补充产品信息与具体需求的对应依据。')+'</p></div><div class="docking-clue-evidence"><details><summary>产品依据与待核问题</summary>'+(evidenceRows.length?dockingEvidenceHtml(evidenceRows):'<p class="docking-muted">暂无已保存的产品原文。请先补充来源再判断适配性。</p>')+manualSource+(Array.isArray(c.questions)&&c.questions.length?'<ul>'+c.questions.map(function(q){return '<li>'+dockingText(q)+'</li>';}).join(''):'')+'<p class="docking-muted">'+dockingText(c.signal?'线索记录（待核）：'+c.signal:'投资意向尚未取得独立核验记录。')+'</p></details></div>'+(c.verificationRequest&&c.verificationRequest.reply?'':'<p class="docking-clue-state">'+dockingText(state.detail)+'</p>')+dockingVerificationFeedbackHtml(c)+'<div class="docking-clue-actions">'+(hasId&&state.canRequest?'<button class="docking-button is-quiet" onclick="'+dockingAction('requestVerify',[key,c.id])+'">申请核验</button>':'')+'<button class="docking-button" onclick="'+dockingAction('openDockingLog',[key,hasId?c.id:null])+'">记录跟进'+(contacts.length?' · '+contacts.length:'')+'</button>'+(hasId?'<button class="docking-button is-quiet" onclick="'+dockingAction('showContactCard',[key,c.id])+'">联系资料</button><button class="docking-button is-quiet" onclick="'+dockingAction('editClue',[key,c.id])+'">'+(dockingIsManualClue(c)?'编辑资料':'企业资料')+'</button>':'')+'</div></article>';
+}
+function dockingTimelineHtml(key,events){
+  if(!events.length)return '<div class="docking-inline-empty"><strong>还没有跟进记录</strong><p>完成电话、拜访或材料沟通后，记录具体情况，便于团队接续跟进。</p></div>';
+  var types={call:'电话沟通',visit:'拜访交流',email:'邮件沟通',material:'材料往来',note:'跟进备注'};
+  return '<div class="docking-timeline">'+events.map(function(e){var isNew=e.contract==='docking-action-v1',kind=({verification_request:'申请核验',review_demand:'管理端受理反馈',supplement_demand:'客户补充资料',review_verification:'企业核验反馈',advance_stage:'管理端阶段更新'})[e.kind]||types[e.type]||'历史记录';var c=dockingClues(key).find(function(c){return c.id===e.clueId;});return '<article><div class="docking-event-top"><span class="docking-event-kind">'+kind+'</span><time>'+dockingDate(e.ts)+'</time></div>'+((e.clueName||(c&&c.name))?'<strong class="docking-event-company">'+dockingText(e.clueName||c.name)+'</strong>':'')+'<p>'+dockingText(e.note||(e.kind==='verification_request'?'已提交核验申请，等待资源团队处理。':Array.isArray(e.files)&&e.files.length?'已保存附件。':'未填写记录正文。'))+'</p><div class="docking-event-actor">'+dockingText(e.actor||'记录人未保存')+' · '+(isNew?(e.actorRole==='admin'?'管理端 · 已保存反馈':'已保存记录'):'历史记录，来源待复核')+'</div>'+(Array.isArray(e.files)&&e.files.length?'<div class="docking-event-files">'+e.files.map(function(f,i){return '<button class="docking-button is-quiet" onclick="'+dockingAction('dockingDownloadEventFile',[key,e.id||'',Number(e.ts)||0,i])+'">附件 · '+dockingText(f.name||'文件')+'</button>';}).join('')+'</div>':'')+'</article>';}).join('')+'</div>';
+}
+function dockingSelect(key){if(dockingDemandKeys().indexOf(key)<0)return;var ui=dockingViewState();ui.selected=key;window.__projOpen=key;dockingRefreshPanels();}
+function dockingSetSearch(value){dockingViewState().search=String(value||'');dockingRefreshPanels();}
+function dockingSetFilter(value){if(['all','receiving','needs_info','verification','followed'].indexOf(value)<0)return;dockingViewState().filter=value;dockingRefreshPanels();}
+function dockingClearFilters(){var ui=dockingViewState();ui.search='';ui.filter='all';var search=document.getElementById('dockingDemandSearch');if(search)search.value='';dockingRefreshPanels();}
+function dockingRefreshPanels(){
+  var keys=dockingFilteredKeys(dockingDemandKeys()),key=dockingSelectedKey(keys),list=document.getElementById('dockingListResults'),detail=document.getElementById('dockingDetailHost');
+  if(list)list.innerHTML=dockingDemandListHtml(keys,key);if(detail&&detail.getAttribute('data-demand-key')!==String(key||'')){detail.innerHTML=dockingDetailHtml(key);detail.setAttribute('data-demand-key',key||'');detail.scrollTop=0;}
+  Array.prototype.forEach.call(document.querySelectorAll('.docking-filters button'),function(button){var active=button.getAttribute('data-filter')===dockingViewState().filter;button.classList.toggle('is-active',active);button.setAttribute('aria-pressed',String(active));});
+}
+function dockingOpenReport(key){if(!PROJECTS[key])return;if(PROJECTS[key].demandOrigin==='direct'){toast('这条需求由机构直接提交，没有来源分析报告。');return;}cur=key;view='report';detailData=null;render();}
+function dockingDownloadEventFile(key,id,ts,index){
+  var event=dockingEvents(key).find(function(e){return id?e.id===id:Number(e.ts)===ts;}),file=event&&event.files&&event.files[index];
+  if(!file||typeof file.dataUrl!=='string'||!/^data:(application\/(?:pdf|msword|vnd\.[a-z0-9.+-]+)|text\/(?:plain|csv)|image\/(?:png|jpeg|webp));base64,/i.test(file.dataUrl)){toast('附件当前不可用');return;}
+  var link=document.createElement('a');link.href=file.dataUrl;link.download=file.name||'附件';document.body.appendChild(link);link.click();link.remove();
+}
+function dockingCaptureView(){
+  if(view!=='home'&&view!=='docking')return null;
+  var root=document.getElementById('dockingWorkspace');if(!root)return null;
+  var input=document.getElementById('dockingDemandSearch'),detail=document.getElementById('dockingDetailHost'),list=document.getElementById('dockingListResults');
+  return {epoch:dockingViewState().epoch,selected:dockingViewState().selected,detail:detail&&detail.scrollTop||0,list:list&&list.scrollTop||0,searchFocused:document.activeElement===input,start:input&&input.selectionStart,end:input&&input.selectionEnd,open:Array.prototype.map.call(root.querySelectorAll('details'),function(d){return d.open;})};
+}
+function dockingRestoreView(snapshot){
+  if(!snapshot||snapshot.epoch!==dockingViewState().epoch||snapshot.selected!==dockingViewState().selected||view!=='home')return;
+  var root=document.getElementById('dockingWorkspace');if(!root)return;
+  var detail=document.getElementById('dockingDetailHost'),list=document.getElementById('dockingListResults'),input=document.getElementById('dockingDemandSearch');
+  if(detail)detail.scrollTop=snapshot.detail;if(list)list.scrollTop=snapshot.list;
+  Array.prototype.forEach.call(root.querySelectorAll('details'),function(d,i){d.open=!!snapshot.open[i];});
+  if(snapshot.searchFocused&&input){input.focus({preventScroll:true});if(typeof input.setSelectionRange==='function')input.setSelectionRange(snapshot.start,snapshot.end);}
+}
+
+function dockingReceivingHtml(key){
+  var p=PROJECTS[key],intake=dockingIntake(p),status=dockingIntakeStatus(p),hasReply=!!intake.reply;
+  return '<section class="docking-receiving" data-status="'+dockingText(intake.status)+'"><div class="docking-receiving-top"><div><span class="docking-kicker">SERVICE PROGRESS</span><h3>管理端受理与反馈</h3></div>'+dockingBadge(status.label,status.tone)+'</div>'+
+    (hasReply?'<p class="docking-receiving-reply">'+dockingText(intake.reply)+'</p><dl><dt>负责人</dt><dd>'+dockingText(intake.owner||'未指定')+'</dd><dt>下一步</dt><dd>'+dockingText(intake.nextStep||'尚未填写')+'</dd><dt>最近反馈</dt><dd>'+dockingDate(intake.repliedAt||intake.updatedAt)+' · '+dockingText(intake.repliedBy||intake.updatedBy||'管理端')+'</dd></dl>':'<p class="docking-receiving-reply">需求已进入受理队列。管理端受理后，负责人、下一步和处理结果将显示在这里。</p>')+
+    '<button class="docking-button '+(intake.status==='needs_info'?'is-primary':'is-quiet')+'" onclick="'+dockingAction('openDockingSupplement',[key])+'">'+(intake.status==='needs_info'?'按反馈补充资料':'补充需求资料')+'</button></section>';
+}
+
+function dockingVerificationFeedbackHtml(clue){
+  var r=clue.verificationRequest;if(!r||r.contract!=='docking-action-v1'||!r.reply)return '';
+  return '<div class="docking-verification-reply"><strong>管理端核验记录</strong><p>'+dockingText(r.reply)+'</p>'+(r.evidence?'<small>记录依据</small><p>'+dockingText(r.evidence)+'</p>':'')+'<small>'+dockingDate(r.updatedAt)+' · '+dockingText(r.updatedBy||'管理端')+'</small><p class="docking-muted">这项反馈仅适用于本条需求，投资意向以企业实际沟通为准。</p></div>';
 }
 /* ===== 右侧详情栏（复刻雷总"本次分析" + 证据联动）===== */
 function detailPane(p){

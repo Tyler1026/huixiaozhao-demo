@@ -1,4 +1,4 @@
-"""Create one atomic, source-bound demand from one saved report priority.
+"""Create an atomic demand from a saved report priority or a direct request.
 
 The client chooses a reviewed suggestion and writes the requested action.  It
 cannot supply report text, evidence, or a claim that its request is a verified
@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 import time
 import uuid
 from urllib.parse import urlsplit
@@ -22,12 +23,19 @@ from .chain_identity import chain_input_identity, chain_report_text, identity_js
 CONTRACT = 'industry-demand-v1'
 _PRIORITY_FIELDS = ('focus', 'scope', 'comparison', 'reason', 'action', 'evidence_ids')
 _SCOPES = {'local', 'local_enterprise', 'industry', 'project'}
+_REQUEST_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z')
 _PROJECT_FIELDS = ('demandContract', 'demandTitle', 'selectedPriority', 'demandSpec',
+                   'demandOrigin', 'directRequestId', 'directRequestFingerprint',
                    'sourceProjectKey', 'sourceAnalysisTopic', 'sourcePriorityKey',
                    'sourceReportIdentity', 'sourceReportFingerprint', 'submittedAt',
-                   'submittedBy', 'topic', 'workspaceId', 'isDemand')
+                   'submittedBy', 'submissionState', 'topic', 'workspaceId', 'isDemand',
+                   'id', 'parentProjectKey', 'analysisTopic', 'reportRequestId',
+                   'sourceReportId', 'report')
 _DEMAND_FIELDS = ('demandContract', 'projKey', 'topic', 'title', 'demandTitle',
+                 'demandOrigin', 'directRequestId', 'directRequestFingerprint',
                  'analysisTopic', 'sourceProjectKey', 'sourcePriorityKey',
+                 'sourceAnalysisTopic', 'sourceReportIdentity', 'sourceReportFingerprint',
+                 'reportRequestId', 'sourceReportId',
                  'selectedPriority', 'demandSpec', 'need', 'note', 'domain', 'city', 'gov',
                  'submittedAt', 'submittedBy')
 
@@ -42,9 +50,83 @@ def priority_key(priority):
 
 def _text(value, name, limit):
     if (not isinstance(value, str) or not value.strip() or len(value) > limit
-            or any(ord(ch) < 32 and ch not in '\n\r\t' for ch in value)):
+            or any((ord(ch) < 32 and ch not in '\n\r\t') or ord(ch) == 127 for ch in value)):
         _fail('invalid_demand', name + '格式不正确', 400)
     return value.strip()
+
+
+def _optional_text(value, name, limit):
+    if value == '':
+        return ''
+    return _text(value, name, limit)
+
+
+def _demand_rows(state):
+    rows = state.get('DEMANDS')
+    if rows is None:
+        rows = state['DEMANDS'] = []
+    if not isinstance(rows, list):
+        _fail('storage_unavailable', '需求列表暂不可用，请稍后重试', 503)
+    return rows
+
+
+def _create_direct_demand(body, state, principal, project, key, now):
+    """A client's stated need is useful input, never a report-derived finding."""
+    if set(body) - {'mode', 'projectKey', 'requestId', 'demand'}:
+        _fail('invalid_demand', '直接提交需求包含不支持的字段', 400)
+    request_id = body.get('requestId')
+    if not isinstance(request_id, str) or not _REQUEST_ID.fullmatch(request_id):
+        _fail('invalid_request_id', '提交标识不正确，请重新提交', 400)
+    supplied = body.get('demand')
+    if not isinstance(supplied, dict) or set(supplied) - {
+            'title', 'description', 'conditions', 'contactName', 'contactMethod'}:
+        _fail('invalid_demand', '请填写明确的招商需求', 400)
+    title = _text(supplied.get('title'), '需求标题', 120)
+    description = _text(supplied.get('description'), '具体诉求', 6000)
+    conditions = _optional_text(supplied.get('conditions', ''), '需求条件', 2000)
+    contact_name = _optional_text(supplied.get('contactName', ''), '联系人', 80)
+    contact_method = _optional_text(supplied.get('contactMethod', ''), '联系方式', 240)
+    fingerprint = hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False,
+                                           allow_nan=False, separators=(',', ':')).encode()).hexdigest()
+    rows = _demand_rows(state)
+    duplicates = [(pkey, item) for pkey, item in state['PROJECTS'].items()
+                  if isinstance(item, dict) and item.get('demandContract') == CONTRACT
+                  and item.get('workspaceId') == key and item.get('demandOrigin') == 'direct'
+                  and item.get('directRequestId') == request_id]
+    if duplicates:
+        if len(duplicates) != 1 or duplicates[0][1].get('directRequestFingerprint') != fingerprint:
+            _fail('request_conflict', '该提交标识已用于其他内容，请重新确认需求')
+        saved_key, saved = duplicates[0]
+        demands = [row for row in rows if isinstance(row, dict) and row.get('projKey') == saved_key]
+        if len(demands) != 1:
+            _fail('demand_conflict', '已有需求记录不完整，请联系管理员核对')
+        return {'ok': True, 'created': False, 'projectKey': saved_key,
+                'project': copy.deepcopy(saved), 'demand': copy.deepcopy(demands[0]),
+                'reportState': {}}
+    stamp = int(time.time() * 1000) if now is None else now
+    child_key = 'proj_' + uuid.uuid4().hex
+    spec = {'title': title, 'description': description, 'conditions': conditions,
+            'contactName': contact_name, 'contactMethod': contact_method,
+            'source': 'user_direct', 'verificationStatus': 'user_stated'}
+    identity = {'demandContract': CONTRACT, 'demandOrigin': 'direct',
+                'directRequestId': request_id, 'directRequestFingerprint': fingerprint}
+    child = dict(identity, id=child_key, workspaceId=key, parentProjectKey=key,
+                 city=project.get('city', ''), org=project.get('org', ''), who=project.get('who', ''),
+                 topic=title, demandTitle=title, stage=4, isDemand=True,
+                 submissionState='submitted', demandSpec=spec, submittedAt=stamp,
+                 submittedBy=principal.get('user', ''), kb=[], report=None, clues=[],
+                 stageLog=[{'ts': stamp, 'from': None, 'to': 4,
+                            'note': '机构已直接提交明确的招商需求', 'who': principal.get('user', '')}])
+    demand = dict(identity, id='d_' + uuid.uuid4().hex, projKey=child_key,
+                  city=child['city'], gov=child['org'] + '·' + child['who'],
+                  topic=title, title=title, demandTitle=title, domain=title,
+                  demandSpec=copy.deepcopy(spec), need=description, note=conditions,
+                  submit='刚刚', submittedAt=stamp, submittedBy=principal.get('user', ''),
+                  res='none', resLabel='待受理', clues=0, ai='')
+    state['PROJECTS'][child_key] = child
+    rows.append(demand)
+    return {'ok': True, 'created': True, 'projectKey': child_key, 'project': copy.deepcopy(child),
+            'demand': copy.deepcopy(demand), 'reportState': {}}
 
 
 def _selected_priority(research, supplied):
@@ -118,11 +200,20 @@ def create_industry_demand(body, state, principal, *, now=None):
     key, topic = body.get('projectKey'), body.get('topic')
     authorize_project(key, state, principal)
     project = state['PROJECTS'][key]
-    if project.get('isDemand') or (project.get('workspaceId') or key) != key:
-        _fail('parent_workspace_required', '请在城市产业分析工作区选择要提交的建议')
+    scoped = scoped_sync_view(state, principal)
+    canonical = (scoped.get('PROJECTS') or {}).get(key) or {}
+    parent = (canonical.get('workspaceId') or project.get('workspaceId') or
+              project.get('parentProjectKey') or project.get('parentKey') or
+              project.get('parentProjKey') or project.get('parent') or key)
+    if project.get('isDemand') or parent != key or key in (state.get('DELETED_PROJECTS') or []):
+        _fail('parent_workspace_required', '请在所属城市工作区提交招商需求')
+    mode = body.get('mode', 'report')
+    if mode == 'direct':
+        return _create_direct_demand(body, state, principal, project, key, now)
+    if mode != 'report':
+        _fail('invalid_demand_mode', '请选择有效的需求提交方式', 400)
     if not isinstance(topic, str) or not topic:
         _fail('invalid_topic', '请选择当前报告方向', 400)
-    scoped = scoped_sync_view(state, principal)
     identity = chain_input_identity(scoped, key, topic)
     if not identity_matches(body.get('sourceIdentity'), identity):
         _fail('stale_report', '报告或材料已更新，请刷新并重新确认需求')
@@ -140,11 +231,7 @@ def create_industry_demand(body, state, principal, *, now=None):
         _fail('stale_report', '报告的建议或来源已更新，请刷新并重新确认需求')
     selected = _selected_priority(research, body.get('priority'))
     selected_key = priority_key(selected)
-    rows = state.get('DEMANDS')
-    if rows is None:
-        rows = state['DEMANDS'] = []
-    if not isinstance(rows, list):
-        _fail('storage_unavailable', '需求列表暂不可用，请稍后重试', 503)
+    rows = _demand_rows(state)
     duplicates = [(pkey, item) for pkey, item in state['PROJECTS'].items()
                   if isinstance(item, dict) and item.get('demandContract') == CONTRACT
                   and item.get('workspaceId') == key and item.get('sourceProjectKey') == key
@@ -176,7 +263,7 @@ def create_industry_demand(body, state, principal, *, now=None):
     child = {'id': child_key, 'workspaceId': key, 'parentProjectKey': key,
              'city': project.get('city', ''), 'org': project.get('org', ''), 'who': project.get('who', ''),
              'topic': topic, 'demandTitle': title, 'stage': 4, 'isDemand': True,
-             'submissionState': 'submitted', 'demandContract': CONTRACT,
+             'submissionState': 'submitted', 'demandContract': CONTRACT, 'demandOrigin': 'report',
              'selectedPriority': selected, 'demandSpec': spec,
              'sourceProjectKey': key, 'sourceAnalysisTopic': topic, 'sourcePriorityKey': selected_key,
              'sourceReportIdentity': identity_json(identity), 'sourceReportFingerprint': fingerprint,
@@ -184,6 +271,7 @@ def create_industry_demand(body, state, principal, *, now=None):
              'clues': [], 'stageLog': [{'ts': stamp, 'from': 2, 'to': 4,
                  'note': '已按具体研判建议递交招商需求', 'who': principal.get('user', '')}]}
     demand = {'id': 'd_' + uuid.uuid4().hex, 'projKey': child_key, 'demandContract': CONTRACT,
+              'demandOrigin': 'report',
               'city': child['city'], 'gov': child['org'] + '·' + child['who'],
               'topic': title, 'title': title, 'demandTitle': title, 'domain': selected['focus'],
               'analysisTopic': topic, 'sourceProjectKey': key, 'sourcePriorityKey': selected_key,
@@ -214,6 +302,8 @@ def preserve_industry_demands(incoming, state):
             for field in _PROJECT_FIELDS:
                 if field in old:
                     item[field] = copy.deepcopy(old[field])
+                else:
+                    item.pop(field, None)
             reports = incoming.get('REPORTSTATE')
             if isinstance(reports, dict) and key in reports:
                 reports[key] = copy.deepcopy((state.get('REPORTSTATE') or {}).get(key) or {})
@@ -240,6 +330,8 @@ def preserve_industry_demands(incoming, state):
         for field in _DEMAND_FIELDS:
             if field in old:
                 row[field] = copy.deepcopy(old[field])
+            else:
+                row.pop(field, None)
 
 
 def handle_industry_demand(handler, raw, session_factory, admin_config=None):

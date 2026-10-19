@@ -130,7 +130,7 @@ function resourceReviewConfirmSelection(key){
 }
 function resourceReviewPreview(key,ids){
   var p=PROJECTS[key];if(!p)return;
-  var topic=p.topic,identity=savedEvidenceIdentity(key,topic),epoch=typeof _authEpoch==='number'?_authEpoch:0,requestId=String(p.reportRequestId||(REPORTSTATE[key]||{}).reportRequestId||'');
+  var topic=p.topic,identity=savedEvidenceIdentity(key,topic),epoch=typeof _authEpoch==='number'?_authEpoch:0,requestId=opsDemandContextRequestId(key);
   fetch('/api/funnel-resource-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({projectKey:key,topic:topic,reportRequestId:requestId,resourceIds:ids})})
   .then(async function(resp){var data=await resp.json();if(!resp.ok)throw new Error(data.message||'来源预览未完成');
     if(!PROJECTS[key]||PROJECTS[key].topic!==topic||savedEvidenceIdentity(key,topic)!==identity||(typeof _authEpoch==='number'?_authEpoch:0)!==epoch)throw new Error('当前项目材料已变化，请重新打开');
@@ -560,29 +560,11 @@ function toggleClue(id){
 }
 
 function requestVerify(projKey, clueId){
-  var p = PROJECTS[projKey]; if(!p) return;
-  var c = (p.clues||[]).find(function(x){return x.id===clueId;});
-  if(!c) return;
-  c.tone = 'amber';
-  c.status = '资源核验中';
-  persist();
-  // 推进 stage 到 4（资源匹配）
-  p.stage = Math.max(p.stage, 4);
-  persist();
-  render();
-  toast('✓ 已发起资源核验，等待团队回传');
+  return requestDockingVerification(projKey,clueId);
 }
 
 function arrangeDocking(projKey, clueId){
-  var p = PROJECTS[projKey]; if(!p) return;
-  var c = (p.clues||[]).find(function(x){return x.id===clueId;});
-  if(!c) return;
-  c.tone = 'teal';
-  c.status = '可安排首次沟通';
-  p.stage = Math.max(p.stage, 5);
-  persist();
-  render();
-  toast('✓ 已标记为可安排沟通，进入招商对接阶段');
+  return openDockingLog(projKey,clueId);
 }
 
 function editClue(projKey, clueId){
@@ -858,7 +840,7 @@ function advanceStage(projKey){
   var st=projStages(p);
   var current=demandEffectiveStage(projKey,p);
   if(current < st.length){
-    advanceStageTo(projKey, current+1, '');
+    return advanceStageTo(projKey, current+1, '');
   }
 }
 
@@ -872,13 +854,9 @@ function advanceStageTo(projKey, target, note){
   }
   var current=demandEffectiveStage(projKey,p);
   if(target === current){ toast('已在该阶段'); return; }
-  var from = current;
-  p.stage = target;
-  if(!p.stageLog) p.stageLog=[];
-  p.stageLog.unshift({ts:Date.now(), from:from, to:target, note:(note||'').trim(), who:'运营端'});
-  persist();
-  render();
-  toast('✓ 已推进到「' + stageNameOf(p,target) + '」阶段');
+  note=String(note||'').trim();
+  if(!note){toast('请填写本次阶段变化的实际依据');return;}
+  return opsSaveStageAction(projKey,target,note);
 }
 
 /* 阶段推进面板：下拉选项（当前阶段之后的所有阶段） */
@@ -902,8 +880,8 @@ function renderStageLog(p){
       return '<div style="display:flex;gap:8px;padding:6px 0;font-size:12px;color:#4a5568">'+
         '<span style="color:#1a56db;flex-shrink:0">▸</span>'+
         '<div style="min-width:0"><span style="font-weight:650">'+stageNameOf(p,l.to)+'</span>'+
-        (l.note?'<span style="color:#8492a6"> — '+l.note+'</span>':'')+
-        '<div style="font-size:11px;color:#9aa5b5;margin-top:1px">'+new Date(l.ts).toLocaleString('zh-CN')+(l.who?' · '+l.who:'')+'</div></div>'+
+        (l.note?'<span style="color:#8492a6"> — '+_authEscape(l.note)+'</span>':'')+
+        '<div style="font-size:11px;color:#9aa5b5;margin-top:1px">'+new Date(l.ts).toLocaleString('zh-CN')+(l.who?' · '+_authEscape(l.who):'')+'</div></div>'+
       '</div>';
     }).join('')+
   '</div>';
@@ -914,7 +892,7 @@ function saveStageAdvance(projKey){
   var targetEl = document.getElementById('stage-target-'+projKey);
   var noteEl = document.getElementById('stage-note-'+projKey);
   if(!targetEl) return;
-  advanceStageTo(projKey, targetEl.value, noteEl ? noteEl.value : '');
+  return advanceStageTo(projKey, targetEl.value, noteEl ? noteEl.value : '');
 }
 
 /* 新增后续自定义阶段 */
@@ -1311,18 +1289,7 @@ function setDockType(projKey, type){
 }
 
 function saveDockLog(projKey){
-  var ta=document.getElementById('dock-note-'+projKey);
-  if(!ta||!ta.value.trim()){toast('请填写对接记录内容');return;}
-  if(!DOCK_LOGS[projKey]) DOCK_LOGS[projKey]=[];
-  DOCK_LOGS[projKey].unshift({
-    ts: Date.now(),
-    note: ta.value.trim(),
-    type: __dockType[projKey]||'visit'
-  });
-  persist();
-  ta.value='';
-  render();
-  toast('✓ 对接记录已保存');
+  return recordDockingLegacyLog(projKey);
 }
 function ctxBar(icon,strong,span){
   return '<div class="context-bar"><div class="context-icon"><i class="i">'+icon+'</i></div>'+

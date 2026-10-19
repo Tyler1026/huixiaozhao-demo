@@ -123,14 +123,15 @@ test('free-form verdict classification displays pending review, never a numeric 
   assert.equal(c.topicScoreDisplay(p.topic), '暂无核验结论');
 });
 
-test('native history, project card and PDF/TXT exports agree for 100, true 0 and unclassified', () => {
+test('native history and PDF/TXT exports agree for 100, true 0 and unclassified', () => {
   for (const [score, status, label] of [[100, 'classified', '核验一致项比例 100%'], [0, 'classified', '核验一致项比例 0%'], [0, 'unclassified', '核验分类待校核']]) {
     const {context: c, elements, project: p, report: r, exports: out} = harness(publication());
     r.score = score; r.scoreStatus = status;
     c.renderHistoryReports(c.cur);
     assert.ok(elements.reportHistoryArea.innerHTML.includes(label));
     p.isDemand = true; p.stage = 3; c.window.__projOpen = c.cur;
-    assert.ok(c.projMgmtPage(p).includes(label));
+    const saved=c.demandReportSnapshot(c.cur,p.topic);
+    assert.ok(saved,'the source report remains available from the demand workspace');
     c.downloadReportPDF('full');
     assert.ok(out.pdf.at(-1).includes(label));
     assert.ok(!out.pdf.at(-1).includes('研判置信度'));

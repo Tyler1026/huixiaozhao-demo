@@ -57,6 +57,11 @@ function _funnelInput(p){
   var gaps=[]; try{ gaps=extractGapsForScan(p); }catch(e){}
   return {text:text, gaps:gaps};
 }
+function opsDemandContextRequestId(key,project,report){
+  var p=project||PROJECTS[key]||{},rs=report||(typeof REPORTSTATE!=='undefined'&&REPORTSTATE[key])||{};
+  if(p.demandOrigin==='direct')return /^[0-9a-f]{64}$/.test(String(p.directRequestFingerprint||''))?'demand:'+p.directRequestFingerprint:'';
+  return String(p.reportRequestId||rs.reportRequestId||'');
+}
 function savedEvidenceIdentity(key, topic, snapshot){
   var projects=snapshot?snapshot.PROJECTS||{}:PROJECTS,states=snapshot?snapshot.REPORTSTATE||{}:(typeof REPORTSTATE!=='undefined'?REPORTSTATE:{});
   var p=projects[key];if(!p)return null;
@@ -72,7 +77,7 @@ function savedEvidenceIdentity(key, topic, snapshot){
   state.fileChunks=keys.map(function(k){return (input.KB_FILE_CHUNKS||{})[k]||[];});
   state.uploads=keys.map(function(k){return ((input.UPLOADS||{})[k]||[]).map(function(upload){if(!upload||typeof upload!=='object')return upload;var copy=Object.assign({},upload);delete copy.dataUrl;return copy;});});
   state.uploadTombs={};Object.keys(input.UPLOAD_TOMBS||{}).forEach(function(k){if(keys.some(function(key){return k.indexOf(key+'::')===0;}))state.uploadTombs[k]=input.UPLOAD_TOMBS[k];});
-  return JSON.stringify(stable({schema:'saved-evidence-v2',workspace:root,city:p.city||'',topic:topic,requestId:p.reportRequestId||rs.reportRequestId||'',keys:keys,
+  return JSON.stringify(stable({schema:'saved-evidence-v2',workspace:root,city:p.city||'',topic:topic,requestId:opsDemandContextRequestId(key,p,rs),keys:keys,
     kb:keys.map(function(k){return (projects[k]||{}).kb||[];}),onboarding:keys.map(function(k){return (projects[k]||{}).onboarding||{};}),
     baseReportVersion:keys.map(function(k){var v=(projects[k]||{}).baseReportVersion;return v===undefined?null:v;}),
     report:(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'')||'',state:state}));
@@ -81,7 +86,7 @@ function savedEvidenceIdentity(key, topic, snapshot){
 function runAIFunnel(projKey, done, onProgress){
   var p=PROJECTS[projKey]; if(!p){ done&&done('no project'); return; }
   if(_funnelRunning[projKey])return;
-  var run={},epoch=typeof _authEpoch==='number'?_authEpoch:0,requestId=p.reportRequestId||null,topic=p.topic||'';
+  var run={},epoch=typeof _authEpoch==='number'?_authEpoch:0,requestId=opsDemandContextRequestId(projKey)||null,topic=p.topic||'';
   var sourceIdentity=savedEvidenceIdentity(projKey,topic);
   _funnelRunning[projKey]=run;
   function current(){return PROJECTS[projKey]&&(PROJECTS[projKey].topic||'')===topic&&savedEvidenceIdentity(projKey,topic)===sourceIdentity&&(typeof _authEpoch==='number'?_authEpoch:0)===epoch;}

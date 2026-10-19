@@ -1,10 +1,11 @@
 {
   "index.html": {
-    "sha256": "f00ac15cb208903cb9589cb92c7ef4dc4ad65ecafac732bc68cbe568c64b7319",
+    "sha256": "f655fec3a830c4e1191bfe06a04bb39288f71e84b8195d6879e1383ff19e74a0",
     "parts": [
       "frontend/index/markup-01.html",
       "frontend/index/style-01.css",
       "frontend/index/industry.css",
+      "frontend/index/docking.css",
       "frontend/shared/industry-chain.css",
       "frontend/index/markup-02.html",
       "frontend/index/script-01.js",
@@ -29,7 +30,9 @@
       "frontend/shared/_clueLegacyTombKey.js",
       "frontend/shared/report-priorities.js",
       "frontend/shared/industry-demands.js",
+      "frontend/shared/docking-actions.js",
       "frontend/index/script-02-sections/12-tail.js",
+      "frontend/index/docking-workspace.js",
       "frontend/index/script-02-sections/13.js",
       "frontend/index/script-02-sections/14-part-00.js",
       "frontend/shared/_kbItemFp.js",
@@ -43,10 +46,11 @@
     ]
   },
   "ops.html": {
-    "sha256": "0ef836ac5306395e8064ca432a0fe3272eae9779ae23e3bec15a58656db1c4e7",
+    "sha256": "e1e415a9d4c447e64da9deb4e4389c34d6bf12ed484aa1553e821b8c97afc969",
     "parts": [
       "frontend/ops/markup-01.html",
       "frontend/ops/style-01.css",
+      "frontend/ops/docking-receiving.css",
       "frontend/shared/industry-chain.css",
       "frontend/ops/markup-02.html",
       "frontend/ops/script-01.js",
@@ -71,6 +75,7 @@
       "frontend/shared/_isReusableClueId.js",
       "frontend/shared/report-priorities.js",
       "frontend/shared/industry-demands.js",
+      "frontend/shared/docking-actions.js",
       "frontend/ops/script-03-sections/12-tail.js",
       "frontend/ops/script-03-sections/13.js",
       "frontend/ops/script-03-sections/14-part-00.js",
@@ -79,6 +84,7 @@
       "frontend/ops/script-03-sections/15.js",
       "frontend/ops/script-03-sections/16.js",
       "frontend/ops/script-03-sections/17.js",
+      "frontend/ops/docking-receiving.js",
       "frontend/ops/script-03-sections/18.js",
       "frontend/ops/markup-05.html"
     ]

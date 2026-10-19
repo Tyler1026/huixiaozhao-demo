@@ -404,6 +404,7 @@ test('demand list shows submitted projects only and rendering never starts AI wo
   const h = await boot(); h.admin();
   h.ctx.PROJECTS = {base: {city: '同城', topic: '城市基础', kb: []}, child: {city: '同城', topic: '新能源', org: '招商局', isDemand: true, stage: 1, kb: [], clues: []},
     other: {city: '另一城', topic: '半导体', org: '高新区', isDemand: true, stage: 1, kb: [], clues: []}};
+  h.ctx.DEMANDS = [{projKey:'child'}, {projKey:'other'}];
   h.ctx.runAIFunnel = () => {throw new Error('render may not start AI work');};
   let html = h.ctx.opsDemandResults(); assert.match(html, /2 个城市 · 2 个项目/); assert.doesNotMatch(html, /城市基础/);
   h.ctx.OPS_UI.demands.query = '新能源'; html = h.ctx.opsDemandResults(); assert.match(html, /新能源/); assert.doesNotMatch(html, /半导体/);

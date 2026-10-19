@@ -34,7 +34,9 @@ function setup(app){
  };
  vm.createContext(c);
  const auth=fs.readFileSync(path.join(root,'frontend',app,folder,app==='index'?'03.js':'17.js'),'utf8');vm.runInContext(fn(auth,'_safeSyncSnapshot'),c);
- const shared=fs.readFileSync(path.join(root,'frontend',app,folder,'12-part-00.js'),'utf8');vm.runInContext(fn(shared,'savedEvidenceIdentity'),c);
+ const shared=fs.readFileSync(path.join(root,'frontend',app,folder,'12-part-00.js'),'utf8');
+ if(app==='ops')vm.runInContext(fn(shared,'opsDemandContextRequestId'),c);
+ vm.runInContext(fn(shared,'savedEvidenceIdentity'),c);
  for(const name of ['_correctChainLevel','chainSnapshotIdentity','chainSourceIdentity','chainEvidenceMatches','currentEvidenceChain','chainInputSnapshot','readTopicReportStream','syncTopicReportInputs','generateChainFromReport','requestChainGeneration','escapeChainText','chainSafeSourceUrl','chainNodeSources','chainNodeSourcesHtml','actualWeaknessView','chainAssessmentView','chainAssessmentBadge','chainAssessmentDate','chainAssessmentFindings','chainAssessmentFindingHtml','chainAssessmentDetails','chainAssessmentPanel','chainNeedsAssessment','chainNodeCardHtml','_renderRichChain','chainGenerationStatusHtml','chainMapHtml'])vm.runInContext(fn(source,name),c);
  return {c,events,storage,snapshot,server:()=>clone(server),setSyncGate:v=>syncGate=v,setModelGate:v=>modelGate=v,setSyncFailure:v=>syncFailure=v,setModelFailure:v=>modelFailure=v,setTransform:v=>transform=v,setStream:v=>streamOptions=v,setStorage:v=>storageWorks=v};
 }
