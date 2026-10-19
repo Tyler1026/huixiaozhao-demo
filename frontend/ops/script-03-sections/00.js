@@ -93,11 +93,17 @@ function reportMdToHtml(md){
   var lines=md.split('\n'), out=[], i=0, inTable=false, tbuf=[];
   function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
   function inline(s){
+    var links=[];
+    s=s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,function(all,label,url){
+      if(/[<>"'\\]/.test(url)||/@/.test(url.split('/').slice(0,3).join('/')))return all;
+      var token='\u0000HXLINK'+links.length+'\u0000';
+      links.push('<a href="'+esc(url).replace(/"/g,'&quot;')+'" target="_blank" rel="noopener noreferrer">'+esc(label)+'</a>');return token;
+    });
     s=esc(s).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
     // 关键数据高亮
     s=s.replace(/(\d[\d,.]*\s*(?:亿元|亿|万辆|万吨|万㎡|万台|GWh|km|kg|%))/g,'<span class="num">$1</span>');
     s=s.replace(/✅/g,'<span class="ok">✅</span>').replace(/❌/g,'<span class="no">❌</span>').replace(/⚠️/g,'<span class="warn">⚠️</span>');
-    return s;
+    return s.replace(/\u0000HXLINK(\d+)\u0000/g,function(all,i){return links[Number(i)]||all;});
   }
   function flushTable(){
     if(!tbuf.length){inTable=false;return;}
@@ -140,6 +146,7 @@ function reportMdToHtml(md){
   return out.join('\n');
 }
 
+/* 所有导出从当前方向取正文；当前方向为空时禁止沿用上一方向。 */
 
 function reportExportContext(){
   var p=P(), rs=REPORTSTATE[cur];

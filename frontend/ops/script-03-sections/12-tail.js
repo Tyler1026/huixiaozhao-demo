@@ -1400,12 +1400,132 @@ function cancelTopicEdit(){
 /* ── 研判需求页辅助函数 ── */
 
 // 选择研判方向（卡片点击 or 自定义输入）
+function reportStateFields(){
+  return ['aiReportByTopic','phaseByTopic','tsByTopic','researchByTopic','materialDirectoryByTopic','evidenceStatusByTopic','scoreByTopic','userGeneratedTopics','reportByTopic','actionItemsByTopic'];
+}
+
+
+function reportStateStamp(value){return typeof value==='number'&&isFinite(value)&&value>0?value:0;}
+
+function reportTopicStamp(state,topic){return reportStateStamp((state.tsByTopic||{})[topic])||(state.topic===topic?reportStateStamp(state.ts):0);}
+
+function mergeTopicStamps(){
+  var out={};Array.from(arguments).forEach(function(map){Object.keys(map||{}).forEach(function(t){out[t]=Math.max(out[t]||0,reportStateStamp(map[t]));});});return out;
+}
+
+
+function topicLifecycle(){
+  var rows=Array.from(arguments),deleted=mergeTopicStamps.apply(null,rows.map(function(r){return (r||{}).topicDeletedAt;})),created=mergeTopicStamps.apply(null,rows.map(function(r){return (r||{}).topicCreatedAt;}));
+  rows.forEach(function(r){((r||{}).deletedTopics||[]).forEach(function(t){deleted[t]=Math.max(deleted[t]||0,1);});});
+  return {deleted:deleted,created:created};
+}
+
+
+function mergeTopicProjectLifecycle(old,incoming){
+  old=old||{};incoming=incoming||{};var out=Object.assign({},incoming),life=topicLifecycle(old,incoming);
+  out.topicDeletedAt=life.deleted;out.topicCreatedAt=life.created;
+  out.deletedTopics=Object.keys(life.deleted).filter(function(t){return life.deleted[t]>=(life.created[t]||0);});
+  out.customTopics=Array.from(new Set((old.customTopics||[]).concat(incoming.customTopics||[]))).filter(function(t){return out.deletedTopics.indexOf(t)<0;});
+  out.stageByTopic=Object.assign({},old.stageByTopic||{},incoming.stageByTopic||{});
+  out.deletedTopics.forEach(function(t){delete out.stageByTopic[t];});
+  Object.keys(life.created).forEach(function(t){if(life.created[t]>((old.topicCreatedAt||{})[t]||0))out.stageByTopic[t]=(incoming.stageByTopic||{})[t]||2;});
+  Object.keys(life.created).forEach(function(t){if(life.created[t]>((incoming.topicCreatedAt||{})[t]||0))out.stageByTopic[t]=(old.stageByTopic||{})[t]||2;});
+  if(out.aiTopics)out.aiTopics=Object.assign({},out.aiTopics,{list:(out.aiTopics.list||[]).filter(function(t){return t&&out.deletedTopics.indexOf(t.label)<0;})});
+  if(out.deletedTopics.indexOf(out.topic)>=0){out.topic='';out.stage=2;}
+  else if(life.created[out.topic])out.stage=out.stageByTopic[out.topic]||2;
+  return out;
+}
+
+
+function mergeTopicReportState(old,incoming,project){
+  old=old||{};incoming=incoming||{};project=project||{};
+  var fields=reportStateFields(),aux=['pendingByTopic','pendingRevisionByTopic','pendingReportTsByTopic','partialByTopic'];
+  var out=Object.assign({},old,incoming),life=topicLifecycle(project,old,incoming),topics={};
+  out.topicDeletedAt=life.deleted;out.topicCreatedAt=life.created;
+  out.historyDeletedAt=mergeTopicStamps(old.historyDeletedAt,incoming.historyDeletedAt);
+  fields.concat(aux).forEach(function(f){Object.keys(old[f]||{}).concat(Object.keys(incoming[f]||{})).forEach(function(t){topics[t]=true;});out[f]={};});
+  Object.keys(topics).forEach(function(t){
+    var tomb=life.deleted[t]||0,birth=life.created[t]||0;if(tomb&&tomb>=birth)return;
+    var candidates=[old,incoming].filter(function(s){return !birth||reportTopicStamp(s,t)>=birth;});if(!candidates.length)return;
+    var winner=candidates.reduce(function(a,b){return reportTopicStamp(b,t)>reportTopicStamp(a,t)?b:a;}),version=reportTopicStamp(winner,t);
+    fields.forEach(function(f){if(Object.prototype.hasOwnProperty.call(winner[f]||{},t))out[f][t]=winner[f][t];});
+    var editors=candidates.filter(function(s){return reportTopicStamp(s,t)===version&&((s.pendingReportTsByTopic||{})[t]===undefined||s.pendingReportTsByTopic[t]===version);});
+    if(editors.length){var editor=editors.reduce(function(a,b){return reportStateStamp((b.pendingRevisionByTopic||{})[t])>reportStateStamp((a.pendingRevisionByTopic||{})[t])?b:a;});if(!editors.some(function(s){return reportStateStamp((s.pendingRevisionByTopic||{})[t]);}))editor=editors[editors.length-1];['pendingByTopic','pendingRevisionByTopic','pendingReportTsByTopic'].forEach(function(f){if(Object.prototype.hasOwnProperty.call(editor[f]||{},t))out[f][t]=editor[f][t];});}
+    var parts=candidates.map(function(s){return (s.partialByTopic||{})[t];}).filter(function(p){return p&&reportStateStamp(p.ts)>version&&(p.reportTs===undefined||p.reportTs===version);});
+    if(parts.length)out.partialByTopic[t]=parts.reduce(function(a,b){return reportStateStamp(b.ts)>reportStateStamp(a.ts)?b:a;});
+  });
+  var topic=incoming.topic||old.topic||'';if(life.deleted[topic]&&life.deleted[topic]>=(life.created[topic]||0))topic='';out.topic=topic;
+  var viewOwner=reportTopicStamp(incoming,topic)>=reportTopicStamp(old,topic)?incoming:old;
+  [['text','aiReportByTopic',''],['phase','phaseByTopic',1],['ts','tsByTopic',0],['score','scoreByTopic',null]].forEach(function(row){var fallback=viewOwner.topic===topic?(viewOwner[row[0]]===undefined?(old[row[0]]===undefined?row[2]:old[row[0]]):viewOwner[row[0]]):row[2];out[row[0]]=Object.prototype.hasOwnProperty.call(out[row[1]],topic)?out[row[1]][topic]:(topic?fallback:row[2]);});
+  ['chainByTopic','chainEvidenceByTopic','chainStatusByTopic','chainUnclassifiedByTopic','chainErrorByTopic'].forEach(function(f){
+    // Incoming server graph data remains authoritative; tombstones only remove.
+    if(out[f]){out[f]=Object.assign({},out[f]);Object.keys(out[f]).forEach(function(t){if((life.deleted[t]&&life.deleted[t]>=(life.created[t]||0))||((life.created[t]||0)>reportTopicStamp(out,t)))delete out[f][t];});}
+  });
+  var currentVersion=Math.max(reportTopicStamp(old,topic),reportTopicStamp(incoming,topic));
+  out.finalized=!!out.text&&[old,incoming].some(function(s){return s.topic===topic&&reportTopicStamp(s,topic)===currentVersion&&s.finalized;});return out;
+}
+
+
+function mergeTopicReportStates(old,incoming,projects){
+  var out={};Object.keys(Object.assign({},old||{},incoming||{})).forEach(function(k){
+    var a=(old||{})[k]||{},b=(incoming||{})[k]||{};
+    out[k]=reportStateFields().some(function(f){return a[f]||b[f];})?mergeTopicReportState(a,b,(projects||{})[k]):Object.assign({},a,b);
+  });return out;
+}
+
+
+function applyTopicStateIntegrity(){
+  Object.keys(PROJECTS||{}).forEach(function(k){PROJECTS[k]=mergeTopicProjectLifecycle(PROJECTS[k],PROJECTS[k]);});
+  REPORTSTATE=mergeTopicReportStates(REPORTSTATE,{},PROJECTS);
+  REPORT_HISTORY=mergeTopicReportHistory(REPORT_HISTORY,{},REPORTSTATE,PROJECTS);
+  Object.keys(REPORTSTATE).forEach(function(k){var state=REPORTSTATE[k],topic=(PROJECTS[k]||{}).topic;if(state.pendingByTopic)PENDING_CONFIRMS[k]=state.pendingByTopic[topic]||[];});
+}
+
+
+function mergeTopicReportHistory(old,incoming,states,projects){
+  var out={};Object.keys(Object.assign({},old||{},incoming||{})).forEach(function(k){
+    var state=(states||{})[k]||{},life=topicLifecycle(state,(projects||{})[k]),seen={};out[k]=[];
+    ((old||{})[k]||[]).concat((incoming||{})[k]||[]).forEach(function(h){
+      if(!h)return;var ts=reportStateStamp(h.ts),id=(h.topic||'')+'\u0000'+ts;
+      if(seen[id]||(state.historyDeletedAt||{})[id]||ts<=(life.deleted[h.topic]||-1)||ts<(life.created[h.topic]||0))return;
+      seen[id]=true;out[k].push(h);
+    });out[k].sort(function(a,b){return reportStateStamp(b.ts)-reportStateStamp(a.ts);});out[k]=out[k].slice(0,10);
+  });return out;
+}
+
+
+function topicOperationStamp(key,topic){
+  var p=PROJECTS[key]||{},s=REPORTSTATE[key]||{};
+  return Math.max(Date.now(),reportTopicStamp(s,topic)+1,((s.pendingRevisionByTopic||{})[topic]||0)+1,((p.topicDeletedAt||{})[topic]||0)+1,((p.topicCreatedAt||{})[topic]||0)+1);
+}
+
+
+function touchTopicPending(key,topic){
+  var state=REPORTSTATE[key];if(!state)return;
+  state.pendingRevisionByTopic=state.pendingRevisionByTopic||{};state.pendingReportTsByTopic=state.pendingReportTsByTopic||{};
+  state.pendingRevisionByTopic[topic]=topicOperationStamp(key,topic);state.pendingReportTsByTopic[topic]=reportTopicStamp(state,topic);
+}
+
+
+function clearTopicReportData(key,topic){
+  var state=REPORTSTATE[key]||{},p=PROJECTS[key]||{};
+  reportStateFields().concat(['pendingByTopic','pendingRevisionByTopic','pendingReportTsByTopic','partialByTopic','chainByTopic','chainEvidenceByTopic','chainStatusByTopic','chainUnclassifiedByTopic','chainErrorByTopic']).forEach(function(f){if(state[f])delete state[f][topic];});
+  if(state.topic===topic){state.text='';state.topic='';state.phase=1;state.ts=0;state.score=null;state.finalized=false;}
+  if(p.stageByTopic)delete p.stageByTopic[topic];
+  if(typeof REPORT_HISTORY!=='undefined'&&REPORT_HISTORY[key])REPORT_HISTORY[key]=REPORT_HISTORY[key].filter(function(h){return h&&h.topic!==topic;});
+  if(p.topic===topic&&typeof PENDING_CONFIRMS!=='undefined')PENDING_CONFIRMS[key]=[];
+}
+
+
 function selectTopic(val,isCustom){
   var p=P();if(!p||!val||!val.trim())return;
   var rs=REPORTSTATE[cur],old=p.topic;
   if(rs&&old){rs.pendingByTopic=rs.pendingByTopic||{};rs.pendingByTopic[old]=currentPendingItems(cur);}
   p.topic=val.trim();
-  if(isCustom){p.customTopics=p.customTopics||[];if(p.customTopics.indexOf(p.topic)<0)p.customTopics.push(p.topic);}
+  if(isCustom){
+    if((p.topicDeletedAt||{})[p.topic]||(p.deletedTopics||[]).indexOf(p.topic)>=0){var born=topicOperationStamp(cur,p.topic);clearTopicReportData(cur,p.topic);p.topicCreatedAt=p.topicCreatedAt||{};p.topicCreatedAt[p.topic]=born;}
+    p.deletedTopics=(p.deletedTopics||[]).filter(function(t){return t!==p.topic;});p.customTopics=p.customTopics||[];if(p.customTopics.indexOf(p.topic)<0)p.customTopics.push(p.topic);
+  }
   if(rs){rs.text=reportTextForTopic(p.topic)||'';rs.topic=p.topic;PENDING_CONFIRMS[cur]=(rs.pendingByTopic||{})[p.topic]||[];}
   persist();render();
 }
@@ -1498,13 +1618,14 @@ function reportHistoryScoreDisplay(rep,key){
   return score===null?'内容待核验':score+'%';
 }
 
-function archiveCurrentReport(key){
+function archiveCurrentReport(key,topic){
   var rs=REPORTSTATE[key];
   if(!rs) return;
-  var text=(rs.aiReportByTopic||{})[rs.topic]||rs.text;
+  topic=topic||rs.topic;
+  var text=(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'');
   if(!text) return;
   if(!REPORT_HISTORY[key]) REPORT_HISTORY[key]=[];
-  var record=reportHistoryRecord(key,rs.topic,text);
+  var record=reportHistoryRecord(key,topic,text);
   var existing=REPORT_HISTORY[key].findIndex(function(h){return h.topic===record.topic&&h.ts===record.ts;});
   if(existing>=0) REPORT_HISTORY[key][existing]=record;
   else REPORT_HISTORY[key].unshift(record);
@@ -1514,8 +1635,13 @@ function archiveCurrentReport(key){
 
 function deleteHistoryReport(key, idx){
   if(!REPORT_HISTORY[key]) return;
+  var _h=REPORT_HISTORY[key][idx]; var _label=_h&&_h.topic?('「'+_h.topic+'」'):'该条';
+  if(!confirm('确定删除'+_label+'历史报告？删除后无法恢复。')) return;
+  var state=REPORTSTATE[key]||(REPORTSTATE[key]={});state.historyDeletedAt=state.historyDeletedAt||{};
+  if(_h)state.historyDeletedAt[(_h.topic||'')+'\u0000'+(Number(_h.ts)||0)]=topicOperationStamp(key,_h.topic||'');
   REPORT_HISTORY[key].splice(idx,1);
   saveReportHistory();
+  persist();
   renderHistoryReports(key);
 }
 
@@ -1531,6 +1657,7 @@ function toggleHistoryReport(key, idx){
 function renderHistoryReports(key){
   var container=document.getElementById('reportHistoryArea');
   if(!container) return;
+  REPORT_HISTORY=mergeTopicReportHistory(REPORT_HISTORY,{},REPORTSTATE,PROJECTS);
   var list=REPORT_HISTORY[key]||[];
   if(!list.length){container.innerHTML='';return;}
   var h='<div style="margin-bottom:12px">';
@@ -1694,7 +1821,7 @@ function updateConfirmProgress(projKey){
 /* 确认一条 */
 function cfmItem(projKey, idx){
   var items=currentPendingItems(projKey);if(!items[idx])return;
-  items[idx].status = 'confirmed';
+  items[idx].status = 'confirmed';touchTopicPending(projKey,PROJECTS[projKey].topic);
   var card = document.getElementById('ci-'+projKey+'-'+idx);
   if(card){
     var item = PENDING_CONFIRMS[projKey][idx];
@@ -1715,7 +1842,7 @@ function cfmItem(projKey, idx){
 /* 撤回确认 */
 function uncfmItem(projKey, idx){
   var items=currentPendingItems(projKey);if(!items[idx])return;
-  items[idx].status = 'pending';
+  items[idx].status = 'pending';touchTopicPending(projKey,PROJECTS[projKey].topic);
   // 重新渲染整个面板
   var panel = document.getElementById('confirmPanel-'+projKey);
   if(panel){
@@ -1749,7 +1876,7 @@ function ciSave(projKey, idx){
   if(!ta||!ta.value.trim()) return;
   var item = currentPendingItems(projKey)[idx];if(!item)return;
   item.editedText = ta.value.trim();
-  item.status = 'edited';
+  item.status = 'edited';touchTopicPending(projKey,PROJECTS[projKey].topic);
   var card = document.getElementById('ci-'+projKey+'-'+idx);
   if(card){
     var displayText = item.editedText;
@@ -1780,13 +1907,14 @@ function ciFileSelected(inp, projKey, idx){
   if(files.length) ciAttachFiles(files, projKey, idx);
 }
 function ciAttachFiles(files, projKey, idx){
-  var epoch=originalUploadEpoch(),item=currentPendingItems(projKey)[idx];if(!item||cur!==projKey)return;
+  var epoch=originalUploadEpoch(),topic=(PROJECTS[projKey]||{}).topic,item=currentPendingItems(projKey)[idx];if(!item||cur!==projKey)return;
   var hint=document.getElementById('ci-file-hint-'+projKey+'-'+idx);
   if(hint)hint.textContent='正在保存附件原件…';
   return ingestFiles(files,null).then(function(saved){
     if(!originalUploadSessionCurrent(epoch))return;
     if(!item.files)item.files=[];
     saved.forEach(function(f){item.files.push(f._originalReceipt.upload);});
+    touchTopicPending(projKey,topic);
     if(cur===projKey&&hint)hint.textContent='已保存 '+saved.length+' 个附件原件';
     persist();
   });
@@ -1886,46 +2014,81 @@ function triggerReport(phase){
   if(window._topicReportJobs[jobKey]){toast('当前方向正在生成，请稍候');return;}
   var epoch=typeof _authEpoch==='undefined'?null:_authEpoch;
   var requestId=p.reportRequestId||'';
+  var baseReportTs=reportTopicStamp(REPORTSTATE[key]||{},topic);
+  var topicBirth=(p.topicCreatedAt||{})[topic]||0,topicDeath=(p.topicDeletedAt||{})[topic]||0;
+  var materialIdentity=reportMaterialIdentity(key,topic),clientFingerprint='';
+  var materialDirectory=typeof captureReportMaterialDirectory==='function'?captureReportMaterialDirectory(key,topic):null;
   var controller=new AbortController(),started=Date.now(),text='';
   window._topicReportJobs[jobKey]=controller;window._reportGenerating=true;
-  try{p.topic=topic;persist();}catch(error){delete window._topicReportJobs[jobKey];updateReportBusy();toast('本地保存未完成，请重试');return Promise.resolve();}
+  window._topicReportProgress=window._topicReportProgress||{};
+  window._topicReportProgress[jobKey]={phase:phase,message:'正在准备当前方向材料…',text:''};
+  try{p.topic=topic;persist();}catch(error){delete window._topicReportJobs[jobKey];delete window._topicReportProgress[jobKey];updateReportBusy();toast('本地保存未完成，请重试');return Promise.resolve();}
   var query=phase===1
     ? '请基于'+p.city+'城市智库，针对「'+topic+'」输出简短草稿：三个关键缺口、三个招引方向、三个以⚠️开头的待确认事项和证据边界。事实与推断分开，没有证据写待核，不能写成不存在。'+(window._interviewContext?'\n访谈补充：'+window._interviewContext:'')
     : '请基于'+p.city+'城市智库，针对「'+topic+'」输出五章招商研判：一、产业基础判断；二、产业链缺口分析；三、补链优先级清单；四、目标企业画像；五、待确认事项。数字、政策门槛和有效期必须保留原文完整条件，并给出来源。不得将未检索到改写为不存在，不得将待核或推断改成事实。已确认事项：\n'+gate.items.map(function(x){return x.editedText||x.text;}).join('\n');
   var chunks;
   try{
     var corpus=buildKBCorpus(p.city);chunks=kbSearch(query,corpus,phase===1?8:20);
-    setReportAreaHtml(area,'<div class="report-document"><h2>'+(phase===1?'初步研判草稿':'完整产业研判')+'</h2><p id="reportRunStatus">正在读取当前方向材料，生成结果将即时显示…</p><div id="reportContent"></div></div>');
-  }catch(error){delete window._topicReportJobs[jobKey];updateReportBusy();toast('读取本地材料未完成，请重试');return Promise.resolve();}
-  function active(){return PROJECTS[key] && (PROJECTS[key].reportRequestId||'')===requestId && (epoch===null || epoch===_authEpoch);}
+    setReportAreaHtml(area,'<div class="report-document industry-report industry-prose"><h2>'+(phase===1?'初步研判草稿':'完整产业研判')+'</h2><p id="reportRunStatus">正在读取当前方向材料，检索与来源核对完成后显示研判…</p><div id="reportContent"></div></div>');
+    refreshReportRunUi();
+  }catch(error){delete window._topicReportJobs[jobKey];delete window._topicReportProgress[jobKey];updateReportBusy();toast('读取本地材料未完成，请重试');return Promise.resolve();}
+  function active(){return PROJECTS[key] && (PROJECTS[key].reportRequestId||'')===requestId && ((PROJECTS[key].topicCreatedAt||{})[topic]||0)===topicBirth && ((PROJECTS[key].topicDeletedAt||{})[topic]||0)===topicDeath && (epoch===null || epoch===_authEpoch);}
   function visible(){return active() && cur===key && P() && P().topic===topic;}
-  function showStatus(message){if(visible()){var el=document.getElementById('reportRunStatus');if(el)el.textContent=message;}}
+  function materialsCurrent(){return reportMaterialIdentity(key,topic)===materialIdentity;}
+  function changedError(){var e=new Error('材料或确认事项已更新，本次结果未写入，请按最新材料重新生成');e.sourceChanged=true;return e;}
+  function showStatus(message){
+    var job=(window._topicReportProgress||{})[jobKey];if(job)job.message=message;
+    if(visible())refreshReportRunUi();
+  }
   function retainPartial(part,reason){
-    if(!active())return;
+    if(!active()||reportTopicStamp(REPORTSTATE[key]||{},topic)!==baseReportTs)return;
     var rs=REPORTSTATE[key]||(REPORTSTATE[key]={});
     rs.partialByTopic=rs.partialByTopic||{};
-    rs.partialByTopic[topic]={text:part||'',reason:reason,ts:Date.now(),phase:phase,status:'incomplete'};
+    rs.partialByTopic[topic]={text:part||'',reason:reason,ts:topicOperationStamp(key,topic),reportTs:baseReportTs,phase:phase,status:'incomplete'};
     persist();
   }
-  var timeout=setTimeout(function(){controller.abort();},phase===2?180000:90000);
-  return syncTopicReportInputs().then(function(){
+  var timeout=setTimeout(function(){controller.abort();},phase===2?240000:180000);
+  return reportClientFingerprint(materialIdentity).then(function(value){
+    clientFingerprint=value;
+    if(!materialsCurrent())throw changedError();
+    return syncTopicReportInputs();
+  }).then(function(){
     if(!active())throw new Error('登录状态已变更，本次生成已停止');
+    if(!materialsCurrent())throw changedError();
     return fetch('/api/kb-chat',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,
-    body:JSON.stringify({question:query,chunks:chunks,city:p.city,stream:true,mode:phase===1?'draft':'full',prefs:curOnbPrefs(),purpose:phase===2?'topic_full':'topic_draft',projectKey:key,topic:topic,reportRequestId:requestId||null,confirmations:phase===2?gate.items:[]})
+    body:JSON.stringify({question:query,chunks:chunks,city:p.city,stream:true,mode:phase===1?'draft':'full',prefs:curOnbPrefs(),purpose:phase===2?'topic_full':'topic_draft',projectKey:key,topic:topic,reportRequestId:requestId||null,confirmations:phase===2?gate.items:[],clientMaterialFingerprint:clientFingerprint})
     });
   }).then(function(response){
-    if(!response.ok)throw new Error('服务未接受请求（'+response.status+'）');
-    showStatus('正在生成，已返回内容实时展示');
-    return readTopicReportStream(response,function(value){text=value;if(visible()){var el=document.getElementById('reportContent');if(el)el.innerHTML=topicReportMarkup(value);}});
+    if(!response.ok){
+      return response.json().catch(function(){return {};}).then(function(error){throw new Error(typeof error.message==='string'?error.message.slice(0,500):'服务未接受请求（'+response.status+'）');});
+    }
+    showStatus('正在研究当前方向，检索与来源核对进展将在此显示');
+    return readTopicReportStream(response,function(value){
+      text=value;var job=(window._topicReportProgress||{})[jobKey];if(job)job.text=value;
+      if(visible()){var el=document.getElementById('reportContent');if(el)el.innerHTML=topicReportMarkup(value);}
+    },function(event,metadata){
+      if(metadata.clientMaterialFingerprint&&metadata.clientMaterialFingerprint!==clientFingerprint){controller.abort();throw changedError();}
+      if(event.type==='research.status'&&event.message)showStatus(event.message);
+      else if(event.type==='research.evidence')showStatus('已读取 '+metadata.sources.length+' 条来源，继续核对并整理研判');
+    });
   }).then(function(result){
     if(!active())return;
+    if(!materialsCurrent())throw changedError();
+    if(reportTopicStamp(REPORTSTATE[key]||{},topic)!==baseReportTs)throw changedError();
+    if(result.metadata&&result.metadata.clientMaterialFingerprint&&result.metadata.clientMaterialFingerprint!==clientFingerprint)throw changedError();
     text=result.text;
     if(phase===2 && !isCompleteTopicReport(text)){var e=new Error('本次正文未包含完整五章，已保留为未完成内容');e.partialText=text;throw e;}
     var rs=REPORTSTATE[key]||(REPORTSTATE[key]={});
-    if(typeof archiveCurrentReport==='function')archiveCurrentReport(key);
-    var now=Date.now();
+    if(typeof archiveCurrentReport==='function')archiveCurrentReport(key,topic);
+    var now=topicOperationStamp(key,topic);
     ['aiReportByTopic','phaseByTopic','tsByTopic','scoreByTopic','userGeneratedTopics','pendingByTopic'].forEach(function(field){rs[field]=rs[field]||{};});
     rs.aiReportByTopic[topic]=text;rs.phaseByTopic[topic]=phase;rs.tsByTopic[topic]=now;
+    rs.researchByTopic=rs.researchByTopic||{};
+    rs.researchByTopic[topic]=Object.assign({},result.metadata||{},{topic:topic,reportText:text,clientMaterialFingerprint:clientFingerprint,generatedAt:now});
+    if(materialDirectory){
+      materialDirectory.reportText=text;rs.materialDirectoryByTopic=rs.materialDirectoryByTopic||{};
+      rs.materialDirectoryByTopic[topic]=materialDirectory;
+    }
     rs.userGeneratedTopics[topic]=true;
     if(rs.chainByTopic)delete rs.chainByTopic[topic];
     if(rs.chainEvidenceByTopic)delete rs.chainEvidenceByTopic[topic];
@@ -1940,21 +2103,28 @@ function triggerReport(phase){
       rs.pendingByTopic[topic]=parsePendingItems(text).map(function(item){return previous.find(function(x){return x.text===item.text;})||item;});
       if(visible())PENDING_CONFIRMS[key]=rs.pendingByTopic[topic];
     }
-    if(visible()){rs.text=text;rs.topic=topic;rs.phase=phase;rs.ts=now;rs.score=null;}
-    persist();showStatus('生成完成 · '+Math.round((Date.now()-started)/1000)+'秒 · 请核对来源和待确认事项');
-    if(visible())toast(phase===1?'草稿已完成，请确认当前方向事项':'完整研判已完成');
+    touchTopicPending(key,topic);
+    if(visible()){rs.text=text;rs.topic=topic;rs.phase=phase;rs.ts=now;rs.score=null;rs.finalized=false;}
+    persist();showStatus('正文已生成，正在确认云端保存…');
+    return syncTopicReportInputs().then(function(){
+      var analysis=(rs.researchByTopic[topic]||{}).analysis||{};
+      var label=analysis.status==='evidence_only'?'资料摘要已保存 · 研判依据待补':analysis.status==='supported_analysis'?'研判已生成 · 结论待核验':phase===1?'草稿已保存，请确认当前方向事项':'报告已保存 · 请核对来源和结论';
+      showStatus(label+' · '+Math.round((Date.now()-started)/1000)+'秒');if(visible())toast(label);
+    },function(error){error.localReportSaved=true;throw error;});
   }).catch(function(error){
-    retainPartial(error.partialText||text,error.message);
-    showStatus('本次生成未完成，原正式报告已保留；可重试。');
+    if(error.localReportSaved){showStatus('报告已保存在本机，云端保存未确认；请重试同步。');if(visible())toast('报告已保存在本机，云端保存未确认；请重试同步。');return;}
+    if(!error.sourceChanged&&materialsCurrent())retainPartial(error.partialText||text,error.message);
+    showStatus(error.sourceChanged?error.message:'本次生成未完成，原正式报告已保留；可重试。');
     if(visible())toast(error.name==='AbortError'?'生成连接超时，未完成内容已保留':error.message);
   }).finally(function(){
     clearTimeout(timeout);delete window._topicReportJobs[jobKey];
+    delete window._topicReportProgress[jobKey];
     updateReportBusy();
     if(visible())render();
   });
 }
 
-// 提交招引需求到管理端需求池
+
 function submitDemand(){
   var p=P(); if(!p) return;
   var topic=p.topic;
@@ -2081,7 +2251,7 @@ function homePage(p){
           '<span style="font-size:12px;font-weight:650;color:'+(r.score>=80?'#166534':'#92400e')+'">从城市智库继承数据</span>'+
           '<span style="font-size:11px;color:'+(r.score>=80?'#22c55e':'#f59e0b')+';font-weight:700">'+r.score+'%</span>'+
           '<span style="font-size:11px;color:'+(r.score>=80?'#22c55e':'#f59e0b')+'">'+r.label+'</span>'+
-          '<span title="置信度计算：确认⚠️事项×60% + 上传材料×10%（上限40%）。确认全部4条→+60，上传2份材料→+20，合计80%自动解锁" style="font-size:11px;color:#9aa5b5;cursor:help;text-decoration:underline dotted;margin-left:4px">ⓘ 如何提升</span>'+
+          '<span title="仅表示材料覆盖与流程准备情况，不代表事实正确率。补充原始材料，并逐条核实待确认事项。" style="font-size:11px;color:#9aa5b5;cursor:help;text-decoration:underline dotted;margin-left:4px">ⓘ 如何提升</span>'+
         '</div>'+
         '<div style="height:4px;background:'+(r.score>=80?'#dcfce7':'#fef3c7')+';border-radius:2px;overflow:hidden">'+
           '<div style="height:100%;width:'+r.score+'%;background:'+(r.score>=80?'#22c55e':'#f59e0b')+';border-radius:2px;transition:width .4s"></div>'+
@@ -2196,7 +2366,7 @@ function kbPage(p){
           '</div>'+
           '<span style="font-size:12px;font-weight:700;color:'+r.color+'">'+r.score+'%</span>'+
           '<span style="font-size:11px;color:'+r.color+'">'+r.label+'</span>'+
-          '<span title="计算方式：确认⚠️事项×60% + 上传材料×10%（上限40%）" '+
+          '<span title="此进度只表示流程准备情况；确认操作和上传数量不能证明事实正确。" '+
             'style="font-size:11px;color:#9aa5b5;cursor:help;margin-left:2px">ⓘ</span>'+
         '</div>'+
         (r.score<80?'<p style="font-size:11.5px;color:#f59e0b;margin:5px 0 0">'+          '⚡ 上传越多材料、领导确认越多结论，研判数据可靠性越高（差 '+(80-r.score)+'% 自动解锁后续步骤）</p>':'')+
@@ -2283,6 +2453,120 @@ function topicReportMarkup(text){
 }
 
 
+function reportMaterialIdentity(key,topic){
+  var p=PROJECTS[key];if(!p)return null;
+  var rs=REPORTSTATE[key]||{},root=p.workspaceId||key,keys=root===key?[key]:[root,key];
+  function stable(v){
+    if(Array.isArray(v))return v.map(stable);
+    if(v&&typeof v==='object'){var out={};Object.keys(v).sort().forEach(function(k){if(v[k]!==undefined)out[k]=stable(v[k]);});return out;}
+    return v;
+  }
+  var materials=keys.map(function(k){return {key:k,kb:(PROJECTS[k]||{}).kb||[],
+    edits:typeof KB_EDITS!=='undefined'?KB_EDITS[k]||{}:{},
+    chunks:typeof KB_FILE_CHUNKS!=='undefined'?KB_FILE_CHUNKS[k]||[]:[],
+    uploads:typeof UPLOADS!=='undefined'?UPLOADS[k]||[]:[]};});
+  return JSON.stringify(stable({workspace:root,city:p.city||'',topic:topic,requestId:p.reportRequestId||'',
+    materials:materials,onboarding:p.onboarding||{},confirmations:(rs.pendingByTopic||{})[topic]||[],
+    previousReport:(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'')||''}));
+}
+
+async function reportClientFingerprint(identity){
+  var provider=typeof crypto!=='undefined'?crypto:(typeof window!=='undefined'?window.crypto:null);
+  if(!provider||!provider.subtle)throw new Error('当前浏览器无法校验材料版本，请使用安全连接后重试');
+  var bytes=await provider.subtle.digest('SHA-256',new TextEncoder().encode(identity));
+  return Array.from(new Uint8Array(bytes)).map(function(b){return ('0'+b.toString(16)).slice(-2);}).join('');
+}
+
+function reportJobForTopic(key,topic){
+  return (window._topicReportProgress||{})[key+'\u0000'+topic]||null;
+}
+
+function reportRunBanner(p){
+  var job=p&&reportJobForTopic(cur,p.topic);
+  if(!job)return '';
+  return '<div id="industryRunBanner" class="industry-run-banner" role="status" aria-live="polite">'+
+    '<span class="industry-run-spinner" aria-hidden="true"></span><div><strong>'+(job.phase===2?'完整报告生成中':'初步草稿生成中')+'</strong>'+
+    '<span id="industryRunMessage">'+escapeChainText(job.message||'正在准备当前方向材料…')+'</span></div></div>';
+}
+
+function refreshReportRunUi(){
+  var p=P();if(!p)return;
+  var job=reportJobForTopic(cur,p.topic),message=job&&job.message||'';
+  ['reportRunStatus','industryRunMessage','industryBottomRunMessage','industryDetailRunMessage'].forEach(function(id){
+    var el=document.getElementById(id);if(el&&job)el.textContent=message;
+  });
+  if(!document.querySelector)return;
+  var host=document.getElementById('industryRunHost');if(host)host.innerHTML=reportRunBanner(p);
+  var bar=document.querySelector('.report-bottom-bar');
+  if(bar&&typeof reportBottomBarInner==='function')bar.innerHTML=reportBottomBarInner(p);
+  var detail=document.querySelector('.detail-page');
+  if(detail&&typeof detailReport==='function')detail.innerHTML=detailReport(p);
+}
+
+function reportSourceDate(value,withTime){
+  var text=typeof value==='string'?value.trim():'';
+  if(!text)return '未知';
+  var parts=text.match(/^(\d{4})-(\d{2})-(\d{2})(?:[Tt ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:[Zz]|[+-]\d{2}:?\d{2})?)?$/);
+  if(!parts)return text;
+  var date=new Date(text),calendar=new Date(0);
+  calendar.setUTCFullYear(Number(parts[1]),Number(parts[2])-1,Number(parts[3]));
+  calendar.setUTCHours(0,0,0,0);
+  if(!Number.isFinite(date.getTime())||calendar.getUTCFullYear()!==Number(parts[1])||calendar.getUTCMonth()!==Number(parts[2])-1||calendar.getUTCDate()!==Number(parts[3]))return text;
+  if(!withTime)return parts[1]+'-'+parts[2]+'-'+parts[3];
+  function pad(n){return String(n).padStart(2,'0');}
+  return String(date.getFullYear()).padStart(4,'0')+'-'+pad(date.getMonth()+1)+'-'+pad(date.getDate())+' '+pad(date.getHours())+':'+pad(date.getMinutes());
+}
+
+function reportResearchSourcesHtml(p,key){
+  key=key||cur;if(!p)return '';
+  var rs=REPORTSTATE[key]||{},record=(rs.researchByTopic||{})[p.topic];
+  var text=(rs.aiReportByTopic||{})[p.topic]||(rs.topic===p.topic?rs.text:'');
+  if(!record||record.topic!==p.topic||record.reportText!==text||!Array.isArray(record.sources)||!record.sources.length)return '';
+  var rows=record.sources.map(function(source,index){
+    var url=reportSafeSourceUrl(source.url),label=escapeChainText(source.label||'S'+(index+1));
+    var support={cross_checked:'交叉支持',single_source:'单源待复核'}[source.support_status]||'未核实';
+    return '<li><div class="industry-source-heading"><span>'+label+'</span>'+
+      (source.archived===true?'<div style="font-size:10px;color:#8294a5">公开原文库命中 · 非本次联网抓取'+(source.fulltext_scope?' · PDF摘录范围：'+escapeChainText(source.fulltext_scope):'')+'</div>':'')+
+    (url?'<a href="'+escapeChainText(url)+'" target="_blank" rel="noopener noreferrer">'+escapeChainText(source.title||url)+'</a>':'<strong>'+escapeChainText(source.title||'来源未提供链接')+'</strong>')+'</div>'+
+      '<div class="industry-source-date">'+(source.published_at?'发布：'+escapeChainText(reportSourceDate(source.published_at,false))+' · ':'')+
+      (source.retrieved_at?'检索：'+escapeChainText(reportSourceDate(source.retrieved_at,true))+' · ':'')+support+'</div>'+
+      (source.quote?'<blockquote>'+escapeChainText(source.quote)+'</blockquote>':'')+'</li>';
+  }).join('');
+  return '<details class="industry-sources"><summary>本次报告来源 <span>'+record.sources.length+' 条</span></summary>'+
+    '<p>以下为本次生成保存的来源与摘录；来源可追溯不等于事实已核验。检索时间为本地时间。</p><ol>'+rows+'</ol></details>';
+}
+
+function reportSafeSourceUrl(value){
+  if(typeof value!=='string'||/[\s<>"'\\]/.test(value))return '';
+  try{var u=new URL(value);return /^https?:$/.test(u.protocol)&&!u.username&&!u.password?u.href:'';}catch(e){return '';}
+}
+
+function reportStreamMetadataEvent(metadata,event){
+  if(event.fingerprint)metadata.fingerprint=String(event.fingerprint).slice(0,256);
+  if(event.clientMaterialFingerprint)metadata.clientMaterialFingerprint=String(event.clientMaterialFingerprint).slice(0,256);
+  if(event.runId)metadata.runId=String(event.runId).slice(0,256);
+  ['researchStatus','verificationStatus'].forEach(function(k){if(typeof event[k]==='string')metadata[k]=event[k].slice(0,100);});
+  if(event.type==='research.status'&&typeof event.message==='string')metadata.message=event.message.slice(0,1000);
+  if(event.type==='research.evidence'&&Array.isArray(event.sources)){
+    metadata.sources=event.sources.slice(0,100).filter(function(x){return x&&typeof x==='object';}).map(function(x){
+      var row={};['id','label','url','title','published_at','retrieved_at','quote','status','support_status','source_status','verification_status','source_type','source_id','origin_id','publisher_id','archive_retrieved_at','fulltext_scope','fulltext_sha256','website_attestation'].forEach(function(k){if(typeof x[k]==='string')row[k]=x[k].slice(0,k==='quote'?16000:4096);});
+      if(typeof x.archived==='boolean')row.archived=x.archived;
+      if(typeof x.pdf_page==='string'||typeof x.pdf_page==='number')row.pdf_page=x.pdf_page;
+      if(x.website_attestation&&typeof x.website_attestation==='object'&&!Array.isArray(x.website_attestation)){
+        var attestation={};['domain','website_host','evidence_id','source_id','url','website_text'].forEach(function(k){if(typeof x.website_attestation[k]==='string')attestation[k]=x.website_attestation[k].slice(0,4096);});
+        if(Object.keys(attestation).length)row.website_attestation=attestation;
+      }
+      return row;
+    });
+  }
+  if(event.type==='research.complete'){
+    if(typeof event.status==='string')metadata.status=event.status.slice(0,100);
+    if(event.checks&&typeof event.checks==='object')metadata.checks=event.checks;
+    ['errors','queries','issues'].forEach(function(k){if(Array.isArray(event[k]))metadata[k]=event[k];});
+    ['analysis','publicResearch'].forEach(function(k){if(event[k]&&typeof event[k]==='object')metadata[k]=JSON.parse(JSON.stringify(event[k]));});
+  }
+}
+
 function viewPartialReport(){
   var p=P(), rs=REPORTSTATE[cur]||{};
   var part=p && rs.partialByTopic && rs.partialByTopic[p.topic];
@@ -2292,7 +2576,7 @@ function viewPartialReport(){
 
 
 async function readTopicReportStream(response, onText, onEvent){
-  var text='', finish='', failure='', buffer='', ended=false;
+  var text='', finish='', failure='', buffer='', ended=false,metadata={sources:[]};
   function line(raw){
     if(raw.indexOf('data:')!==0)return;
     var data=raw.slice(5).trim();
@@ -2300,6 +2584,10 @@ async function readTopicReportStream(response, onText, onEvent){
     if(data==='[DONE]'){ended=true;return;}
     var event;try{event=JSON.parse(data);}catch(e){failure='响应格式不完整';return;}
     if(event.error){failure=event.error&&typeof event.error.message==='string'?event.error.message.slice(0,500):'生成服务未完成本次请求';return;}
+    if(/^research\.(status|evidence|complete)$/.test(event.type||'')){
+      reportStreamMetadataEvent(metadata,event);
+      if(typeof onEvent==='function')onEvent(event,metadata);
+    }
     if(/^chain\.(result|status)$/.test(event.type||'')&&typeof onEvent==='function')onEvent(event);
     var choice=(event.choices||[])[0]||{};
     var delta=(choice.delta||{}).content;
@@ -2323,9 +2611,8 @@ async function readTopicReportStream(response, onText, onEvent){
     var error=new Error(failure||(!text.trim()?'服务未返回正文':'连接结束，但服务没有确认生成完成'));
     error.partialText=text;throw error;
   }
-  return {text:text,finishReason:finish,transportEnded:ended};
+  return {text:text,finishReason:finish,transportEnded:ended,metadata:metadata};
 }
-
 
 async function syncTopicReportInputs(capturedSnapshot){
   if(window._syncTimer){clearTimeout(window._syncTimer);window._syncTimer=null;}
@@ -2476,6 +2763,9 @@ function topicScoreLabel(topic, projKey){
 
 
 function topicScoreDisplay(topic,key){
+  var analysis=(((REPORTSTATE[key||cur]||{}).researchByTopic||{})[topic]||{}).analysis;
+  if(analysis&&analysis.status==='evidence_only')return '资料摘要 · 研判依据待补';
+  if(analysis&&analysis.status==='supported_analysis')return '研判已生成 · 结论待核验';
   var rs=REPORTSTATE[key||cur]||{},st=nativeReportState(topic,key),score=nativeReportScore(topic,key);
   if((rs.evidenceStatusByTopic||{})[topic]==='unreviewed')return '内容待核验';
   if(st&&st.scoreStatus==='unclassified')return '核验分类待校核';
@@ -2641,7 +2931,7 @@ function chainNodeSources(node){
   var seen={},rows=[];
   all.forEach(function(source){if(!source||typeof source!=='object')return;var urls=Array.isArray(source.urls)?source.urls:[source.url||source.source_url];urls=urls.map(chainSafeSourceUrl).filter(Boolean);
     var quote=typeof source.quote==='string'?source.quote:'',id=source.id||'',sig=JSON.stringify([id,urls,quote]);if(seen[sig])return;seen[sig]=true;
-    rows.push({id:id,urls:urls,quote:quote,title:source.title||source.cite||'',date:source.published_at||source.date||'',retrieved:source.retrieved_at||'',archived:source.archived===true,fulltextScope:source.fulltext_scope||''});});
+    rows.push({id:id,urls:urls,quote:quote,title:source.title||source.cite||'',date:source.published_at||source.date||'',retrieved:source.retrieved_at||'',archived:source.archived===true,fulltextScope:source.fulltext_scope||'',pdfPage:source.pdf_page||'',quoteRange:source.quote_range||source.excerpt_range||''});});
   return rows;
 }
 
@@ -2790,20 +3080,196 @@ function _renderRichChain(topic, segments, recs, p, unclassified, status, eviden
   var notice=status==='empty'?'当前材料不足以形成有来源的环节图谱。请补充材料后重试；不能据此判断现实中不存在相关产业。':status==='partial'?'本次仅能整理部分环节，其余材料仍待补充或分类。':'';
   h+='<details class="industry-chain-notice" style="padding:8px 18px;margin:0;color:#8798a6;font-size:10px;line-height:1.8"><summary style="cursor:pointer">图谱范围与分类口径</summary><p style="margin:5px 0">本次资料中的代表环节，非完整行业清单。内容未独立核实；规划不代表已落地，分类不代表本地能力。'+(notice?'<br>'+notice:'')+(taxonomy.description?'<br>分类口径：'+escapeChainText(taxonomy.description):'')+'</p></details>';
   h+=chainAssessmentPanel(evidence.assessment,nodes,unclassified.length);
-  var actual=chainAssessmentView(evidence.assessment).actual,pending=[];
-  if(actual&&nodes.some(function(node){return chainAssessmentView(node.assessment).level!=='unknown';})){
-    segments=segments.map(function(segment){return Object.assign({},segment,{nodes:(segment.nodes||[]).filter(function(node){if(chainAssessmentView(node.assessment).level==='unknown'){pending.push({node:node,segment:segment.seg});return false;}return true;}).slice().sort(function(a,b){var ranks={weak:0,mid:1,strong:2};return ranks[chainAssessmentView(a.assessment).level]-ranks[chainAssessmentView(b.assessment).level];})});});
-    unclassified=unclassified.filter(function(node){if(chainAssessmentView(node.assessment).level==='unknown'){pending.push({node:node,segment:'待归类'});return false;}return true;});
-    h+='<p style="margin:0 18px 10px;font-size:11px;color:#60798b">先展示已有事实评价的环节；尚不能评价的 '+pending.length+' 项保留在下方待补清单。</p>';
+  var actual=chainAssessmentView(evidence.assessment).actual;
+  if(actual){
+    segments=segments.map(function(segment){return Object.assign({},segment,{nodes:(segment.nodes||[]).slice().sort(function(a,b){var ranks={weak:0,mid:1,strong:2,unknown:3};return ranks[chainAssessmentView(a.assessment).level]-ranks[chainAssessmentView(b.assessment).level];})});});
+    if(nodes.some(function(node){return chainAssessmentView(node.assessment).level==='unknown';}))h+='<p style="margin:0 18px 10px;font-size:11px;color:#60798b">已归类的待核节点保留在对应泳道，以灰色显示；尚不能评价不等于薄弱，也不能据此推断现实缺失。</p>';
   }
   h+='<div class="industry-chain-body" style="padding:16px;display:flex;flex-direction:column;gap:14px;background:#f8fafc">';
   ['上游','中游','下游'].forEach(function(name){var segment=segments.find(function(item){return item.seg===name;})||{nodes:[]};
     h+='<div class="industry-chain-row" style="display:flex;gap:12px;align-items:stretch"><div class="industry-chain-label" style="align-self:flex-start;min-height:76px;width:44px;flex-shrink:0;padding:10px 3px;border:1px solid #dfe7ee;border-radius:7px;display:flex;align-items:center;justify-content:center"><span style="writing-mode:vertical-rl;font-size:12px;opacity:1;letter-spacing:3px">'+name+'</span></div><div class="industry-chain-nodes" style="flex:1;min-width:0;display:grid;align-items:start;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">'+
-      ((segment.nodes||[]).length?segment.nodes.map(chainNodeCardHtml).join(''):'<div style="padding:18px;border:1px dashed #cbd5e1;border-radius:8px;font-size:12px;color:#64748b">' +(pending.length?'该分组暂未形成可展示的环节评价；待补材料保留在清单中，不能据此判断现实中不存在。':'资料待补：当前材料不足以说明该分组的环节，不能据此判断不存在。')+'</div>')+'</div></div>';
+      ((segment.nodes||[]).length?segment.nodes.map(chainNodeCardHtml).join(''):'<div style="padding:18px;border:1px dashed #cbd5e1;border-radius:8px;font-size:12px;color:#64748b">资料待补：当前材料不足以说明该分组的环节，不能据此判断不存在。</div>')+'</div></div>';
   });
   if(unclassified.length)h+='<section class="industry-chain-unclassified" style="padding:14px;border:1px dashed #cbd5e1;border-radius:8px"><strong style="font-size:13px">尚未分类的材料项</strong><p style="font-size:12px;color:#64748b">现有材料不足以确定其产业环节，保留原文供核对。</p><div style="display:grid;align-items:start;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">'+unclassified.map(chainNodeCardHtml).join('')+'</div></section>';
-  if(pending.length)h+='<details class="chain-pending-facts" style="padding:14px;border:1px solid #dfe7ee;border-radius:9px;background:#fff"><summary style="cursor:pointer;color:#61768a;font-size:12px;font-weight:650">待补事实的材料项（'+pending.length+'）</summary><p style="font-size:11px;color:#8291a1;line-height:1.8">这些材料尚不支持实际强弱结论。政策方向与待核事项保留可查，不参与三色评价。</p><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px">'+pending.map(function(item){return '<section><div style="font-size:10px;color:#8291a1;margin:0 0 5px">'+escapeChainText(item.segment)+'</div>'+chainNodeCardHtml(item.node)+'</section>';}).join('')+'</div></details>';
   return h+'</div></section>';
+}
+
+/* Presentation only: layout and assessment share the same immutable evidence. */
+var CHAIN_EXPLORER_UI=Object.create(null);
+var CHAIN_OPEN_DRAWER=null;
+function chainLayoutText(value){return typeof value==='string'?value.trim():'';}
+function chainLayoutContains(text,part){return !!chainLayoutText(part)&&chainLayoutText(text).replace(/\s+/g,'').includes(chainLayoutText(part).replace(/\s+/g,''));}
+function chainLayoutReviewedPremises(node){
+  var view=chainAssessmentView(node.assessment),j=node.assessment&&node.assessment.judgment;
+  if(!view.actual||!j||j.status!=='assessed'||view.level==='unknown')return [];
+  return (Array.isArray(j.premises)?j.premises:[]).filter(function(p){
+    if(!p||!p.source||!chainLayoutText(p.evidence_id)||p.source.id!==p.evidence_id||!Array.isArray(j.evidence_ids)||j.evidence_ids.indexOf(p.evidence_id)<0)return false;
+    var rows=chainNodeSources({sources:[p.source]});
+    return rows.length&&rows[0].urls.length&&chainLayoutText(rows[0].quote)&&chainLayoutText(p.statement)&&chainLayoutContains(rows[0].quote,p.statement)&&(!p.quote||chainLayoutContains(rows[0].quote,p.quote));
+  });
+}
+function chainLayoutInfo(node){
+  var original=chainNodeSources(node),premises=chainLayoutReviewedPremises(node),view=chainAssessmentView(node.assessment),j=node.assessment&&node.assessment.judgment;
+  var assessed=!!(view.actual&&j&&j.status==='assessed'&&view.level!=='unknown'),rows=original.slice();
+  premises.forEach(function(p){rows=rows.concat(chainNodeSources({sources:[p.source]}));});
+  var seen=Object.create(null);
+  rows=rows.filter(function(row){var key=JSON.stringify([row.id,row.urls,row.quote]);if(!row.urls.length||!chainLayoutText(row.quote)||seen[key])return false;seen[key]=true;return true;});
+  var roles=['operation','maturity','dependency','constraint','industry_fact','enterprise_capability','benchmark'];
+  var facts=premises.filter(function(p){return roles.indexOf(p.role)>=0&&chainLayoutContains(p.statement,node.name);}).slice().sort(function(a,b){return roles.indexOf(a.role)-roles.indexOf(b.role);});
+  var companies=[],companySeen=Object.create(null);
+  (assessed&&Array.isArray(j.enterprise_links)?j.enterprise_links:[]).forEach(function(link){
+    if(!link||!chainLayoutText(link.company_subject)||companySeen[link.company_subject])return;
+    var identityUrl=chainSafeSourceUrl(link.identity_url),businessUrl=chainSafeSourceUrl(link.business_url);if(!identityUrl||!businessUrl)return;
+    var identity=premises.find(function(p){return p.evidence_id===link.presence_evidence_id&&['local_presence','local_affiliation'].indexOf(p.role)>=0&&p.subject===link.company_subject&&chainLayoutContains(p.source.quote,link.company_subject)&&chainSafeSourceUrl(p.source.url)===identityUrl;});
+    var business=facts.find(function(p){return p.evidence_id===link.capability_evidence_id&&chainSafeSourceUrl(p.source.url)===businessUrl;});
+    if(!identity||!business)return;
+    companySeen[link.company_subject]=true;companies.push(link.company_subject);
+  });
+  var material=premises.filter(function(p){return roles.indexOf(p.role)>=0&&chainLayoutContains(p.source.quote,node.name);}).slice().sort(function(a,b){return roles.indexOf(a.role)-roles.indexOf(b.role);});
+  var statement=(Array.isArray(node.facts)?node.facts:[]).find(function(f){return f&&f.kind==='source_statement'&&f.scope==='source_statement_only'&&chainLayoutContains(f.statement,node.name)&&rows.some(function(row){return row.id===f.evidence_id&&chainLayoutContains(row.quote,f.statement);});});
+  var chosen=facts[0]||material[0],source=chosen?chainNodeSources({sources:[chosen.source]})[0]:statement?rows.find(function(row){return row.id===statement.evidence_id&&chainLayoutContains(row.quote,statement.statement);}):rows[0];
+  var excerpt=chosen?(chainLayoutContains(chosen.statement,node.name)?chosen.statement:chosen.source.quote):statement?statement.statement:source?source.quote:'';
+  var label=assessed?'已有现状依据':node.negated?'含否定表述':node.status==='planned'?'含规划线索':rows.length?'已收录材料':'来源尚不完整';
+  var scope=assessed?({local:'本地环节 / 应用',local_enterprise:'关联企业业务 · 不代表本地产能',industry_shared:'行业共同约束 · 非本地独有'}[j.scope]||'适用范围见依据'):'材料范围待核';
+  var rawLabel=node.negated?'原始材料含否定或排除表述':node.status==='planned'?'原始材料含规划表述':node.status==='reported'?'原始材料为披露记录':'原始材料属性待核';
+  return {assessed:assessed,label:label,scope:scope,count:rows.length,rows:rows,original:original,companies:companies,excerpt:excerpt,date:source?chainAssessmentDate(source.date,false):'',rawLabel:rawLabel};
+}
+function chainExplorerKey(topic,p,evidence){
+  return JSON.stringify([p&&p.id||typeof cur==='string'&&cur||'',topic,evidence.runId||evidence.generatedAt||'']);
+}
+function setChainExplorerMode(button,mode){
+  if(mode!=='layout'&&mode!=='assessment')return;
+  var root=button.closest('.chain-explorer');if(!root)return;
+  var drawer=root._chainDrawer||root.querySelector('.chain-node-drawer');if(drawer&&!drawer.hidden)closeChainLayoutNode(drawer,false);
+  var key=root.getAttribute('data-chain-key');if(key)CHAIN_EXPLORER_UI[key]=mode;
+  root.setAttribute('data-chain-mode',mode);
+  root.querySelectorAll('[data-chain-panel]').forEach(function(panel){panel.hidden=panel.getAttribute('data-chain-panel')!==mode;});
+  root.querySelectorAll('[data-chain-mode-button]').forEach(function(tab){var active=tab.getAttribute('data-chain-mode-button')===mode;tab.classList.toggle('is-active',active);tab.setAttribute('aria-pressed',active?'true':'false');});
+}
+function openChainLayoutNode(button,index){
+  var root=button.closest('.chain-explorer');if(!root||!/^\d+$/.test(String(index))||typeof document==='undefined'||!document.body)return;
+  var template=root.querySelector('template[data-chain-detail="'+index+'"]'),drawer=root._chainDrawer||root.querySelector('.chain-node-drawer');
+  if(!template||!drawer)return;
+  if(CHAIN_OPEN_DRAWER)closeChainLayoutNode(CHAIN_OPEN_DRAWER,false);
+  var content=drawer.querySelector('.chain-node-drawer-content');content.innerHTML=template.innerHTML;content.scrollTop=0;
+  drawer._chainRoot=root;drawer._chainReturnFocus=button;root._chainDrawer=drawer;CHAIN_OPEN_DRAWER=drawer;
+  // A body-level portal keeps fixed positioning outside transformed report containers.
+  document.body.appendChild(drawer);drawer.hidden=false;
+  button.setAttribute('aria-expanded','true');button.classList.add('is-selected');
+  if(typeof MutationObserver!=='undefined'){
+    drawer._chainObserver=new MutationObserver(function(){
+      if(root.isConnected===false||button.isConnected===false)closeChainLayoutNode(drawer,false);
+    });
+    drawer._chainObserver.observe(document.body,{childList:true,subtree:true});
+  }
+  drawer.querySelector('button').focus();
+}
+function closeChainLayoutNode(button,restoreFocus){
+  var drawer=button&&button.closest('.chain-node-drawer');if(!drawer)return;
+  if(drawer._chainObserver){drawer._chainObserver.disconnect();drawer._chainObserver=null;}
+  drawer.hidden=true;var trigger=drawer._chainReturnFocus,root=drawer._chainRoot;
+  drawer._chainReturnFocus=null;drawer._chainRoot=null;
+  if(CHAIN_OPEN_DRAWER===drawer)CHAIN_OPEN_DRAWER=null;
+  if(root&&root._chainDrawer===drawer)root._chainDrawer=null;
+  if(root){
+    if(root.isConnected!==false&&trigger&&trigger.isConnected!==false)root.appendChild(drawer);
+    else drawer.remove();
+  }
+  if(trigger){trigger.setAttribute('aria-expanded','false');trigger.classList.remove('is-selected');if(restoreFocus!==false&&trigger.isConnected!==false)trigger.focus();}
+}
+function chainLayoutExcerpt(text,name){
+  if(typeof text!=='string'||!chainLayoutText(name))return '';
+  var start=text.indexOf(name),end=start+name.length;
+  if(start<0){
+    // Only typography equivalence: retain source spelling and its original offsets.
+    function fold(value){
+      var out='',offset=0,starts=[],ends=[];
+      for(var point of value){
+        var normalized=point.normalize('NFKC').toLowerCase();
+        for(var i=0;i<normalized.length;i++)if(!/\s/.test(normalized[i])){out+=normalized[i];starts.push(offset);ends.push(offset+point.length);}
+        offset+=point.length;
+      }
+      return {text:out,starts:starts,ends:ends};
+    }
+    var source=fold(text),target=fold(name).text,index=target?source.text.indexOf(target):-1;
+    if(index<0)return '';
+    start=source.starts[index];end=source.ends[index+target.length-1];
+  }
+  var left=Math.max(0,start-16),right=Math.min(text.length,Math.max(left+96,end+28));
+  return (left?'…':'')+text.slice(left,right)+(right<text.length?'…':'');
+}
+function chainLayoutNodeHtml(node,index){
+  if(!chainLayoutText(node.name))return '';
+  var info=chainLayoutInfo(node),excerpt=chainLayoutExcerpt(info.excerpt,node.name);
+  return '<button type="button" class="chain-layout-node'+(info.assessed?'':' is-sparse')+'" onclick="openChainLayoutNode(this,'+index+')" aria-haspopup="dialog" aria-expanded="false" aria-label="查看'+escapeChainText(node.name)+'的依据">'+
+    '<span class="chain-layout-node-name">'+escapeChainText(node.name)+'</span>'+
+    (info.companies.length?'<span class="chain-layout-entity">关联企业：'+info.companies.map(escapeChainText).join('、')+'</span>':'')+
+    (excerpt?'<span class="chain-layout-node-summary"><span class="chain-layout-quote-label">'+(excerpt===info.excerpt?'原文':'原文节选')+'</span>'+escapeChainText(excerpt)+'</span>':'')+
+    '<span class="chain-layout-fact-meta"><span>'+escapeChainText(info.scope)+'</span>'+(info.date?'<span>资料日期 '+escapeChainText(info.date)+'</span>':'')+'</span>'+
+    '<span class="chain-layout-node-foot"><span class="chain-layout-status">'+info.label+'</span><span class="chain-layout-evidence">'+(info.count?'原文片段 '+info.count+' 条':'查看材料状态')+' <span aria-hidden="true">↗</span></span></span></button>';
+}
+function chainLayoutSourceHtml(row){
+  var published=chainAssessmentDate(row.date,false),retrieved=chainAssessmentDate(row.retrieved,true);
+  var location=[];if(row.pdfPage)location.push('PDF 页码：'+row.pdfPage);if(row.quoteRange)location.push('摘录范围：'+row.quoteRange);
+  if(row.fulltextScope)location.push('归档范围：'+(row.fulltextScope==='entire_html_visible_text'?'网页可见正文':row.fulltextScope));
+  return '<article class="chain-layout-source">'+(row.title?'<h4>'+escapeChainText(row.title)+'</h4>':'')+
+    '<blockquote>'+escapeChainText(row.quote)+'</blockquote><p class="chain-layout-source-meta">'+(published?'发布：'+escapeChainText(published):'发布日期未提供')+(retrieved?' · '+(row.archived?'归档：':'检索：')+escapeChainText(retrieved):'')+'</p>'+
+    (location.length?'<p class="chain-layout-source-meta">'+location.map(escapeChainText).join(' · ')+'</p>':'')+
+    row.urls.map(function(url){return '<a href="'+escapeChainText(url)+'" target="_blank" rel="noopener noreferrer">打开原文来源</a>';}).join(' · ')+'</article>';
+}
+function chainLayoutDetailHtml(node,index){
+  var info=chainLayoutInfo(node),j=node.assessment&&node.assessment.judgment,missing=j&&Array.isArray(j.missing)?j.missing:[];
+  var description=info.assessed?'已有资料支持此处列出的有限判断，适用地域和时间以原文为准。':'材料收录状态不代表已落地；尚不能据此判断该环节强弱或现实中不存在。';
+  var incomplete=info.original.filter(function(row){return !row.urls.length||!chainLayoutText(row.quote);});
+  return '<template data-chain-detail="'+index+'"><div class="chain-detail-eyebrow">环节与依据</div><h3>'+escapeChainText(node.name)+'</h3>'+
+    (info.companies.length?'<p class="chain-layout-entity">关联企业：'+info.companies.map(escapeChainText).join('、')+'</p>':'')+
+    '<div class="chain-detail-status">'+info.label+' · '+escapeChainText(info.scope)+'</div><p>'+description+'</p><p class="chain-layout-source-meta">'+info.rawLabel+(Array.isArray(node.qualifiers)&&node.qualifiers.length?'；原文限定：'+node.qualifiers.map(escapeChainText).join('、'):'')+'</p>'+
+    '<section class="chain-layout-originals"><h4>原文与来源</h4>'+(info.rows.length?info.rows.map(chainLayoutSourceHtml).join(''):'<p>尚无同时包含有效链接和原句的来源，不能据此判断产业缺失。</p>')+'</section>'+
+    (incomplete.length?'<details class="chain-layout-incomplete"><summary>来源不完整的材料片段（'+incomplete.length+'）</summary>'+incomplete.map(function(row){return '<p>'+escapeChainText(row.quote||'此记录未提供原句。')+'</p>';}).join('')+'</details>':'')+
+    (missing.length?'<h4>还需补充</h4><ul>'+missing.map(function(s){return '<li>'+escapeChainText(s)+'</li>';}).join('')+'</ul>':'')+
+    chainAssessmentDetails(node.assessment,node)+'</template>';
+}
+function chainLayoutMetaHtml(evidence,status,count,unclassifiedCount){
+  var coverage=evidence.coverage&&typeof evidence.coverage==='object'?evidence.coverage:{},taxonomy=evidence.taxonomy&&typeof evidence.taxonomy==='object'?evidence.taxonomy:{};
+  var partial=status==='partial'||coverage.status==='partial'||unclassifiedCount>0;
+  var label=!count?'尚未形成节点':partial?'部分材料已归类':'已整理本次材料';
+  var record=evidence.nodeResearch&&typeof evidence.nodeResearch==='object'?evidence.nodeResearch:null;
+  var supplement=record&&(chainLayoutText(record.status)||(Array.isArray(record.batches)&&record.batches.length)||(Array.isArray(record.errors)&&record.errors.length))?record:null;
+  var errors=supplement&&Array.isArray(supplement.errors)?supplement.errors:[];
+  var batches=supplement&&Array.isArray(supplement.batches)?supplement.batches:[];
+  var unfinished=batches.filter(function(batch){return batch&&!batch.legacy_summary&&typeof batch.status==='string'&&batch.status!=='ready';}).length;
+  var incomplete=supplement&&(supplement.status!=='ready'||errors.length||unfinished);
+  var research={ready:supplement?'基础检索完成':'本轮检索完成',pending:'本轮检索不完整',partial:'本轮检索不完整',failed:'本轮检索未完成',unavailable:'本轮检索未完成'}[evidence.researchStatus]||'检索状态未记录';
+  var supplementLabel=supplement?(incomplete?'补充核验未完整':'补充核验完成'):'';
+  if(supplement&&supplement.status==='scope_mismatch')supplementLabel+='（材料范围不一致）';
+  var errorMessages=errors.map(function(error){return typeof error==='string'?error:error&&typeof error.message==='string'?error.message:error&&typeof error.code==='string'?error.code:'';}).filter(Boolean);
+  var time=typeof evidence.generatedAt==='number'?new Date(evidence.generatedAt):null;
+  var date=time&&Number.isFinite(time.getTime())?chainAssessmentDate(time.toISOString(),true):'';
+  return '<div class="chain-layout-context"><div class="chain-layout-context-row"><strong>'+label+'</strong><span>'+research+'</span>'+(supplementLabel?'<span>'+supplementLabel+'</span>':'')+(unfinished?'<span>未完成 '+unfinished+' 组</span>':'')+(errors.length?'<span>错误记录 '+errors.length+' 条</span>':'')+(date?'<span>图谱生成：'+escapeChainText(date)+'</span>':'')+'</div>'+
+    '<p>范围：当前方向、本次取得的材料；不是完整产业清单，不能据此推断现实缺失。</p>'+
+    (chainLayoutText(taxonomy.description)?'<p>分类口径'+(chainLayoutText(taxonomy.label)?'（'+escapeChainText(taxonomy.label)+'）':'')+'：'+escapeChainText(taxonomy.description)+'</p>':'')+
+    (chainLayoutText(coverage.meaning)?'<p>'+escapeChainText(coverage.meaning)+'</p>':'')+(errorMessages.length?'<details class="chain-layout-research-errors"><summary>查看补充核验记录</summary><ul>'+errorMessages.map(function(message){return '<li>'+escapeChainText(message)+'</li>';}).join('')+'</ul></details>':'')+'</div>';
+}
+function chainExplorerHtml(topic,segments,recs,p,unclassified,status,evidence){
+  if(CHAIN_OPEN_DRAWER)closeChainLayoutNode(CHAIN_OPEN_DRAWER,false);
+  evidence=evidence||{};unclassified=(Array.isArray(unclassified)?unclassified:[]).filter(function(n){return n&&chainLayoutText(n.name);});
+  segments=(Array.isArray(segments)?segments:[]).map(function(s){return {seg:s.seg,nodes:(Array.isArray(s.nodes)?s.nodes:[]).filter(function(n){return n&&chainLayoutText(n.name);})};});
+  var nodes=[];segments.forEach(function(s){nodes=nodes.concat(s.nodes);});nodes=nodes.concat(unclassified);
+  var withOriginal=nodes.filter(function(n){return chainLayoutInfo(n).count>0;}).length,assessed=nodes.filter(function(n){return chainLayoutInfo(n).assessed;}).length;
+  var key=chainExplorerKey(topic,p,evidence),mode=CHAIN_EXPLORER_UI[key]==='assessment'?'assessment':'layout',index=0,templates=[];
+  function card(n){var id=index++;templates.push(chainLayoutDetailHtml(n,id));return chainLayoutNodeHtml(n,id);}
+  var lanes=['上游','中游','下游'].map(function(name,i){var group=segments.find(function(s){return s.seg===name;})||{nodes:[]};
+    return '<section class="industry-chain-row"><div class="chain-lane-heading"><span class="chain-lane-index">0'+(i+1)+'</span><h3>'+name+'</h3><span class="chain-lane-total">'+group.nodes.length+' 个环节</span></div><div class="industry-chain-nodes">'+(group.nodes.length?group.nodes.map(card).join(''):'<div class="chain-layout-empty">本次材料未形成该组节点；不代表实际不存在。</div>')+'</div></section>';
+  }).join('');
+  var other=unclassified.length?'<details class="chain-layout-other"><summary>待归类材料 <span>'+unclassified.length+' 项</span></summary><p>暂不放入上中下游；原文及分类依据保留供核对。</p><div class="industry-chain-nodes">'+unclassified.map(card).join('')+'</div></details>':'';
+  var metric=function(value,label){return '<div class="chain-overview-metric"><strong>'+value+'</strong><span>'+label+'</span></div>';};
+  return '<section class="chain-explorer" data-chain-key="'+escapeChainText(key)+'" data-chain-mode="'+mode+'" aria-label="产业链布局与评价">'+
+    '<div class="chain-explorer-toolbar"><div class="chain-explorer-title"><span>INDUSTRY LANDSCAPE</span><h2>'+escapeChainText(topic)+'<small>产业链图谱</small></h2><p>查看有出处的环节记录，评价与原文分开展示。</p></div><div class="chain-view-switch" aria-label="图谱视图"><button type="button" class="'+(mode==='layout'?'is-active':'')+'" data-chain-mode-button="layout" aria-pressed="'+(mode==='layout')+'" onclick="setChainExplorerMode(this,\'layout\')">产业布局</button><button type="button" class="'+(mode==='assessment'?'is-active':'')+'" data-chain-mode-button="assessment" aria-pressed="'+(mode==='assessment')+'" onclick="setChainExplorerMode(this,\'assessment\')">薄弱评价</button></div></div>'+
+    '<div class="chain-overview-metrics">'+metric(nodes.length,'已整理环节 / 线索')+metric(withOriginal,'有原文的节点')+metric(assessed,'具备评价依据')+metric(unclassified.length,'产业位置待确认')+'</div>'+
+    chainLayoutMetaHtml(evidence,status,nodes.length,unclassified.length)+
+    '<div class="chain-explorer-layout" data-chain-panel="layout"'+(mode==='layout'?'':' hidden')+'><div class="chain-layout-caption"><span>按产业环节组织材料</span><span>并列展示，不表示已证实的供货关系</span></div><div class="industry-chain-body">'+lanes+'</div>'+other+'</div>'+
+    '<div class="chain-explorer-assessment" data-chain-panel="assessment"'+(mode==='assessment'?'':' hidden')+'>'+_renderRichChain(topic,segments,recs,p,unclassified,status,evidence)+'</div>'+
+    templates.join('')+'<aside class="chain-node-drawer" role="dialog" aria-label="环节详情与原文依据" hidden onkeydown="if(event.key===\'Escape\')closeChainLayoutNode(this)"><div class="chain-node-drawer-header"><span>资料与判断分开展示</span><button type="button" class="chain-node-drawer-close" aria-label="关闭环节详情" onclick="closeChainLayoutNode(this)">×</button></div><div class="chain-node-drawer-content"></div></aside></section>';
 }
 
 function chainMapHtml(p){
@@ -2812,11 +3278,22 @@ function chainMapHtml(p){
   if(job)return '<div role="status" aria-live="polite" style="margin-top:16px;padding:20px;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b">'+escapeChainText(job.message||'正在生成产业链图谱…')+'<button disabled aria-busy="true" style="margin-left:12px">生成中…</button></div>';
   var chain=currentEvidenceChain(topic,cur),error=(rs.chainErrorByTopic||{})[topic];
   var errorHtml=error?'<p role="alert" style="color:#92400e;font-size:12px">'+escapeChainText(error)+'</p>':'';
-  if(Array.isArray(chain)){var metadata=(rs.chainEvidenceByTopic||{})[topic]||{},allNodes=[];chain.forEach(function(segment){allNodes=allNodes.concat(segment.nodes||[]);});allNodes=allNodes.concat((rs.chainUnclassifiedByTopic||{})[topic]||[]);return errorHtml+_renderRichChain(topic,chain,null,p,(rs.chainUnclassifiedByTopic||{})[topic],(rs.chainStatusByTopic||{})[topic],metadata)+'<div style="text-align:right;padding:10px 0"><button onclick="requestChainGeneration()">'+(chainNeedsAssessment(allNodes,metadata.assessment)?'更新图谱并评价':['empty','partial'].indexOf((rs.chainStatusByTopic||{})[topic])>=0?'补充材料后重新生成':'重新生成图谱')+'</button></div>'; }
+  if(Array.isArray(chain)){var metadata=(rs.chainEvidenceByTopic||{})[topic]||{},allNodes=[];chain.forEach(function(segment){allNodes=allNodes.concat(segment.nodes||[]);});allNodes=allNodes.concat((rs.chainUnclassifiedByTopic||{})[topic]||[]);return errorHtml+(typeof chainExplorerHtml==='function'?chainExplorerHtml:_renderRichChain)(topic,chain,null,p,(rs.chainUnclassifiedByTopic||{})[topic],(rs.chainStatusByTopic||{})[topic],metadata)+'<div style="text-align:right;padding:10px 0"><button onclick="requestChainGeneration()">'+(chainNeedsAssessment(allNodes,metadata.assessment)?'更新图谱并评价':['empty','partial'].indexOf((rs.chainStatusByTopic||{})[topic])>=0?'补充材料后重新生成':'重新生成图谱')+'</button></div>'; }
   var text=typeof reportTextForTopic==='function'?reportTextForTopic(topic):'',short=!text||text.trim().length<100;
   var legacy=!!((rs.chainByTopic||{})[topic]||(rs.chainEvidenceByTopic||{})[topic]),failed=(rs.chainStatusByTopic||{})[topic]==='failed';
   return '<div style="margin-top:16px;padding:20px;border:1px dashed #cbd5e1;border-radius:12px;background:#f8fafc;color:#64748b;font-size:12px;line-height:1.8">'+errorHtml+
     '<strong>'+escapeChainText(topic)+'</strong> · '+(legacy?'材料或图谱版本已变化，请重新生成。':'尚未生成基于当前材料的图谱。')+
     '<p>依据本次公开原文检索及保存材料背景整理；计划与材料披露均不代表已经落地，没有证据的连接不会绘制。</p>'+
     (short?'<p>当前报告正文不足 100 字，请先完善当前方向报告。</p>':'<button onclick="requestChainGeneration()">'+(legacy?'重新生成图谱':error||failed?'重试生成图谱':'生成产业链图谱')+'</button>')+'</div>';
+}
+
+function deleteCustomTopic(label){
+  var p=P();if(!p||!label||!confirm('确定删除自定义方向「'+label+'」？该方向下的报告与历史将一并清除。'))return;
+  var stamp=topicOperationStamp(cur,label);p.topicDeletedAt=p.topicDeletedAt||{};p.topicDeletedAt[label]=stamp;
+  p.deletedTopics=p.deletedTopics||[];if(p.deletedTopics.indexOf(label)<0)p.deletedTopics.push(label);
+  p.customTopics=(p.customTopics||[]).filter(function(t){return t!==label;});
+  if(p.aiTopics)p.aiTopics.list=(p.aiTopics.list||[]).filter(function(t){return t.label!==label;});
+  var state=REPORTSTATE[cur]||(REPORTSTATE[cur]={});state.topicDeletedAt=state.topicDeletedAt||{};state.topicDeletedAt[label]=stamp;
+  clearTopicReportData(cur,label);if(p.topic===label){p.topic='';p.stage=2;}
+  saveReportHistory();persist();render();
 }

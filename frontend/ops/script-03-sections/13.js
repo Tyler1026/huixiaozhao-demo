@@ -57,22 +57,30 @@ function detailSub(s){
 function detailReport(p){
   var stageProject=demandDisplayProject(cur,p);
   var st=REPORTSTATE[cur]; var ups=(UPLOADS[cur]||[]);
-  return '<div class="detail-header"><div><span class="eyebrow">CURRENT STUDY</span><h2>本次研判</h2><p>'+p.topic+'</p></div></div>'+
+  var topicTime=st&&((st.tsByTopic||{})[p.topic]||(st.topic===p.topic?st.ts:0));
+  // 按当前方向判断该方向是否已生成报告/是否完整报告（项目级 st.phase/st.ts 是单例，切方向会串）
+  var _topicFull = topicHasFullReport(p.topic);
+  var _topicText = (typeof reportTextForTopic==='function') ? reportTextForTopic(p.topic) : null;
+  var _topicHasReport = _topicFull || !!_topicText || (st&&st.phaseByTopic&&st.phaseByTopic[p.topic]);
+  var running=typeof reportJobForTopic==='function'?reportJobForTopic(cur,p.topic):null;
+  return '<div class="detail-header"><div><span class="eyebrow">CURRENT STUDY</span><h2>本次产业分析</h2><p>'+p.topic+'</p></div></div>'+
     '<div class="detail-scroll">'+
-      '<div class="detail-block"><h3>报告状态</h3>'+(st
+      '<div class="detail-block"><h3>报告状态</h3>'+(running
+        ? '<div class="industry-detail-progress" role="status"><span class="industry-run-spinner" aria-hidden="true"></span><strong>'+(running.phase===2?'完整报告生成中':'初步草稿生成中')+'</strong><p id="industryDetailRunMessage">'+escapeChainText(running.message||'正在准备材料…')+'</p></div>'
+        : _topicHasReport
         ? '<ul class="check-list">'+
-            '<li><i class="i">'+(st.phase===2?'✅':'✎')+'</i>'+(st.phase===2?'完整报告已生成':'初步草稿')+' · 置信度 '+st.score+'%</li>'+
-            '<li><i class="i"></i>研判方向：'+p.topic+'</li>'+
-            '<li><i class="i"></i>生成时间：'+(st.ts?new Date(st.ts).toLocaleDateString('zh-CN'):'未知')+'</li>'+
+            '<li><i class="i">'+(_topicFull?'✅':'✎')+'</i>'+(_topicFull?'完整报告已生成':'初步草稿')+' · '+topicScoreDisplay(p.topic)+'</li>'+
+            '<li><i class="i"></i>产业分析方向：'+p.topic+'</li>'+
+            '<li><i class="i"></i>生成时间：'+(topicTime?new Date(topicTime).toLocaleDateString('zh-CN'):'未知')+'</li>'+
           '</ul>'
-        : '<div class="info-callout" style="margin-top:0">尚未生成报告。请先在「研判需求」选择方向并点击生成。</div>'      )+'</div>'+
+        : '<div class="info-callout" style="margin-top:0">尚未生成报告。请先在「产业分析」选择方向并点击生成。</div>'      )+'</div>'+
       '<div class="detail-block"><h3>当前阶段</h3>'+
         '<div class="info-callout" style="margin-top:0">'+stageNameOf(stageProject,stageProject.stage)+' · '+stageDescOf(stageProject,stageProject.stage)+'</div>'+
       '</div>'+
       '<div class="detail-block"><h3>已上传材料</h3>'+(ups.length
         ? '<ul class="source-list">'+ups.map(function(u){return '<li><i class="i"></i>'+u.name+'<small style="color:#9aa5b5;margin-left:6px">'+Math.round(u.size/1024)+'KB</small></li>';}).join('')+'</ul>'
         : '<div style="font-size:12.5px;color:#9aa5b5">暂无上传材料</div>'      )+'</div>'+
-      (st&&st.phase===2
+      (!running&&_topicFull
         ? '<div class="detail-block">'+
       '<div style="display:flex;gap:8px">'+
       '<button onclick="viewCurrentReport()" style="flex:1;padding:9px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer;font-weight:600">📋 查看完整报告</button>'+
@@ -83,7 +91,6 @@ function detailReport(p){
       '<div class="detail-block"><div class="boundary-note" style="margin-top:0"><i class="i">ℹ</i>报告为AI辅助草稿，关键判断需人工确认；定稿后正式递交。</div></div>'+
     '</div>';
 }
-// 招商对接页 → 右侧：对接概览
 function detailDocking(p){
   var ks=Object.keys(PROJECTS);
   var n4=ks.filter(function(k){return demandEffectiveStage(k,PROJECTS[k])>=4}).length;

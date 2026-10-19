@@ -4,6 +4,8 @@ from __future__ import annotations
 import copy
 import re
 
+MAX_MERGED_EVIDENCE = 192
+
 
 def select_node_targets(chain, assessment, limit=6, include_supported=False):
     ratings = assessment.get('node_assessments') or {}
@@ -38,18 +40,57 @@ def merge_node_research(base, extra, targets):
     merged = copy.deepcopy(base)
     previous = merged.get('node_research') or {}
     target_map = {x['id']: x for x in previous.get('targets', []) + targets}
-    merged['node_research'] = {'targets': copy.deepcopy(list(target_map.values())),
-                               'status': extra.get('status', 'unavailable'),
-                               'errors': copy.deepcopy(extra.get('errors') or [])}
-    if extra.get('city') != base.get('city') or extra.get('topic') != base.get('topic'):
-        merged['node_research']['status'] = 'scope_mismatch'
-        return merged
-    rows = {row['id']: row for row in merged.get('evidence', []) if isinstance(row, dict) and row.get('id')}
-    for row in extra.get('evidence', []):
-        if isinstance(row, dict) and row.get('id'):
-            rows.setdefault(row['id'], copy.deepcopy(row))
-    merged['evidence'] = list(rows.values())[:192]
-    archives = merged.setdefault('sources', {})
-    archives.update(copy.deepcopy(extra.get('sources') or {}))
-    merged['queries'] = list(dict.fromkeys((merged.get('queries') or []) + (extra.get('queries') or [])))
+    batches = copy.deepcopy(previous.get('batches') or [])
+    # Preserve failures from the previous, summary-only shape as well. This is
+    # not a new search and must not be represented as one with invented counts.
+    if not batches and previous.get('status'):
+        batches.append({'index': 0, 'legacy_summary': True,
+                        'targets': copy.deepcopy(previous.get('targets') or []),
+                        'status': previous['status'],
+                        'errors': copy.deepcopy(previous.get('errors') or []),
+                        'discarded_evidence_count': 0})
+    same_scope = extra.get('city') == base.get('city') and extra.get('topic') == base.get('topic')
+    batch = {'index': sum(not item.get('legacy_summary') for item in batches) + 1,
+             'targets': copy.deepcopy(targets),
+             'status': extra.get('status', 'unavailable') if same_scope else 'scope_mismatch',
+             'errors': copy.deepcopy(extra.get('errors') or []),
+             'queries': copy.deepcopy(extra.get('queries') or []),
+             'received_evidence_count': sum(isinstance(row, dict) and bool(row.get('id'))
+                                            for row in extra.get('evidence', [])),
+             'new_evidence_count': 0, 'retained_new_evidence_count': 0,
+             'discarded_evidence_count': 0}
+    if same_scope:
+        rows = {row['id']: row for row in merged.get('evidence', []) if isinstance(row, dict) and row.get('id')}
+        old_ids = set(rows)
+        for row in extra.get('evidence', []):
+            if isinstance(row, dict) and row.get('id'):
+                rows.setdefault(row['id'], copy.deepcopy(row))
+        retained = list(rows.values())[:MAX_MERGED_EVIDENCE]
+        batch['new_evidence_count'] = len(set(rows) - old_ids)
+        batch['retained_new_evidence_count'] = sum(row['id'] not in old_ids for row in retained)
+        batch['discarded_evidence_count'] = max(0, len(rows) - len(retained))
+        merged['evidence'] = retained
+        archives = merged.setdefault('sources', {})
+        archives.update(copy.deepcopy(extra.get('sources') or {}))
+        merged['queries'] = list(dict.fromkeys((merged.get('queries') or []) + (extra.get('queries') or [])))
+    batches.append(batch)
+    errors = [copy.deepcopy(error) for item in batches for error in item.get('errors', [])]
+    truncated = [item for item in batches if item.get('discarded_evidence_count', 0)]
+    statuses = [item['status'] for item in batches]
+    if all(status == 'ready' for status in statuses) and not errors and not truncated:
+        status = 'ready'
+    elif all(status == 'scope_mismatch' for status in statuses):
+        status = 'scope_mismatch'
+    elif all(status == 'unavailable' for status in statuses):
+        status = 'unavailable'
+    else:
+        status = 'partial'
+    merged['node_research'] = {
+        'targets': copy.deepcopy(list(target_map.values())), 'status': status,
+        'errors': errors, 'batches': batches,
+        'truncation': {'evidence_limit': MAX_MERGED_EVIDENCE,
+                       'events': len(truncated),
+                       # Cumulative discarded rows per merge, not distinct
+                       # source identities (a later retry can return one again).
+                       'discarded_evidence_count': sum(item['discarded_evidence_count'] for item in truncated)}}
     return merged

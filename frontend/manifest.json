@@ -1,10 +1,11 @@
 {
   "index.html": {
-    "sha256": "4889d4173e0e84873270f64ef9c278c7e2cbe43f540c9fb50596f112746bd08c",
+    "sha256": "58c97498f01b0d157a8099a8d9dd8915d33b2d9f1d250b7a44263f6e8d84bd39",
     "parts": [
       "frontend/index/markup-01.html",
       "frontend/index/style-01.css",
       "frontend/index/industry.css",
+      "frontend/shared/industry-chain.css",
       "frontend/index/markup-02.html",
       "frontend/index/script-01.js",
       "frontend/index/markup-03.html",
@@ -40,10 +41,11 @@
     ]
   },
   "ops.html": {
-    "sha256": "487774cdc2d42dc4483bf830969c61b2e0be679a078f030de98b7e8d1fadd89a",
+    "sha256": "3f24d9acb8b0459589aee2845a2457fc3efcb62fda8e98dbddd520ced1d9cb72",
     "parts": [
       "frontend/ops/markup-01.html",
       "frontend/ops/style-01.css",
+      "frontend/shared/industry-chain.css",
       "frontend/ops/markup-02.html",
       "frontend/ops/script-01.js",
       "frontend/ops/markup-03.html",

@@ -286,6 +286,9 @@ function topicScoreLabel(topic, projKey){
 }
 function topicScoreDisplay(topic, projKey){
   var pk=projKey||cur, rs=REPORTSTATE[pk], st=nativeReportState(topic,pk);
+  var analysis=rs&&((rs.researchByTopic||{})[topic]||{}).analysis;
+  if(analysis&&analysis.status==='evidence_only')return '资料摘要 · 研判依据待补';
+  if(analysis&&analysis.status==='supported_analysis')return '研判已生成 · 结论待核验';
   if(rs&&rs.evidenceStatusByTopic&&rs.evidenceStatusByTopic[topic]==='unreviewed')return '内容待核验';
   if(st && st.scoreStatus==='unclassified') return '核验分类待校核';
   if(st && (st.scoreStatus==='unavailable'||nativeReportScore(topic,pk)===null)) return '暂无核验结论';

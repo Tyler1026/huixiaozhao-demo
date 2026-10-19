@@ -3,7 +3,7 @@ import json
 import math
 from dataclasses import dataclass
 from typing import Callable
-from .sync_merge import _apply_kb_item_tombs, _clue_tombstoned, _merge_invite_codes, _merge_kb_item_tombs, _merge_map
+from .sync_merge import _apply_kb_item_tombs, _clue_tombstoned, _merge_invite_codes, _merge_kb_item_tombs, _merge_map, _merge_report_history
 from .city_workspaces import protect_city_sync
 
 
@@ -272,6 +272,8 @@ def handle_sync(self, raw, deps):
         # Graph provenance sees the final project materials regardless of JSON key order.
         _chain_projects = _merge_map(existing.get('PROJECTS'), incoming.get('PROJECTS'))
         for k, v in incoming.items():
+            if k == 'REPORT_HISTORY':
+                continue  # Merged below after report and direction tombstones.
             # KB_CHAT 单独按会话合并,永不裸覆盖
             if k == 'KB_CHAT':
                 existing[k] = _merge_kbchat(existing.get(k), v, _kbc_tomb)
@@ -305,6 +307,18 @@ def handle_sync(self, raw, deps):
                     existing[k] = _merge_map(existing.get(k), v)
                 continue
             existing[k] = v
+        # Apply direction deletions even when a client sent PROJECTS only, and
+        # derive legacy confirmation views from their versioned topic record.
+        _topic_tomb_reports = {key: state for key, state in (existing.get('REPORTSTATE') or {}).items()
+                               if any((_chain_projects.get(key) or {}).get(field)
+                                      for field in ('topicDeletedAt', 'topicCreatedAt', 'deletedTopics'))}
+        if _topic_tomb_reports:
+            existing['REPORTSTATE'] = _merge_map(existing.get('REPORTSTATE'), _topic_tomb_reports, chain_projects=_chain_projects)
+        existing['REPORT_HISTORY'] = _merge_report_history(existing.get('REPORT_HISTORY'), incoming.get('REPORT_HISTORY'), existing.get('REPORTSTATE'), _chain_projects)
+        for key, state in (existing.get('REPORTSTATE') or {}).items():
+            topic = (_chain_projects.get(key) or {}).get('topic')
+            if isinstance(state, dict) and 'pendingByTopic' in state:
+                existing.setdefault('PENDING_CONFIRMS', {})[key] = (state.get('pendingByTopic') or {}).get(topic, [])
         # 同理把文件墓碑应用到已存 UPLOADS / KB_FILE_CHUNKS
         if _file_tomb:
             if isinstance(existing.get('UPLOADS'), dict):

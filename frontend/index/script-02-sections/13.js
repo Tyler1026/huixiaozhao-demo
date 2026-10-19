@@ -134,6 +134,7 @@ function detailSub(s){
 function detailReport(p){
   var stageProject=demandDisplayProject(cur,p);
   var st=REPORTSTATE[cur]; var ups=(UPLOADS[cur]||[]);
+  var topicTime=st&&((st.tsByTopic||{})[p.topic]||(st.topic===p.topic?st.ts:0));
   // 按当前方向判断该方向是否已生成报告/是否完整报告（项目级 st.phase/st.ts 是单例，切方向会串）
   var _topicFull = topicHasFullReport(p.topic);
   var _topicText = (typeof reportTextForTopic==='function') ? reportTextForTopic(p.topic) : null;
@@ -147,7 +148,7 @@ function detailReport(p){
         ? '<ul class="check-list">'+
             '<li><i class="i">'+(_topicFull?'✅':'✎')+'</i>'+(_topicFull?'完整报告已生成':'初步草稿')+' · '+topicScoreDisplay(p.topic)+'</li>'+
             '<li><i class="i"></i>产业分析方向：'+p.topic+'</li>'+
-            '<li><i class="i"></i>生成时间：'+(st&&st.ts?new Date(st.ts).toLocaleDateString('zh-CN'):'未知')+'</li>'+
+            '<li><i class="i"></i>生成时间：'+(topicTime?new Date(topicTime).toLocaleDateString('zh-CN'):'未知')+'</li>'+
           '</ul>'
         : '<div class="info-callout" style="margin-top:0">尚未生成报告。请先在「产业分析」选择方向并点击生成。</div>'      )+'</div>'+
       '<div class="detail-block"><h3>当前阶段</h3>'+

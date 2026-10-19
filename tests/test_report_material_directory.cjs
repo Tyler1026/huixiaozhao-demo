@@ -23,6 +23,7 @@ function env(app='index'){
     localStorage:{getItem:()=> '{}'},buildKBCorpus:()=>[],kbSearch:()=>[],curOnbPrefs:()=>({}),parsePendingItems:()=>[],view:'report',
   };
   vm.createContext(c);
+  vm.runInContext(tail.slice(tail.indexOf('function reportStateFields('),tail.indexOf('function selectTopic(')),c);
   ['captureReportMaterialDirectory','reportMaterialDirectoryForContext','reportExportSourceHeading','reportExportSourceRecords','reportExportContext','reportMdToHtml','viewCurrentReport'].forEach(name=>vm.runInContext(declaration(source,name),c));
   if(app==='index')vm.runInContext(declaration(source,'setReportAreaHtml'),c);
   vm.runInContext(declaration(tail,'demandReportSnapshot'),c);

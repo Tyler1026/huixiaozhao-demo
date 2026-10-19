@@ -99,6 +99,11 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
         for batch_index, batch in enumerate(batches):
             budget = min(25, max(0, 190 - (clock() - started)))
             if budget < 5:
+                remaining = [node for pending in batches[batch_index:] for node in pending]
+                findings = merge_node_research(findings, {
+                    'city': context['city'], 'topic': topic, 'status': 'pending',
+                    'errors': [{'code': 'node_research_budget_exhausted',
+                                'message': '补查时间预算已用尽，剩余环节尚未完成检索。'}]}, remaining)
                 break
             event('research.status', stage='node_research', message=f'正在核验实际供给与约束：第{batch_index+1}/{len(batches)}组')
             try:
@@ -125,7 +130,15 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
                                     node['extraction_method'] = methods[node['id']]
             except Exception:
                 # An optional public supplement never discards the original graph.
-                findings['node_research'] = {'targets': targets, 'status': 'partial'}
+                findings = merge_node_research(findings, {
+                    'city': context['city'], 'topic': topic, 'status': 'unavailable',
+                    'errors': [{'code': 'node_research_failed',
+                                'message': '本组补查未完成，保留此前已取得的原文。'}]}, batch)
+        # Every usable original can be inspected even if it does not support a
+        # strength comparison. This also reconnects later research to existing
+        # nodes when all three lanes were already populated.
+        from .chain_facts import attach_source_statements
+        attach_source_statements(result, findings, context)
         event('research.status', stage='reasoning', message='正在对比本地基础与产业要求，并交叉核对补链判断')
         try:
             from .chain_weakness import build_weakness

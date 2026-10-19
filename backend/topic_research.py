@@ -113,9 +113,9 @@ def search_plan(city, topic, mode='draft'):
                 f'{common} 本地产能 研发中试 量产 协同配套 现状 原文',
                 f'{city} {subject} 现有企业 生产基地 已投产 已交付',
                 f'{city} {subject} 上下游 配套产品 研发制造 已形成']
-    queries = [f'{common} 产业基础 重点企业 官方发布',
-               f'{common} 产业政策 行动方案 适用条件 site:gov.cn',
-               f'{common} 企业官网 年度报告 项目建设']
+    queries = [f'{common} 现有企业 产品 产线 供应 已投产 已交付 企业官网 年度报告',
+               f'{common} 需求 进口依赖 技术瓶颈 研发 中试 验证阶段 官方原文',
+               f'{common} 产业政策 行动方案 适用条件 site:gov.cn']
     if mode == 'full':
         queries += [f'{common} 注册地址 生产基地 公司公告',
                     f'{common} 开工 投产 项目进度 官方 核实']
@@ -169,6 +169,45 @@ def _same_origin(a, b):
     aa, bb = _grams(a['quote']), _grams(b['quote'])
     # Same press release hosted elsewhere is not an independent witness.
     return bool(aa and bb and len(aa & bb) / min(len(aa), len(bb)) >= .82)
+
+
+def _document_keys(entry):
+    """Explicit document identities, not a shared generic website title."""
+    title = entry.get('title', '')
+    keys = {_clean(value) for value in re.findall(r'《([^》]{6,180})》', title)}
+    keys.update(_clean(value) for value in grounding._DOCUMENT.findall(
+        title + '\n' + entry.get('quote', '')))
+    if re.search(r'方案|规划|办法|措施|意见', title) and len(_clean(title)) >= 12:
+        keys.add(_clean(title))
+    return keys
+
+
+def _independent_sources(a, b):
+    # Stored origin IDs describe acquisition, and may differ for a repost or a
+    # second extraction of the same document. Recheck the saved passages too.
+    if not a.get('origin_id') or not b.get('origin_id'):
+        return False
+    if a['origin_id'] == b['origin_id'] or _publisher(a['url']) == _publisher(b['url']):
+        return False
+    if _same_origin(a, b) or _document_keys(a) & _document_keys(b):
+        return False
+    return True
+
+
+def _crosscheck_identity(statement):
+    """Only auto-verify identities this deterministic checker can bind.
+
+    An industrial narrative needs semantic review of its product, stage and
+    conditions. Literal support still earns single_source, not a fabricated
+    independent verdict based on a shared capacity/completion phrase.
+    """
+    claim = _stripped(statement)
+    if _LOCATION.search(claim):
+        return True
+    groups = grounding._metric_groups(claim)
+    return bool(groups and not any(key in {'产能', '投资', '研发'} for key, _ in groups)
+                and grounding._claim_years(claim)
+                and (grounding._claim_regions(claim) or grounding._claim_companies(claim)))
 
 
 def _balanced_chain_rows(candidates, limit, char_limit=None):
@@ -475,6 +514,9 @@ def _location_support(statement, evidence):
 def _support(statement, entry):
     clean = _stripped(statement)
     original = entry.get('source_excerpt') or entry.get('excerpt') or entry.get('quote', '')
+    if entry.get('retrieval') == 'snippet' or entry.get('status') in {
+            'pending', 'unavailable', 'unsupported', 'rejected'}:
+        return {'supported': False, 'reason': 'original_source_not_available'}
     if entry.get('_has_archive') and _clean(entry.get('quote', '')) not in _clean(original):
         return {'supported': False, 'reason': 'quote_not_in_archived_source'}
     location = _location_support(clean, [entry])
@@ -484,9 +526,26 @@ def _support(statement, entry):
     policy_issues = grounding.synthesis_issues(clean, {'current': {'metadata': {'evidence': [policy_entry]}}})
     if any(issue['kind'] == 'policy_condition_lost' for issue in policy_issues):
         return {'supported': False, 'reason': 'policy_condition_lost'}
-    # An unchanged complete source excerpt supports that quotation directly.
-    # This is source support, not an assertion that the publisher is infallible.
-    if _clean(clean) == _clean(entry.get('quote', '')):
+    # Generic metric overlap (e.g. "capacity") cannot bind products, policies,
+    # delivery, maturity or their qualifications. Require the entire stated
+    # proposition in this saved excerpt. This intentionally leaves paraphrases
+    # unresolved instead of treating one keyword as an independent witness.
+    claim = _clean(clean).rstrip('。；;.!！?？')
+    saved = _clean(entry.get('quote', ''))
+    literal = bool(claim and claim in saved)
+    if literal:
+        position = saved.index(claim)
+        start = max(saved.rfind(mark, 0, position) for mark in '。；;！!？?\n') + 1
+        ends = [saved.find(mark, position + len(claim)) for mark in '。；;！!？?\n']
+        end = min((value for value in ends if value >= 0), default=len(saved))
+        context = saved[start:end]
+        if re.search(r'无法确认|不能确认|未能确认|尚未证实|未获证实|没有证据|说法不实|虚假|予以否认|据称|网传|传闻', context):
+            return {'supported': False, 'reason': 'source_does_not_confirm_claim'}
+        prefix = saved[start:position]
+        if re.search(r'如果|假如|若|只有|以.{0,30}为前提|在.{0,30}条件下', prefix):
+            return {'supported': False, 'reason': 'source_condition_not_in_claim'}
+        if _COMPLETE.search(clean) and not _PLAN.search(clean) and _PLAN.search(context):
+            return {'supported': False, 'reason': 'plan_does_not_prove_completion'}
         return {'supported': True, 'quote': entry['quote'], 'source_sha256': _digest(entry['quote'])}
     observations = grounding.evidence_observations(evidence=[entry])
     result = grounding.source_support(clean, observations, entry['url'])
@@ -502,7 +561,7 @@ def _support(statement, entry):
     nonfinancial = {v for v in values if not re.search(r'亿元|万元|元|吨|亩|%|％', v)}
     if not nonfinancial <= source_values:
         return {'supported': False, 'reason': 'count_area_or_date_not_in_same_span'}
-    return result
+    return {'supported': False, 'reason': 'claim_object_predicate_or_conditions_not_literal'}
 
 
 def validate_report(text, research_result, *, require_citations=True):
@@ -542,14 +601,16 @@ def validate_report(text, research_result, *, require_citations=True):
         if require_citations and not selected and not _UNCERTAIN.search(statement):
             reasons.append('missing_original_evidence_reference')
         supports = []
+        supporting_entries = []
         for entry in selected:
             support = _support(statement, entry)
             if support.get('supported'):
+                supporting_entries.append(entry)
                 supports.append({'evidence_id': entry['id'], 'url': entry['url'],
                                  'origin_id': entry['origin_id'], 'publisher_id': entry['publisher_id'],
                                  'quote': support.get('quote', ''), 'source_sha256': support.get('source_sha256', '')})
-        independent = any(a['origin_id'] != b['origin_id'] and a['publisher_id'] != b['publisher_id']
-                          for i, a in enumerate(supports) for b in supports[i+1:])
+        independent = _crosscheck_identity(statement) and any(_independent_sources(a, b)
+                          for i, a in enumerate(supporting_entries) for b in supporting_entries[i+1:])
         status = 'cross_checked' if independent else 'single_source' if supports else 'unsupported'
         if reasons:
             status = 'unsupported'

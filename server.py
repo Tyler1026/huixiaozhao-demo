@@ -302,8 +302,12 @@ def _classify_and_summarize(city, kb_sections, all_cleaned_items):
 
 def _clean_kb_text(text):
     """清洗 known 条目：删除URL/来源/元信息/系统prompt/章节标题等冗余"""
+    # Saved KB entries may include provenance metadata beside their text.
+    # Summaries consume only the text, never stringify the complete record.
+    if isinstance(text, dict):
+        text = text.get('text', '')
     if not isinstance(text, str):
-        return text
+        return ''
     # 删除所有 URL
     text = _re.sub(r'https?://[^\s\)）,，。]*', '', text)
     # 删除来源标注
@@ -341,7 +345,7 @@ def _clean_kb_text(text):
 
 def _is_junk_item(text):
     """判断一条 known 是否为无用条目（纯标题/元信息/报告头）应被丢弃"""
-    if not text or len(text) < 6:
+    if not isinstance(text, str) or not text or len(text) < 6:
         return True
     # 纯报告标题类（不含有用数据）
     junk_patterns = [

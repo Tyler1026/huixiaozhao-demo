@@ -44,7 +44,7 @@ function environment(reply = response(fullText), implementation = source) {
   vm.createContext(context);
   const shared=fs.readFileSync(path.join(root,'frontend/index/script-02-sections/12-part-00.js'),'utf8');
   vm.runInContext(declaration('savedEvidenceIdentity',shared),context);
-  const added=['reportMaterialIdentity','reportClientFingerprint','reportJobForTopic','reportRunBanner','refreshReportRunUi','reportStreamMetadataEvent'];
+  const added=['reportMaterialIdentity','reportClientFingerprint','reportJobForTopic','reportRunBanner','refreshReportRunUi','reportStreamMetadataEvent','reportStateStamp','reportTopicStamp','topicOperationStamp','touchTopicPending'];
   vm.runInContext(['fullReportConfirmation', 'topicReportMarkup', ...added, 'escapeChainText', 'readTopicReportStream', 'syncTopicReportInputs', 'isCompleteTopicReport', 'updateReportBusy', 'triggerReport',
     'demandReportSnapshot', 'demandSubmissionState', 'demandEffectiveStage'].map(n => declaration(n,added.includes(n)&&!implementation.includes('function '+n+'(')?source:implementation)).join('\n') + '\n' + ['_correctChainLevel', '_normalizeChain'].map(n => declaration(n)).join('\n'), context);
   return {c: context, events, elements};
@@ -90,6 +90,36 @@ test('successful full generation sends exact identity, preserves native receipt 
   assert.equal(c.REPORTSTATE.p.scoreByTopic['核电配套'], null);
   assert.equal(c.REPORTSTATE.p.evidenceStatusByTopic['核电配套'], 'unreviewed');
   assert.equal(c.window._reportGenerating, false);
+});
+
+test('completion waits for acknowledged cloud save after streaming finishes', async () => {
+  const {c,events}=environment();const transport=c.fetch;let syncs=0,release;
+  c.fetch=(url,init)=>url==='/api/sync'&&++syncs===2?new Promise(r=>{release=r;}):transport(url,init);
+  const pending=c.triggerReport(2);await untilRequestStarted(()=>!!release);
+  assert.equal(c.REPORTSTATE.p.aiReportByTopic['核电配套'],fullText);
+  assert.equal(events.toasts.length,0);
+  release({ok:true,json:async()=>({ok:true})});await pending;
+  assert.match(events.toasts.at(-1),/已保存/);
+});
+
+test('failed final cloud save keeps local report and does not announce confirmed completion', async () => {
+  const {c,events}=environment();const transport=c.fetch;let syncs=0;
+  c.fetch=(url,init)=>url==='/api/sync'&&++syncs===2?Promise.resolve({ok:false,status:503}):transport(url,init);
+  await c.triggerReport(2);
+  assert.equal(c.REPORTSTATE.p.aiReportByTopic['核电配套'],fullText);
+  assert.match(events.toasts.at(-1),/本机.*云端保存未确认/);
+  assert.equal(c.REPORTSTATE.p.partialByTopic&&c.REPORTSTATE.p.partialByTopic['核电配套'],undefined);
+});
+
+test('admin generation also waits for the final save and preserves local content on save failure', async () => {
+  const implementation=fs.readFileSync(path.join(root,'frontend/ops/script-03-sections/12-tail.js'),'utf8');
+  for(const failed of [false,true]){
+    const {c,events}=environment(response(fullText),implementation),transport=c.fetch;let syncs=0,release;
+    c.fetch=(url,init)=>url==='/api/sync'&&++syncs===2?new Promise(r=>{release=r;}):transport(url,init);
+    const pending=c.triggerReport(2);await untilRequestStarted(()=>!!release);assert.equal(events.toasts.length,0);
+    release(failed?{ok:false,status:503}:{ok:true,json:async()=>({ok:true})});await pending;
+    assert.equal(c.REPORTSTATE.p.aiReportByTopic['核电配套'],fullText);assert.match(events.toasts.at(-1),failed?/云端保存未确认/:/已保存/);
+  }
 });
 
 test('length, transport EOF, or incomplete five chapters never overwrite a completed report', async () => {
