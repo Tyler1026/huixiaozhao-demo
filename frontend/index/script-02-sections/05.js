@@ -92,9 +92,8 @@ function render(){
   // 重建 DOM 前：记录当前滚动位置（供"原地重渲染"后还原，避免阅读时弹回顶部）
   // 注意：必须用"本次重建前"刚捕获的位置来还原（_captureScroll 会写入 _scrollMemory），
   // 而不是上一轮的旧值，否则跨标签同步/异步 render 会把滚动错误还原到过时位置或顶部。
-  _captureScroll();
-  var _prevScrollKey=_scrollMemory.key, _prevScrollTops=_scrollMemory.tops;
-  $('#root').innerHTML=
+  var _chainDom=_captureChainExplorer();
+  var _nextMarkup=
    '<div class="app-shell">'+
     topbar(p)+
     '<div class="app-content">'+sidebar()+
@@ -107,6 +106,16 @@ function render(){
     '</div>'+
     progressFooter(p)+
    '</div>';
+  // Background sync often changes no visible report data. Keep the live DOM,
+  // including expanded evidence, focus and the graph drawer, in that case.
+  var _nextKey=_viewScrollKey(),_nextGraphDataKey=view==='report'?_chainRenderDataKey():null;
+  if(view==='report'&&render._markup===_nextMarkup&&render._markupKey===_nextKey&&render._markupAuthEpoch===_authEpoch&&render._graphDataKey===_nextGraphDataKey&&_renderedScrollKey===_nextKey)return;
+  _captureScroll();
+  var _prevScrollKey=_scrollMemory.key, _prevScrollTops=_scrollMemory.tops;
+  $('#root').innerHTML=_nextMarkup;
+  render._markup=_nextMarkup;render._markupKey=_nextKey;render._markupAuthEpoch=_authEpoch;render._graphDataKey=_nextGraphDataKey;
+  _renderedScrollKey=_nextKey;
+  _restoreChainExplorer(_chainDom);
   bind();
   if(cur && REPORT_HISTORY[cur]) { var _rha=document.getElementById('reportHistoryArea'); if(_rha) renderHistoryReports(cur); }
   // 城市智库对话：render 重建了 #kbConv，把已存的历史对话回放回去（切主题/切模块/刷新都不丢）

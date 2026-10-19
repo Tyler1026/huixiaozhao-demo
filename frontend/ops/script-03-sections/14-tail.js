@@ -104,7 +104,8 @@ function restoreFromServer(callback){
       if(localENT.length && !OPS_ENT.length) OPS_ENT = localENT;
       if(callback)callback(false); return;
     }
-    if(_acceptServerGeneration(srv))localENT=[];
+    var currentProject=cur;
+    if(_acceptServerGeneration(srv)){localENT=[];currentProject=null;}
     var topicLocalProjects=PROJECTS;
     PROJECTS         = srv.PROJECTS         || {};
     Object.keys(PROJECTS).forEach(function(k){PROJECTS[k]=mergeTopicProjectLifecycle(topicLocalProjects[k],PROJECTS[k]);});
@@ -143,7 +144,7 @@ function restoreFromServer(callback){
         });
       }
     }
-    cur  = srv.cur  || Object.keys(PROJECTS)[0] || null;
+    cur=currentProject&&PROJECTS[currentProject]?currentProject:(srv.cur&&PROJECTS[srv.cur]?srv.cur:Object.keys(PROJECTS)[0]||null);
     applyTopicStateIntegrity();
     try{localStorage.setItem(LS_KEY,JSON.stringify(Object.assign(_safeSyncSnapshot(srv),{clientUser:AUTH.user,PROJECTS:PROJECTS,REPORTSTATE:REPORTSTATE,REPORT_HISTORY:REPORT_HISTORY,PENDING_CONFIRMS:PENDING_CONFIRMS})));}catch(e){}
     window._opsServerHadData=true;

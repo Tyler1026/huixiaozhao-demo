@@ -3,6 +3,7 @@ import copy
 import hashlib
 import io
 import json
+import threading
 import unittest
 from contextlib import contextmanager
 from unittest.mock import patch
@@ -105,12 +106,12 @@ class ChainRouteTests(unittest.TestCase):
         return {'projectKey': 'p', 'topic': '商业火箭', 'reportRequestId': 'r1',
                 'sourceIdentity': identity_json(chain_input_identity(handler._scoped_state, 'p', '商业火箭')),
                 'purpose': 'chain_map', 'mode': 'chain', 'stream': True}
-    def run_route(self, h, research=None, build=diagram, principal=None, body=None, assessment_builder=None):
+    def run_route(self, h, research=None, build=diagram, principal=None, body=None, assessment_builder=None, **options):
         audits = []
         with patch('backend.topic_chain_route.require_session', return_value=principal or h._principal):
             serve_topic_chain(h, body or self.body(h), complete=lambda *args: {}, audit=audits.append,
                               research=research or (lambda *args, **kwargs: findings()), build=build,
-                              assessment_builder=assessment_builder)
+                              assessment_builder=assessment_builder, **options)
         return h.wfile.getvalue().decode(), audits
 
     def test_persisted_server_result_precedes_completion_and_uses_v2_contract(self):
@@ -124,6 +125,70 @@ class ChainRouteTests(unittest.TestCase):
         expected[1]['nodes'][0]['facts'] = []
         self.assertEqual(rs['chainByTopic']['商业火箭'], expected)
         self.assertEqual(audits[-1]['persisted'], True)
+
+    def test_long_research_sends_transport_heartbeat_without_fake_progress(self):
+        h = Handler(state())
+        received = threading.Event()
+        class Stream(io.BytesIO):
+            def write(self, value):
+                result = super().write(value)
+                if value == b': keep-alive\n\n':
+                    received.set()
+                return result
+        h.wfile = Stream()
+        def retrieve(*args, **kwargs):
+            self.assertTrue(received.wait(1), 'stream must stay alive during a blocking provider call')
+            return findings()
+        text, _ = self.run_route(h, research=retrieve, heartbeat_seconds=0.005)
+        self.assertIn(': keep-alive\n\n', text)
+        self.assertLess(text.index(': keep-alive'), text.index('chain.result'))
+        self.assertFalse(text.endswith(': keep-alive\n\n'))
+        self.assertIn('[DONE]', text)
+
+    def test_model_budget_keeps_completed_graph_and_marks_unfinished_evaluation(self):
+        h = Handler(state())
+        now, calls = [100.0], []
+        def build(context, research, complete):
+            complete('system', 'selection', 10)
+            now[0] += 356
+            return diagram()
+        def assessment(context, research, result, complete):
+            complete('system', 'late evaluation', 10)
+            self.fail('a late model call must be stopped')
+        with patch('backend.topic_chain_route.require_session', return_value=h._principal):
+            serve_topic_chain(h, self.body(h), complete=lambda *args: calls.append(args) or {},
+                audit=lambda row: None, research=lambda *args, **kwargs: findings(), build=build,
+                assessment_builder=assessment, clock=lambda: now[0])
+        self.assertEqual(len(calls), 1)
+        text = h.wfile.getvalue().decode()
+        self.assertIn('chain.result', text)
+        meta = h.data['REPORTSTATE']['p']['chainEvidenceByTopic']['商业火箭']
+        self.assertIn('chain_model_budget_exhausted', [row['code'] for row in meta['errors']])
+        self.assertEqual(meta['assessment']['state'], 'unavailable')
+        self.assertEqual(h.writes, 1)
+
+    def test_slow_model_is_bounded_and_late_output_cannot_replace_saved_graph(self):
+        from test_topic_chain import research as originals
+        archive = originals(['闵行区计划建设商业火箭总装测试平台，具体实施条件尚待核实。'], topic='商业火箭')
+        release, calls = threading.Event(), []
+        def slow(*args):
+            calls.append(args)
+            release.wait(1)
+            return {'nodes': [{'name': '迟到的虚构环节', 'evidence_ids': []}]}
+        h = Handler(state())
+        try:
+            with patch('backend.topic_chain_route.require_session', return_value=h._principal), \
+                 patch('backend.public_research.enrich_public_research', side_effect=lambda r,*a:r):
+                serve_topic_chain(h, self.body(h), complete=slow, audit=lambda row: None,
+                    research=lambda *args, **kwargs: copy.deepcopy(archive), model_timeout_seconds=0.005)
+            self.assertEqual(len(calls), 1)
+            self.assertIn('[DONE]', h.wfile.getvalue().decode())
+            stored = h.data['REPORTSTATE']['p']
+            self.assertNotIn('迟到的虚构环节', json.dumps(stored, ensure_ascii=False))
+            codes = [row['code'] for row in stored['chainEvidenceByTopic']['商业火箭']['errors']]
+            self.assertIn('chain_model_timeout', codes)
+        finally:
+            release.set()
 
     def test_supplemental_original_is_saved_even_without_a_strength_judgment(self):
         from test_topic_chain import research as originals, plan
@@ -146,6 +211,104 @@ class ChainRouteTests(unittest.TestCase):
                          {first['evidence'][0]['quote'], second['evidence'][0]['quote']})
         self.assertIn(second['evidence'][0]['id'],
                       [s['id'] for s in rs['chainEvidenceByTopic']['商业火箭']['sources']])
+
+    def test_disabled_live_services_can_save_limited_verified_archive_graph(self):
+        from test_topic_chain import research as originals
+        archived = originals(['闵行区计划建设商业火箭总装测试平台，实施条件尚待进一步核实。'], topic='商业火箭')
+        archived.update(status='unavailable', errors=[{'code': 'research_configuration'}])
+        for row in list(archived['sources'].values()) + archived['evidence']:
+            row['archived'] = True
+        calls = []
+        def unavailable(*args):
+            calls.append(args)
+            raise RuntimeError('provider secret must not escape')
+        h = Handler(state())
+        with patch('backend.topic_chain_route.require_session', return_value=h._principal), \
+             patch('backend.public_research.enrich_public_research', side_effect=lambda r,*a:r):
+            serve_topic_chain(h, self.body(h), complete=unavailable, audit=lambda row: None,
+                              research=lambda *args, **kwargs: copy.deepcopy(archived))
+        self.assertEqual(len(calls), 1)
+        self.assertIn('[DONE]', h.wfile.getvalue().decode())
+        stored = h.data['REPORTSTATE']['p']
+        self.assertEqual(stored['chainStatusByTopic']['商业火箭'], 'partial')
+        meta = stored['chainEvidenceByTopic']['商业火箭']
+        self.assertEqual(meta['researchStatus'], 'unavailable')
+        self.assertEqual(meta['generation']['mode'], 'source_only')
+        self.assertEqual(meta['assessment']['level'], 'unknown')
+        self.assertEqual(meta['edges'], [])
+        self.assertIn('chain_model_selection_unavailable', [row['code'] for row in meta['errors']])
+        self.assertNotIn('provider secret', json.dumps(meta))
+
+    def test_source_only_retry_preserves_richer_graph_for_same_material_identity(self):
+        h = Handler(state())
+        report = h.data['REPORTSTATE']['p']
+        report['chainByTopic'] = {'商业火箭': [{'seg': '中游', 'nodes': [
+            {'name': '已有环节一'}, {'name': '已有环节二'}]}]}
+        report['chainEvidenceByTopic'] = {'商业火箭': {
+            'contract': 'source-bound-chain-v2', 'scope': 'current-topic-v2', 'topic': '商业火箭',
+            'sourceIdentity': identity_json(chain_input_identity(h.data, 'p', '商业火箭'))}}
+        old = copy.deepcopy(report)
+        def limited(*args):
+            result = diagram()
+            result['generation'] = {'mode': 'source_only'}
+            result['chain'][1]['nodes'][0]['id'] = 'chn_test'
+            return result
+        text, _ = self.run_route(h, build=limited)
+        self.assertIn('chain_existing_result_preserved', text)
+        self.assertNotIn('chain.result', text)
+        self.assertEqual(h.writes, 0)
+        self.assertEqual(h.data['REPORTSTATE']['p'], old)
+
+    def test_source_only_retry_preserves_existing_completed_evaluation(self):
+        h = Handler(state())
+        report = h.data['REPORTSTATE']['p']
+        report['chainByTopic'] = {'商业火箭': [{'seg': '中游', 'nodes': [
+            {'name': '已有环节', 'assessment': {'judgment': {'level': 'strong'}}}]}]}
+        report['chainEvidenceByTopic'] = {'商业火箭': {
+            'contract': 'source-bound-chain-v2', 'scope': 'current-topic-v2', 'topic': '商业火箭',
+            'sourceIdentity': identity_json(chain_input_identity(h.data, 'p', '商业火箭'))}}
+        def limited(*args):
+            result = dict(diagram(), generation={'mode': 'source_only'})
+            result['chain'][1]['nodes'][0]['id'] = 'chn_test'
+            return result
+        text, _ = self.run_route(h, build=limited)
+        self.assertIn('chain_existing_result_preserved', text)
+        self.assertEqual(h.writes, 0)
+
+    def test_source_only_retry_cannot_replace_same_count_with_different_nodes(self):
+        h = Handler(state())
+        report = h.data['REPORTSTATE']['p']
+        report['chainByTopic'] = {'商业火箭': [{'seg': '中游', 'nodes': [
+            {'id': 'chn_existing', 'name': '已有环节'}]}]}
+        report['chainEvidenceByTopic'] = {'商业火箭': {
+            'contract': 'source-bound-chain-v2', 'scope': 'current-topic-v2', 'topic': '商业火箭',
+            'sourceIdentity': identity_json(chain_input_identity(h.data, 'p', '商业火箭'))}}
+        before = copy.deepcopy(report)
+        def limited(*args):
+            result = dict(diagram(), generation={'mode': 'source_only'})
+            result['chain'][1]['nodes'][0]['id'] = 'chn_different'
+            return result
+        text, _ = self.run_route(h, build=limited)
+        self.assertIn('chain_existing_result_preserved', text)
+        self.assertNotIn('chain.result', text)
+        self.assertEqual(h.writes, 0)
+        self.assertEqual(h.data['REPORTSTATE']['p'], before)
+
+    def test_outdated_richer_graph_does_not_block_current_source_only_result(self):
+        h = Handler(state())
+        report = h.data['REPORTSTATE']['p']
+        report['chainByTopic'] = {'商业火箭': [{'seg': '中游', 'nodes': [
+            {'name': '旧版环节一'}, {'name': '旧版环节二'}]}]}
+        report['chainEvidenceByTopic'] = {'商业火箭': {
+            'contract': 'source-bound-chain-v2', 'scope': 'current-topic-v2', 'topic': '商业火箭',
+            'sourceIdentity': '{}'}}
+        def limited(*args):
+            result = dict(diagram(), generation={'mode': 'source_only'})
+            result['chain'][1]['nodes'][0]['id'] = 'chn_test'
+            return result
+        text, _ = self.run_route(h, build=limited)
+        self.assertIn('chain.result', text)
+        self.assertEqual(h.writes, 1)
 
     def test_supplement_exception_records_failure_without_discarding_graph(self):
         from test_topic_chain import research as originals, plan

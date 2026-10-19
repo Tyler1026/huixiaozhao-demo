@@ -1675,6 +1675,9 @@ function selectTopic(val, isCustom){
   var _pf=document.querySelector('.progress-footer');
   if(_pf) _pf.outerHTML=progressFooter(p);
   // 重渲染卡片高亮
+  if(typeof _viewScrollKey==='function')_renderedScrollKey=_viewScrollKey();
+  if(typeof _restoreChainExplorer==='function')_restoreChainExplorer(null);
+  if(typeof render==='function')render._markup=null;
   var cardGrid=document.getElementById('topicCardGrid');
   if(!cardGrid) return;
   var topics=generateTopicsFromKb(p);
@@ -2236,10 +2239,19 @@ function deriveActionItemsFromChain(){
 /* 从REPORTSTATE恢复已保存的招引方向卡片 */
 function restoreActionItems(){
   var p=P();if(!p || !demandReportSnapshot(cur,p.topic))return '';
+  var items=typeof reportAnalyticalPriorities==='function'?reportAnalyticalPriorities(REPORTSTATE[cur],p.topic):[];
+  var directions='<section class="industry-priorities" aria-label="报告中的招引研判方向"><div class="industry-priorities-heading"><h3>报告中的招引研判方向</h3>'+(items.length?'<span>'+items.length+' 项来源支持的分析建议</span>':'')+'</div>';
+  if(items.length){
+    directions+='<div class="industry-priority-grid">'+items.map(function(item,index){
+      var sources=chainNodeSources({sources:item.sources});
+      return '<article class="industry-priority-card"><span class="industry-priority-scope">'+escapeChainText(item.scopeLabel)+'</span><h4>'+escapeChainText(item.focus)+'</h4><p class="industry-priority-reason">'+escapeChainText(item.reason)+'</p><div class="industry-priority-action"><strong>建议动作</strong><p>'+escapeChainText(item.action)+'</p></div><details><summary>比较依据与原文 · '+sources.length+' 条</summary><p>'+escapeChainText(item.comparison)+'</p>'+sources.map(chainLayoutSourceHtml).join('')+'</details></article>';
+    }).join('')+'</div>';
+  }else directions+='<p class="industry-priority-empty">当前报告尚未形成经来源复核的具体招引建议。补充实际需求、供给与采购材料后可继续研判。</p>';
+  directions+='</section>';
   var demandKey=p.isDemand===true?cur:_findExistingDemand(p.city,p.topic);
   var submitted=demandKey&&demandSubmissionState(demandKey)==='submitted';
-  var message=submitted?'需求已递交，资源端正在开展当前方向的企业核验与推荐。':'完整研判已生成。提交后，管理端将基于当前方向核验并推荐企业。';
-  return '<section class="industry-demand" style="margin-top:16px;padding:16px;border:1px solid #dbeafe;border-radius:12px;background:#f8faff"><strong>'+escapeChainText(p.topic)+'</strong><p>'+message+'报告和线索中的待核结论不代表投资意向已确认。</p>'+reportDemandActionButton(p)+'</section>';
+  var message=submitted?'需求已递交，资源端正在开展当前方向的企业核验与推荐。':'提交后，管理端将基于报告中的具体建议核验并推荐企业。';
+  return directions+'<section class="industry-demand" style="margin-top:16px;padding:16px;border:1px solid #dbeafe;border-radius:12px;background:#f8faff"><strong>当前分析任务：'+escapeChainText(p.topic)+'</strong><p>'+message+'报告和线索中的待核结论不代表投资意向已确认。</p>'+reportDemandActionButton(p)+'</section>';
 }
 
 /* 从报告文本解析TOP3招引方向（供渲染与切换方向时复用） */
@@ -3233,7 +3245,7 @@ function _extractChainRobust(raw){
   return (out.length && out.some(function(s){return s.nodes.length;}))?out:null;
 }
 function currentEvidenceChain(topic,key){
-  key=key||cur;if(typeof _chainGenInFlight!=='undefined'&&_chainGenInFlight[key+'|'+topic])return null;
+  key=key||cur;
   var rs=REPORTSTATE[key];if(!rs)return null;
   var meta=(rs.chainEvidenceByTopic||{})[topic],chain=(rs.chainByTopic||{})[topic],status=(rs.chainStatusByTopic||{})[topic];
   return ['ready','partial','empty'].indexOf(status)>=0&&chainEvidenceMatches(meta,key,topic)&&Array.isArray(chain)?chain:null;
@@ -3285,7 +3297,22 @@ function generateChainFromReport(topic, reportText, city, force){
   var controller=new AbortController(),timer=setTimeout(function(){controller.abort();},480000);
   _chainGenInFlight[inflight]={message:'正在确认当前材料已保存…'};
   function active(){return PROJECTS[key]&&savedEvidenceIdentity(key,topic)===sourceIdentity&&(PROJECTS[key].reportRequestId||REPORTSTATE[key].reportRequestId||'')===requestId&&(epoch===null||epoch===_authEpoch);}
-  function show(){if(cur===key&&P()&&P().topic===topic&&view==='report')render();}
+  function show(){
+    if(cur!==key||!P()||P().topic!==topic||view!=='report')return;
+    var block=document.getElementById('chainMapBlock'),job=_chainGenInFlight[inflight];
+    if(!block){render();return;}
+    if(job){
+      var status=block.querySelector('.chain-generation-status');
+      if(status){var message=status.querySelector('[data-chain-status-message]');if(message)message.textContent=job.message;return;}
+      if(block.querySelector('.chain-explorer')){block.insertAdjacentHTML('afterbegin',chainGenerationStatusHtml(job));return;}
+    }
+    var old=typeof _captureChainExplorer==='function'?_captureChainExplorer():null;
+    if(typeof _captureScroll==='function')_captureScroll();
+    block.innerHTML=chainMapHtml(P());
+    if(typeof _restoreChainExplorer==='function')_restoreChainExplorer(old);
+    if(typeof _restoreScroll==='function')_restoreScroll(_scrollMemory.key,_scrollMemory.tops);
+    if(typeof render==='function')render._markup=null;
+  }
   var snapshot;
   try{snapshot=chainInputSnapshot(key);}catch(error){snapshot=null;}
   show();
@@ -3293,7 +3320,7 @@ function generateChainFromReport(topic, reportText, city, force){
     if(!active())throw new Error('材料或报告已更新，请重新生成图谱。');
     _chainGenInFlight[inflight].message='正在检索并整理公开原文…';show();
     return fetch(KB_API,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},signal:controller.signal,
-      body:JSON.stringify({question:'依据当前方向已保存的报告和材料生成有来源的产业链图谱；未分类项单列，禁止推断不存在的连接。',chunks:[],city:city||project.city,stream:true,mode:'chain',purpose:'chain_map',projectKey:key,topic:topic,reportRequestId:requestId||null})});
+      body:JSON.stringify({question:'依据当前方向已保存的报告和材料生成有来源的产业链图谱；未分类项单列，禁止推断不存在的连接。',chunks:[],city:city||project.city,stream:true,mode:'chain',purpose:'chain_map',projectKey:key,topic:topic,reportRequestId:requestId||null,sourceIdentity:sourceIdentity})});
   }).then(async function(response){
     if(!response.ok){var errorBody=await response.json().catch(function(){return {};});var messages={evidence_changed:'材料已更新，请刷新后重新生成图谱。',report_changed:'报告版本已更新，请刷新后重新生成图谱。',topic_mismatch:'当前方向已更新，请刷新后重新生成图谱。',evidence_missing:'当前方向缺少可核查材料，请补充后重试。'};throw new Error(messages[errorBody.error||errorBody.code]||'图谱服务未接受请求（'+response.status+'），请稍后重试。');}
     var resultEvent=null;
@@ -3647,6 +3674,8 @@ function chainLayoutMetaHtml(evidence,status,count,unclassifiedCount){
   var coverage=evidence.coverage&&typeof evidence.coverage==='object'?evidence.coverage:{},taxonomy=evidence.taxonomy&&typeof evidence.taxonomy==='object'?evidence.taxonomy:{};
   var partial=status==='partial'||coverage.status==='partial'||unclassifiedCount>0;
   var label=!count?'尚未形成节点':partial?'部分材料已归类':'已整理本次材料';
+  var generation=evidence.generation&&typeof evidence.generation==='object'?evidence.generation:{};
+  var sourceOnly=generation.mode==='source_only';
   var record=evidence.nodeResearch&&typeof evidence.nodeResearch==='object'?evidence.nodeResearch:null;
   var supplement=record&&(chainLayoutText(record.status)||(Array.isArray(record.batches)&&record.batches.length)||(Array.isArray(record.errors)&&record.errors.length))?record:null;
   var errors=supplement&&Array.isArray(supplement.errors)?supplement.errors:[];
@@ -3660,12 +3689,12 @@ function chainLayoutMetaHtml(evidence,status,count,unclassifiedCount){
   var time=typeof evidence.generatedAt==='number'?new Date(evidence.generatedAt):null;
   var date=time&&Number.isFinite(time.getTime())?chainAssessmentDate(time.toISOString(),true):'';
   return '<div class="chain-layout-context"><div class="chain-layout-context-row"><strong>'+label+'</strong><span>'+research+'</span>'+(supplementLabel?'<span>'+supplementLabel+'</span>':'')+(unfinished?'<span>未完成 '+unfinished+' 组</span>':'')+(errors.length?'<span>错误记录 '+errors.length+' 条</span>':'')+(date?'<span>图谱生成：'+escapeChainText(date)+'</span>':'')+'</div>'+
+    (sourceOnly?'<p class="chain-source-only">本次仅按可追溯的归档原文整理环节；公开调研或模型整理未完成，未作新的强弱评价。</p>':'')+
     '<p>范围：当前方向、本次取得的材料；不是完整产业清单，不能据此推断现实缺失。</p>'+
     (chainLayoutText(taxonomy.description)?'<p>分类口径'+(chainLayoutText(taxonomy.label)?'（'+escapeChainText(taxonomy.label)+'）':'')+'：'+escapeChainText(taxonomy.description)+'</p>':'')+
     (chainLayoutText(coverage.meaning)?'<p>'+escapeChainText(coverage.meaning)+'</p>':'')+(errorMessages.length?'<details class="chain-layout-research-errors"><summary>查看补充核验记录</summary><ul>'+errorMessages.map(function(message){return '<li>'+escapeChainText(message)+'</li>';}).join('')+'</ul></details>':'')+'</div>';
 }
 function chainExplorerHtml(topic,segments,recs,p,unclassified,status,evidence){
-  if(CHAIN_OPEN_DRAWER)closeChainLayoutNode(CHAIN_OPEN_DRAWER,false);
   evidence=evidence||{};unclassified=(Array.isArray(unclassified)?unclassified:[]).filter(function(n){return n&&chainLayoutText(n.name);});
   segments=(Array.isArray(segments)?segments:[]).map(function(s){return {seg:s.seg,nodes:(Array.isArray(s.nodes)?s.nodes:[]).filter(function(n){return n&&chainLayoutText(n.name);})};});
   var nodes=[];segments.forEach(function(s){nodes=nodes.concat(s.nodes);});nodes=nodes.concat(unclassified);
@@ -3686,19 +3715,24 @@ function chainExplorerHtml(topic,segments,recs,p,unclassified,status,evidence){
     templates.join('')+'<aside class="chain-node-drawer" role="dialog" aria-label="环节详情与原文依据" hidden onkeydown="if(event.key===\'Escape\')closeChainLayoutNode(this)"><div class="chain-node-drawer-header"><span>资料与判断分开展示</span><button type="button" class="chain-node-drawer-close" aria-label="关闭环节详情" onclick="closeChainLayoutNode(this)">×</button></div><div class="chain-node-drawer-content"></div></aside></section>';
 }
 
+function chainGenerationStatusHtml(job){
+  return job?'<div class="chain-generation-status" role="status" aria-live="polite" aria-busy="true"><span data-chain-status-message>'+escapeChainText(job.message||'正在生成产业链图谱…')+'</span><button disabled>生成中…</button></div>':'';
+}
+
 function chainMapHtml(p){
   if(!p)return '';
   var topic=p.topic||'',rs=REPORTSTATE[cur]||{},job=_chainGenInFlight[(cur||'')+'|'+topic];
-  if(job)return '<div role="status" aria-live="polite" style="margin-top:16px;padding:20px;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b">'+escapeChainText(job.message||'正在生成产业链图谱…')+'<button disabled aria-busy="true" style="margin-left:12px">生成中…</button></div>';
+  var progressHtml=chainGenerationStatusHtml(job);
   var chain=currentEvidenceChain(topic,cur),error=(rs.chainErrorByTopic||{})[topic];
   var errorHtml=error?'<p role="alert" style="color:#92400e;font-size:12px">'+escapeChainText(error)+'</p>':'';
-  if(Array.isArray(chain)){var metadata=(rs.chainEvidenceByTopic||{})[topic]||{},allNodes=[];chain.forEach(function(segment){allNodes=allNodes.concat(segment.nodes||[]);});allNodes=allNodes.concat((rs.chainUnclassifiedByTopic||{})[topic]||[]);return errorHtml+(typeof chainExplorerHtml==='function'?chainExplorerHtml:_renderRichChain)(topic,chain,null,p,(rs.chainUnclassifiedByTopic||{})[topic],(rs.chainStatusByTopic||{})[topic],metadata)+'<div style="text-align:right;padding:10px 0"><button onclick="requestChainGeneration()">'+(chainNeedsAssessment(allNodes,metadata.assessment)?'更新图谱并评价':['empty','partial'].indexOf((rs.chainStatusByTopic||{})[topic])>=0?'补充材料后重新生成':'重新生成图谱')+'</button></div>'; }
+  if(Array.isArray(chain)){var metadata=(rs.chainEvidenceByTopic||{})[topic]||{},allNodes=[];chain.forEach(function(segment){allNodes=allNodes.concat(segment.nodes||[]);});allNodes=allNodes.concat((rs.chainUnclassifiedByTopic||{})[topic]||[]);return progressHtml+errorHtml+(typeof chainExplorerHtml==='function'?chainExplorerHtml:_renderRichChain)(topic,chain,null,p,(rs.chainUnclassifiedByTopic||{})[topic],(rs.chainStatusByTopic||{})[topic],metadata)+'<div style="text-align:right;padding:10px 0"><button class="chain-generate-button" onclick="requestChainGeneration()">'+(chainNeedsAssessment(allNodes,metadata.assessment)?'更新图谱并评价':['empty','partial'].indexOf((rs.chainStatusByTopic||{})[topic])>=0?'补充材料后重新生成':'重新生成图谱')+'</button></div>'; }
   var text=typeof reportTextForTopic==='function'?reportTextForTopic(topic):'',short=!text||text.trim().length<100;
   var legacy=!!((rs.chainByTopic||{})[topic]||(rs.chainEvidenceByTopic||{})[topic]),failed=(rs.chainStatusByTopic||{})[topic]==='failed';
+  if(job&&!Array.isArray(chain))return progressHtml+errorHtml;
   return '<div style="margin-top:16px;padding:20px;border:1px dashed #cbd5e1;border-radius:12px;background:#f8fafc;color:#64748b;font-size:12px;line-height:1.8">'+errorHtml+
     '<strong>'+escapeChainText(topic)+'</strong> · '+(legacy?'材料或图谱版本已变化，请重新生成。':'尚未生成基于当前材料的图谱。')+
     '<p>依据本次公开原文检索及保存材料背景整理；计划与材料披露均不代表已经落地，没有证据的连接不会绘制。</p>'+
-    (short?'<p>当前报告正文不足 100 字，请先完善当前方向报告。</p>':'<button onclick="requestChainGeneration()">'+(legacy?'重新生成图谱':error||failed?'重试生成图谱':'生成产业链图谱')+'</button>')+'</div>';
+    (short?'<p>当前报告正文不足 100 字，请先完善当前方向报告。</p>':'<button class="chain-generate-button" onclick="requestChainGeneration()">'+(legacy?'重新生成图谱':error||failed?'重试生成图谱':'生成产业链图谱')+'</button>')+'</div>';
 }
 
 function chainPriorityMarkdown(){
@@ -3709,6 +3743,12 @@ function chainPriorityMarkdown(){
     rows.push('| '+(rows.length+1)+' | '+String(nd.name||'').replace(/\|/g,'／')+' | '+(nd.assessment?chainAssessmentView(nd.assessment).label:(labels[nd.level]||'待核'))+' | '+(nd.benchmark||[]).join('、').replace(/\|/g,'／')+' |');
   });});
   return '## 产业链材料研判（独立视图，不替代报告正文）\n\n| 序号 | 环节 | 研判 | 对标材料 |\n|---|---|---|---|\n'+rows.join('\n');
+}
+
+function industrySavedReportHtml(p){
+  var state=REPORTSTATE[cur]||{},text=(state.aiReportByTopic||{})[p.topic]||(state.topic===p.topic?state.text:'')||'';
+  var chain=typeof text==='string'&&text.trim().length>=100?'<div id="chainMapBlock">'+chainMapHtml(p)+'</div>':'';
+  return reportHtml(p)+chain+'<div id="actionItemsBlock">'+restoreActionItems()+'</div>'+restoreConfirmPanel();
 }
 
 function alignChainToReport(text){
@@ -3894,47 +3934,18 @@ function ensureAiTopics(){
 
 /* 正则兜底方向推荐（AI 未就绪时用）：按关键词匹配 RAG 文本 */
 function generateTopicsFromKb(p){
-  if(!p) return [];
-  // 关键修复：数据门槛置于最前，忽略历史脏的 aiTopics 缓存。
-  // 无真实数据(仅AI初判占位)时不产出任何方向，避免"零上传却凭空出方向"（含旧数据残留的 aiTopics）。
-  // 用户手动添加的 customTopics 属于显式操作，始终保留。
-  if(!hasRealKbData(p)){
-    var _del0=p.deletedTopics||[]; return (p.customTopics||[]).filter(function(ct){return _del0.indexOf(ct)<0;}).map(function(ct){
-      return {label:ct, icon:'\ud83d\udccc', type:'custom', desc:'\u81ea\u5b9a\u4e49\u65b9\u5411'};
-    });
+  if(!p)return [];
+  var stored=p.aiTopics&&Array.isArray(p.aiTopics.list)?p.aiTopics.list:[];
+  var custom=Array.isArray(p.customTopics)?p.customTopics:[],deleted=Array.isArray(p.deletedTopics)?p.deletedTopics:[],seen=Object.create(null),topics=[];
+  function add(value,isCustom){
+    var row=typeof value==='string'?{label:value}:value;
+    if(!row||typeof row.label!=='string')return;
+    var label=row.label.trim();if(!label||seen[label]||deleted.indexOf(label)>=0)return;
+    seen[label]=true;topics.push({label:label,icon:typeof row.icon==='string'?row.icon:(isCustom?'📌':'📊'),type:isCustom?'custom':typeof row.type==='string'?row.type:'saved',desc:isCustom?'自定义方向':typeof row.desc==='string'?row.desc:''});
   }
-  // AI 生成的方向优先（RAG 驱动，单一事实源）
-  if(p && p.aiTopics && p.aiTopics.list && p.aiTopics.list.length){
-    var aiList=p.aiTopics.list.slice();
-    var customs0=(p.customTopics||[]);
-    customs0.forEach(function(ct){
-      if(!aiList.some(function(t){return t.label===ct;})){
-        aiList.push({label:ct, icon:'\ud83d\udccc', type:'custom', desc:'\u81ea\u5b9a\u4e49\u65b9\u5411'});
-      }
-    });
-    var _del1=p.deletedTopics||[]; aiList=aiList.filter(function(t){return _del1.indexOf(t.label)<0;});
-    return aiList;
-  }
-  if(!p||!p.kb) return [];
-  var allKnown=[];
-  p.kb.forEach(function(k){ (k.known||[]).forEach(function(x){ allKnown.push(x); }); });
-  // 通用方向推荐：不硬编码特定城市关键词，直接从RAG库内容提取产业关键词
-  // 当AI推荐不可用时，给出通用占位方向
-  topics=[
-    {label:p.city+'主导产业补链',icon:'\ud83c\udfed',type:'补链',desc:'基于城市智库产业链缺口分析'},
-    {label:p.city+'产业转移承接',icon:'\ud83d\udd04',type:'承接转移',desc:'承接产业转移，利用区位成本优势'},
-    {label:p.city+'特色产业升级',icon:'\u2b06\ufe0f',type:'精深加工',desc:'现有产业向高附加值延伸'},
-  ];
-  // Append user-defined custom topics
-  var customs = (p.customTopics||[]);
-  customs.forEach(function(ct){
-    if(!topics.some(function(t){return t.label===ct;})){
-      topics.push({label:ct, icon:'\ud83d\udccc', type:'custom', desc:'\u81ea\u5b9a\u4e49\u65b9\u5411'});
-    }
-  });
-  // 过滤掉用户明确删除过的方向
-  var _del=p.deletedTopics||[];
-  topics=topics.filter(function(t){return _del.indexOf(t.label)<0;});
+  stored.forEach(function(row){add(row,false);});custom.forEach(function(row){add(row,true);});
+  // Retain an explicitly saved current topic; never invent a city's industries.
+  if(!topics.length&&typeof p.topic==='string')add(p.topic,false);
   return topics;
 }
 
@@ -4023,9 +4034,9 @@ function homePage(p){
             '<div id="reportContent" class="industry-prose" style="padding:20px 22px;font-size:13px;color:#1e293b;line-height:1.85;min-height:80px">'+topicReportMarkup(running.text||'')+'</div>'+
           '</div>'
         : (REPORTSTATE[cur]&&REPORTSTATE[cur].phaseByTopic&&REPORTSTATE[cur].phaseByTopic[p.topic]===2)
-        ? reportHtml(p)+'<div id="chainMapBlock" style="animation:fadeIn .6s ease-out">'+chainMapHtml(p)+'</div>'+'<div id="actionItemsBlock" style="animation:fadeIn .8s ease-out .3s both">'+restoreActionItems()+'</div>'+restoreConfirmPanel()
+        ? industrySavedReportHtml(p)
         : (REPORTSTATE[cur]&&REPORTSTATE[cur].text)||(PENDING_CONFIRMS[cur]&&PENDING_CONFIRMS[cur].length)||(REPORTSTATE[cur]&&p&&_findPendingForTopic(REPORTSTATE[cur],p.topic).length)
-        ? reportHtml(p)+restoreConfirmPanel()
+        ? industrySavedReportHtml(p)
         : '<div class="industry-empty" style="text-align:center;padding:48px 20px">'+
             '<div style="font-size:40px;margin-bottom:12px">📋</div>'+
             '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">'+

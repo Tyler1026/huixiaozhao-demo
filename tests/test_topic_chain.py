@@ -406,11 +406,70 @@ class ChainModelContractTests(unittest.TestCase):
         self.assertEqual(calls[0][2], 4800)
         self.assertEqual(result['contract'], 'topic-chain-v1')
 
-    def test_malformed_model_output_fails_not_successful_empty(self):
+    def test_malformed_model_output_keeps_literal_source_nodes_and_marks_partial(self):
         bundle = research(['计划推进商业火箭总装测试平台建设，具体实施条件将另行研究并向社会发布。'])
         for raw in ('not-json', {'nodes': 'invalid'}, [], None):
-            with self.subTest(raw=raw), self.assertRaises(TopicChainError):
-                build_chain(CONTEXT, bundle, lambda *args: raw)
+            with self.subTest(raw=raw):
+                result = build_chain(CONTEXT, bundle, lambda *args: raw)
+                self.assertEqual(result['status'], 'partial')
+                self.assertEqual(result['generation']['mode'], 'source_only')
+                self.assertTrue(nodes(result))
+                for node in nodes(result):
+                    self.assertEqual(node['level'], 'unknown')
+                    self.assertEqual(node['extraction_method'], 'literal_source_fallback')
+                    self.assertEqual(node['local_leaders'], [])
+                    self.assertIn(node['name'], node['sources'][0]['quote'])
+
+    def test_failed_model_with_no_literal_product_still_fails_explicitly(self):
+        bundle = research(['商业航天产业是新的发展方向，具体产业链布局与企业经营情况仍需要进一步调研。'])
+        with self.assertRaises(TopicChainError) as raised:
+            build_chain(CONTEXT, bundle, lambda *args: None)
+        self.assertEqual(raised.exception.code, 'chain_selection_unavailable')
+
+    def test_source_only_fallback_preserves_multiple_specific_products(self):
+        topic = '低空经济整机配套承接集聚'
+        bundle = research(['低空产业计划发展无人机整机、飞控系统芯片、航空发动机，相关研发安排仍待论证。'], topic=topic)
+        result = build_chain(dict(CONTEXT, topic=topic), bundle, lambda *args: None)
+        names = {node['name'] for node in nodes(result)}
+        self.assertIn('飞控系统芯片', names)
+        self.assertNotIn('飞控系统', names)
+        self.assertIn('航空发动机', names)
+        self.assertIn('无人机整机', names)
+        self.assertEqual(result['edges'], [])
+
+    def test_live_unavailability_does_not_discard_valid_archived_originals(self):
+        bundle = research(['当前全钒液流电池已经并网运行，相关项目的生产主体和产地仍须核实。'], topic='氢基能源与长时储能装备补链')
+        bundle['status'] = 'unavailable'
+        for source in bundle['sources'].values():
+            source['archived'] = True
+        result = build_chain(dict(CONTEXT, topic=bundle['topic']), bundle, lambda *args: None)
+        self.assertEqual(result['status'], 'partial')
+        self.assertTrue(all(source['archived'] for source in result['sources']))
+        self.assertEqual(bundle['status'], 'unavailable')
+
+    def test_source_only_extraction_does_not_use_company_name_as_equipment(self):
+        bundle = research(['上海航天设备制造总厂位于闵行区，企业文化展示厅向社会开放，具体参观时间另行公布。'])
+        with self.assertRaises(TopicChainError):
+            build_chain(CONTEXT, bundle, lambda *args: None)
+
+    def test_source_only_extraction_does_not_turn_predicate_into_product_name(self):
+        topic = '生物医药上游耗材国产替代招引'
+        bundle = research(['当前相关成本直接影响生物药生产，市经信委在过滤膜方面开展研究，具体项目资料另行提供。'], topic=topic)
+        with self.assertRaises(TopicChainError):
+            build_chain(dict(CONTEXT, topic=topic), bundle, lambda *args: None)
+
+    def test_source_only_extraction_rejects_narrative_prefix_instead_of_guessing_a_node(self):
+        cases = [
+            ('低空经济整机配套承接集聚',
+             '低空研发部门在年度会议上说明，研究团队可根据实际需求持续优化航空发动机，后续研发程序另行公布。'),
+            (TOPIC, '研究人员认为我们需要尽快取得星载计算单元，尚未决定研发路线与具体项目建设条件。'),
+        ]
+        for topic, quote in cases:
+            with self.subTest(topic=topic):
+                bundle = research([quote], topic=topic)
+                with self.assertRaises(TopicChainError) as raised:
+                    build_chain(dict(CONTEXT, topic=topic), bundle, lambda *args: None)
+                self.assertEqual(raised.exception.code, 'chain_selection_unavailable')
 
 
 class ConstraintSubjectSelectionTests(unittest.TestCase):

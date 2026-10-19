@@ -65,3 +65,10 @@ test('actual admin persist filters graph writes while preserving the local cache
  c.persist();await new Promise(setImmediate);assert.equal(e.events.posts.length,1);assert.ok(e.c.REPORTSTATE.p.chainByTopic);
  assert.ok(JSON.parse(e.storage.state).REPORTSTATE.p.chainByTopic);assert.ok(Object.keys(e.events.posts[0].REPORTSTATE.p).every(k=>!k.startsWith('chain')));
 });
+for(const app of ['index','ops']){
+ test(app+' regeneration keeps the existing map visible and sends its exact input identity',async()=>{
+  const e=setup(app),g=gate();cache(e);e.setModelGate(g);const work=e.c.requestChainGeneration();await modelStarted(e);
+  assert.match(e.c.chainMapHtml(e.c.P()),/已有图谱/);assert.match(e.c.chainMapHtml(e.c.P()),/aria-busy="true"/);
+  assert.equal(e.events.requests[0].sourceIdentity,e.c.savedEvidenceIdentity('p',topic));g.resolve();assert.equal(await work,true);
+ });
+}

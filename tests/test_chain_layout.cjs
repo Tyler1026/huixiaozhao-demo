@@ -172,11 +172,12 @@ for(const side of ['index','ops']){
   const g=portalFixture(c);c.openChainLayoutNode(g.button,0);g.button.isConnected=false;g.observer().fire();
   assert.equal(g.drawer.parentNode,null);assert.notEqual(g.button.focused,true);
  });
- test(side+' owner view switches and new rendering close a portaled drawer',()=>{
+ test(side+' view switch closes drawer but pure markup rendering preserves it',()=>{
   const c=setup(side),f=portalFixture(c);c.openChainLayoutNode(f.button,0);
   c.setChainExplorerMode({closest:()=>f.root},'assessment');assert.equal(f.drawer.hidden,true);assert.equal(f.drawer.parentNode,f.root);assert.notEqual(f.button.focused,true);
   c.openChainLayoutNode(f.button,0);c.chainExplorerHtml('新方向',[],null,{},[],'empty',{});
-  assert.equal(f.drawer.hidden,true);assert.equal(c.CHAIN_OPEN_DRAWER,null);
+  assert.equal(f.drawer.hidden,false);assert.equal(c.CHAIN_OPEN_DRAWER,f.drawer);
+  f.root.isConnected=false;f.observer().fire();assert.equal(f.drawer.parentNode,null);assert.equal(c.CHAIN_OPEN_DRAWER,null);
  });
  test(side+' only one body drawer remains open when another graph node is opened',()=>{
   const c=setup(side),first=portalFixture(c),second=portalFixture(c);

@@ -477,8 +477,8 @@ def normalize_chain_plan(raw, research, context):
         'rejected_count': rejected, 'omitted_count': len(nodes)-count}
 
 
-def _literal_fallback(context, research, missing):
-    """Extract at most one already-written complete taxonomy noun per lane.
+def _literal_fallback(context, research, missing, *, limit_per_lane=1):
+    """Extract already-written complete taxonomy nouns, bounded per lane.
 
     No source text is composed here. Explicit industry scope and both lexical
     boundaries are required in addition to the ordinary node/source guards.
@@ -492,14 +492,14 @@ def _literal_fallback(context, research, missing):
     selected = []
     for lane in missing:
         terms = sorted((term for term in taxonomy['terms'][lane] if len(term) >= 4), key=len, reverse=True)
-        found = None
+        lane_count = 0
         for term in terms:
             if classify_node(term, topic)['lane'] != lane:
                 continue
             for sid, source in catalog.items():
                 quote = source['quote']
                 title = source.get('title') if isinstance(source.get('title'), str) else ''
-                if len(quote) > 1600 or not (re.search(cue, quote, re.I) or re.search(cue, title, re.I)):
+                if len(quote) > (1600 if limit_per_lane == 1 else MAX_QUOTE_CHARS) or not (re.search(cue, quote, re.I) or re.search(cue, title, re.I)):
                     continue
                 # Low-altitude sources sometimes share a document with large
                 # civil-aircraft projects; that background is not a low-altitude
@@ -514,12 +514,11 @@ def _literal_fallback(context, research, missing):
                 candidate = {'name': term, 'evidence_ids': [sid]}
                 checked = normalize_chain_plan({'nodes': [candidate]}, research, context)
                 if any(group['seg'] == lane and group['nodes'] for group in checked['chain']):
-                    found = candidate
+                    selected.append(candidate)
+                    lane_count += 1
                     break
-            if found:
+            if lane_count >= limit_per_lane:
                 break
-        if found:
-            selected.append(found)
     return selected
 
 
@@ -623,17 +622,111 @@ def _dependency_selection(context, research, result):
     return additions[:8]
 
 
+def _literal_activity_selection(context, research):
+    """Read complete source noun phrases when no model is available.
+
+    Public taxonomy words locate a passage, but cannot shorten a source's
+    product (for example, a flight-control chip is not a flight-control
+    system). Modifiers and explicit equipment/service endings stay attached.
+    Ambiguous positions remain in the ordinary unclassified collection.
+    """
+    taxonomy = taxonomy_for_topic(context.get('topic'))
+    cue = _DOMAIN_CUES.get(taxonomy['id'])
+    if not cue:
+        return []
+    endings = ('生产线', '产线', '基地', '平台', '装备', '设备', '终端', '系统', '装置',
+               '芯片', '模块', '服务', '材料', '部件', '产品', '码头', '电站')
+    words = {term for terms in taxonomy['terms'].values() for term in terms if len(term) >= 3}
+    words.update(endings)
+    pattern = re.compile('|'.join(re.escape(term) for term in sorted(words, key=len, reverse=True)))
+    separators = re.compile(r'[\s，,。！？!?；;：:、（）()\[\]“”「」\'"+／/]')
+    actions = re.compile(r'已(?:经)?(?:建成|投运|投产|完成|交付|形成)|'
+                         r'正在|当前|目前|如今|现有|现已|其中|包括|采用|依托|研制|研发|制造|生产|'
+                         r'建设|推动|推进|支持|发展|提供|配备|交付|具备|属于|作为|'
+                         r'开展|推出|打造|搭建|突破|面向|涉及|实现|深耕|验证|有了|加速|是|为|的')
+    right_boundary = re.compile(r'^(?:$|[\s，,。！？!?；;：:、（）()\[\]“”「」\'"+／/]|'
+                                r'在|已|正|将|为|是|等|超[0-9]|约[0-9]|具备|依靠|实现|下线|投运|投产|'
+                                r'成功|完成|服务于|面向|尚|仍|目前|建设|研制|研发|制造|生产)')
+    extension = re.compile('(?:' + '|'.join(map(re.escape, endings)) + ')+')
+    catalog = chain_source_catalog(research, context)
+    selected = {}
+    for sid, source in catalog.items():
+        quote = source['quote']
+        for match in pattern.finditer(quote):
+            end = match.end()
+            suffix = extension.match(quote, end)
+            if suffix:
+                end = suffix.end()
+            if (not right_boundary.match(quote[end:])
+                    or re.match(r'(?:制造)?(?:总)?厂|(?:股份|有限责任|有限)公司', quote[end:])):
+                continue
+            start = max(0, match.start() - 40)
+            prefix = quote[start:match.start()]
+            boundary = list(separators.finditer(prefix)) + list(actions.finditer(prefix))
+            if boundary:
+                start += max(item.end() for item in boundary)
+            name = quote[start:end]
+            # Counters are part of a source sentence, not the equipment name.
+            counter = re.match(r'(?:[一二三四五六七八九十两]+|[0-9]+)(?:套|台|个|种|项|颗)', name)
+            if counter:
+                start += counter.end()
+                name = quote[start:end]
+            if (not 3 <= len(name) <= 40 or re.search(r'\s|公司|企业|集团|当前|全国|我国|全球|领域|阶段|项目规模|'
+                    r'影响|降低|增加|提高|促进|加快|推动|依赖|依靠|明确|相关|在(?!轨)|'
+                    r'我们|他们|研究人员|研究团队|是否|应该|需要|能够|可以|根据|尽快|持续|优化|取得|不仅|使得|也使', name)
+                    or name.startswith(('和', '与', '及', '或', '将', '可', '被', '其', '该', '在', '向', '到', '从', '有', '加速', '国内', '首个', '首台'))
+                    or not re.search(r'[\u3400-\u9fffA-Za-z]', name[0])
+                    or not _topic_supports(name, quote, context.get('topic'))
+                    or (match.group() in endings and not re.search(cue, name, re.I))):
+                continue
+            candidate = {'name': name, 'evidence_ids': [sid]}
+            checked = normalize_chain_plan({'nodes': [candidate]}, research, context)
+            if not _retained_selection(checked):
+                continue
+            key = _name_key(name)
+            row = selected.setdefault(key, {'name': name, 'evidence_ids': []})
+            if sid not in row['evidence_ids']:
+                row['evidence_ids'].append(sid)
+    return list(selected.values())[:MAX_NODES * 3]
+
+
+def _source_only_chain(context, research, error):
+    """Keep usable originals when model selection fails, without a verdict.
+
+    The public taxonomy only supplies search nouns. A returned node still
+    needs a whole literal match and the normal source/topic checks. No node
+    is added just to fill a lane, and no strength or connection is inferred.
+    """
+    selected = _literal_activity_selection(context, research)
+    selected.extend(_literal_fallback(context, research, LANES, limit_per_lane=MAX_NODES))
+    initial = normalize_chain_plan({'nodes': selected}, research, context)
+    dependencies = _dependency_selection(context, research, initial)
+    result = normalize_chain_plan({'nodes': _retained_selection(initial) + dependencies}, research, context)
+    if not any(group['nodes'] for group in result['chain']) and not result['unclassified']:
+        raise TopicChainError('chain_selection_unavailable', '已取得原文，但尚未能提取明确产业环节，请补充材料或重试。') from error
+    for node in [node for group in result['chain'] for node in group['nodes']] + result['unclassified']:
+        node['extraction_method'] = 'literal_source_fallback'
+    result['status'] = result['coverage']['status'] = 'partial'
+    result['coverage']['selection_partial'] = True
+    result['generation'] = {
+        'mode': 'source_only', 'model_status': 'unavailable',
+        'errors': [{'code': 'chain_model_selection_unavailable',
+                    'message': '模型整理未完成，当前仅展示从已核验原文直接提取的环节。'}],
+        'limitations': ['仅为原文中可直接识别的环节，未完成模型完整性检查和薄弱程度复核。']}
+    return result
+
+
 def build_chain(context, research, complete):
-    if research.get('status') not in ('ready', 'pending') or not chain_source_catalog(research, context):
+    if not chain_source_catalog(research, context):
         raise TopicChainError('chain_research_unavailable', '本次未取得可追溯的产业链原始资料，已有图谱保留。')
     system, prompt = chain_prompt(context, research)
-    raw = complete(system, prompt, 4800)
     try:
+        raw = complete(system, prompt, 4800)
         if isinstance(raw, str):
             raw = json.loads(raw.strip().removeprefix('```json').removesuffix('```').strip())
-    except (TypeError, ValueError):
-        raise TopicChainError('invalid_chain_plan', '图谱节点结构未完成，请重试。') from None
-    result = normalize_chain_plan(raw, research, context)
+        result = normalize_chain_plan(raw, research, context)
+    except Exception as error:
+        return _source_only_chain(context, research, error)
     payload = json.loads(prompt)
     missing = [lane for lane in result['coverage']['missing_lanes']
                if payload.get('facet_sources', {}).get(lane)]
@@ -713,7 +806,7 @@ def build_chain(context, research, complete):
                 node['extraction_method'] = 'literal_dependency'
             elif node['id'] in methods:
                 node['extraction_method'] = methods[node['id']]
-    if research.get('status') == 'pending' and result['status'] != 'empty':
+    if research.get('status') != 'ready' and result['status'] != 'empty':
         result['status'] = result['coverage']['status'] = 'partial'
         result['coverage']['research_partial'] = True
     return result

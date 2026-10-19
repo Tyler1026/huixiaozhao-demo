@@ -572,3 +572,24 @@
   .chain-node-drawer-close { transition: none; }
   .chain-explorer .chain-layout-node:not(:disabled):not([aria-disabled="true"]):hover { transform: none; }
 }
+
+/* Analysis-derived directions are distinct from the single submission task. */
+.industry-priorities { margin-top:24px; padding:22px; border:1px solid #e0e8f0; border-radius:14px; background:#fff; }
+.industry-priorities-heading { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+.industry-priorities-heading h3 { margin:0; font-size:16px; color:#34536f; }
+.industry-priorities-heading > span,.industry-priority-scope { color:#718ba1; font-size:11px; }
+.industry-priority-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); gap:14px; }
+.industry-priority-card { border:1px solid #dfe8f1; border-radius:12px; padding:18px; background:#fcfdff; color:#526b80; font-size:12px; line-height:1.8; overflow-wrap:anywhere; }
+.industry-priority-card h4 { margin:7px 0 10px; color:#2d5271; font-size:15px; }
+.industry-priority-card p { margin:6px 0 12px; }
+.industry-priority-action { padding:12px; margin:14px 0; border-radius:8px; background:#f0f5fa; }
+.industry-priority-action strong { font-size:11px; color:#60819d; }
+.industry-priority-action p { margin-bottom:0; }
+.industry-priority-card summary { color:#517b9e; cursor:pointer; }
+.industry-priority-empty { margin:0; color:#71869a; font-size:12px; line-height:1.8; }
+.chain-generation-status { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px 18px; margin:16px 0; border:1px solid #d7e5f1; border-radius:12px; background:#f5f9fd; color:#54758e; font-size:12px; }
+.chain-generation-status button { border:0; color:#7892a7; background:transparent; white-space:nowrap; }
+
+.chain-generate-button { border:1px solid #bcd0e0; border-radius:9px; padding:10px 16px; background:#f4f8fc; color:#376384; font:inherit; font-size:12px; font-weight:600; cursor:pointer; transition:background .15s,border-color .15s; }
+.chain-generate-button:hover { background:#eaf2f9; border-color:#91b3cf; }
+.chain-generate-button:focus-visible { outline:3px solid #95b8d4; outline-offset:3px; }

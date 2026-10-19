@@ -47,6 +47,47 @@ def _string(value):
     return value.strip() if isinstance(value, str) else ''
 
 
+def _project_topics(project, report):
+    """Read the saved direction catalogue, not only the current selection.
+
+    Selection is client navigation state and may reach storage after the next
+    request. The persisted AI/custom direction lists remain the source of
+    available directions. A deleted direction must not be revived by an old
+    report or a stale catalogue entry.
+    """
+    def labels(rows):
+        return {_string(row.get('label')) if isinstance(row, dict) else _string(row)
+                for row in rows if isinstance(row, (str, dict))}
+
+    allowed = {_string(project.get('topic'))}
+    for field in ('topics', 'customTopics'):
+        if isinstance(project.get(field), list):
+            allowed.update(labels(project[field]))
+    ai_topics = project.get('aiTopics')
+    if isinstance(ai_topics, dict) and isinstance(ai_topics.get('list'), list):
+        allowed.update(labels(ai_topics['list']))
+    for field in ('aiReportByTopic', 'pendingByTopic'):
+        if isinstance(report.get(field), dict):
+            allowed.update(_string(label) for label in report[field])
+
+    def timestamp(value):
+        return value if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0 else 0
+
+    deleted, created = {}, {}
+    for owner in (project, report):
+        for label in owner.get('deletedTopics', []) if isinstance(owner.get('deletedTopics'), list) else []:
+            if isinstance(label, str):
+                deleted[label] = max(deleted.get(label, 0), 1)
+        for field, target in (('topicDeletedAt', deleted), ('topicCreatedAt', created)):
+            table = owner.get(field)
+            if isinstance(table, dict):
+                for label, value in table.items():
+                    if isinstance(label, str):
+                        target[label] = max(target.get(label, 0), timestamp(value))
+    return {label for label in allowed if label and
+            (not deleted.get(label) or created.get(label, 0) > deleted[label])}
+
+
 def _scope(body, state):
     """The state must already have been scoped to the authenticated session."""
     key = body.get('projectKey')
@@ -56,11 +97,7 @@ def _scope(body, state):
     project = projects[key]
     report = (state.get('REPORTSTATE') or {}).get(key) or {}
     topic = body.get('topic') or project.get('topic') or ''
-    allowed = {project.get('topic', '')}
-    for item in project.get('topics') or []:
-        allowed.add(item.get('label', '') if isinstance(item, dict) else str(item))
-    allowed.update((report.get('aiReportByTopic') or {}).keys())
-    allowed.update((report.get('pendingByTopic') or {}).keys())
+    allowed = _project_topics(project, report)
     if not isinstance(topic, str) or not topic or topic not in allowed:
         raise AuthError(409, 'topic_mismatch', '方向与当前工作区不一致，请刷新后重试')
     request_id = project.get('reportRequestId') or report.get('reportRequestId') or ''

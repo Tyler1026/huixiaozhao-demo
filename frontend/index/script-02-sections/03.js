@@ -44,37 +44,62 @@ var cur=null,view='setup',detailOpen=false,detailData=null,curKb=null,curDemand=
    避免用户正在往下阅读时莫名弹回顶部；若 view/cur 发生变化（用户主动切模块/切项目）则不还原、正常回到顶部。 ═══ */
 var _SCROLL_SELECTORS='.report-scroll,.clues-scroll,.knowledge-scroll,.conversation-scroll,.docking-scroll,.settings-scroll,.detail-scroll';
 var _scrollMemory={key:null,tops:null};
-// 用户真实滚动时间戳；_captureMs 记录本次 capture 时刻
-// restore 的 apply 只跳过 capture 之后产生的新滚动（说明用户在新DOM上主动操作了）
-var _lastUserScrollMs=0;
+var _renderedScrollKey=null, _scrollCaptureSeq=0;
+function _viewScrollKey(){
+  return String(typeof _authEpoch==='number'?_authEpoch:0)+'::'+view+'::'+cur+(view==='report'?'::'+String(cur&&PROJECTS[cur]&&PROJECTS[cur].topic||''):'');
+}
+// Scroll events also come from layout clamping and our own restoration. Only
+// actual user input cancels a pending restore; a same-millisecond input counts.
+var _lastUserScrollMs=0,_scrollInputSeq=0,_scrollCaptureInputSeq=0;
 var _scrollCaptureMs=0;
-document.addEventListener('scroll',function(){_lastUserScrollMs=Date.now();},true);
+function _markScrollInput(event){
+  if(event&&event.isTrusted===false)return;
+  _lastUserScrollMs=Date.now();_scrollInputSeq++;
+}
+['wheel','touchmove','pointerdown'].forEach(function(name){document.addEventListener(name,_markScrollInput,{capture:true,passive:true});});
+document.addEventListener('pointermove',function(event){if(event.buttons)_markScrollInput(event);},{capture:true,passive:true});
+document.addEventListener('keydown',function(event){
+  if(['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].indexOf(event.key)>=0)_markScrollInput(event);
+},true);
 function _captureScroll(){
-  var tops={};
+  var tops={},anchors={};
   _scrollCaptureMs=Date.now();
+  _scrollCaptureInputSeq=_scrollInputSeq;
+  _scrollCaptureSeq++;
   try{
     document.querySelectorAll(_SCROLL_SELECTORS).forEach(function(el,i){
       // 用 class + 序号做键，重建后按同样规则匹配还原
       var cls=(el.className||'').split(/\s+/)[0]||'sc';
-      tops[cls+'#'+i]=el.scrollTop;
+      var key=cls+'#'+i;tops[key]=el.scrollTop;
+      var root=view==='report'&&document.getElementById('root'),chain=root&&root.querySelector?root.querySelector('.chain-explorer'):null;
+      if(chain&&el.contains&&el.contains(chain)&&el.getBoundingClientRect&&chain.getBoundingClientRect){
+        var viewport=el.getBoundingClientRect(),rect=chain.getBoundingClientRect();
+        if(rect.bottom>viewport.top&&rect.top<viewport.bottom)anchors[key]={node:chain,offset:rect.top-viewport.top};
+      }
     });
   }catch(e){}
-  _scrollMemory={key:view+'::'+cur, tops:tops};
+  // The DOM still belongs to the previous route when a click has already changed view/topic.
+  _scrollMemory={key:_renderedScrollKey||_viewScrollKey(),tops:tops,anchors:anchors};
 }
-function _restoreScroll(prevKey, tops){
+function _restoreScroll(prevKey, tops, anchors){
   // 仅当重渲染后仍是同一 view+cur 才还原（否则说明用户切了模块/项目，应停在顶部）
-  if(!tops || prevKey!==(view+'::'+cur)) return;
+  if(!tops || prevKey!==_viewScrollKey()) return;
+  var captureSeq=_scrollCaptureSeq,inputSeq=_scrollCaptureInputSeq;
+  anchors=anchors||(_scrollMemory.tops===tops?_scrollMemory.anchors:null)||{};
   // 是否有任何需要还原的非零位置；全为 0 则无需处理（避免无谓循环）
   var _has=false; for(var _k in tops){ if(tops[_k]>0){ _has=true; break; } }
   if(!_has) return;
   var apply=function(){
     // capture之后用户在新DOM上主动滚动了：让用户掌控位置，不强行覆盖
-    if(_lastUserScrollMs > _scrollCaptureMs) return;
+    if(captureSeq!==_scrollCaptureSeq||prevKey!==_viewScrollKey()||_scrollInputSeq!==inputSeq) return;
     try{
       document.querySelectorAll(_SCROLL_SELECTORS).forEach(function(el,i){
         var cls=(el.className||'').split(/\s+/)[0]||'sc';
-        var v=tops[cls+'#'+i];
-        if(v!=null && v>0) el.scrollTop=v;
+        var key=cls+'#'+i,v=tops[key],anchor=anchors[key];
+        if(anchor&&anchor.node.isConnected!==false&&el.contains&&el.contains(anchor.node)){
+          v=el.scrollTop+anchor.node.getBoundingClientRect().top-el.getBoundingClientRect().top-anchor.offset;
+        }
+        if(v!=null&&v>=0)el.scrollTop=v;
       });
     }catch(e){}
   };
@@ -82,6 +107,35 @@ function _restoreScroll(prevKey, tops){
   if(window.requestAnimationFrame) requestAnimationFrame(apply);
   // 300ms内用户尚未开始滚动，足以应对异步重排归零；500/800ms已无必要。
   [30,80,160,300].forEach(function(ms){ setTimeout(apply, ms); });
+}
+
+
+/* Reuse a graph only while its source data and authenticated route are unchanged.
+   View mode and expanded details belong to the reader, not to the data version. */
+function _chainRenderDataKey(){
+  var state=typeof REPORTSTATE!=='undefined'&&REPORTSTATE[cur],topic=cur&&PROJECTS[cur]&&PROJECTS[cur].topic;
+  if(!state||!topic||!Array.isArray((state.chainByTopic||{})[topic]))return null;
+  try{return JSON.stringify([(state.chainByTopic||{})[topic],(state.chainUnclassifiedByTopic||{})[topic],(state.chainStatusByTopic||{})[topic],(state.chainEvidenceByTopic||{})[topic]]);}catch(error){return null;}
+}
+function _captureChainExplorer(){
+  if(view!=='report'||_renderedScrollKey!==_viewScrollKey())return null;
+  var root=document.getElementById('root'),chain=root&&root.querySelector?root.querySelector('.chain-explorer'):null;
+  return chain&&chain._renderDataKey?{element:chain,dataKey:chain._renderDataKey,key:_viewScrollKey(),epoch:_authEpoch}:null;
+}
+function _restoreChainExplorer(saved){
+  var root=document.getElementById('root'),chain=root&&root.querySelector?root.querySelector('.chain-explorer'):null;
+  if(!chain){
+    if(typeof CHAIN_OPEN_DRAWER!=='undefined'&&CHAIN_OPEN_DRAWER&&typeof closeChainLayoutNode==='function')closeChainLayoutNode(CHAIN_OPEN_DRAWER,false);
+    return;
+  }
+  var dataKey=_chainRenderDataKey();
+  if(saved&&dataKey&&saved.key===_viewScrollKey()&&saved.epoch===_authEpoch&&saved.dataKey===dataKey){
+    chain.replaceWith(saved.element);
+  }else{
+    chain._renderDataKey=dataKey;
+    // Close a portal whose source graph was replaced, even before its observer runs.
+    if(typeof CHAIN_OPEN_DRAWER!=='undefined'&&CHAIN_OPEN_DRAWER&&typeof closeChainLayoutNode==='function')closeChainLayoutNode(CHAIN_OPEN_DRAWER,false);
+  }
 }
 
 /* AUTH: 当前登录态 {user,city,projKey,resident,who,org,role}；null=未登录

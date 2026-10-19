@@ -218,14 +218,14 @@ body.ops-mode .conversation-scroll .prompt-row{min-height:56px}
 .topic-grid .topic-row:hover{box-shadow:0 2px 16px rgba(26,86,219,.1);border-color:#c7d2fe;}
 /* 滚动性能优化：
    1) 主滚动容器禁止 scroll chaining（overscroll-behavior:contain）——避免滚轮到边界时传导给外层导致的"被拖住"顿感。
-   2) 产业报告/企业线索/时间轴等长内容用 content-visibility:auto 让浏览器 skip 屏外 render，千节点报告下滑不再每帧全量 layout。
+   2) 企业线索/时间轴等独立条目使用 content-visibility:auto；报告区保持真实高度，避免重绘时估算高度把图谱阅读位置夹回顶部。
    3) 滚动容器提升至独立合成层，滚动纯 GPU 合成不触发主线程 paint。 */
 .conversation-scroll,.knowledge-scroll,.report-scroll,.clues-scroll,.docking-scroll,.settings-scroll,.detail-scroll{
   overscroll-behavior:contain;
   -webkit-overflow-scrolling:touch;
   will-change:scroll-position;
 }
-#reportArea>*,.knowledge-scroll .topic-row,.clues-scroll .clue-row,.docking-scroll .timeline-item,.docking-scroll .task-row{
+.knowledge-scroll .topic-row,.clues-scroll .clue-row,.docking-scroll .timeline-item,.docking-scroll .task-row{
   content-visibility:auto;
   contain-intrinsic-size:auto 220px;
 }

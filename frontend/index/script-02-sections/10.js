@@ -142,6 +142,7 @@ function toggleSw(e){e.stopPropagation();var m=$('#swMenu');m.style.display=m.st
 function switchProj(k){cur=k;view='report';detailData=null;try{_sanitizeReportState();}catch(_){}render();toast('已进入「'+PROJECTS[k].topic+'」研判工作区')}
 function newProj(){var m=$('#swMenu');if(m)m.style.display='none';newProjModal()}
 function go(v){
+  if(v==='report')cur=industryAnalysisWorkspaceKey(cur);
   if(isLocked(v)){
     var r=kbReadiness();
     var vnames={report:'产业分析',home:'招商对接',docking:'招商对接'};

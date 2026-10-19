@@ -30,6 +30,44 @@ def read(state, topic=TOPIC, **kwargs):
 
 
 class TopicEvidenceTests(unittest.TestCase):
+    def test_saved_ai_and_custom_directions_do_not_depend_on_current_selection(self):
+        state = fixture('商业火箭卫星配套本地化补链')
+        project = state['PROJECTS'][KEY]
+        project['aiTopics'] = {'list': [{'label': TOPIC}, {'label': '低空经济整机配套承接集聚'}]}
+        project['customTopics'] = ['高端陶瓷基板配套招引']
+        for topic in (TOPIC, '低空经济整机配套承接集聚', '高端陶瓷基板配套招引'):
+            with self.subTest(topic=topic):
+                result = read(state, topic)
+                self.assertEqual(result['topic'], topic)
+        self.assertEqual(project['topic'], '商业火箭卫星配套本地化补链')
+
+    def test_deleted_direction_is_not_revived_by_saved_report_or_stale_catalogue(self):
+        state = fixture()
+        state['PROJECTS'][KEY]['aiTopics'] = {'list': [{'label': TOPIC}]}
+        state['PROJECTS'][KEY]['deletedTopics'] = [TOPIC]
+        with self.assertRaises(AuthError) as error:
+            read(state)
+        self.assertEqual(error.exception.code, 'topic_mismatch')
+
+    def test_recreated_direction_requires_newer_creation_than_deletion(self):
+        state = fixture()
+        project = state['PROJECTS'][KEY]
+        project['deletedTopics'] = [TOPIC]
+        project['topicDeletedAt'] = {TOPIC: 100}
+        project['topicCreatedAt'] = {TOPIC: 99}
+        with self.assertRaises(AuthError):
+            read(state)
+        project['topicCreatedAt'][TOPIC] = 101
+        self.assertEqual(read(state)['topic'], TOPIC)
+        state['REPORTSTATE'][KEY]['topicDeletedAt'] = {TOPIC: 102}
+        with self.assertRaises(AuthError):
+            read(state)
+
+    def test_unsaved_topic_cannot_be_selected_through_request_body(self):
+        with self.assertRaises(AuthError) as error:
+            read(fixture(), '不存在的招商方向')
+        self.assertEqual(error.exception.code, 'topic_mismatch')
+
     def test_five_cards_require_specific_industry_terms(self):
         cases = [
             ('商业火箭卫星配套本地化补链', '闵行商业航天火箭卫星供应链待核实。', '生物医药上游过滤耗材的国产替代情况。'),
