@@ -50,6 +50,9 @@ function boot() {
 function displayedSelect(html) {
   return html.match(/<select id="stage-target-demand"[\s\S]*?<\/select>/)?.[0];
 }
+function completedMilestones(html) {
+  return Array.from(html.matchAll(/<span data-ops-icon="success"[^>]*><\/span>\s*([^<]+)/g), match => match[1].trim());
+}
 function firstBadge(html) {
   return html.match(/border-radius:20px;font-size:11px;font-weight:650">([^<]*)/)[1];
 }
@@ -60,7 +63,7 @@ test('actual ops v2 card, progress, city badge and options share submitted effec
   assert.equal(firstBadge(html),'资源匹配');
   assert.match(html,/font-size:12px;font-weight:650;display:inline-block">资源匹配/);
   assert.match(html,/font-weight:700;color:#1a56db[^>]*>资源匹配/);
-  assert.match(html,/✓ 确认需求/);
+  assert.ok(completedMilestones(html).includes('确认需求'));
   assert.match(displayedSelect(html),/value="5">推进到「招商对接」/);
   assert.doesNotMatch(displayedSelect(html),/value="4"/);
   assert.equal(JSON.stringify(c.PROJECTS),before);
@@ -88,10 +91,10 @@ test('direct demands never imply material preparation, AI analysis or confirmati
   c.opsDemandSpecificationHtml=()=>'';
   const before=JSON.stringify(demand),html=c.opsDemandResults();
   assert.equal(firstBadge(html),'已提交需求');assert.match(html,/对接进展记录/);
-  assert.doesNotMatch(html,/✓ 资料准备|✓ AI 研判|✓ 确认需求/);
+  assert.ok(!completedMilestones(html).some(label => ['资料准备','AI 研判','确认需求'].includes(label)));
   assert.match(displayedSelect(html),/value="5">推进到「招商对接」/);
   assert.equal(JSON.stringify(demand),before);
-  demand.stage=5;const progressed=c.opsDemandResults();assert.match(progressed,/招商对接/);assert.doesNotMatch(progressed,/✓ 资料准备|✓ AI 研判|✓ 确认需求/);
+  demand.stage=5;const progressed=c.opsDemandResults();assert.match(progressed,/招商对接/);assert.ok(!completedMilestones(progressed).some(label => ['资料准备','AI 研判','确认需求'].includes(label)));
 });
 
 test('city badge uses maximum effective progress across its actual child demands',()=>{

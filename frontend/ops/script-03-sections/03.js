@@ -152,7 +152,7 @@ function pushReportToRag(reqId,btn){
   var request=REPORT_REQUESTS.find(function(r){return r.id===reqId;});
   if(!request||request.status!=='done'){toast('该报告申请尚未完成，请刷新页面后重试');return;}
   var city=request.city;
-  if(btn){btn.disabled=true;btn.textContent='⏳ 推送中…';}
+  if(btn){btn.disabled=true;btn.innerHTML='<span data-ops-icon="loading" data-ops-icon-size="16"></span> 推送中…';if(typeof opsDecorateBrand==='function')opsDecorateBrand(btn);}
   fetch('/api/report-push-request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:reqId,city:city})})
     .then(function(r){return r.json();})
     .then(function(res){
@@ -162,11 +162,11 @@ function pushReportToRag(reqId,btn){
         toast(res.pushed?'「'+city+'」报告已推送':'已提交「'+city+'」推送请求');
         render();
       }else{
-        if(btn){btn.disabled=false;btn.textContent='🚀 推送到 RAG';}
+        if(btn){btn.disabled=false;btn.innerHTML='<span data-ops-icon="upload" data-ops-icon-size="16"></span> 推送到 RAG';if(typeof opsDecorateBrand==='function')opsDecorateBrand(btn);}
         toast('推送提交失败：'+(res&&res.error||'任务不匹配，请刷新页面后重试'));
       }
     }).catch(function(e){
-      if(btn){btn.disabled=false;btn.textContent='🚀 推送到 RAG';}
+      if(btn){btn.disabled=false;btn.innerHTML='<span data-ops-icon="upload" data-ops-icon-size="16"></span> 推送到 RAG';if(typeof opsDecorateBrand==='function')opsDecorateBrand(btn);}
       toast('网络错误，推送提交失败');
     });
 }
@@ -188,12 +188,12 @@ function cancelReportRequest(id,btn){
       if(res&&res.ok){toast('已取消该申请');render();}
       else{
         loc.status=prevStatus;/* 回滚本地乐观更新到取消前的真实状态 */
-        if(btn){btn.disabled=false;btn.textContent='✕ 取消';}
+        if(btn){btn.disabled=false;btn.innerHTML='<span data-ops-icon="error" data-ops-icon-size="16"></span> 取消';if(typeof opsDecorateBrand==='function')opsDecorateBrand(btn);}
         toast('取消失败：'+(res&&res.rejected||'请重试'));render();
       }
     }).catch(function(){
       loc.status=prevStatus;
-      if(btn){btn.disabled=false;btn.textContent='✕ 取消';}
+      if(btn){btn.disabled=false;btn.innerHTML='<span data-ops-icon="error" data-ops-icon-size="16"></span> 取消';if(typeof opsDecorateBrand==='function')opsDecorateBrand(btn);}
       toast('网络错误，取消失败');render();
     });
 }

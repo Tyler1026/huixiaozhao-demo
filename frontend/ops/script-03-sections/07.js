@@ -5,6 +5,7 @@ function openModal(title,bodyHtml,footHtml){
   l.innerHTML='<div class="modal"><header><h2>'+title+'</h2><button onclick="closeModal()"><i class="i">✕</i></button></header>'+
     '<div class="modal-body">'+bodyHtml+'</div>'+(footHtml?('<footer>'+footHtml+'</footer>'):'')+'</div>';
   document.body.appendChild(l);
+  if(typeof opsDecorateBrand==='function')opsDecorateBrand(l);
 }
 function closeModal(){var ls=document.querySelectorAll('.modal-layer');if(ls.length)ls[ls.length-1].remove();}
 var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','研判需求','出报告·可来回优化'],['home','📋','项目管理','报告派生项目·对接需求'],['docking','🤝','招商对接','资源匹配与对接进度'],['settings','⚙️','设置','账号与提醒']];
