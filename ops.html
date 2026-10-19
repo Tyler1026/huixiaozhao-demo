@@ -1186,8 +1186,8 @@ function downloadReport(mode){return downloadReportPDF(mode);}
 
 function reportMdToHtml(md){
   if(!md) return '';
-  md=md.replace(/\r\n/g,'\n').replace(/\n{3,}/g,'\n\n');
-  var lines=md.split('\n'), out=[], i=0, inTable=false, tbuf=[];
+  md=md.replace(/\r\n?/g,'\n').replace(/\n{3,}/g,'\n\n');
+  var lines=md.split('\n'), out=[], i=0, inTable=false, tbuf=[], qbuf=[];
   function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
   function inline(s){
     var links=[];
@@ -1201,6 +1201,33 @@ function reportMdToHtml(md){
     s=s.replace(/(\d[\d,.]*\s*(?:亿元|亿|万辆|万吨|万㎡|万台|GWh|km|kg|%))/g,'<span class="num">$1</span>');
     s=s.replace(/✅/g,'<span class="ok">✅</span>').replace(/❌/g,'<span class="no">❌</span>').replace(/⚠️/g,'<span class="warn">⚠️</span>');
     return s.replace(/\u0000HXLINK(\d+)\u0000/g,function(all,i){return links[Number(i)]||all;});
+  }
+  // PDF extraction keeps visual line wraps. Render one continuous quote while
+  // preserving explicit blank paragraphs and Markdown hard line breaks.
+  function quoteParagraph(rows){
+    var chunks=[],text='';
+    function flushText(){if(text){chunks.push(inline(text));text='';}}
+    rows.forEach(function(raw){
+      var slashes=(raw.match(/\\+$/)||[''])[0].length;
+      var hardSpaces=/ {2,}$/.test(raw),hard=hardSpaces||slashes%2===1;
+      var part=(hard&&!hardSpaces?raw.slice(0,-1):raw).trim();
+      if(text&&part){
+        var edge=text.slice(-1)+part.charAt(0);
+        var cjk=/[\u2e80-\u9fff\uf900-\ufaff]/.test(edge);
+        text+=(cjk||/[-\u2010]$/.test(text)?'':' ')+part;
+      }else text+=part;
+      if(hard){flushText();chunks.push('<br>');}
+    });
+    flushText();
+    return '<p>'+chunks.join('')+'</p>';
+  }
+  function flushQuote(){
+    if(!qbuf.length)return;
+    var paragraphs=[],rows=[];
+    function flushRows(){if(rows.length){paragraphs.push(quoteParagraph(rows));rows=[];}}
+    qbuf.forEach(function(line){if(line.trim())rows.push(line);else flushRows();});
+    flushRows();qbuf=[];
+    if(paragraphs.length)out.push('<blockquote>'+paragraphs.join('')+'</blockquote>');
   }
   function flushTable(){
     if(!tbuf.length){inTable=false;return;}
@@ -1218,12 +1245,12 @@ function reportMdToHtml(md){
     out.push(html); tbuf=[]; inTable=false;
   }
   for(;i<lines.length;i++){
-    var ln=lines[i];
+    var ln=lines[i],quote=ln.match(/^\s*>\s?(.*)$/);
+    if(quote){if(inTable)flushTable();qbuf.push(quote[1]);continue;}
+    flushQuote();
     if(/^\s*\|.*\|\s*$/.test(ln)){ inTable=true; tbuf.push(ln); continue; }
     else if(inTable){ flushTable(); }
     if(/^\s*(?:-{3,}|_{3,}|\*{3,})\s*$/.test(ln)){out.push('<hr>');continue;}
-    var quote=ln.match(/^\s*>\s?(.*)$/);
-    if(quote){out.push('<blockquote><p>'+inline(quote[1])+'</p></blockquote>');continue;}
     var label=ln.trim().match(/^\*\*((?:缺口[0-9一二三四五六七八九十]+[：:、]|原文第\s*\d+(?:\s*至\s*\d+)?\s*段)[^*]*)\*\*$/);
     if(label){out.push('<h4 class="keep-next">'+inline(label[1])+'</h4>');continue;}
     var mh=ln.match(/^(#{1,4})\s+(.*)$/);
@@ -1239,6 +1266,7 @@ function reportMdToHtml(md){
     if(ln.trim()==='') continue;
     out.push('<p>'+inline(ln.trim())+'</p>');
   }
+  flushQuote();
   if(inTable) flushTable();
   return out.join('\n');
 }
