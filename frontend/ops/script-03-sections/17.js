@@ -147,7 +147,7 @@ if(!window._opsAuthPoll)window._opsAuthPoll=setInterval(opsRefreshData,15000);
 /* ─ 管理端展示状态：筛选条件只在浏览器中保存，不写业务数据 ─ */
 var opsTab = 'overview';
 var OPS_ENT = OPS_ENT || [];
-var OPS_UI = {invitations:{query:'',status:'all',distribution:'all'},users:{query:'',city:''},reports:{query:'',status:'all'},demands:{query:'',city:''},rag:{tab:'materials'}};
+var OPS_UI = {invitations:{query:'',status:'all',distribution:'all'},users:{query:'',city:''},reports:{query:'',status:'all'},demands:{query:'',city:'',status:'all'},rag:{tab:'materials'}};
 var _opsRenderedTab = null, _opsRenderedScope = null;
 var OPS_NAV = [
   {label:'工作台',items:[{id:'overview',icon:'◫',label:'运营总览'}]},
@@ -1447,8 +1447,8 @@ function opsMonthlyOverview(){
   return '<section class="ops-ui-card" style="margin-bottom:16px"><div class="ops-ui-card-head"><h2>月度报告更新</h2><span class="ops-ui-muted">每月 1 日 09:00（北京时间）</span></div><div class="ops-ui-table-wrap"><table class="ops-ui-table"><thead><tr><th scope="col">地区</th><th scope="col">状态与下次更新</th></tr></thead><tbody>'+cities.map(function(city){return '<tr><td>'+_authEscape(city)+'</td><td>'+opsMonthlyCell(city)+'</td></tr>';}).join('')+'</tbody></table></div></section>';
 }
 function opsDemandSpecificationHtml(item){
-  if(!item||item.demandContract!=='industry-demand-v1')return '';
-  var spec=item.demandSpec||{},priority=item.selectedPriority||{};
+  if(!item||(!item.demandSpec&&item.demandContract!=='industry-demand-v1'))return '';
+  var spec=item.demandSpec||{},priority=item.selectedPriority||{},direct=item.demandOrigin==='direct'||spec.source==='user_direct';
   var origin=item.sourceAnalysisTopic||item.analysisTopic||'';
   var scopes={local:'本地原文范围',local_enterprise:'本地关联企业业务',industry:'行业共性，非本地缺失',project:'具名项目范围'};
   var sources=(Array.isArray(priority.sources)?priority.sources:[]).filter(function(source){
@@ -1458,18 +1458,18 @@ function opsDemandSpecificationHtml(item){
   function line(label,value){return value?'<div style="margin-top:7px"><strong style="color:#52627a">'+label+'</strong><div style="white-space:pre-line;color:#334155">'+_authEscape(value)+'</div></div>':'';}
   return '<div class="ops-demand-specification" style="font-size:12px;line-height:1.75">'+
     line('具体招引诉求',spec.description||item.need||'')+
-    line('补充条件',spec.conditions||'')+
-    '<div style="margin-top:12px;padding-top:10px;border-top:1px solid #e2e8f0">'+
+    line('补充条件',spec.conditions||'')+line('需求联系人',spec.contactName||'')+line('联系方式',spec.contactMethod||'')+
+    (direct?'<p class="ops-receiving-help">来源：客户直接提交。以上诉求与条件由客户填写，接单后需逐项沟通确认。</p>':'<div style="margin-top:12px;padding-top:10px;border-top:1px solid #e2e8f0">'+
       line('来源分析方向',origin)+line('对应招引建议',priority.focus||'')+line('分析适用范围',scopes[priority.scope]||'')+
       '<details style="margin-top:8px"><summary style="cursor:pointer;color:#1d4ed8">查看原建议与依据</summary>'+
         line('建议依据',priority.reason||'')+line('对照分析',priority.comparison||'')+line('原建议行动',priority.action||'')+
         sources.map(function(source){return '<div style="margin-top:8px"><a href="'+_authEscape(source.url)+'" target="_blank" rel="noopener noreferrer">'+_authEscape(source.title||source.label||source.id||'查看来源原文')+'</a><blockquote style="margin:5px 0;white-space:pre-line">'+_authEscape(source.quote)+'</blockquote></div>';}).join('')+
       '</details>'+
-    '</div><p style="margin:8px 0 0;color:#8492a6">企业筛选与核验以本条具体诉求为准；来源报告仅提供分析背景。</p></div>';
+    '</div><p style="margin:8px 0 0;color:#8492a6">企业筛选与核验以本条具体诉求为准；来源报告仅提供分析背景。</p>')+'</div>';
 }
 function opsDemands(){
   var state=OPS_UI.demands,cities=Object.create(null);Object.keys(PROJECTS||{}).forEach(function(k){var p=PROJECTS[k];if(p&&p.isDemand===true&&p.city)cities[p.city]=true;});
-  return '<div class="ops-ui-page">'+opsPageHead('招商项目','集中查看已提交的招商需求、阶段进展、材料和企业匹配。')+'<div class="ops-ui-toolbar"><label class="ops-ui-search">搜索项目<input id="opsDemandSearch" value="'+_authEscape(state.query)+'" placeholder="搜索需求 / 来源方向 / 城市 / 单位" oninput="opsFilterChange(\'demands\',\'query\',this.value)"></label><label class="ops-ui-filter">城市<select id="opsDemandCity" onchange="opsFilterChange(\'demands\',\'city\',this.value)"><option value="">全部城市</option>'+Object.keys(cities).sort().map(function(city){return '<option value="'+_authEscape(city)+'"'+(state.city===city?' selected':'')+'>'+_authEscape(city)+'</option>';}).join('')+'</select></label></div><div id="opsDemandResults">'+opsDemandResults()+'</div></div>';
+  return '<div class="ops-ui-page">'+opsPageHead('招商项目','接收客户的具体需求，明确承办人，处理企业核验并向客户反馈。')+opsReceivingOverview()+'<div class="ops-ui-toolbar"><label class="ops-ui-search">搜索项目<input id="opsDemandSearch" value="'+_authEscape(state.query)+'" placeholder="搜索需求 / 来源方向 / 城市 / 单位" oninput="opsFilterChange(\'demands\',\'query\',this.value)"></label><label class="ops-ui-filter">处理状态<select id="opsDemandStatus" onchange="opsSetReceivingFilter(this.value)">'+[['all','全部状态'],['submitted','待受理'],['processing','处理中'],['needs_info','待客户补充'],['feedback','已反馈']].map(function(item){return '<option value="'+item[0]+'"'+(state.status===item[0]?' selected':'')+'>'+item[1]+'</option>';}).join('')+'</select></label><label class="ops-ui-filter">城市<select id="opsDemandCity" onchange="opsFilterChange(\'demands\',\'city\',this.value)"><option value="">全部城市</option>'+Object.keys(cities).sort().map(function(city){return '<option value="'+_authEscape(city)+'"'+(state.city===city?' selected':'')+'>'+_authEscape(city)+'</option>';}).join('')+'</select></label></div><div id="opsDemandResults">'+opsDemandResults()+'</div></div>';
 }
 
 /* ══ 招商项目：保留既有项目操作 ══ */
@@ -1482,8 +1482,9 @@ function opsDemandResults(){
     var x=PROJECTS[k]; if(!x) return false;
     // 只显示政府端正式提交的招商需求（isDemand=true），与政府端保持一致
     if(x.isDemand!==true)return false;
+    if(typeof opsIsSubmittedDemand==='function'&&!opsIsSubmittedDemand(k,x))return false;
     var state=OPS_UI.demands,q=state.query.trim().toLowerCase();
-    return (!state.city||x.city===state.city)&&(!q||[k,x.city,x.topic,x.demandTitle,x.org,(x.demandSpec||{}).description,(x.demandSpec||{}).conditions,(x.selectedPriority||{}).focus].join(' ').toLowerCase().indexOf(q)>=0);
+    return (!state.city||x.city===state.city)&&(!state.status||state.status==='all'||(typeof opsIntakeStatus==='function'&&opsIntakeStatus(x)===state.status))&&(!q||[k,x.city,x.topic,x.demandTitle,x.org,(x.demandSpec||{}).description,(x.demandSpec||{}).conditions,(x.selectedPriority||{}).focus].join(' ').toLowerCase().indexOf(q)>=0);
   });
 
   if(!projKeys.length)return opsEmpty('暂无符合条件的招商项目','政府端正式提交的招商需求会出现在这里；可调整筛选后再查看。');
@@ -1508,8 +1509,9 @@ function opsDemandResults(){
       }
     })();
     var stage = p.stage||1;
+    var directDemand=p.demandOrigin==='direct'||(p.demandSpec||{}).source==='user_direct';
     var stageNames = projStages(p);
-    var stageName  = stageNameOf(p, stage);
+    var stageName  = directDemand&&stage<=4?'已提交需求':stageNameOf(p, stage);
     var stageColors= ['#9aa5b5','#f59e0b','#3b82f6','#6366f1','#22c55e'];
     var stageColor = stageColors[stage-1]||'#8b5cf6';
 
@@ -1535,13 +1537,17 @@ function opsDemandResults(){
       '<div onclick="toggleOpsProj(' + _authEscape(JSON.stringify(k)) + ')" style="padding:16px 20px;background:#f8faff;border-bottom:1px solid ' + (_pOpen?'#e8edf5':'transparent') + ';display:flex;align-items:center;gap:12px;cursor:pointer">' +
         '<span style="font-size:12px;color:#1a56db;display:inline-block;transform:rotate(' + (_pOpen?'90':'0') + 'deg);transition:transform .15s">&#9654;</span>' +
         '<div style="font-size:14px;color:#0b183b;font-weight:700">' + _authEscape(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(p):p.topic) + '</div>' +
-        '<div style="margin-left:auto;text-align:right">' +
+        '<div style="margin-left:auto;text-align:right;display:flex;align-items:center;gap:8px">' +
+          (typeof opsIntakeBadge==='function'?opsIntakeBadge(p):'') +
           '<div style="padding:4px 12px;background:' + stageColor + ';color:#fff;border-radius:20px;font-size:12px;font-weight:650;display:inline-block">' + _authEscape(stageName) + '</div>' +
         '</div>' +
       '</div>' +
       (_pOpen ? (
-      // 进度条
-      '<div style="padding:12px 20px;border-bottom:1px solid #f0f4ff;display:flex;gap:0">' +
+      (typeof opsReceivingPanel==='function'?opsReceivingPanel(k,p):'') +
+      (typeof opsVerificationPanel==='function'?opsVerificationPanel(k,p):'') +
+      (typeof opsCustomerActivity==='function'?opsCustomerActivity(k):'') +
+      // Direct submissions have no report-generation milestones.
+      (directDemand?'':'<div style="padding:12px 20px;border-bottom:1px solid #f0f4ff;display:flex;gap:0">' +
         stageNames.map(function(s,si){
           var n=si+1;
           var isDone=(n<stage), isCur=(n===stage);
@@ -1551,11 +1557,11 @@ function opsDemandResults(){
           return '<div style="flex:1;padding:6px 4px;text-align:center;background:'+bg+';font-size:10.5px;font-weight:'+fw+';color:'+color+';border-right:1px solid #e8edf5">' +
             (isDone?'✓ ':'')+_authEscape(s[0])+'</div>';
         }).join('') +
-      '</div>' +
+      '</div>') +
       // 阶段推进面板：回复说明 + 选下一阶段 + 新增自定义阶段 + 留痕列表
       '<div style="padding:12px 20px;border-bottom:1px solid #e0e7ff;background:#fafbff">' +
-        '<div style="font-size:12px;font-weight:700;color:#1a56db;margin-bottom:8px">🔄 阶段推进与回复</div>' +
-        '<textarea id="stage-note-' + _authEscape(k) + '" placeholder="填写回复说明（如：材料已初审通过，建议约下周三第一次会议）…" ' +
+        '<div style="font-size:12px;font-weight:700;color:#1a56db;margin-bottom:8px">'+(directDemand?'对接进展记录':'项目阶段记录')+'</div>' +
+        '<textarea id="stage-note-' + _authEscape(k) + '" placeholder="记录本次阶段变化的实际依据；客户回复请使用上方受理面板" ' +
           'style="width:100%;box-sizing:border-box;padding:8px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;resize:vertical;min-height:50px;outline:none;line-height:1.6"></textarea>' +
         '<div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">' +
           '<select id="stage-target-' + _authEscape(k) + '" style="flex:1;min-width:140px;padding:8px 12px;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;background:#fff;color:#0b183b;outline:none">' + stageOptions(p, k) + '</select>' +
@@ -1582,11 +1588,11 @@ function opsDemandResults(){
         '</div>' +
       '</div>' +
       // 需求块
-      (p.demandContract==='industry-demand-v1' ?
+      (p.demandSpec||p.demandContract==='industry-demand-v1' ? (typeof opsReceivingPanel==='function'?'':
         '<div style="padding:14px 20px;background:#f8faff;border-bottom:1px solid #e2e8f0">'+
           '<div style="font-size:11.5px;font-weight:650;color:#1d4ed8;margin-bottom:6px">独立招商需求</div>'+
           opsDemandSpecificationHtml(p)+
-        '</div>'
+        '</div>')
       : demand ?
         '<div style="padding:14px 20px;background:#fffbeb;border-bottom:1px solid #fde68a">' +
           '<div style="font-size:11.5px;font-weight:650;color:#92400e;margin-bottom:6px">📤 招引需求</div>' +
@@ -1717,7 +1723,7 @@ function opsDemandResults(){
         '<span style="font-size:12px;color:#4a5568">' + keys.length + ' 个项目</span>' +
         (cityKbConfirms>0 ? '<span style="font-size:12px;color:#1d4ed8;font-weight:600">✅ 城市智库已确认 ' + cityKbConfirms + ' 条</span>' : '') +
         (totalUps>0 ? '<button onclick="event.stopPropagation();opsViewCityUploads(' + _authEscape(JSON.stringify(encodeURIComponent(city))) + ')" style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600">📎 上传材料 ' + totalUps + ' 份 · 查看</button>' : '<span style="font-size:12px;color:#9aa5b5">暂无材料</span>') +
-        '<span style="padding:3px 10px;background:#1a56db;color:#fff;border-radius:20px;font-size:11px;font-weight:650">' + stageNameOf(maxStageProject,maxStage) + '</span>' +
+        '<span style="padding:3px 10px;background:#1a56db;color:#fff;border-radius:20px;font-size:11px;font-weight:650">' + _authEscape((maxStageProject.demandOrigin==='direct'||(maxStageProject.demandSpec||{}).source==='user_direct')&&maxStage<=4?'已提交需求':stageNameOf(maxStageProject,maxStage)) + '</span>' +
       '</span>' +
     '</div>';
     var body = isOpen ? '<div style="padding-left:6px">' + keys.map(opsProjCard).join('') + '</div>' : '';

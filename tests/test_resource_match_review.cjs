@@ -1,6 +1,8 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const read=p=>fs.readFileSync(path.join(__dirname,'..',p),'utf8');
+const {fn}=require('./chain_v2_fixture.cjs');
+const contextSource=read('frontend/ops/script-03-sections/12-part-00.js');
 const tail=read('frontend/ops/script-03-sections/12-tail.js');
 const titleSource=read('frontend/shared/industry-demands.js');
 const titleStart=titleSource.indexOf('function industryDemandProjectTitle(');
@@ -12,7 +14,7 @@ function boot(){
  const c={JSON,Number,Array,String,PROJECTS:{p:{topic:'核电换热',isDemand:true,city:'闵行区',reportRequestId:'r1',clues:[]}},REPORTSTATE:{p:{}},OPS_ENT:[{id:'e0',name:'未匹配甲',matches:[]},{id:'e1',name:'产品乙',matches:[]},{id:'e2',name:'产品丙',matches:[]}],
  document:{getElementById:id=>nodes[id]},_authEscape:String,toast:v=>messages.push(v),openModal:(title,html)=>modal=html,closeModal(){},funnelEvidenceLinks:()=>'',savedEvidenceIdentity:key=>JSON.stringify([c.PROJECTS[key].topic,c.PROJECTS[key].reportRequestId,c.REPORTSTATE[key]]),
  fetch:async(url,opts)=>{calls.push({url,body:JSON.parse(opts.body)});return {ok:true,json:async()=>({projectKey:'p',topic:'核电换热',reportRequestId:'r1',source:'resource',evidence_contract:'saved-excerpts-v1',companies:[],demandAnchors:[]})};}};
- c.window=c;vm.createContext(c);vm.runInContext(titleHelper+'\n'+helper,c);
+ c.window=c;vm.createContext(c);vm.runInContext(fn(contextSource,'opsDemandContextRequestId')+'\n'+titleHelper+'\n'+helper,c);
  const functions=read('frontend/ops/script-03-sections/17.js').split('\n').filter(l=>/^function (opsEntPushModal|opsEntDoPush|opsPushEntToCity|opsDoPushToCity)\(/.test(l)).join('\n');vm.runInContext(functions,c);vm.runInContext(read('frontend/ops/script-03-sections/18.js'),c);
  return {c,nodes,calls,messages,modal:()=>modal};
 }

@@ -32,6 +32,7 @@ function syncDetailPane(){
 function render(){
   document.body.classList.toggle('kb-view',view==='knowledge'&&!!AUTH);
   document.body.classList.toggle('industry-view',view==='report'&&!!AUTH);
+  document.body.classList.toggle('docking-view',(view==='home'||view==='docking')&&!!AUTH);
   if(typeof kbCancelHiddenRequests==='function')kbCancelHiddenRequests();
   // 跳过重渲染：用户正在查看校验结果或冲突面板时不重建DOM
   if(AUTH&&_authState==='ready'&&(window._verifyInProgress || document.getElementById('conflictModal'))) return;
@@ -93,6 +94,7 @@ function render(){
   // 注意：必须用"本次重建前"刚捕获的位置来还原（_captureScroll 会写入 _scrollMemory），
   // 而不是上一轮的旧值，否则跨标签同步/异步 render 会把滚动错误还原到过时位置或顶部。
   var _chainDom=_captureChainExplorer();
+  var _dockingDom=typeof dockingCaptureView==='function'?dockingCaptureView():null;
   var _nextMarkup=
    '<div class="app-shell">'+
     topbar(p)+
@@ -109,13 +111,14 @@ function render(){
   // Background sync often changes no visible report data. Keep the live DOM,
   // including expanded evidence, focus and the graph drawer, in that case.
   var _nextKey=_viewScrollKey(),_nextGraphDataKey=view==='report'?_chainRenderDataKey():null;
-  if(view==='report'&&render._markup===_nextMarkup&&render._markupKey===_nextKey&&render._markupAuthEpoch===_authEpoch&&render._graphDataKey===_nextGraphDataKey&&_renderedScrollKey===_nextKey)return;
+  if((view==='report'||view==='home')&&render._markup===_nextMarkup&&render._markupKey===_nextKey&&render._markupAuthEpoch===_authEpoch&&render._graphDataKey===_nextGraphDataKey&&_renderedScrollKey===_nextKey)return;
   _captureScroll();
   var _prevScrollKey=_scrollMemory.key, _prevScrollTops=_scrollMemory.tops;
   $('#root').innerHTML=_nextMarkup;
   render._markup=_nextMarkup;render._markupKey=_nextKey;render._markupAuthEpoch=_authEpoch;render._graphDataKey=_nextGraphDataKey;
   _renderedScrollKey=_nextKey;
   _restoreChainExplorer(_chainDom);
+  if(typeof dockingRestoreView==='function')dockingRestoreView(_dockingDom);
   bind();
   if(cur && REPORT_HISTORY[cur]) { var _rha=document.getElementById('reportHistoryArea'); if(_rha) renderHistoryReports(cur); }
   // 城市智库对话：render 重建了 #kbConv，把已存的历史对话回放回去（切主题/切模块/刷新都不丢）

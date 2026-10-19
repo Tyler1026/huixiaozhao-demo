@@ -244,6 +244,19 @@ def _merge_topic_project_map(merged, old, new):
         a, b = (old or {}).get(key) or {}, (new or {}).get(key) or {}
         if not isinstance(a, dict) or not isinstance(b, dict):
             continue
+        # Submitted demand children keep the confirmed demand topic and the
+        # stage written by the docking action endpoint. Older records may not
+        # have submissionState, but reached the submitted stage before that
+        # field existed. City drafts still use the ordinary topic lifecycle.
+        # Determine submission from the saved record, never an incoming
+        # snapshot which could set isDemand or clear its submitted marker.
+        stage = a.get('stage')
+        submitted_demand = (a.get('isDemand') is True
+                            and a.get('submissionState') not in ('draft', 'pending', 'failed', 'cancelled')
+                            and (a.get('submissionState') == 'submitted'
+                                 or isinstance(stage, (int, float)) and not isinstance(stage, bool) and stage >= 4))
+        if submitted_demand:
+            continue
         if not any(field in a or field in b for field in ('city', 'kb', 'customTopics', 'deletedTopics', 'stageByTopic', 'aiTopics')):
             continue
         deleted, created = _topic_lifecycle(a, b)

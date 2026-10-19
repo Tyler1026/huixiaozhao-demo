@@ -33,6 +33,25 @@ def _url(value):
         return ''
 
 
+def _direct_demand_context(project):
+    """A saved institutional request is context, never a product evidence source."""
+    if (project.get('demandContract') != 'industry-demand-v1'
+            or project.get('demandOrigin') != 'direct'):
+        return None
+    spec = project.get('demandSpec') or {}
+    fingerprint = project.get('directRequestFingerprint')
+    if (project.get('isDemand') is not True or project.get('submissionState') != 'submitted'
+            or not isinstance(spec, dict) or spec.get('source') != 'user_direct'
+            or spec.get('verificationStatus') != 'user_stated'
+            or not isinstance(spec.get('description'), str) or not spec['description'].strip()
+            or not isinstance(fingerprint, str) or not re.fullmatch(r'[0-9a-f]{64}', fingerprint)):
+        raise AuthError(409, 'demand_invalid', '已保存的需求原文或版本不完整，请刷新后核对')
+    # This request identity names the immutable demand snapshot, not an AI
+    # report. It is computed from the saved submission fingerprint so callers
+    # cannot select a different demand body by sending their own text or ID.
+    return {'requestId': 'demand:' + fingerprint, 'spec': spec}
+
+
 def project_context(body, state):
     """Use a previously scoped server snapshot, never client supplied corpus/city."""
     key = body.get('projectKey')
@@ -49,7 +68,8 @@ def project_context(body, state):
     allowed.update((rs.get('pendingByTopic') or {}).keys())
     if not isinstance(topic, str) or not topic or topic not in allowed:
         raise AuthError(409, 'topic_mismatch', '方向与当前工作区不一致，请刷新后重试')
-    reqid = p.get('reportRequestId') or rs.get('reportRequestId') or ''
+    direct = _direct_demand_context(p)
+    reqid = direct['requestId'] if direct else p.get('reportRequestId') or rs.get('reportRequestId') or ''
     supplied = body.get('reportRequestId')
     if supplied and supplied != reqid:
         raise AuthError(409, 'report_changed', '报告版本已更新，请刷新后重试')
@@ -85,6 +105,15 @@ def project_context(body, state):
         for block in re.split(r'\n\s*\n', str(report)):
             if block.strip():
                 corpus.append({'text': block, 'cite': '当前报告 / '+topic, 'topic': topic, 'origin': 'report'})
+    if direct:
+        # Keep the requirements available to retrieval and the model even when
+        # no city report exists. Deliberately omit personal contact fields.
+        for field, label in (('title', '需求名称'), ('description', '具体招引诉求'), ('conditions', '承接条件与要求')):
+            value = direct['spec'].get(field)
+            if isinstance(value, str) and value.strip():
+                corpus.append({'text': label + '：' + value.strip(),
+                               'cite': '机构直接提交的需求（用户陈述，未独立核验）',
+                               'topic': topic, 'origin': 'user_demand', 'nature': 'user_stated'})
     dedup, positions = [], {}
     for chunk in corpus:
         sig = hashlib.sha256(chunk['text'].encode()).hexdigest()
@@ -105,7 +134,8 @@ def project_context(body, state):
     if p.get('demandContract') == 'industry-demand-v1':
         result.update(demandContract=p['demandContract'], demandSpec=copy.deepcopy(p.get('demandSpec') or {}),
                       selectedPriority=copy.deepcopy(p.get('selectedPriority') or {}),
-                      sourcePriorityKey=p.get('sourcePriorityKey', ''), demandTitle=p.get('demandTitle', ''))
+                      sourcePriorityKey=p.get('sourcePriorityKey', ''), demandTitle=p.get('demandTitle', ''),
+                      demandOrigin=p.get('demandOrigin', 'report'))
     return result
 
 
@@ -135,6 +165,10 @@ def evidence_catalog(chunks):
     """Bounded excerpts retain an entire line including qualifications and URLs."""
     out = []
     for chunk in chunks:
+        # A client may name an enterprise and paste a URL in its request. That
+        # is still a requested target, not an independently saved product fact.
+        if isinstance(chunk, dict) and chunk.get('origin') == 'user_demand':
+            continue
         text = _text(chunk)
         for line in text.splitlines():
             line = line.strip()
@@ -344,11 +378,14 @@ def funnel_request_text(context):
     import json
     return ('仅围绕以下已保存的具体招商需求筛选企业，不得以所属产业大类替代本项产品/服务。'
             '需求文字是用户提出的待核任务，分析建议不是已经证实的当地缺口；'
-            '报告其他建议只是背景，不能混入本项候选。所有候选仍需有产品原文并逐家人工核对。\n' +
+            '报告其他建议只是背景，不能混入本项候选。直接提交的需求没有生成报告背书；'
+            '用户给出的企业名和网址只能作为需求线索，不能作为产品或当地短板的事实证据。'
+            '所有候选仍需有产品原文并逐家人工核对。\n' +
             json.dumps({'title': context.get('demandTitle', ''),
                         'focus': (context.get('selectedPriority') or {}).get('focus', ''),
                         'scope': (context.get('selectedPriority') or {}).get('scope', ''),
-                        'request': context.get('demandSpec') or {}}, ensure_ascii=False))
+                        'request': {field: value for field, value in (context.get('demandSpec') or {}).items()
+                                    if field in {'title', 'description', 'conditions', 'source', 'verificationStatus'}}}, ensure_ascii=False))
 
 
 def resource_review_preview(body, state):

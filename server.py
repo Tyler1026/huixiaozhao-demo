@@ -1008,6 +1008,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/kb-edit':
             from backend.kb_edits import handle_kb_edit
             return handle_kb_edit(self, raw, self._account_session, self._account_config())
+        if path == '/api/docking-action':
+            from backend.docking_actions import handle_docking_action
+            return handle_docking_action(self, raw, self._account_session, self._account_config())
         if path == '/api/industry-demand':
             from backend.industry_demands import handle_industry_demand
             return handle_industry_demand(self, raw, self._account_session, self._account_config())

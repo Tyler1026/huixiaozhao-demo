@@ -9,7 +9,7 @@ function boot(response){
   const old={summary:'previous completed profile'};
   const c={JSON,Promise,console,PROJECTS:{a:{id:'a',topic:'当前方向',city:'测试区',reportRequestId:'r1',profile:old}},REPORTSTATE:{},_authEpoch:1,cpBusy:false,cpErr:'',cpRaw:'',cpProjKey:()=> 'a',cpCorpus:()=>[{text:'saved evidence'}],cpOnboarding:()=>null,renderOpsV2(){},cpFinish(){finishes++;},fetch:async()=>{calls++;return response;},readTopicReportStream(){throw Error('non-200 must not enter stream reader');}};
   c.window=c;vm.createContext(c);
-  vm.runInContext(source.slice(source.indexOf('function savedEvidenceIdentity('),source.indexOf('function runAIFunnel(')),c);
+  vm.runInContext(source.slice(source.indexOf('function opsDemandContextRequestId('),source.indexOf('function runAIFunnel(')),c);
   vm.runInContext(profile.slice(profile.indexOf('function cpGenerate('),profile.indexOf('/* 【2026-09-17】JSON')),c);
   return {c,old,calls:()=>calls,finishes:()=>finishes};
 }
