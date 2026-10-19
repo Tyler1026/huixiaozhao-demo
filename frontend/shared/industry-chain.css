@@ -612,7 +612,7 @@
   .chain-explorer .chain-layout-node:not(:disabled):not([aria-disabled="true"]):hover { transform: none; }
 }
 
-/* Analysis-derived directions are distinct from the single submission task. */
+/* Each source-backed suggestion can become an independently tracked demand. */
 .industry-priorities { margin-top:24px; padding:22px; border:1px solid #e0e8f0; border-radius:14px; background:#fff; }
 .industry-priorities-heading { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
 .industry-priorities-heading h3 { margin:0; font-size:16px; color:#34536f; }
@@ -632,3 +632,26 @@
 .chain-generate-button { border:1px solid #bcd0e0; border-radius:9px; padding:10px 16px; background:#f4f8fc; color:#376384; font:inherit; font-size:12px; font-weight:600; cursor:pointer; transition:background .15s,border-color .15s; }
 .chain-generate-button:hover { background:#eaf2f9; border-color:#91b3cf; }
 .chain-generate-button:focus-visible { outline:3px solid #95b8d4; outline-offset:3px; }
+
+.industry-priority-submit { display:inline-flex; justify-content:center; align-items:center; min-height:38px; margin-top:16px; padding:9px 16px; border:1px solid #b8d0df; border-radius:8px; background:#edf5fa; color:#245e80; font:inherit; font-weight:600; cursor:pointer; }
+.industry-priority-submit:hover { background:#e0eef7; border-color:#8cb5ce; }
+.industry-priority-submit:focus-visible { outline:3px solid #9ac5df; outline-offset:3px; }
+.industry-priority-submit:disabled { opacity:.6; cursor:wait; }
+.industry-demand-composer { color:#4c6378; line-height:1.8; }
+.industry-demand-composer .industry-demand-intro { margin:0 0 16px; color:#38566e; }
+.industry-demand-origin { padding:13px 16px; border:1px solid #e0eaf1; border-radius:9px; background:#f6f9fc; color:#688093; font-size:12px; line-height:1.9; overflow-wrap:anywhere; }
+.industry-demand-composer label { display:block; margin:20px 0 7px; color:#34536a; font-size:13px; font-weight:600; }
+.industry-demand-composer label span { color:#8697a7; font-weight:400; }
+.industry-demand-composer input,.industry-demand-composer textarea { box-sizing:border-box; width:100%; padding:11px 13px; border:1px solid #cfdce6; border-radius:8px; background:#fff; color:#2c4b61; font:inherit; font-size:13px; line-height:1.75; }
+.industry-demand-composer textarea { resize:vertical; min-height:90px; }
+.industry-demand-composer input:focus,.industry-demand-composer textarea:focus { border-color:#72a9ca; outline:3px solid #dcecf6; }
+.industry-demand-composer details { margin:20px 0 12px; padding-top:15px; border-top:1px solid #e5edf3; font-size:12px; }
+.industry-demand-composer summary { color:#577e99; cursor:pointer; }
+.industry-demand-boundary { margin:16px 0 0; color:#7c8d9d; font-size:11px; line-height:1.8; }
+.industry-demand-error { margin:12px 0 0; color:#b23d4b; font-size:12px; }
+.industry-demand-error:empty { display:none; }
+.industry-submitted-demand { margin-top:24px; padding:24px; border:1px solid #dce8ef; border-radius:14px; background:#fff; color:#4b6579; line-height:1.9; }
+.industry-demand-eyebrow { color:#66859a; font-size:11px; letter-spacing:.08em; }
+.industry-submitted-demand h3 { margin:8px 0 14px; color:#2c506c; font-size:18px; }
+.industry-submitted-demand h4 { margin:20px 0 5px; color:#47677e; font-size:13px; }
+.industry-submitted-demand p { white-space:pre-wrap; overflow-wrap:anywhere; }

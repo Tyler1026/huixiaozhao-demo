@@ -23,6 +23,7 @@ function _buildNotifs(){
     var _dirs=cityKeys().filter(function(k){var x=PROJECTS[k];return x && x.isDemand===true && x.topic;});
     _dirs.forEach(function(k){
       var p=PROJECTS[k]; if(!p||!p.topic) return;
+      var title=typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(p):p.topic;
       var stage=p.stage||1;
       var log=(p.stageLog||[]);
       var lastTs=log.length?Number(log[log.length-1].at||log[log.length-1].ts||0):0;
@@ -34,8 +35,8 @@ function _buildNotifs(){
         arr.push({
           id:idA,
           type:'状态变化', icon:'🔵', proj:k,
-          title:p.topic+' · 已进入「'+toName+'」',
-          desc:'该方向阶段已推进至「'+toName+'」，可打开研判查看下一步动作。',
+          title:title+' · 已进入「'+toName+'」',
+          desc:'该需求阶段已推进至「'+toName+'」，可打开需求查看下一步动作。',
           ts:lastTs, read: !!NOTIFS_READ[idA]
         });
       }
@@ -45,8 +46,8 @@ function _buildNotifs(){
         arr.push({
           id:idB,
           type:'超时提醒', icon:'🟠', proj:k,
-          title:p.topic+' · 已3个工作日无更新',
-          desc:'该研判在「'+stageNameOf(p,stage)+'」阶段停留超过 3 天，建议跟进资源端核验进度。',
+          title:title+' · 已3个工作日无更新',
+          desc:'该需求在「'+stageNameOf(p,stage)+'」阶段停留超过 3 天，建议跟进资源端核验进度。',
           ts:lastTs, read: !!NOTIFS_READ[idB]
         });
       }
@@ -57,7 +58,7 @@ function _buildNotifs(){
         arr.push({
           id:idC,
           type:'待确认', icon:'🟡', proj:k,
-          title:p.topic+' · 报告待你确认',
+          title:title+' · 报告待你确认',
           desc:'AI 研判已完成，请核对报告后进入双确认与需求提交。',
           ts:rts||Date.now(), read: !!NOTIFS_READ[idC]
         });
@@ -76,8 +77,8 @@ function _buildNotifs(){
       });
       arr.push({
         id:sumId, type:'每日摘要', icon:'📋', proj:null,
-        title:'每日摘要 · '+keys.length+' 个研判进行中',
-        desc:parts.join('，')+'。点开查看各方向进展。',
+        title:'每日摘要 · '+keys.length+' 条招商需求进行中',
+        desc:parts.join('，')+'。点开查看各条需求进展。',
         ts:today.getTime(), read: !!NOTIFS_READ[sumId]
       });
     }
@@ -96,8 +97,8 @@ function notifList(){
       return '<div onclick="openNotif(\''+n.id+'\')" style="padding:13px 16px;border-bottom:1px solid #f2f5f9;cursor:pointer;display:flex;gap:10px;align-items:flex-start;'+(n.read?'opacity:.55':'')+'" onmouseover="this.style.background=\'#f7f9fc\'" onmouseout="this.style.background=\'\'">'+
         '<span style="font-size:15px;flex:0 0 auto;line-height:1.4;margin-top:1px">'+n.icon+'</span>'+
         '<span style="flex:1;min-width:0;overflow:hidden">'+
-          '<span style="font-size:13px;font-weight:600;color:#0b183b;display:block;word-break:break-word;line-height:1.45">'+n.title+(n.read?'':' <b style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#c85b09;vertical-align:middle;margin-left:2px"></b>')+'</span>'+
-          '<span style="font-size:11.5px;color:#667590;line-height:1.55;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:4px;word-break:break-word">'+n.desc+'</span>'+
+          '<span style="font-size:13px;font-weight:600;color:#0b183b;display:block;word-break:break-word;line-height:1.45">'+_authEscape(n.title)+(n.read?'':' <b style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#c85b09;vertical-align:middle;margin-left:2px"></b>')+'</span>'+
+          '<span style="font-size:11.5px;color:#667590;line-height:1.55;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:4px;word-break:break-word">'+_authEscape(n.desc)+'</span>'+
           '<span style="font-size:10.5px;color:#a8b2c2;display:block;margin-top:5px">'+n.type+' · '+n.time+'</span>'+
         '</span>'+
       '</div>';
@@ -115,31 +116,31 @@ function openNotif(id){
     var rows=_mkeys.map(function(k){var x=PROJECTS[k];var sc=stColor(x.stage);
       return '<div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #f2f5f9;cursor:pointer" onclick="closeModal();gotoProjFromNotif(\''+k+'\')">'+
         '<span style="font-size:16px">📍</span>'+
-        '<span style="flex:1;min-width:0"><strong style="font-size:13.5px;color:#0b183b;display:block">'+x.topic+'</strong>'+
+        '<span style="flex:1;min-width:0"><strong style="font-size:13.5px;color:#0b183b;display:block">'+_authEscape(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(x):x.topic)+'</strong>'+
         '<small style="font-size:11px;color:#667590">'+x.city+' · '+stageDescOf(x,x.stage)+'</small></span>'+
         '<span class="status-tag" style="color:'+sc.c+';background:'+sc.bg+'">'+stageNameOf(x,x.stage)+'</span></div>';
     }).join('');
-    var body='<p class="modal-intro">今天 09:00 · '+P().who+' 名下 '+_mkeys.length+' 个研判进展如下，点任意一条进入。</p>'+rows+
-      '<div class="boundary-note" style="margin-top:14px"><i class="i">📋</i>每日摘要为全局汇总，不属于单个研判；系统每天 09:00 自动生成。</div>';
-    openModal('每日摘要 · 今日各研判概览',body,'<button class="primary-button" onclick="closeModal()">知道了</button>');
+    var body='<p class="modal-intro">今天 09:00 · '+P().who+' 名下 '+_mkeys.length+' 条招商需求进展如下，点任意一条进入。</p>'+rows+
+      '<div class="boundary-note" style="margin-top:14px"><i class="i">📋</i>每日摘要为全局汇总，不属于单条需求；系统每天 09:00 自动生成。</div>';
+    openModal('每日摘要 · 今日需求概览',body,'<button class="primary-button" onclick="closeModal()">知道了</button>');
     return;
   }
   // 事件通知（状态变化/超时）= 前往对应研判
   var pj=PROJECTS[n.proj];
   var body='<div style="display:flex;align-items:flex-start;gap:11px;margin-bottom:14px">'+
       '<span style="font-size:20px">'+n.icon+'</span>'+
-      '<div><div style="font-size:15px;font-weight:650;color:#0b183b">'+n.title+'</div>'+
+      '<div><div style="font-size:15px;font-weight:650;color:#0b183b">'+_authEscape(n.title)+'</div>'+
       '<div style="font-size:11px;color:#8490a5;margin-top:3px">'+n.type+' · '+n.time+'</div></div></div>'+
-    '<div class="info-callout" style="margin-top:0">'+n.desc+'</div>'+
-    '<div class="kv" style="margin-top:14px"><span class="kk" style="width:70px;color:#8490a5">相关研判</span><span class="vv">'+pj.city+' · '+pj.topic+'</span></div>'+
+    '<div class="info-callout" style="margin-top:0">'+_authEscape(n.desc)+'</div>'+
+    '<div class="kv" style="margin-top:14px"><span class="kk" style="width:70px;color:#8490a5">相关需求</span><span class="vv">'+_authEscape(pj.city)+' · '+_authEscape(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(pj):pj.topic)+'</span></div>'+
     '<div class="kv"><span class="kk" style="width:70px;color:#8490a5">当前阶段</span><span class="vv">'+stageNameOf(pj,pj.stage)+'</span></div>';
   var foot='<button class="secondary-button" onclick="closeModal()">知道了</button>'+
-    '<button class="primary-button" onclick="closeModal();gotoProjFromNotif(\''+n.proj+'\')">前往该研判 ➜</button>';
+    '<button class="primary-button" onclick="closeModal();gotoProjFromNotif(\''+n.proj+'\')">前往该需求 ➜</button>';
   openModal('通知详情',body,foot);
 }
-function gotoProjFromNotif(pk){cur=pk;view='home';detailData=null;render();toast('已定位到「'+PROJECTS[pk].topic+'」研判')}
+function gotoProjFromNotif(pk){if(!PROJECTS[pk])return;cur=pk;view='home';detailData=null;window.__projOpen=pk;render();toast('已定位到「'+(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(PROJECTS[pk]):PROJECTS[pk].topic)+'」需求')}
 function toggleSw(e){e.stopPropagation();var m=$('#swMenu');m.style.display=m.style.display==='none'?'block':'none'}
-function switchProj(k){cur=k;view='report';detailData=null;try{_sanitizeReportState();}catch(_){}render();toast('已进入「'+PROJECTS[k].topic+'」研判工作区')}
+function switchProj(k){cur=k;view='report';detailData=null;try{_sanitizeReportState();}catch(_){}render();toast('已进入「'+(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(PROJECTS[k]):PROJECTS[k].topic)+'」'+(PROJECTS[k].isDemand?'需求':'研判工作区'))}
 function newProj(){var m=$('#swMenu');if(m)m.style.display='none';newProjModal()}
 function go(v){
   if(v==='report')cur=industryAnalysisWorkspaceKey(cur);

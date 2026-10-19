@@ -23,6 +23,7 @@ function env(app='index'){
     localStorage:{getItem:()=> '{}'},buildKBCorpus:()=>[],kbSearch:()=>[],curOnbPrefs:()=>({}),parsePendingItems:()=>[],view:'report',
   };
   vm.createContext(c);
+  vm.runInContext(fs.readFileSync(path.join(root,'frontend/shared/industry-demands.js'),'utf8'),c);
   vm.runInContext(tail.slice(tail.indexOf('function reportStateFields('),tail.indexOf('function selectTopic(')),c);
   ['captureReportMaterialDirectory','reportMaterialDirectoryForContext','reportExportSourceHeading','reportExportSourceRecords','reportExportContext','reportMdToHtml','viewCurrentReport'].forEach(name=>vm.runInContext(declaration(source,name),c));
   if(app==='index')vm.runInContext(declaration(source,'setReportAreaHtml'),c);
@@ -95,11 +96,12 @@ for(const app of ['index','ops']){
     assert.match(area.innerHTML,/&lt;script&gt;bad&lt;\/script&gt;/);assert.doesNotMatch(area.innerHTML,/wrong fallback|###|<script>/);
     assert.equal(state.text,'wrong fallback');
   });
-  test(app+' action card follows the real submitted state without changing records',()=>{
-    const {c,tail}=env(app);c.demandReportSnapshot=()=>({});c._findExistingDemand=()=>null;
-    vm.runInContext(['demandSubmissionState','restoreActionItems'].map(n=>declaration(tail,n)).join('\n'),c);
-    const before=JSON.stringify(c.PROJECTS);assert.match(c.restoreActionItems(),/提交后，管理端将/);
-    c.DEMANDS.push({projKey:'child'});assert.match(c.restoreActionItems(),/需求已递交，资源端正在/);assert.doesNotMatch(c.restoreActionItems(),/提交后，管理端将/);
+  test(app+' action card identifies the selected demand without conflating it with its source report',()=>{
+    const {c,tail,project}=env(app);c.demandReportSnapshot=()=>({});
+    project.demandContract='industry-demand-v1';project.demandTitle='核级换热器招引';project.sourceAnalysisTopic='核电换热';project.selectedPriority={focus:'核级换热器'};project.demandSpec={description:'引入核级换热器生产能力'};
+    vm.runInContext(['demandSubmissionState','reportDemandActionButton','restoreActionItems'].map(n=>declaration(tail,n)).join('\n'),c);
+    const before=JSON.stringify(c.PROJECTS),html=c.restoreActionItems();assert.match(html,/独立招商需求/);assert.match(html,/核级换热器招引/);assert.match(html,/引入核级换热器生产能力/);assert.match(html,/来自分析：核电换热/);assert.match(html,/查看这条招商需求/);assert.doesNotMatch(html,/提交后，管理端将|提交当前方向/);
+    c.DEMANDS.push({projKey:'child'});assert.equal(c.restoreActionItems(),html);
     assert.equal(JSON.stringify(c.PROJECTS),before);
   });
 }

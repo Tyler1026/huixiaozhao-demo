@@ -155,7 +155,7 @@ test('legacy resource must be explicitly saved before review and never silently 
 
 test('saved legacy enterprises retain distinct IDs and exact targets in readonly review requests', async () => {
   const h = await boot(), calls=[];
-  h.ctx.PROJECTS={a:{city:'闵行区',topic:'方向甲',clues:[]},b:{city:'闵行区',topic:'方向乙',clues:[]}};
+  h.ctx.PROJECTS={a:{city:'闵行区',topic:'方向甲',isDemand:true,clues:[]},b:{city:'闵行区',topic:'方向乙',isDemand:true,clues:[]}};
   h.ctx.OPS_ENT=[{name:'企业甲'},{name:'企业乙'}];
   for(const i of [0,1]){h.ctx._manualEditIdx=i;h.input('me-kind','半导体');h.ctx.applyManualEdit();}
   const ids=h.ctx.OPS_ENT.map(e=>e.id);assert.equal(new Set(ids).size,2);

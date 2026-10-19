@@ -1446,9 +1446,30 @@ function opsMonthlyOverview(){
   if(!cities.length)return opsEmpty('暂无月度更新地区','在「地区与邀请码」设置地区主工作区后，每月 1 日 09:00（北京时间）更新报告。');
   return '<section class="ops-ui-card" style="margin-bottom:16px"><div class="ops-ui-card-head"><h2>月度报告更新</h2><span class="ops-ui-muted">每月 1 日 09:00（北京时间）</span></div><div class="ops-ui-table-wrap"><table class="ops-ui-table"><thead><tr><th scope="col">地区</th><th scope="col">状态与下次更新</th></tr></thead><tbody>'+cities.map(function(city){return '<tr><td>'+_authEscape(city)+'</td><td>'+opsMonthlyCell(city)+'</td></tr>';}).join('')+'</tbody></table></div></section>';
 }
+function opsDemandSpecificationHtml(item){
+  if(!item||item.demandContract!=='industry-demand-v1')return '';
+  var spec=item.demandSpec||{},priority=item.selectedPriority||{};
+  var origin=item.sourceAnalysisTopic||item.analysisTopic||'';
+  var scopes={local:'本地原文范围',local_enterprise:'本地关联企业业务',industry:'行业共性，非本地缺失',project:'具名项目范围'};
+  var sources=(Array.isArray(priority.sources)?priority.sources:[]).filter(function(source){
+    if(!source||typeof source.quote!=='string'||!source.quote.trim())return false;
+    try{var url=new URL(source.url);return url.protocol==='https:'&&!!url.hostname&&!url.username&&!url.password;}catch(e){return false;}
+  });
+  function line(label,value){return value?'<div style="margin-top:7px"><strong style="color:#52627a">'+label+'</strong><div style="white-space:pre-line;color:#334155">'+_authEscape(value)+'</div></div>':'';}
+  return '<div class="ops-demand-specification" style="font-size:12px;line-height:1.75">'+
+    line('具体招引诉求',spec.description||item.need||'')+
+    line('补充条件',spec.conditions||'')+
+    '<div style="margin-top:12px;padding-top:10px;border-top:1px solid #e2e8f0">'+
+      line('来源分析方向',origin)+line('对应招引建议',priority.focus||'')+line('分析适用范围',scopes[priority.scope]||'')+
+      '<details style="margin-top:8px"><summary style="cursor:pointer;color:#1d4ed8">查看原建议与依据</summary>'+
+        line('建议依据',priority.reason||'')+line('对照分析',priority.comparison||'')+line('原建议行动',priority.action||'')+
+        sources.map(function(source){return '<div style="margin-top:8px"><a href="'+_authEscape(source.url)+'" target="_blank" rel="noopener noreferrer">'+_authEscape(source.title||source.label||source.id||'查看来源原文')+'</a><blockquote style="margin:5px 0;white-space:pre-line">'+_authEscape(source.quote)+'</blockquote></div>';}).join('')+
+      '</details>'+
+    '</div><p style="margin:8px 0 0;color:#8492a6">企业筛选与核验以本条具体诉求为准；来源报告仅提供分析背景。</p></div>';
+}
 function opsDemands(){
   var state=OPS_UI.demands,cities=Object.create(null);Object.keys(PROJECTS||{}).forEach(function(k){var p=PROJECTS[k];if(p&&p.isDemand===true&&p.city)cities[p.city]=true;});
-  return '<div class="ops-ui-page">'+opsPageHead('招商项目','集中查看已提交的招商需求、阶段进展、材料和企业匹配。')+'<div class="ops-ui-toolbar"><label class="ops-ui-search">搜索项目<input id="opsDemandSearch" value="'+_authEscape(state.query)+'" placeholder="搜索城市 / 产业方向 / 单位 / 项目编号" oninput="opsFilterChange(\'demands\',\'query\',this.value)"></label><label class="ops-ui-filter">城市<select id="opsDemandCity" onchange="opsFilterChange(\'demands\',\'city\',this.value)"><option value="">全部城市</option>'+Object.keys(cities).sort().map(function(city){return '<option value="'+_authEscape(city)+'"'+(state.city===city?' selected':'')+'>'+_authEscape(city)+'</option>';}).join('')+'</select></label></div><div id="opsDemandResults">'+opsDemandResults()+'</div></div>';
+  return '<div class="ops-ui-page">'+opsPageHead('招商项目','集中查看已提交的招商需求、阶段进展、材料和企业匹配。')+'<div class="ops-ui-toolbar"><label class="ops-ui-search">搜索项目<input id="opsDemandSearch" value="'+_authEscape(state.query)+'" placeholder="搜索需求 / 来源方向 / 城市 / 单位" oninput="opsFilterChange(\'demands\',\'query\',this.value)"></label><label class="ops-ui-filter">城市<select id="opsDemandCity" onchange="opsFilterChange(\'demands\',\'city\',this.value)"><option value="">全部城市</option>'+Object.keys(cities).sort().map(function(city){return '<option value="'+_authEscape(city)+'"'+(state.city===city?' selected':'')+'>'+_authEscape(city)+'</option>';}).join('')+'</select></label></div><div id="opsDemandResults">'+opsDemandResults()+'</div></div>';
 }
 
 /* ══ 招商项目：保留既有项目操作 ══ */
@@ -1462,7 +1483,7 @@ function opsDemandResults(){
     // 只显示政府端正式提交的招商需求（isDemand=true），与政府端保持一致
     if(x.isDemand!==true)return false;
     var state=OPS_UI.demands,q=state.query.trim().toLowerCase();
-    return (!state.city||x.city===state.city)&&(!q||[k,x.city,x.topic,x.org].join(' ').toLowerCase().indexOf(q)>=0);
+    return (!state.city||x.city===state.city)&&(!q||[k,x.city,x.topic,x.demandTitle,x.org,(x.demandSpec||{}).description,(x.demandSpec||{}).conditions,(x.selectedPriority||{}).focus].join(' ').toLowerCase().indexOf(q)>=0);
   });
 
   if(!projKeys.length)return opsEmpty('暂无符合条件的招商项目','政府端正式提交的招商需求会出现在这里；可调整筛选后再查看。');
@@ -1513,7 +1534,7 @@ function opsDemandResults(){
       // 头部
       '<div onclick="toggleOpsProj(' + _authEscape(JSON.stringify(k)) + ')" style="padding:16px 20px;background:#f8faff;border-bottom:1px solid ' + (_pOpen?'#e8edf5':'transparent') + ';display:flex;align-items:center;gap:12px;cursor:pointer">' +
         '<span style="font-size:12px;color:#1a56db;display:inline-block;transform:rotate(' + (_pOpen?'90':'0') + 'deg);transition:transform .15s">&#9654;</span>' +
-        '<div style="font-size:14px;color:#0b183b;font-weight:700">' + _authEscape(p.topic) + '</div>' +
+        '<div style="font-size:14px;color:#0b183b;font-weight:700">' + _authEscape(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(p):p.topic) + '</div>' +
         '<div style="margin-left:auto;text-align:right">' +
           '<div style="padding:4px 12px;background:' + stageColor + ';color:#fff;border-radius:20px;font-size:12px;font-weight:650;display:inline-block">' + _authEscape(stageName) + '</div>' +
         '</div>' +
@@ -1561,7 +1582,12 @@ function opsDemandResults(){
         '</div>' +
       '</div>' +
       // 需求块
-      (demand ?
+      (p.demandContract==='industry-demand-v1' ?
+        '<div style="padding:14px 20px;background:#f8faff;border-bottom:1px solid #e2e8f0">'+
+          '<div style="font-size:11.5px;font-weight:650;color:#1d4ed8;margin-bottom:6px">独立招商需求</div>'+
+          opsDemandSpecificationHtml(p)+
+        '</div>'
+      : demand ?
         '<div style="padding:14px 20px;background:#fffbeb;border-bottom:1px solid #fde68a">' +
           '<div style="font-size:11.5px;font-weight:650;color:#92400e;margin-bottom:6px">📤 招引需求</div>' +
           '<div style="font-size:13px;color:#1e293b;line-height:1.65"><strong>' + _authEscape(demand.topic||p.topic||'') + '</strong>' + (demand.domain?' · ' + _authEscape(demand.domain):'') + '</div>' +
@@ -1602,7 +1628,7 @@ function opsDemandResults(){
     if(fn&&fn.evidence_contract!=='saved-excerpts-v1')return head+'<div style="padding:12px 20px;color:#92400e">此旧清单尚未逐条核对来源。请重新分析后查看和推送。</div>';
     var body;
     if(running && !fn){
-      body='<div style="margin:6px 20px 14px;text-align:center;padding:20px;background:#faf9ff;border-radius:10px;border:1px solid #ede9fe;font-size:12.5px;color:#6d28d9">⏳ AI 正在整理当前方向的材料企业，尚未完成业务适配审核…</div>';
+      body='<div style="margin:6px 20px 14px;text-align:center;padding:20px;background:#faf9ff;border-radius:10px;border:1px solid #ede9fe;font-size:12.5px;color:#6d28d9">⏳ AI 正在整理本条需求相关的材料企业，尚未完成业务适配审核…</div>';
     } else if(!fn){
       body='<div style="margin:6px 20px 14px;text-align:center;padding:18px;background:#f9fafb;border-radius:10px;border:1px solid #e8edf5">'+
         '<div style="font-size:12.5px;color:#9aa5b5;margin-bottom:8px">尚未生成企业漏斗</div>'+
@@ -2799,62 +2825,72 @@ function opsEntDomains(text){
 
 function opsEntScanOne(idx, silent){
   var e=OPS_ENT[idx]; if(!e) return;
+  var preserved=(Array.isArray(e.matches)?e.matches:[]).filter(function(m){return m&&m.pushed===true;});
   var matches=[];
-  // 企业侧领域：综合 名称+方向+行业+标签
-  var entText=(e.name||'')+' '+(e.gap||'')+' '+(e.kind||'')+' '+((e.tags||[]).join(' '));
-  var entDoms=opsEntDomains(entText);
-  var entDomList=Object.keys(entDoms);
+  // These are candidate hints only. A shared industry label is not evidence
+  // that an enterprise serves every product requested by that industry.
+  var entText=[e.name,e.gap,e.kind].concat(Array.isArray(e.tags)?e.tags:[]).filter(function(v){return typeof v==='string';}).join(' ');
+  var entDoms=opsEntDomains(entText),entDomList=Object.keys(entDoms);
+  function normalized(value){return String(value||'').toLowerCase().replace(/[\s，,。；;：:、/（）()\[\]【】“”"'·—-]+/g,'');}
+  var entLiteral=normalized(entText);
   Object.keys(PROJECTS).forEach(function(k){
     var p=PROJECTS[k];
-    var rs=REPORTSTATE[k];
-    var kb=p.kb||[];
-    // 缺口来源：报告文本 ❌/⚠/薄弱/缺失 行 + KB 主题卡方向
-    var gaps=[];
-    if(rs&&rs.text){
+    if(!p||p.isDemand!==true)return;
+    if(preserved.some(function(m){return m.projKey===k;}))return;
+    if(p.demandContract==='industry-demand-v1'){
+      var priority=p.selectedPriority||{},spec=p.demandSpec||{};
+      var focus=typeof priority.focus==='string'?priority.focus.trim():'';
+      var description=typeof spec.description==='string'?spec.description.trim():'';
+      // A valid saved request is required. Do not read its frozen full report,
+      // inherited KB, other recommendations or broad industry clusters here.
+      if(!focus||!description)return;
+      var terms=focus.split(/[/、，,；;：:\n]+/).map(normalized).filter(function(term){return term.length>1;});
+      var hit=terms.some(function(term){return entLiteral.indexOf(term)>=0;});
+      if(hit)matches.push({projKey:k,city:p.city,gap:industryDemandProjectTitle(p),sourcePriorityKey:p.sourcePriorityKey,
+        matchBasis:'selected_demand_literal',verificationStatus:'pending',pushed:false});
+      return;
+    }
+    var rs=REPORTSTATE[k],kb=Array.isArray(p.kb)?p.kb:[],gaps=[];
+    if(rs&&typeof rs.text==='string'){
       rs.text.split('\n').forEach(function(l){
         if(l.indexOf('❌')>=0||l.indexOf('⚠')>=0||l.indexOf('薄弱')>=0||l.indexOf('缺失')>=0){
           var clean=l.replace(/[❌✅⚠️*#|]/g,'').replace(/\s+/g,' ').trim();
-          if(clean.length>3&&clean.length<80) gaps.push(clean);
+          if(clean.length>3&&clean.length<80)gaps.push(clean);
         }
       });
     }
     kb.forEach(function(card){
       (card&&Array.isArray(card.known)?card.known:[]).forEach(function(item){
         var c=ragItemText(item).replace(/[✅⚠️]/g,'').replace(/\s+/g,' ').trim();
-        if((c.indexOf('缺')>=0||c.indexOf('薄弱')>=0||c.indexOf('补链')>=0||c.indexOf('引进')>=0)&&c.length>4&&c.length<80) gaps.push(c);
+        if((c.indexOf('缺')>=0||c.indexOf('薄弱')>=0||c.indexOf('补链')>=0||c.indexOf('引进')>=0)&&c.length>4&&c.length<80)gaps.push(c);
       });
     });
     gaps.forEach(function(gapTxt){
       var gapLow=gapTxt.toLowerCase();
       var kws=(e.gap||'').toLowerCase().split(/[/、，,\s]+/).filter(function(w){return w.length>1;});
-      // ① 字面命中（企业方向词出现在缺口里）
       var hit=kws.some(function(kw){return gapLow.indexOf(kw)>=0;});
-      // ② 领域聚类命中（企业领域 ∩ 缺口领域 非空）
-      if(!hit && entDomList.length){
-        var gapDoms=opsEntDomains(gapTxt);
-        hit=entDomList.some(function(d){return gapDoms[d];});
-      }
-      if(hit){
-        matches.push({projKey:k, city:p.city, gap:gapTxt.slice(0,25), pushed:false});
-      }
+      if(!hit&&entDomList.length){var gapDoms=opsEntDomains(gapTxt);hit=entDomList.some(function(d){return gapDoms[d];});}
+      if(hit)matches.push({projKey:k,city:p.city,gap:gapTxt.slice(0,25),pushed:false});
     });
   });
-  // 去重：按「城市+缺口语义」合并（同一缺口在多个项目重复出现时只保留一条）
-  var seen={};
+  var seen=Object.create(null),legacyCount=0;
   matches=matches.filter(function(m){
-    // 规范化缺口文本：去标点/前后缀「缺失/薄弱/核心缺口」等，抓取核心词做去重键
-    var g=(m.gap||'').replace(/[\s\-—：:（）()、，,。.]/g,'')
-                     .replace(/^(核心缺口|缺失|薄弱|缺口方向)/,'');
-    var key=(m.city||'')+':'+g.slice(0,10);
-    if(seen[key]) return false;
-    seen[key]=true; return true;
-  }).slice(0,6);
-  OPS_ENT[idx].matches=matches;
-  OPS_ENT[idx].status=matches.length>0?'scanned':'manual';
+    var p=PROJECTS[m.projKey],key;
+    if(p&&p.demandContract==='industry-demand-v1')key='demand:'+m.projKey;
+    else{
+      var g=(m.gap||'').replace(/[\s\-—：:（）()、，,。.]/g,'').replace(/^(核心缺口|缺失|薄弱|缺口方向)/,'');
+      key='legacy:'+(m.city||'')+':'+g.slice(0,10);
+      if(legacyCount>=6)return false;
+    }
+    if(seen[key])return false;
+    seen[key]=true;if(!p||p.demandContract!=='industry-demand-v1')legacyCount++;
+    return true;
+  });
+  OPS_ENT[idx].matches=preserved.concat(matches);
+  OPS_ENT[idx].status=preserved.length?'pushed':matches.length?'scanned':'manual';
   if(!silent){
-    persist();
-    renderOpsV2();
-    toast(matches.length>0?'✓ 扫描完成，找到 '+matches.length+' 个匹配方向':'未找到匹配方向，请检查企业方向填写');
+    persist();renderOpsV2();
+    toast(matches.length?'✓ 扫描完成，找到 '+matches.length+' 条待核需求线索':'未新增待核需求线索，已推送记录保持不变');
   }
 }
 

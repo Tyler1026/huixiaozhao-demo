@@ -16,7 +16,7 @@ function detailPane(p){
 function detailNeeds(p){
   // 若有展开的方向：右侧显示该方向上下文；否则显示全局汇总
   var openK = window.__projOpen;
-  if(openK && PROJECTS[openK]){
+  if(openK && PROJECTS[openK] && PROJECTS[openK].isDemand===true){
     var x = demandDisplayProject(openK,PROJECTS[openK]);
     var clues = x.clues||[];
     var teal  = clues.filter(function(c){return c.tone==='teal';}).length;
@@ -24,8 +24,9 @@ function detailNeeds(p){
     var slate = clues.filter(function(c){return c.tone==='slate';}).length;
     var sname = stageNameOf(x, x.stage);
     var sdesc = stageDescOf(x, x.stage);
-    return '<div class="detail-header"><div><span class="eyebrow">DIRECTION</span><h2>'+x.topic+'</h2><p>'+_authEscape(x.city)+' · 当前方向进度</p></div></div>'+
+    return '<div class="detail-header"><div><span class="eyebrow">DEMAND</span><h2>'+_authEscape(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(x):x.topic)+'</h2><p>'+_authEscape(x.city)+' · 当前需求进度</p></div></div>'+
       '<div class="detail-scroll">'+
+        (x.demandContract==='industry-demand-v1'?'<div class="detail-block">'+industryDemandSummaryHtml(x)+'</div>':'')+
         '<div class="detail-block"><h3>当前阶段</h3>'+
           '<p class="detail-copy" style="font-size:18px;font-weight:700;color:#013582">'+sname+'</p>'+
           '<div style="font-size:12px;color:#8492a6;margin-top:4px">第 '+x.stage+'/'+projStages(x).length+' 步 · '+sdesc+'</div>'+
@@ -35,7 +36,7 @@ function detailNeeds(p){
           '<li><i class="i">•</i>核验中：'+amber+' 家</li>'+
           '<li><i class="i">•</i>待接触：'+slate+' 家</li>'+
         '</ul></div>'+
-        '<div class="detail-block"><h3>提示</h3><div class="info-callout" style="margin-top:0">右侧随所选方向联动；点击左侧其它方向可切换查看。企业真实联系方式由资源团队线下保管。</div></div>'+
+        '<div class="detail-block"><h3>提示</h3><div class="info-callout" style="margin-top:0">右侧随所选需求联动；点击左侧其它需求可切换查看。企业真实联系方式由资源团队线下保管。</div></div>'+
       '</div>';
   }
   // 与左侧招商对接列表(projMgmtPage)用同一过滤口径：只统计已提交的招商需求子项目，
@@ -46,9 +47,9 @@ function detailNeeds(p){
     return false; // 只认isDemand===true，不再用stage>=3兜底（防止产业分析项目误入招商对接）
   });
   var byStage={};ks.forEach(function(k){var s=demandEffectiveStage(k,PROJECTS[k]);byStage[s]=(byStage[s]||0)+1});
-  return '<div class="detail-header"><div><span class="eyebrow">OVERVIEW</span><h2>需求概览</h2><p>'+_authEscape(p.who)+' 名下产业分析汇总</p></div></div>'+
+  return '<div class="detail-header"><div><span class="eyebrow">OVERVIEW</span><h2>需求概览</h2><p>'+_authEscape(p.who)+' 名下招商需求汇总</p></div></div>'+
     '<div class="detail-scroll">'+
-      '<div class="detail-block"><h3>产业分析总数</h3><p class="detail-copy" style="font-size:22px;font-weight:700;color:#013582">'+ks.length+' 个产业方向</p></div>'+
+      '<div class="detail-block"><h3>招商需求总数</h3><p class="detail-copy" style="font-size:22px;font-weight:700;color:#013582">'+ks.length+' 条招商需求</p></div>'+
       '<div class="detail-block"><h3>阶段分布</h3><ul class="check-list">'+
         (function(){
           // 阶段名按项目取（可能有自定义阶段，序号会超过 STAGES 长度）
@@ -59,11 +60,11 @@ function detailNeeds(p){
             var nm='';
             for(var j=0;j<ks.length;j++){ if(demandEffectiveStage(ks[j],PROJECTS[ks[j]])===i){ nm=stageNameOf(PROJECTS[ks[j]],i); break; } }
             if(!nm) nm=(STAGES[i-1]&&STAGES[i-1][0])||('第'+i+'阶段');
-            rows+='<li><i class="i">•</i>'+nm+'：'+n+' 个</li>';
+            rows+='<li><i class="i">•</i>'+nm+'：'+n+' 条</li>';
           }
           return rows;
         })()+'</ul></div>'+
-      '<div class="detail-block"><h3>提示</h3><div class="info-callout" style="margin-top:0">展开任一产业方向后，这里会显示该方向的阶段与线索进度；每条为独立研判线，进度互不干扰。</div></div>'+
+      '<div class="detail-block"><h3>提示</h3><div class="info-callout" style="margin-top:0">展开任一招商需求后，这里会显示该需求的具体诉求、阶段与线索进度；各条需求独立跟进。</div></div>'+
     '</div>';
 }
 // 设置页 → 右侧：账号与权限概览
@@ -170,13 +171,13 @@ function detailReport(p){
 }
 // 招商对接页 → 右侧：对接概览
 function detailDocking(p){
-  var ks=cityKeys();
+  var ks=cityKeys().filter(function(k){return PROJECTS[k]&&PROJECTS[k].isDemand===true;});
   var n4=ks.filter(function(k){return demandEffectiveStage(k,PROJECTS[k])>=4}).length;
   var n5=ks.filter(function(k){return demandEffectiveStage(k,PROJECTS[k])>=5}).length;
-  return '<div class="detail-header"><div><span class="eyebrow">DOCKING</span><h2>对接概览</h2><p>各项目对接进度</p></div></div>'+
+  return '<div class="detail-header"><div><span class="eyebrow">DOCKING</span><h2>对接概览</h2><p>各条需求对接进度</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>进行中</h3><ul class="check-list"><li><i class="i">🔄</i>资源匹配中：'+n4+' 个</li><li><i class="i">🤝</i>已进入对接：'+n5+' 个</li></ul></div>'+
-      '<div class="detail-block"><h3>说明</h3><div class="info-callout" style="margin-top:0">点左侧项目查看对接时间线。进度由资源端回传，系统只做提醒。</div></div>'+
+      '<div class="detail-block"><h3>说明</h3><div class="info-callout" style="margin-top:0">点左侧需求查看对接时间线。进度由资源端回传，系统只做提醒。</div></div>'+
       '<div class="detail-block"><div class="boundary-note" style="margin-top:0"><i class="i">🔒</i>系统不自动联系企业；对接由资源端线下推进。</div></div>'+
     '</div>';
 }

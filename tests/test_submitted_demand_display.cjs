@@ -20,7 +20,7 @@ function boot(side) {
   const topic = 'QA-POST-REPORT-20261011核电换热配套';
   const parent = {id: 'parent', city: '闵行区', topic, stage: 2, workspaceId: 'workspace'};
   const demand = {id: 'demand', city: '闵行区', topic, stage: 3, isDemand: true,
-    submissionState: 'submitted', workspaceId: 'workspace', stageByTopic: {[topic]: 3},
+    submissionState: 'submitted', demandContract:'industry-demand-v1', demandTitle:'核级换热器招引', sourceProjectKey:'parent', sourceAnalysisTopic:topic, sourcePriorityKey:'["industry","核级换热器"]', selectedPriority:{focus:'核级换热器'}, demandSpec:{description:'引入核级换热器生产能力'}, workspaceId: 'workspace', stageByTopic: {[topic]: 3},
     clues: [{name: '来源支持企业', tone: 'amber'}]};
   const report = {topic, text: '一、产业基础判断\n现有材料待核验。', phase: 2, ts: 1,
     aiReportByTopic: {[topic]: '一、产业基础判断\n现有材料待核验。'}, phaseByTopic: {[topic]: 2}};
@@ -35,7 +35,7 @@ function boot(side) {
     topicHasFullReport: () => true, reportTextForTopic: () => report.text,
     topicScoreDisplay: () => '内容待核验', origReportFiles: () => null,
     P: () => c.PROJECTS[c.cur], render() {calls.render++;}, submitDemand() {calls.submit++;},
-    persist() {calls.writes++;}, fetch() {calls.fetch++; throw new Error('No network in display tests');},
+    closeModal() {}, toast() {}, persist() {calls.writes++;}, fetch() {calls.fetch++; throw new Error('No network in display tests');},
     _authEscape: String, cityKeys: () => Object.keys(c.PROJECTS),
     escapeChainText: String, setReportAreaHtml: (el, html) => {el.innerHTML = html;},
     document: {getElementById: key => elements[key] || null, querySelector: () => elements.bottom},
@@ -49,7 +49,7 @@ function boot(side) {
   functions.push(...['detailNeeds', 'detailReport', 'detailDocking'].map(n => declaration(side, '13.js', n)));
   functions.push(...['reportExportContext', 'reportMdToHtml', 'viewCurrentReport'].map(n => declaration(side, '00.js', n)));
   if (side === 'index') functions.push(declaration(side, '12-tail.js', 'reportBottomBarInner'));
-  vm.runInContext(functions.join('\n'), c);
+  vm.runInContext(fs.readFileSync(path.join(root,'frontend/shared/industry-demands.js'),'utf8')+'\n'+functions.join('\n'), c);
   return {c, parent, demand, report, elements, calls};
 }
 
@@ -70,28 +70,25 @@ for (const side of ['index', 'ops']) {
     assert.equal(calls.writes + calls.fetch, 0);
   });
 
-  test(side + ': parent report resolves the exact workspace demand without changing research stage', () => {
+  test(side + ': an analysis workspace stays separate from its submitted child suggestions', () => {
     const {c, parent} = boot(side); c.cur = 'parent';
     const before = JSON.stringify(c.PROJECTS);
-    assert.match(c.detailReport(parent), /资源匹配 · 资源端核验匹配/);
-    assert.match(c.reportDemandActionButton(parent), /查看已递交需求/);
+    assert.equal(c.demandDisplayProject('parent', parent).stage, 2);
+    assert.match(c.reportDemandActionButton(parent), /选择具体招引建议/);
+    assert.doesNotMatch(c.reportDemandActionButton(parent), /查看这条招商需求/);
     assert.equal(JSON.stringify(c.PROJECTS), before);
     c.PROJECTS.demand.workspaceId = 'different-workspace';
     assert.equal(c.demandDisplayProject('parent', parent).stage, 2);
-    assert.doesNotMatch(c.reportDemandActionButton(parent), /查看已递交需求/);
-    c.PROJECTS.demand.workspaceId = 'workspace'; c.PROJECTS.demand.topic = '另一个方向';
-    assert.equal(c.demandDisplayProject('parent', parent).stage, 2);
   });
 
-  test(side + ': pending and failed receipts do not advance stage and keep distinct actions', () => {
+  test(side + ': incomplete legacy receipts never advance stage or offer a whole-direction retry', () => {
     const {c, demand} = boot(side);
-    for (const [state, label] of [['pending', '需求正在保存'], ['failed', '重试提交当前方向需求']]) {
+    for (const state of ['pending', 'failed']) {
       demand.submissionState = state;
       assert.equal(c.demandDisplayProject('demand', demand).stage, 3);
       const html = c.reportDemandActionButton(demand);
-      assert.match(html, new RegExp(label));
-      assert.equal(html.includes(' disabled'), state === 'pending');
-      assert.doesNotMatch(html, /查看已递交需求/);
+      assert.match(html, /查看这条招商需求/);
+      assert.doesNotMatch(html, /submitDemand|重试提交当前方向需求/);
     }
     demand.submissionState = 'submitted'; c.DEMANDS = [];
     assert.equal(c.demandDisplayProject('demand', demand).stage, 3);
@@ -100,11 +97,11 @@ for (const side of ['index', 'ops']) {
   test(side + ': viewing a submitted report retains exports and never offers resubmission', () => {
     const {c, demand, elements, calls} = boot(side), before = JSON.stringify(c.PROJECTS);
     c.viewCurrentReport();
-    assert.match(elements.bottom.innerHTML, /查看已递交需求/);
+    assert.match(elements.bottom.innerHTML, /查看这条招商需求/);
     assert.doesNotMatch(elements.bottom.innerHTML, /submitDemand\(\)/);
     assert.match(elements.bottom.innerHTML, /downloadReport/);
     if (side === 'index') assert.match(elements.bottom.innerHTML, /快速简报/);
-    const action = elements.bottom.innerHTML.match(/onclick="([^"]+)"[^>]*>查看已递交需求/)[1];
+    const action = elements.bottom.innerHTML.match(/onclick="([^"]+)"[^>]*>查看这条招商需求/)[1];
     vm.runInContext(action, c);
     assert.equal(c.view, 'home'); assert.equal(calls.render, 1);
     assert.equal(calls.submit + calls.writes + calls.fetch, 0);
@@ -114,9 +111,9 @@ for (const side of ['index', 'ops']) {
 
   test(side + ': existing custom later stages are preserved and render with their own labels', () => {
     const {c, parent, demand} = boot(side); demand.stage = 6; demand.customStages = ['第一次会议'];
-    c.cur = 'parent';
-    assert.equal(c.demandDisplayProject('parent', parent).stage, 6);
-    assert.match(c.detailReport(parent), /第一次会议 · 自定义阶段/);
+    c.cur = 'demand';
+    assert.equal(c.demandDisplayProject('demand', demand).stage, 6);
+    assert.match(c.detailReport(demand), /第一次会议 · 自定义阶段/);
     assert.equal(parent.stage, 2); assert.equal(demand.stage, 6);
   });
 

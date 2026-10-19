@@ -278,6 +278,8 @@ test('JSON-restored confirmation, withdrawal and edits update the canonical topi
 
 test('legacy gap cards cannot submit an unresearched direction or manufacture a full report', async () => {
   const {c, events} = environment();
+  vm.runInContext(fs.readFileSync(path.join(root,'frontend/shared/industry-demands.js'),'utf8'),c);
+  c.reportAnalyticalPriorities=()=>[];
   vm.runInContext(declaration('importToProject'),c);
   c.submitDemand=()=>{throw new Error('must not submit');};
   c.importToProject('别的产业缺口','闵行区','核电配套');

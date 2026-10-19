@@ -64,3 +64,25 @@ test('legacy convert action opens only the selected company review and changes n
 test('completed empty material result shows no push button and does not imply absence',()=>{
  const h=boot(0);h.c.PROJECTS.p.clues=[];h.c._funnelRunning={};h.c.__funnelExpand={};vm.runInContext(declaration(src,'renderCluesTwoPanel'),h.c);const html=h.c.renderCluesTwoPanel('p');assert.match(html,/不代表现实中不存在/);assert.doesNotMatch(html,/onclick="pushFunnelTopToGov/);
 });
+
+for(const side of ['index/script-02-sections','ops/script-03-sections']){
+ test(side+' specific demand anchors exclude broad report, confirmed facts and other suggestions',()=>{
+  const h=boot();const source=fs.readFileSync(path.join(__dirname,'../frontend/'+side+'/12-tail.js'),'utf8');vm.runInContext(declaration(source,'funnelReviewDemandAnchors'),h.c);
+  const topic=h.c.PROJECTS.p.topic;Object.assign(h.c.PROJECTS.p,{demandContract:'industry-demand-v1',demandTitle:'耐蚀管材',selectedPriority:{action:'其他建议仅作背景，不能作为当前用户确认需求'},demandSpec:{description:'对接具备核电换热器耐蚀管材生产能力的企业',conditions:'要求提供核级质保体系与对应产品证据'}});
+  h.c.REPORTSTATE.p.pendingByTopic={[topic]:[{status:'confirmed',text:'宽泛产业分析中的已确认事项不能成为具体需求锚点'}]};
+  const anchors=Array.from(h.c.funnelReviewDemandAnchors('p',topic),x=>({id:x.id,kind:x.kind,quote:x.quote}));
+  assert.deepEqual(anchors,[{id:'demand:description',kind:'user_demand',quote:h.c.PROJECTS.p.demandSpec.description},{id:'demand:conditions',kind:'user_demand',quote:h.c.PROJECTS.p.demandSpec.conditions}]);
+  h.c.PROJECTS.p.demandSpec.conditions='   ';assert.equal(h.c.funnelReviewDemandAnchors('p',topic).length,1);
+  h.c.PROJECTS.p.demandSpec.description='';assert.equal(h.c.funnelReviewDemandAnchors('p',topic).length,0,'missing specific requirements must not fall back to the whole report');
+ });
+ test(side+' keeps the full long demand quote without clipping or normalizing it',()=>{
+  const h=boot();const source=fs.readFileSync(path.join(__dirname,'../frontend/'+side+'/12-tail.js'),'utf8');vm.runInContext(declaration(source,'funnelReviewDemandAnchors'),h.c);
+  const quote='  '+('核级耐蚀管材的产品与生产能力须逐项核验。'.repeat(240))+'\n保留用户末尾条件。  ';assert.ok(quote.length>3500&&quote.length<6000);
+  Object.assign(h.c.PROJECTS.p,{demandContract:'industry-demand-v1',demandSpec:{description:quote,conditions:''}});
+  const anchors=h.c.funnelReviewDemandAnchors('p',h.c.PROJECTS.p.topic);assert.equal(anchors.length,1);assert.equal(anchors[0].quote,quote);assert.equal(anchors[0].quote.length,quote.length);
+ });
+}
+test('specific-demand review payload preserves the full user requirement as selected anchor',async()=>{
+ const h=boot();const quote='核电换热管材生产能力需有来源。'.repeat(270);assert.ok(quote.length>3500);Object.assign(h.c.PROJECTS.p,{demandContract:'industry-demand-v1',demandSpec:{description:quote,conditions:'提交产品资质原文'}});
+ h.open();h.fill();h.c.confirmFunnelReview('p',1);await flush();assert.equal(h.calls.length,1);assert.equal(h.calls[0].body.reviews[0].demand.anchorId,'demand:description');assert.equal(h.calls[0].body.reviews[0].demand.quote,quote);
+});

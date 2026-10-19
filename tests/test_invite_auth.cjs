@@ -352,21 +352,19 @@ test('new government direction inherits the root and actual rendering keeps cur 
   assert.equal(h.ctx._projectWorkspaceId(child), 'team-a');
 });
 
-test('both government demand creation paths bind to their parent workspace and never dedupe across same-city teams', async () => {
+test('legacy whole-topic actions never create demands or merge same-city workspaces', async () => {
   for (const action of ['import', 'submit']) {
     const h = await bootPage('index.html', response(401, {ok: false, message: '请登录'})); workspaceFixture(h);
     h.ctx.AUTH.projectKeys.push('team-b');
     h.ctx.PROJECTS.foreign = {id: 'foreign', workspaceId: 'team-b', city: '同名城市', topic: '原方向', isDemand: true};
     h.ctx.REPORTSTATE['team-a'] = {text: '已完成的研判报告', topic: '原方向', phase: 2};
+    const before = JSON.stringify(h.ctx.PROJECTS);
     if (action === 'import') h.ctx.importToProject('原方向', '同名城市', '原方向');
     else await h.ctx.submitDemand();
-    const children = Object.entries(h.ctx.PROJECTS).filter(([key, p]) => key !== 'foreign' && p.isDemand);
-    assert.equal(children.length, 1, action + ' creates one child in this workspace');
-    const [key, child] = children[0]; assert.equal(child.workspaceId, 'team-a');
-    assert.equal(h.ctx._findExistingDemand('同名城市', '原方向'), key);
-    h.ctx.cur = key; h.ctx.view = 'home'; h.ctx.render();
-    assert.equal(h.ctx.cur, key, action + ' child survives route validation');
-    h.ctx._dedupeDemands(); assert.ok(h.ctx.PROJECTS.foreign, 'same city peer workspace stays intact');
+    assert.equal(JSON.stringify(h.ctx.PROJECTS), before, action + ' cannot submit an entire direction');
+    assert.equal(h.ctx.cur, 'team-a');
+    assert.equal(h.ctx._findExistingDemand('同名城市', '原方向'), null, 'foreign workspace is not reused');
+    h.ctx._dedupeDemands(); assert.equal(JSON.stringify(h.ctx.PROJECTS), before, 'history is never deleted by a name heuristic');
   }
 });
 

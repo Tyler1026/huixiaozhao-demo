@@ -2,14 +2,17 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const read=p=>fs.readFileSync(path.join(__dirname,'..',p),'utf8');
 const tail=read('frontend/ops/script-03-sections/12-tail.js');
+const titleSource=read('frontend/shared/industry-demands.js');
+const titleStart=titleSource.indexOf('function industryDemandProjectTitle(');
+const titleHelper=titleSource.slice(titleStart,titleSource.indexOf('\nfunction ',titleStart+1));
 const helper=tail.slice(tail.indexOf('function pushFunnelTopToGov('),tail.indexOf('function toggleFunnelExpand('));
 const flush=async()=>{for(let i=0;i<40;i++)await Promise.resolve();};
 function boot(){
  const nodes={},calls=[],messages=[];let modal='';
- const c={JSON,Number,Array,String,PROJECTS:{p:{topic:'核电换热',city:'闵行区',reportRequestId:'r1',clues:[]}},REPORTSTATE:{p:{}},OPS_ENT:[{id:'e0',name:'未匹配甲',matches:[]},{id:'e1',name:'产品乙',matches:[]},{id:'e2',name:'产品丙',matches:[]}],
+ const c={JSON,Number,Array,String,PROJECTS:{p:{topic:'核电换热',isDemand:true,city:'闵行区',reportRequestId:'r1',clues:[]}},REPORTSTATE:{p:{}},OPS_ENT:[{id:'e0',name:'未匹配甲',matches:[]},{id:'e1',name:'产品乙',matches:[]},{id:'e2',name:'产品丙',matches:[]}],
  document:{getElementById:id=>nodes[id]},_authEscape:String,toast:v=>messages.push(v),openModal:(title,html)=>modal=html,closeModal(){},funnelEvidenceLinks:()=>'',savedEvidenceIdentity:key=>JSON.stringify([c.PROJECTS[key].topic,c.PROJECTS[key].reportRequestId,c.REPORTSTATE[key]]),
  fetch:async(url,opts)=>{calls.push({url,body:JSON.parse(opts.body)});return {ok:true,json:async()=>({projectKey:'p',topic:'核电换热',reportRequestId:'r1',source:'resource',evidence_contract:'saved-excerpts-v1',companies:[],demandAnchors:[]})};}};
- c.window=c;vm.createContext(c);vm.runInContext(helper,c);
+ c.window=c;vm.createContext(c);vm.runInContext(titleHelper+'\n'+helper,c);
  const functions=read('frontend/ops/script-03-sections/17.js').split('\n').filter(l=>/^function (opsEntPushModal|opsEntDoPush|opsPushEntToCity|opsDoPushToCity)\(/.test(l)).join('\n');vm.runInContext(functions,c);vm.runInContext(read('frontend/ops/script-03-sections/18.js'),c);
  return {c,nodes,calls,messages,modal:()=>modal};
 }
@@ -37,4 +40,9 @@ test('source-backed preview uses same dual-anchor form and sends only source IDs
  h.c.fetch=async(url,opts)=>{h.calls.push({url,body:JSON.parse(opts.body)});return {ok:true,json:async()=>url.includes('preview')?preview:{ok:true,added:['产品乙'],skipped:[]}};};h.c.resourceReviewPreview('p',['e1']);await flush();
  h.nodes.funnelReviewError={};h.nodes['funnelReview-0']={checked:true};h.nodes['funnelProduct-0']={value:'0'};h.nodes['funnelDemand-0']={value:'0'};h.nodes['funnelReason-0']={value:'逐项核对耐蚀管材与核电需求的技术范围，仍需验证资质'};
  h.c.confirmFunnelReview('p',1);await flush();const sent=h.calls[1].body;assert.equal(sent.source,'resource');assert.deepEqual(sent.resourceIds,['e1']);assert.equal(sent.reportRequestId,'r1');assert.equal(sent.reviews[0].product.quote,quote);assert.equal(sent.reviews[0].demand.quote,demand);assert.equal('companies' in sent,false);
+});
+
+test('resource target chooser lists only submitted demand children and displays their specific titles',()=>{
+ const h=boot();h.c.PROJECTS.p.demandContract='industry-demand-v1';h.c.PROJECTS.p.demandTitle='耐蚀换热管材';h.c.PROJECTS.workspace={topic:'宽泛城市产业分析',city:'闵行区',isDemand:false};h.c.opsEntManualPushModal(1);
+ assert.deepEqual(Array.from(h.c.resourceReviewChooseProject.selection.keys),['p']);assert.match(h.modal(),/耐蚀换热管材/);assert.doesNotMatch(h.modal(),/宽泛城市产业分析/);
 });

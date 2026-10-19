@@ -101,7 +101,12 @@ def project_context(body, state):
         dedup.append(chunk)
     if not dedup:
         raise AuthError(409, 'evidence_missing', '当前工作区尚无可核查材料，请先补充材料')
-    return {'projectKey': key, 'workspaceId': root, 'topic': topic, 'city': p.get('city', ''), 'reportRequestId': reqid, 'chunks': dedup, 'onboarding': p.get('onboarding') or {}, 'reportState': rs}
+    result = {'projectKey': key, 'workspaceId': root, 'topic': topic, 'city': p.get('city', ''), 'reportRequestId': reqid, 'chunks': dedup, 'onboarding': p.get('onboarding') or {}, 'reportState': rs}
+    if p.get('demandContract') == 'industry-demand-v1':
+        result.update(demandContract=p['demandContract'], demandSpec=copy.deepcopy(p.get('demandSpec') or {}),
+                      selectedPriority=copy.deepcopy(p.get('selectedPriority') or {}),
+                      sourcePriorityKey=p.get('sourcePriorityKey', ''), demandTitle=p.get('demandTitle', ''))
+    return result
 
 
 def validate_confirmations(body, context):
@@ -238,12 +243,16 @@ def ground_funnel(obj, catalog, context):
         companies.append(item)
     if not companies and obj['companies']:
         raise ValueError('没有企业通过来源核对；请补充该方向企业名录或原始链接')
-    return {'topic': context['topic'], 'projectKey': context['projectKey'],
+    result = {'topic': context['topic'], 'projectKey': context['projectKey'],
             'reportRequestId': context['reportRequestId'], 'total_scanned': len(companies),
             'source_records': len(catalog), 'rejected_count': dropped, 'companies': companies,
             'evidence_contract': 'saved-excerpts-v1',
             'notice': ('当前材料不足以形成有来源的企业候选；不代表现实中不存在相关企业。' if not companies else
                        '当前为材料候选清单，逐条保留来源；业务适配和投资意向未核验，不可直接批量推送。')}
+    if context.get('demandContract') == 'industry-demand-v1':
+        result.update(demandContract=context['demandContract'], sourcePriorityKey=context['sourcePriorityKey'],
+                      demandTitle=context['demandTitle'], demandFocus=context['selectedPriority'].get('focus', ''))
+    return result
 
 
 def ground_profile(obj, catalog, context):
@@ -298,6 +307,13 @@ def funnel_demand_anchors(context):
     substitute for the current demand. IDs retain source positions so stale
     dialogs cannot silently bind the same index to changed text.
     """
+    if context.get('demandContract') == 'industry-demand-v1':
+        spec = context.get('demandSpec') or {}
+        # The preserved industry report explains the suggestion; none of its
+        # other lines may silently become this selected demand's requirements.
+        return [{'id': 'demand:' + field, 'kind': 'user_demand', 'quote': spec[field].strip()}
+                for field in ('description', 'conditions')
+                if isinstance(spec.get(field), str) and spec[field].strip()]
     rs, topic = context['reportState'], context['topic']
     anchors = []
     for index, item in enumerate((rs.get('pendingByTopic') or {}).get(topic) or []):
@@ -319,6 +335,20 @@ def funnel_demand_anchors(context):
                 if 12 <= len(quote) <= 3500:
                     anchors.append({'id': 'report:'+str(index), 'kind': 'report', 'quote': quote})
     return anchors
+
+
+def funnel_request_text(context):
+    """Replace broad client questions with the saved, specific demand scope."""
+    if context.get('demandContract') != 'industry-demand-v1':
+        return None
+    import json
+    return ('仅围绕以下已保存的具体招商需求筛选企业，不得以所属产业大类替代本项产品/服务。'
+            '需求文字是用户提出的待核任务，分析建议不是已经证实的当地缺口；'
+            '报告其他建议只是背景，不能混入本项候选。所有候选仍需有产品原文并逐家人工核对。\n' +
+            json.dumps({'title': context.get('demandTitle', ''),
+                        'focus': (context.get('selectedPriority') or {}).get('focus', ''),
+                        'scope': (context.get('selectedPriority') or {}).get('scope', ''),
+                        'request': context.get('demandSpec') or {}}, ensure_ascii=False))
 
 
 def resource_review_preview(body, state):
@@ -374,6 +404,9 @@ def review_and_push(body, state, actor):
     funnel = resource_review_preview(body, state) if resource_mode else project.get('funnel') or {}
     if funnel.get('evidence_contract') != 'saved-excerpts-v1' or funnel.get('reportRequestId', '') != context['reportRequestId'] or funnel.get('topic') != context['topic']:
         raise AuthError(409, 'funnel_stale', '候选来源或报告版本已更新，请重新分析')
+    if (not resource_mode and context.get('demandContract') == 'industry-demand-v1'
+            and funnel.get('sourcePriorityKey') != context.get('sourcePriorityKey')):
+        raise AuthError(409, 'funnel_stale', '候选未绑定当前具体需求，请重新筛选')
     names = body.get('names')
     if not isinstance(names, list) or not 1 <= len(names) <= 8 or not all(isinstance(n, str) and n.strip() for n in names) or len(set(names)) != len(names):
         raise AuthError(400, 'invalid_selection', '每次请选择 1 至 8 家不同企业')
@@ -441,7 +474,9 @@ def review_and_push(body, state, actor):
         cid = 'f_review_'+hashlib.sha256((key+'\0'+nk).encode()).hexdigest()[:20]
         review = c['match_review']
         clues.append({'id': cid, 'name': c['name'], 'kind': c.get('kind', ''), 'region': c.get('region', ''),
-            'gap': context['topic'], 'status': 'ops_rec', 'tone': 'amber',
+            'gap': (context.get('selectedPriority') or {}).get('focus') or context['topic'],
+            'demandTitle': context.get('demandTitle', ''), 'sourcePriorityKey': context.get('sourcePriorityKey', ''),
+            'status': 'ops_rec', 'tone': 'amber',
             'reason': '人工适配意见（待核验）：'+review['reason'], 'fit': c.get('fit', ''),
             'signal': '投资意向未知，待资源团队核验', 'hasMoveSignal': False,
             'source': c.get('source', ''), 'signalSrc': c.get('source', ''),
