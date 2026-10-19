@@ -120,8 +120,52 @@ class ChainRouteTests(unittest.TestCase):
         rs = h.data['REPORTSTATE']['p']
         self.assertEqual(rs['chainStatusByTopic']['商业火箭'], 'partial')
         self.assertEqual(rs['chainEvidenceByTopic']['商业火箭']['contract'], 'source-bound-chain-v2')
-        self.assertEqual(rs['chainByTopic']['商业火箭'], diagram()['chain'])
+        expected = diagram()['chain']
+        expected[1]['nodes'][0]['facts'] = []
+        self.assertEqual(rs['chainByTopic']['商业火箭'], expected)
         self.assertEqual(audits[-1]['persisted'], True)
+
+    def test_supplemental_original_is_saved_even_without_a_strength_judgment(self):
+        from test_topic_chain import research as originals, plan
+        from backend.topic_chain import normalize_chain_plan
+        first = originals(['商业火箭总装测试平台处于规划阶段，具体建设安排仍需要逐项核实。'], topic='商业火箭')
+        second = originals(['商业火箭总装测试平台已经建成，尚未披露实际产量及生产企业。'], topic='商业火箭')
+        def retrieve(*args, **kwargs):
+            return copy.deepcopy(second if kwargs.get('node_targets') else first)
+        def build(context, findings, complete):
+            return normalize_chain_plan(plan(first, ['商业火箭总装测试']), first, context)
+        h = Handler(state())
+        with patch('backend.public_research.enrich_public_research', side_effect=lambda r,*a:r):
+            text, _ = self.run_route(h, research=retrieve, build=build)
+        self.assertIn('chain.result', text)
+        rs = h.data['REPORTSTATE']['p']
+        node = rs['chainByTopic']['商业火箭'][1]['nodes'][0]
+        self.assertEqual(node['level'], 'unknown')
+        self.assertEqual(node['status'], 'planned')
+        self.assertEqual({f['statement'] for f in node['facts']},
+                         {first['evidence'][0]['quote'], second['evidence'][0]['quote']})
+        self.assertIn(second['evidence'][0]['id'],
+                      [s['id'] for s in rs['chainEvidenceByTopic']['商业火箭']['sources']])
+
+    def test_supplement_exception_records_failure_without_discarding_graph(self):
+        from test_topic_chain import research as originals, plan
+        from backend.topic_chain import normalize_chain_plan
+        first = originals(['商业火箭总装测试平台处于规划阶段，具体建设安排仍需要逐项核实。'], topic='商业火箭')
+        def retrieve(*args, **kwargs):
+            if kwargs.get('node_targets'):
+                raise RuntimeError('unavailable provider')
+            return copy.deepcopy(first)
+        def build(context, findings, complete):
+            return normalize_chain_plan(plan(first, ['商业火箭总装测试']), first, context)
+        h = Handler(state())
+        with patch('backend.public_research.enrich_public_research', side_effect=lambda r,*a:r):
+            text, _ = self.run_route(h, research=retrieve, build=build)
+        self.assertIn('chain.result', text)
+        meta = h.data['REPORTSTATE']['p']['chainEvidenceByTopic']['商业火箭']
+        self.assertEqual(meta['nodeResearch']['status'], 'unavailable')
+        self.assertEqual(len(meta['nodeResearch']['batches']), 1)
+        self.assertEqual(meta['nodeResearch']['errors'][0]['code'], 'node_research_failed')
+        self.assertNotIn('unavailable provider', json.dumps(meta))
 
     def test_preflight_stale_identity_does_not_run_research(self):
         h = Handler(state()); body = self.body(h); body['sourceIdentity'] = '{}'

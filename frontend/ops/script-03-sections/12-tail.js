@@ -2931,7 +2931,7 @@ function chainNodeSources(node){
   var seen={},rows=[];
   all.forEach(function(source){if(!source||typeof source!=='object')return;var urls=Array.isArray(source.urls)?source.urls:[source.url||source.source_url];urls=urls.map(chainSafeSourceUrl).filter(Boolean);
     var quote=typeof source.quote==='string'?source.quote:'',id=source.id||'',sig=JSON.stringify([id,urls,quote]);if(seen[sig])return;seen[sig]=true;
-    rows.push({id:id,urls:urls,quote:quote,title:source.title||source.cite||'',date:source.published_at||source.date||'',retrieved:source.retrieved_at||'',archived:source.archived===true,fulltextScope:source.fulltext_scope||''});});
+    rows.push({id:id,urls:urls,quote:quote,title:source.title||source.cite||'',date:source.published_at||source.date||'',retrieved:source.retrieved_at||'',archived:source.archived===true,fulltextScope:source.fulltext_scope||'',pdfPage:source.pdf_page||'',quoteRange:source.quote_range||source.excerpt_range||''});});
   return rows;
 }
 
@@ -3094,13 +3094,191 @@ function _renderRichChain(topic, segments, recs, p, unclassified, status, eviden
   return h+'</div></section>';
 }
 
+/* Presentation only: layout and assessment share the same immutable evidence. */
+var CHAIN_EXPLORER_UI=Object.create(null);
+var CHAIN_OPEN_DRAWER=null;
+function chainLayoutText(value){return typeof value==='string'?value.trim():'';}
+function chainLayoutContains(text,part){return !!chainLayoutText(part)&&chainLayoutText(text).replace(/\s+/g,'').includes(chainLayoutText(part).replace(/\s+/g,''));}
+function chainLayoutReviewedPremises(node){
+  var view=chainAssessmentView(node.assessment),j=node.assessment&&node.assessment.judgment;
+  if(!view.actual||!j||j.status!=='assessed'||view.level==='unknown')return [];
+  return (Array.isArray(j.premises)?j.premises:[]).filter(function(p){
+    if(!p||!p.source||!chainLayoutText(p.evidence_id)||p.source.id!==p.evidence_id||!Array.isArray(j.evidence_ids)||j.evidence_ids.indexOf(p.evidence_id)<0)return false;
+    var rows=chainNodeSources({sources:[p.source]});
+    return rows.length&&rows[0].urls.length&&chainLayoutText(rows[0].quote)&&chainLayoutText(p.statement)&&chainLayoutContains(rows[0].quote,p.statement)&&(!p.quote||chainLayoutContains(rows[0].quote,p.quote));
+  });
+}
+function chainLayoutInfo(node){
+  var original=chainNodeSources(node),premises=chainLayoutReviewedPremises(node),view=chainAssessmentView(node.assessment),j=node.assessment&&node.assessment.judgment;
+  var assessed=!!(view.actual&&j&&j.status==='assessed'&&view.level!=='unknown'),rows=original.slice();
+  premises.forEach(function(p){rows=rows.concat(chainNodeSources({sources:[p.source]}));});
+  var seen=Object.create(null);
+  rows=rows.filter(function(row){var key=JSON.stringify([row.id,row.urls,row.quote]);if(!row.urls.length||!chainLayoutText(row.quote)||seen[key])return false;seen[key]=true;return true;});
+  var roles=['operation','maturity','dependency','constraint','industry_fact','enterprise_capability','benchmark'];
+  var facts=premises.filter(function(p){return roles.indexOf(p.role)>=0&&chainLayoutContains(p.statement,node.name);}).slice().sort(function(a,b){return roles.indexOf(a.role)-roles.indexOf(b.role);});
+  var companies=[],companySeen=Object.create(null);
+  (assessed&&Array.isArray(j.enterprise_links)?j.enterprise_links:[]).forEach(function(link){
+    if(!link||!chainLayoutText(link.company_subject)||companySeen[link.company_subject])return;
+    var identityUrl=chainSafeSourceUrl(link.identity_url),businessUrl=chainSafeSourceUrl(link.business_url);if(!identityUrl||!businessUrl)return;
+    var identity=premises.find(function(p){return p.evidence_id===link.presence_evidence_id&&['local_presence','local_affiliation'].indexOf(p.role)>=0&&p.subject===link.company_subject&&chainLayoutContains(p.source.quote,link.company_subject)&&chainSafeSourceUrl(p.source.url)===identityUrl;});
+    var business=facts.find(function(p){return p.evidence_id===link.capability_evidence_id&&chainSafeSourceUrl(p.source.url)===businessUrl;});
+    if(!identity||!business)return;
+    companySeen[link.company_subject]=true;companies.push(link.company_subject);
+  });
+  var material=premises.filter(function(p){return roles.indexOf(p.role)>=0&&chainLayoutContains(p.source.quote,node.name);}).slice().sort(function(a,b){return roles.indexOf(a.role)-roles.indexOf(b.role);});
+  var statement=(Array.isArray(node.facts)?node.facts:[]).find(function(f){return f&&f.kind==='source_statement'&&f.scope==='source_statement_only'&&chainLayoutContains(f.statement,node.name)&&rows.some(function(row){return row.id===f.evidence_id&&chainLayoutContains(row.quote,f.statement);});});
+  var chosen=facts[0]||material[0],source=chosen?chainNodeSources({sources:[chosen.source]})[0]:statement?rows.find(function(row){return row.id===statement.evidence_id&&chainLayoutContains(row.quote,statement.statement);}):rows[0];
+  var excerpt=chosen?(chainLayoutContains(chosen.statement,node.name)?chosen.statement:chosen.source.quote):statement?statement.statement:source?source.quote:'';
+  var label=assessed?'已有现状依据':node.negated?'含否定表述':node.status==='planned'?'含规划线索':rows.length?'已收录材料':'来源尚不完整';
+  var scope=assessed?({local:'本地环节 / 应用',local_enterprise:'关联企业业务 · 不代表本地产能',industry_shared:'行业共同约束 · 非本地独有'}[j.scope]||'适用范围见依据'):'材料范围待核';
+  var rawLabel=node.negated?'原始材料含否定或排除表述':node.status==='planned'?'原始材料含规划表述':node.status==='reported'?'原始材料为披露记录':'原始材料属性待核';
+  return {assessed:assessed,label:label,scope:scope,count:rows.length,rows:rows,original:original,companies:companies,excerpt:excerpt,date:source?chainAssessmentDate(source.date,false):'',rawLabel:rawLabel};
+}
+function chainExplorerKey(topic,p,evidence){
+  return JSON.stringify([p&&p.id||typeof cur==='string'&&cur||'',topic,evidence.runId||evidence.generatedAt||'']);
+}
+function setChainExplorerMode(button,mode){
+  if(mode!=='layout'&&mode!=='assessment')return;
+  var root=button.closest('.chain-explorer');if(!root)return;
+  var drawer=root._chainDrawer||root.querySelector('.chain-node-drawer');if(drawer&&!drawer.hidden)closeChainLayoutNode(drawer,false);
+  var key=root.getAttribute('data-chain-key');if(key)CHAIN_EXPLORER_UI[key]=mode;
+  root.setAttribute('data-chain-mode',mode);
+  root.querySelectorAll('[data-chain-panel]').forEach(function(panel){panel.hidden=panel.getAttribute('data-chain-panel')!==mode;});
+  root.querySelectorAll('[data-chain-mode-button]').forEach(function(tab){var active=tab.getAttribute('data-chain-mode-button')===mode;tab.classList.toggle('is-active',active);tab.setAttribute('aria-pressed',active?'true':'false');});
+}
+function openChainLayoutNode(button,index){
+  var root=button.closest('.chain-explorer');if(!root||!/^\d+$/.test(String(index))||typeof document==='undefined'||!document.body)return;
+  var template=root.querySelector('template[data-chain-detail="'+index+'"]'),drawer=root._chainDrawer||root.querySelector('.chain-node-drawer');
+  if(!template||!drawer)return;
+  if(CHAIN_OPEN_DRAWER)closeChainLayoutNode(CHAIN_OPEN_DRAWER,false);
+  var content=drawer.querySelector('.chain-node-drawer-content');content.innerHTML=template.innerHTML;content.scrollTop=0;
+  drawer._chainRoot=root;drawer._chainReturnFocus=button;root._chainDrawer=drawer;CHAIN_OPEN_DRAWER=drawer;
+  // A body-level portal keeps fixed positioning outside transformed report containers.
+  document.body.appendChild(drawer);drawer.hidden=false;
+  button.setAttribute('aria-expanded','true');button.classList.add('is-selected');
+  if(typeof MutationObserver!=='undefined'){
+    drawer._chainObserver=new MutationObserver(function(){
+      if(root.isConnected===false||button.isConnected===false)closeChainLayoutNode(drawer,false);
+    });
+    drawer._chainObserver.observe(document.body,{childList:true,subtree:true});
+  }
+  drawer.querySelector('button').focus();
+}
+function closeChainLayoutNode(button,restoreFocus){
+  var drawer=button&&button.closest('.chain-node-drawer');if(!drawer)return;
+  if(drawer._chainObserver){drawer._chainObserver.disconnect();drawer._chainObserver=null;}
+  drawer.hidden=true;var trigger=drawer._chainReturnFocus,root=drawer._chainRoot;
+  drawer._chainReturnFocus=null;drawer._chainRoot=null;
+  if(CHAIN_OPEN_DRAWER===drawer)CHAIN_OPEN_DRAWER=null;
+  if(root&&root._chainDrawer===drawer)root._chainDrawer=null;
+  if(root){
+    if(root.isConnected!==false&&trigger&&trigger.isConnected!==false)root.appendChild(drawer);
+    else drawer.remove();
+  }
+  if(trigger){trigger.setAttribute('aria-expanded','false');trigger.classList.remove('is-selected');if(restoreFocus!==false&&trigger.isConnected!==false)trigger.focus();}
+}
+function chainLayoutExcerpt(text,name){
+  if(typeof text!=='string'||!chainLayoutText(name))return '';
+  var start=text.indexOf(name),end=start+name.length;
+  if(start<0){
+    // Only typography equivalence: retain source spelling and its original offsets.
+    function fold(value){
+      var out='',offset=0,starts=[],ends=[];
+      for(var point of value){
+        var normalized=point.normalize('NFKC').toLowerCase();
+        for(var i=0;i<normalized.length;i++)if(!/\s/.test(normalized[i])){out+=normalized[i];starts.push(offset);ends.push(offset+point.length);}
+        offset+=point.length;
+      }
+      return {text:out,starts:starts,ends:ends};
+    }
+    var source=fold(text),target=fold(name).text,index=target?source.text.indexOf(target):-1;
+    if(index<0)return '';
+    start=source.starts[index];end=source.ends[index+target.length-1];
+  }
+  var left=Math.max(0,start-16),right=Math.min(text.length,Math.max(left+96,end+28));
+  return (left?'…':'')+text.slice(left,right)+(right<text.length?'…':'');
+}
+function chainLayoutNodeHtml(node,index){
+  if(!chainLayoutText(node.name))return '';
+  var info=chainLayoutInfo(node),excerpt=chainLayoutExcerpt(info.excerpt,node.name);
+  return '<button type="button" class="chain-layout-node'+(info.assessed?'':' is-sparse')+'" onclick="openChainLayoutNode(this,'+index+')" aria-haspopup="dialog" aria-expanded="false" aria-label="查看'+escapeChainText(node.name)+'的依据">'+
+    '<span class="chain-layout-node-name">'+escapeChainText(node.name)+'</span>'+
+    (info.companies.length?'<span class="chain-layout-entity">关联企业：'+info.companies.map(escapeChainText).join('、')+'</span>':'')+
+    (excerpt?'<span class="chain-layout-node-summary"><span class="chain-layout-quote-label">'+(excerpt===info.excerpt?'原文':'原文节选')+'</span>'+escapeChainText(excerpt)+'</span>':'')+
+    '<span class="chain-layout-fact-meta"><span>'+escapeChainText(info.scope)+'</span>'+(info.date?'<span>资料日期 '+escapeChainText(info.date)+'</span>':'')+'</span>'+
+    '<span class="chain-layout-node-foot"><span class="chain-layout-status">'+info.label+'</span><span class="chain-layout-evidence">'+(info.count?'原文片段 '+info.count+' 条':'查看材料状态')+' <span aria-hidden="true">↗</span></span></span></button>';
+}
+function chainLayoutSourceHtml(row){
+  var published=chainAssessmentDate(row.date,false),retrieved=chainAssessmentDate(row.retrieved,true);
+  var location=[];if(row.pdfPage)location.push('PDF 页码：'+row.pdfPage);if(row.quoteRange)location.push('摘录范围：'+row.quoteRange);
+  if(row.fulltextScope)location.push('归档范围：'+(row.fulltextScope==='entire_html_visible_text'?'网页可见正文':row.fulltextScope));
+  return '<article class="chain-layout-source">'+(row.title?'<h4>'+escapeChainText(row.title)+'</h4>':'')+
+    '<blockquote>'+escapeChainText(row.quote)+'</blockquote><p class="chain-layout-source-meta">'+(published?'发布：'+escapeChainText(published):'发布日期未提供')+(retrieved?' · '+(row.archived?'归档：':'检索：')+escapeChainText(retrieved):'')+'</p>'+
+    (location.length?'<p class="chain-layout-source-meta">'+location.map(escapeChainText).join(' · ')+'</p>':'')+
+    row.urls.map(function(url){return '<a href="'+escapeChainText(url)+'" target="_blank" rel="noopener noreferrer">打开原文来源</a>';}).join(' · ')+'</article>';
+}
+function chainLayoutDetailHtml(node,index){
+  var info=chainLayoutInfo(node),j=node.assessment&&node.assessment.judgment,missing=j&&Array.isArray(j.missing)?j.missing:[];
+  var description=info.assessed?'已有资料支持此处列出的有限判断，适用地域和时间以原文为准。':'材料收录状态不代表已落地；尚不能据此判断该环节强弱或现实中不存在。';
+  var incomplete=info.original.filter(function(row){return !row.urls.length||!chainLayoutText(row.quote);});
+  return '<template data-chain-detail="'+index+'"><div class="chain-detail-eyebrow">环节与依据</div><h3>'+escapeChainText(node.name)+'</h3>'+
+    (info.companies.length?'<p class="chain-layout-entity">关联企业：'+info.companies.map(escapeChainText).join('、')+'</p>':'')+
+    '<div class="chain-detail-status">'+info.label+' · '+escapeChainText(info.scope)+'</div><p>'+description+'</p><p class="chain-layout-source-meta">'+info.rawLabel+(Array.isArray(node.qualifiers)&&node.qualifiers.length?'；原文限定：'+node.qualifiers.map(escapeChainText).join('、'):'')+'</p>'+
+    '<section class="chain-layout-originals"><h4>原文与来源</h4>'+(info.rows.length?info.rows.map(chainLayoutSourceHtml).join(''):'<p>尚无同时包含有效链接和原句的来源，不能据此判断产业缺失。</p>')+'</section>'+
+    (incomplete.length?'<details class="chain-layout-incomplete"><summary>来源不完整的材料片段（'+incomplete.length+'）</summary>'+incomplete.map(function(row){return '<p>'+escapeChainText(row.quote||'此记录未提供原句。')+'</p>';}).join('')+'</details>':'')+
+    (missing.length?'<h4>还需补充</h4><ul>'+missing.map(function(s){return '<li>'+escapeChainText(s)+'</li>';}).join('')+'</ul>':'')+
+    chainAssessmentDetails(node.assessment,node)+'</template>';
+}
+function chainLayoutMetaHtml(evidence,status,count,unclassifiedCount){
+  var coverage=evidence.coverage&&typeof evidence.coverage==='object'?evidence.coverage:{},taxonomy=evidence.taxonomy&&typeof evidence.taxonomy==='object'?evidence.taxonomy:{};
+  var partial=status==='partial'||coverage.status==='partial'||unclassifiedCount>0;
+  var label=!count?'尚未形成节点':partial?'部分材料已归类':'已整理本次材料';
+  var record=evidence.nodeResearch&&typeof evidence.nodeResearch==='object'?evidence.nodeResearch:null;
+  var supplement=record&&(chainLayoutText(record.status)||(Array.isArray(record.batches)&&record.batches.length)||(Array.isArray(record.errors)&&record.errors.length))?record:null;
+  var errors=supplement&&Array.isArray(supplement.errors)?supplement.errors:[];
+  var batches=supplement&&Array.isArray(supplement.batches)?supplement.batches:[];
+  var unfinished=batches.filter(function(batch){return batch&&!batch.legacy_summary&&typeof batch.status==='string'&&batch.status!=='ready';}).length;
+  var incomplete=supplement&&(supplement.status!=='ready'||errors.length||unfinished);
+  var research={ready:supplement?'基础检索完成':'本轮检索完成',pending:'本轮检索不完整',partial:'本轮检索不完整',failed:'本轮检索未完成',unavailable:'本轮检索未完成'}[evidence.researchStatus]||'检索状态未记录';
+  var supplementLabel=supplement?(incomplete?'补充核验未完整':'补充核验完成'):'';
+  if(supplement&&supplement.status==='scope_mismatch')supplementLabel+='（材料范围不一致）';
+  var errorMessages=errors.map(function(error){return typeof error==='string'?error:error&&typeof error.message==='string'?error.message:error&&typeof error.code==='string'?error.code:'';}).filter(Boolean);
+  var time=typeof evidence.generatedAt==='number'?new Date(evidence.generatedAt):null;
+  var date=time&&Number.isFinite(time.getTime())?chainAssessmentDate(time.toISOString(),true):'';
+  return '<div class="chain-layout-context"><div class="chain-layout-context-row"><strong>'+label+'</strong><span>'+research+'</span>'+(supplementLabel?'<span>'+supplementLabel+'</span>':'')+(unfinished?'<span>未完成 '+unfinished+' 组</span>':'')+(errors.length?'<span>错误记录 '+errors.length+' 条</span>':'')+(date?'<span>图谱生成：'+escapeChainText(date)+'</span>':'')+'</div>'+
+    '<p>范围：当前方向、本次取得的材料；不是完整产业清单，不能据此推断现实缺失。</p>'+
+    (chainLayoutText(taxonomy.description)?'<p>分类口径'+(chainLayoutText(taxonomy.label)?'（'+escapeChainText(taxonomy.label)+'）':'')+'：'+escapeChainText(taxonomy.description)+'</p>':'')+
+    (chainLayoutText(coverage.meaning)?'<p>'+escapeChainText(coverage.meaning)+'</p>':'')+(errorMessages.length?'<details class="chain-layout-research-errors"><summary>查看补充核验记录</summary><ul>'+errorMessages.map(function(message){return '<li>'+escapeChainText(message)+'</li>';}).join('')+'</ul></details>':'')+'</div>';
+}
+function chainExplorerHtml(topic,segments,recs,p,unclassified,status,evidence){
+  if(CHAIN_OPEN_DRAWER)closeChainLayoutNode(CHAIN_OPEN_DRAWER,false);
+  evidence=evidence||{};unclassified=(Array.isArray(unclassified)?unclassified:[]).filter(function(n){return n&&chainLayoutText(n.name);});
+  segments=(Array.isArray(segments)?segments:[]).map(function(s){return {seg:s.seg,nodes:(Array.isArray(s.nodes)?s.nodes:[]).filter(function(n){return n&&chainLayoutText(n.name);})};});
+  var nodes=[];segments.forEach(function(s){nodes=nodes.concat(s.nodes);});nodes=nodes.concat(unclassified);
+  var withOriginal=nodes.filter(function(n){return chainLayoutInfo(n).count>0;}).length,assessed=nodes.filter(function(n){return chainLayoutInfo(n).assessed;}).length;
+  var key=chainExplorerKey(topic,p,evidence),mode=CHAIN_EXPLORER_UI[key]==='assessment'?'assessment':'layout',index=0,templates=[];
+  function card(n){var id=index++;templates.push(chainLayoutDetailHtml(n,id));return chainLayoutNodeHtml(n,id);}
+  var lanes=['上游','中游','下游'].map(function(name,i){var group=segments.find(function(s){return s.seg===name;})||{nodes:[]};
+    return '<section class="industry-chain-row"><div class="chain-lane-heading"><span class="chain-lane-index">0'+(i+1)+'</span><h3>'+name+'</h3><span class="chain-lane-total">'+group.nodes.length+' 个环节</span></div><div class="industry-chain-nodes">'+(group.nodes.length?group.nodes.map(card).join(''):'<div class="chain-layout-empty">本次材料未形成该组节点；不代表实际不存在。</div>')+'</div></section>';
+  }).join('');
+  var other=unclassified.length?'<details class="chain-layout-other"><summary>待归类材料 <span>'+unclassified.length+' 项</span></summary><p>暂不放入上中下游；原文及分类依据保留供核对。</p><div class="industry-chain-nodes">'+unclassified.map(card).join('')+'</div></details>':'';
+  var metric=function(value,label){return '<div class="chain-overview-metric"><strong>'+value+'</strong><span>'+label+'</span></div>';};
+  return '<section class="chain-explorer" data-chain-key="'+escapeChainText(key)+'" data-chain-mode="'+mode+'" aria-label="产业链布局与评价">'+
+    '<div class="chain-explorer-toolbar"><div class="chain-explorer-title"><span>INDUSTRY LANDSCAPE</span><h2>'+escapeChainText(topic)+'<small>产业链图谱</small></h2><p>查看有出处的环节记录，评价与原文分开展示。</p></div><div class="chain-view-switch" aria-label="图谱视图"><button type="button" class="'+(mode==='layout'?'is-active':'')+'" data-chain-mode-button="layout" aria-pressed="'+(mode==='layout')+'" onclick="setChainExplorerMode(this,\'layout\')">产业布局</button><button type="button" class="'+(mode==='assessment'?'is-active':'')+'" data-chain-mode-button="assessment" aria-pressed="'+(mode==='assessment')+'" onclick="setChainExplorerMode(this,\'assessment\')">薄弱评价</button></div></div>'+
+    '<div class="chain-overview-metrics">'+metric(nodes.length,'已整理环节 / 线索')+metric(withOriginal,'有原文的节点')+metric(assessed,'具备评价依据')+metric(unclassified.length,'产业位置待确认')+'</div>'+
+    chainLayoutMetaHtml(evidence,status,nodes.length,unclassified.length)+
+    '<div class="chain-explorer-layout" data-chain-panel="layout"'+(mode==='layout'?'':' hidden')+'><div class="chain-layout-caption"><span>按产业环节组织材料</span><span>并列展示，不表示已证实的供货关系</span></div><div class="industry-chain-body">'+lanes+'</div>'+other+'</div>'+
+    '<div class="chain-explorer-assessment" data-chain-panel="assessment"'+(mode==='assessment'?'':' hidden')+'>'+_renderRichChain(topic,segments,recs,p,unclassified,status,evidence)+'</div>'+
+    templates.join('')+'<aside class="chain-node-drawer" role="dialog" aria-label="环节详情与原文依据" hidden onkeydown="if(event.key===\'Escape\')closeChainLayoutNode(this)"><div class="chain-node-drawer-header"><span>资料与判断分开展示</span><button type="button" class="chain-node-drawer-close" aria-label="关闭环节详情" onclick="closeChainLayoutNode(this)">×</button></div><div class="chain-node-drawer-content"></div></aside></section>';
+}
+
 function chainMapHtml(p){
   if(!p)return '';
   var topic=p.topic||'',rs=REPORTSTATE[cur]||{},job=_chainGenInFlight[(cur||'')+'|'+topic];
   if(job)return '<div role="status" aria-live="polite" style="margin-top:16px;padding:20px;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b">'+escapeChainText(job.message||'正在生成产业链图谱…')+'<button disabled aria-busy="true" style="margin-left:12px">生成中…</button></div>';
   var chain=currentEvidenceChain(topic,cur),error=(rs.chainErrorByTopic||{})[topic];
   var errorHtml=error?'<p role="alert" style="color:#92400e;font-size:12px">'+escapeChainText(error)+'</p>':'';
-  if(Array.isArray(chain)){var metadata=(rs.chainEvidenceByTopic||{})[topic]||{},allNodes=[];chain.forEach(function(segment){allNodes=allNodes.concat(segment.nodes||[]);});allNodes=allNodes.concat((rs.chainUnclassifiedByTopic||{})[topic]||[]);return errorHtml+_renderRichChain(topic,chain,null,p,(rs.chainUnclassifiedByTopic||{})[topic],(rs.chainStatusByTopic||{})[topic],metadata)+'<div style="text-align:right;padding:10px 0"><button onclick="requestChainGeneration()">'+(chainNeedsAssessment(allNodes,metadata.assessment)?'更新图谱并评价':['empty','partial'].indexOf((rs.chainStatusByTopic||{})[topic])>=0?'补充材料后重新生成':'重新生成图谱')+'</button></div>'; }
+  if(Array.isArray(chain)){var metadata=(rs.chainEvidenceByTopic||{})[topic]||{},allNodes=[];chain.forEach(function(segment){allNodes=allNodes.concat(segment.nodes||[]);});allNodes=allNodes.concat((rs.chainUnclassifiedByTopic||{})[topic]||[]);return errorHtml+(typeof chainExplorerHtml==='function'?chainExplorerHtml:_renderRichChain)(topic,chain,null,p,(rs.chainUnclassifiedByTopic||{})[topic],(rs.chainStatusByTopic||{})[topic],metadata)+'<div style="text-align:right;padding:10px 0"><button onclick="requestChainGeneration()">'+(chainNeedsAssessment(allNodes,metadata.assessment)?'更新图谱并评价':['empty','partial'].indexOf((rs.chainStatusByTopic||{})[topic])>=0?'补充材料后重新生成':'重新生成图谱')+'</button></div>'; }
   var text=typeof reportTextForTopic==='function'?reportTextForTopic(topic):'',short=!text||text.trim().length<100;
   var legacy=!!((rs.chainByTopic||{})[topic]||(rs.chainEvidenceByTopic||{})[topic]),failed=(rs.chainStatusByTopic||{})[topic]==='failed';
   return '<div style="margin-top:16px;padding:20px;border:1px dashed #cbd5e1;border-radius:12px;background:#f8fafc;color:#64748b;font-size:12px;line-height:1.8">'+errorHtml+

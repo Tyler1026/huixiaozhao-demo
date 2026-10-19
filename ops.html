@@ -455,6 +455,580 @@ body.ops-mode .ops-v3 .ops-ui-report-row .r-main small{white-space:normal;overfl
 @media(max-width:700px){.ops-login-shell{display:block;padding:20px 16px}.ops-login-layout{grid-template-columns:1fr;min-height:0;max-width:480px;margin:0 auto;border-radius:15px}.ops-login-brand{padding:27px 28px 25px;min-height:218px}.ops-login-brandline{gap:10px}.ops-login-mark{width:36px;height:36px;font-size:21px;border-radius:9px}.ops-login-brandline strong{font-size:19px}.ops-login-brandline>div>span{font-size:9px;margin-top:4px}.ops-login-intro{margin:28px 0 0}.ops-login-eyebrow,.ops-login-description,.ops-login-brandfoot{display:none}.ops-login-title{font-size:27px;line-height:1.4;letter-spacing:.5px;margin:0;position:relative;z-index:1}.ops-login-city{height:120px;width:220px;left:auto;right:-23px;bottom:0;opacity:.32}.ops-login-city:before{width:140px;height:140px;left:45px;top:-35px}.ops-login-city>span:nth-child(1){height:34px}.ops-login-city>span:nth-child(2){height:60px}.ops-login-city>span:nth-child(3){height:88px}.ops-login-panel{padding:32px 28px 30px}.ops-login-form{max-width:380px}.ops-login-form h1{font-size:25px;margin-top:14px}.ops-login-fields{margin-top:27px;gap:18px}.ops-login-switch{margin-top:25px;padding-top:22px}.ops-login-footnote{margin-top:27px}}
 @media(max-width:380px){.ops-login-shell{padding:12px}.ops-login-brand{padding:23px 23px;min-height:203px}.ops-login-title{font-size:24px}.ops-login-panel{padding:28px 23px}.ops-login-switch{gap:8px;flex-wrap:wrap}.ops-login-dot{margin:0 7px}}
 @media(prefers-reduced-motion:reduce){.ops-login-field input,.ops-login-submit{transition:none}}
+/* Shared chain explorer. Load after each application's existing styles.
+   JavaScript owns view switching and disclosure state; this file only styles them. */
+.chain-explorer {
+  --chain-ink: #263f59;
+  --chain-copy: #567088;
+  --chain-muted: #788b9e;
+  --chain-blue: #316b9d;
+  --chain-line: #e5ebf2;
+  --chain-soft: #f7fafd;
+  min-width: 0;
+  margin-block: 22px;
+  border: 1px solid var(--chain-line);
+  border-radius: 15px;
+  background: #fff;
+  color: var(--chain-ink);
+  box-shadow: 0 5px 22px #1d416b05;
+  overflow: visible;
+}
+.industry-page .industry-chain.chain-explorer {
+  border-radius: 15px !important;
+  box-shadow: 0 5px 22px #1d416b05 !important;
+}
+.chain-explorer *, .chain-explorer *::before, .chain-explorer *::after {
+  box-sizing: border-box;
+}
+.chain-explorer .chain-explorer-layout[hidden],
+.chain-explorer .chain-explorer-assessment[hidden],
+.chain-explorer[data-chain-mode="layout"] .chain-explorer-assessment,
+.chain-explorer[data-chain-mode="assessment"] .chain-explorer-layout,
+.chain-node-drawer[hidden] {
+  display: none !important;
+}
+
+/* Compact navigation with an unambiguous active view. */
+.chain-explorer .chain-explorer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 22px 24px 18px;
+}
+.chain-explorer .chain-explorer-title {
+  min-width: 0;
+  margin: 0;
+  color: var(--chain-ink);
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.5;
+  letter-spacing: .15px;
+}
+.chain-explorer .chain-explorer-title :is(h2, h3, strong) {
+  margin: 0;
+  color: inherit;
+  font: inherit;
+}
+.chain-explorer .chain-explorer-title :is(p, small) {
+  display: block;
+  margin: 5px 0 0;
+  color: var(--chain-muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.7;
+  letter-spacing: 0;
+}
+.chain-explorer .chain-explorer-title > span {
+  display: block;
+  margin-bottom: 5px;
+  color: #8a9eaf;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+}
+.chain-explorer .chain-view-switch {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 3px;
+  max-width: 100%;
+  padding: 4px;
+  border: 1px solid #e4eaf1;
+  border-radius: 10px;
+  background: #f4f7fa;
+}
+.chain-explorer .chain-view-switch button {
+  appearance: none;
+  min-height: 34px;
+  margin: 0;
+  padding: 6px 13px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #718397;
+  box-shadow: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.5;
+  text-align: center;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color .16s ease, background-color .16s ease, box-shadow .16s ease;
+}
+.chain-explorer .chain-view-switch button.is-active {
+  border-color: #e2eaf2;
+  background: #fff;
+  color: #2f608b;
+  box-shadow: 0 1px 3px #2848690b;
+}
+.chain-explorer .chain-view-switch button:not(:disabled):not(.is-active):hover {
+  color: #385e80;
+  background: #eaf0f6;
+}
+
+/* Counts describe coverage; their styling does not imply a strength rating. */
+.chain-explorer .chain-overview-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin: 0 24px;
+  padding: 16px 0 18px;
+  border-top: 1px solid var(--chain-line);
+  border-bottom: 1px solid var(--chain-line);
+}
+.chain-explorer .chain-overview-metric {
+  display: flex;
+  flex: 1 1 120px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 9px;
+  min-width: 0;
+  padding: 2px 16px;
+  border-left: 1px solid #eaf0f5;
+  color: var(--chain-muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.chain-explorer .chain-overview-metric:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+.chain-explorer .chain-overview-metric :is(b, strong) {
+  color: #345b7c;
+  font-size: 25px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -.5px;
+  font-variant-numeric: tabular-nums;
+}
+.chain-explorer .chain-overview-metric small {
+  color: #94a2b1;
+  font-size: 10px;
+  line-height: 1.6;
+}
+.chain-explorer .chain-layout-context {
+  padding: 14px 24px 0;
+  color: #7b8d9e;
+  font-size: 11px;
+  line-height: 1.75;
+}
+.chain-explorer .chain-layout-context-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-bottom: 5px;
+}
+.chain-explorer .chain-layout-context-row strong { color: #55758f; font-weight: 600; }
+.chain-explorer .chain-layout-context p { margin: 4px 0; }
+.chain-explorer .chain-layout-caption {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 16px 24px 0;
+  color: #8a9aa9;
+  font-size: 10px;
+  line-height: 1.7;
+}
+
+/* Three sequential lanes; no connector implies a verified business relation. */
+.chain-explorer .industry-chain-body {
+  display: flex !important;
+  flex-direction: column;
+  gap: 22px !important;
+  padding: 22px 24px 24px !important;
+  border-radius: 0 0 15px 15px !important;
+  background: #fff !important;
+}
+.chain-explorer .industry-chain-row {
+  display: block !important;
+  min-width: 0;
+  padding: 0 0 22px;
+  border-bottom: 1px solid #edf1f6;
+}
+.chain-explorer .industry-chain-row:last-of-type {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.chain-explorer .chain-lane-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  min-width: 0;
+  margin: 0 0 13px;
+  color: #3e5a74;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.65;
+}
+.chain-explorer .chain-lane-heading :is(h3, h4, strong) {
+  margin: 0;
+  color: inherit;
+  font: inherit;
+}
+.chain-explorer .chain-lane-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #dfe9f3;
+  border-radius: 8px;
+  background: #f5f9fd;
+  color: #7192b0;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .3px;
+}
+.chain-explorer .chain-lane-caption {
+  flex: 1 1 150px;
+  min-width: 0;
+  color: #8797a6;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.65;
+}
+.chain-explorer .chain-lane-total {
+  margin-left: auto;
+  color: #8a9cae;
+  font-size: 10px;
+  font-weight: 400;
+}
+.chain-explorer .chain-layout-empty {
+  padding: 16px;
+  border: 1px dashed #e1e9f0;
+  border-radius: 10px;
+  color: #8b9aa8;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.chain-explorer .chain-layout-other {
+  margin: 0 24px 24px;
+  padding: 14px;
+  border: 1px solid #e5ebf2;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 1.75;
+  color: #8093a5;
+}
+.chain-explorer .chain-layout-other > summary { cursor: pointer; color: #526f87; font-weight: 600; }
+.chain-explorer .chain-layout-other > summary > span { margin-left: 8px; color: #8a9cae; font-weight: 400; }
+.chain-explorer .industry-chain-nodes {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 216px), 1fr)) !important;
+  align-items: stretch !important;
+  gap: 10px !important;
+  min-width: 0;
+  padding: 0 !important;
+  overflow: visible;
+}
+
+/* Layout cards stay neutral, including sparse records. Evidence is a detail. */
+.chain-explorer .chain-layout-node {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 168px;
+  max-width: 100%;
+  margin: 0;
+  padding: 15px 16px 13px;
+  border: 1px solid #dfe7ef;
+  border-radius: 11px;
+  background: #fff;
+  color: var(--chain-copy);
+  box-shadow: 0 2px 5px #24496b03;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.chain-explorer .chain-layout-node.is-sparse {
+  border-color: #e5ebf1;
+  background: #fff;
+  box-shadow: none;
+}
+.chain-explorer .chain-layout-node:not(:disabled):not([aria-disabled="true"]):hover {
+  transform: translateY(-1px);
+  border-color: #a5c3dd;
+  box-shadow: 0 5px 14px #254b700a;
+}
+.chain-explorer .chain-layout-node:is([aria-expanded="true"], .is-selected) {
+  border-color: #96b9d8;
+  background: #fcfdff;
+  box-shadow: 0 0 0 2px #d6e7f438;
+}
+.chain-explorer .chain-layout-node-name {
+  display: block;
+  margin: 0;
+  color: #35536f;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.chain-explorer .chain-layout-node-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  margin: 7px 0 0;
+  color: #7d8e9e;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.chain-layout-entity {
+  display: block;
+  margin-top: 6px;
+  color: #54748e;
+  font-size: 11px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.chain-explorer .chain-layout-quote-label {
+  margin-right: 6px;
+  color: #8e9dab;
+  font-size: 9px;
+}
+.chain-explorer .chain-layout-fact-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 12px;
+  margin-top: 10px;
+  color: #93a0ad;
+  font-size: 9px;
+  line-height: 1.7;
+}
+.chain-explorer .chain-layout-node-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: auto;
+  padding-top: 15px;
+  font-size: 10px;
+  line-height: 1.6;
+}
+.chain-explorer .chain-layout-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #8b9aa8;
+  font-size: 10px;
+  font-weight: 400;
+}
+.chain-explorer .chain-layout-status::before {
+  content: "";
+  flex: 0 0 3px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #9bafc0;
+}
+.chain-explorer .chain-layout-evidence {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: #7896b0;
+  font-size: 10px;
+  font-weight: 400;
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+.chain-explorer .chain-layout-node:hover .chain-layout-evidence {
+  color: #4a789e;
+}
+.chain-explorer :is(.chain-layout-node, .chain-view-switch button):focus-visible {
+  outline: 3px solid #7db0d858 !important;
+  outline-offset: 3px !important;
+}
+.chain-explorer :is(.chain-layout-node, .chain-view-switch button):disabled,
+.chain-explorer .chain-layout-node[aria-disabled="true"] {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+/* Assessment cards keep the established evidence-based rating colors. */
+.chain-explorer[data-chain-mode="assessment"] .industry-chain-nodes {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 238px), 1fr)) !important;
+}
+.chain-explorer[data-chain-mode="assessment"] .industry-chain-node {
+  min-width: 0 !important;
+  border-radius: 10px !important;
+}
+
+/* Non-modal evidence drawer: the graph remains visible for orientation. */
+.chain-node-drawer {
+  position: fixed;
+  inset: 90px 24px 24px auto;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  width: 420px;
+  max-width: calc(100vw - 48px);
+  min-height: 0;
+  border: 1px solid #dce6ef;
+  border-radius: 16px;
+  background: #fff;
+  color: #3f5a74;
+  box-shadow: 0 16px 55px #183b6226, 0 3px 12px #183b620a;
+  font-size: 12px;
+  line-height: 1.8;
+  text-align: left;
+  isolation: isolate;
+  overflow: hidden;
+}
+.chain-node-drawer *, .chain-node-drawer *::before, .chain-node-drawer *::after {
+  box-sizing: border-box;
+}
+.chain-node-drawer-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 20px 20px 17px;
+  border-bottom: 1px solid #e6edf3;
+  background: #fcfdff;
+}
+.chain-node-drawer-header :is(h2, h3, strong) {
+  margin: 0;
+  color: #2e4b67;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.chain-node-drawer-header :is(p, small) {
+  display: block;
+  margin: 5px 0 0;
+  color: #8697a8;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.chain-node-drawer-close {
+  appearance: none;
+  display: inline-flex;
+  flex: 0 0 34px;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #e1e9f0;
+  border-radius: 9px;
+  background: #fff;
+  color: #70879b;
+  box-shadow: none;
+  font: inherit;
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color .16s ease, border-color .16s ease, background-color .16s ease;
+}
+.chain-node-drawer-close:not(:disabled):hover {
+  border-color: #b9cddf;
+  background: #f3f7fb;
+  color: #345d80;
+}
+.chain-node-drawer-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 20px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #ccd9e4 transparent;
+  overflow-wrap: anywhere;
+}
+.chain-node-drawer-content > :first-child { margin-top: 0; }
+.chain-node-drawer-content > :last-child { margin-bottom: 0; }
+.chain-node-drawer-content a {
+  color: #447aab;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.chain-node-drawer-content > h3 { margin: 5px 0 8px; color: #2e4b67; font-size: 17px; line-height: 1.6; }
+.chain-detail-eyebrow { color: #90a0af; font-size: 10px; letter-spacing: .5px; }
+.chain-detail-status { margin-top: 12px; color: #607c94; font-size: 11px; }
+.chain-layout-source-meta { color: #8a9cab; font-size: 10px; line-height: 1.75; }
+.chain-layout-originals > h4 { margin: 20px 0 5px; color: #48647d; font-size: 12px; }
+.chain-layout-source { padding: 14px 0; border-bottom: 1px solid #e9eef4; }
+.chain-layout-source > h4 { margin: 0 0 8px; color: #55738c; font-size: 11px; font-weight: 600; line-height: 1.7; }
+.chain-layout-source blockquote { margin: 0; padding: 10px 12px; border-left: 2px solid #c9dbe9; background: #f8fafc; color: #536e85; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chain-layout-source-meta { margin-block: 8px; }
+.chain-layout-incomplete { margin-top: 14px; color: #8b99a6; font-size: 11px; }
+.chain-layout-incomplete > summary { cursor: pointer; }
+.chain-node-drawer :is(button, a, summary):focus-visible {
+  outline: 3px solid #7db0d858 !important;
+  outline-offset: 3px !important;
+}
+.chain-node-drawer-close:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 720px) {
+  .chain-explorer .chain-explorer-toolbar { gap: 13px; padding: 19px 18px 15px; }
+  .chain-explorer .chain-explorer-title { font-size: 16px; }
+  .chain-explorer .chain-overview-metrics { margin-inline: 18px; }
+  .chain-explorer .chain-overview-metric { flex-basis: 100px; padding-inline: 12px; }
+  .chain-explorer .chain-overview-metric :is(b, strong) { font-size: 23px; }
+  .chain-explorer .chain-layout-context { padding-inline: 18px; }
+  .chain-explorer .chain-layout-caption { padding-inline: 18px; }
+  .chain-explorer .chain-layout-other { margin-inline: 18px; }
+  .chain-explorer .industry-chain-body { padding: 20px 18px !important; gap: 20px !important; }
+  .chain-explorer .industry-chain-row { padding-bottom: 20px; }
+}
+@media (max-width: 480px) {
+  .chain-explorer .chain-explorer-toolbar { padding: 17px 14px 14px; }
+  .chain-explorer .chain-view-switch { width: 100%; }
+  .chain-explorer .chain-view-switch button { flex: 1 1 0; min-height: 36px; }
+  .chain-explorer .chain-overview-metrics { margin-inline: 14px; padding-block: 12px; gap: 10px 0; }
+  .chain-explorer .chain-overview-metric { flex-basis: 50%; padding: 1px 10px; }
+  .chain-explorer .chain-overview-metric:nth-child(odd) { padding-left: 0; border-left: 0; }
+  .chain-explorer .chain-overview-metric :is(b, strong) { font-size: 22px; }
+  .chain-explorer .chain-layout-context { padding-inline: 14px; }
+  .chain-explorer .chain-layout-caption { padding-inline: 14px; }
+  .chain-explorer .chain-layout-other { margin-inline: 14px; }
+  .chain-explorer .industry-chain-body { padding: 18px 14px !important; }
+  .chain-explorer .industry-chain-nodes,
+  .chain-explorer[data-chain-mode="assessment"] .industry-chain-nodes { grid-template-columns: minmax(0, 1fr) !important; }
+  .chain-explorer .chain-layout-node { min-height: 150px; padding: 14px; }
+  .chain-explorer .chain-lane-caption { flex-basis: 100%; padding-left: 38px; margin-top: -4px; }
+}
+@media (max-width: 600px) {
+  .chain-node-drawer { inset: 56px 0 0; width: 100%; max-width: none; border-radius: 15px 15px 0 0; }
+  .chain-node-drawer-header { padding: 18px 16px 15px; }
+  .chain-node-drawer-content { padding: 18px 16px max(18px, env(safe-area-inset-bottom)); }
+  .chain-node-drawer-close { width: 38px; height: 38px; flex-basis: 38px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chain-explorer .chain-layout-node,
+  .chain-explorer .chain-view-switch button,
+  .chain-node-drawer-close { transition: none; }
+  .chain-explorer .chain-layout-node:not(:disabled):not([aria-disabled="true"]):hover { transform: none; }
+}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>if(typeof pdfjsLib!=='undefined')pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
@@ -5589,7 +6163,7 @@ function chainNodeSources(node){
   var seen={},rows=[];
   all.forEach(function(source){if(!source||typeof source!=='object')return;var urls=Array.isArray(source.urls)?source.urls:[source.url||source.source_url];urls=urls.map(chainSafeSourceUrl).filter(Boolean);
     var quote=typeof source.quote==='string'?source.quote:'',id=source.id||'',sig=JSON.stringify([id,urls,quote]);if(seen[sig])return;seen[sig]=true;
-    rows.push({id:id,urls:urls,quote:quote,title:source.title||source.cite||'',date:source.published_at||source.date||'',retrieved:source.retrieved_at||'',archived:source.archived===true,fulltextScope:source.fulltext_scope||''});});
+    rows.push({id:id,urls:urls,quote:quote,title:source.title||source.cite||'',date:source.published_at||source.date||'',retrieved:source.retrieved_at||'',archived:source.archived===true,fulltextScope:source.fulltext_scope||'',pdfPage:source.pdf_page||'',quoteRange:source.quote_range||source.excerpt_range||''});});
   return rows;
 }
 
@@ -5752,13 +6326,191 @@ function _renderRichChain(topic, segments, recs, p, unclassified, status, eviden
   return h+'</div></section>';
 }
 
+/* Presentation only: layout and assessment share the same immutable evidence. */
+var CHAIN_EXPLORER_UI=Object.create(null);
+var CHAIN_OPEN_DRAWER=null;
+function chainLayoutText(value){return typeof value==='string'?value.trim():'';}
+function chainLayoutContains(text,part){return !!chainLayoutText(part)&&chainLayoutText(text).replace(/\s+/g,'').includes(chainLayoutText(part).replace(/\s+/g,''));}
+function chainLayoutReviewedPremises(node){
+  var view=chainAssessmentView(node.assessment),j=node.assessment&&node.assessment.judgment;
+  if(!view.actual||!j||j.status!=='assessed'||view.level==='unknown')return [];
+  return (Array.isArray(j.premises)?j.premises:[]).filter(function(p){
+    if(!p||!p.source||!chainLayoutText(p.evidence_id)||p.source.id!==p.evidence_id||!Array.isArray(j.evidence_ids)||j.evidence_ids.indexOf(p.evidence_id)<0)return false;
+    var rows=chainNodeSources({sources:[p.source]});
+    return rows.length&&rows[0].urls.length&&chainLayoutText(rows[0].quote)&&chainLayoutText(p.statement)&&chainLayoutContains(rows[0].quote,p.statement)&&(!p.quote||chainLayoutContains(rows[0].quote,p.quote));
+  });
+}
+function chainLayoutInfo(node){
+  var original=chainNodeSources(node),premises=chainLayoutReviewedPremises(node),view=chainAssessmentView(node.assessment),j=node.assessment&&node.assessment.judgment;
+  var assessed=!!(view.actual&&j&&j.status==='assessed'&&view.level!=='unknown'),rows=original.slice();
+  premises.forEach(function(p){rows=rows.concat(chainNodeSources({sources:[p.source]}));});
+  var seen=Object.create(null);
+  rows=rows.filter(function(row){var key=JSON.stringify([row.id,row.urls,row.quote]);if(!row.urls.length||!chainLayoutText(row.quote)||seen[key])return false;seen[key]=true;return true;});
+  var roles=['operation','maturity','dependency','constraint','industry_fact','enterprise_capability','benchmark'];
+  var facts=premises.filter(function(p){return roles.indexOf(p.role)>=0&&chainLayoutContains(p.statement,node.name);}).slice().sort(function(a,b){return roles.indexOf(a.role)-roles.indexOf(b.role);});
+  var companies=[],companySeen=Object.create(null);
+  (assessed&&Array.isArray(j.enterprise_links)?j.enterprise_links:[]).forEach(function(link){
+    if(!link||!chainLayoutText(link.company_subject)||companySeen[link.company_subject])return;
+    var identityUrl=chainSafeSourceUrl(link.identity_url),businessUrl=chainSafeSourceUrl(link.business_url);if(!identityUrl||!businessUrl)return;
+    var identity=premises.find(function(p){return p.evidence_id===link.presence_evidence_id&&['local_presence','local_affiliation'].indexOf(p.role)>=0&&p.subject===link.company_subject&&chainLayoutContains(p.source.quote,link.company_subject)&&chainSafeSourceUrl(p.source.url)===identityUrl;});
+    var business=facts.find(function(p){return p.evidence_id===link.capability_evidence_id&&chainSafeSourceUrl(p.source.url)===businessUrl;});
+    if(!identity||!business)return;
+    companySeen[link.company_subject]=true;companies.push(link.company_subject);
+  });
+  var material=premises.filter(function(p){return roles.indexOf(p.role)>=0&&chainLayoutContains(p.source.quote,node.name);}).slice().sort(function(a,b){return roles.indexOf(a.role)-roles.indexOf(b.role);});
+  var statement=(Array.isArray(node.facts)?node.facts:[]).find(function(f){return f&&f.kind==='source_statement'&&f.scope==='source_statement_only'&&chainLayoutContains(f.statement,node.name)&&rows.some(function(row){return row.id===f.evidence_id&&chainLayoutContains(row.quote,f.statement);});});
+  var chosen=facts[0]||material[0],source=chosen?chainNodeSources({sources:[chosen.source]})[0]:statement?rows.find(function(row){return row.id===statement.evidence_id&&chainLayoutContains(row.quote,statement.statement);}):rows[0];
+  var excerpt=chosen?(chainLayoutContains(chosen.statement,node.name)?chosen.statement:chosen.source.quote):statement?statement.statement:source?source.quote:'';
+  var label=assessed?'已有现状依据':node.negated?'含否定表述':node.status==='planned'?'含规划线索':rows.length?'已收录材料':'来源尚不完整';
+  var scope=assessed?({local:'本地环节 / 应用',local_enterprise:'关联企业业务 · 不代表本地产能',industry_shared:'行业共同约束 · 非本地独有'}[j.scope]||'适用范围见依据'):'材料范围待核';
+  var rawLabel=node.negated?'原始材料含否定或排除表述':node.status==='planned'?'原始材料含规划表述':node.status==='reported'?'原始材料为披露记录':'原始材料属性待核';
+  return {assessed:assessed,label:label,scope:scope,count:rows.length,rows:rows,original:original,companies:companies,excerpt:excerpt,date:source?chainAssessmentDate(source.date,false):'',rawLabel:rawLabel};
+}
+function chainExplorerKey(topic,p,evidence){
+  return JSON.stringify([p&&p.id||typeof cur==='string'&&cur||'',topic,evidence.runId||evidence.generatedAt||'']);
+}
+function setChainExplorerMode(button,mode){
+  if(mode!=='layout'&&mode!=='assessment')return;
+  var root=button.closest('.chain-explorer');if(!root)return;
+  var drawer=root._chainDrawer||root.querySelector('.chain-node-drawer');if(drawer&&!drawer.hidden)closeChainLayoutNode(drawer,false);
+  var key=root.getAttribute('data-chain-key');if(key)CHAIN_EXPLORER_UI[key]=mode;
+  root.setAttribute('data-chain-mode',mode);
+  root.querySelectorAll('[data-chain-panel]').forEach(function(panel){panel.hidden=panel.getAttribute('data-chain-panel')!==mode;});
+  root.querySelectorAll('[data-chain-mode-button]').forEach(function(tab){var active=tab.getAttribute('data-chain-mode-button')===mode;tab.classList.toggle('is-active',active);tab.setAttribute('aria-pressed',active?'true':'false');});
+}
+function openChainLayoutNode(button,index){
+  var root=button.closest('.chain-explorer');if(!root||!/^\d+$/.test(String(index))||typeof document==='undefined'||!document.body)return;
+  var template=root.querySelector('template[data-chain-detail="'+index+'"]'),drawer=root._chainDrawer||root.querySelector('.chain-node-drawer');
+  if(!template||!drawer)return;
+  if(CHAIN_OPEN_DRAWER)closeChainLayoutNode(CHAIN_OPEN_DRAWER,false);
+  var content=drawer.querySelector('.chain-node-drawer-content');content.innerHTML=template.innerHTML;content.scrollTop=0;
+  drawer._chainRoot=root;drawer._chainReturnFocus=button;root._chainDrawer=drawer;CHAIN_OPEN_DRAWER=drawer;
+  // A body-level portal keeps fixed positioning outside transformed report containers.
+  document.body.appendChild(drawer);drawer.hidden=false;
+  button.setAttribute('aria-expanded','true');button.classList.add('is-selected');
+  if(typeof MutationObserver!=='undefined'){
+    drawer._chainObserver=new MutationObserver(function(){
+      if(root.isConnected===false||button.isConnected===false)closeChainLayoutNode(drawer,false);
+    });
+    drawer._chainObserver.observe(document.body,{childList:true,subtree:true});
+  }
+  drawer.querySelector('button').focus();
+}
+function closeChainLayoutNode(button,restoreFocus){
+  var drawer=button&&button.closest('.chain-node-drawer');if(!drawer)return;
+  if(drawer._chainObserver){drawer._chainObserver.disconnect();drawer._chainObserver=null;}
+  drawer.hidden=true;var trigger=drawer._chainReturnFocus,root=drawer._chainRoot;
+  drawer._chainReturnFocus=null;drawer._chainRoot=null;
+  if(CHAIN_OPEN_DRAWER===drawer)CHAIN_OPEN_DRAWER=null;
+  if(root&&root._chainDrawer===drawer)root._chainDrawer=null;
+  if(root){
+    if(root.isConnected!==false&&trigger&&trigger.isConnected!==false)root.appendChild(drawer);
+    else drawer.remove();
+  }
+  if(trigger){trigger.setAttribute('aria-expanded','false');trigger.classList.remove('is-selected');if(restoreFocus!==false&&trigger.isConnected!==false)trigger.focus();}
+}
+function chainLayoutExcerpt(text,name){
+  if(typeof text!=='string'||!chainLayoutText(name))return '';
+  var start=text.indexOf(name),end=start+name.length;
+  if(start<0){
+    // Only typography equivalence: retain source spelling and its original offsets.
+    function fold(value){
+      var out='',offset=0,starts=[],ends=[];
+      for(var point of value){
+        var normalized=point.normalize('NFKC').toLowerCase();
+        for(var i=0;i<normalized.length;i++)if(!/\s/.test(normalized[i])){out+=normalized[i];starts.push(offset);ends.push(offset+point.length);}
+        offset+=point.length;
+      }
+      return {text:out,starts:starts,ends:ends};
+    }
+    var source=fold(text),target=fold(name).text,index=target?source.text.indexOf(target):-1;
+    if(index<0)return '';
+    start=source.starts[index];end=source.ends[index+target.length-1];
+  }
+  var left=Math.max(0,start-16),right=Math.min(text.length,Math.max(left+96,end+28));
+  return (left?'…':'')+text.slice(left,right)+(right<text.length?'…':'');
+}
+function chainLayoutNodeHtml(node,index){
+  if(!chainLayoutText(node.name))return '';
+  var info=chainLayoutInfo(node),excerpt=chainLayoutExcerpt(info.excerpt,node.name);
+  return '<button type="button" class="chain-layout-node'+(info.assessed?'':' is-sparse')+'" onclick="openChainLayoutNode(this,'+index+')" aria-haspopup="dialog" aria-expanded="false" aria-label="查看'+escapeChainText(node.name)+'的依据">'+
+    '<span class="chain-layout-node-name">'+escapeChainText(node.name)+'</span>'+
+    (info.companies.length?'<span class="chain-layout-entity">关联企业：'+info.companies.map(escapeChainText).join('、')+'</span>':'')+
+    (excerpt?'<span class="chain-layout-node-summary"><span class="chain-layout-quote-label">'+(excerpt===info.excerpt?'原文':'原文节选')+'</span>'+escapeChainText(excerpt)+'</span>':'')+
+    '<span class="chain-layout-fact-meta"><span>'+escapeChainText(info.scope)+'</span>'+(info.date?'<span>资料日期 '+escapeChainText(info.date)+'</span>':'')+'</span>'+
+    '<span class="chain-layout-node-foot"><span class="chain-layout-status">'+info.label+'</span><span class="chain-layout-evidence">'+(info.count?'原文片段 '+info.count+' 条':'查看材料状态')+' <span aria-hidden="true">↗</span></span></span></button>';
+}
+function chainLayoutSourceHtml(row){
+  var published=chainAssessmentDate(row.date,false),retrieved=chainAssessmentDate(row.retrieved,true);
+  var location=[];if(row.pdfPage)location.push('PDF 页码：'+row.pdfPage);if(row.quoteRange)location.push('摘录范围：'+row.quoteRange);
+  if(row.fulltextScope)location.push('归档范围：'+(row.fulltextScope==='entire_html_visible_text'?'网页可见正文':row.fulltextScope));
+  return '<article class="chain-layout-source">'+(row.title?'<h4>'+escapeChainText(row.title)+'</h4>':'')+
+    '<blockquote>'+escapeChainText(row.quote)+'</blockquote><p class="chain-layout-source-meta">'+(published?'发布：'+escapeChainText(published):'发布日期未提供')+(retrieved?' · '+(row.archived?'归档：':'检索：')+escapeChainText(retrieved):'')+'</p>'+
+    (location.length?'<p class="chain-layout-source-meta">'+location.map(escapeChainText).join(' · ')+'</p>':'')+
+    row.urls.map(function(url){return '<a href="'+escapeChainText(url)+'" target="_blank" rel="noopener noreferrer">打开原文来源</a>';}).join(' · ')+'</article>';
+}
+function chainLayoutDetailHtml(node,index){
+  var info=chainLayoutInfo(node),j=node.assessment&&node.assessment.judgment,missing=j&&Array.isArray(j.missing)?j.missing:[];
+  var description=info.assessed?'已有资料支持此处列出的有限判断，适用地域和时间以原文为准。':'材料收录状态不代表已落地；尚不能据此判断该环节强弱或现实中不存在。';
+  var incomplete=info.original.filter(function(row){return !row.urls.length||!chainLayoutText(row.quote);});
+  return '<template data-chain-detail="'+index+'"><div class="chain-detail-eyebrow">环节与依据</div><h3>'+escapeChainText(node.name)+'</h3>'+
+    (info.companies.length?'<p class="chain-layout-entity">关联企业：'+info.companies.map(escapeChainText).join('、')+'</p>':'')+
+    '<div class="chain-detail-status">'+info.label+' · '+escapeChainText(info.scope)+'</div><p>'+description+'</p><p class="chain-layout-source-meta">'+info.rawLabel+(Array.isArray(node.qualifiers)&&node.qualifiers.length?'；原文限定：'+node.qualifiers.map(escapeChainText).join('、'):'')+'</p>'+
+    '<section class="chain-layout-originals"><h4>原文与来源</h4>'+(info.rows.length?info.rows.map(chainLayoutSourceHtml).join(''):'<p>尚无同时包含有效链接和原句的来源，不能据此判断产业缺失。</p>')+'</section>'+
+    (incomplete.length?'<details class="chain-layout-incomplete"><summary>来源不完整的材料片段（'+incomplete.length+'）</summary>'+incomplete.map(function(row){return '<p>'+escapeChainText(row.quote||'此记录未提供原句。')+'</p>';}).join('')+'</details>':'')+
+    (missing.length?'<h4>还需补充</h4><ul>'+missing.map(function(s){return '<li>'+escapeChainText(s)+'</li>';}).join('')+'</ul>':'')+
+    chainAssessmentDetails(node.assessment,node)+'</template>';
+}
+function chainLayoutMetaHtml(evidence,status,count,unclassifiedCount){
+  var coverage=evidence.coverage&&typeof evidence.coverage==='object'?evidence.coverage:{},taxonomy=evidence.taxonomy&&typeof evidence.taxonomy==='object'?evidence.taxonomy:{};
+  var partial=status==='partial'||coverage.status==='partial'||unclassifiedCount>0;
+  var label=!count?'尚未形成节点':partial?'部分材料已归类':'已整理本次材料';
+  var record=evidence.nodeResearch&&typeof evidence.nodeResearch==='object'?evidence.nodeResearch:null;
+  var supplement=record&&(chainLayoutText(record.status)||(Array.isArray(record.batches)&&record.batches.length)||(Array.isArray(record.errors)&&record.errors.length))?record:null;
+  var errors=supplement&&Array.isArray(supplement.errors)?supplement.errors:[];
+  var batches=supplement&&Array.isArray(supplement.batches)?supplement.batches:[];
+  var unfinished=batches.filter(function(batch){return batch&&!batch.legacy_summary&&typeof batch.status==='string'&&batch.status!=='ready';}).length;
+  var incomplete=supplement&&(supplement.status!=='ready'||errors.length||unfinished);
+  var research={ready:supplement?'基础检索完成':'本轮检索完成',pending:'本轮检索不完整',partial:'本轮检索不完整',failed:'本轮检索未完成',unavailable:'本轮检索未完成'}[evidence.researchStatus]||'检索状态未记录';
+  var supplementLabel=supplement?(incomplete?'补充核验未完整':'补充核验完成'):'';
+  if(supplement&&supplement.status==='scope_mismatch')supplementLabel+='（材料范围不一致）';
+  var errorMessages=errors.map(function(error){return typeof error==='string'?error:error&&typeof error.message==='string'?error.message:error&&typeof error.code==='string'?error.code:'';}).filter(Boolean);
+  var time=typeof evidence.generatedAt==='number'?new Date(evidence.generatedAt):null;
+  var date=time&&Number.isFinite(time.getTime())?chainAssessmentDate(time.toISOString(),true):'';
+  return '<div class="chain-layout-context"><div class="chain-layout-context-row"><strong>'+label+'</strong><span>'+research+'</span>'+(supplementLabel?'<span>'+supplementLabel+'</span>':'')+(unfinished?'<span>未完成 '+unfinished+' 组</span>':'')+(errors.length?'<span>错误记录 '+errors.length+' 条</span>':'')+(date?'<span>图谱生成：'+escapeChainText(date)+'</span>':'')+'</div>'+
+    '<p>范围：当前方向、本次取得的材料；不是完整产业清单，不能据此推断现实缺失。</p>'+
+    (chainLayoutText(taxonomy.description)?'<p>分类口径'+(chainLayoutText(taxonomy.label)?'（'+escapeChainText(taxonomy.label)+'）':'')+'：'+escapeChainText(taxonomy.description)+'</p>':'')+
+    (chainLayoutText(coverage.meaning)?'<p>'+escapeChainText(coverage.meaning)+'</p>':'')+(errorMessages.length?'<details class="chain-layout-research-errors"><summary>查看补充核验记录</summary><ul>'+errorMessages.map(function(message){return '<li>'+escapeChainText(message)+'</li>';}).join('')+'</ul></details>':'')+'</div>';
+}
+function chainExplorerHtml(topic,segments,recs,p,unclassified,status,evidence){
+  if(CHAIN_OPEN_DRAWER)closeChainLayoutNode(CHAIN_OPEN_DRAWER,false);
+  evidence=evidence||{};unclassified=(Array.isArray(unclassified)?unclassified:[]).filter(function(n){return n&&chainLayoutText(n.name);});
+  segments=(Array.isArray(segments)?segments:[]).map(function(s){return {seg:s.seg,nodes:(Array.isArray(s.nodes)?s.nodes:[]).filter(function(n){return n&&chainLayoutText(n.name);})};});
+  var nodes=[];segments.forEach(function(s){nodes=nodes.concat(s.nodes);});nodes=nodes.concat(unclassified);
+  var withOriginal=nodes.filter(function(n){return chainLayoutInfo(n).count>0;}).length,assessed=nodes.filter(function(n){return chainLayoutInfo(n).assessed;}).length;
+  var key=chainExplorerKey(topic,p,evidence),mode=CHAIN_EXPLORER_UI[key]==='assessment'?'assessment':'layout',index=0,templates=[];
+  function card(n){var id=index++;templates.push(chainLayoutDetailHtml(n,id));return chainLayoutNodeHtml(n,id);}
+  var lanes=['上游','中游','下游'].map(function(name,i){var group=segments.find(function(s){return s.seg===name;})||{nodes:[]};
+    return '<section class="industry-chain-row"><div class="chain-lane-heading"><span class="chain-lane-index">0'+(i+1)+'</span><h3>'+name+'</h3><span class="chain-lane-total">'+group.nodes.length+' 个环节</span></div><div class="industry-chain-nodes">'+(group.nodes.length?group.nodes.map(card).join(''):'<div class="chain-layout-empty">本次材料未形成该组节点；不代表实际不存在。</div>')+'</div></section>';
+  }).join('');
+  var other=unclassified.length?'<details class="chain-layout-other"><summary>待归类材料 <span>'+unclassified.length+' 项</span></summary><p>暂不放入上中下游；原文及分类依据保留供核对。</p><div class="industry-chain-nodes">'+unclassified.map(card).join('')+'</div></details>':'';
+  var metric=function(value,label){return '<div class="chain-overview-metric"><strong>'+value+'</strong><span>'+label+'</span></div>';};
+  return '<section class="chain-explorer" data-chain-key="'+escapeChainText(key)+'" data-chain-mode="'+mode+'" aria-label="产业链布局与评价">'+
+    '<div class="chain-explorer-toolbar"><div class="chain-explorer-title"><span>INDUSTRY LANDSCAPE</span><h2>'+escapeChainText(topic)+'<small>产业链图谱</small></h2><p>查看有出处的环节记录，评价与原文分开展示。</p></div><div class="chain-view-switch" aria-label="图谱视图"><button type="button" class="'+(mode==='layout'?'is-active':'')+'" data-chain-mode-button="layout" aria-pressed="'+(mode==='layout')+'" onclick="setChainExplorerMode(this,\'layout\')">产业布局</button><button type="button" class="'+(mode==='assessment'?'is-active':'')+'" data-chain-mode-button="assessment" aria-pressed="'+(mode==='assessment')+'" onclick="setChainExplorerMode(this,\'assessment\')">薄弱评价</button></div></div>'+
+    '<div class="chain-overview-metrics">'+metric(nodes.length,'已整理环节 / 线索')+metric(withOriginal,'有原文的节点')+metric(assessed,'具备评价依据')+metric(unclassified.length,'产业位置待确认')+'</div>'+
+    chainLayoutMetaHtml(evidence,status,nodes.length,unclassified.length)+
+    '<div class="chain-explorer-layout" data-chain-panel="layout"'+(mode==='layout'?'':' hidden')+'><div class="chain-layout-caption"><span>按产业环节组织材料</span><span>并列展示，不表示已证实的供货关系</span></div><div class="industry-chain-body">'+lanes+'</div>'+other+'</div>'+
+    '<div class="chain-explorer-assessment" data-chain-panel="assessment"'+(mode==='assessment'?'':' hidden')+'>'+_renderRichChain(topic,segments,recs,p,unclassified,status,evidence)+'</div>'+
+    templates.join('')+'<aside class="chain-node-drawer" role="dialog" aria-label="环节详情与原文依据" hidden onkeydown="if(event.key===\'Escape\')closeChainLayoutNode(this)"><div class="chain-node-drawer-header"><span>资料与判断分开展示</span><button type="button" class="chain-node-drawer-close" aria-label="关闭环节详情" onclick="closeChainLayoutNode(this)">×</button></div><div class="chain-node-drawer-content"></div></aside></section>';
+}
+
 function chainMapHtml(p){
   if(!p)return '';
   var topic=p.topic||'',rs=REPORTSTATE[cur]||{},job=_chainGenInFlight[(cur||'')+'|'+topic];
   if(job)return '<div role="status" aria-live="polite" style="margin-top:16px;padding:20px;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b">'+escapeChainText(job.message||'正在生成产业链图谱…')+'<button disabled aria-busy="true" style="margin-left:12px">生成中…</button></div>';
   var chain=currentEvidenceChain(topic,cur),error=(rs.chainErrorByTopic||{})[topic];
   var errorHtml=error?'<p role="alert" style="color:#92400e;font-size:12px">'+escapeChainText(error)+'</p>':'';
-  if(Array.isArray(chain)){var metadata=(rs.chainEvidenceByTopic||{})[topic]||{},allNodes=[];chain.forEach(function(segment){allNodes=allNodes.concat(segment.nodes||[]);});allNodes=allNodes.concat((rs.chainUnclassifiedByTopic||{})[topic]||[]);return errorHtml+_renderRichChain(topic,chain,null,p,(rs.chainUnclassifiedByTopic||{})[topic],(rs.chainStatusByTopic||{})[topic],metadata)+'<div style="text-align:right;padding:10px 0"><button onclick="requestChainGeneration()">'+(chainNeedsAssessment(allNodes,metadata.assessment)?'更新图谱并评价':['empty','partial'].indexOf((rs.chainStatusByTopic||{})[topic])>=0?'补充材料后重新生成':'重新生成图谱')+'</button></div>'; }
+  if(Array.isArray(chain)){var metadata=(rs.chainEvidenceByTopic||{})[topic]||{},allNodes=[];chain.forEach(function(segment){allNodes=allNodes.concat(segment.nodes||[]);});allNodes=allNodes.concat((rs.chainUnclassifiedByTopic||{})[topic]||[]);return errorHtml+(typeof chainExplorerHtml==='function'?chainExplorerHtml:_renderRichChain)(topic,chain,null,p,(rs.chainUnclassifiedByTopic||{})[topic],(rs.chainStatusByTopic||{})[topic],metadata)+'<div style="text-align:right;padding:10px 0"><button onclick="requestChainGeneration()">'+(chainNeedsAssessment(allNodes,metadata.assessment)?'更新图谱并评价':['empty','partial'].indexOf((rs.chainStatusByTopic||{})[topic])>=0?'补充材料后重新生成':'重新生成图谱')+'</button></div>'; }
   var text=typeof reportTextForTopic==='function'?reportTextForTopic(topic):'',short=!text||text.trim().length<100;
   var legacy=!!((rs.chainByTopic||{})[topic]||(rs.chainEvidenceByTopic||{})[topic]),failed=(rs.chainStatusByTopic||{})[topic]==='failed';
   return '<div style="margin-top:16px;padding:20px;border:1px dashed #cbd5e1;border-radius:12px;background:#f8fafc;color:#64748b;font-size:12px;line-height:1.8">'+errorHtml+
