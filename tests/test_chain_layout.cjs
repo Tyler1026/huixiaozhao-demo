@@ -46,6 +46,41 @@ for(const side of ['index','ops']){
   assert.match(html,/已有现状依据/);assert.match(html,/含规划线索/);assert.doesNotMatch(html,/企业 0 家|独立核实 2|未命名材料项/);
   assert.equal(JSON.stringify(groups),before);assert.equal(c.chainLayoutInfo(node('strong')).count,1);
  });
+ test(side+' layout keeps textual green yellow red ratings only for source-bound reviewed nodes',()=>{
+  const c=setup(side),labels={strong:'已有支撑',mid:'存在短板',weak:'明显薄弱',unknown:'尚不能评价'};
+  for(const [level,label] of Object.entries(labels)){
+   const n=node(level,'reported'),before=JSON.stringify(n),html=c.chainLayoutNodeHtml(n,0);
+   assert.match(html,new RegExp('data-chain-rating="'+level+'"'));
+   assert.ok(html.includes('<span class="chain-layout-rating">'+label+'</span>'));
+   assert.ok(html.includes('薄弱评价：'+label));assert.equal(JSON.stringify(n),before);
+  }
+ });
+ test(side+' stored ratings cannot color unreviewed or mismatched evidence',()=>{
+  const c=setup(side),cases=[];
+  let n=node('weak');n.assessment.judgment.status='pending';cases.push(n);
+  n=node('mid');n.assessment.judgment.premises=[];cases.push(n);
+  n=node('strong');n.assessment.judgment.premises[0].source.id='FORGED';cases.push(n);
+  n=node('strong');n.assessment.judgment.premises[0].statement='原文没有这句话';cases.push(n);
+  n=node('weak');n.assessment.judgment.premises[0].role='policy_target';cases.push(n);
+  n=node('mid');n.assessment.judgment.premises[0].source.url='javascript:alert(1)';cases.push(n);
+  n=node('strong');n.name='另一个完全无关的环节';cases.push(n);
+  n=node('strong');n.assessment.judgment.contract='chain-judgment-v2';cases.push(n);
+  for(const value of cases){
+   const before=JSON.stringify(value),html=c.chainLayoutNodeHtml(value,0);
+   assert.equal(c.chainLayoutInfo(value).assessed,false);
+   assert.match(html,/data-chain-rating="unknown"/);assert.match(html,/>尚不能评价<\/span>/);
+   assert.doesNotMatch(html,/data-chain-rating="(?:strong|mid|weak)"/);assert.equal(JSON.stringify(value),before);
+  }
+ });
+ test(side+' current archived reviewed nodes retain their real ratings including paragraph references',()=>{
+  const c=setup(side),fixture=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/chain_layout_reviewed_sources_20261017.json'),'utf8'));
+  assert.equal(fixture.nodes.length,4);
+  for(const value of fixture.nodes){
+   const before=JSON.stringify(value),level=value.assessment.judgment.level,info=c.chainLayoutInfo(value),html=c.chainLayoutNodeHtml(value,0);
+   assert.equal(info.assessed,true,value.name);assert.equal(info.ratingLevel,level,value.name);
+   assert.match(html,new RegExp('data-chain-rating="'+level+'"'));assert.ok(info.count>0);assert.equal(JSON.stringify(value),before);
+  }
+ });
  test(side+' only nonempty quotations with safe URLs count as original evidence',()=>{
   const c=setup(side),n=node();n.sources=[{id:'empty'},{id:'blank',url:source.url,quote:'  '},{id:'unsafe',url:'javascript:alert(1)',quote:'真实片段'},{id:'credentials',url:'https://user:pass@example.org',quote:'片段'}];
   const info=c.chainLayoutInfo(n),html=c.chainLayoutNodeHtml(n,0);
@@ -172,11 +207,12 @@ for(const side of ['index','ops']){
   const g=portalFixture(c);c.openChainLayoutNode(g.button,0);g.button.isConnected=false;g.observer().fire();
   assert.equal(g.drawer.parentNode,null);assert.notEqual(g.button.focused,true);
  });
- test(side+' owner view switches and new rendering close a portaled drawer',()=>{
+ test(side+' view switch closes drawer but pure markup rendering preserves it',()=>{
   const c=setup(side),f=portalFixture(c);c.openChainLayoutNode(f.button,0);
   c.setChainExplorerMode({closest:()=>f.root},'assessment');assert.equal(f.drawer.hidden,true);assert.equal(f.drawer.parentNode,f.root);assert.notEqual(f.button.focused,true);
   c.openChainLayoutNode(f.button,0);c.chainExplorerHtml('新方向',[],null,{},[],'empty',{});
-  assert.equal(f.drawer.hidden,true);assert.equal(c.CHAIN_OPEN_DRAWER,null);
+  assert.equal(f.drawer.hidden,false);assert.equal(c.CHAIN_OPEN_DRAWER,f.drawer);
+  f.root.isConnected=false;f.observer().fire();assert.equal(f.drawer.parentNode,null);assert.equal(c.CHAIN_OPEN_DRAWER,null);
  });
  test(side+' only one body drawer remains open when another graph node is opened',()=>{
   const c=setup(side),first=portalFixture(c),second=portalFixture(c);
@@ -195,4 +231,14 @@ test('both applications use the same layout and source presentation implementati
  const sections=['index/script-02-sections','ops/script-03-sections'].map(p=>fs.readFileSync(path.join(__dirname,'../frontend',p,'12-tail.js'),'utf8'));
  const blocks=sections.map(s=>s.slice(s.indexOf('/* Presentation only: layout and assessment'),s.indexOf('function chainMapHtml(')));
  assert.equal(blocks[0],blocks[1]);
+});
+
+test('layout rating accents keep the established colors and neutral fallback',()=>{
+ const css=fs.readFileSync(path.join(__dirname,'../frontend/shared/industry-chain.css'),'utf8');
+ for(const [level,color] of Object.entries({strong:'#2c7951',mid:'#8f6416',weak:'#b24738'})){
+  const block=css.match(new RegExp('\\[data-chain-rating="'+level+'"\\] \\{([^}]+)\\}'));
+  assert.ok(block,level);assert.ok(block[1].includes('--chain-rating-ink: '+color),level);
+ }
+ assert.match(css,/color: var\(--chain-rating-ink, #738293\)/);
+ assert.match(css,/border-left: 3px solid var\(--chain-rating-edge, #dfe7ef\)/);
 });

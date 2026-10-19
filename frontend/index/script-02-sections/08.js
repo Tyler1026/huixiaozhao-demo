@@ -19,6 +19,21 @@ var _onbOpts={};     // 本次问卷各题实际选项：AI 结合城市生成�
 var _onbCity='';     // 本次问卷针对的城市（动态，不硬编码）
 var _onbCanClose=false; // 本次问卷是否允许关闭：设置页修改=true(不论是否已填写过)；首次建项目=false(必须作答才能建项目)
 
+/* The main industry navigation opens the authorized city workspace. A demand
+ * keeps its independent report when opened directly through switchProj. */
+function industryAnalysisWorkspaceKey(projectKey){
+  var project=PROJECTS[projectKey];
+  if(!project||project.isDemand!==true)return projectKey;
+  var key=project.workspaceId,parent=key&&PROJECTS[key];
+  if(!key||key===projectKey||!parent||parent.isDemand===true||parent.city!==project.city)return projectKey;
+  if(typeof AUTH==='undefined'||!AUTH)return projectKey;
+  if(AUTH.scope!=='admin'){
+    var keys=typeof _authProjectKeys==='function'?_authProjectKeys():[AUTH.projKey];
+    if(keys.indexOf(key)<0)return projectKey;
+  }
+  return key;
+}
+
 // 取当前城市：优先账号绑定，其次当前项目，最后传入参数
 function _resolveOnbCity(explicit){
   if(explicit) return explicit;

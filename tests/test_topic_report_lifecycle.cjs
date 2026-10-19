@@ -317,7 +317,7 @@ test('request replacement while streaming rejects writes to the new report', asy
 
 test('graph failure stays retryable and no embedded demo facts render',()=>{
  const {c}=environment();Object.assign(c,{_chainGenInFlight:{},reportTextForTopic:()=>fullText.repeat(2)});
- vm.runInContext(['currentEvidenceChain','chainMapHtml','escapeChainText'].map(n=>declaration(n)).join('\n'),c);
+ vm.runInContext(['currentEvidenceChain','chainGenerationStatusHtml','chainMapHtml','escapeChainText'].map(n=>declaration(n)).join('\n'),c);
  c.REPORTSTATE.p.chainStatusByTopic={'核电配套':'failed'};
  const html=c.chainMapHtml(c.PROJECTS.p);assert.match(html,/重试生成图谱/);assert.doesNotMatch(html,/香菇|随州|本地优势|外省企业/);
 });
@@ -326,7 +326,7 @@ test('admin graph and report selection use exact current evidence without legacy
  const {c}=environment();const ops=fs.readFileSync(path.join(root,'frontend/ops/script-03-sections/12-tail.js'),'utf8');
  const helpers=fs.readFileSync(path.join(root,'frontend/ops/script-03-sections/14-tail.js'),'utf8');
  Object.assign(c,{_chainGenInFlight:{}});
- vm.runInContext(['currentEvidenceChain','chainMapHtml','escapeChainText'].map(n=>declaration(n,ops)).join('\n')+'\n'+['getTopicReport','reportTextForTopic'].map(n=>declaration(n,helpers)).join('\n'),c);
+ vm.runInContext(['currentEvidenceChain','chainGenerationStatusHtml','chainMapHtml','escapeChainText'].map(n=>declaration(n,ops)).join('\n')+'\n'+['getTopicReport','reportTextForTopic'].map(n=>declaration(n,helpers)).join('\n'),c);
  c.REPORTSTATE.p.topic='other';c.REPORTSTATE.p.text='unrelated body';
  assert.equal(c.reportTextForTopic('核电配套'),null);
  c.REPORTSTATE.p.aiReportByTopic['核电配套']=fullText.repeat(2);

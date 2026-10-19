@@ -63,10 +63,6 @@ function restoreFromServer(callback){
   }
   var readSeq=window._serverRestoreSeq=(window._serverRestoreSeq||0)+1;
   window._serverSyncLock=true;
-  // 保存用户当前操作状态，避免服务器数据覆盖用户刚做的方向切换
-  var _userCur = cur;
-  var _userTopic = (cur && PROJECTS[cur]) ? PROJECTS[cur].topic : null;
-  var _userView = view;
   return fetch('/api/sync',{credentials:'same-origin',headers:{'X-HXZ-Report-Client':'website'}}).then(function(response){if(authEpoch!==_authEpoch||readSeq!==_serverRestoreSeq)throw new Error('同步请求已过期');return _authReadSync(response);}).then(function(raw){
     if(authEpoch!==_authEpoch||readSeq!==_serverRestoreSeq)return;
     if(!raw){window._serverSyncLock=false;if(callback)callback(false);return;}
@@ -77,6 +73,9 @@ function restoreFromServer(callback){
               ? raw.huixiaozhao_kb_v1
               : raw;
     if(!srv||!srv.PROJECTS){window._serverSyncLock=false;if(callback)callback(false);return;}
+    // Capture the live selection when the response arrives, not when the request
+    // started: a user can change direction or page while the network is pending.
+    var _userCur=cur,_userTopic=cur&&PROJECTS[cur]?PROJECTS[cur].topic:null,_userView=view;
     if(_acceptServerGeneration(srv)){_userCur=null;_userTopic=null;_userView=null;}
     // 服务器直接覆盖本地，不做合并——保证所有人看到同一份数据
     // 但保护本地刚提交的 isDemand 项目：5秒防抖内刷新时服务器尚无这些数据，直接覆盖会丢
@@ -245,8 +244,15 @@ function restoreFromServer(callback){
     // 不盲目用srv.cur（可能指向空项目）：选数据最多的项目
     var _allK=Object.keys(PROJECTS); var _bestK=null,_bestKC=0;
     _allK.forEach(function(k){var c=0;(PROJECTS[k].kb||[]).forEach(function(t){c+=(t.known||[]).length;});if(c>_bestKC){_bestKC=c;_bestK=k;}});
-    cur = (_bestK && _bestKC > 0) ? _bestK : (srv.cur || _allK[0] || null);
+    cur = (_bestK && _bestKC > 0) ? _bestK : (srv.cur&&PROJECTS[srv.cur]?srv.cur:_allK[0]||null);
     view = (_bestKC > 0) ? 'knowledge' : (srv.view || 'setup');
+    // Restore the current selection before integrity checks and cache writes,
+    // so neither another tab nor this tab briefly receives the server's old route.
+    if(_userCur&&PROJECTS[_userCur]){
+      cur=_userCur;
+      if(_userTopic&&(PROJECTS[_userCur].deletedTopics||[]).indexOf(_userTopic)<0)PROJECTS[_userCur].topic=_userTopic;
+    }
+    if(_userView)view=_userView;
     applyTopicStateIntegrity();
     // 写回 localStorage（统一扁平格式）
     var flat={cur:cur,view:view,PROJECTS:PROJECTS,UPLOADS:UPLOADS,
@@ -268,12 +274,6 @@ function restoreFromServer(callback){
       try{fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify(_safeSyncSnapshot(flat))}).catch(function(){});}catch(_){}
     }
-    // 恢复用户当前操作状态：服务器数据不覆盖用户刚切换的方向
-    if(_userCur && PROJECTS[_userCur]){
-      cur = _userCur;
-      if(_userTopic&&(PROJECTS[_userCur].deletedTopics||[]).indexOf(_userTopic)<0) PROJECTS[_userCur].topic = _userTopic;
-    }
-    if(_userView) view = _userView;
     window._serverSyncLock=false;
     console.log('[sync] restored from server, projects:',Object.keys(PROJECTS).length,', preserved topic:', _userTopic);
     try{ migrateKbChatToCity(); }catch(_){}

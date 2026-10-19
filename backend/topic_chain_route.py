@@ -20,8 +20,46 @@ from .topic_reports import TopicReportError
 from .topic_chain import TopicChainError
 
 
+def _keep_existing_chain(report, topic, identity, result):
+    """A failed model retry must not replace a richer current saved graph."""
+    if (result.get('generation') or {}).get('mode') != 'source_only':
+        return False
+    def value(field):
+        table = report.get(field)
+        return table.get(topic) if isinstance(table, dict) else None
+
+    meta = value('chainEvidenceByTopic')
+    if (not isinstance(meta, dict) or meta.get('contract') != 'source-bound-chain-v2'
+            or meta.get('scope') != 'current-topic-v2' or meta.get('topic') != topic
+            or not identity_matches(meta.get('sourceIdentity'), identity)):
+        return False
+
+    def nodes(chain, extra):
+        return [node for group in chain if isinstance(group, dict)
+                and isinstance(group.get('nodes'), list)
+                for node in group['nodes'] if isinstance(node, dict)] + [
+                    node for node in extra if isinstance(node, dict)]
+
+    old_chain = value('chainByTopic')
+    old_extra = value('chainUnclassifiedByTopic') or []
+    if not isinstance(old_chain, list) or not isinstance(old_extra, list):
+        return False
+    previous = nodes(old_chain, old_extra)
+    incoming = nodes(result.get('chain', []), result.get('unclassified', []))
+    def identities(items):
+        return {node.get('id') or node.get('name') for node in items
+                if isinstance(node.get('id') or node.get('name'), str)}
+    rated = any(isinstance(node.get('assessment'), dict)
+                and isinstance(node['assessment'].get('judgment'), dict)
+                and node['assessment']['judgment'].get('level') in ('strong', 'mid', 'weak')
+                for node in previous)
+    return (len(previous) > len(incoming) or rated
+            or not identities(previous).issubset(identities(incoming)))
+
+
 def serve_topic_chain(handler, body, *, complete, audit, research=research_topic,
-                      build=None, assessment_builder=None, reasoning_builder=None, clock=time.monotonic):
+                      build=None, assessment_builder=None, reasoning_builder=None,
+                      clock=time.monotonic, heartbeat_seconds=15, model_timeout_seconds=65):
     if build is None:
         from .topic_chain import build_chain
         build = build_chain
@@ -43,6 +81,54 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
     run_id, started = uuid.uuid4().hex, clock()
     stream, headers_sent, persisted = body.get('stream', True), False, False
     lock = threading.Lock()
+    heartbeat_stop = threading.Event()
+    heartbeat_thread = None
+    generation_errors = []
+    model_timed_out = False
+
+    def bounded_complete(*args):
+        nonlocal model_timed_out
+        # Production model requests have a 65 s transport timeout. Stop
+        # starting optional calls while there is still enough time to finish
+        # that request, validate originals and save before the client deadline.
+        if model_timed_out or clock() - started >= 355:
+            if not generation_errors:
+                generation_errors.append({'code': 'chain_model_budget_exhausted',
+                    'message': '本轮模型整理已达到时间预算，保留已核验的原文及已完成结果。'})
+            raise TopicChainError('chain_model_budget_exhausted', '本轮模型整理已达到时间预算。')
+        finished, outcome = threading.Event(), {}
+        def request():
+            try:
+                outcome['result'] = complete(*args)
+            except BaseException as error:
+                outcome['error'] = error
+            finally:
+                finished.set()
+        # Socket timeouts reset on each received chunk. Bound the complete
+        # model call as well, so a slow provider cannot hold the graph request
+        # beyond its wall-clock budget. Late output is never saved or rated.
+        threading.Thread(target=request, name='chain-model-request', daemon=True).start()
+        if not finished.wait(min(model_timeout_seconds, max(0, 420 - (clock() - started)))):
+            model_timed_out = True
+            generation_errors.append({'code': 'chain_model_timeout',
+                'message': '本轮模型响应超时，已停止后续模型调用，仅保留已完成的原文整理。'})
+            raise TopicChainError('chain_model_timeout', '本轮模型响应超时。')
+        if 'error' in outcome:
+            raise outcome['error']
+        return outcome.get('result')
+
+    def heartbeat():
+        while not heartbeat_stop.wait(heartbeat_seconds):
+            try:
+                # SSE comments preserve the connection without reporting new
+                # research progress or triggering a frontend re-render.
+                with lock:
+                    if heartbeat_stop.is_set():
+                        return
+                    handler.wfile.write(b': keep-alive\n\n')
+                    handler.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                heartbeat_stop.set()
 
     def send(value):
         with lock:
@@ -67,9 +153,17 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
             handler.send_header('Cache-Control', 'no-store')
             handler.send_header('X-Accel-Buffering', 'no')
             handler.cors(); handler.end_headers(); headers_sent = True
+            heartbeat_thread = threading.Thread(target=heartbeat, name='chain-stream-heartbeat', daemon=True)
+            heartbeat_thread.start()
         event('research.status', stage='retrieval', message='正在分别检索上游、中游和下游的公开原文')
-        findings = research(context['city'], topic, mode='chain', basis=context['chunks'],
-                            progress=lambda progress: event('research.status', **progress))
+        try:
+            findings = research(context['city'], topic, mode='chain', basis=context['chunks'],
+                                progress=lambda progress: event('research.status', **progress))
+        except Exception:
+            findings = {'city': context['city'], 'topic': topic, 'status': 'unavailable',
+                        'evidence': [], 'sources': {}, 'queries': [],
+                        'errors': [{'code': 'chain_research_failed',
+                                    'message': '本轮公开检索未完成；如有已核验归档原文，将明确按归档资料整理。'}]}
         # Validate incoming retrieval before enrichment. A valid archive must
         # not hide a corrupted live source behind an otherwise empty graph.
         for row in findings.get('evidence', []):
@@ -83,11 +177,16 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
         from .public_research import enrich_public_research
         findings = enrich_public_research(findings, context['city'], topic)
         event('research.status', stage='classification', message='正在核对原文、环节归类和规划状态')
-        result = build(context, findings, complete)
+        result = build(context, findings, bounded_complete)
+        generation = result.get('generation') or {}
+        source_only = generation.get('mode') == 'source_only'
         from .chain_assessment import build_assessment, unavailable_assessment
-        event('research.status', stage='assessment', message='正在逐环节研判已有基础、培育方向与补链短板')
+        event('research.status', stage='assessment', message=('模型整理未完成，本轮只保留原文环节，不判定薄弱程度'
+              if source_only else '正在逐环节研判已有基础、培育方向与补链短板'))
         try:
-            assessment_result = (assessment_builder or build_assessment)(context, findings, result, complete)
+            if source_only:
+                raise TopicChainError('chain_model_selection_unavailable', '本轮仅完成原文环节整理。')
+            assessment_result = (assessment_builder or build_assessment)(context, findings, result, bounded_complete)
         except Exception:
             # A failed evaluation must remain visibly unevaluated; it must not
             # turn into a weak rating or discard a valid source-bound diagram.
@@ -139,10 +238,13 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
         # nodes when all three lanes were already populated.
         from .chain_facts import attach_source_statements
         attach_source_statements(result, findings, context)
-        event('research.status', stage='reasoning', message='正在对比本地基础与产业要求，并交叉核对补链判断')
+        event('research.status', stage='reasoning', message=('正在保存原文及未完成复核的状态'
+              if source_only else '正在对比本地基础与产业要求，并交叉核对补链判断'))
         try:
+            if source_only:
+                raise TopicChainError('chain_model_selection_unavailable', '本轮未完成薄弱程度复核。')
             from .chain_weakness import build_weakness
-            reasoned = (reasoning_builder or build_weakness)(context, findings, result, assessment_result, complete)
+            reasoned = (reasoning_builder or build_weakness)(context, findings, result, assessment_result, bounded_complete)
             if reasoned.get('judgment'):
                 assessment_result['assessment']['judgment'] = reasoned['judgment']
             for node_id, judgment in (reasoned.get('node_judgments') or {}).items():
@@ -196,6 +298,9 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
             if chain_input_fingerprint(current, current_identity) != fingerprint:
                 raise AuthError(409, 'evidence_changed', '生成期间材料或报告已更新，旧图谱未保存，请重新生成')
             rs = live.setdefault('REPORTSTATE', {}).setdefault(key, {})
+            if _keep_existing_chain(rs, topic, current_identity, result):
+                raise AuthError(409, 'chain_existing_result_preserved',
+                                '本轮模型复核未完成，新结果未完整保留现有环节或评价，已保留原图谱。')
             previous_map = rs.get('chainEvidenceByTopic')
             previous = previous_map.get(topic) if isinstance(previous_map, dict) else {}
             previous_time = previous.get('generatedAt') if isinstance(previous, dict) else None
@@ -209,7 +314,9 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
                     'inputFingerprint': fingerprint, 'generatedAt': generated, 'runId': run_id,
                     'sources': result.get('sources', []), 'checks': verification.get('checks', []),
                     'verificationStatus': 'unreviewed', 'researchStatus': findings.get('status'),
-                    'queries': findings.get('queries', []), 'errors': findings.get('errors', []),
+                    'queries': findings.get('queries', []),
+                    'errors': list(findings.get('errors') or []) + list(generation.get('errors') or []) + generation_errors,
+                    'generation': generation,
                     'taxonomy': result.get('taxonomy', {}), 'coverage': result.get('coverage', {}),
                     'assessment': result['assessment'],
                     'nodeResearch': findings.get('node_research', {}),
@@ -231,6 +338,7 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
                    'evidence': meta, 'status': status, 'taxonomy': meta['taxonomy'],
                    'coverage': meta['coverage'], 'saved': True}
         payload['assessment'] = meta['assessment']
+        heartbeat_stop.set()
         if stream:
             event('chain.result', **payload)
             send({'choices': [{'delta': {'content': json.dumps(result['chain'], ensure_ascii=False)},
@@ -249,6 +357,7 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
     except (BrokenPipeError, ConnectionResetError):
         record('client_disconnected')
     except Exception as error:
+        heartbeat_stop.set()
         if isinstance(error, AuthError):
             code, message, http = error.code, error.message, error.status
         elif isinstance(error, (TopicReportError, TopicChainError)):
@@ -264,3 +373,7 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
                 pass
         elif not headers_sent:
             error_response(handler, AuthError(http, code, message))
+    finally:
+        heartbeat_stop.set()
+        if heartbeat_thread is not None:
+            heartbeat_thread.join(timeout=0.2)

@@ -273,7 +273,7 @@
   overflow: visible;
 }
 
-/* Layout cards stay neutral, including sparse records. Evidence is a detail. */
+/* Keep layouts quiet; only source-bound reviewed judgments receive rating accents. */
 .chain-explorer .chain-layout-node {
   appearance: none;
   display: flex;
@@ -302,12 +302,51 @@
 .chain-explorer .chain-layout-node:not(:disabled):not([aria-disabled="true"]):hover {
   transform: translateY(-1px);
   border-color: #a5c3dd;
+  border-left-color: var(--chain-rating-edge, #a5c3dd);
   box-shadow: 0 5px 14px #254b700a;
 }
 .chain-explorer .chain-layout-node:is([aria-expanded="true"], .is-selected) {
   border-color: #96b9d8;
+  border-left-color: var(--chain-rating-edge, #96b9d8);
   background: #fcfdff;
   box-shadow: 0 0 0 2px #d6e7f438;
+}
+/* Rating tokens come only from validated, source-bound assessment levels. */
+.chain-explorer .chain-layout-node[data-chain-rating="strong"] {
+  --chain-rating-ink: #2c7951;
+  --chain-rating-wash: #eaf7ef;
+  --chain-rating-edge: #8aba9e;
+}
+.chain-explorer .chain-layout-node[data-chain-rating="mid"] {
+  --chain-rating-ink: #8f6416;
+  --chain-rating-wash: #fff4cf;
+  --chain-rating-edge: #d8bc69;
+}
+.chain-explorer .chain-layout-node[data-chain-rating="weak"] {
+  --chain-rating-ink: #b24738;
+  --chain-rating-wash: #fdebe5;
+  --chain-rating-edge: #db8d7e;
+}
+.chain-explorer .chain-layout-node[data-chain-rating] {
+  border-left: 3px solid var(--chain-rating-edge, #dfe7ef);
+}
+.chain-explorer .chain-layout-node-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 8px;
+}
+.chain-explorer .chain-layout-node-heading .chain-layout-node-name { flex: 1 1 110px; }
+.chain-explorer .chain-layout-rating {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--chain-rating-wash, #f5f7fa);
+  color: var(--chain-rating-ink, #738293);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
 }
 .chain-explorer .chain-layout-node-name {
   display: block;
@@ -572,3 +611,24 @@
   .chain-node-drawer-close { transition: none; }
   .chain-explorer .chain-layout-node:not(:disabled):not([aria-disabled="true"]):hover { transform: none; }
 }
+
+/* Analysis-derived directions are distinct from the single submission task. */
+.industry-priorities { margin-top:24px; padding:22px; border:1px solid #e0e8f0; border-radius:14px; background:#fff; }
+.industry-priorities-heading { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+.industry-priorities-heading h3 { margin:0; font-size:16px; color:#34536f; }
+.industry-priorities-heading > span,.industry-priority-scope { color:#718ba1; font-size:11px; }
+.industry-priority-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); gap:14px; }
+.industry-priority-card { border:1px solid #dfe8f1; border-radius:12px; padding:18px; background:#fcfdff; color:#526b80; font-size:12px; line-height:1.8; overflow-wrap:anywhere; }
+.industry-priority-card h4 { margin:7px 0 10px; color:#2d5271; font-size:15px; }
+.industry-priority-card p { margin:6px 0 12px; }
+.industry-priority-action { padding:12px; margin:14px 0; border-radius:8px; background:#f0f5fa; }
+.industry-priority-action strong { font-size:11px; color:#60819d; }
+.industry-priority-action p { margin-bottom:0; }
+.industry-priority-card summary { color:#517b9e; cursor:pointer; }
+.industry-priority-empty { margin:0; color:#71869a; font-size:12px; line-height:1.8; }
+.chain-generation-status { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px 18px; margin:16px 0; border:1px solid #d7e5f1; border-radius:12px; background:#f5f9fd; color:#54758e; font-size:12px; }
+.chain-generation-status button { border:0; color:#7892a7; background:transparent; white-space:nowrap; }
+
+.chain-generate-button { border:1px solid #bcd0e0; border-radius:9px; padding:10px 16px; background:#f4f8fc; color:#376384; font:inherit; font-size:12px; font-weight:600; cursor:pointer; transition:background .15s,border-color .15s; }
+.chain-generate-button:hover { background:#eaf2f9; border-color:#91b3cf; }
+.chain-generate-button:focus-visible { outline:3px solid #95b8d4; outline-offset:3px; }

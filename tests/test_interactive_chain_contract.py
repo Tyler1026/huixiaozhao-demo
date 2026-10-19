@@ -24,7 +24,8 @@ class InteractiveChainContractTests(unittest.TestCase):
             return original(*args, **kwargs)
         body={'question':'整理当前证据产业链','mode':'chain','purpose':'chain_map',
               'projectKey':'a','topic':'液体火箭','reportRequestId':'r1','stream':True}
-        with patch.object(topic_chain_route, 'serve_topic_chain', routed):
+        with patch.object(topic_chain_route, 'serve_topic_chain', routed), \
+             patch('backend.public_research.enrich_public_research', side_effect=lambda findings,*args:findings):
             status,_,raw=self.h.request('POST','/api/kb-chat',body,cookie=self.cookie)
         return status,raw.decode()
 
@@ -47,9 +48,22 @@ class InteractiveChainContractTests(unittest.TestCase):
         self.assertEqual(event['status'],'empty');self.assertEqual(event['coverage']['missing_lanes'],['上游','中游','下游'])
         self.assertIn('[DONE]',text)
 
-    def test_legacy_object_bad_plan_or_unbound_archive_cannot_complete(self):
-        for bad, broken in [({'chain':'液体火箭','segments':[]},False), ([{'seg':'上游','nodes':[]}],False), ({'nodes':[]},True)]:
-            status,text=self._request(bad,broken)
+    def test_bad_model_plan_keeps_only_source_bound_literal_nodes(self):
+        for bad in ({'chain':'液体火箭','segments':[]}, [{'seg':'上游','nodes':[]}]):
+            status,text=self._request(bad)
+            self.assertEqual(status,200)
+            event=next(json.loads(line[6:]) for line in text.splitlines() if line.startswith('data: {') and json.loads(line[6:]).get('type')=='chain.result')
+            self.assertEqual(event['status'],'partial')
+            self.assertEqual(event['evidence']['generation']['mode'],'source_only')
+            self.assertTrue(event['saved'])
+            node=event['chain'][1]['nodes'][0]
+            self.assertEqual(node['name'],'液体火箭总装测试平台')
+            self.assertEqual(node['level'],'unknown')
+            self.assertIn(node['name'],node['sources'][0]['quote'])
+
+    def test_unbound_archive_cannot_complete_even_when_model_fails(self):
+        for bad in ({'chain':'液体火箭','segments':[]}, {'nodes':[]}):
+            status,text=self._request(bad,True)
             self.assertEqual(status,200)
             self.assertNotIn('[DONE]',text);self.assertNotIn('chain.result',text)
             self.assertEqual(self.audits[-1]['outcome'],'incomplete')

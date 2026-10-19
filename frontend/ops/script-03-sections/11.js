@@ -54,6 +54,7 @@ function toggleSw(e){e.stopPropagation();var m=$('#swMenu');m.style.display=m.st
 function switchProj(k){cur=k;view='report';detailData=null;render();toast('已进入「'+PROJECTS[k].topic+'」研判工作区')}
 function newProj(){var m=$('#swMenu');if(m)m.style.display='none';newProjModal()}
 function go(v){
+  if(v==='report')cur=industryAnalysisWorkspaceKey(cur);
   if(isLocked(v)){
     var r=kbReadiness();
     var vnames={report:'\u7814\u5224\u9700\u6c42',home:'\u9879\u76ee\u7ba1\u7406',docking:'\u653f\u4f01\u5bf9\u63a5'};
