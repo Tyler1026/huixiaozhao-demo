@@ -69,6 +69,7 @@ body.industry-view .nav-copy small{font-size:10px}
 .industry-page .industry-prose li::marker{color:#7798b7}
 .industry-page .industry-prose blockquote{margin:18px 0!important;padding:12px 16px!important;border:0!important;border-left:3px solid #adc7df!important;border-radius:0 6px 6px 0;background:#f5f8fc!important;color:#59718a!important}
 .industry-page .industry-prose blockquote p{margin:0!important;color:inherit!important;font-size:12px!important}
+.industry-page .industry-prose blockquote p+p{margin-top:10px!important}
 .industry-page .industry-prose hr{margin:26px 0!important;border:0!important;border-top:1px solid #e7edf3!important}
 .industry-page .industry-prose table{display:block;width:100%!important;max-width:100%;margin:18px 0 22px!important;overflow-x:auto;border:1px solid #e0e8f1!important;border-spacing:0;border-collapse:separate!important;border-radius:7px;background:#fff;font-size:11px!important;line-height:1.7!important;scrollbar-width:thin}
 .industry-page .industry-prose th{padding:10px 13px!important;border:0!important;border-right:1px solid #e4ebf3!important;border-bottom:1px solid #dde6f0!important;background:#eff4f9!important;color:#3d5a76!important;font-weight:650!important;text-align:left;white-space:nowrap}
