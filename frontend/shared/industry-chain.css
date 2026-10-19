@@ -273,7 +273,7 @@
   overflow: visible;
 }
 
-/* Layout cards stay neutral, including sparse records. Evidence is a detail. */
+/* Keep layouts quiet; only source-bound reviewed judgments receive rating accents. */
 .chain-explorer .chain-layout-node {
   appearance: none;
   display: flex;
@@ -302,12 +302,51 @@
 .chain-explorer .chain-layout-node:not(:disabled):not([aria-disabled="true"]):hover {
   transform: translateY(-1px);
   border-color: #a5c3dd;
+  border-left-color: var(--chain-rating-edge, #a5c3dd);
   box-shadow: 0 5px 14px #254b700a;
 }
 .chain-explorer .chain-layout-node:is([aria-expanded="true"], .is-selected) {
   border-color: #96b9d8;
+  border-left-color: var(--chain-rating-edge, #96b9d8);
   background: #fcfdff;
   box-shadow: 0 0 0 2px #d6e7f438;
+}
+/* Rating tokens come only from validated, source-bound assessment levels. */
+.chain-explorer .chain-layout-node[data-chain-rating="strong"] {
+  --chain-rating-ink: #2c7951;
+  --chain-rating-wash: #eaf7ef;
+  --chain-rating-edge: #8aba9e;
+}
+.chain-explorer .chain-layout-node[data-chain-rating="mid"] {
+  --chain-rating-ink: #8f6416;
+  --chain-rating-wash: #fff4cf;
+  --chain-rating-edge: #d8bc69;
+}
+.chain-explorer .chain-layout-node[data-chain-rating="weak"] {
+  --chain-rating-ink: #b24738;
+  --chain-rating-wash: #fdebe5;
+  --chain-rating-edge: #db8d7e;
+}
+.chain-explorer .chain-layout-node[data-chain-rating] {
+  border-left: 3px solid var(--chain-rating-edge, #dfe7ef);
+}
+.chain-explorer .chain-layout-node-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 8px;
+}
+.chain-explorer .chain-layout-node-heading .chain-layout-node-name { flex: 1 1 110px; }
+.chain-explorer .chain-layout-rating {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--chain-rating-wash, #f5f7fa);
+  color: var(--chain-rating-ink, #738293);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
 }
 .chain-explorer .chain-layout-node-name {
   display: block;
