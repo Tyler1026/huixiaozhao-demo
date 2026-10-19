@@ -1,6 +1,6 @@
 {
   "index.html": {
-    "sha256": "a86e46ef1a9ced94a3857f818ddebfcc8da22ef3fdded28c60b3e216b03e0e8f",
+    "sha256": "f00ac15cb208903cb9589cb92c7ef4dc4ad65ecafac732bc68cbe568c64b7319",
     "parts": [
       "frontend/index/markup-01.html",
       "frontend/index/style-01.css",
@@ -28,6 +28,7 @@
       "frontend/index/script-02-sections/12-part-02.js",
       "frontend/shared/_clueLegacyTombKey.js",
       "frontend/shared/report-priorities.js",
+      "frontend/shared/industry-demands.js",
       "frontend/index/script-02-sections/12-tail.js",
       "frontend/index/script-02-sections/13.js",
       "frontend/index/script-02-sections/14-part-00.js",
@@ -42,7 +43,7 @@
     ]
   },
   "ops.html": {
-    "sha256": "b9ab71261ef49e0fa5f9f60ea857f8883530e174a6e7bfa1725e7ac99e225a2a",
+    "sha256": "0ef836ac5306395e8064ca432a0fe3272eae9779ae23e3bec15a58656db1c4e7",
     "parts": [
       "frontend/ops/markup-01.html",
       "frontend/ops/style-01.css",
@@ -69,6 +70,7 @@
       "frontend/ops/script-03-sections/12-part-01.js",
       "frontend/shared/_isReusableClueId.js",
       "frontend/shared/report-priorities.js",
+      "frontend/shared/industry-demands.js",
       "frontend/ops/script-03-sections/12-tail.js",
       "frontend/ops/script-03-sections/13.js",
       "frontend/ops/script-03-sections/14-part-00.js",

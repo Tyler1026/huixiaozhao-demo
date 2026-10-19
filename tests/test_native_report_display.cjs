@@ -52,6 +52,7 @@ function harness(state) {
   context.P = () => context.PROJECTS[context.cur];
   context.persist = () => {local.offline = JSON.stringify({PROJECTS: context.PROJECTS, REPORTSTATE: context.REPORTSTATE, DEMANDS: context.DEMANDS});};
   vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.join(root,'frontend/shared/industry-demands.js'),'utf8')+'\n'+fs.readFileSync(path.join(root,'frontend/shared/report-priorities.js'),'utf8'),context);
   const topicState=read('12-tail.js');
   vm.runInContext(topicState.slice(topicState.indexOf('function reportStateFields('),topicState.indexOf('function selectTopic(')),context);
   vm.runInContext([
@@ -144,17 +145,15 @@ test('native history, project card and PDF/TXT exports agree for 100, true 0 and
   assert.ok(out.text.at(-1).includes('置信度：81%'));
 });
 
-test('native demand carries the exact publication identity and pending classification to its project card', async () => {
+test('native report preserves publication identity in the snapshot and cannot submit an entire direction', async () => {
   const {context: c, project: p, report: r} = harness(publication());
   r.score = 0; r.scoreStatus = 'unclassified';
-  await c.submitDemand();
-  const demand = c.DEMANDS[0], child = c.PROJECTS[demand.projKey];
-  assert.equal(child.reportRequestId, p.reportRequestId);
-  assert.equal(child.workspaceId, 'report_rrfixture');
-  assert.equal(child.clues.length, 0);
-  assert.ok(demand.need.includes('核验分类待校核'));
-  assert.ok(!demand.need.includes('置信度'));
-  assert.equal(c.topicScoreDisplay(child.topic, demand.projKey), '核验分类待校核');
-  c.window.__projOpen = demand.projKey;
-  assert.ok(c.projMgmtPage(p).includes('核验分类待校核'));
+  const snapshot=c.demandReportSnapshot(c.cur,p.topic);
+  assert.equal(snapshot.sourceReportId,p.reportRequestId);
+  assert.equal(snapshot.scoreStatus,'unclassified');
+  assert.equal(snapshot.text,r.text);
+  assert.equal(await c.submitDemand(),false);
+  assert.equal(c.DEMANDS.length,0);
+  assert.equal(Object.values(c.PROJECTS).filter(project=>project.isDemand).length,0);
+  assert.equal(c.topicScoreDisplay(p.topic,c.cur),'核验分类待校核');
 });

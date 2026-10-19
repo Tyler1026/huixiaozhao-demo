@@ -344,61 +344,8 @@ function cadreOK(row){var ck=row.querySelector('input');ck.checked=true;$('#ck2'
 function leaderOK(row){var ck=row.querySelector('input');if(ck.disabled){toast('请先完成干部确认');return;}ck.checked=true;$('#submitBtn').disabled=false;toast('双确认完成，可正式递交')}
 // 双确认 == 从研判进入项目管理的唯一关口：通过后报告的「补链方向」自动派生为项目
 /* 跨端桥接：政府端双确认递交 → upsert 一条管理端需求池记录（黄金演示动线第1→2步） */
-function syncDemandFromProject(){
-  var p=P();if(!p)return;
-  var cl=p.clues||[];
-  var domain=(cl[0]&&(cl[0].dir||'').split(' · ')[0])||p.topic.replace('补链','').replace('升级','').replace('智能化','');
-  var exist=DEMANDS.find(function(d){return d.city===p.city&&d.topic===p.topic});
-  var payload={
-    city:p.city, gov:p.org+'·'+p.who, topic:p.topic, domain:domain,
-    need:cl.map(function(c){return c.dir.split(' · ')[0]}).join(' / ')||p.topic,
-    submit:'刚刚', res:'checking', resLabel:'核验中', clues:cl.length,
-    note:'政府端双确认递交，等待资源端核验匹配。', fromGov:true
-  };
-  if(exist){Object.keys(payload).forEach(function(k){if(k!=='res'&&k!=='resLabel'&&k!=='clues')exist[k]=payload[k];});exist.submit='刚刚';}
-  else{payload.id='dg'+Date.now();DEMANDS.unshift(payload);}
-  // 更新城市漏斗（提交+确认各+1；若该城市不存在则新建）
-  var f=CITY_FUNNEL.find(function(x){return x.city===p.city});
-  if(f){f.submit++;f.confirm++;}else{CITY_FUNNEL.push({city:p.city,submit:1,confirm:1,match:0,dock:0,sign:0});}
-}
-function submitNeed(){
-  setStage(3);
-  var cl=P().clues||[];var n=cl.length;
-  syncDemandFromProject();
-  // 【自动派生项目】把报告里每个补链方向变成一个招引项目，挂到当前产业方向下（去重）
-  if(!SUBPROJ[cur])SUBPROJ[cur]=[];
-  var made=0;
-  cl.forEach(function(c){
-    if(SUBPROJ[cur].some(function(m){return m.name===c.dir}))return;
-    SUBPROJ[cur].push({name:c.dir,dir:c.dir,clueName:c.name,stage:4,from:P().topic});
-    made++;
-  });
-  saveSubproj();
-  if(n===0){
-    // 无补链方向可派生（高概率一家都没有）——需求仍进入资源池
-    addA('<p>✅ 双确认完成，已生成<strong>正式招商需求</strong>并递交资源端。</p>');
-    addRaw('<div class="clue-origin"><i class="i">🔗</i>需求已递交<button onclick="scrollToReport()">查看报告</button></div>'+
-      '<div style="border:1px dashed #cdd8e8;border-radius:10px;padding:20px;text-align:center;background:#fafbfd">'+
-        '<div style="font-size:26px;margin-bottom:6px">📭</div>'+
-        '<div style="font-size:13.5px;font-weight:650;color:#0b183b">报告暂无明确补链方向</div>'+
-        '<div style="font-size:12px;color:#667590;margin-top:6px;line-height:1.7">需求已进入资源池，资源端将持续核验可触达渠道，有匹配会通知你。</div>'+
-        '<div style="margin-top:12px"><span class="status-tag" style="background:#fff0de;color:#a34c09">已纳入长期跟踪</span></div>'+
-      '</div>'+
-      '<div class="boundary-note"><i class="i">ℹ</i>无匹配也是有效结果——资源端会据此对接外部渠道，或等待新资源进入。</div>');
-    setStage(4);
-    setTimeout(function(){addRaw(dockPanel());setStage(5);},700);
-    return;
-  }
-  addA('<p>✅ 双确认完成，已生成<strong>正式招商需求</strong>。系统已把报告的 <strong>'+n+' 个补链方向自动建成招引项目</strong>，挂在「项目管理 › '+P().topic+'」下，可分别推进对接——</p>');
-  addRaw('<div class="clue-origin"><i class="i">🔗</i>项目由报告补链方向自动派生<button onclick="scrollToReport()">查看报告</button></div>'+
-    '<div class="clue-list">'+cl.map(function(c,i){return '<div class="clue-row" onclick="go(\'home\');setTimeout(function(){toggleProjGroup(\''+cur+'\')},60)"><div class="clue-icon"><i class="i">🎯</i></div>'+
-      '<div class="clue-main"><strong>'+c.dir.split(' · ')[0]+'</strong><small>候选线索 '+c.name+'</small><em>已建为项目 · 点击到「项目管理」查看</em></div>'+
-      '<span class="status-tag" style="background:#ebf3fd;color:#013582">已建项目</span><i class="i">➜</i></div>';}).join('')+'</div>'+
-    '<div style="margin-top:10px"><button class="primary-button" onclick="go(\'home\');setTimeout(function(){toggleProjGroup(\''+cur+'\')},60)"><i class="i">📋</i>前往项目管理查看 '+n+' 个项目</button></div>'+
-    '<div class="boundary-note"><i class="i">ℹ</i>项目自动生成后即为独立对接线；候选企业由资源端核验可达性，系统不自动联系企业。</div>');
-  setStage(4);
-  setTimeout(function(){addRaw(dockPanel());setStage(5);},700);
-}
+function syncDemandFromProject(){return chooseIndustryDemand();}
+function submitNeed(){return chooseIndustryDemand();}
 function scrollToReport(){var r=document.querySelector('.report-document');if(r){r.scrollIntoView({behavior:'smooth',block:'start'});r.style.outline='2px solid #0757ad';setTimeout(function(){r.style.outline=''},1200);}else{toast('报告在当前对话上方')}}
 // 导出报告：生成完整研判报告文件并下载
 function exportReport(){

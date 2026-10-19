@@ -132,7 +132,7 @@ function opsMain(){
   var rows=DEMANDS.map(function(d){var on=d.id===curDemand;
     return '<div onclick="pickDemand(\''+d.id+'\')" class="ops-row'+(on?' on':'')+'" style="align-items:flex-start">'+
       '<div class="r-ic">📥</div>'+
-      '<div class="r-main"><div style="display:flex;align-items:center;gap:8px"><strong>'+d.city+' · '+d.topic+'</strong><span class="ops-badge '+demandBadge(d.res)+'">'+d.resLabel+'</span></div>'+
+      '<div class="r-main"><div style="display:flex;align-items:center;gap:8px"><strong>'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'</strong><span class="ops-badge '+demandBadge(d.res)+'">'+d.resLabel+'</span></div>'+
       '<small>'+d.gov+' · 递交于 '+d.submit+' · 线索 '+(d.clues||0)+' 家</small>'+
       '<em style="display:flex;gap:5px;margin-top:4px"><span style="color:#0757ad">AI 初判</span>'+d.ai+'</em></div>'+
       '<i class="i" style="color:#c3cfdd;font-size:18px;align-self:center">›</i></div>';
@@ -153,10 +153,10 @@ function opsDetail(){
   var d=DEMANDS.find(function(x){return x.id===curDemand})||DEMANDS[0];var rc=RES_COLOR[d.res];
   return '<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button>'+
     '<div class="detail-page">'+
-    '<div class="detail-header"><div><span class="eyebrow">DEMAND DETAIL</span><h2>'+d.city+' · '+d.topic+'</h2><p>'+d.gov+'</p></div></div>'+
+    '<div class="detail-header"><div><span class="eyebrow">DEMAND DETAIL</span><h2>'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'</h2><p>'+d.gov+'</p></div></div>'+
     '<div class="detail-scroll">'+
-      '<div class="detail-block"><h3>递交需求</h3><p class="detail-copy">'+d.need+'</p><span class="source-note">递交于 '+d.submit+'</span></div>'+
-      '<div class="detail-block"><h3>资源端判断</h3><div class="'+(d.res==='none'?'warning-callout':'info-callout')+'" style="margin-top:0"><b style="color:'+rc.c+'">'+d.resLabel+'</b> · '+d.note+'</div></div>'+
+      '<div class="detail-block"><h3>递交需求</h3>'+(d.demandContract==='industry-demand-v1'?opsDemandSpecificationHtml(d):'<p class="detail-copy">'+d.need+'</p>')+'<span class="source-note">递交于 '+d.submit+'</span></div>'+
+      '<div class="detail-block"><h3>资源端判断</h3><div class="'+(d.res==='none'?'warning-callout':'info-callout')+'" style="margin-top:0"><b style="color:'+rc.c+'">'+_authEscape(d.resLabel)+'</b>'+(d.demandContract==='industry-demand-v1'?'':' · '+_authEscape(d.note||''))+'</div></div>'+
       '<div class="detail-block"><h3>候选线索</h3>'+(d.clues>0?'<ul class="source-list"><li><i class="i">🔗</i>已匹配 '+d.clues+' 家脱敏候选企业<small>资源端从企业资源库匹配并经人工核验</small></li></ul>':'<div class="fact-with-icon warning"><i class="i">⚠</i><div><strong>暂无匹配线索</strong><span>建议纳入长期跟踪或对接外部渠道</span></div></div>')+'</div>'+
       '<div class="boundary-note"><i class="i">🔒</i>资源可达性、关键人触达由资源团队线下核验；系统只做需求汇总、状态跟踪与提醒，不自动联系企业。</div>'+
     '</div>'+
@@ -170,7 +170,7 @@ function opsAction(id){
   var d=DEMANDS.find(function(x){return x.id===id});if(!d)return;
   if(d.res==='matched'){
     // 已匹配 → 弹出对接安排表单（真实内容）
-    var body='<p class="modal-intro">为「'+d.city+' · '+d.topic+'」安排招商对接，确认后将同步回该城市干部的「当前研判」时间线。</p>'+
+    var body='<p class="modal-intro">为「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」安排招商对接，确认后将同步回该城市干部的「当前研判」时间线。</p>'+
       '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">需求方</span><span class="vv">'+d.gov+'</span></div>'+
       '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">候选线索</span><span class="vv">'+d.clues+' 家脱敏企业（资源端核验通过）</span></div>'+
       '<div class="form-stack" style="margin-top:12px"><label>拟对接时间<input value="本周内 · 待与双方确认"></label>'+
@@ -178,14 +178,14 @@ function opsAction(id){
     openModal('安排招商对接',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="doArrangeDock(\''+d.id+'\')">确认发起对接</button>');
   }else if(d.res==='checking'){
     // 核验中 → 弹出核验进度详情
-    var body='<p class="modal-intro">「'+d.city+' · '+d.topic+'」资源可达性核验进度：</p>'+
+    var body='<p class="modal-intro">「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」资源可达性核验进度：</p>'+
       '<div class="timeline"><div class="timeline-item done"><div class="timeline-dot"><i class="i">✓</i></div><div><div class="timeline-title"><strong>需求已接收</strong></div><p>已同步需求与报告证据链。</p></div></div>'+
       '<div class="timeline-item current"><div class="timeline-dot"><i class="i">◔</i></div><div><div class="timeline-title"><strong>资源匹配中</strong></div><p>正在核验 '+d.clues+' 家候选线索的真实意向与决策层触达。</p></div></div>'+
       '<div class="timeline-item"><div class="timeline-dot"><i class="i">•</i></div><div><div class="timeline-title"><strong>反馈可对接企业</strong></div><p>核验完成后回传该城市干部。</p></div></div></div>';
     openModal('资源核验进度',body,'<button class="primary-button" onclick="closeModal()">知道了</button>');
   }else{
     // 暂无资源 → 弹出长期跟踪确认
-    var body='<p class="modal-intro">「'+d.city+' · '+d.topic+'」当前资源库暂无直接匹配，可纳入长期跟踪或对接外部渠道。</p>'+
+    var body='<p class="modal-intro">「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」当前资源库暂无直接匹配，可纳入长期跟踪或对接外部渠道。</p>'+
       '<div class="fact-with-icon warning"><i class="i">⚠</i><div><strong>暂无匹配线索</strong><span>纳入跟踪后，有新资源进入将自动提醒</span></div></div>';
     openModal('纳入长期跟踪',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="closeModal();toast(\'已纳入长期跟踪，有匹配将提醒\')">确认纳入</button>');
   }
@@ -193,9 +193,9 @@ function opsAction(id){
 function doArrangeDock(id){
   var d=DEMANDS.find(function(x){return x.id===id});if(!d)return;
   var contact=(d.gov.split('·')[1]||d.gov)+' / 待确认';
-  var exist=DOCK_ITEMS.find(function(k){return k.city===d.city&&k.topic===d.topic});
+  var exist=DOCK_ITEMS.find(function(k){return d.projKey?k.projKey===d.projKey:k.city===d.city&&k.topic===d.topic;});
   if(exist){exist.stage='对接中';exist.next='本周实地走访 + 政企座谈';}
-  else{DOCK_ITEMS.unshift({id:'k'+Date.now(),city:d.city,topic:d.topic,company:(d.clues+' 家脱敏候选企业'),stage:'对接中',contact:contact,next:'本周实地走访 + 政企座谈'});}
+  else{DOCK_ITEMS.unshift({id:'k'+Date.now(),projKey:d.projKey||null,city:d.city,topic:d.topic,company:(d.clues+' 家脱敏候选企业'),stage:'对接中',contact:contact,next:'本周实地走访 + 政企座谈'});}
   d.arranged=true;
   closeModal();render();
   toast('已发起对接，「'+d.city+' · '+d.topic+'」进入对接看板"对接中"');
@@ -368,12 +368,12 @@ function saveResAdd(){
   persist();
   closeModal();
   render();
-  toast('✓ 已录入「'+alias+'」→ 已推送至「'+p.city+'·'+p.topic.substring(0,15)+'」项目线索');
+  toast('✓ 已录入「'+alias+'」→ 已推送至「'+p.city+'·'+(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(p):p.topic).substring(0,30)+'」项目线索');
 }
 function resAdd(){
-  var projKeys=Object.keys(PROJECTS);
+  var projKeys=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k]&&PROJECTS[k].isDemand===true;});
   var projOptions=projKeys.map(function(k){
-    return '<option value="'+k+'">'+PROJECTS[k].city+' · '+PROJECTS[k].topic.substring(0,20)+'</option>';
+    return '<option value="'+_authEscape(k)+'">'+_authEscape(PROJECTS[k].city)+' · '+_authEscape(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(PROJECTS[k]):PROJECTS[k].topic)+'</option>';
   }).join('');
   var body=
     '<p style="font-size:13px;color:#4a5568;margin:0 0 16px;line-height:1.7">以下内容仅管理端可见，政府端只展示脱敏名称和公开信号。</p>'+
@@ -436,7 +436,7 @@ function opsMatch(){
   // 需求切换器（统一 chips）
   var picker='<div class="ops-chips"><span class="lbl">针对需求</span>'+
     DEMANDS.map(function(x){var on=x.id===d.id;var rc=RES_COLOR[x.res];
-      return '<button class="ops-chip'+(on?' on':'')+'" onclick="setMatchDemand(\''+x.id+'\')"><span class="dot" style="background:'+rc.c+'"></span>'+x.city+' · '+x.topic.replace('补链','').replace('升级','').replace('智能化','')+'</button>';
+      return '<button class="ops-chip'+(on?' on':'')+'" onclick="setMatchDemand(\''+x.id+'\')"><span class="dot" style="background:'+rc.c+'"></span>'+_authEscape(x.city)+' · '+_authEscape(x.topic)+'</button>';
     }).join('')+'</div>';
   // 候选企业：仅展示与该需求 domain 匹配的资源
   var pool=RESOURCES.map(function(r,gi){return {r:r,gi:gi}}).filter(function(o){return o.r.domain===d.domain;});
@@ -445,13 +445,13 @@ function opsMatch(){
   var lead;
   if(RESOURCES.length===0){
     var _bg0=d.domain.indexOf('电堆')>-1?'该环节是随州氢能整车成本最大缺口（占53%），新楚风/程力急需本地配套':d.domain.indexOf('无人机')>-1||d.domain.indexOf('机器人')>-1?'随州江南专汽/齐星整机能力强但感知层全靠外采，是智慧应急补链最大突破口':'随州香菇年产70万吨全球第一，功能成分提取仅2家，是向价值链上移的核心瓶颈';
-    lead='已锁定「'+d.city+' · '+d.topic+'」缺口：「'+d.domain+'」（'+_bg0+'）。资源库目前是空的——建议先补录该方向 2-3 家种子企业（可在右侧资源库冷启动），有内容后立即可以开始匹配。';
+    lead='已锁定「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」缺口：「'+d.domain+'」（'+_bg0+'）。资源库目前是空的——建议先补录该方向 2-3 家种子企业（可在右侧资源库冷启动），有内容后立即可以开始匹配。';
   }else if(pool.length===0){
     var _bg1=d.domain.indexOf('电堆')>-1?'电堆/储氢/空压机（随州整车成本53%缺口）':d.domain.indexOf('无人机')>-1||d.domain.indexOf('机器人')>-1?'应急机器人/无人机/5G通信（随州感知层外采依赖）':'香菇多糖/多肽提取/菌种研发（随州精深加工空白）';
-    lead='「'+d.city+' · '+d.topic+'」缺口「'+d.domain+'」（'+_bg1+'）。已扫描资源库现有 '+RESOURCES.length+' 家企业，暂无该方向匹配项。建议：①去资源库补录 '+d.domain+' 方向企业；②或让我规划外部找源渠道（行业协会/产业基金/展会名单）。';
+    lead='「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」缺口「'+d.domain+'」（'+_bg1+'）。已扫描资源库现有 '+RESOURCES.length+' 家企业，暂无该方向匹配项。建议：①去资源库补录 '+d.domain+' 方向企业；②或让我规划外部找源渠道（行业协会/产业基金/展会名单）。';
   }else{
     var _bg2=d.domain.indexOf('电堆')>-1?'，补随州整车成本53%最大缺口，与新楚风/程力直接配套':d.domain.indexOf('无人机')>-1||d.domain.indexOf('机器人')>-1?'，替代随州江南专汽/齐星对外采依赖':'，就近使用随州年产70万吨香菇原料，提取成本可降40%+';
-    lead='针对「'+d.city+' · '+d.topic+'」缺口「'+d.domain+'」'+_bg2+'，从资源库匹配到 <strong>'+pool.length+' 家</strong>候选企业'+(okCnt?'（其中 '+okCnt+' 家已核验通过）':'')+'。下面每家我都给了匹配理由、证据和需要你线下核实的风险点——核验属实后点「核验通过」，即派生线索并进入对接看板。';
+    lead='针对「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」缺口「'+d.domain+'」'+_bg2+'，从资源库匹配到 <strong>'+pool.length+' 家</strong>候选企业'+(okCnt?'（其中 '+okCnt+' 家已核验通过）':'')+'。下面每家我都给了匹配理由、证据和需要你线下核实的风险点——核验属实后点「核验通过」，即派生线索并进入对接看板。';
   }
   var leadBubble='<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble"><p>'+lead+'</p></div></div>';
   // prompt-row 引导卡
@@ -500,9 +500,9 @@ function opsMatch(){
 function opsVerify(i){
   var r=RESOURCES[i];if(!r)return;
   var d=matchDemand();
-  var body='<p class="modal-intro">确认你已<strong>线下核实</strong>「'+r.alias+'」对「'+d.city+' · '+d.topic+'」的真实意向与可触达性？</p>'+
+  var body='<p class="modal-intro">确认你已<strong>线下核实</strong>「'+r.alias+'」对「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」的真实意向与可触达性？</p>'+
     '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">候选企业</span><span class="vv">'+r.alias+'（'+r.tag+'·'+r.loc+'）</span></div>'+
-    '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">对应需求</span><span class="vv">'+d.city+' · '+d.topic+'</span></div>'+
+    '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">对应需求</span><span class="vv">'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'</span></div>'+
     '<div class="info-callout" style="margin-top:10px">通过后：① 该企业以脱敏名派生为候选线索 ② 自动进入「对接管理」看板"匹配中" ③ 回写需求状态并通知该城市干部。系统仅记录你的人工结论，不代替核实、不自动联系企业。</div>';
   openModal('记录核验结论 · '+r.alias,body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="doVerify('+i+')"><i class="i">✓</i>确认已核实·通过</button>');
 }
@@ -513,21 +513,21 @@ function doVerify(i){
   d.res='matched';d.resLabel='已匹配';d.clues=(d.clues||0)+1;
   d.note='「'+r.alias+'」经人工核验通过，已进入对接流程。';
   // 进对接看板"匹配中"（去重）
-  if(!DOCK_ITEMS.some(function(k){return k.company===r.alias&&k.topic===d.topic})){
-    DOCK_ITEMS.unshift({id:'k'+Date.now(),city:d.city,topic:d.topic,company:r.alias,stage:'匹配中',contact:d.gov.split('·')[1]||d.gov+' / 待确认',next:'核验决策层触达，安排走访'});
+  if(!DOCK_ITEMS.some(function(k){return k.company===r.alias&&(d.projKey?k.projKey===d.projKey:k.city===d.city&&k.topic===d.topic)})){
+    DOCK_ITEMS.unshift({id:'k'+Date.now(),projKey:d.projKey||null,city:d.city,topic:d.topic,company:r.alias,stage:'匹配中',contact:d.gov.split('·')[1]||d.gov+' / 待确认',next:'核验决策层触达，安排走访'});
   }
   // 漏斗 match+1
   var f=CITY_FUNNEL.find(function(x){return x.city===d.city});if(f)f.match++;
   // 【回传政府端】给对应城市干部推一条通知（黄金演示动线第4步）
-  var pk=projKeyByCityTopic(d.city,d.topic);
+  var pk=d.projKey&&PROJECTS[d.projKey]&&PROJECTS[d.projKey].city===d.city?d.projKey:projKeyByCityTopic(d.city,d.topic);
   NOTIFS.unshift({id:'n'+Date.now(),type:'状态变化',icon:'🔵',proj:pk,title:d.topic+' · 资源端已反馈',desc:'资源端核验通过 1 家脱敏候选企业（'+r.alias+'），已进入对接流程，建议准备承接材料。',time:'刚刚',read:false});
   closeModal();render();
   toast('已记录核验结论：'+r.alias+' 通过，进入对接看板，并已通知政府端');
 }
 /* 按城市+课题反查政府端项目key（用于回传通知定位） */
 function projKeyByCityTopic(city,topic){
-  var hit=Object.keys(PROJECTS).find(function(k){return PROJECTS[k].city===city&&PROJECTS[k].topic===topic});
-  return hit||null;
+  var hits=Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&p.city===city&&(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(p):p.topic)===topic;});
+  return hits.length===1?hits[0]:null;
 }
 function opsReject(i){
   var r=RESOURCES[i];if(!r)return;

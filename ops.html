@@ -1069,7 +1069,7 @@ body.ops-mode .ops-v3 .ops-ui-report-row .r-main small{white-space:normal;overfl
   .chain-explorer .chain-layout-node:not(:disabled):not([aria-disabled="true"]):hover { transform: none; }
 }
 
-/* Analysis-derived directions are distinct from the single submission task. */
+/* Each source-backed suggestion can become an independently tracked demand. */
 .industry-priorities { margin-top:24px; padding:22px; border:1px solid #e0e8f0; border-radius:14px; background:#fff; }
 .industry-priorities-heading { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
 .industry-priorities-heading h3 { margin:0; font-size:16px; color:#34536f; }
@@ -1089,6 +1089,29 @@ body.ops-mode .ops-v3 .ops-ui-report-row .r-main small{white-space:normal;overfl
 .chain-generate-button { border:1px solid #bcd0e0; border-radius:9px; padding:10px 16px; background:#f4f8fc; color:#376384; font:inherit; font-size:12px; font-weight:600; cursor:pointer; transition:background .15s,border-color .15s; }
 .chain-generate-button:hover { background:#eaf2f9; border-color:#91b3cf; }
 .chain-generate-button:focus-visible { outline:3px solid #95b8d4; outline-offset:3px; }
+
+.industry-priority-submit { display:inline-flex; justify-content:center; align-items:center; min-height:38px; margin-top:16px; padding:9px 16px; border:1px solid #b8d0df; border-radius:8px; background:#edf5fa; color:#245e80; font:inherit; font-weight:600; cursor:pointer; }
+.industry-priority-submit:hover { background:#e0eef7; border-color:#8cb5ce; }
+.industry-priority-submit:focus-visible { outline:3px solid #9ac5df; outline-offset:3px; }
+.industry-priority-submit:disabled { opacity:.6; cursor:wait; }
+.industry-demand-composer { color:#4c6378; line-height:1.8; }
+.industry-demand-composer .industry-demand-intro { margin:0 0 16px; color:#38566e; }
+.industry-demand-origin { padding:13px 16px; border:1px solid #e0eaf1; border-radius:9px; background:#f6f9fc; color:#688093; font-size:12px; line-height:1.9; overflow-wrap:anywhere; }
+.industry-demand-composer label { display:block; margin:20px 0 7px; color:#34536a; font-size:13px; font-weight:600; }
+.industry-demand-composer label span { color:#8697a7; font-weight:400; }
+.industry-demand-composer input,.industry-demand-composer textarea { box-sizing:border-box; width:100%; padding:11px 13px; border:1px solid #cfdce6; border-radius:8px; background:#fff; color:#2c4b61; font:inherit; font-size:13px; line-height:1.75; }
+.industry-demand-composer textarea { resize:vertical; min-height:90px; }
+.industry-demand-composer input:focus,.industry-demand-composer textarea:focus { border-color:#72a9ca; outline:3px solid #dcecf6; }
+.industry-demand-composer details { margin:20px 0 12px; padding-top:15px; border-top:1px solid #e5edf3; font-size:12px; }
+.industry-demand-composer summary { color:#577e99; cursor:pointer; }
+.industry-demand-boundary { margin:16px 0 0; color:#7c8d9d; font-size:11px; line-height:1.8; }
+.industry-demand-error { margin:12px 0 0; color:#b23d4b; font-size:12px; }
+.industry-demand-error:empty { display:none; }
+.industry-submitted-demand { margin-top:24px; padding:24px; border:1px solid #dce8ef; border-radius:14px; background:#fff; color:#4b6579; line-height:1.9; }
+.industry-demand-eyebrow { color:#66859a; font-size:11px; letter-spacing:.08em; }
+.industry-submitted-demand h3 { margin:8px 0 14px; color:#2c506c; font-size:18px; }
+.industry-submitted-demand h4 { margin:20px 0 5px; color:#47677e; font-size:13px; }
+.industry-submitted-demand p { white-space:pre-wrap; overflow-wrap:anywhere; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>if(typeof pdfjsLib!=='undefined')pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
@@ -2901,7 +2924,7 @@ function opsMain(){
       DEMANDS.map(function(d){var rc=RES_COLOR[d.res];var on=d.id===curDemand;
         return '<button onclick="pickDemand(\''+d.id+'\')" style="width:100%;display:flex;align-items:center;gap:14px;padding:14px 18px;border:1px solid '+(on?'var(--blue)':'var(--line)')+';border-radius:10px;background:'+(on?'#f3f7fd':'#fff')+';cursor:pointer;text-align:left">'+
           '<i class="i" style="font-size:22px;flex:0 0 auto">📥</i>'+
-          '<span style="flex:1;min-width:0;display:grid;gap:3px"><strong style="font-size:14.5px">'+d.city+' · '+d.topic+'</strong>'+
+          '<span style="flex:1;min-width:0;display:grid;gap:3px"><strong style="font-size:14.5px">'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'</strong>'+
           '<small style="color:var(--muted);font-size:12px">'+d.gov+' · 递交于 '+d.submit+'</small></span>'+
           '<span class="status-tag" style="flex:0 0 auto;color:'+rc.c+';background:'+rc.bg+'">'+d.resLabel+'</span></button>';
       }).join('')+
@@ -2912,10 +2935,10 @@ function opsDetail(){
   var d=DEMANDS.find(function(x){return x.id===curDemand})||DEMANDS[0];var rc=RES_COLOR[d.res];
   return '<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button>'+
     '<div class="detail-page">'+
-    '<div class="detail-header"><div><span class="eyebrow">DEMAND DETAIL</span><h2>'+d.city+' · '+d.topic+'</h2><p>'+d.gov+'</p></div></div>'+
+    '<div class="detail-header"><div><span class="eyebrow">DEMAND DETAIL</span><h2>'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'</h2><p>'+d.gov+'</p></div></div>'+
     '<div class="detail-scroll">'+
-      '<div class="detail-block"><h3>递交需求</h3><p class="detail-copy">'+d.need+'</p><span class="source-note">递交于 '+d.submit+'</span></div>'+
-      '<div class="detail-block"><h3>资源端判断</h3><div class="'+(d.res==='none'?'warning-callout':'info-callout')+'" style="margin-top:0"><b style="color:'+rc.c+'">'+d.resLabel+'</b> · '+d.note+'</div></div>'+
+      '<div class="detail-block"><h3>递交需求</h3>'+(d.demandContract==='industry-demand-v1'?opsDemandSpecificationHtml(d):'<p class="detail-copy">'+d.need+'</p>')+'<span class="source-note">递交于 '+d.submit+'</span></div>'+
+      '<div class="detail-block"><h3>资源端判断</h3><div class="'+(d.res==='none'?'warning-callout':'info-callout')+'" style="margin-top:0"><b style="color:'+rc.c+'">'+_authEscape(d.resLabel)+'</b>'+(d.demandContract==='industry-demand-v1'?'':' · '+_authEscape(d.note||''))+'</div></div>'+
       '<div class="detail-block"><h3>候选线索</h3>'+(d.clues>0?'<ul class="source-list"><li><i class="i">🔗</i>已派生 '+d.clues+' 家脱敏候选线索<small>由政府端报告缺口结论派生</small></li></ul>':'<div class="fact-with-icon warning"><i class="i">⚠</i><div><strong>暂无匹配线索</strong><span>建议纳入长期跟踪或对接外部渠道</span></div></div>')+'</div>'+
       '<div class="boundary-note"><i class="i">🔒</i>资源可达性、关键人触达由资源团队线下核验；系统只做需求汇总、状态跟踪与提醒，不自动联系企业。</div>'+
     '</div>'+
@@ -2929,7 +2952,7 @@ function opsAction(id){
   var d=DEMANDS.find(function(x){return x.id===id});if(!d)return;
   if(d.res==='matched'){
     // 已匹配 → 弹出对接安排表单（真实内容）
-    var body='<p class="modal-intro">为「'+d.city+' · '+d.topic+'」安排招商对接，确认后将同步回该城市干部的「当前研判」时间线。</p>'+
+    var body='<p class="modal-intro">为「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」安排招商对接，确认后将同步回该城市干部的「当前研判」时间线。</p>'+
       '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">需求方</span><span class="vv">'+d.gov+'</span></div>'+
       '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">候选线索</span><span class="vv">'+d.clues+' 家脱敏企业（资源端核验通过）</span></div>'+
       '<div class="form-stack" style="margin-top:12px"><label>拟对接时间<input value="本周内 · 待与双方确认"></label>'+
@@ -2937,14 +2960,14 @@ function opsAction(id){
     openModal('安排招商对接',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="closeModal();toast(\'对接安排已发起，将通知 '+d.gov+'\')">确认发起对接</button>');
   }else if(d.res==='checking'){
     // 核验中 → 弹出核验进度详情
-    var body='<p class="modal-intro">「'+d.city+' · '+d.topic+'」资源可达性核验进度：</p>'+
+    var body='<p class="modal-intro">「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」资源可达性核验进度：</p>'+
       '<div class="timeline"><div class="timeline-item done"><div class="timeline-dot"><i class="i">✓</i></div><div><div class="timeline-title"><strong>需求已接收</strong></div><p>已同步需求与报告证据链。</p></div></div>'+
       '<div class="timeline-item current"><div class="timeline-dot"><i class="i">◔</i></div><div><div class="timeline-title"><strong>资源匹配中</strong></div><p>正在核验 '+d.clues+' 家候选线索的真实意向与决策层触达。</p></div></div>'+
       '<div class="timeline-item"><div class="timeline-dot"><i class="i">•</i></div><div><div class="timeline-title"><strong>反馈可对接企业</strong></div><p>核验完成后回传该城市干部。</p></div></div></div>';
     openModal('资源核验进度',body,'<button class="primary-button" onclick="closeModal()">知道了</button>');
   }else{
     // 暂无资源 → 弹出长期跟踪确认
-    var body='<p class="modal-intro">「'+d.city+' · '+d.topic+'」当前资源库暂无直接匹配，可纳入长期跟踪或对接外部渠道。</p>'+
+    var body='<p class="modal-intro">「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」当前资源库暂无直接匹配，可纳入长期跟踪或对接外部渠道。</p>'+
       '<div class="fact-with-icon warning"><i class="i">⚠</i><div><strong>暂无匹配线索</strong><span>纳入跟踪后，有新资源进入将自动提醒</span></div></div>';
     openModal('纳入长期跟踪',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="closeModal();toast(\'已纳入长期跟踪，有匹配将提醒\')">确认纳入</button>');
   }
@@ -2957,7 +2980,7 @@ function topbar(p){
     '<div class="org-block"><i class="i">🏛️</i>'+
       '<strong style="font-weight:650">'+p.org+' · '+(p&&p.who||'—')+'</strong>'+
       '<span style="margin:0 10px;color:#cbd7e6">/</span>'+
-      '<strong style="color:var(--blue-dark)">'+p.topic+'</strong>'+
+      '<strong style="color:var(--blue-dark)">'+_authEscape(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(p):p.topic)+'</strong>'+
     '</div>'+
     roleSwitch()+
     '<div class="top-meta"><span><i class="i">🛰️</i>'+p.city+'城市智库已连接</span><span><i class="i">🕒</i>随州产业信息更新至 7月20日 06:00</span>'+
@@ -3374,6 +3397,74 @@ function reportAnalyticalPriorities(state, topic){
   });
   return out;
 }
+/* One reviewed report suggestion creates one independently tracked demand. */
+var INDUSTRY_DEMAND_DRAFT=null;
+function industryDemandProjectTitle(project){return project&&project.demandContract==='industry-demand-v1'?project.demandTitle||project.topic:project&&project.topic||'';}
+function industryDemandPriorityKey(item){return JSON.stringify([item.scope,item.focus]);}
+function industryDemandExisting(key,topic,item){
+  var priorityKey=industryDemandPriorityKey(item);
+  return Object.keys(PROJECTS||{}).find(function(id){var p=PROJECTS[id];return p&&p.demandContract==='industry-demand-v1'&&p.sourceProjectKey===key&&p.sourceAnalysisTopic===topic&&p.sourcePriorityKey===priorityKey;})||null;
+}
+function industryDemandButtonHtml(project,item){
+  var key=cur,topic=project.topic,existing=industryDemandExisting(key,topic,item);
+  return '<button class="industry-priority-submit" type="button" data-demand-source="'+escapeChainText(key)+'" data-demand-topic="'+escapeChainText(topic)+'" data-demand-priority="'+escapeChainText(industryDemandPriorityKey(item))+'" onclick="openIndustryDemandComposer(this)">'+(existing?'查看这条需求':'形成招商需求')+'</button>';
+}
+function industryDemandSummaryHtml(project){
+  var spec=project.demandSpec||{},priority=project.selectedPriority||{};
+  return '<section class="industry-submitted-demand"><span class="industry-demand-eyebrow">独立招商需求</span><h3>'+escapeChainText(industryDemandProjectTitle(project))+'</h3><p>'+escapeChainText(spec.description||'')+'</p>'+(spec.conditions?'<h4>补充条件</h4><p>'+escapeChainText(spec.conditions)+'</p>':'')+'<div class="industry-demand-origin">来自分析：'+escapeChainText(project.sourceAnalysisTopic||project.topic)+'<br>对应建议：'+escapeChainText(priority.focus||'')+'</div><p class="industry-demand-boundary">以上为提交人确认的需求，原报告的事实核验状态保持不变。</p></section>';
+}
+function openIndustryDemandProject(key){
+  if(!PROJECTS[key]||!PROJECTS[key].isDemand){toast('该需求当前不可用，请刷新后重试');return;}
+  closeModal();INDUSTRY_DEMAND_DRAFT=null;cur=key;view='home';detailData=null;detailOpen=true;window.__projOpen=key;render();
+}
+function chooseIndustryDemand(){
+  var p=P();if(!p)return false;
+  if(p.isDemand){openIndustryDemandProject(cur);return false;}
+  var items=reportAnalyticalPriorities(REPORTSTATE[cur],p.topic);
+  if(!items.length){toast('当前报告尚未形成可提交的具体招引建议');return false;}
+  if(typeof view!=='undefined'&&view!=='report'){view='report';render();}
+  var block=document.getElementById('actionItemsBlock');
+  if(block&&block.scrollIntoView)block.scrollIntoView({block:'start',behavior:'smooth'});
+  toast('请选择一条具体招引建议，确认需求后单独提交');return false;
+}
+function openIndustryDemandComposer(button){
+  var key=button.getAttribute('data-demand-source'),topic=button.getAttribute('data-demand-topic'),priorityKey=button.getAttribute('data-demand-priority');
+  var p=PROJECTS[key],items=p&&reportAnalyticalPriorities(REPORTSTATE[key],topic),item=items&&items.find(function(row){return industryDemandPriorityKey(row)===priorityKey;});
+  if(!p||p.isDemand||cur!==key||p.topic!==topic||!demandReportSnapshot(key,topic)||!item){toast('建议或报告已更新，请重新选择');return;}
+  var existing=industryDemandExisting(key,topic,item);if(existing){openIndustryDemandProject(existing);return;}
+  var identity=savedEvidenceIdentity(key,topic);if(!identity){toast('当前报告来源不完整，请刷新后重试');return;}
+  var priority={};['focus','scope','comparison','reason','action','evidence_ids'].forEach(function(field){priority[field]=JSON.parse(JSON.stringify(item[field]));});
+  INDUSTRY_DEMAND_DRAFT={key:key,topic:topic,sourceIdentity:identity,reportMetadataIdentity:JSON.stringify((REPORTSTATE[key].researchByTopic||{})[topic]),priority:priority,epoch:typeof _authEpoch==='number'?_authEpoch:0,pending:false};
+  var rows=chainNodeSources({sources:item.sources});
+  var body='<div class="industry-demand-composer"><p class="industry-demand-intro">将这一条建议单独形成需求，管理端将按下方具体诉求开展企业核验与对接。</p><div class="industry-demand-origin">分析方向：'+escapeChainText(topic)+'<br>原建议：'+escapeChainText(item.focus)+'<br>适用范围：'+escapeChainText(item.scopeLabel)+'</div><label for="industryDemandTitle">需求名称</label><input id="industryDemandTitle" maxlength="120" value="'+escapeChainText(item.focus)+'"><label for="industryDemandDescription">具体招引诉求</label><textarea id="industryDemandDescription" maxlength="6000" rows="4">'+escapeChainText(item.action)+'</textarea><label for="industryDemandConditions">补充条件 <span>（选填）</span></label><textarea id="industryDemandConditions" maxlength="2000" rows="3" placeholder="可填写希望对接的能力、合作方式、承接条件等"></textarea><details><summary>查看这条建议的分析与依据</summary><p>'+escapeChainText(item.reason)+'</p><p>'+escapeChainText(item.comparison)+'</p>'+rows.map(chainLayoutSourceHtml).join('')+'</details><p class="industry-demand-boundary">提交表示确认你的招引诉求，不会将报告中的待核信息改为已核实事实。</p><p id="industryDemandError" class="industry-demand-error" role="alert"></p></div>';
+  openModal('确认这条招商需求',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button id="industryDemandSubmit" class="primary-button" onclick="submitIndustryDemand()">确认提交本条需求</button>');
+}
+async function submitIndustryDemand(){
+  var draft=INDUSTRY_DEMAND_DRAFT;if(!draft||draft.pending)return false;
+  var error=document.getElementById('industryDemandError'),button=document.getElementById('industryDemandSubmit');
+  function fail(message){if(error)error.textContent=message;else toast(message);}
+  var epoch=typeof _authEpoch==='number'?_authEpoch:0;
+  if(epoch!==draft.epoch||cur!==draft.key||!PROJECTS[draft.key]||PROJECTS[draft.key].topic!==draft.topic||savedEvidenceIdentity(draft.key,draft.topic)!==draft.sourceIdentity||JSON.stringify(((REPORTSTATE[draft.key]||{}).researchByTopic||{})[draft.topic])!==draft.reportMetadataIdentity){fail('报告或当前方向已更新，请关闭后重新选择建议。');return false;}
+  var value=function(id){var el=document.getElementById(id);return el&&typeof el.value==='string'?el.value.trim():'';};
+  var demand={title:value('industryDemandTitle'),description:value('industryDemandDescription'),conditions:value('industryDemandConditions')};
+  if(!demand.title||demand.title.length>120){fail('请填写不超过120字的需求名称。');return false;}
+  if(!demand.description||demand.description.length>6000){fail('请填写具体招引诉求，不超过6000字。');return false;}
+  if(demand.conditions.length>2000){fail('补充条件请控制在2000字以内。');return false;}
+  draft.pending=true;if(button){button.disabled=true;button.textContent='正在提交…';}if(error)error.textContent='';
+  try{
+    var response=await fetch('/api/industry-demand',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({projectKey:draft.key,topic:draft.topic,sourceIdentity:draft.sourceIdentity,reportMetadataIdentity:draft.reportMetadataIdentity,priority:draft.priority,demand:demand})});
+    var result=await response.json();
+    if(!response.ok||!result||result.ok!==true)throw new Error(result&&result.message||result&&result.error||'需求尚未保存，请重试。');
+    if((typeof _authEpoch==='number'?_authEpoch:0)!==draft.epoch)return false;
+    if(!result.projectKey||!result.project||result.project.demandContract!=='industry-demand-v1'||result.project.sourceProjectKey!==draft.key||result.project.sourceAnalysisTopic!==draft.topic||result.project.sourcePriorityKey!==industryDemandPriorityKey(draft.priority)||!result.demand||result.demand.projKey!==result.projectKey||!result.reportState)throw new Error('服务端返回的需求与所选建议不一致，请刷新核对。');
+    PROJECTS[result.projectKey]=result.project;REPORTSTATE[result.projectKey]=result.reportState;
+    var index=DEMANDS.findIndex(function(row){return row.id===result.demand.id;});if(index<0)DEMANDS.push(result.demand);else DEMANDS[index]=result.demand;
+    persist();
+    if(INDUSTRY_DEMAND_DRAFT===draft){closeModal();INDUSTRY_DEMAND_DRAFT=null;render();}
+    toast(result.created?'这条招商需求已提交，可在招商对接中单独查看':'这条建议已有需求，已保留原提交内容');return true;
+  }catch(exception){if((typeof _authEpoch==='number'?_authEpoch:0)===draft.epoch&&INDUSTRY_DEMAND_DRAFT===draft)fail(exception.message||'提交未完成，请重试。');return false;}
+  finally{draft.pending=false;if(button&&button.isConnected!==false){button.disabled=false;button.textContent='确认提交本条需求';}}
+}
 
 function _clueTombKey(projKey, clue){
   var nm=(clue&&typeof clue==='object')?clue.name:clue;
@@ -3452,6 +3543,11 @@ function confirmFunnelReview(projKey,n){
   .then(function(){confirmFunnelReview.pending=false;});
 }
 function funnelReviewDemandAnchors(key,topic){
+  var project=PROJECTS[key]||{};
+  if(project.demandContract==='industry-demand-v1'){
+    var spec=project.demandSpec||{};
+    return ['description','conditions'].filter(function(field){return typeof spec[field]==='string'&&spec[field].trim();}).map(function(field){return {id:'demand:'+field,kind:'user_demand',quote:spec[field]};});
+  }
   var rs=REPORTSTATE[key]||{},anchors=[];
   ((rs.pendingByTopic||{})[topic]||[]).forEach(function(item,i){
     if(!item||['confirmed','edited'].indexOf(item.status)<0)return;
@@ -3474,9 +3570,9 @@ function funnelReviewAnchorChange(i){
 
 function resourceReviewChooseProject(resourceIds){
   if(!Array.isArray(resourceIds)||!resourceIds.length||resourceIds.some(function(id){return !id;})){toast('请先保存有唯一编号的资源企业');return;}
-  var ids=resourceIds.map(String),keys=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k]&&PROJECTS[k].topic;});
+  var ids=resourceIds.map(String),keys=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k]&&PROJECTS[k].isDemand&&PROJECTS[k].topic;});
   resourceReviewChooseProject.selection={ids:ids,keys:keys};
-  var options=keys.map(function(k){var p=PROJECTS[k];return '<option value="'+_authEscape(k)+'">'+_authEscape((p.city||'')+' / '+p.topic+' / '+k)+'</option>';}).join('');
+  var options=keys.map(function(k){var p=PROJECTS[k];return '<option value="'+_authEscape(k)+'">'+_authEscape((p.city||'')+' / '+industryDemandProjectTitle(p)+' / '+k)+'</option>';}).join('');
   openModal('选择一个确切的需求项目','<p>请选择本次要复核的唯一项目。下一步会核对该工作区实际保存的产品与需求来源，不会直接推送。</p><select id="resourceReviewProject" style="width:100%"><option value="">请选择项目</option>'+options+'</select>',
     '<button class="ghost-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="resourceReviewStartFromSelection()">核对当前材料</button>');
 }
@@ -5304,12 +5400,7 @@ function renderActionItems(text,p,r){
 }
 
 /* 立项导入 */
-function importToProject(gap,city,topic,btnEl){
-  var p=P();if(!p || (city&&city!==p.city) || gap!==p.topic || (topic&&topic!==p.topic)){
-    toast('请先为该方向完成独立研判，再提交招商需求');return;
-  }
-  return submitDemand();
-}
+function importToProject(){return chooseIndustryDemand();}
 
 function showImportConfirm(projKey, gap){
   var old=document.getElementById('importConfirmLayer');
@@ -5501,66 +5592,7 @@ function triggerReport(phase){
 }
 
 
-function submitDemand(){
-  var p=P(); if(!p) return;
-  var topic=p.topic;
-  var snapshot=demandReportSnapshot(cur,topic);
-  if(!snapshot){toast('请先完成当前方向的研判报告');return;}
-  // 关键修复：招商需求必须针对「当前研判方向」创建一个独立的 isDemand 子项目，
-  // 而不是把父项目工作区(cur, 如 sz)本身推进 stage/派生线索——那会让父项目连同它
-  // 随方向变化的 topic 一起混入招商对接，且各方向线索全堆到父项目上。
-  // 幂等：同一城市同一方向已提交过则不重复建。
-  var dupKey=_findExistingDemand(p.city, topic);
-  // 同一需求重复点击只重试同步，不能重复创建，也不能假定已入库。
-  var key=dupKey||('proj_'+Date.now().toString(36));
-  window._demandSyncPending=window._demandSyncPending||{};
-  if(window._demandSyncPending[key]){toast('正在提交，请稍候'); return;}
-  if(!dupKey){
-  PROJECTS[key]={
-    id:key, workspaceId:_projectWorkspaceId(cur), city:p.city, org:p.org, who:p.who,
-    topic:topic, stage:3, isDemand:true, submissionState:'pending',
-    kb: JSON.parse(JSON.stringify(p.kb||[])),
-    report:null, clues:[],
-    stageLog:[{ts:Date.now(), from:2, to:3, note:'招商需求已正式递交', who:'政府端'}]
-  };
-  // 把当前方向的报告复制给子项目，供招商对接/线索派生使用
-  REPORTSTATE[key]=snapshot;
-  if(nativeReportState(topic)) PROJECTS[key].reportRequestId=p.reportRequestId;
-
-  DEMANDS.push({
-    id:'d'+Date.now().toString(36),
-    projKey:key,
-    city:p.city, gov:p.org+'·'+p.who,
-    topic:topic, domain:topic.replace('补链','').replace('升级',''),
-    need:'基于研判报告（'+(nativeReportState(topic)?topicScoreDisplay(topic):'内容待核验')+'），见报告全文',
-    submit:'刚刚', res:'none', resLabel:'待研判', clues:0,
-    note:snapshot.text.slice(0,120)+'…', ai:''
-  });
-  // 待接触企业只由管理端 AI 漏斗精选推送，政府端不再自动派生「脱敏企业」假线索
-  // deriveCluesFromReport(key);
-  }
-  persist();
-  window._demandSyncPending[key]=true;
-  toast('正在提交，请稍候');
-  return Promise.resolve().then(function(){
-    var payload=JSON.parse(localStorage.getItem(LS_KEY)||'{}');
-    if(!payload.PROJECTS || !payload.PROJECTS[key]) throw new Error('本地保存失败');
-    return fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(typeof _safeSyncSnapshot==='function'?_safeSyncSnapshot(payload):payload)});
-  }).then(function(response){
-    if(!response.ok) throw new Error('HTTP '+response.status);
-    return response.json();
-  }).then(function(result){
-    if(!result || result.ok!==true) throw new Error((result&&(result.error||result.rejected))||'服务端未确认保存');
-    PROJECTS[key].submissionState='submitted';
-    persist();
-    toast('招引需求已提交，待管理端核验与推荐企业');
-  }).catch(function(error){
-    if(PROJECTS[key])PROJECTS[key].submissionState='failed';
-    persist();
-    console.warn('[demand] sync failed:',error.message);
-    toast('提交未确认：'+error.message+'；请重试（不会重复创建需求）');
-  }).then(function(){delete window._demandSyncPending[key];});
-}
+function submitDemand(){return chooseIndustryDemand();}
 
 // REPORTSTATE: 存储已生成的报告
 
@@ -6057,20 +6089,11 @@ function demandDisplayProject(key,p){
 
 function reportDemandActionButton(p){
   if(!p||!demandReportSnapshot(cur,p.topic))return '';
-  var key=p.isDemand===true?cur:_findExistingDemand(p.city,p.topic);
-  var state=key?demandSubmissionState(key):'not_submitted';
-  var label=state==='submitted'?'查看已递交需求':state==='pending'?'需求正在保存':state==='failed'?'重试提交当前方向需求':'提交当前方向招商需求';
-  var action=state==='submitted'?"view='home';render()":"submitDemand()";
-  return '<button onclick="'+action+'"'+(state==='pending'?' disabled':'')+' style="padding:12px 16px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;font-size:13px;color:#166534;cursor:pointer;font-weight:600">'+label+'</button>';
+  return '<button class="industry-priority-submit" type="button" onclick="chooseIndustryDemand()">'+(p.isDemand?'查看这条招商需求':'选择具体招引建议')+'</button>';
 }
 
 
-function _normalizeTopic(t){
-  if(!t) return '';
-  return String(t).replace(/\s+/g,'')
-    .replace(/(补链|升级|招引|引入|引育|培育|招商|Tier1|新能源|方向|产业)/g,'')
-    .toLowerCase();
-}
+function _normalizeTopic(t){return typeof t==='string'?t.trim():'';}
 
 
 function _findExistingDemand(city, topic){
@@ -6080,31 +6103,29 @@ function _findExistingDemand(city, topic){
   function sameWorkspace(key){return !workspace||(typeof _authWorkspaceOf==='function'&&_authWorkspaceOf(key)===workspace);}
   // 精确匹配优先
   var exactKey=Object.keys(PROJECTS).find(function(k){
-    var x=PROJECTS[k]; return x&&x.isDemand&&sameWorkspace(k)&&x.city===city&&x.topic===topic;
+    var x=PROJECTS[k]; return x&&x.isDemand&&x.demandContract!=='industry-demand-v1'&&sameWorkspace(k)&&x.city===city&&x.topic===topic;
   });
   if(exactKey) return exactKey;
-  // 规范化匹配（宽松）
+  // 仅忽略两端空白，不折叠产品或需求词。
   return Object.keys(PROJECTS).find(function(k){
-    var x=PROJECTS[k]; return x&&x.isDemand&&sameWorkspace(k)&&x.city===city&&_normalizeTopic(x.topic)===_nt;
+    var x=PROJECTS[k]; return x&&x.isDemand&&x.demandContract!=='industry-demand-v1'&&sameWorkspace(k)&&x.city===city&&_normalizeTopic(x.topic)===_nt;
   }) || null;
 }
 
 
 function restoreActionItems(){
   var p=P();if(!p || !demandReportSnapshot(cur,p.topic))return '';
+  if(p.demandContract==='industry-demand-v1')return industryDemandSummaryHtml(p)+reportDemandActionButton(p);
   var items=typeof reportAnalyticalPriorities==='function'?reportAnalyticalPriorities(REPORTSTATE[cur],p.topic):[];
   var directions='<section class="industry-priorities" aria-label="报告中的招引研判方向"><div class="industry-priorities-heading"><h3>报告中的招引研判方向</h3>'+(items.length?'<span>'+items.length+' 项来源支持的分析建议</span>':'')+'</div>';
   if(items.length){
     directions+='<div class="industry-priority-grid">'+items.map(function(item,index){
       var sources=chainNodeSources({sources:item.sources});
-      return '<article class="industry-priority-card"><span class="industry-priority-scope">'+escapeChainText(item.scopeLabel)+'</span><h4>'+escapeChainText(item.focus)+'</h4><p class="industry-priority-reason">'+escapeChainText(item.reason)+'</p><div class="industry-priority-action"><strong>建议动作</strong><p>'+escapeChainText(item.action)+'</p></div><details><summary>比较依据与原文 · '+sources.length+' 条</summary><p>'+escapeChainText(item.comparison)+'</p>'+sources.map(chainLayoutSourceHtml).join('')+'</details></article>';
+      return '<article class="industry-priority-card"><span class="industry-priority-scope">'+escapeChainText(item.scopeLabel)+'</span><h4>'+escapeChainText(item.focus)+'</h4><p class="industry-priority-reason">'+escapeChainText(item.reason)+'</p><div class="industry-priority-action"><strong>建议动作</strong><p>'+escapeChainText(item.action)+'</p></div><details><summary>比较依据与原文 · '+sources.length+' 条</summary><p>'+escapeChainText(item.comparison)+'</p>'+sources.map(chainLayoutSourceHtml).join('')+'</details>'+industryDemandButtonHtml(p,item)+'</article>';
     }).join('')+'</div>';
   }else directions+='<p class="industry-priority-empty">当前报告尚未形成经来源复核的具体招引建议。补充实际需求、供给与采购材料后可继续研判。</p>';
   directions+='</section>';
-  var demandKey=p.isDemand===true?cur:_findExistingDemand(p.city,p.topic);
-  var submitted=demandKey&&demandSubmissionState(demandKey)==='submitted';
-  var message=submitted?'需求已递交，资源端正在开展当前方向的企业核验与推荐。':'提交后，管理端将基于报告中的具体建议核验并推荐企业。';
-  return directions+'<section class="industry-demand" style="margin-top:16px;padding:16px;border:1px solid #dbeafe;border-radius:12px;background:#f8faff"><strong>当前分析任务：'+escapeChainText(p.topic)+'</strong><p>'+message+'报告和线索中的待核结论不代表投资意向已确认。</p>'+reportDemandActionButton(p)+'</section>';
+  return directions+'<p class="industry-demand-boundary">每条建议独立形成需求；请选择具体建议并确认招引诉求。</p>';
 }
 
 /* 从报告文本解析TOP3招引方向（供渲染与切换方向时复用） */
@@ -7273,61 +7294,8 @@ function cadreOK(row){var ck=row.querySelector('input');ck.checked=true;$('#ck2'
 function leaderOK(row){var ck=row.querySelector('input');if(ck.disabled){toast('请先完成干部确认');return;}ck.checked=true;$('#submitBtn').disabled=false;toast('双确认完成，可正式递交')}
 // 双确认 == 从研判进入项目管理的唯一关口：通过后报告的「补链方向」自动派生为项目
 /* 跨端桥接：政府端双确认递交 → upsert 一条管理端需求池记录（黄金演示动线第1→2步） */
-function syncDemandFromProject(){
-  var p=P();if(!p)return;
-  var cl=p.clues||[];
-  var domain=(cl[0]&&(cl[0].dir||'').split(' · ')[0])||p.topic.replace('补链','').replace('升级','').replace('智能化','');
-  var exist=DEMANDS.find(function(d){return d.city===p.city&&d.topic===p.topic});
-  var payload={
-    city:p.city, gov:p.org+'·'+p.who, topic:p.topic, domain:domain,
-    need:cl.map(function(c){return c.dir.split(' · ')[0]}).join(' / ')||p.topic,
-    submit:'刚刚', res:'checking', resLabel:'核验中', clues:cl.length,
-    note:'政府端双确认递交，等待资源端核验匹配。', fromGov:true
-  };
-  if(exist){Object.keys(payload).forEach(function(k){if(k!=='res'&&k!=='resLabel'&&k!=='clues')exist[k]=payload[k];});exist.submit='刚刚';}
-  else{payload.id='dg'+Date.now();DEMANDS.unshift(payload);}
-  // 更新城市漏斗（提交+确认各+1；若该城市不存在则新建）
-  var f=CITY_FUNNEL.find(function(x){return x.city===p.city});
-  if(f){f.submit++;f.confirm++;}else{CITY_FUNNEL.push({city:p.city,submit:1,confirm:1,match:0,dock:0,sign:0});}
-}
-function submitNeed(){
-  setStage(3);
-  var cl=P().clues||[];var n=cl.length;
-  syncDemandFromProject();
-  // 【自动派生项目】把报告里每个补链方向变成一个招引项目，挂到当前产业方向下（去重）
-  if(!SUBPROJ[cur])SUBPROJ[cur]=[];
-  var made=0;
-  cl.forEach(function(c){
-    if(SUBPROJ[cur].some(function(m){return m.name===c.dir}))return;
-    SUBPROJ[cur].push({name:c.dir,dir:c.dir,clueName:c.name,stage:4,from:P().topic});
-    made++;
-  });
-  saveSubproj();
-  if(n===0){
-    // 无补链方向可派生（高概率一家都没有）——需求仍进入资源池
-    addA('<p>✅ 双确认完成，已生成<strong>正式招商需求</strong>并递交资源端。</p>');
-    addRaw('<div class="clue-origin"><i class="i">🔗</i>需求已递交<button onclick="scrollToReport()">查看报告</button></div>'+
-      '<div style="border:1px dashed #cdd8e8;border-radius:10px;padding:20px;text-align:center;background:#fafbfd">'+
-        '<div style="font-size:26px;margin-bottom:6px">📭</div>'+
-        '<div style="font-size:13.5px;font-weight:650;color:#0b183b">报告暂无明确补链方向</div>'+
-        '<div style="font-size:12px;color:#667590;margin-top:6px;line-height:1.7">需求已进入资源池，资源端将持续核验可触达渠道，有匹配会通知你。</div>'+
-        '<div style="margin-top:12px"><span class="status-tag" style="background:#fff0de;color:#a34c09">已纳入长期跟踪</span></div>'+
-      '</div>'+
-      '<div class="boundary-note"><i class="i">ℹ</i>无匹配也是有效结果——资源端会据此对接外部渠道，或等待新资源进入。</div>');
-    setStage(4);
-    setTimeout(function(){addRaw(dockPanel());setStage(5);},700);
-    return;
-  }
-  addA('<p>✅ 双确认完成，已生成<strong>正式招商需求</strong>。系统已把报告的 <strong>'+n+' 个补链方向自动建成招引项目</strong>，挂在「项目管理 › '+P().topic+'」下，可分别推进对接——</p>');
-  addRaw('<div class="clue-origin"><i class="i">🔗</i>项目由报告补链方向自动派生<button onclick="scrollToReport()">查看报告</button></div>'+
-    '<div class="clue-list">'+cl.map(function(c,i){return '<div class="clue-row" onclick="go(\'home\');setTimeout(function(){toggleProjGroup(\''+cur+'\')},60)"><div class="clue-icon"><i class="i">🎯</i></div>'+
-      '<div class="clue-main"><strong>'+c.dir.split(' · ')[0]+'</strong><small>候选线索 '+c.name+'</small><em>已建为项目 · 点击到「项目管理」查看</em></div>'+
-      '<span class="status-tag" style="background:#ebf3fd;color:#013582">已建项目</span><i class="i">➜</i></div>';}).join('')+'</div>'+
-    '<div style="margin-top:10px"><button class="primary-button" onclick="go(\'home\');setTimeout(function(){toggleProjGroup(\''+cur+'\')},60)"><i class="i">📋</i>前往项目管理查看 '+n+' 个项目</button></div>'+
-    '<div class="boundary-note"><i class="i">ℹ</i>项目自动生成后即为独立对接线；候选企业由资源端核验可达性，系统不自动联系企业。</div>');
-  setStage(4);
-  setTimeout(function(){addRaw(dockPanel());setStage(5);},700);
-}
+function syncDemandFromProject(){return chooseIndustryDemand();}
+function submitNeed(){return chooseIndustryDemand();}
 function scrollToReport(){var r=document.querySelector('.report-document');if(r){r.scrollIntoView({behavior:'smooth',block:'start'});r.style.outline='2px solid #0757ad';setTimeout(function(){r.style.outline=''},1200);}else{toast('报告在当前对话上方')}}
 // 导出报告：生成完整研判报告文件并下载
 function exportReport(){
@@ -8597,7 +8565,7 @@ function opsMain(){
   var rows=DEMANDS.map(function(d){var on=d.id===curDemand;
     return '<div onclick="pickDemand(\''+d.id+'\')" class="ops-row'+(on?' on':'')+'" style="align-items:flex-start">'+
       '<div class="r-ic">📥</div>'+
-      '<div class="r-main"><div style="display:flex;align-items:center;gap:8px"><strong>'+d.city+' · '+d.topic+'</strong><span class="ops-badge '+demandBadge(d.res)+'">'+d.resLabel+'</span></div>'+
+      '<div class="r-main"><div style="display:flex;align-items:center;gap:8px"><strong>'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'</strong><span class="ops-badge '+demandBadge(d.res)+'">'+d.resLabel+'</span></div>'+
       '<small>'+d.gov+' · 递交于 '+d.submit+' · 线索 '+(d.clues||0)+' 家</small>'+
       '<em style="display:flex;gap:5px;margin-top:4px"><span style="color:#0757ad">AI 初判</span>'+d.ai+'</em></div>'+
       '<i class="i" style="color:#c3cfdd;font-size:18px;align-self:center">›</i></div>';
@@ -8618,10 +8586,10 @@ function opsDetail(){
   var d=DEMANDS.find(function(x){return x.id===curDemand})||DEMANDS[0];var rc=RES_COLOR[d.res];
   return '<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button>'+
     '<div class="detail-page">'+
-    '<div class="detail-header"><div><span class="eyebrow">DEMAND DETAIL</span><h2>'+d.city+' · '+d.topic+'</h2><p>'+d.gov+'</p></div></div>'+
+    '<div class="detail-header"><div><span class="eyebrow">DEMAND DETAIL</span><h2>'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'</h2><p>'+d.gov+'</p></div></div>'+
     '<div class="detail-scroll">'+
-      '<div class="detail-block"><h3>递交需求</h3><p class="detail-copy">'+d.need+'</p><span class="source-note">递交于 '+d.submit+'</span></div>'+
-      '<div class="detail-block"><h3>资源端判断</h3><div class="'+(d.res==='none'?'warning-callout':'info-callout')+'" style="margin-top:0"><b style="color:'+rc.c+'">'+d.resLabel+'</b> · '+d.note+'</div></div>'+
+      '<div class="detail-block"><h3>递交需求</h3>'+(d.demandContract==='industry-demand-v1'?opsDemandSpecificationHtml(d):'<p class="detail-copy">'+d.need+'</p>')+'<span class="source-note">递交于 '+d.submit+'</span></div>'+
+      '<div class="detail-block"><h3>资源端判断</h3><div class="'+(d.res==='none'?'warning-callout':'info-callout')+'" style="margin-top:0"><b style="color:'+rc.c+'">'+_authEscape(d.resLabel)+'</b>'+(d.demandContract==='industry-demand-v1'?'':' · '+_authEscape(d.note||''))+'</div></div>'+
       '<div class="detail-block"><h3>候选线索</h3>'+(d.clues>0?'<ul class="source-list"><li><i class="i">🔗</i>已匹配 '+d.clues+' 家脱敏候选企业<small>资源端从企业资源库匹配并经人工核验</small></li></ul>':'<div class="fact-with-icon warning"><i class="i">⚠</i><div><strong>暂无匹配线索</strong><span>建议纳入长期跟踪或对接外部渠道</span></div></div>')+'</div>'+
       '<div class="boundary-note"><i class="i">🔒</i>资源可达性、关键人触达由资源团队线下核验；系统只做需求汇总、状态跟踪与提醒，不自动联系企业。</div>'+
     '</div>'+
@@ -8635,7 +8603,7 @@ function opsAction(id){
   var d=DEMANDS.find(function(x){return x.id===id});if(!d)return;
   if(d.res==='matched'){
     // 已匹配 → 弹出对接安排表单（真实内容）
-    var body='<p class="modal-intro">为「'+d.city+' · '+d.topic+'」安排招商对接，确认后将同步回该城市干部的「当前研判」时间线。</p>'+
+    var body='<p class="modal-intro">为「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」安排招商对接，确认后将同步回该城市干部的「当前研判」时间线。</p>'+
       '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">需求方</span><span class="vv">'+d.gov+'</span></div>'+
       '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">候选线索</span><span class="vv">'+d.clues+' 家脱敏企业（资源端核验通过）</span></div>'+
       '<div class="form-stack" style="margin-top:12px"><label>拟对接时间<input value="本周内 · 待与双方确认"></label>'+
@@ -8643,14 +8611,14 @@ function opsAction(id){
     openModal('安排招商对接',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="doArrangeDock(\''+d.id+'\')">确认发起对接</button>');
   }else if(d.res==='checking'){
     // 核验中 → 弹出核验进度详情
-    var body='<p class="modal-intro">「'+d.city+' · '+d.topic+'」资源可达性核验进度：</p>'+
+    var body='<p class="modal-intro">「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」资源可达性核验进度：</p>'+
       '<div class="timeline"><div class="timeline-item done"><div class="timeline-dot"><i class="i">✓</i></div><div><div class="timeline-title"><strong>需求已接收</strong></div><p>已同步需求与报告证据链。</p></div></div>'+
       '<div class="timeline-item current"><div class="timeline-dot"><i class="i">◔</i></div><div><div class="timeline-title"><strong>资源匹配中</strong></div><p>正在核验 '+d.clues+' 家候选线索的真实意向与决策层触达。</p></div></div>'+
       '<div class="timeline-item"><div class="timeline-dot"><i class="i">•</i></div><div><div class="timeline-title"><strong>反馈可对接企业</strong></div><p>核验完成后回传该城市干部。</p></div></div></div>';
     openModal('资源核验进度',body,'<button class="primary-button" onclick="closeModal()">知道了</button>');
   }else{
     // 暂无资源 → 弹出长期跟踪确认
-    var body='<p class="modal-intro">「'+d.city+' · '+d.topic+'」当前资源库暂无直接匹配，可纳入长期跟踪或对接外部渠道。</p>'+
+    var body='<p class="modal-intro">「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」当前资源库暂无直接匹配，可纳入长期跟踪或对接外部渠道。</p>'+
       '<div class="fact-with-icon warning"><i class="i">⚠</i><div><strong>暂无匹配线索</strong><span>纳入跟踪后，有新资源进入将自动提醒</span></div></div>';
     openModal('纳入长期跟踪',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="closeModal();toast(\'已纳入长期跟踪，有匹配将提醒\')">确认纳入</button>');
   }
@@ -8658,9 +8626,9 @@ function opsAction(id){
 function doArrangeDock(id){
   var d=DEMANDS.find(function(x){return x.id===id});if(!d)return;
   var contact=(d.gov.split('·')[1]||d.gov)+' / 待确认';
-  var exist=DOCK_ITEMS.find(function(k){return k.city===d.city&&k.topic===d.topic});
+  var exist=DOCK_ITEMS.find(function(k){return d.projKey?k.projKey===d.projKey:k.city===d.city&&k.topic===d.topic;});
   if(exist){exist.stage='对接中';exist.next='本周实地走访 + 政企座谈';}
-  else{DOCK_ITEMS.unshift({id:'k'+Date.now(),city:d.city,topic:d.topic,company:(d.clues+' 家脱敏候选企业'),stage:'对接中',contact:contact,next:'本周实地走访 + 政企座谈'});}
+  else{DOCK_ITEMS.unshift({id:'k'+Date.now(),projKey:d.projKey||null,city:d.city,topic:d.topic,company:(d.clues+' 家脱敏候选企业'),stage:'对接中',contact:contact,next:'本周实地走访 + 政企座谈'});}
   d.arranged=true;
   closeModal();render();
   toast('已发起对接，「'+d.city+' · '+d.topic+'」进入对接看板"对接中"');
@@ -8833,12 +8801,12 @@ function saveResAdd(){
   persist();
   closeModal();
   render();
-  toast('✓ 已录入「'+alias+'」→ 已推送至「'+p.city+'·'+p.topic.substring(0,15)+'」项目线索');
+  toast('✓ 已录入「'+alias+'」→ 已推送至「'+p.city+'·'+(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(p):p.topic).substring(0,30)+'」项目线索');
 }
 function resAdd(){
-  var projKeys=Object.keys(PROJECTS);
+  var projKeys=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k]&&PROJECTS[k].isDemand===true;});
   var projOptions=projKeys.map(function(k){
-    return '<option value="'+k+'">'+PROJECTS[k].city+' · '+PROJECTS[k].topic.substring(0,20)+'</option>';
+    return '<option value="'+_authEscape(k)+'">'+_authEscape(PROJECTS[k].city)+' · '+_authEscape(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(PROJECTS[k]):PROJECTS[k].topic)+'</option>';
   }).join('');
   var body=
     '<p style="font-size:13px;color:#4a5568;margin:0 0 16px;line-height:1.7">以下内容仅管理端可见，政府端只展示脱敏名称和公开信号。</p>'+
@@ -8901,7 +8869,7 @@ function opsMatch(){
   // 需求切换器（统一 chips）
   var picker='<div class="ops-chips"><span class="lbl">针对需求</span>'+
     DEMANDS.map(function(x){var on=x.id===d.id;var rc=RES_COLOR[x.res];
-      return '<button class="ops-chip'+(on?' on':'')+'" onclick="setMatchDemand(\''+x.id+'\')"><span class="dot" style="background:'+rc.c+'"></span>'+x.city+' · '+x.topic.replace('补链','').replace('升级','').replace('智能化','')+'</button>';
+      return '<button class="ops-chip'+(on?' on':'')+'" onclick="setMatchDemand(\''+x.id+'\')"><span class="dot" style="background:'+rc.c+'"></span>'+_authEscape(x.city)+' · '+_authEscape(x.topic)+'</button>';
     }).join('')+'</div>';
   // 候选企业：仅展示与该需求 domain 匹配的资源
   var pool=RESOURCES.map(function(r,gi){return {r:r,gi:gi}}).filter(function(o){return o.r.domain===d.domain;});
@@ -8910,13 +8878,13 @@ function opsMatch(){
   var lead;
   if(RESOURCES.length===0){
     var _bg0=d.domain.indexOf('电堆')>-1?'该环节是随州氢能整车成本最大缺口（占53%），新楚风/程力急需本地配套':d.domain.indexOf('无人机')>-1||d.domain.indexOf('机器人')>-1?'随州江南专汽/齐星整机能力强但感知层全靠外采，是智慧应急补链最大突破口':'随州香菇年产70万吨全球第一，功能成分提取仅2家，是向价值链上移的核心瓶颈';
-    lead='已锁定「'+d.city+' · '+d.topic+'」缺口：「'+d.domain+'」（'+_bg0+'）。资源库目前是空的——建议先补录该方向 2-3 家种子企业（可在右侧资源库冷启动），有内容后立即可以开始匹配。';
+    lead='已锁定「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」缺口：「'+d.domain+'」（'+_bg0+'）。资源库目前是空的——建议先补录该方向 2-3 家种子企业（可在右侧资源库冷启动），有内容后立即可以开始匹配。';
   }else if(pool.length===0){
     var _bg1=d.domain.indexOf('电堆')>-1?'电堆/储氢/空压机（随州整车成本53%缺口）':d.domain.indexOf('无人机')>-1||d.domain.indexOf('机器人')>-1?'应急机器人/无人机/5G通信（随州感知层外采依赖）':'香菇多糖/多肽提取/菌种研发（随州精深加工空白）';
-    lead='「'+d.city+' · '+d.topic+'」缺口「'+d.domain+'」（'+_bg1+'）。已扫描资源库现有 '+RESOURCES.length+' 家企业，暂无该方向匹配项。建议：①去资源库补录 '+d.domain+' 方向企业；②或让我规划外部找源渠道（行业协会/产业基金/展会名单）。';
+    lead='「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」缺口「'+d.domain+'」（'+_bg1+'）。已扫描资源库现有 '+RESOURCES.length+' 家企业，暂无该方向匹配项。建议：①去资源库补录 '+d.domain+' 方向企业；②或让我规划外部找源渠道（行业协会/产业基金/展会名单）。';
   }else{
     var _bg2=d.domain.indexOf('电堆')>-1?'，补随州整车成本53%最大缺口，与新楚风/程力直接配套':d.domain.indexOf('无人机')>-1||d.domain.indexOf('机器人')>-1?'，替代随州江南专汽/齐星对外采依赖':'，就近使用随州年产70万吨香菇原料，提取成本可降40%+';
-    lead='针对「'+d.city+' · '+d.topic+'」缺口「'+d.domain+'」'+_bg2+'，从资源库匹配到 <strong>'+pool.length+' 家</strong>候选企业'+(okCnt?'（其中 '+okCnt+' 家已核验通过）':'')+'。下面每家我都给了匹配理由、证据和需要你线下核实的风险点——核验属实后点「核验通过」，即派生线索并进入对接看板。';
+    lead='针对「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」缺口「'+d.domain+'」'+_bg2+'，从资源库匹配到 <strong>'+pool.length+' 家</strong>候选企业'+(okCnt?'（其中 '+okCnt+' 家已核验通过）':'')+'。下面每家我都给了匹配理由、证据和需要你线下核实的风险点——核验属实后点「核验通过」，即派生线索并进入对接看板。';
   }
   var leadBubble='<div class="message"><img src="'+aiAvatar()+'"><div class="message-bubble"><p>'+lead+'</p></div></div>';
   // prompt-row 引导卡
@@ -8965,9 +8933,9 @@ function opsMatch(){
 function opsVerify(i){
   var r=RESOURCES[i];if(!r)return;
   var d=matchDemand();
-  var body='<p class="modal-intro">确认你已<strong>线下核实</strong>「'+r.alias+'」对「'+d.city+' · '+d.topic+'」的真实意向与可触达性？</p>'+
+  var body='<p class="modal-intro">确认你已<strong>线下核实</strong>「'+r.alias+'」对「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」的真实意向与可触达性？</p>'+
     '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">候选企业</span><span class="vv">'+r.alias+'（'+r.tag+'·'+r.loc+'）</span></div>'+
-    '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">对应需求</span><span class="vv">'+d.city+' · '+d.topic+'</span></div>'+
+    '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">对应需求</span><span class="vv">'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'</span></div>'+
     '<div class="info-callout" style="margin-top:10px">通过后：① 该企业以脱敏名派生为候选线索 ② 自动进入「对接管理」看板"匹配中" ③ 回写需求状态并通知该城市干部。系统仅记录你的人工结论，不代替核实、不自动联系企业。</div>';
   openModal('记录核验结论 · '+r.alias,body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="doVerify('+i+')"><i class="i">✓</i>确认已核实·通过</button>');
 }
@@ -8978,21 +8946,21 @@ function doVerify(i){
   d.res='matched';d.resLabel='已匹配';d.clues=(d.clues||0)+1;
   d.note='「'+r.alias+'」经人工核验通过，已进入对接流程。';
   // 进对接看板"匹配中"（去重）
-  if(!DOCK_ITEMS.some(function(k){return k.company===r.alias&&k.topic===d.topic})){
-    DOCK_ITEMS.unshift({id:'k'+Date.now(),city:d.city,topic:d.topic,company:r.alias,stage:'匹配中',contact:d.gov.split('·')[1]||d.gov+' / 待确认',next:'核验决策层触达，安排走访'});
+  if(!DOCK_ITEMS.some(function(k){return k.company===r.alias&&(d.projKey?k.projKey===d.projKey:k.city===d.city&&k.topic===d.topic)})){
+    DOCK_ITEMS.unshift({id:'k'+Date.now(),projKey:d.projKey||null,city:d.city,topic:d.topic,company:r.alias,stage:'匹配中',contact:d.gov.split('·')[1]||d.gov+' / 待确认',next:'核验决策层触达，安排走访'});
   }
   // 漏斗 match+1
   var f=CITY_FUNNEL.find(function(x){return x.city===d.city});if(f)f.match++;
   // 【回传政府端】给对应城市干部推一条通知（黄金演示动线第4步）
-  var pk=projKeyByCityTopic(d.city,d.topic);
+  var pk=d.projKey&&PROJECTS[d.projKey]&&PROJECTS[d.projKey].city===d.city?d.projKey:projKeyByCityTopic(d.city,d.topic);
   NOTIFS.unshift({id:'n'+Date.now(),type:'状态变化',icon:'🔵',proj:pk,title:d.topic+' · 资源端已反馈',desc:'资源端核验通过 1 家脱敏候选企业（'+r.alias+'），已进入对接流程，建议准备承接材料。',time:'刚刚',read:false});
   closeModal();render();
   toast('已记录核验结论：'+r.alias+' 通过，进入对接看板，并已通知政府端');
 }
 /* 按城市+课题反查政府端项目key（用于回传通知定位） */
 function projKeyByCityTopic(city,topic){
-  var hit=Object.keys(PROJECTS).find(function(k){return PROJECTS[k].city===city&&PROJECTS[k].topic===topic});
-  return hit||null;
+  var hits=Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&p.city===city&&(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(p):p.topic)===topic;});
+  return hits.length===1?hits[0]:null;
 }
 function opsReject(i){
   var r=RESOURCES[i];if(!r)return;
@@ -10612,9 +10580,30 @@ function opsMonthlyOverview(){
   if(!cities.length)return opsEmpty('暂无月度更新地区','在「地区与邀请码」设置地区主工作区后，每月 1 日 09:00（北京时间）更新报告。');
   return '<section class="ops-ui-card" style="margin-bottom:16px"><div class="ops-ui-card-head"><h2>月度报告更新</h2><span class="ops-ui-muted">每月 1 日 09:00（北京时间）</span></div><div class="ops-ui-table-wrap"><table class="ops-ui-table"><thead><tr><th scope="col">地区</th><th scope="col">状态与下次更新</th></tr></thead><tbody>'+cities.map(function(city){return '<tr><td>'+_authEscape(city)+'</td><td>'+opsMonthlyCell(city)+'</td></tr>';}).join('')+'</tbody></table></div></section>';
 }
+function opsDemandSpecificationHtml(item){
+  if(!item||item.demandContract!=='industry-demand-v1')return '';
+  var spec=item.demandSpec||{},priority=item.selectedPriority||{};
+  var origin=item.sourceAnalysisTopic||item.analysisTopic||'';
+  var scopes={local:'本地原文范围',local_enterprise:'本地关联企业业务',industry:'行业共性，非本地缺失',project:'具名项目范围'};
+  var sources=(Array.isArray(priority.sources)?priority.sources:[]).filter(function(source){
+    if(!source||typeof source.quote!=='string'||!source.quote.trim())return false;
+    try{var url=new URL(source.url);return url.protocol==='https:'&&!!url.hostname&&!url.username&&!url.password;}catch(e){return false;}
+  });
+  function line(label,value){return value?'<div style="margin-top:7px"><strong style="color:#52627a">'+label+'</strong><div style="white-space:pre-line;color:#334155">'+_authEscape(value)+'</div></div>':'';}
+  return '<div class="ops-demand-specification" style="font-size:12px;line-height:1.75">'+
+    line('具体招引诉求',spec.description||item.need||'')+
+    line('补充条件',spec.conditions||'')+
+    '<div style="margin-top:12px;padding-top:10px;border-top:1px solid #e2e8f0">'+
+      line('来源分析方向',origin)+line('对应招引建议',priority.focus||'')+line('分析适用范围',scopes[priority.scope]||'')+
+      '<details style="margin-top:8px"><summary style="cursor:pointer;color:#1d4ed8">查看原建议与依据</summary>'+
+        line('建议依据',priority.reason||'')+line('对照分析',priority.comparison||'')+line('原建议行动',priority.action||'')+
+        sources.map(function(source){return '<div style="margin-top:8px"><a href="'+_authEscape(source.url)+'" target="_blank" rel="noopener noreferrer">'+_authEscape(source.title||source.label||source.id||'查看来源原文')+'</a><blockquote style="margin:5px 0;white-space:pre-line">'+_authEscape(source.quote)+'</blockquote></div>';}).join('')+
+      '</details>'+
+    '</div><p style="margin:8px 0 0;color:#8492a6">企业筛选与核验以本条具体诉求为准；来源报告仅提供分析背景。</p></div>';
+}
 function opsDemands(){
   var state=OPS_UI.demands,cities=Object.create(null);Object.keys(PROJECTS||{}).forEach(function(k){var p=PROJECTS[k];if(p&&p.isDemand===true&&p.city)cities[p.city]=true;});
-  return '<div class="ops-ui-page">'+opsPageHead('招商项目','集中查看已提交的招商需求、阶段进展、材料和企业匹配。')+'<div class="ops-ui-toolbar"><label class="ops-ui-search">搜索项目<input id="opsDemandSearch" value="'+_authEscape(state.query)+'" placeholder="搜索城市 / 产业方向 / 单位 / 项目编号" oninput="opsFilterChange(\'demands\',\'query\',this.value)"></label><label class="ops-ui-filter">城市<select id="opsDemandCity" onchange="opsFilterChange(\'demands\',\'city\',this.value)"><option value="">全部城市</option>'+Object.keys(cities).sort().map(function(city){return '<option value="'+_authEscape(city)+'"'+(state.city===city?' selected':'')+'>'+_authEscape(city)+'</option>';}).join('')+'</select></label></div><div id="opsDemandResults">'+opsDemandResults()+'</div></div>';
+  return '<div class="ops-ui-page">'+opsPageHead('招商项目','集中查看已提交的招商需求、阶段进展、材料和企业匹配。')+'<div class="ops-ui-toolbar"><label class="ops-ui-search">搜索项目<input id="opsDemandSearch" value="'+_authEscape(state.query)+'" placeholder="搜索需求 / 来源方向 / 城市 / 单位" oninput="opsFilterChange(\'demands\',\'query\',this.value)"></label><label class="ops-ui-filter">城市<select id="opsDemandCity" onchange="opsFilterChange(\'demands\',\'city\',this.value)"><option value="">全部城市</option>'+Object.keys(cities).sort().map(function(city){return '<option value="'+_authEscape(city)+'"'+(state.city===city?' selected':'')+'>'+_authEscape(city)+'</option>';}).join('')+'</select></label></div><div id="opsDemandResults">'+opsDemandResults()+'</div></div>';
 }
 
 /* ══ 招商项目：保留既有项目操作 ══ */
@@ -10628,7 +10617,7 @@ function opsDemandResults(){
     // 只显示政府端正式提交的招商需求（isDemand=true），与政府端保持一致
     if(x.isDemand!==true)return false;
     var state=OPS_UI.demands,q=state.query.trim().toLowerCase();
-    return (!state.city||x.city===state.city)&&(!q||[k,x.city,x.topic,x.org].join(' ').toLowerCase().indexOf(q)>=0);
+    return (!state.city||x.city===state.city)&&(!q||[k,x.city,x.topic,x.demandTitle,x.org,(x.demandSpec||{}).description,(x.demandSpec||{}).conditions,(x.selectedPriority||{}).focus].join(' ').toLowerCase().indexOf(q)>=0);
   });
 
   if(!projKeys.length)return opsEmpty('暂无符合条件的招商项目','政府端正式提交的招商需求会出现在这里；可调整筛选后再查看。');
@@ -10679,7 +10668,7 @@ function opsDemandResults(){
       // 头部
       '<div onclick="toggleOpsProj(' + _authEscape(JSON.stringify(k)) + ')" style="padding:16px 20px;background:#f8faff;border-bottom:1px solid ' + (_pOpen?'#e8edf5':'transparent') + ';display:flex;align-items:center;gap:12px;cursor:pointer">' +
         '<span style="font-size:12px;color:#1a56db;display:inline-block;transform:rotate(' + (_pOpen?'90':'0') + 'deg);transition:transform .15s">&#9654;</span>' +
-        '<div style="font-size:14px;color:#0b183b;font-weight:700">' + _authEscape(p.topic) + '</div>' +
+        '<div style="font-size:14px;color:#0b183b;font-weight:700">' + _authEscape(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(p):p.topic) + '</div>' +
         '<div style="margin-left:auto;text-align:right">' +
           '<div style="padding:4px 12px;background:' + stageColor + ';color:#fff;border-radius:20px;font-size:12px;font-weight:650;display:inline-block">' + _authEscape(stageName) + '</div>' +
         '</div>' +
@@ -10727,7 +10716,12 @@ function opsDemandResults(){
         '</div>' +
       '</div>' +
       // 需求块
-      (demand ?
+      (p.demandContract==='industry-demand-v1' ?
+        '<div style="padding:14px 20px;background:#f8faff;border-bottom:1px solid #e2e8f0">'+
+          '<div style="font-size:11.5px;font-weight:650;color:#1d4ed8;margin-bottom:6px">独立招商需求</div>'+
+          opsDemandSpecificationHtml(p)+
+        '</div>'
+      : demand ?
         '<div style="padding:14px 20px;background:#fffbeb;border-bottom:1px solid #fde68a">' +
           '<div style="font-size:11.5px;font-weight:650;color:#92400e;margin-bottom:6px">📤 招引需求</div>' +
           '<div style="font-size:13px;color:#1e293b;line-height:1.65"><strong>' + _authEscape(demand.topic||p.topic||'') + '</strong>' + (demand.domain?' · ' + _authEscape(demand.domain):'') + '</div>' +
@@ -10768,7 +10762,7 @@ function opsDemandResults(){
     if(fn&&fn.evidence_contract!=='saved-excerpts-v1')return head+'<div style="padding:12px 20px;color:#92400e">此旧清单尚未逐条核对来源。请重新分析后查看和推送。</div>';
     var body;
     if(running && !fn){
-      body='<div style="margin:6px 20px 14px;text-align:center;padding:20px;background:#faf9ff;border-radius:10px;border:1px solid #ede9fe;font-size:12.5px;color:#6d28d9">⏳ AI 正在整理当前方向的材料企业，尚未完成业务适配审核…</div>';
+      body='<div style="margin:6px 20px 14px;text-align:center;padding:20px;background:#faf9ff;border-radius:10px;border:1px solid #ede9fe;font-size:12.5px;color:#6d28d9">⏳ AI 正在整理本条需求相关的材料企业，尚未完成业务适配审核…</div>';
     } else if(!fn){
       body='<div style="margin:6px 20px 14px;text-align:center;padding:18px;background:#f9fafb;border-radius:10px;border:1px solid #e8edf5">'+
         '<div style="font-size:12.5px;color:#9aa5b5;margin-bottom:8px">尚未生成企业漏斗</div>'+
@@ -11965,62 +11959,72 @@ function opsEntDomains(text){
 
 function opsEntScanOne(idx, silent){
   var e=OPS_ENT[idx]; if(!e) return;
+  var preserved=(Array.isArray(e.matches)?e.matches:[]).filter(function(m){return m&&m.pushed===true;});
   var matches=[];
-  // 企业侧领域：综合 名称+方向+行业+标签
-  var entText=(e.name||'')+' '+(e.gap||'')+' '+(e.kind||'')+' '+((e.tags||[]).join(' '));
-  var entDoms=opsEntDomains(entText);
-  var entDomList=Object.keys(entDoms);
+  // These are candidate hints only. A shared industry label is not evidence
+  // that an enterprise serves every product requested by that industry.
+  var entText=[e.name,e.gap,e.kind].concat(Array.isArray(e.tags)?e.tags:[]).filter(function(v){return typeof v==='string';}).join(' ');
+  var entDoms=opsEntDomains(entText),entDomList=Object.keys(entDoms);
+  function normalized(value){return String(value||'').toLowerCase().replace(/[\s，,。；;：:、/（）()\[\]【】“”"'·—-]+/g,'');}
+  var entLiteral=normalized(entText);
   Object.keys(PROJECTS).forEach(function(k){
     var p=PROJECTS[k];
-    var rs=REPORTSTATE[k];
-    var kb=p.kb||[];
-    // 缺口来源：报告文本 ❌/⚠/薄弱/缺失 行 + KB 主题卡方向
-    var gaps=[];
-    if(rs&&rs.text){
+    if(!p||p.isDemand!==true)return;
+    if(preserved.some(function(m){return m.projKey===k;}))return;
+    if(p.demandContract==='industry-demand-v1'){
+      var priority=p.selectedPriority||{},spec=p.demandSpec||{};
+      var focus=typeof priority.focus==='string'?priority.focus.trim():'';
+      var description=typeof spec.description==='string'?spec.description.trim():'';
+      // A valid saved request is required. Do not read its frozen full report,
+      // inherited KB, other recommendations or broad industry clusters here.
+      if(!focus||!description)return;
+      var terms=focus.split(/[/、，,；;：:\n]+/).map(normalized).filter(function(term){return term.length>1;});
+      var hit=terms.some(function(term){return entLiteral.indexOf(term)>=0;});
+      if(hit)matches.push({projKey:k,city:p.city,gap:industryDemandProjectTitle(p),sourcePriorityKey:p.sourcePriorityKey,
+        matchBasis:'selected_demand_literal',verificationStatus:'pending',pushed:false});
+      return;
+    }
+    var rs=REPORTSTATE[k],kb=Array.isArray(p.kb)?p.kb:[],gaps=[];
+    if(rs&&typeof rs.text==='string'){
       rs.text.split('\n').forEach(function(l){
         if(l.indexOf('❌')>=0||l.indexOf('⚠')>=0||l.indexOf('薄弱')>=0||l.indexOf('缺失')>=0){
           var clean=l.replace(/[❌✅⚠️*#|]/g,'').replace(/\s+/g,' ').trim();
-          if(clean.length>3&&clean.length<80) gaps.push(clean);
+          if(clean.length>3&&clean.length<80)gaps.push(clean);
         }
       });
     }
     kb.forEach(function(card){
       (card&&Array.isArray(card.known)?card.known:[]).forEach(function(item){
         var c=ragItemText(item).replace(/[✅⚠️]/g,'').replace(/\s+/g,' ').trim();
-        if((c.indexOf('缺')>=0||c.indexOf('薄弱')>=0||c.indexOf('补链')>=0||c.indexOf('引进')>=0)&&c.length>4&&c.length<80) gaps.push(c);
+        if((c.indexOf('缺')>=0||c.indexOf('薄弱')>=0||c.indexOf('补链')>=0||c.indexOf('引进')>=0)&&c.length>4&&c.length<80)gaps.push(c);
       });
     });
     gaps.forEach(function(gapTxt){
       var gapLow=gapTxt.toLowerCase();
       var kws=(e.gap||'').toLowerCase().split(/[/、，,\s]+/).filter(function(w){return w.length>1;});
-      // ① 字面命中（企业方向词出现在缺口里）
       var hit=kws.some(function(kw){return gapLow.indexOf(kw)>=0;});
-      // ② 领域聚类命中（企业领域 ∩ 缺口领域 非空）
-      if(!hit && entDomList.length){
-        var gapDoms=opsEntDomains(gapTxt);
-        hit=entDomList.some(function(d){return gapDoms[d];});
-      }
-      if(hit){
-        matches.push({projKey:k, city:p.city, gap:gapTxt.slice(0,25), pushed:false});
-      }
+      if(!hit&&entDomList.length){var gapDoms=opsEntDomains(gapTxt);hit=entDomList.some(function(d){return gapDoms[d];});}
+      if(hit)matches.push({projKey:k,city:p.city,gap:gapTxt.slice(0,25),pushed:false});
     });
   });
-  // 去重：按「城市+缺口语义」合并（同一缺口在多个项目重复出现时只保留一条）
-  var seen={};
+  var seen=Object.create(null),legacyCount=0;
   matches=matches.filter(function(m){
-    // 规范化缺口文本：去标点/前后缀「缺失/薄弱/核心缺口」等，抓取核心词做去重键
-    var g=(m.gap||'').replace(/[\s\-—：:（）()、，,。.]/g,'')
-                     .replace(/^(核心缺口|缺失|薄弱|缺口方向)/,'');
-    var key=(m.city||'')+':'+g.slice(0,10);
-    if(seen[key]) return false;
-    seen[key]=true; return true;
-  }).slice(0,6);
-  OPS_ENT[idx].matches=matches;
-  OPS_ENT[idx].status=matches.length>0?'scanned':'manual';
+    var p=PROJECTS[m.projKey],key;
+    if(p&&p.demandContract==='industry-demand-v1')key='demand:'+m.projKey;
+    else{
+      var g=(m.gap||'').replace(/[\s\-—：:（）()、，,。.]/g,'').replace(/^(核心缺口|缺失|薄弱|缺口方向)/,'');
+      key='legacy:'+(m.city||'')+':'+g.slice(0,10);
+      if(legacyCount>=6)return false;
+    }
+    if(seen[key])return false;
+    seen[key]=true;if(!p||p.demandContract!=='industry-demand-v1')legacyCount++;
+    return true;
+  });
+  OPS_ENT[idx].matches=preserved.concat(matches);
+  OPS_ENT[idx].status=preserved.length?'pushed':matches.length?'scanned':'manual';
   if(!silent){
-    persist();
-    renderOpsV2();
-    toast(matches.length>0?'✓ 扫描完成，找到 '+matches.length+' 个匹配方向':'未找到匹配方向，请检查企业方向填写');
+    persist();renderOpsV2();
+    toast(matches.length?'✓ 扫描完成，找到 '+matches.length+' 条待核需求线索':'未新增待核需求线索，已推送记录保持不变');
   }
 }
 

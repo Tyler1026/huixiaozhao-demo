@@ -1008,6 +1008,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/kb-edit':
             from backend.kb_edits import handle_kb_edit
             return handle_kb_edit(self, raw, self._account_session, self._account_config())
+        if path == '/api/industry-demand':
+            from backend.industry_demands import handle_industry_demand
+            return handle_industry_demand(self, raw, self._account_session, self._account_config())
         if path == '/api/funnel-resource-preview':
             from backend.evidence_grounding import resource_review_preview
             from backend.auth_routes import respond
@@ -1264,13 +1267,15 @@ class Handler(BaseHTTPRequestHandler):
 
         from backend.evidence_grounding import (project_context, validate_confirmations,
             evidence_catalog, bounded_catalog, model_catalog, ground_funnel, ground_profile, ground_chain,
-            enterprise_sources, ground_enterprise_draft)
+            enterprise_sources, ground_enterprise_draft, funnel_request_text)
         evidence_context = None
         catalog = []
         structured = mode in ('funnel', 'city_profile') or body.get('purpose') == 'chain_map'
         if structured or mode in ('full', 'draft') or body.get('purpose') in ('topic_full', 'topic_draft'):
             try:
                 evidence_context = project_context(body, self._scoped_state)
+                if mode == 'funnel':
+                    q = funnel_request_text(evidence_context) or q
                 if mode == 'full' or body.get('purpose') == 'topic_full':
                     validate_confirmations(body, evidence_context)
                 chunks = evidence_context['chunks']

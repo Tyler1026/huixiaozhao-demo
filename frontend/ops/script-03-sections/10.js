@@ -49,7 +49,7 @@ function opsMain(){
       DEMANDS.map(function(d){var rc=RES_COLOR[d.res];var on=d.id===curDemand;
         return '<button onclick="pickDemand(\''+d.id+'\')" style="width:100%;display:flex;align-items:center;gap:14px;padding:14px 18px;border:1px solid '+(on?'var(--blue)':'var(--line)')+';border-radius:10px;background:'+(on?'#f3f7fd':'#fff')+';cursor:pointer;text-align:left">'+
           '<i class="i" style="font-size:22px;flex:0 0 auto">📥</i>'+
-          '<span style="flex:1;min-width:0;display:grid;gap:3px"><strong style="font-size:14.5px">'+d.city+' · '+d.topic+'</strong>'+
+          '<span style="flex:1;min-width:0;display:grid;gap:3px"><strong style="font-size:14.5px">'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'</strong>'+
           '<small style="color:var(--muted);font-size:12px">'+d.gov+' · 递交于 '+d.submit+'</small></span>'+
           '<span class="status-tag" style="flex:0 0 auto;color:'+rc.c+';background:'+rc.bg+'">'+d.resLabel+'</span></button>';
       }).join('')+
@@ -60,10 +60,10 @@ function opsDetail(){
   var d=DEMANDS.find(function(x){return x.id===curDemand})||DEMANDS[0];var rc=RES_COLOR[d.res];
   return '<button class="collapse-detail" onclick="toggleDetail()"><i class="i">✕</i></button>'+
     '<div class="detail-page">'+
-    '<div class="detail-header"><div><span class="eyebrow">DEMAND DETAIL</span><h2>'+d.city+' · '+d.topic+'</h2><p>'+d.gov+'</p></div></div>'+
+    '<div class="detail-header"><div><span class="eyebrow">DEMAND DETAIL</span><h2>'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'</h2><p>'+d.gov+'</p></div></div>'+
     '<div class="detail-scroll">'+
-      '<div class="detail-block"><h3>递交需求</h3><p class="detail-copy">'+d.need+'</p><span class="source-note">递交于 '+d.submit+'</span></div>'+
-      '<div class="detail-block"><h3>资源端判断</h3><div class="'+(d.res==='none'?'warning-callout':'info-callout')+'" style="margin-top:0"><b style="color:'+rc.c+'">'+d.resLabel+'</b> · '+d.note+'</div></div>'+
+      '<div class="detail-block"><h3>递交需求</h3>'+(d.demandContract==='industry-demand-v1'?opsDemandSpecificationHtml(d):'<p class="detail-copy">'+d.need+'</p>')+'<span class="source-note">递交于 '+d.submit+'</span></div>'+
+      '<div class="detail-block"><h3>资源端判断</h3><div class="'+(d.res==='none'?'warning-callout':'info-callout')+'" style="margin-top:0"><b style="color:'+rc.c+'">'+_authEscape(d.resLabel)+'</b>'+(d.demandContract==='industry-demand-v1'?'':' · '+_authEscape(d.note||''))+'</div></div>'+
       '<div class="detail-block"><h3>候选线索</h3>'+(d.clues>0?'<ul class="source-list"><li><i class="i">🔗</i>已派生 '+d.clues+' 家脱敏候选线索<small>由政府端报告缺口结论派生</small></li></ul>':'<div class="fact-with-icon warning"><i class="i">⚠</i><div><strong>暂无匹配线索</strong><span>建议纳入长期跟踪或对接外部渠道</span></div></div>')+'</div>'+
       '<div class="boundary-note"><i class="i">🔒</i>资源可达性、关键人触达由资源团队线下核验；系统只做需求汇总、状态跟踪与提醒，不自动联系企业。</div>'+
     '</div>'+
@@ -77,7 +77,7 @@ function opsAction(id){
   var d=DEMANDS.find(function(x){return x.id===id});if(!d)return;
   if(d.res==='matched'){
     // 已匹配 → 弹出对接安排表单（真实内容）
-    var body='<p class="modal-intro">为「'+d.city+' · '+d.topic+'」安排招商对接，确认后将同步回该城市干部的「当前研判」时间线。</p>'+
+    var body='<p class="modal-intro">为「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」安排招商对接，确认后将同步回该城市干部的「当前研判」时间线。</p>'+
       '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">需求方</span><span class="vv">'+d.gov+'</span></div>'+
       '<div class="kv"><span class="kk" style="width:74px;color:#8490a5">候选线索</span><span class="vv">'+d.clues+' 家脱敏企业（资源端核验通过）</span></div>'+
       '<div class="form-stack" style="margin-top:12px"><label>拟对接时间<input value="本周内 · 待与双方确认"></label>'+
@@ -85,14 +85,14 @@ function opsAction(id){
     openModal('安排招商对接',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="closeModal();toast(\'对接安排已发起，将通知 '+d.gov+'\')">确认发起对接</button>');
   }else if(d.res==='checking'){
     // 核验中 → 弹出核验进度详情
-    var body='<p class="modal-intro">「'+d.city+' · '+d.topic+'」资源可达性核验进度：</p>'+
+    var body='<p class="modal-intro">「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」资源可达性核验进度：</p>'+
       '<div class="timeline"><div class="timeline-item done"><div class="timeline-dot"><i class="i">✓</i></div><div><div class="timeline-title"><strong>需求已接收</strong></div><p>已同步需求与报告证据链。</p></div></div>'+
       '<div class="timeline-item current"><div class="timeline-dot"><i class="i">◔</i></div><div><div class="timeline-title"><strong>资源匹配中</strong></div><p>正在核验 '+d.clues+' 家候选线索的真实意向与决策层触达。</p></div></div>'+
       '<div class="timeline-item"><div class="timeline-dot"><i class="i">•</i></div><div><div class="timeline-title"><strong>反馈可对接企业</strong></div><p>核验完成后回传该城市干部。</p></div></div></div>';
     openModal('资源核验进度',body,'<button class="primary-button" onclick="closeModal()">知道了</button>');
   }else{
     // 暂无资源 → 弹出长期跟踪确认
-    var body='<p class="modal-intro">「'+d.city+' · '+d.topic+'」当前资源库暂无直接匹配，可纳入长期跟踪或对接外部渠道。</p>'+
+    var body='<p class="modal-intro">「'+_authEscape(d.city)+' · '+_authEscape(d.topic)+'」当前资源库暂无直接匹配，可纳入长期跟踪或对接外部渠道。</p>'+
       '<div class="fact-with-icon warning"><i class="i">⚠</i><div><strong>暂无匹配线索</strong><span>纳入跟踪后，有新资源进入将自动提醒</span></div></div>';
     openModal('纳入长期跟踪',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="closeModal();toast(\'已纳入长期跟踪，有匹配将提醒\')">确认纳入</button>');
   }
@@ -105,7 +105,7 @@ function topbar(p){
     '<div class="org-block"><i class="i">🏛️</i>'+
       '<strong style="font-weight:650">'+p.org+' · '+(p&&p.who||'—')+'</strong>'+
       '<span style="margin:0 10px;color:#cbd7e6">/</span>'+
-      '<strong style="color:var(--blue-dark)">'+p.topic+'</strong>'+
+      '<strong style="color:var(--blue-dark)">'+_authEscape(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(p):p.topic)+'</strong>'+
     '</div>'+
     roleSwitch()+
     '<div class="top-meta"><span><i class="i">🛰️</i>'+p.city+'城市智库已连接</span><span><i class="i">🕒</i>随州产业信息更新至 7月20日 06:00</span>'+
