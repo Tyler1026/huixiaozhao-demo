@@ -1,6 +1,6 @@
 {
   "index.html": {
-    "sha256": "ddee2dfc6ee4d5455a0eb793b42a8d92ee4c36057bcd229c6092f10c5a6fe7ac",
+    "sha256": "094027a7e3c9c6f67d1e212dbf53b612bae72dad3b20382056d2f6aec6c4dda2",
     "parts": [
       "frontend/index/markup-01.html",
       "frontend/index/style-01.css",
@@ -13,6 +13,7 @@
       "frontend/index/workspace-brand.css",
       "frontend/index/settings-brand.css",
       "frontend/index/kb-detail-brand.css",
+      "frontend/index/kb-progress.css",
       "frontend/index/markup-02.html",
       "frontend/index/brand-icons.js",
       "frontend/index/brand-assets.js",

@@ -1,0 +1,89 @@
+/* Request activity belongs to the answer, with the same paper and green palette. */
+.kb-chat-panel .kb-request-progress {
+  box-sizing:border-box;
+  width:100%;max-width:580px;min-width:0;
+  margin:8px 0 4px;padding:15px 16px 12px;
+  border:1px solid #dce5d8;border-radius:12px;
+  background:radial-gradient(ellipse at 100% 0%,#e8efe180,transparent 65%),#fafbf5;
+  color:#3f554a;font-size:12px;line-height:1.65;
+  box-shadow:0 2px 8px #314d2804;
+}
+.kb-request-progress[hidden] {display:none!important}
+.kb-request-progress>header,.kb-request-progress-header {
+  display:flex;align-items:center;gap:9px;min-width:0;
+}
+.kb-request-progress-icon {
+  display:inline-flex;align-items:center;justify-content:center;
+  flex:0 0 30px;width:30px;height:30px;
+  border:1px solid #dce6d5;border-radius:9px;
+  background:#edf3e6;color:#16594c;
+}
+.kb-request-progress-icon svg {display:block;width:17px;height:17px;flex-shrink:0}
+.kb-request-progress-title {
+  flex:1;min-width:0;color:#254e3c;font-size:13px;font-weight:550;
+  line-height:1.55;overflow-wrap:anywhere;
+}
+.kb-request-progress-time {
+  flex:0 0 auto;color:#768574;font-size:11px;
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+.kb-chat-panel .kb-request-progress .kb-request-progress-note {
+  margin:10px 0 0;color:#6e7e68;font-size:12px;line-height:1.7;
+  overflow-wrap:anywhere;
+}
+.kb-request-progress-steps {
+  display:flex;flex-wrap:wrap;gap:8px 19px;
+  margin:12px 0 0;padding:11px 0 0;
+  border-top:1px solid #e3eadc;list-style:none;
+}
+.kb-request-progress-steps>li {
+  position:relative;box-sizing:border-box;min-width:0;
+  margin:0;padding:0 0 0 17px;list-style:none;
+  color:#8a9483;font-size:11px;line-height:1.7;overflow-wrap:anywhere;
+}
+.kb-request-progress-steps>li::before {
+  content:"";position:absolute;left:1px;top:.47em;
+  box-sizing:border-box;width:8px;height:8px;
+  border:1px solid #bbc9b5;border-radius:50%;background:#fffefa;
+}
+.kb-request-progress-steps>li.is-current {color:#16594c;font-weight:500}
+.kb-request-progress-steps>li.is-current::before {
+  border-color:#477d57;background:#477d57;box-shadow:0 0 0 3px #dfeada;
+}
+.kb-request-progress-steps>li.is-complete {color:#5c7458}
+.kb-request-progress-steps>li.is-complete::before {
+  left:0;top:.48em;width:10px;height:6px;border:0;
+  border-left:1.5px solid #60835b;border-bottom:1.5px solid #60835b;
+  border-radius:0;background:transparent;transform:rotate(-45deg);
+}
+.kb-request-progress-cancel {
+  display:inline-flex;align-items:center;justify-content:center;gap:5px;
+  min-height:32px;max-width:100%;margin:10px 0 0;padding:5px 9px;
+  border:1px solid #d9e2d3;border-radius:7px;
+  background:#fffefa;color:#62785d;font:inherit;font-size:11px;
+  line-height:1.5;text-align:center;cursor:pointer;
+}
+.kb-request-progress-cancel:hover {border-color:#a7bca1;background:#edf3e6;color:#16594c}
+.kb-request-progress-cancel:focus-visible {outline:2px solid #6d9277;outline-offset:3px}
+.kb-request-progress-cancel:disabled {opacity:.55;cursor:default}
+.kb-request-progress-cancel svg {width:13px;height:13px;flex-shrink:0}
+.kb-answer-retry {display:inline-flex;align-items:center;gap:5px;margin-top:8px;padding:5px 9px;border:1px solid #d9e2d3;border-radius:7px;background:#fffefa;color:#62785d;font:inherit;font-size:12px;cursor:pointer}
+.kb-answer-retry svg {width:13px;height:13px}
+.kb-answer-stopped {color:#6e7e68}
+@media(max-width:480px) {
+  .kb-chat-panel .kb-request-progress {padding:12px;border-radius:10px}
+  .kb-request-progress>header,.kb-request-progress-header {gap:7px;flex-wrap:wrap}
+  .kb-request-progress-icon {flex-basis:26px;width:26px;height:26px;border-radius:8px}
+  .kb-request-progress-icon svg {width:15px;height:15px}
+  .kb-request-progress-title {font-size:12px}
+  .kb-request-progress-time {font-size:10px}
+  .kb-request-progress-steps {gap:6px 14px;margin-top:10px;padding-top:9px}
+  .kb-request-progress-cancel {min-height:36px}
+}
+@media(prefers-reduced-motion:no-preference) {
+  .kb-request-progress-steps>li.is-current::before {animation:kb-request-breathe 1.8s ease-in-out infinite}
+}
+@keyframes kb-request-breathe {
+  0%,100% {opacity:1;box-shadow:0 0 0 3px #dfeada}
+  50% {opacity:.6;box-shadow:0 0 0 1px #dfeada}
+}
