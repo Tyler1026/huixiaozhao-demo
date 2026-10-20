@@ -1,13 +1,20 @@
 {
   "index.html": {
-    "sha256": "f655fec3a830c4e1191bfe06a04bb39288f71e84b8195d6879e1383ff19e74a0",
+    "sha256": "4590741cb89fda0b07143692a4a32377ed78676b5ca22d6965b0d428913646cf",
     "parts": [
       "frontend/index/markup-01.html",
       "frontend/index/style-01.css",
       "frontend/index/industry.css",
       "frontend/index/docking.css",
       "frontend/shared/industry-chain.css",
+      "frontend/index/qingxu.css",
+      "frontend/index/industry-brand.css",
+      "frontend/index/docking-brand.css",
+      "frontend/index/workspace-brand.css",
+      "frontend/index/settings-brand.css",
       "frontend/index/markup-02.html",
+      "frontend/index/brand-icons.js",
+      "frontend/index/brand-assets.js",
       "frontend/index/script-01.js",
       "frontend/index/markup-03.html",
       "frontend/index/script-02-sections/00.js",
@@ -40,6 +47,7 @@
       "frontend/index/script-02-sections/15.js",
       "frontend/index/script-02-sections/16.js",
       "frontend/index/script-02-sections/17.js",
+      "frontend/index/client-icons.js",
       "frontend/index/markup-04.html",
       "frontend/index/script-03.js",
       "frontend/index/markup-05.html"

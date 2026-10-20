@@ -39,6 +39,8 @@ python server.py
 
 `frontend/` 是前端源文件，`index.html`、`ops.html` 由 `scripts/build_frontend.py` 生成；修改源文件后更新 manifest 的 SHA256 并构建。`backend/` 是网站存储及接口边界，`report_service/` 是独立研究、恢复、Word 构建与发布服务。
 
+客户端青序视觉层位于 `frontend/index/*brand.css`、`qingxu.css` 与 `client-icons.js`。图标装饰不改写报告、问答正文、附件名或表单值；数据与业务处理仍由原模块负责。四张配图保存在 `frontend/index/assets/`，更换后先运行 `python scripts/build_client_brand_assets.py`，再构建前端。此生成器只嵌入视觉资源，不包含演示账号、数据或 API 替身。
+
 ```sh
 python -m unittest discover -s tests -p 'test_*.py' -q
 node --test tests/test_*.cjs
