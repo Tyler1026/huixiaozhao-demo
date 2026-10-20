@@ -482,6 +482,8 @@
       ['.composer-wrap [onclick="clearKbActiveTopic()"][title="取消"]', 'error', '取消'],
       ['.kb-detail-edit', 'edit'],
       ['.kb-detail-block-edit', 'edit'],
+      ['.kb-request-progress-cancel', 'error'],
+      ['.kb-answer-retry', 'refresh'],
       ['.kb-detail-confirm', 'success'],
       ['.kb-detail-manage .is-danger', 'delete'],
       ['.kb-detail-footer [onclick^="addKbItem"]', 'add'],

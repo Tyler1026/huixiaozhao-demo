@@ -553,7 +553,7 @@ function kbContextCurrent(ctx){
 function kbRequestKey(ctx){return ctx.key+'::'+ctx.sessionId;}
 function kbIsRequestPending(){var ctx=kbRequestContext();return !!(ctx&&_kbRequests[kbRequestKey(ctx)]);}
 function kbResetChatRequests(){
-  Object.keys(_kbRequests||{}).forEach(function(key){var req=_kbRequests[key];req.cancelled=true;if(req.controller)req.controller.abort();});
+  Object.keys(_kbRequests||{}).forEach(function(key){var req=_kbRequests[key];req.cancelled=true;if(req.controller)req.controller.abort();kbProgressClear(req);});
   _kbRequests={};_kbTopicScopes={};if(typeof _kbSuggestCache!=='undefined')_kbSuggestCache={};
   window._verifyRequestContext=null;window._verifyInProgress=false;
 }
@@ -592,15 +592,76 @@ function kbBeginRequest(query,container,history){
   kbCancelHiddenRequests();var key=kbRequestKey(ctx);
   if(_kbRequests[key]){if(typeof toast==='function')toast('上一条回答仍在生成，请稍候');return null;}
   var session=KB_CHAT[ctx.key].sessions.filter(function(s){return s.id===ctx.sessionId;})[0];
-  ctx.history=history||kbHistory(session,query,true);ctx.requestId='kb'+Date.now()+'_'+(++_kbRequestSeq);
+  ctx.history=history||kbHistory(session,query,true);ctx.query=query;ctx.requestId='kb'+Date.now()+'_'+(++_kbRequestSeq);
   ctx.controller=typeof AbortController!=='undefined'?new AbortController():null;ctx.container=container;ctx.cancelled=false;ctx.followScroll=true;
   _kbRequests[key]=ctx;kbRefreshWorkspace();return ctx;
 }
 function kbFinishRequest(ctx){
+  kbProgressClear(ctx);
   if(ctx.scrollElement&&ctx.scrollListener&&ctx.scrollElement.removeEventListener)ctx.scrollElement.removeEventListener('scroll',ctx.scrollListener);
   if(_kbRequests[kbRequestKey(ctx)]===ctx)delete _kbRequests[kbRequestKey(ctx)];
   if(window._verifyRequestContext===ctx){window._verifyRequestContext=null;window._verifyInProgress=false;}
   if(kbContextCurrent(ctx))kbRefreshWorkspace();
+}
+function kbProgressCurrent(ctx){return !ctx.cancelled&&kbContextCurrent(ctx)&&_kbRequests[kbRequestKey(ctx)]===ctx;}
+function kbProgressClear(ctx){
+  if(ctx.progressTimer!==undefined){clearTimeout(ctx.progressTimer);delete ctx.progressTimer;}
+  if(ctx.progress&&ctx.progress.node.parentNode)ctx.progress.node.remove();
+  ctx.progress=null;ctx.progressRefresh=null;
+}
+function kbProgressAttach(ctx){
+  if(!kbProgressCurrent(ctx)||!ctx.progress)return;
+  var container=document.getElementById('kbConv')||ctx.container;if(!container)return;
+  ctx.container=container;
+  if(ctx.progress.node.parentNode!==container)container.appendChild(ctx.progress.node);
+  if(ctx.outputText&&ctx.answerNode&&ctx.answerNode.parentNode!==container)container.appendChild(ctx.answerNode);
+  kbTrackScroll(ctx,container);
+}
+function kbProgressUpdate(ctx,phase,title,note){
+  if(!kbProgressCurrent(ctx)||!ctx.progress)return;
+  var p=ctx.progress;p.phase=phase;p.baseNote=note||'';p.title.textContent=title;p.note.textContent=p.baseNote;
+  p.card.setAttribute('data-phase',String(phase));
+  p.steps.forEach(function(step,i){step.className=i<phase?'is-complete':i===phase?'is-current':'';step.setAttribute('aria-current',i===phase?'step':'false');});
+}
+function kbProgressCreate(ctx,container,count){
+  var node=document.createElement('div');node.className='message kb-progress-message';
+  var avatar=document.createElement('img');avatar.setAttribute('src',aiAvatar());avatar.setAttribute('alt','');node.appendChild(avatar);
+  var card=document.createElement('div');card.className='message-bubble kb-request-progress';node.appendChild(card);
+  var header=document.createElement('header'),icon=document.createElement('span');icon.className='kb-request-progress-icon';icon.setAttribute('aria-hidden','true');
+  if(typeof hxzIcon==='function')icon.innerHTML=hxzIcon('analysis',{size:18,strokeWidth:1.75});
+  var title=document.createElement('strong');title.className='kb-request-progress-title';title.setAttribute('role','status');title.setAttribute('aria-live','polite');title.setAttribute('aria-atomic','true');
+  var time=document.createElement('span');time.className='kb-request-progress-time';time.setAttribute('aria-hidden','true');
+  header.appendChild(icon);header.appendChild(title);header.appendChild(time);card.appendChild(header);
+  var note=document.createElement('p');note.className='kb-request-progress-note';card.appendChild(note);
+  var list=document.createElement('ol');list.className='kb-request-progress-steps';list.setAttribute('aria-label','回答进度');var steps=[];
+  ['整理材料','等待回答','接收正文'].forEach(function(label,index){var li=document.createElement('li');li.textContent=label;li.setAttribute('data-step',['retrieve','wait','answer'][index]);list.appendChild(li);steps.push(li);});card.appendChild(list);
+  var stop=document.createElement('button');stop.className='kb-request-progress-cancel';stop.setAttribute('type','button');stop.setAttribute('onclick','kbStopAnswer('+JSON.stringify(ctx.requestId)+')');stop.textContent='停止生成';card.appendChild(stop);
+  ctx.progress={node:node,card:card,title:title,note:note,time:time,steps:steps,phase:0,baseNote:'',startedAt:Date.now()};
+  ctx.progressRefresh=function(){kbProgressAttach(ctx);};
+  kbProgressUpdate(ctx,0,'正在准备问答请求',count?'已整理 '+count+' 条本地候选材料。':'本地未匹配到候选材料，将由问答服务继续处理。');
+  kbProgressAttach(ctx);
+  function tick(){
+    if(!kbProgressCurrent(ctx)||!ctx.progress){kbProgressClear(ctx);return;}
+    var p=ctx.progress,seconds=Math.max(0,Math.floor((Date.now()-p.startedAt)/1000));
+    p.time.textContent=(p.phase===2?'已用时 ':'已等待 ')+seconds+' 秒';
+    p.note.textContent=p.baseNote+(seconds>=30&&p.phase<2?' 用时较长，你可以继续等待或停止生成。':'');
+    ctx.progressTimer=setTimeout(tick,1000);
+  }
+  tick();
+}
+function kbRetryQuestion(button){return kbSubmitQuestion(button.getAttribute('data-kb-query'));}
+function kbRetryButton(query){return '<button type="button" class="kb-answer-retry" data-kb-query="'+kbEscape(query)+'" onclick="kbRetryQuestion(this)">重新提问</button>';}
+function kbStopAnswer(requestId){
+  var ctx=Object.keys(_kbRequests).map(function(key){return _kbRequests[key];}).filter(function(req){return req.requestId===requestId;})[0];
+  if(!ctx||!kbProgressCurrent(ctx))return;
+  ctx.cancelled=true;if(ctx.controller)ctx.controller.abort();kbProgressClear(ctx);
+  var container=document.getElementById('kbConv')||ctx.container,node=ctx.answerNode,body=ctx.answerBody;
+  if(container&&node&&body){
+    body.innerHTML=(ctx.outputText?'<p>'+renderMarkdown(ctx.outputText)+'</p>':'')+'<p class="kb-answer-stopped">已停止生成'+(ctx.outputText?'，以上为未完成内容。':'。')+'</p>'+kbRetryButton(ctx.query);
+    if(node.parentNode!==container)container.appendChild(node);
+    kbChatPush('ai',node.outerHTML,{context:ctx,error:true,plainText:''});
+  }
+  kbFinishRequest(ctx);
 }
 function kbScopeKey(){var ctx=kbRequestContext();return ctx?ctx.projectKey+'::'+ctx.sessionId:null;}
 function kbActiveTopic(){var key=kbScopeKey(),name=key&&_kbTopicScopes[key],p=P();return name&&p&&(p.kb||[]).filter(function(k){return k.t===name;})[0]||null;}
@@ -1075,6 +1136,7 @@ function kbChatReplay(){
   kbRefreshWorkspace();
   // 恢复最近一批上传的分析上下文，使重建的按钮点击后仍能拿到 chunks
   if(_lastActions) try{ restoreIngestCtx(_lastActions); }catch(_){}
+  if(pending&&pending.progressRefresh)pending.progressRefresh();
   if(!pending||pending.followScroll)kbScrollToEnd(c);
   if(pending)kbTrackScroll(pending,c);
 }
@@ -1546,20 +1608,19 @@ function renderMarkdown(md){
 async function kbAnswerRender(container, query, chunks, city, context){
   var ctx=context||kbBeginRequest(query,container);if(!ctx)return false;
   ctx.topic=ctx.topic||(kbActiveTopic()||{}).t||'';
-  var thinking=document.createElement('div');thinking.className='message';
-  thinking.innerHTML='<img src="'+aiAvatar()+'"><div class="message-bubble">正在查阅材料…</div>';
-  container.appendChild(thinking);kbTrackScroll(ctx,container);kbScrollToEnd(container);
   var ansNode=document.createElement('div');ansNode.className='message';
   var bubble=document.createElement('div');bubble.className='message-bubble';
   var bodyDiv=document.createElement('div');bodyDiv.className='kb-stream-body';
   bubble.appendChild(bodyDiv);ansNode.innerHTML='<img src="'+aiAvatar()+'">';ansNode.appendChild(bubble);
+  ctx.answerNode=ansNode;ctx.answerBody=bodyDiv;ctx.outputText='';
+  kbProgressCreate(ctx,container,Array.isArray(chunks)?chunks.length:0);kbTrackScroll(ctx,container);kbScrollToEnd(container);
   var accText='',sources=[],receivedSources=false,sawDone=false,reader=null;
   function current(){return !ctx.cancelled&&kbContextCurrent(ctx);}
   function requireCurrent(){if(!current()){if(ctx.controller)ctx.controller.abort();var e=new Error('请求已离开原会话');e.name='AbortError';throw e;}}
   function display(){
     requireCurrent();var live=document.getElementById('kbConv');if(live&&live!==container)container=live;
     var scroll=kbTrackScroll(ctx,container),follow=ctx.followScroll&&kbNearScrollBottom(scroll);
-    if(thinking.parentNode)thinking.remove();if(ansNode.parentNode!==container)container.appendChild(ansNode);
+    kbProgressAttach(ctx);if(ansNode.parentNode!==container)container.appendChild(ansNode);
     return follow;
   }
   function renderStream(value,plain){var follow=display();if(plain)bodyDiv.textContent=value;else bodyDiv.innerHTML=value;if(follow)kbScrollToEnd(container);}
@@ -1570,20 +1631,29 @@ async function kbAnswerRender(container, query, chunks, city, context){
     if(data.error)throw new Error('AI 服务未完成本次回答，请重试');
     if(data.type==='kb_sources'){
       if(data.scope&&data.scope.projectKey&&data.scope.projectKey!==ctx.projectKey)throw new Error('回答来源不属于当前工作区');
-      sources=kbSafeSources(data.sources);ctx.sources=sources;ctx.receivedSources=true;receivedSources=true;kbRenderSources(sources,ctx);return;
+      sources=kbSafeSources(data.sources);ctx.sources=sources;ctx.receivedSources=true;receivedSources=true;kbRenderSources(sources,ctx);
+      if(!accText)kbProgressUpdate(ctx,1,'已收到回答依据',sources.length?'已收到 '+sources.length+' 条回答依据，正在等待正文。':'本次未返回可引用的材料，正在等待正文。');return;
     }
     var choice=data.choices&&data.choices[0],delta=choice&&choice.delta||{};
     if(choice&&choice.finish_reason==='stop')sawDone=true;
-    if(delta.content){accText+=delta.content;renderStream('<p>'+renderMarkdown(accText)+'</p>');}
-    else if(delta.reasoning_content&&!accText){renderStream(delta.reasoning_content==='[searching]'?'正在检索相关材料…':'正在整理回答…',true);}
+    if(delta.content){
+      accText+=delta.content;ctx.outputText=accText;
+      if(ctx.progress&&ctx.progress.phase!==2)kbProgressUpdate(ctx,2,'正在生成回答','正文正在逐步返回，可随时停止生成。');
+      renderStream('<p>'+renderMarkdown(accText)+'</p>');
+    }else if(delta.reasoning_content&&!accText){
+      kbProgressUpdate(ctx,1,delta.reasoning_content==='[searching]'?'正在检索公开资料':'正在整理回答',delta.reasoning_content==='[searching]'?'问答服务正在补充检索，正文尚未返回。':'问答服务已开始处理，正文尚未返回。');
+    }
   }
   try{
     requireCurrent();kbRenderSources([],ctx,'loading');
-    var resp=await fetch(KB_API,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+    var response=fetch(KB_API,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
       signal:ctx.controller?ctx.controller.signal:undefined,
       body:JSON.stringify({question:query,chunks:chunks,city:city,projectKey:ctx.projectKey,topic:ctx.topic,stream:true,mode:'chat',history:ctx.history,prefs:curOnbPrefs()})});
+    kbProgressUpdate(ctx,1,'正在连接 AI 服务','问题已发送，等待服务返回响应。');
+    var resp=await response;
     requireCurrent();if(!resp.ok)throw new Error('AI 服务暂时不可用（'+resp.status+'），请重试');
     if(!resp.body||!resp.body.getReader)throw new Error('浏览器未收到可读的回答流，请重试');
+    kbProgressUpdate(ctx,1,'已连接，等待回答','连接已建立，正在等待回答事件。');
     reader=resp.body.getReader();var decoder=new TextDecoder(),buf='';
     while(true){
       var chunk=await reader.read();requireCurrent();
@@ -1601,12 +1671,11 @@ async function kbAnswerRender(container, query, chunks, city, context){
     kbRenderSources(sources,ctx);if(follow)kbScrollToEnd(container);return true;
   }catch(error){
     if(current()&&error.name!=='AbortError'){
-      renderStream('<p class="kb-answer-error">'+kbEscape(error.message||'回答失败，请重试')+'</p>');
+      renderStream('<p class="kb-answer-error">'+kbEscape(error.message||'回答失败，请重试')+'</p>'+kbRetryButton(query));
       kbChatPush('ai',ansNode.outerHTML,{context:ctx,error:true,plainText:''});
     }
     return false;
   }finally{
-    if(thinking.parentNode)thinking.remove();
     if(!current()&&reader&&reader.cancel)try{await reader.cancel();}catch(_){}
     kbFinishRequest(ctx);
   }

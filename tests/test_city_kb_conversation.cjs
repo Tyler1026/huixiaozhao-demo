@@ -6,9 +6,9 @@ const flush=async()=>{for(let i=0;i<30;i++)await Promise.resolve();};
 const plain=html=>html.replace(/<[^>]*>/g,'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&#39;/g,"'").replace(/&quot;/g,'"');
 class Element {
  constructor(tag='div'){this.tag=tag;this.value='';this.children=[];this.style={};this.attrs={};this.raw='';this.className='';this.listeners={};this.scrollTop=0;this.clientHeight=100;this.classList={_names:new Set(),toggle(name,force){const on=force===undefined?!this._names.has(name):!!force;if(on)this._names.add(name);else this._names.delete(name);return on;},add(name){this._names.add(name);},remove(name){this._names.delete(name);},contains(name){return this._names.has(name);}};this.scrollHeight=120;}
- set innerHTML(value){this.raw=String(value);this.children=[];}
+ set innerHTML(value){this.raw=String(value);this.children.forEach(child=>{child.parentNode=null;});this.children=[];}
  get innerHTML(){return this.raw+this.children.map(c=>c.outerHTML).join('');}
- set textContent(value){this.raw=String(value);this.children=[];}
+ set textContent(value){this.raw=String(value);this.children.forEach(child=>{child.parentNode=null;});this.children=[];}
  get textContent(){return plain(this.innerHTML);}
  get outerHTML(){return '<'+this.tag+' class="'+this.className+'">'+this.innerHTML+'</'+this.tag+'>';}
  appendChild(child){if(child.parentNode)child.remove();this.children.push(child);child.parentNode=this;return child;}
@@ -43,7 +43,11 @@ function feed(){
 function harness(disk=new Map()){
  const nodes={};for(const id of ['kbConv','kbSourcesList','kbSourcesTitle','composerTa','kbScopeLabel','kbTopicHintBar','kbTopicHintText'])nodes[id]=new Element();
  const api=[],sync=[],feeds=[];let refreshes=0;
- const c={console,JSON,Math,Date,Promise,URL,AbortController,TextDecoder,TextEncoder,setTimeout,clearTimeout,
+ let now=1700000000000,nextTimer=0;const timers=new Map();
+ class TestDate extends Date {static now(){return now;}}
+ const clock={pending:()=>timers.size,advance(ms){const end=now+ms;let steps=0;while(true){const due=[...timers].filter(([,timer])=>timer.at<=end).sort((a,b)=>a[1].at-b[1].at||a[0]-b[0])[0];if(!due)break;assert.ok(++steps<10000,'virtual timers must make progress');now=due[1].at;timers.delete(due[0]);due[1].fn();}now=end;}};
+ const c={console,JSON,Math,Date:TestDate,Promise,URL,AbortController,TextDecoder,TextEncoder,
+  setTimeout(fn,ms){const id=++nextTimer;timers.set(id,{fn,at:now+Math.max(0,Number(ms)||0)});return id;},clearTimeout(id){timers.delete(id);},
   AUTH:{user:'ryan',scope:'user',projectKeys:['a','b'],projKey:'a'},_authState:'ready',_authEpoch:1,cur:'a',view:'knowledge',RESET_GEN:'g1',
   PROJECTS:{a:{city:'闵行',topic:'方向甲',kb:[{t:'政策',icon:'📜',known:['已核内容']}]},b:{city:'闵行',topic:'方向乙',kb:[{t:'政策',known:['另一个工作区']}]}},
   KB_CHAT_TOMBS:{},KB_FILE_CHUNKS:{},UPLOAD_TOMBS:{},_authProjectKeys(){return c.AUTH?.projectKeys||[];},_authWorkspaceOf(key){return c.AUTH?.projectKeys.includes(key)?key:null;},
@@ -63,7 +67,7 @@ function harness(disk=new Map()){
   tail.slice(tail.indexOf('function kbRefreshTopicScope('),tail.indexOf('// 真实文件选择器'))].join('\n');
  vm.runInContext(code,c);c.renderKbSessionBar=()=>{};
  c.KB_CHAT={'workspace:a':{sessions:[{id:'s1',title:'已有会话',ts:1,messages:[]},{id:'s2',title:'会话二',ts:1,messages:[]}],activeId:'s1',selectedAt:1},'workspace:b':{sessions:[{id:'sb',messages:[]}],activeId:'sb',selectedAt:1}};
- return {c,nodes,api,sync,feeds,disk,refreshes:()=>refreshes};
+ return {c,nodes,api,sync,feeds,disk,clock,refreshes:()=>refreshes};
 }
 function sendAnswer(f,text='已核答案'){f.push({type:'kb_sources',scope:{projectKey:'a'},sources:[{id:'used',cite:'统计公报',text:'官方片段',urls:['https://example.com/source','javascript:alert(1)','https://u:p@bad.example/']} ]});f.push({choices:[{delta:{content:text}}]});f.done();}
 
@@ -218,4 +222,123 @@ test('reset scope in an empty selected session retains its session and editable 
  c.clearKbActiveTopic();
  assert.equal(c.kbScopeTitle(),'全库问答');assert.equal(h.nodes.kbScopeLabel.textContent,'全库问答');assert.equal(c.KB_CHAT['workspace:a'].activeId,active);assert.equal(c.KB_CHAT['workspace:a'].selectedAt,selection);assert.equal(c.KB_CHAT['workspace:a'].sessions.length,count);
  assert.equal(input.value,'尚未发送的政策问题');assert.equal(input.selectionStart,3);assert.equal(input.selectionEnd,6);assert.equal(input.focused,true);assert.equal(h.api.length,0);
+});
+
+const pendingRequest=h=>Object.values(h.c._kbRequests)[0];
+const transcript=h=>h.c.KB_CHAT['workspace:a'].sessions[0].messages;
+
+test('progress is visible before response headers and elapsed time never invents a completed stage',async()=>{
+ const h=harness(),f=feed(),response=f.response;let release;
+ f.response=signal=>new Promise(resolve=>{release=()=>resolve(response(signal));});
+ h.feeds.push(f);h.c.kbSubmitQuestion('等待服务的问题');
+ const ctx=pendingRequest(h),progress=ctx.progress;
+ assert.ok(progress);assert.equal(progress.node.parentNode,h.nodes.kbConv);assert.equal(progress.phase,1);
+ assert.match(progress.title.textContent,/连接|等待/);assert.equal(h.clock.pending(),1);
+ h.clock.advance(32000);
+ assert.match(progress.time.textContent,/32 秒/);assert.match(progress.note.textContent,/较长|等待|停止/);
+ assert.equal(progress.phase,1);assert.equal(progress.steps[2].className,'');assert.equal(transcript(h).length,1);
+ release();await flush();sendAnswer(f);await flush();assert.equal(h.clock.pending(),0);assert.equal(ctx.progress,null);
+});
+
+test('progress follows real source, search and content events without exposing model reasoning',async()=>{
+ const h=harness(),f=feed();h.feeds.push(f);h.c.kbSubmitQuestion('依据是什么');await flush();
+ const ctx=pendingRequest(h),progress=ctx.progress;
+ f.push({type:'kb_sources',scope:{projectKey:'a'},sources:[{id:'one',text:'材料甲'},{id:'two',text:'材料乙'}]});await flush();
+ assert.match(progress.note.textContent,/2\s*条/);assert.equal(progress.phase,1);
+ f.push({choices:[{delta:{reasoning_content:'[searching]'}}]});await flush();
+ assert.match(progress.title.textContent,/检索公开资料/);assert.equal(progress.phase,1);
+ const privateReasoning='PRIVATE_REASONING_SHOULD_NEVER_BE_VISIBLE';
+ f.push({choices:[{delta:{reasoning_content:privateReasoning}}]});await flush();
+ assert.doesNotMatch(h.nodes.kbConv.innerHTML,new RegExp(privateReasoning));
+ f.push({choices:[{delta:{content:'实际回答第一句'}}]});await flush();
+ assert.equal(progress.phase,2);assert.equal(ctx.outputText,'实际回答第一句');assert.match(h.nodes.kbConv.innerHTML,/实际回答第一句/);
+ assert.equal(progress.steps[2].getAttribute('aria-current'),'step');
+ h.clock.advance(1000);assert.match(progress.time.textContent,/已用时/);
+ f.done();await flush();assert.equal(h.clock.pending(),0);
+ assert.doesNotMatch(JSON.stringify(transcript(h)),new RegExp(privateReasoning+'|kb-request-progress|已等待'));
+ assert.equal(transcript(h).at(-1).plainText,'实际回答第一句');
+});
+
+test('zero source result does not claim successful web search without a search event',async()=>{
+ const h=harness(),f=feed();h.feeds.push(f);h.c.kbSubmitQuestion('缺少材料');await flush();
+ const ctx=pendingRequest(h);f.push({type:'kb_sources',scope:{projectKey:'a'},sources:[]});await flush();
+ assert.match(ctx.progress.note.textContent,/未命中|未检索|未匹配|未返回|没有/);
+ assert.doesNotMatch(ctx.progress.title.textContent+ctx.progress.note.textContent,/已完成联网|联网检索完成|已查阅\s*0\s*条/);
+ h.clock.advance(60000);assert.equal(ctx.progress.phase,1);
+ f.push({choices:[{delta:{content:'需要更多材料'}}]});f.done();await flush();assert.equal(h.clock.pending(),0);
+});
+
+test('successful answer removes progress and its timer from the UI and saved conversation',async()=>{
+ const h=harness(),f=feed();h.feeds.push(f);h.c.kbSubmitQuestion('完成的问题');await flush();
+ const ctx=pendingRequest(h),node=ctx.progress.node;sendAnswer(f,'完整答复');await flush();
+ assert.equal(h.c.kbIsRequestPending(),false);assert.equal(ctx.progress,null);assert.equal(node.parentNode,null);assert.equal(h.clock.pending(),0);
+ assert.doesNotMatch(h.nodes.kbConv.innerHTML,/kb-progress-message|停止生成/);
+ assert.equal(transcript(h).at(-1).plainText,'完整答复');assert.doesNotMatch(JSON.stringify(transcript(h)),/kb-request-progress|已等待/);
+});
+
+for(const ending of ['server error','premature EOF'])test('progress is cleaned up after '+ending+' and the answer remains retryable',async()=>{
+ const h=harness(),f=feed();h.feeds.push(f);h.c.kbSubmitQuestion('需要重试的问题');await flush();
+ const ctx=pendingRequest(h),node=ctx.progress.node;
+ if(ending==='server error')f.push({error:{message:'RAW_PROVIDER_SECRET'}});else{f.push({choices:[{delta:{content:'不完整的正文'}}]});f.eof();}
+ await flush();assert.equal(h.c.kbIsRequestPending(),false);assert.equal(h.clock.pending(),0);assert.equal(ctx.progress,null);assert.equal(node.parentNode,null);
+ const last=transcript(h).at(-1);assert.equal(last.error,true);assert.equal(last.plainText,'');assert.match(last.text,/重新提问/);assert.doesNotMatch(last.text,/RAW_PROVIDER_SECRET/);
+ assert.doesNotMatch(h.nodes.kbConv.innerHTML,/kb-progress-message/);
+});
+
+for(const change of ['session','project','logout'])test('progress timer and node are removed immediately after '+change,async()=>{
+ const h=harness(),f=feed();h.feeds.push(f);h.c.kbSubmitQuestion('旧请求');await flush();
+ const ctx=pendingRequest(h),node=ctx.progress.node;
+ if(change==='session')h.c.kbSwitchSession('s2');
+ if(change==='project'){h.c.cur='b';h.c.kbChatReplay();}
+ if(change==='logout'){h.c.kbResetChatRequests();h.c.AUTH=null;h.c._authEpoch++;h.c._authState='anonymous';h.nodes.kbConv.innerHTML='';}
+ assert.equal(h.clock.pending(),0);assert.equal(ctx.progress,null);assert.equal(node.parentNode,null);assert.equal(ctx.controller.signal.aborted,true);
+ h.clock.advance(60000);sendAnswer(f,'晚到内容');await flush();assert.doesNotMatch(h.nodes.kbConv.innerHTML,/晚到内容|kb-progress-message/);
+});
+
+test('same-session replay keeps the live progress card and partial answer attached exactly once',async()=>{
+ const h=harness(),f=feed();h.feeds.push(f);h.c.kbSubmitQuestion('重绘的问题');await flush();
+ const ctx=pendingRequest(h),progressNode=ctx.progress.node;
+ h.nodes.kbConv=new Element();h.c.kbChatReplay();assert.equal(progressNode.parentNode,h.nodes.kbConv);
+ assert.equal(h.nodes.kbConv.children.filter(n=>n===progressNode).length,1);
+ f.push({choices:[{delta:{content:'尚未完成的正文'}}]});await flush();
+ h.nodes.kbConv=new Element();h.c.kbChatReplay();assert.equal(progressNode.parentNode,h.nodes.kbConv);assert.equal(ctx.answerNode.parentNode,h.nodes.kbConv);
+ assert.match(h.nodes.kbConv.innerHTML,/尚未完成的正文/);assert.equal(h.clock.pending(),1);
+ h.c.kbChatReplay();assert.equal(h.nodes.kbConv.children.filter(n=>n===progressNode).length,1);
+ f.done();await flush();assert.equal(h.clock.pending(),0);assert.equal(transcript(h).at(-1).plainText,'尚未完成的正文');
+});
+
+for(const partial of [false,true])test('stopping '+(partial?'a partial answer':'before any content')+' records an incomplete result and allows retry',async()=>{
+ const h=harness(),f=feed();h.feeds.push(f);h.c.kbSubmitQuestion('原问题 <原文>');await flush();
+ const ctx=pendingRequest(h);if(partial){f.push({choices:[{delta:{content:'已收到的一部分'}}]});await flush();}
+ h.c.kbStopAnswer(ctx.requestId);
+ assert.equal(h.c.kbIsRequestPending(),false);assert.equal(h.clock.pending(),0);assert.equal(ctx.controller.signal.aborted,true);assert.equal(ctx.progress,null);
+ assert.match(h.nodes.kbConv.innerHTML,/已停止生成/);assert.match(h.nodes.kbConv.innerHTML,/重新提问/);
+ if(partial)assert.match(h.nodes.kbConv.innerHTML,/已收到的一部分|未完成/);
+ const stopped=transcript(h).at(-1);assert.equal(stopped.error,true);assert.equal(stopped.plainText,'');assert.equal(transcript(h).length,2);
+ await flush();assert.equal(transcript(h).length,2);
+ const next=feed();h.feeds.push(next);const retry=new Element('button');retry.setAttribute('data-kb-query','原问题 <原文>');
+ assert.equal(h.c.kbRetryQuestion(retry),true);await flush();assert.equal(h.api.at(-1).question,'原问题 <原文>');
+ assert.ok(h.api.at(-1).history.every(m=>!m.content.includes('已停止生成')&&!m.content.includes('已收到的一部分')));
+ h.c.kbStopAnswer(ctx.requestId);assert.equal(h.c.kbIsRequestPending(),true);assert.equal(h.clock.pending(),1);
+ sendAnswer(next,'重试完成');await flush();assert.equal(h.clock.pending(),0);assert.equal(transcript(h).at(-1).plainText,'重试完成');
+});
+
+test('elapsed-time updates do not scroll away from earlier conversation the user is reading',async()=>{
+ const h=harness(),f=feed();h.nodes.kbScroll=new Element();h.nodes.kbScroll.scrollHeight=2000;h.nodes.kbScroll.clientHeight=400;
+ h.feeds.push(f);h.c.kbSubmitQuestion('长等待');await flush();
+ h.nodes.kbScroll.scrollTop=200;h.nodes.kbScroll.listeners.scroll();h.clock.advance(35000);
+ assert.equal(h.nodes.kbScroll.scrollTop,200);assert.equal(pendingRequest(h).followScroll,false);
+ f.push({choices:[{delta:{reasoning_content:'[searching]'}}]});await flush();assert.equal(h.nodes.kbScroll.scrollTop,200);
+ sendAnswer(f);await flush();assert.equal(h.clock.pending(),0);
+});
+
+test('stop before response headers cleans up immediately and late connection cannot revive it',async()=>{
+ const h=harness(),f=feed(),response=f.response;let release;
+ f.response=signal=>new Promise(resolve=>{release=()=>resolve(response(signal));});
+ h.feeds.push(f);h.c.kbSubmitQuestion('连接期间停止');const ctx=pendingRequest(h);
+ h.c.kbStopAnswer(ctx.requestId);
+ assert.equal(ctx.controller.signal.aborted,true);assert.equal(h.clock.pending(),0);assert.equal(h.c.kbIsRequestPending(),false);
+ assert.equal(transcript(h).length,2);assert.equal(transcript(h).at(-1).error,true);
+ release();await flush();sendAnswer(f,'旧连接迟到的答案');await flush();
+ assert.equal(transcript(h).length,2);assert.doesNotMatch(h.nodes.kbConv.innerHTML,/旧连接迟到的答案|kb-progress-message/);
 });
