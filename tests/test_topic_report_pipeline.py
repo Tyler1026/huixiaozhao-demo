@@ -60,7 +60,8 @@ class TopicProjectionTests(unittest.TestCase):
         self.assertIn('计划于2027年建成', result['text'])
         self.assertIn('必须具有独立法人资格', result['text'])
         self.assertNotIn('于2027年已建成', result['text'])
-        self.assertIn('[来源 S1](https://www.shanghai.gov.cn/energy)', result['text'])
+        self.assertIn('[1](https://www.shanghai.gov.cn/energy)', result['text'])
+        self.assertIn('## 参考文献', result['text'])
         self.assertEqual(result['status'], 'unreviewed')
         for chapter in '一二三四五': self.assertIn('## '+chapter+'、', result['text'])
 
@@ -158,8 +159,8 @@ class TopicProjectionTests(unittest.TestCase):
         self.assertEqual(len(clean['companies']),1)
         text,_=render_report(clean,{'city':'闵行区','topic':'聚变能源'},b,2)
         self.assertIn(quote,text)
-        self.assertIn('待核查产品线索关键词：聚变磁体',text)
-        self.assertIn('不构成能力、适配性或投资意向的确认',text)
+        self.assertIn('**公开披露产品：** 聚变磁体',text)
+        self.assertIn('投资及采购意向不由产品能力推定',text)
         self.assertNotIn('原文披露的匹配产品',text)
 
     def test_product_binding_cannot_shorten_another_company_name(self):
@@ -214,7 +215,7 @@ class TopicRouteTests(unittest.TestCase):
         for row in completed['sources']:
             self.assertEqual(row['fulltext_sha256'],b['sources'][row['source_id']]['fulltext_sha256'])
         self.assertEqual(audits[-1]['outcome'],'completed')
-        self.assertIn('本轮检索未完全完成',text)
+        self.assertIn('不代表完整的产业普查',text)
 
     def test_missing_real_research_is_terminal_not_generic_fallback(self):
         h=Handler(state());text,audits=self.run_route(h,research=lambda *args,**kwargs:{'status':'unavailable','evidence':[]})

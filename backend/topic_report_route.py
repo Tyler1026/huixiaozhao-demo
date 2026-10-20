@@ -99,7 +99,7 @@ def serve_topic_report(handler, body, *, read_state, complete, audit,
                       source_urls=[x.get('url') for x in public_sources],
                       public_evidence_ids=[x.get('id') for x in public_sources])
         event('research.status', message='正在将原文事实与研判建议分开整理', stage='synthesis')
-        report = build_report(context, findings, phase, complete)
+        report = build_report(context, findings, phase, complete, on_progress=progress)
         event('research.status', message='正在核对数字、原文条件和来源，并检查材料版本', stage='verification')
         # Check actual original excerpts, with one reference per source. No model
         # self-report, generic disclaimer or confirmation click counts as proof.
@@ -111,7 +111,8 @@ def serve_topic_report(handler, body, *, read_state, complete, audit,
             checks = [c for c in verification.get('checks', []) if source['id'] in {s.get('evidence_id') for s in c.get('sources', [])}]
             source['support_status'] = ('cross_checked' if checks and all(c['support_status']=='cross_checked' for c in checks)
                                         else 'single_source' if checks else 'unverified')
-        # Re-render to expose the verified status instead of promising it in advance.
+        # Re-render with verified source status. Reviewed composition stays in
+        # the plan, so verification does not replace it with an excerpt summary.
         from .topic_reports import render_report
         by_id = {s['id']: s for s in report['sources']}
         findings['evidence'] = [by_id.get(s['id'], s) for s in findings['evidence']]
@@ -142,8 +143,8 @@ def serve_topic_report(handler, body, *, read_state, complete, audit,
                   verificationStatus=verification['status'], researchStatus=findings['status'],
                   analysis=metadata['analysis'], publicResearch=metadata['publicResearch'],
                   researchCoverage=metadata['researchCoverage'])
-            # Only source-projected text is streamed. There is no unverified
-            # model prose briefly shown as factual content before validation.
+            # Publish only after source checks and composition review finish;
+            # unreviewed draft paragraphs are never briefly streamed as facts.
             for block in report['text'].split('\n\n'):
                 send({'choices': [{'delta': {'content': block+'\n\n'}}], 'runId': run_id})
             event('research.complete', **{k: v for k, v in metadata.items() if k not in ('runId','fingerprint','clientMaterialFingerprint')})

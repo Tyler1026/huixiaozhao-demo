@@ -678,7 +678,7 @@ function projMgmtPage(p){
         '<div style="font-size:36px;margin-bottom:12px">📂</div>'+
         '<div style="font-size:15px;font-weight:700;color:#0b183b;margin-bottom:8px">暂无立项</div>'+
         '<div style="font-size:13px;color:#8492a6;line-height:1.7;margin-bottom:20px">'+
-          '在「研判需求」生成完整报告后，<br>点击「🏁 可立项招引方向」中的「立项导入 →」按钮建立项目'+
+          '在「研判需求」生成产业研判报告后，<br>点击「🏁 可立项招引方向」中的「立项导入 →」按钮建立项目'+
         '</div>'+
         '<button onclick="go(\'report\')" style="padding:10px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:650;cursor:pointer">前往研判需求 →</button>'+
       '</div></div></div>';
@@ -1561,6 +1561,7 @@ function reportHistoryRecord(key, topic, text){
   if(typeof score!=='number'||!isFinite(score)||score<0||score>100) score=null;
   return {
     topic:topic, text:text, rep:text,
+    composition:typeof reportCompositionForContext==='function'?reportCompositionForContext({state:rs,topic:topic,text:text}):null,
     ts:(rs.tsByTopic||{})[topic]||(rs.topic===topic?rs.ts:0)||rs.ts||0,
     phase:(rs.phaseByTopic||{})[topic]||(rs.topic===topic?rs.phase:2)||2,
     score:score, evidenceStatus:unreviewed?'unreviewed':null,
@@ -1638,7 +1639,7 @@ function renderHistoryReports(key){
   h+='历史报告（'+list.length+' 份）</div>';
   list.forEach(function(rep,i){
     var dt=rep.ts?new Date(rep.ts).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'未知时间';
-    var phaseLabel=rep.phase===2?'完整报告':'初步草稿';
+    var phaseLabel=rep.phase===2?(typeof reportPublicationLabel==='function'?reportPublicationLabel({text:rep.text,topic:rep.topic,state:REPORTSTATE[key]||{},composition:rep.composition},'完整报告'):'完整报告'):'初步草稿';
     var phaseColor=rep.phase===2?'#1d4ed8':'#92400e';
     var phaseBg=rep.phase===2?'#dbeafe':'#fef3c7';
     h+='<div style="border-radius:12px;border:1.5px solid #e2e8f0;overflow:hidden;margin-bottom:6px;background:#fff">';
@@ -1660,7 +1661,7 @@ function renderHistoryReports(key){
     txt=txt.replace(/^#{1,3}\s(.+)$/gm,'<div style="font-weight:700;color:#0b183b;margin:8px 0 3px">$1</div>');
     txt=txt.replace(/^[-•]\s(.+)$/gm,'<div style="padding-left:12px;margin:2px 0">· $1</div>');
     txt=txt.replace(/\n\n/g,'<br>');
-    h+=txt;
+    h+=(typeof reportPublicationForContext==='function'&&typeof reportMdToHtml==='function')?reportMdToHtml(reportPublicationForContext({text:rep.text||'',topic:rep.topic,state:REPORTSTATE[key]||{},phase:Number(rep.phase)||0,composition:rep.composition})):txt;
     h+='</div>';
     h+='</div>';
   });
@@ -1732,7 +1733,7 @@ function renderConfirmPanel(items, projKey){
       '<span style="font-size:18px">📋</span>'+
       '<div style="flex:1">'+
         '<div style="font-size:13px;font-weight:800;color:#92400e;letter-spacing:.2px">待领导确认事项</div>'+
-        '<div style="font-size:11px;color:#b45309;margin-top:1px">全部确认后方可生成完整五章报告</div>'+
+        '<div style="font-size:11px;color:#b45309;margin-top:1px">全部确认后方可生成产业研判报告</div>'+
       '</div>'+
       '<div style="display:flex;align-items:center;gap:8px">'+
         '<span id="cp-progress-'+projKey+'" style="font-size:12px;font-weight:700;color:'+(allDone?'#166534':'#92400e')+'">'+done+' / '+total+'</span>'+
@@ -1744,7 +1745,7 @@ function renderConfirmPanel(items, projKey){
     '<div style="padding:12px 16px;display:flex;flex-direction:column;gap:8px;background:#fff" id="cp-items-'+projKey+'">'+rows+'</div>'+
     '<div id="cp-unlock-'+projKey+'" style="padding:12px 18px;background:'+(allDone?'linear-gradient(135deg,#f0fdf4,#dcfce7)':'#f9fafb')+';border-top:1px solid '+(allDone?'#86efac':'#f0f4ff')+';display:flex;align-items:center;justify-content:center;gap:8px">'+
       (allDone
-        ? '<span style="font-size:13px;font-weight:700;color:#166534">✅ 所有事项已确认，立即生成完整报告</span>'
+        ? '<span style="font-size:13px;font-weight:700;color:#166534">✅ 所有事项已确认，立即生成产业研判报告</span>'
         : '<span style="font-size:12.5px;color:#9aa5b5">还有 <strong style="color:#f59e0b">'+(total-done)+'</strong> 条事项待确认</span>'
       )+
     '</div>'+
@@ -1765,7 +1766,7 @@ function updateConfirmProgress(projKey){
     unlock.style.background=allDone?'#f0fdf4':'#f9fafb';
     unlock.style.borderColor=allDone?'#86efac':'#e8edf5';
     unlock.innerHTML=allDone
-      ?'<span style="font-size:13px;font-weight:650;color:#166534">✓ 所有事项已确认，请点击下方蓝色按钮生成完整报告</span>'
+      ?'<span style="font-size:13px;font-weight:650;color:#166534">✓ 所有事项已确认，请点击下方蓝色按钮生成产业研判报告</span>'
       :'<span style="font-size:13px;color:#9aa5b5">还剩 '+(total-done)+' 条待确认</span>';
   }
   // 始终强制重建底部操作栏
@@ -1779,11 +1780,11 @@ function updateConfirmProgress(projKey){
   if(allDone){
     bottomBar.innerHTML=
       '<div style="flex:1;font-size:12.5px;color:#166534;background:#f0fdf4;padding:10px 14px;border-radius:10px;border:1px solid #86efac">✓ 所有待确认事项已完成</div>'+
-      '<button onclick="triggerReport(2)" style="padding:12px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;box-shadow:0 4px 16px rgba(26,86,219,.3)">生成完整产业报告 →</button>'+
+      '<button onclick="triggerReport(2)" style="padding:12px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;box-shadow:0 4px 16px rgba(26,86,219,.3)">生成产业研判报告 →</button>'+
       '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>';
   } else {
     bottomBar.innerHTML=
-      '<div style="flex:1;font-size:12.5px;color:#92400e;background:#fffbeb;padding:10px 14px;border-radius:10px;border:1px solid #fde68a">请确认上方 '+(total-done)+' 条待确认事项后生成完整产业报告</div>'+
+      '<div style="flex:1;font-size:12.5px;color:#92400e;background:#fffbeb;padding:10px 14px;border-radius:10px;border:1px solid #fde68a">请确认上方 '+(total-done)+' 条待确认事项后生成产业研判报告</div>'+
       '<button disabled style="padding:12px 20px;background:#e8edf5;color:#9aa5b5;border:none;border-radius:12px;font-size:13.5px;cursor:not-allowed">完成确认后解锁 →</button>'+
       '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>';
   }
@@ -1992,11 +1993,11 @@ function triggerReport(phase){
   try{p.topic=topic;persist();}catch(error){delete window._topicReportJobs[jobKey];delete window._topicReportProgress[jobKey];updateReportBusy();toast('本地保存未完成，请重试');return Promise.resolve();}
   var query=phase===1
     ? '请基于'+p.city+'城市智库，针对「'+topic+'」输出简短草稿：三个关键缺口、三个招引方向、三个以⚠️开头的待确认事项和证据边界。事实与推断分开，没有证据写待核，不能写成不存在。'+(window._interviewContext?'\n访谈补充：'+window._interviewContext:'')
-    : '请基于'+p.city+'城市智库，针对「'+topic+'」输出五章招商研判：一、产业基础判断；二、产业链缺口分析；三、补链优先级清单；四、目标企业画像；五、待确认事项。数字、政策门槛和有效期必须保留原文完整条件，并给出来源。不得将未检索到改写为不存在，不得将待核或推断改成事实。已确认事项：\n'+gate.items.map(function(x){return x.editedText||x.text;}).join('\n');
+    : '请基于'+p.city+'城市智库，针对「'+topic+'」输出五章招商研判：一、产业基础判断；二、产业链缺口分析；三、补链优先级清单；四、目标企业画像；五、实施建议。正文仅包含正式研判与实施建议，不输出待确认事项、本轮确认输入或证据与核验边界等过程章节。引用采用数字编号并在文末列出参考文献，同一原文只列一次，不重复说明来源计数过程。数字、政策门槛和有效期必须保留原文完整条件。不得将未检索到改写为不存在，不得将待核或推断改成事实。下列已确认输入仅供研究参考，不直接复述为报告章节，也不自动视为已核实事实：\n'+gate.items.map(function(x){return x.editedText||x.text;}).join('\n');
   var chunks;
   try{
     var corpus=buildKBCorpus(p.city);chunks=kbSearch(query,corpus,phase===1?8:20);
-    setReportAreaHtml(area,'<div class="report-document industry-report industry-prose"><h2>'+(phase===1?'初步研判草稿':'完整产业研判')+'</h2><p id="reportRunStatus">正在读取当前方向材料，检索与来源核对完成后显示研判…</p><div id="reportContent"></div></div>');
+    setReportAreaHtml(area,'<div class="report-document industry-report industry-prose"><h2>'+(phase===1?'初步研判草稿':'产业研判报告')+'</h2><p id="reportRunStatus">正在读取当前方向材料，检索与来源核对完成后显示研判…</p><div id="reportContent"></div></div>');
     refreshReportRunUi();
   }catch(error){delete window._topicReportJobs[jobKey];delete window._topicReportProgress[jobKey];updateReportBusy();toast('读取本地材料未完成，请重试');return Promise.resolve();}
   function active(){return PROJECTS[key] && (PROJECTS[key].reportRequestId||'')===requestId && ((PROJECTS[key].topicCreatedAt||{})[topic]||0)===topicBirth && ((PROJECTS[key].topicDeletedAt||{})[topic]||0)===topicDeath && (epoch===null || epoch===_authEpoch);}
@@ -2007,14 +2008,14 @@ function triggerReport(phase){
     var job=(window._topicReportProgress||{})[jobKey];if(job)job.message=message;
     if(visible())refreshReportRunUi();
   }
-  function retainPartial(part,reason){
+  function retainPartial(part,reason,metadata){
     if(!active()||reportTopicStamp(REPORTSTATE[key]||{},topic)!==baseReportTs)return;
     var rs=REPORTSTATE[key]||(REPORTSTATE[key]={});
     rs.partialByTopic=rs.partialByTopic||{};
-    rs.partialByTopic[topic]={text:part||'',reason:reason,ts:topicOperationStamp(key,topic),reportTs:baseReportTs,phase:phase,status:'incomplete'};
+    rs.partialByTopic[topic]={text:part||'',reason:reason,ts:topicOperationStamp(key,topic),reportTs:baseReportTs,phase:phase,status:'incomplete',metadata:metadata||null};
     persist();
   }
-  var timeout=setTimeout(function(){controller.abort();},phase===2?240000:180000);
+  var timeout=setTimeout(function(){controller.abort();},phase===2?720000:180000);
   return reportClientFingerprint(materialIdentity).then(function(value){
     clientFingerprint=value;
     if(!materialsCurrent())throw changedError();
@@ -2032,7 +2033,7 @@ function triggerReport(phase){
     showStatus('正在研究当前方向，检索与来源核对进展将在此显示');
     return readTopicReportStream(response,function(value){
       text=value;var job=(window._topicReportProgress||{})[jobKey];if(job)job.text=value;
-      if(visible()){var el=document.getElementById('reportContent');if(el)el.innerHTML=topicReportMarkup(value);}
+      if(visible()){var el=document.getElementById('reportContent');if(el)el.innerHTML=topicReportMarkup(value,phase);}
     },function(event,metadata){
       if(metadata.clientMaterialFingerprint&&metadata.clientMaterialFingerprint!==clientFingerprint){controller.abort();throw changedError();}
       if(event.type==='research.status'&&event.message)showStatus(event.message);
@@ -2044,8 +2045,13 @@ function triggerReport(phase){
     if(reportTopicStamp(REPORTSTATE[key]||{},topic)!==baseReportTs)throw changedError();
     if(result.metadata&&result.metadata.clientMaterialFingerprint&&result.metadata.clientMaterialFingerprint!==clientFingerprint)throw changedError();
     text=result.text;
-    if(phase===2 && !isCompleteTopicReport(text)){var e=new Error('本次正文未包含完整五章，已保留为未完成内容');e.partialText=text;throw e;}
+    if(phase===2 && !isCompleteTopicReport(text)){var e=new Error('本次正文未包含必要章节，已保留为未完成内容');e.partialText=text;throw e;}
     var rs=REPORTSTATE[key]||(REPORTSTATE[key]={});
+    var previousText=(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'')||'';
+    if(phase===2&&typeof reportKeepReviewed==='function'&&reportKeepReviewed({state:rs,topic:topic,text:previousText,history:typeof REPORT_HISTORY==='undefined'?[]:REPORT_HISTORY[key]||[]},result.metadata)){
+      var limitedError=new Error('本轮仅形成阶段性研判，已保留未完成内容；已审稿报告可在历史中查看');
+      limitedError.partialText=text;limitedError.partialMetadata=result.metadata;throw limitedError;
+    }
     if(typeof archiveCurrentReport==='function')archiveCurrentReport(key,topic);
     var now=topicOperationStamp(key,topic);
     ['aiReportByTopic','phaseByTopic','tsByTopic','scoreByTopic','userGeneratedTopics','pendingByTopic'].forEach(function(field){rs[field]=rs[field]||{};});
@@ -2075,12 +2081,12 @@ function triggerReport(phase){
     persist();showStatus('正文已生成，正在确认云端保存…');
     return syncTopicReportInputs().then(function(){
       var analysis=(rs.researchByTopic[topic]||{}).analysis||{};
-      var label=analysis.status==='evidence_only'?'资料摘要已保存 · 研判依据待补':analysis.status==='supported_analysis'?'研判已生成 · 结论待核验':phase===1?'草稿已保存，请确认当前方向事项':'报告已保存 · 请核对来源和结论';
+      var label=phase===1?'草稿已保存，请确认当前方向事项':analysis.composition&&analysis.composition.status==='limited'?'阶段性研判已保存 · 研究仍有不足':analysis.composition&&analysis.composition.status==='reviewed'?'产业研判报告已保存':analysis.status==='evidence_only'?'资料摘要已保存 · 研判依据待补':'产业研判报告已保存';
       showStatus(label+' · '+Math.round((Date.now()-started)/1000)+'秒');if(visible())toast(label);
     },function(error){error.localReportSaved=true;throw error;});
   }).catch(function(error){
     if(error.localReportSaved){showStatus('报告已保存在本机，云端保存未确认；请重试同步。');if(visible())toast('报告已保存在本机，云端保存未确认；请重试同步。');return;}
-    if(!error.sourceChanged&&materialsCurrent())retainPartial(error.partialText||text,error.message);
+    if(!error.sourceChanged&&materialsCurrent())retainPartial(error.partialText||text,error.message,error.partialMetadata);
     showStatus(error.sourceChanged?error.message:'本次生成未完成，原正式报告已保留；可重试。');
     if(visible())toast(error.name==='AbortError'?'生成连接超时，未完成内容已保留':error.message);
   }).finally(function(){
@@ -2109,14 +2115,15 @@ function reportHtml(p){
 
   return '<div style="border-radius:14px;border:1.5px solid #e8edf5;overflow:hidden;margin-bottom:8px">'+
     '<div style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
-      '<span style="font-size:12px;font-weight:650;color:#1a56db">📋 研判报告</span>'+
+      '<span style="font-size:12px;font-weight:650;color:#1a56db">'+(typeof reportPublicationLabel==='function'?reportPublicationLabel({state:rs,topic:p.topic,text:reportTextForTopic(p.topic)||''},'研判报告'):'研判报告')+'</span>'+
       '<span style="font-size:11.5px;color:#4a5568">'+escapeChainText(p.topic)+'</span>'+
       '<span style="margin-left:auto;font-size:11px;color:'+(rs.score>=80?'#22c55e':'#f59e0b')+'">'+topicScoreDisplay(p.topic)+'</span>'+
       '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
     '</div>'+
     '<div style="padding:16px 18px;font-size:13px;color:#1e293b;line-height:1.8">'+
-      reportMdToHtml(reportTextForTopic(p.topic)||'')+
+      reportMdToHtml(typeof reportPublicationForContext==='function'?reportPublicationForContext({text:reportTextForTopic(p.topic)||'',topic:p.topic,state:rs}):reportTextForTopic(p.topic)||'')+
     '</div>'+
+    (typeof reportResearchSourcesHtml==='function'?reportResearchSourcesHtml(p):'')+
   '</div>';
 }
 
@@ -2211,7 +2218,7 @@ function homePage(p){
               '选择上方研判方向，点击「🔍 开始初步研判」'+
             '</div>'+
             '<div style="font-size:12.5px;color:#8492a6;line-height:1.8">'+
-              '① AI 先出初步草稿（约10秒）② 逐条确认待确认事项 ③ 生成完整五章报告'+
+              '① AI 先出初步草稿（约10秒）② 逐条确认待确认事项 ③ 生成产业研判报告'+
             '</div>'+
           '</div>'
       )+
@@ -2231,7 +2238,7 @@ function homePage(p){
     '<div class="report-bottom-bar" style="border-top:1px solid #f0f4ff;background:#fff;padding:12px 22px;display:flex;gap:10px;align-items:center">'+
       (REPORTSTATE[cur]&&REPORTSTATE[cur].phase===2
         ? ('<button onclick="viewCurrentReport()" '+
-            'style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">📊 查看完整报告</button>'+
+            'style="flex:1;padding:13px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;letter-spacing:.2px">📊 查看'+(typeof reportPublicationLabel==='function'?reportPublicationLabel({state:REPORTSTATE[cur]||{},topic:p.topic,text:(typeof reportTextForTopic==='function'?reportTextForTopic(p.topic):null)||''},'完整报告'):'完整报告')+'</button>'+
            '<button onclick="downloadReport(\'full\')" style="padding:13px 16px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;font-size:13px;color:#1a56db;cursor:pointer;font-weight:600">⬇ 下载</button>'+
            '<button onclick="triggerReport(1)" style="padding:13px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:12.5px;color:#4a5568;cursor:pointer">🔄 重新研判</button>')
         : ('<button id="generateBtn" onclick="triggerReport(1)" '+
@@ -2344,8 +2351,9 @@ function fullReportConfirmation(key, topic){
 }
 
 
-function topicReportMarkup(text){
-  return typeof reportMdToHtml==='function'?reportMdToHtml(text):String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+function topicReportMarkup(text,phase,sources){
+  var publication=typeof reportPublicationText==='function'?reportPublicationText(text,{phase:phase,sources:sources}):text;
+  return typeof reportMdToHtml==='function'?reportMdToHtml(publication):String(publication).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
 }
 
 
@@ -2381,7 +2389,7 @@ function reportRunBanner(p){
   var job=p&&reportJobForTopic(cur,p.topic);
   if(!job)return '';
   return '<div id="industryRunBanner" class="industry-run-banner" role="status" aria-live="polite">'+
-    '<span class="industry-run-spinner" aria-hidden="true"></span><div><strong>'+(job.phase===2?'完整报告生成中':'初步草稿生成中')+'</strong>'+
+    '<span class="industry-run-spinner" aria-hidden="true"></span><div><strong>'+(job.phase===2?'产业研判生成中':'初步草稿生成中')+'</strong>'+
     '<span id="industryRunMessage">'+escapeChainText(job.message||'正在准备当前方向材料…')+'</span></div></div>';
 }
 
@@ -2417,7 +2425,13 @@ function reportResearchSourcesHtml(p,key){
   key=key||cur;if(!p)return '';
   var rs=REPORTSTATE[key]||{},record=(rs.researchByTopic||{})[p.topic];
   var text=(rs.aiReportByTopic||{})[p.topic]||(rs.topic===p.topic?rs.text:'');
-  if(!record||record.topic!==p.topic||record.reportText!==text||!Array.isArray(record.sources)||!record.sources.length)return '';
+  if(!record||record.topic!==p.topic||record.reportText!==text)return '';
+  var composition=(record.analysis||{}).composition,quality='';
+  if(composition&&typeof composition==='object'){
+    quality='<details class="industry-sources industry-review-notes"><summary>研究与审稿记录</summary><p>'+escapeChainText(composition.status==='reviewed'?'成文与审稿已完成':'研究仍有不足，当前展示阶段性研判')+'</p>'+
+      (typeof reportCompositionNotes==='function'?'<ul>'+reportCompositionNotes(composition).map(function(note){return '<li>'+escapeChainText(note)+'</li>';}).join('')+'</ul>':'')+'</details>';
+  }
+  if(!Array.isArray(record.sources)||!record.sources.length)return quality;
   var rows=record.sources.map(function(source,index){
     var url=reportSafeSourceUrl(source.url),label=escapeChainText(source.label||'S'+(index+1));
     var support={cross_checked:'交叉支持',single_source:'单源待复核'}[source.support_status]||'未核实';
@@ -2428,7 +2442,7 @@ function reportResearchSourcesHtml(p,key){
       (source.retrieved_at?'检索：'+escapeChainText(reportSourceDate(source.retrieved_at,true))+' · ':'')+support+'</div>'+
       (source.quote?'<blockquote>'+escapeChainText(source.quote)+'</blockquote>':'')+'</li>';
   }).join('');
-  return '<details class="industry-sources"><summary>本次报告来源 <span>'+record.sources.length+' 条</span></summary>'+
+  return quality+'<details class="industry-sources"><summary>本次报告来源 <span>'+record.sources.length+' 条</span></summary>'+
     '<p>以下为本次生成保存的来源与摘录；来源可追溯不等于事实已核验。检索时间为本地时间。</p><ol>'+rows+'</ol></details>';
 }
 
@@ -2467,7 +2481,7 @@ function viewPartialReport(){
   var p=P(), rs=REPORTSTATE[cur]||{};
   var part=p && rs.partialByTopic && rs.partialByTopic[p.topic];
   if(!part){toast('暂无未完成内容');return;}
-  openModal('未完成内容 · 不作为正式报告', '<p>本次生成未完成，原正式报告已保留。</p><div>'+topicReportMarkup(part.text||'')+'</div>', '<button class="primary-button" onclick="closeModal()">关闭</button>');
+  openModal('未完成内容 · 不作为正式报告', '<p>本次生成未完成，原正式报告已保留。</p><div>'+topicReportMarkup(part.text||'',part.phase)+'</div>', '<button class="primary-button" onclick="closeModal()">关闭</button>');
 }
 
 

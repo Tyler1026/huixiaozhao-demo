@@ -66,10 +66,10 @@ function detailReport(p){
   return '<div class="detail-header"><div><span class="eyebrow">CURRENT STUDY</span><h2>本次产业分析</h2><p>'+p.topic+'</p></div></div>'+
     '<div class="detail-scroll">'+
       '<div class="detail-block"><h3>报告状态</h3>'+(running
-        ? '<div class="industry-detail-progress" role="status"><span class="industry-run-spinner" aria-hidden="true"></span><strong>'+(running.phase===2?'完整报告生成中':'初步草稿生成中')+'</strong><p id="industryDetailRunMessage">'+escapeChainText(running.message||'正在准备材料…')+'</p></div>'
+        ? '<div class="industry-detail-progress" role="status"><span class="industry-run-spinner" aria-hidden="true"></span><strong>'+(running.phase===2?'产业研判生成中':'初步草稿生成中')+'</strong><p id="industryDetailRunMessage">'+escapeChainText(running.message||'正在准备材料…')+'</p></div>'
         : _topicHasReport
         ? '<ul class="check-list">'+
-            '<li><i class="i">'+(_topicFull?'✅':'✎')+'</i>'+(_topicFull?'完整报告已生成':'初步草稿')+' · '+topicScoreDisplay(p.topic)+'</li>'+
+            '<li><i class="i">'+(_topicFull?'✅':'✎')+'</i>'+(_topicFull?(typeof reportPublicationLabel==='function'?reportPublicationLabel({state:st,topic:p.topic,text:_topicText},'完整报告')+'已生成':'完整报告已生成'):'初步草稿')+' · '+topicScoreDisplay(p.topic)+'</li>'+
             '<li><i class="i"></i>产业分析方向：'+p.topic+'</li>'+
             '<li><i class="i"></i>生成时间：'+(topicTime?new Date(topicTime).toLocaleDateString('zh-CN'):'未知')+'</li>'+
           '</ul>'
@@ -83,7 +83,7 @@ function detailReport(p){
       (!running&&_topicFull
         ? '<div class="detail-block">'+
       '<div style="display:flex;gap:8px">'+
-      '<button onclick="viewCurrentReport()" style="flex:1;padding:9px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer;font-weight:600">📋 查看完整报告</button>'+
+      '<button onclick="viewCurrentReport()" style="flex:1;padding:9px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer;font-weight:600">📋 查看'+(typeof reportPublicationLabel==='function'?reportPublicationLabel({state:st,topic:p.topic,text:_topicText},'完整报告'):'完整报告')+'</button>'+
       '<button onclick="downloadReport(\'full\')" style="padding:9px 14px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12.5px;color:#1a56db;cursor:pointer">⬇ 下载</button>'+
       '</div></div>'
         : ''

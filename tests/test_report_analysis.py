@@ -4,6 +4,7 @@ import hashlib
 import json
 import unittest
 from datetime import date
+from unittest.mock import patch
 
 from backend.report_analysis import policy_context, review_priorities
 from backend.topic_reports import build_report, evidence_catalog, normalize_plan, TopicReportError
@@ -84,7 +85,11 @@ class ReportAnalysisTests(unittest.TestCase):
             if len(calls)==1:return p
             if len(calls)==2:return {'companies':[],'priorities':[corrected]}
             return {'verdicts':[{'index':0,'valid':True,'reason':'依赖对象来自同企业原文，范围限定且无本地缺失推断。'}]}
-        out=build_report({'city':'闵行区','topic':b['topic'] if 'topic' in b else '生物医药上游耗材国产替代'},b,2,complete)
+        # This test isolates evidence reselection; writing/review has its own
+        # strict-response integration tests in test_topic_composition.py.
+        with patch('backend.topic_reports.compose_report', return_value={
+                'status':'limited','chapters':[],'diagnostics':[],'calls':0}):
+            out=build_report({'city':'闵行区','topic':b['topic'] if 'topic' in b else '生物医药上游耗材国产替代'},b,2,complete)
         self.assertEqual(len(calls),3)
         self.assertEqual([r['focus'] for r in out['analysis']['priorities']],['膜材'])
         feedback=calls[1]['selection_feedback']['rejected'][0]
@@ -129,9 +134,9 @@ class ReportAnalysisTests(unittest.TestCase):
         self.assertEqual(b,before)
         self.assertFalse(out['researchCoverage']['complete'])
         self.assertEqual(out['researchCoverage']['status'],'pending')
-        self.assertIn('本轮检索未完全完成',out['text'])
-        self.assertIn('产业政策',out['text'])
-        self.assertIn('归档抓取时间沿用原记录',out['text'])
+        self.assertIn('不代表完整的产业普查',out['text'])
+        self.assertNotIn('本轮检索未完全完成',out['text'])
+        self.assertNotIn('归档抓取时间沿用原记录',out['text'])
         self.assertEqual(out['researchCoverage']['errors'],b['errors'])
 
     def test_partial_research_without_hash_bound_originals_still_fails(self):
@@ -353,7 +358,7 @@ class ReportAnalysisTests(unittest.TestCase):
         out=build_report({'city':b['city'],'topic':b['topic']},b,2,complete)
         self.assertEqual(len(out['analysis']['priorities']),1)
         self.assertEqual(out['analysis']['priorities'][0]['state'],'reviewed_inference')
-        self.assertIn('相反证据',out['text'])
+        self.assertIn(b['evidence'][3]['quote'],out['text'])
         self.assertIn('不能断言已经替代',out['text'])
         reviewed={r['id'] for r in calls[1][1]['sources']}
         self.assertTrue(set(ids).issubset(reviewed))
