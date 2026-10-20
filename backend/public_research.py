@@ -42,6 +42,15 @@ _WEBSITE = re.compile(
 _HOST = re.compile(r'(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,24}')
 _PUBLIC_SUFFIXES = {'com', 'org', 'net', 'cn', 'gov.cn', 'com.cn', 'org.cn',
                     'net.cn', 'edu.cn', 'co.uk', 'org.uk', 'com.au', 'co.jp'}
+# Only first-party research publication paths that have been inspected. This
+# does not grant all university/org sites authority, or classify media reprints
+# and public submissions as research. Research never attests company ownership.
+_ACADEMIC_PRIMARY_PATHS = {
+    'news.sjtu.edu.cn': (r'/jdzh/\d{8}/\d+\.html',),
+    'www.engineering.org.cn': (r'/sscae/(?:CN|EN)/(?:10\.15302/J-SSCAE-[\d.]+|\d+)',),
+    'engineering.org.cn': (r'/sscae/(?:CN|EN)/(?:10\.15302/J-SSCAE-[\d.]+|\d+)',),
+    'ipe.cas.cn': (r'/cgzh/xmk/\d{6}/t\d{8}_\d+\.html',),
+}
 
 
 def _digest(text):
@@ -61,6 +70,21 @@ def _public_url(value):
         return ''
 
 
+def academic_primary_source_type(url):
+    """Identify inspected academic publication paths; never corporate proof.
+
+    The type describes the publisher and publication channel, not the truth of
+    a claim, its applicability to a city, or independent verification.
+    """
+    host = _public_url(url)
+    if not host:
+        return None
+    path = urlsplit(url).path
+    if any(re.fullmatch(pattern, path) for pattern in _ACADEMIC_PRIMARY_PATHS.get(host, ())):
+        return 'research'
+    return None
+
+
 def _authority(host):
     kind = full_contract.classify_source_type(host)
     if kind == 'government':
@@ -74,7 +98,7 @@ def _authority(host):
 
 def _publisher(host):
     parts = host.lower().split('.')
-    return '.'.join(parts[-3:] if host.endswith(('.gov.cn', '.com.cn', '.org.cn')) else parts[-2:])
+    return '.'.join(parts[-3:] if host.endswith(('.gov.cn', '.com.cn', '.org.cn', '.edu.cn')) else parts[-2:])
 
 
 def _set_origins(sources, rows):
@@ -150,7 +174,7 @@ def _validated_source(source_id, value, archive_file):
         'id', 'url', 'title', 'published_at', 'published', 'retrieved_at',
         'fulltext', 'fulltext_sha256', 'fulltext_scope', 'pdf_page', 'extraction')
         if key in value}
-    result.update(source_type=_authority(host), retrieval='fetched', status='source',
+    result.update(source_type=_authority(host) or academic_primary_source_type(url) or '', retrieval='fetched', status='source',
                   publisher_id=_publisher(host), archived=True,
                   archive_file=archive_file, archive_retrieved_at=value['retrieved_at'])
     return result

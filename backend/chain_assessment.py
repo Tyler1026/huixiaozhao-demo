@@ -532,7 +532,10 @@ def build_assessment(context, research, chain_result, complete):
                          for key, source in catalog.items()]}, ensure_ascii=False)
         direct = _direct_node_findings(catalog, context, chain_result)
         try:
-            raw = complete(system, prompt, 3000)
+            # The interactive graph has a separate comparison and review
+            # stage. Retain literal findings here and spend the model budget
+            # there instead of selecting the same evidence for a third time.
+            raw = {'findings': []} if context.get('_prefer_assessment') else complete(system, prompt, 3000)
             if isinstance(raw, str):
                 raw = json.loads(raw.strip().removeprefix('```json').removesuffix('```').strip())
             findings = _normalize(raw, catalog, context, node_names)

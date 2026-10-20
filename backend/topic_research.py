@@ -60,6 +60,63 @@ _INDUSTRY_CONTEXT_TERMS = (
     '低空', '航空', '航天', '火箭', '卫星', '生物医药', '医药', '制药', '医疗',
     '能源', '储能', '氢能', '聚变', '半导体', '芯片', '集成电路', '汽车',
     '钢铁', '农业', '房地产', '文旅', '旅游', '教育')
+_ENERGY_BRANCHES = (
+    ('hydrogen', '氢能 制氢 储氢 运氢 加氢',
+     re.compile(r'氢能|氢基|绿氢|制氢|储氢|运氢|加氢|液氢|氢气|电解槽|电解水|燃料电池|膜电极|双极板|质子交换膜')),
+    ('long_duration', '长时储能 液流电池 压缩空气储能 熔盐储热',
+     re.compile(r'长时储能|液流电池|全钒|铁铬|锌溴|压缩空气(?:储能|系统)?|熔盐|储热|热储能')),
+)
+_RESEARCH_ROLES = ('constraint', 'demand', 'supply', 'planning', 'background')
+_RESEARCH_CONSTRAINT = re.compile(r'短板|不足|短缺|缺乏|瓶颈|依赖|受制|受限|不畅|脱节|难以|过长|偏高|偏低|成本高|效率低|进度慢|手续复杂|仍需.{0,18}验证|尚待.{0,18}验证|仍.{0,8}面临.{0,12}挑战')
+_RESEARCH_DEMAND = re.compile(r'需求|采购|订单|所需|需要|应用条件|并网|交付')
+_RESEARCH_SUPPLY = re.compile(r'已(?:建成|投产|形成|交付|实现)|现有|生产|制造|供应|产品|研制|研发|提供')
+_RESEARCH_PLANNING = re.compile(r'规划|行动方案|行动计划|培育|支持|鼓励|推动|引导|布局|到20\d{2}年')
+
+
+def energy_topic_branches(topic):
+    """Split only the explicit hydrogen/long-duration combined direction."""
+    if not (re.search(r'氢', topic) and re.search(r'长时储能|液流|压缩空气|熔盐', topic)):
+        return ()
+    return _ENERGY_BRANCHES
+
+
+def _research_tags(quote, topic, title=''):
+    branches = energy_topic_branches(topic)
+    branch_ids = [key for key, _, pattern in branches if pattern.search(quote)]
+    # An identity table may rely on its document title, but a generic lithium
+    # battery paragraph cannot inherit long-duration relevance from a page.
+    if branches and not branch_ids and re.search(r'公司.{0,8}名称|注册地址|公司网址', quote):
+        branch_ids = [key for key, _, pattern in branches if pattern.search(title)]
+    if (branches and not branch_ids and _RESEARCH_CONSTRAINT.search(quote)
+            and re.search(r'离子膜|交换膜|电极|电解液|稳定性|活性物质|碳毡|电堆|催化剂|双极板|能量效率', quote)
+            and not re.search(r'锂离子|锂电池|动力电池|新能源汽车', quote)):
+        branch_ids = [key for key, _, pattern in branches if pattern.search(title)]
+    roles = [role for role, pattern in (('constraint', _RESEARCH_CONSTRAINT),
+             ('demand', _RESEARCH_DEMAND), ('supply', _RESEARCH_SUPPLY),
+             ('planning', _RESEARCH_PLANNING)) if pattern.search(quote)]
+    return branch_ids, roles or ['background']
+
+
+def _balanced_report_rows(candidates, limit, topic, char_limit=40000):
+    """Balance complete excerpts across technical branches and evidence roles."""
+    branches = [key for key, _, _ in energy_topic_branches(topic)] or ['topic']
+    buckets = []
+    for role in _RESEARCH_ROLES:
+        for branch in branches:
+            buckets.append([row for row in candidates if role in row.get('research_roles', ['background'])
+                and (branch == 'topic' or branch in row.get('research_branches', []))])
+    selected, seen, size = [], set(), 0
+    while any(buckets) and len(selected) < limit:
+        for bucket in buckets:
+            while bucket and bucket[0]['id'] in seen:
+                bucket.pop(0)
+            if not bucket or len(selected) >= limit:
+                continue
+            row = bucket.pop(0); seen.add(row['id'])
+            cost = len(json.dumps(row, ensure_ascii=False))
+            if size + cost <= char_limit:
+                selected.append(row); size += cost
+    return selected
 
 
 def _digest(value):
@@ -113,6 +170,15 @@ def search_plan(city, topic, mode='draft'):
                 f'{common} 本地产能 研发中试 量产 协同配套 现状 原文',
                 f'{city} {subject} 现有企业 生产基地 已投产 已交付',
                 f'{city} {subject} 上下游 配套产品 研发制造 已形成']
+    branches = energy_topic_branches(topic)
+    if branches:
+        roles = ['现有企业 产品 产线 供应 已投产 已交付 年度报告',
+                 '成本 效率 关键部件 交付周期 并网 技术瓶颈 原文',
+                 '产业规划 行动方案 重点培育 site:gov.cn']
+        if mode == 'full':
+            roles.insert(2, '项目 应用 采购 需求 验证条件 官方原文')
+        return [f'{"" if role.startswith("成本 效率") else city + " "}{label} {role}'
+                for role in roles for _, label, _ in branches]
     queries = [f'{common} 现有企业 产品 产线 供应 已投产 已交付 企业官网 年度报告',
                f'{common} 需求 进口依赖 技术瓶颈 研发 中试 验证阶段 官方原文',
                f'{common} 产业政策 行动方案 适用条件 site:gov.cn']
@@ -152,6 +218,9 @@ def _primary_type(url, trusted_company_domains):
     kind = contract.classify_source_type(host)
     if kind in ('government', 'disclosure'):
         return kind
+    from .public_research import academic_primary_source_type
+    if academic_primary_source_type(url) == 'research':
+        return 'research'
     for domain in trusted_company_domains:
         if host == domain or host.endswith('.' + domain):
             return 'company'
@@ -269,20 +338,27 @@ def select_source_paragraphs(text, topic, *, limit=None, mode='draft', source_ti
         lines = block.splitlines() if len(block) > max_chars else [block]
         for paragraph in lines:
             paragraph = paragraph.strip()
-            if not 35 <= len(paragraph) <= max_chars or paragraph in seen:
+            minimum = 20 if energy_topic_branches(topic) and _RESEARCH_CONSTRAINT.search(paragraph) else 35
+            if not minimum <= len(paragraph) <= max_chars or paragraph in seen:
                 continue
             matches = [term for term in terms if term.casefold() in paragraph.casefold()]
+            branch_ids, roles = _research_tags(paragraph, topic, source_title)
+            if energy_topic_branches(topic) and not branch_ids:
+                continue
             facet_matches = {lane: [term for term in vocabulary if term.casefold() in paragraph.casefold()]
                              for lane, vocabulary in facets.items()}
             assessment = mode == 'chain' and bool(_CHAIN_ASSESSMENT.search(paragraph))
             foreign_context = any(word in paragraph and word not in own_context
                                   for word in _INDUSTRY_CONTEXT_TERMS)
             from_title = assessment and bool(title_matches) and not foreign_context
-            if not matches and not any(facet_matches.values()) and not from_title:
+            if not matches and not any(facet_matches.values()) and not from_title and not branch_ids:
                 continue
             seen.add(paragraph)
             candidate = {'quote': paragraph, 'match_terms': matches,
-                         'relevance_score': sum(min(8, len(t)) for t in matches)}
+                         'relevance_score': sum(min(8, len(t)) for t in matches),
+                         'research_branches': branch_ids, 'research_roles': roles}
+            if branch_ids and not any(pattern.search(paragraph) for _, _, pattern in energy_topic_branches(topic)):
+                candidate['topic_context'] = 'source_title'
             if facets:
                 candidate['chain_facets'] = [lane for lane, found in facet_matches.items() if found]
                 if assessment:
@@ -300,7 +376,11 @@ def select_source_paragraphs(text, topic, *, limit=None, mode='draft', source_ti
         # Select whole paragraphs across all four roles before repeated high
         # keyword-score passages can consume one page's entire allowance.
         return _balanced_chain_rows(candidates, limit)
-    return candidates[:limit]
+    # Per-document balance prevents a long introduction from taking every
+    # slot before its later constraint or policy direction can be selected.
+    identified = [dict(row, id=str(index)) for index, row in enumerate(candidates)]
+    return [{key:value for key, value in row.items() if key != 'id'}
+            for row in _balanced_report_rows(identified, limit, topic)]
 
 
 def research_topic(city, topic, *, mode='draft', questions=(), basis=(), provider=None,
@@ -371,7 +451,7 @@ def research_topic(city, topic, *, mode='draft', questions=(), basis=(), provide
     per_url_limit = MAX_CHAIN_QUOTES_PER_URL if mode == 'chain' else 3
     # Keep a bounded candidate pool until all public lane queries return. The
     # final 48-row output is balanced globally, not filled by the first query.
-    candidate_limit = len(queries) * 5 * per_url_limit if mode == 'chain' else source_limit
+    candidate_limit = len(queries) * 5 * per_url_limit
     executor = ThreadPoolExecutor(max_workers=3)
     try:
         pending = [executor.submit(retrieve, query) for query in queries]
@@ -450,8 +530,10 @@ def research_topic(city, topic, *, mode='draft', questions=(), basis=(), provide
         executor.shutdown(wait=False, cancel_futures=True)
     if mode == 'chain':
         evidence = _balanced_chain_rows(evidence, source_limit, MAX_CHAIN_EVIDENCE_CHARS)
-        used_sources = {entry['source_id'] for entry in evidence}
-        output['sources'] = {key: value for key, value in output['sources'].items() if key in used_sources}
+    else:
+        evidence = _balanced_report_rows(evidence, source_limit, topic)
+    used_sources = {entry['source_id'] for entry in evidence}
+    output['sources'] = {key: value for key, value in output['sources'].items() if key in used_sources}
     output['evidence'] = evidence[:source_limit]
     if not evidence:
         output['errors'].append({'code': 'original_evidence_missing', 'message': '未取得可核查的官方或企业原始正文'})
