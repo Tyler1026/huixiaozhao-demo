@@ -61,3 +61,20 @@ test('planned development remains a distinct reviewed opportunity with the same 
   rows[0].state='pending_review';assert.equal(read(state).length,1);
   rows[0].state='reviewed_inference';rows[0].evidence_ids=['missing'];assert.equal(read(state).length,1);
 });
+test('all opportunity types retain their reviewed evidence requirements and distinct labels',()=>{
+  const kinds={constraint:'约束补链',planned_development:'规划培育',capability_collaboration:'产业协作',validation_collaboration:'联合验证'};
+  for(const [kind,label] of Object.entries(kinds)){
+    const state=fixture(),row=state.researchByTopic.方向甲.analysis.priorities[0];row.opportunity_type=kind;
+    assert.equal(read(state)[0].opportunityLabel,label);assert.equal(read(state)[0].opportunity_type,kind);
+    if(kind!=='constraint')assert.match(read(state)[0].opportunityBoundary,/不表示/);
+    row.evidence_ids=['missing'];assert.equal(read(state).some(value=>value.focus==='产品甲'),false);
+    row.evidence_ids=['a'];row.state='pending_review';assert.equal(read(state).some(value=>value.focus==='产品甲'),false);
+  }
+});
+test('legacy current-topic text is accepted only without a topic entry and with exact metadata text',()=>{
+  const state=fixture();state.topic='方向甲';state.text='报告正文';delete state.aiReportByTopic.方向甲;
+  assert.equal(read(state).length,2);
+  state.aiReportByTopic.方向甲='';assert.equal(read(state).length,0);
+  delete state.aiReportByTopic.方向甲;state.text='不同原文';assert.equal(read(state).length,0);
+  state.text='报告正文';state.topic='方向乙';assert.equal(read(state).length,0);
+});

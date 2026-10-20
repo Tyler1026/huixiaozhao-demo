@@ -1421,6 +1421,32 @@ function mergeTopicReportState(old,incoming,project){
     var candidates=[old,incoming].filter(function(s){return !birth||reportTopicStamp(s,t)>=birth;});if(!candidates.length)return;
     var winner=candidates.reduce(function(a,b){return reportTopicStamp(b,t)>reportTopicStamp(a,t)?b:a;}),version=reportTopicStamp(winner,t);
     fields.forEach(function(f){if(Object.prototype.hasOwnProperty.call(winner[f]||{},t))out[f][t]=winner[f][t];});
+    // A direction refresh changes one research entry, never the report's
+    // timestamp or body. Keep sources and priorities from the same refresh.
+    function exactText(state){
+      return Object.prototype.hasOwnProperty.call(state.aiReportByTopic||{},t)?state.aiReportByTopic[t]:state.topic===t?state.text:null;
+    }
+    function exactPhase(state){
+      return Object.prototype.hasOwnProperty.call(state.phaseByTopic||{},t)?state.phaseByTopic[t]:state.topic===t?state.phase:null;
+    }
+    var body=exactText(winner),phase=exactPhase(winner),refreshLimit=Date.now()+300000;
+    var researchCandidates=candidates.filter(function(state){
+      var entry=(state.researchByTopic||{})[t],refresh=reportStateStamp((entry&&entry.directionRefresh||{}).generatedAt);
+      return reportTopicStamp(state,t)===version&&exactText(state)===body&&exactPhase(state)===phase&&
+        !(state.sourceReportId&&winner.sourceReportId&&state.sourceReportId!==winner.sourceReportId)&&
+        typeof body==='string'&&!!body.trim()&&entry&&entry.topic===t&&entry.reportText===body&&
+        refresh>0&&refresh<=refreshLimit&&Array.isArray(entry.sources)&&entry.analysis&&
+        entry.analysis.contract==='topic-report-analysis-v2'&&Array.isArray(entry.analysis.priorities);
+    });
+    if(researchCandidates.length){
+      var researchOwner=researchCandidates.reduce(function(a,b){
+        var oldRefresh=reportStateStamp((((a.researchByTopic||{})[t]||{}).directionRefresh||{}).generatedAt);
+        var nextRefresh=reportStateStamp((((b.researchByTopic||{})[t]||{}).directionRefresh||{}).generatedAt);
+        return nextRefresh>oldRefresh?b:a;
+      });
+      out.researchByTopic[t]=researchOwner.researchByTopic[t];
+    }
+
     var editors=candidates.filter(function(s){return reportTopicStamp(s,t)===version&&((s.pendingReportTsByTopic||{})[t]===undefined||s.pendingReportTsByTopic[t]===version);});
     if(editors.length){var editor=editors.reduce(function(a,b){return reportStateStamp((b.pendingRevisionByTopic||{})[t])>reportStateStamp((a.pendingRevisionByTopic||{})[t])?b:a;});if(!editors.some(function(s){return reportStateStamp((s.pendingRevisionByTopic||{})[t]);}))editor=editors[editors.length-1];['pendingByTopic','pendingRevisionByTopic','pendingReportTsByTopic'].forEach(function(f){if(Object.prototype.hasOwnProperty.call(editor[f]||{},t))out[f][t]=editor[f][t];});}
     var parts=candidates.map(function(s){return (s.partialByTopic||{})[t];}).filter(function(p){return p&&reportStateStamp(p.ts)>version&&(p.reportTs===undefined||p.reportTs===version);});
@@ -2603,7 +2629,8 @@ function demandDisplayProject(key,p){
 
 function reportDemandActionButton(p){
   if(!p||!demandReportSnapshot(cur,p.topic))return '';
-  return '<button class="industry-priority-submit" type="button" onclick="chooseIndustryDemand()">'+(p.isDemand?'查看这条招商需求':'选择具体招引建议')+'</button>';
+  var hasSuggestions=typeof reportAnalyticalPriorities!=='function'||reportAnalyticalPriorities(REPORTSTATE[cur],p.topic).length>0;
+  return '<button class="industry-priority-submit" type="button" onclick="chooseIndustryDemand()">'+(p.isDemand?'查看这条招商需求':hasSuggestions?'选择具体招引建议':'填写具体招商需求')+'</button>';
 }
 
 
@@ -2631,15 +2658,19 @@ function restoreActionItems(){
   var p=P();if(!p || !demandReportSnapshot(cur,p.topic))return '';
   if(p.demandContract==='industry-demand-v1')return industryDemandSummaryHtml(p)+reportDemandActionButton(p);
   var items=typeof reportAnalyticalPriorities==='function'?reportAnalyticalPriorities(REPORTSTATE[cur],p.topic):[];
-  var directions='<section class="industry-priorities" aria-label="报告中的招引研判方向"><div class="industry-priorities-heading"><h3>报告中的招引研判方向</h3>'+(items.length?'<span>'+items.length+' 项来源支持的分析建议</span>':'')+'</div>';
+  var update=typeof reportPriorityUpdateState==='function'?reportPriorityUpdateState(cur,p.topic):null;
+  var directions='<section class="industry-priorities" aria-label="报告中的招引研判方向"><div class="industry-priorities-heading"><h3>报告中的招引研判方向</h3>'+(items.length?'<span>'+items.length+' 项来源支持的分析建议</span>':'')+'<button type="button" class="industry-priority-submit" onclick="refreshReportPriorities()"'+(update&&update.pending?' disabled aria-busy="true"':'')+'>'+(update&&update.pending?'正在生成研判方向…':items.length?'更新研判方向':'生成研判方向')+'</button></div>'+
+    (update&&update.message?'<p class="industry-priority-update" role="'+(update.error?'alert':'status')+'" aria-live="polite">'+escapeChainText(update.message)+'</p>':'');
   if(items.length){
     directions+='<div class="industry-priority-grid">'+items.map(function(item,index){
       var sources=chainNodeSources({sources:item.sources});
-      var planned=item.opportunity_type==='planned_development';
-      return '<article class="industry-priority-card" data-opportunity-type="'+(planned?'planned_development':'constraint')+'"><span class="industry-priority-scope">'+(planned?'规划培育':'约束补链')+' · '+escapeChainText(item.scopeLabel)+'</span><h4>'+escapeChainText(item.focus)+'</h4><p class="industry-priority-reason"><strong>研判依据：</strong>'+escapeChainText(item.reason)+'</p><div class="industry-priority-basis"><strong>现有基础与条件</strong><p>'+escapeChainText(item.comparison)+'</p></div><div class="industry-priority-action"><strong>推进路径</strong><p>'+escapeChainText(item.action)+'</p></div>'+(planned?'<p class="industry-demand-boundary">依据正式规划形成的培育机会，不表示本地存在现实供给缺口。</p>':'')+'<details><summary>原文依据 · '+sources.length+' 条</summary>'+sources.map(chainLayoutSourceHtml).join('')+'</details>'+industryDemandButtonHtml(p,item)+'</article>';
+      var opportunityType=item.opportunity_type||'constraint';
+      var kind=typeof reportOpportunityInfo==='function'?reportOpportunityInfo(opportunityType):null;
+      kind=kind||{label:opportunityType==='planned_development'?'规划培育':'约束补链',boundary:opportunityType==='planned_development'?'依据正式规划形成的培育机会，不表示本地存在现实供给缺口。':''};
+      return '<article class="industry-priority-card" data-opportunity-type="'+escapeChainText(opportunityType)+'"><span class="industry-priority-scope">'+escapeChainText(kind.label)+' · '+escapeChainText(item.scopeLabel)+'</span><h4>'+escapeChainText(item.focus)+'</h4><p class="industry-priority-reason"><strong>研判依据：</strong>'+escapeChainText(item.reason)+'</p><div class="industry-priority-basis"><strong>现有基础与条件</strong><p>'+escapeChainText(item.comparison)+'</p></div><div class="industry-priority-action"><strong>推进路径</strong><p>'+escapeChainText(item.action)+'</p></div>'+(kind.boundary?'<p class="industry-demand-boundary">'+escapeChainText(kind.boundary)+'</p>':'')+'<details><summary>原文依据 · '+sources.length+' 条</summary>'+sources.map(chainLayoutSourceHtml).join('')+'</details>'+industryDemandButtonHtml(p,item)+'</article>';
     }).join('')+'</div>';
-  }else directions+='<p class="industry-priority-empty">当前报告尚未形成经来源复核的具体招引建议。补充实际需求、供给与采购材料后可继续研判。</p>';
-  directions+='</section>';
+  }else directions+='<p class="industry-priority-empty">当前报告尚未形成经来源复核的具体招引建议。已有明确诉求时，可以自行填写并提交招商需求。</p>';
+  directions+='<div class="industry-custom-demand"><p class="industry-demand-boundary">'+(items.length?'也可按实际需要自定义招商需求，':'')+'所填诉求将以你提交的内容保存，不作为报告结论。</p><button type="button" class="industry-priority-submit" data-demand-source="user-direct" onclick="openDirectDemandComposer({fromReport:true})">'+(items.length?'自定义招商需求':'填写具体招商需求')+'</button></div></section>';
   return directions+'<p class="industry-demand-boundary">每条建议独立形成需求；请选择具体建议并确认招引诉求。</p>';
 }
 

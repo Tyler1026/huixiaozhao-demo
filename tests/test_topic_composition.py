@@ -70,6 +70,10 @@ class TopicCompositionTests(unittest.TestCase):
         result = compose_report(plan, context, catalog, complete, on_progress=events.append)
         self.assertEqual(result['status'], 'reviewed')
         self.assertEqual(result['calls'], 4)
+        ready = dict(plan, composition=result)
+        text, _ = render_report(ready, context, research, 2)
+        self.assertIn('## 二、产业链关系与机会分析', text)
+        self.assertIn('## 三、招引研判方向', text)
         self.assertEqual([row['id'] for row in result['chapters']], list(CHAPTERS))
         self.assertEqual([call[1].get('requested_chapters') for call in calls[:3]],
                          [['basis', 'chain'], ['priorities', 'companies'], ['actions']])

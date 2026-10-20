@@ -14,6 +14,7 @@ function environment(app='index'){
  vm.createContext(c);vm.runInContext(helpers.map(n=>declaration(n,input)).join('\n'),c);return c;
 }
 function report(t,ts,phase){return {topic:t,text:t+ts,ts,phase,aiReportByTopic:{[t]:t+ts},tsByTopic:{[t]:ts},phaseByTopic:{[t]:phase},pendingByTopic:{[t]:[{text:'条件',status:'pending'}]},researchByTopic:{[t]:{runId:String(ts)}},materialDirectoryByTopic:{[t]:{v:ts}},evidenceStatusByTopic:{[t]:'unreviewed'},partialByTopic:{[t]:{ts:ts+10,reportTs:ts,text:'part'}}};}
+function refreshedResearch(topic,text,stamp,id){return {topic,reportText:text,sources:[{id,url:'https://official.example/'+id,quote:'原始材料'}],analysis:{contract:'topic-report-analysis-v2',priorities:[]},directionRefresh:{generatedAt:stamp}};}
 test('browser merges independent topic versions and accepts an explicitly newer draft',()=>{
  const c=environment(),old=report('A',300,2),incoming=report('A',100,1),other=report('B',400,2);
  for(const f of c.reportStateFields().concat(['pendingByTopic']))incoming[f]=Object.assign({},incoming[f],other[f]);incoming.topic='B';incoming.ts=400;
@@ -67,6 +68,64 @@ test('analysis badge distinguishes evidence summaries from generated judgments',
 });
 
 for(const app of ['index','ops']){
+ test(app+' same-report direction refresh wins independently and keeps its sources and priorities atomic',()=>{
+  const c=environment(app),old=report('A',100,2),fresh=clone(old);
+  c.URL=URL;vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend/shared/report-priorities.js'),'utf8'),c);
+  old.researchByTopic.A=refreshedResearch('A','A100',150,'old');
+  fresh.researchByTopic.A={topic:'A',reportText:'A100',sources:[{id:'new',url:'https://official.example/new',quote:'新方向的原始材料'}],analysis:{contract:'topic-report-analysis-v2',priorities:[{focus:'新方向',scope:'industry',state:'reviewed_inference',comparison:'条件比较',reason:'已有依据',action:'具体行动',evidence_ids:['new']}]},directionRefresh:{generatedAt:200}};
+  const before=JSON.stringify([old,fresh]);
+  for(const [left,right] of [[old,fresh],[fresh,old]]){
+   const merged=c.mergeTopicReportState(left,right,{});
+   assert.deepEqual(clone(merged.researchByTopic.A),fresh.researchByTopic.A);
+   assert.equal(c.reportAnalyticalPriorities(merged,'A').length,1,'the newer sources and priorities must reach the actual display adapter together');
+   assert.equal(merged.aiReportByTopic.A,'A100');assert.equal(merged.tsByTopic.A,100);assert.equal(merged.phaseByTopic.A,2);
+  }
+  assert.equal(JSON.stringify([old,fresh]),before);
+ });
+ test(app+' direction metadata cannot cross a different report version, body, topic, phase or native receipt',()=>{
+  const c=environment(app),old=report('A',100,2);old.researchByTopic.A=refreshedResearch('A','A100',150,'old');
+  for(const mismatch of ['body','topic','phase','receipt','timestamp']){
+   const incoming=clone(old);incoming.researchByTopic.A=refreshedResearch('A','A100',999,'wrong');
+   if(mismatch==='body'){incoming.aiReportByTopic.A='changed';incoming.text='changed';incoming.researchByTopic.A.reportText='changed';}
+   if(mismatch==='topic')incoming.researchByTopic.A.topic='B';
+   if(mismatch==='phase')incoming.phaseByTopic.A=1;
+   if(mismatch==='receipt'){old.sourceReportId='native-one';incoming.sourceReportId='native-two';}
+   if(mismatch==='timestamp')incoming.tsByTopic.A=99;
+   assert.deepEqual(clone(c.mergeTopicReportState(old,incoming,{}).researchByTopic.A),old.researchByTopic.A,mismatch);
+   delete old.sourceReportId;
+  }
+  for(const sameBody of [false,true]){
+   const newer=report('A',200,2);if(sameBody)newer.text=newer.aiReportByTopic.A='A100';
+   newer.researchByTopic.A={topic:'A',reportText:newer.text,sources:[{id:'new-report'}]};
+   assert.deepEqual(clone(c.mergeTopicReportState(old,newer,{}).researchByTopic.A),newer.researchByTopic.A);
+  }
+ });
+ test(app+' independent refresh requires a bounded finite timestamp and complete sources with v2 analysis',()=>{
+  const c=environment(app),old=report('A',100,2);c.Date={now:()=>1000};
+  old.researchByTopic.A=refreshedResearch('A','A100',150,'old');
+  const invalid=[['missing timestamp',x=>delete x.directionRefresh.generatedAt],['zero',x=>x.directionRefresh.generatedAt=0],['negative',x=>x.directionRefresh.generatedAt=-1],['NaN',x=>x.directionRefresh.generatedAt=NaN],['infinite',x=>x.directionRefresh.generatedAt=Infinity],['string',x=>x.directionRefresh.generatedAt='200'],['future',x=>x.directionRefresh.generatedAt=301001],['missing sources',x=>delete x.sources],['invalid sources',x=>x.sources={}],['missing analysis',x=>delete x.analysis],['wrong contract',x=>x.analysis.contract='other'],['invalid priorities',x=>x.analysis.priorities={}]];
+  for(const [label,mutate] of invalid){
+   const incoming=clone(old);incoming.researchByTopic.A=refreshedResearch('A','A100',200,'invalid');mutate(incoming.researchByTopic.A);
+   assert.deepEqual(clone(c.mergeTopicReportState(old,incoming,{}).researchByTopic.A),old.researchByTopic.A,label);
+  }
+  const bounded=clone(old);bounded.researchByTopic.A=refreshedResearch('A','A100',301000,'bounded');
+  assert.deepEqual(clone(c.mergeTopicReportState(old,bounded,{}).researchByTopic.A),bounded.researchByTopic.A,'the five-minute skew limit is inclusive');
+ });
+ test(app+' a refreshed parent never replaces the frozen sources of a separate submitted child record',()=>{
+  const c=environment(app),old=report('A',100,2),fresh=clone(old),child=clone(old);
+  old.researchByTopic.A=refreshedResearch('A','A100',150,'old');
+  fresh.researchByTopic.A=refreshedResearch('A','A100',200,'new');
+  child.sourceReportId='frozen-child';child.researchByTopic.A=refreshedResearch('A','A100',120,'frozen');
+  const merged=c.mergeTopicReportStates({parent:old,child},{parent:fresh,child:clone(child)},{child:{isDemand:true,workspaceId:'parent'}});
+  assert.deepEqual(clone(merged.parent.researchByTopic.A),fresh.researchByTopic.A);
+  assert.deepEqual(clone(merged.child.researchByTopic.A),child.researchByTopic.A);
+ });
+ test(app+' legacy current text permits a matching independent refresh but never imports another topic',()=>{
+  const c=environment(app),old={topic:'A',text:'legacy',ts:100,phase:2,researchByTopic:{A:{topic:'A',reportText:'legacy',sources:[]}}},fresh=clone(old);
+  fresh.researchByTopic.A=refreshedResearch('A','legacy',200,'new');
+  assert.deepEqual(clone(c.mergeTopicReportState(old,fresh,{}).researchByTopic.A),fresh.researchByTopic.A);
+  fresh.researchByTopic.A.topic='B';assert.deepEqual(clone(c.mergeTopicReportState(old,fresh,{}).researchByTopic.A),old.researchByTopic.A);
+ });
  test(app+' shared lifecycle helpers keep the same atomic report and tombstone rules',()=>{
   const c=environment(app),p={topic:'A',topicDeletedAt:{A:200},topicCreatedAt:{A:300},stageByTopic:{A:2}};
   assert.equal(c.mergeTopicReportState({},report('A',100,2),p).aiReportByTopic.A,undefined);

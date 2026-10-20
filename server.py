@@ -164,11 +164,16 @@ def audit_log(entry):
     # ② 云端 DB 持久化：存进同一 store 的 RAG_AUDIT 数组（最近 200 条）
     try:
         if _PG_AVAIL and DATABASE_URL:
-            store = json.loads(_db_get() or '{}')
-            arr = store.get("RAG_AUDIT") or []
-            arr.append(entry)
-            store["RAG_AUDIT"] = arr[-200:]
-            _db_set(json.dumps(store, ensure_ascii=False))
+            # The audit shares the main store with reports and demands. Read
+            # and append under its normal lock, so an audit cannot roll back
+            # a report or a concurrent demand saved after an unlocked read.
+            with _sync_transaction() as session:
+                store = json.loads(session.read() or '{}')
+                arr = store.get("RAG_AUDIT") or []
+                arr.append(entry)
+                store["RAG_AUDIT"] = arr[-200:]
+                if not session.write(json.dumps(store, ensure_ascii=False)):
+                    raise OSError('audit write not committed')
     except Exception as e:
         print(f"[audit] db write failed: {e}")
     up = entry.get("upload_chunks", 0)
@@ -1244,6 +1249,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if not q:
             return error_response(self, AuthError(400, 'question_required', '请填写问题'))
+
+        if body.get('purpose') == 'report_priorities':
+            from backend.topic_priorities_route import serve_topic_priorities
+            return serve_topic_priorities(self, body, complete=_complete_topic_plan, audit=audit_log)
 
         if body.get('purpose') == 'chain_map':
             from backend.topic_chain_route import serve_topic_chain

@@ -156,13 +156,17 @@ class ReportAnalysisTests(unittest.TestCase):
         correction={'companies':[{'name':'乙设备有限公司','product':'真空腔室','evidence_ids':[ids[1]]}],'priorities':[]}
         calls=[]
         def complete(system,prompt,budget):
-            calls.append(json.loads(prompt));return p if len(calls)==1 else correction
+            calls.append(json.loads(prompt))
+            if '补充可执行' in system:
+                return {'priorities': []}
+            return p if len(calls)==1 else correction
         out=build_report({'city':b['city'],'topic':b['topic']},b,2,complete)
-        self.assertEqual(len(calls),2)
+        self.assertEqual(len(calls),3)
         self.assertEqual(len(out['analysis']['company_profiles']),2)
         self.assertEqual(calls[0]['evidence'],calls[1]['evidence'])
         self.assertIn('selection_feedback',calls[1])
         self.assertTrue(out['analysis']['selection_diagnostics']['retried'])
+        self.assertTrue(out['analysis']['direction_generation']['attempted'])
 
     def test_reselection_does_not_relax_literal_binding_or_loop(self):
         b=bundle([{'quote':'甲材料有限公司研发聚变磁体，形成相关产品线。'}],topic='聚变能源');p=skeleton(b)

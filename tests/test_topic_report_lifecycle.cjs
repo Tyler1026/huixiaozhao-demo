@@ -309,15 +309,19 @@ test('JSON-restored confirmation, withdrawal and edits update the canonical topi
   assert.equal(c.fullReportConfirmation('p','核电配套').ready,true);
 });
 
-test('legacy gap cards cannot submit an unresearched direction or manufacture a full report', async () => {
+test('legacy gap cards open an explicit direct-demand form without submitting an unresearched direction', async () => {
   const {c, events} = environment();
   vm.runInContext(fs.readFileSync(path.join(root,'frontend/shared/industry-demands.js'),'utf8'),c);
   c.reportAnalyticalPriorities=()=>[];
+  const before=JSON.stringify({projects:c.PROJECTS,reports:c.REPORTSTATE}),opened=[];
+  c.openDirectDemandComposer=context=>{opened.push(context);return true;};
   vm.runInContext(declaration('importToProject'),c);
   c.submitDemand=()=>{throw new Error('must not submit');};
-  c.importToProject('别的产业缺口','闵行区','核电配套');
+  assert.equal(c.importToProject('别的产业缺口','闵行区','核电配套'),true);
+  assert.equal(opened.length,1);assert.equal(opened[0].fromReport,true);
+  assert.equal(events.fetch.length,0);assert.equal(JSON.stringify({projects:c.PROJECTS,reports:c.REPORTSTATE}),before);
   assert.equal(Object.keys(c.PROJECTS).length,1);
-  assert.equal(events.toasts.length,1);
+  assert.equal(c.DEMANDS.length,0);
 });
 
 test('stale checkpoints do not falsely claim an executor outage, and known retries are explicit', () => {

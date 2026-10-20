@@ -21,6 +21,18 @@ for(const side of ['index','ops']){
   const project={topic:'产业主题'};const c={cur:'p',PROJECTS:{p:project},P:()=>project,REPORTSTATE:{p:{}},demandReportSnapshot:()=>({}),_findExistingDemand:()=>null,reportDemandActionButton:()=>'<button>提交</button>',escapeChainText:s=>String(s).replace(/</g,'&lt;'),chainNodeSources:n=>n.sources,chainLayoutSourceHtml:s=>'<blockquote>'+s.quote+'</blockquote>',reportAnalyticalPriorities:()=>['材料甲','设备乙'].map((focus,index)=>({focus,scope:'industry',scopeLabel:'行业共性',opportunity_type:index?'planned_development':'constraint',reason:'有来源的分析',action:'先确认接口，再组织样品测试',comparison:'具备现有产品基础，尚需验证应用条件',sources:[{quote:'原句'}]}))};vm.createContext(c);vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend/shared/industry-demands.js'),'utf8')+'\n'+fn(source,'restoreActionItems'),c);
   const html=c.restoreActionItems();assert.equal((html.match(/class="industry-priority-card"/g)||[]).length,2);assert.match(html,/材料甲/);assert.match(html,/设备乙/);assert.equal((html.match(/>形成招商需求<\/button>/g)||[]).length,2);assert.equal((html.match(/data-demand-priority=/g)||[]).length,2);assert.match(html,/每条建议独立形成需求/);assert.doesNotMatch(html,/<button>提交<\/button>/);
   assert.match(html,/规划培育/);assert.match(html,/约束补链/);assert.match(html,/现有基础与条件/);assert.match(html,/推进路径/);assert.match(html,/先确认接口，再组织样品测试/);assert.match(html,/不表示本地存在现实供给缺口/);
-  c.reportAnalyticalPriorities=()=>[];assert.doesNotMatch(c.restoreActionItems(),/class="industry-priority-card"/);assert.match(c.restoreActionItems(),/尚未形成/);
+  assert.match(html,/自定义招商需求/);assert.match(html,/openDirectDemandComposer\(\{fromReport:true\}\)/);
+  c.reportAnalyticalPriorities=()=>[];const empty=c.restoreActionItems();assert.doesNotMatch(empty,/class="industry-priority-card"/);assert.match(empty,/尚未形成/);
+  assert.match(empty,/填写具体招商需求/);assert.match(empty,/所填诉求.*不作为报告结论/);assert.match(empty,/openDirectDemandComposer\(\{fromReport:true\}\)/);
+  assert.match(empty,/生成研判方向/);assert.match(empty,/refreshReportPriorities\(\)/);
+  c.REPORT_PRIORITY_UPDATES['p\u0000产业主题']={epoch:0,pending:true,message:'正在更新本方向'};
+  const pending=c.restoreActionItems();assert.match(pending,/disabled aria-busy="true"/);assert.match(pending,/正在更新本方向/);
+ });
+ test(side+' all four opportunity types use explicit labels and display collaboration limits outside actual-gap claims',()=>{
+  const c={cur:'p',PROJECTS:{p:{topic:'方向'}},REPORTSTATE:{p:{}},P:()=>c.PROJECTS.p,demandReportSnapshot:()=>({}),escapeChainText:String,chainNodeSources:n=>n.sources,chainLayoutSourceHtml:()=>'',industryDemandButtonHtml:()=>'<button>确认需求</button>'};
+  vm.createContext(c);vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend/shared/report-priorities.js'),'utf8')+'\n'+fn(source,'restoreActionItems'),c);
+  c.reportAnalyticalPriorities=()=>['constraint','planned_development','capability_collaboration','validation_collaboration'].map(opportunity_type=>({opportunity_type,scopeLabel:'原文范围',focus:'具体对象',comparison:'已有产品与应用条件',reason:'经审核的理由',action:'先核实接口再组织验证',sources:[]}));
+  const html=c.restoreActionItems();for(const label of ['约束补链','规划培育','产业协作','联合验证'])assert.match(html,new RegExp(label));
+  assert.match(html,/不表示已量产或已有采购订单/);assert.match(html,/不表示本地存在供给缺口/);
  });
 }
