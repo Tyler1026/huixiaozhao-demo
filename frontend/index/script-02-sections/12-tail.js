@@ -3958,7 +3958,7 @@ function kbWorkspaceRefresh(){
   var welcome=document.getElementById('kbWelcome');
   if(welcome)welcome.hidden=messages.some(function(m){return m.role==='user'||m.role==='ai'||m.role==='assistant';});
 }
-// Respond to reading gestures, never to streaming/replay or layout-generated scrolls.
+// Reading gestures may free up space; only the explicit toggle reopens the overview.
 function kbSetOverviewCollapsed(page,collapsed,manual){
   if(!page)return false;
   var cards=page.querySelector('#kbOverviewCards'),toggle=page.querySelector('#kbOverviewToggle');
@@ -3992,11 +3992,13 @@ function kbBindOverviewScroll(page){
   }
   function move(delta){
     if(!Number.isFinite(delta)||!delta)return;
+    // Upward reading and trackpad rebound must never reveal the cards.
+    if(delta<0){distance=0;lastAt=0;return;}
     var now=Date.now();
     if(now-lastAt>240||distance*delta<0)distance=0;
     lastAt=now;distance+=delta;
     if(Math.abs(distance)<48)return;
-    kbSetOverviewCollapsed(page,distance>0,false);distance=0;
+    kbSetOverviewCollapsed(page,true,false);distance=0;
   }
   page.addEventListener('wheel',function(e){
     if(e.ctrlKey||!allowed(e.target,false)||Math.abs(e.deltaX||0)>Math.abs(e.deltaY||0))return;
@@ -4017,9 +4019,8 @@ function kbBindOverviewScroll(page){
   ['touchend','touchcancel'].forEach(function(type){page.addEventListener(type,function(){touch=null;distance=0;},{passive:true});});
   page.addEventListener('keydown',function(e){
     if(e.altKey||e.ctrlKey||e.metaKey||!allowed(e.target,true))return;
-    var direct={PageDown:true,End:true,PageUp:false,Home:false};
-    if(Object.prototype.hasOwnProperty.call(direct,e.key))kbSetOverviewCollapsed(page,direct[e.key],false);
-    else if(e.key===' ')kbSetOverviewCollapsed(page,!e.shiftKey,false);
+    if(e.key==='PageDown'||e.key==='End'||(e.key===' '&&!e.shiftKey))kbSetOverviewCollapsed(page,true,false);
+    else if(e.key==='PageUp'||e.key==='Home'||(e.key===' '&&e.shiftKey))move(-1);
     else if(e.key==='ArrowDown'||e.key==='ArrowUp')move(e.key==='ArrowDown'?24:-24);
   });
   // Native scrollbar drags have a pointer intent; unrelated scroll events do not.
