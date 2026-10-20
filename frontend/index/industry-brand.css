@@ -1,0 +1,296 @@
+/* Qingxu / Industry research. Visual layer only: existing structure, widths,
+   scroll containers, report state, controls and reading order remain intact. */
+.industry-page {
+  --ind-ink:#253f32;
+  --ind-copy:#526358;
+  --ind-muted:#7c897b;
+  --ind-blue:#245e47;
+  --ind-line:#dee5d8;
+  --ind-surface:#f4f6ee;
+  --ind-brass:#9c8056;
+  background:#fffefa;
+}
+.industry-page .industry-header {
+  isolation:isolate;
+  overflow:hidden;
+  background:#fffefa;
+  border-bottom-color:#dce5d7;
+}
+.industry-page .industry-header::before {
+  content:"";
+  position:absolute;
+  inset:-65px -18px -75px 41%;
+  z-index:-1;
+  pointer-events:none;
+  background-image:var(--hxz-research-image,none);
+  background-size:cover;
+  background-position:center 54%;
+  opacity:.34;
+  filter:saturate(.46) contrast(.86);
+  -webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 42%,#000 72%,transparent 100%),linear-gradient(180deg,transparent 1%,#000 28%,#000 71%,transparent 99%);
+  mask-image:linear-gradient(90deg,transparent 0%,#000 42%,#000 72%,transparent 100%),linear-gradient(180deg,transparent 1%,#000 28%,#000 71%,transparent 99%);
+  -webkit-mask-composite:source-in;
+  mask-composite:intersect;
+}
+.industry-page .industry-header::after {
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:-2;
+  pointer-events:none;
+  background:radial-gradient(ellipse at 93% 50%,#dce6d7 0%,#edf1e466 36%,transparent 65%);
+}
+.industry-page .industry-kicker {color:#8c977f;font-weight:500;letter-spacing:2px}
+.industry-page .industry-heading {font-weight:500;letter-spacing:.6px;color:#294833}
+.industry-page .industry-header p {color:#52704c;letter-spacing:.2px}
+.industry-page .industry-header-mark {opacity:0;pointer-events:none}
+.industry-page .industry-readiness {background:#fbfcf6!important;border-color:#e2e8db!important}
+.industry-page .industry-readiness>div>div:first-child>span:first-child {color:#607456!important}
+.industry-page .industry-readiness>div>div:nth-child(2) {background:#e8edde!important}
+.industry-page .industry-readiness>div>div:nth-child(2)>div {background:#719174!important}
+.industry-page .industry-readiness>span {color:#87917c!important}
+.industry-page .industry-phase {background:#edf2e7;color:#67815b;border-color:#d5e0cc}
+.industry-page .industry-scroll {
+  background:radial-gradient(ellipse at 100% 0%,#e9efdf88,transparent 450px),#f4f6ef;
+  scrollbar-color:#c8d4c3 transparent;
+}
+.industry-page .industry-section-caption {color:#607656!important;font-weight:500!important}
+.industry-page .industry-section-caption::before {background:#8a9d76}
+
+/* Direction cards use one visual language, with different crops of the same
+   research composition. Imagery is behind the established content footprint. */
+.industry-page .industry-topic-card {
+  isolation:isolate;
+  overflow:hidden;
+  border-color:#d6e0ce!important;
+  background:#fffefa!important;
+  box-shadow:0 2px 5px #30462b04!important;
+  transition:border-color .18s,background-color .18s,box-shadow .18s!important;
+}
+.industry-page .industry-topic-card::before {
+  content:"";
+  position:absolute;
+  inset:0 0 0 37%;
+  z-index:-1;
+  pointer-events:none;
+  background-image:var(--hxz-research-image,none);
+  background-size:auto 180%;
+  background-position:73% 45%;
+  opacity:.17;
+  filter:saturate(.38) contrast(.82);
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 45%,transparent 100%),linear-gradient(180deg,transparent 0%,#000 26%,#000 68%,transparent 100%);
+  mask-image:linear-gradient(90deg,transparent,#000 45%,transparent 100%),linear-gradient(180deg,transparent 0%,#000 26%,#000 68%,transparent 100%);
+  -webkit-mask-composite:source-in;
+  mask-composite:intersect;
+}
+.industry-page .industry-topic-card:nth-child(3n+2)::before {background-position:34% 59%;opacity:.16}
+.industry-page .industry-topic-card:nth-child(3n)::before {background-position:90% 68%;filter:saturate(.2) sepia(.2);opacity:.14}
+.industry-page .industry-topic-card:hover {
+  transform:none!important;
+  border-color:#95ae8c!important;
+  background:#fcfdf8!important;
+  box-shadow:0 3px 10px #304b3310!important;
+}
+.industry-page .industry-topic-card.is-active {
+  border-color:#7e9c73!important;
+  background:#edf3e6!important;
+  box-shadow:inset 0 2px #71946e,0 2px 6px #304b3307!important;
+}
+.industry-page .industry-topic-card>span:not([data-del]):first-of-type {color:#63865c}
+.industry-page .industry-topic-card>span[style*="font-weight:700"] {color:#355438!important;font-weight:500!important}
+.industry-page .industry-topic-card>span:last-of-type {color:#7d8b71!important}
+.industry-page .industry-topic-card>span[data-del] {border-color:#dce4d4!important;background:#fbfcf6!important;color:#8b9a81!important}
+.industry-page .industry-topic-card>span[data-del]:hover {background:#f9efeb!important;color:#a66f5e!important}
+.industry-page .industry-topic-card>div:last-child {background:#688d63!important}
+.industry-page .industry-custom-topic input {
+  border-color:#d4dfcc!important;background:#fffefa;color:#4a6648!important;
+}
+.industry-page .industry-custom-topic input::placeholder {color:#99a38d}
+.industry-page .industry-custom-topic button,.industry-page .industry-readiness button {
+  background:#fffefa!important;border-color:#c8d8bf!important;color:#50734c!important;font-weight:500!important;
+}
+.industry-page .industry-custom-topic button:hover,.industry-page .industry-readiness button:hover {background:#eaf1e1!important;border-color:#a1ba97!important}
+.industry-page button:focus-visible,.industry-page input:focus-visible,.industry-page textarea:focus-visible,.industry-detail button:focus-visible {outline-color:#7a9e6f88!important}
+.industry-page input:focus,.industry-page textarea:focus {border-color:#819f75!important;box-shadow:0 0 0 3px #4c77400b}
+
+/* Report sheets retain a quiet, clear reading surface; tinted labels and the
+   brass index are reserved for hierarchy and evidence. */
+.industry-page .industry-report,.industry-page .industry-chain,.industry-page .industry-interview {
+  border-color:#d8e2cf!important;background:#fffefa!important;box-shadow:0 4px 18px #2d472905!important;
+}
+.industry-page .industry-report-head {border-color:#e3e9db!important;background:#fbfcf6!important}
+.industry-page .industry-report-title {color:#496d46!important;font-weight:500!important}
+.industry-page .industry-report-topic {color:#8c987e!important}
+.industry-page .industry-report-score {color:#8a7857!important;background:#f5f2e8!important;border-color:#e5deca}
+.industry-page .industry-report-head button {color:#657f56!important;background:#fffefa!important;border-color:#d6e1ca!important}
+.industry-page .industry-report-head button:hover {background:#eff4e8!important;border-color:#a4ba96!important}
+.industry-page .industry-prose {color:#526358!important;background:#fffefa}
+.industry-page .industry-prose h1 {font-family:"Songti SC","STSong",serif;color:#294732!important;font-weight:500!important;letter-spacing:.6px}
+.industry-page .industry-prose h2 {color:#365b3d!important;border-color:#e1e8d8!important;font-weight:500!important}
+.industry-page .industry-prose h3,.industry-page .industry-prose h4 {color:#486b48!important;font-weight:500!important}
+.industry-page .industry-prose strong {color:#3d6541;font-weight:600}
+.industry-page .industry-prose .num {color:#52784a!important}
+.industry-page .industry-prose li::marker {color:#a28b60}
+.industry-page .industry-prose blockquote {border-left-color:#abbc96!important;background:#f5f7ed!important;color:#768267!important}
+.industry-page .industry-prose hr {border-color:#e3e8da!important}
+.industry-page .industry-prose table {border-color:#dce4d2!important;background:#fffefa}
+.industry-page .industry-prose th {border-color:#dce4d2!important;background:#eff3e5!important;color:#5c7351!important;font-weight:500!important}
+.industry-page .industry-prose td {border-color:#e8edde!important;color:#5d6e55!important}
+.industry-page .industry-prose tbody tr:nth-child(even) {background:#fafbf5}
+.industry-page .industry-report-foot {background:#f7f9f0!important;border-color:#e4eadb!important;color:#8d977f!important}
+.industry-page .industry-history>div {border-color:#dce5d2!important;background:#fffefa!important}
+.industry-page .industry-history>div:first-child {color:#8b9980!important}
+.industry-page .industry-history>div:not(:first-child)>div:first-child {background:#fffefa!important}
+.industry-page .industry-history>div:not(:first-child)>div:first-child>span:nth-child(2) {background:#eef3e7!important;color:#82936c!important}
+.industry-page .industry-history>div:not(:first-child)>div:first-child>span:nth-child(3) {color:#647d59!important}
+.industry-page .industry-history button {background:#f6f9ef!important;border-color:#d5e1c8!important;color:#6b825b!important}
+.industry-page .industry-sources {color:#6b7d5e}
+.industry-page .industry-sources summary {border-color:#e1e8d8;color:#4e7148}
+.industry-page .industry-sources summary span,.industry-page .industry-sources>p,.industry-page .industry-source-date {color:#8a967c}
+.industry-page .industry-source-heading>span {color:#877449;background:#f2efdf}
+.industry-page .industry-source-heading a,.industry-page .industry-prose a {color:#527850;text-decoration-color:#a6bd98}
+.industry-page .industry-sources blockquote {background:#f5f7ed;border-color:#c4d3b2;color:#6d7b62}
+
+/* Original empty state, with depth from an edge-less wash instead of a boxed
+   illustration. No additional call to action or workflow is introduced. */
+.industry-page .industry-empty {
+  position:relative;isolation:isolate;overflow:hidden;
+  border:1px solid #dce5d3;background:#fffefa;
+}
+.industry-page .industry-empty::before {
+  content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;
+  background-image:var(--hxz-research-image,none);background-size:cover;background-position:center 56%;
+  opacity:.12;filter:saturate(.32) contrast(.85);
+  -webkit-mask-image:radial-gradient(ellipse at 64% 55%,#000 12%,transparent 72%);
+  mask-image:radial-gradient(ellipse at 64% 55%,#000 12%,transparent 72%);
+}
+.industry-page .industry-empty>div:first-child {color:#7d9470;opacity:1}
+.industry-page .industry-empty>div:first-child .client-brand-icon {width:31px;height:31px;stroke-width:1.35}
+.industry-page .industry-empty>div:nth-child(2) {color:#4d6c47!important;font-weight:500!important}
+.industry-page .industry-empty>div:nth-child(3) {color:#839475!important}
+.industry-page #topicCardGrid>div:not(.industry-topic-card) {border-color:#cddbc1!important;background:#f5f8ec!important;color:#627950}
+.industry-page #topicCardGrid>div:not(.industry-topic-card)>div:nth-child(2) {color:#4d6c47!important}
+.industry-page #topicCardGrid>div:not(.industry-topic-card)>div:nth-child(3) {color:#839475!important}
+.industry-page #topicCardGrid>div:not(.industry-topic-card) button {background:#365f43!important;color:#fffefa!important}
+
+/* Confirmation and interview controls keep their established affordances. */
+.industry-page .industry-confirm {border-color:#d9e3cf!important;background:#fffefa}
+.industry-page .industry-confirm-head {border-color:#e0e8d7!important;background:#f1f5e9!important}
+.industry-page .industry-confirm-head>div>div:first-child {color:#4b6e45!important;font-weight:500!important}
+.industry-page .industry-confirm-head>div>div:nth-child(2) {color:#899779!important}
+.industry-page .industry-confirm-head>div:last-child>span {color:#71875e!important}
+.industry-page .industry-confirm-head>div:last-child>div {background:#e1e9d7!important}
+.industry-page .industry-confirm-head>div:last-child>div>div {background:#87a377!important}
+.industry-page .industry-confirm-row {border-color:#dee6d5!important;background:#fffefa!important}
+.industry-page .industry-confirm-row.is-pending {border-left-color:#b4a078!important}
+.industry-page .industry-confirm-row.is-done {border-left-color:#8baa82!important;background:#fbfdf6!important}
+.industry-page .industry-confirm-row.is-pending>div:first-child>div:first-child>span {background:#f4f0e3!important;color:#9b845a!important}
+.industry-page .industry-confirm-text {color:#576b51!important}
+.industry-page .industry-confirm-actions {background:#f8faf2!important;border-color:#e5ebdc!important}
+.industry-page .industry-confirm-actions button,.industry-page .industry-confirm-row.is-done>button {border-color:#d1dec6!important;background:#fffefa!important;color:#6e845e!important}
+.industry-page .industry-confirm-actions button:first-child {background:#eaf2e1!important;border-color:#c9dbbc!important;color:#507744!important}
+.industry-page .industry-confirm-actions button:hover {border-color:#9cb68e!important;box-shadow:0 2px 5px #36552808!important}
+.industry-page .industry-confirm-edit textarea {border-color:#b9cea8!important;background:#fdfef9!important;color:#557049!important}
+.industry-page .industry-confirm-edit>div[onclick] {border-color:#c7d8ba!important;background:#f6f9ee!important;color:#889c75!important}
+.industry-page .industry-confirm-edit button {border-color:#d7e1ce!important;background:#f6f9ef!important;color:#6d815f!important}
+.industry-page .industry-confirm-edit button:first-child {background:#396347!important;border-color:#396347!important;color:#fffefa!important}
+.industry-page .industry-confirm-foot {background:#f8faf2!important;border-color:#e3ead9!important}
+.industry-page .industry-confirm-foot span {color:#839275!important}
+.industry-page .industry-confirm-foot strong {color:#a28a5b!important}
+.industry-page .industry-interview-head>div:first-child {border-color:#c7d7ba;background:#edf3e4!important;color:#5b7c4e!important}
+.industry-page .industry-interview-head>div:nth-child(2)>div:first-child {color:#4c6d46!important;font-weight:500!important}
+.industry-page .industry-interview-head>div:nth-child(2)>div:nth-child(2) {color:#909c83!important}
+.industry-page .industry-interview-head>div[style*="width:120px"] {background:#e7eddf!important}
+.industry-page .industry-interview-head>div[style*="width:120px"]>div {background:#8ca67b!important}
+.industry-page .industry-interview-answers>div {border-color:#cddcc1;background:#f7f9f1!important;color:#6e835e}
+.industry-page .industry-interview-answers>div>div:first-child {color:#909c82!important}
+.industry-page .industry-interview-answers>div>div:last-child {color:#667e57!important}
+.industry-page .industry-interview-question {background:#fbfcf6!important;border-color:#dfe7d4!important}
+.industry-page .industry-interview-question>div {color:#4f7046!important}
+.industry-page .industry-interview-question textarea {background:#fffefa;border-color:#d2dfc6!important;color:#5d7751}
+.industry-page .industry-interview-question textarea::placeholder {color:#9ba78e}
+.industry-page .industry-interview-actions button {background:#f8faf3!important;border-color:#d9e3cf!important;color:#788b69!important}
+.industry-page .industry-interview-actions button[onclick="interviewNext()"],.industry-page .industry-interview-actions button[onclick="interviewDone()"] {background:#396347!important;border-color:#396347!important;color:#fffefa!important}
+
+/* Chain assessment retains its meaningful green / amber / terracotta states. */
+.industry-page .industry-chain-head {background:#fbfcf6!important;border-color:#e3ead9}
+.industry-page .industry-chain-head>span {color:#789168}
+.industry-page .industry-chain-head>div>div:first-child {color:#4d7048!important;font-weight:500!important}
+.industry-page .industry-chain-head>div>div:nth-child(2) {color:#8e9a80!important}
+.industry-page .industry-chain-body {background:#f6f9ef!important}
+.industry-page .industry-chain-label {background:#edf3e3!important;border-color:#d8e3ca!important}
+.industry-page .industry-chain-label>span:first-child {color:#648052!important}
+.industry-page .industry-chain-label>span:last-child:not(:first-child) {color:#92a47e!important}
+.industry-page .industry-chain-nodes {scrollbar-color:#c8d7ba transparent}
+.industry-page .industry-chain-node {background:#fffefa!important;border-color:#dbe5cf!important}
+.industry-page .industry-chain-node>div:nth-child(2):not(.chain-assessment-tags) {color:#516f47!important;font-weight:500!important}
+.industry-page .industry-chain-node>div[style*="border-top"] {border-color:#e4ebdb!important}
+.industry-page .industry-chain-node>div[style*="border-top"]>div:first-child {color:#8f9d80!important}
+.industry-page .industry-chain-node>div[style*="border-top"] span {border-color:#dce6d1!important;color:#7a8f67!important}
+.industry-page .industry-chain-node a {color:#708e5f!important}
+.industry-page .industry-chain-node .chain-material-status {color:#89997c!important}
+.industry-page .industry-chain-node.judgment-strong {background:#f4f9ef!important;border-color:#bdcfb3!important;border-top-color:#8aaa79!important}
+.industry-page .industry-chain-node.judgment-mid {background:#fcfaef!important;border-color:#e2d7b5!important;border-top-color:#bba069!important}
+.industry-page .industry-chain-node.judgment-weak {background:#fcf5ef!important;border-color:#e7cec2!important;border-top-color:#c29378!important}
+.industry-page .industry-chain-node.judgment-unknown {background:#fffefa!important;border-color:#dce4d4!important;border-top-color:#b9c5aa!important}
+.industry-page .chain-priority-panel {background:#f6f9ef!important;border-color:#e1e8d7!important}
+.industry-page .chain-priority-panel .chain-assessment-details>summary,.industry-page .chain-priority-panel .chain-assessment-criteria>summary,.industry-page .chain-priority-panel .chain-factual-dimensions>summary {color:#7e916b}
+.industry-page .industry-chain-sources summary {color:#658455}
+
+/* Bottom action bar and right-hand study notes. */
+.industry-page .industry-bottom-bar {background:#fffefa!important;border-color:#dce5d2!important;box-shadow:0 -3px 15px #35512d04}
+.industry-page .industry-bottom-bar>div {color:#95805b!important;background:#f6f2e6!important;border-color:#e4d9bf!important}
+.industry-page .industry-bottom-bar button {background:#f7f9f1!important;border-color:#d3dfc7!important;color:#6b805b!important;font-weight:500!important}
+.industry-page .industry-bottom-bar button[onclick="viewCurrentReport()"],.industry-page .industry-bottom-bar button[onclick="triggerReport(2)"],.industry-page .industry-bottom-bar #generateBtn {
+  background:#2f6244!important;color:#fffefa!important;border-color:#2f6244!important;
+}
+.industry-page .industry-bottom-bar button[onclick="startAiInterview()"]:not(#generateBtn) {background:#f7f9f1!important;border-color:#cfddc2!important;color:#6b805b!important}
+.industry-page .industry-bottom-bar button[onclick="downloadReport('full')"] {background:#eef4e5!important;border-color:#b8cfa8!important;color:#608150!important}
+.industry-page .industry-bottom-bar button:hover:not(:disabled) {border-color:#91ad7f!important;filter:brightness(.98)}
+.industry-page .industry-bottom-bar button:disabled {background:#eff2e9!important;border-color:#dee5d4!important;color:#97a28a!important}
+.industry-page .industry-demand {border-color:#d1dfc4!important;background:#edf4e4!important;color:#5b7b4b}
+.industry-page .industry-demand p {color:#80936b}
+.industry-page .industry-demand button {background:#fffefa;border-color:#bed2ad;color:#5d804b}
+.industry-page .industry-run-banner {background:#eef4e5;border-color:#d4e2c7;color:#597947}
+.industry-page .industry-run-banner strong {color:#466d3b}
+.industry-page .industry-run-spinner,.industry-detail .industry-run-spinner {border-color:#cfdec2;border-top-color:#65894f}
+.industry-page .industry-report.is-generating>div:first-child {background:#f3f6e9!important;border-color:#dce6ce!important}
+.industry-page .industry-report.is-generating>div:first-child>div:last-child {color:#71875d!important}
+.industry-page .industry-bottom-bar>.industry-bottom-progress {background:#f0f5e7!important;border-color:#d4e2c6!important;color:#6b8456!important}
+.industry-detail {background:#fffefa;color:#647b59}
+.industry-detail .detail-header {background:linear-gradient(130deg,#fffefa 35%,#eef3e5);border-color:#e2e9d8}
+.industry-detail .detail-header h2 {color:#45673f;font-weight:500;letter-spacing:.3px}
+.industry-detail .detail-header .eyebrow {color:#939e83}
+.industry-detail .detail-header p {color:#849775}
+.industry-detail .detail-block {border-color:#e4ebdc}
+.industry-detail .detail-block h3 {color:#72885f;font-weight:500;letter-spacing:.6px}
+.industry-detail .detail-block p,.industry-detail .detail-copy {color:#839475}
+.industry-detail .detail-block .check-list li,.industry-detail .source-list li {color:#6c815d;font-size:11px;line-height:1.9}
+.industry-detail .detail-block>.source-list small {color:#99a38c!important}
+.industry-detail .detail-block>div[style*="font-size:12.5px"] {color:#929e83!important}
+.industry-detail .outline-list li {color:#768b65}
+.industry-detail .outline-list li::before {border-color:#d4e0c8;background:#f5f8ee;color:#97a980}
+.industry-detail .fact-with-icon>i {color:#819e6e}
+.industry-detail .fact-with-icon strong {color:#647f53}
+.industry-detail .fact-with-icon span {color:#90a17f}
+.industry-detail .info-callout {border-color:#dce7d0;background:#f5f8ee;color:#7f9370}
+.industry-detail .warning-callout {border-color:#e7ddc5;background:#f8f5ea;color:#978662}
+.industry-detail .warning-callout strong {color:#90784c}
+.industry-detail .boundary-note {background:#f4f7ed;border-color:#e2e9d8;color:#8a987b;font-size:10px;line-height:1.9}
+.industry-detail .detail-actions-stack {border-color:#e1e9d7}
+.industry-detail .primary-button {background:#386347;border-color:#386347}
+.industry-detail .secondary-button {background:#f4f8ec;border-color:#d5e1c8;color:#718861}
+.industry-detail .detail-block button {background:#f0f5e7!important;border-color:#c5d8b6!important;color:#668451!important;font-weight:500!important}
+.industry-detail .detail-block button:hover {background:#e7f0db!important;border-color:#9ebb88!important}
+.industry-detail .detail-actions-stack small {color:#9ba68d}
+.industry-detail .industry-detail-progress {color:#67834f}
+.industry-detail .industry-detail-progress p {color:#849875!important}
+
+@media(max-width:767px) {
+  .industry-page .industry-header::before {inset:-30px -20px -45px 28%;opacity:.25}
+  .industry-page .industry-topic-card::before {opacity:.12}
+  .industry-page .industry-empty::before {opacity:.09}
+}
+@media(prefers-reduced-motion:reduce) {
+  .industry-page .industry-topic-card {transition:none!important}
+}

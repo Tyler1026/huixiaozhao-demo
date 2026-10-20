@@ -3569,7 +3569,7 @@ function homePage(p){
 
 
   return '<div class="page industry-page">'+
-    '<header class="industry-header"><div><span class="industry-kicker">INDUSTRY RESEARCH</span><h1 class="industry-heading">产业分析</h1><p>以城市智库为基础，梳理产业方向与招引机会</p></div><div class="industry-header-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></div></header>'+
+    '<header class="industry-header"><div><span class="industry-kicker">INDUSTRY RESEARCH</span><h1 class="industry-heading">产业分析</h1><p>从产业基础，找到招引方向。</p></div><div class="industry-header-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></div></header>'+
     reliabilityBanner+
     '<div id="industryRunHost">'+reportRunBanner(p)+'</div>'+
     '<div class="conversation-scroll industry-scroll" style="padding:16px 22px 0">'+
@@ -4053,7 +4053,7 @@ function kbPage(p){
   var topics=(p.kb||[]).map(function(k,i){
     return '<article class="kb-topic-card" data-kb-topic="'+i+'">'+
       '<button type="button" class="kb-topic-material" onclick="kbClosePanels();kbDetail('+i+')" aria-label="查看'+escape(k.t)+'资料">'+
-      '<span class="kb-topic-number" aria-hidden="true">'+String(i+1).padStart(2,'0')+'</span><span class="kb-topic-title">'+escape(k.t)+'</span>'+
+      '<img class="kb-topic-art" src="'+HXZ_CARD_ART[i]+'" alt="" aria-hidden="true"><span class="kb-topic-number" aria-hidden="true">'+String(i+1).padStart(2,'0')+'</span><span class="kb-topic-title">'+escape(k.t)+'</span>'+
       '<p>'+escape(topicDescriptions[k.t]||'查阅本板块已有资料与补充材料')+'</p><span class="kb-topic-read">查看资料 <span aria-hidden="true">↗</span></span></button>'+
       '<button type="button" class="kb-topic-question" onclick="askAboutKb('+i+')" aria-label="围绕'+escape(k.t)+'提问">围绕此板块提问 <span aria-hidden="true">→</span></button></article>';
   }).join('');
@@ -4062,7 +4062,7 @@ function kbPage(p){
     '<nav class="kb-toolbar" aria-label="智库工具"><button type="button" id="kbToggle-topics" class="kb-nav-toggle" aria-controls="kbTopicsPanel" aria-expanded="false" onclick="kbTogglePanel(\'topics\')">历史对话</button>'+
     '<button type="button" onclick="uploadHint()">上传材料</button><button type="button" onclick="openMemoryBank()">记忆库</button><button type="button" onclick="showDownloadReport()">下载报告</button>'+
     '<button type="button" id="kbToggle-sources" class="kb-source-toggle" aria-controls="kbSourcesPanel" aria-expanded="false" onclick="kbTogglePanel(\'sources\')">回答依据</button></nav></header>'+
-    '<section class="kb-topic-overview" aria-labelledby="kbOverviewTitle"><div class="kb-overview-heading"><div><h2 id="kbOverviewTitle">城市知识全景</h2><p>从重点板块查阅资料，围绕具体问题深入分析。</p></div><div class="kb-overview-actions"><button type="button" class="kb-overview-toggle" id="kbOverviewToggle" aria-controls="kbOverviewCards" aria-expanded="true" onclick="kbToggleOverview()">收起板块 ↑</button><button type="button" class="kb-global-scope" onclick="clearKbActiveTopic();kbClosePanels()">全库提问 <span aria-hidden="true">↗</span></button></div></div><div id="kbOverviewCards" class="kb-overview-body" aria-hidden="false"><div class="kb-overview-clip"><div class="kb-topic-grid">'+topics+'</div></div></div></section>'+
+    '<section class="kb-topic-overview" aria-labelledby="kbOverviewTitle"><div class="kb-overview-heading"><div><h2 id="kbOverviewTitle">城市知识全景</h2><p><span class="brand-slogan-lead">读懂城市，</span><span class="brand-slogan-result">让招引更有方向。</span></p></div><div class="kb-overview-actions"><button type="button" class="kb-overview-toggle" id="kbOverviewToggle" aria-controls="kbOverviewCards" aria-expanded="true" onclick="kbToggleOverview()">收起板块 ↑</button><button type="button" class="kb-global-scope" onclick="clearKbActiveTopic();kbClosePanels()">全库提问 <span aria-hidden="true">↗</span></button></div></div><div id="kbOverviewCards" class="kb-overview-body" aria-hidden="false"><div class="kb-overview-clip"><div class="kb-topic-grid">'+topics+'</div></div></div></section>'+
     '<div class="kb-workbench-grid"><button class="kb-panel-backdrop" aria-label="关闭侧栏" onclick="kbClosePanels()"></button>'+
     '<aside id="kbTopicsPanel" class="kb-topics-panel" aria-label="历史会话"><div class="kb-pane-heading"><h2>历史对话</h2><button id="kbTopicsClose" class="kb-panel-close" type="button" onclick="kbClosePanels()" aria-label="关闭历史对话">×</button></div>'+
     '<button type="button" class="kb-new-conversation" onclick="kbNewSession(cur);kbClosePanels()"><span aria-hidden="true">＋</span> 新对话</button>'+
@@ -4070,7 +4070,7 @@ function kbPage(p){
     '</aside>'+
     '<section class="kb-chat-panel" aria-label="城市智库对话"><div id="kbSessionBar"></div>'+
     '<div class="knowledge-scroll" id="kbScroll" onscroll="kbToggleTopBtn()"><section id="kbWelcome" class="kb-welcome">'+
-    '<h2>围绕城市资料，继续深入分析</h2><p>选择上方板块提问，或直接输入你关心的问题。</p></section>'+
+    '<h2>把城市资料，变成研判依据。</h2><p>从上方板块查阅材料，或输入你关心的城市招商问题。</p></section>'+
     '<div id="kbConvWrap"><div id="kbConv" role="log" aria-label="问答记录" aria-live="polite"></div></div></div>'+kbComposer()+
     '<button type="button" id="kbTopBtn" onclick="kbScrollTop()" title="回到对话顶部" aria-label="回到对话顶部">↑</button></section>'+
     '<aside id="kbSourcesPanel" class="kb-sources-panel" aria-label="当前回答的依据"><div class="kb-pane-heading"><h2 id="kbSourcesTitle">回答依据</h2><button id="kbSourcesClose" class="kb-panel-close" type="button" onclick="kbTogglePanel(\'sources\')" aria-label="关闭回答依据">×</button></div>'+
@@ -4079,9 +4079,9 @@ function kbPage(p){
 function settingsPage(p){
   return '<div class="page">'+
     '<div class="page-header"><div><span class="eyebrow">PERSONALIZATION</span><h1>个人与提醒设置</h1>'+
-    '<p>调整个性化范围，但不改变确认关口与资源核验责任。</p></div></div>'+
+    '<p>让协作，更合你的节奏。</p></div></div>'+
     '<div class="settings-scroll">'+authWorkspaceBlock('settings-section')+
-    '<div class="settings-section"><h2>账号身份（由系统开通，不可修改）</h2>'+
+    '<div class="settings-section"><h2>账号身份<span class="settings-readonly-badge">系统开通 · 只读</span></h2>'+
       '<div class="form-grid">'+
       '<label>所属单位<input value="'+_authEscape(p.org)+'" disabled></label>'+
       '<label>姓名 / 角色<input value="'+_authEscape(p.who)+' / 招商干部" disabled></label>'+
@@ -4089,7 +4089,7 @@ function settingsPage(p){
       '<label>数据权限<input value="仅限 '+_authEscape(p.city)+' 城市智库" disabled></label></div>'+
       '<div class="boundary-note" style="margin-top:14px"><i class="i">🔒</i>账号的地区与身份在开通时绑定，用户不可自行更改；如需变更请联系系统管理员。</div></div>'+
     onboardingSettingsSection(p)+
-    '<div class="settings-section"><h2>提醒偏好（可自行调整）</h2>'+
+    '<div class="settings-section"><h2>提醒偏好<span class="settings-editable-badge">可自行调整</span></h2>'+
       '<div class="toggle-row"><span><strong>状态变化通知</strong><small>需求进度更新时提醒我</small></span><input type="checkbox" checked></div>'+
       '<div class="toggle-row"><span><strong>超时提醒</strong><small>3 个工作日无更新时提醒</small></span><input type="checkbox" checked></div>'+
       '<div class="toggle-row"><span><strong>每日摘要</strong><small>每天 09:00 汇总进行中事项</small></span><input type="checkbox" checked></div>'+

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -17,3 +18,11 @@ class FrontendBuildTests(unittest.TestCase):
         for page in ('index','ops'):
             self.assertTrue(list((ROOT/'frontend'/page).glob('*.js')))
             self.assertTrue(list((ROOT/'frontend'/page).glob('*.css')))
+    def test_client_brand_adapter_runs_outside_external_script_tags(self):
+        page=(ROOT/'index.html').read_text()
+        scripts=re.findall(r'<script\b([^>]*)>(.*?)</script\s*>',page,re.S|re.I)
+        inline='\n'.join(body for attributes,body in scripts if not re.search(r'\bsrc\s*=',attributes,re.I))
+        self.assertIn('window.hxzClientIcons = Object.freeze',inline)
+        self.assertIn('var HXZ_CARD_ART = Object.freeze',inline)
+        self.assertNotIn('const previewState',page)
+        self.assertNotIn('Local design fixture',page)
