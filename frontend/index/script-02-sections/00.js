@@ -28,13 +28,13 @@ function viewCurrentReport(){
   setReportAreaHtml(area,
     '<div class="industry-report" style="border-radius:14px;border:1.5px solid #bfdbfe;overflow:hidden;margin-bottom:8px">'+
       '<div class="industry-report-head" style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
-        '<span class="industry-report-title" style="font-size:13px;font-weight:700;color:#1d4ed8">📊 产业分析报告（当前正文）</span>'+
+        '<span class="industry-report-title" style="font-size:13px;font-weight:700;color:#1d4ed8">📊 '+(typeof reportPublicationLabel==='function'?reportPublicationLabel(context,'产业分析报告（当前正文）'):'产业分析报告（当前正文）')+'</span>'+
         '<span class="industry-report-topic" style="font-size:11.5px;color:#8492a6">'+context.topic.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>'+
         '<span class="industry-report-score" style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f0fdf4;color:#166534">'+topicScoreDisplay(context.topic)+'</span>'+
         '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
       '</div>'+
       '<div class="industry-prose" style="padding:18px 20px;font-size:13px;line-height:1.85;color:#1e293b">'+
-        reportMdToHtml(context.text)+
+        reportMdToHtml(typeof reportPublicationForContext==='function'?reportPublicationForContext(context):context.text)+
       '</div>'+
       (typeof reportResearchSourcesHtml==='function'?reportResearchSourcesHtml(context.project,context.key):'')+
       '<div class="industry-report-foot" style="padding:10px 16px;background:#f9fafb;border-top:1px solid #f0f4ff;font-size:11px;color:#9aa5b5">'+
@@ -74,7 +74,8 @@ function reportMdToHtml(md){
     s=s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,function(all,label,url){
       if(/[<>"'\\]/.test(url)||/@/.test(url.split('/').slice(0,3).join('/')))return all;
       var token='\u0000HXLINK'+links.length+'\u0000';
-      links.push('<a href="'+esc(url).replace(/"/g,'&quot;')+'" target="_blank" rel="noopener noreferrer">'+esc(label)+'</a>');return token;
+      var anchor='<a href="'+esc(url).replace(/"/g,'&quot;')+'" target="_blank" rel="noopener noreferrer">'+(/^\d+$/.test(label)?'['+esc(label)+']':esc(label))+'</a>';
+      links.push(/^\d+$/.test(label)?'<sup class="report-citation">'+anchor+'</sup>':anchor);return token;
     });
     s=esc(s).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
     // 关键数据高亮
@@ -172,6 +173,7 @@ function buildReportBrief(text){
   function category(title){
     var name=String(title||'').replace(/^\s*(?:[一二三四五六七八九十]+[、．.]|\d+(?:\.\d+)*[.、．)]?)\s*/,'').replace(/^附[：:]\s*/,'').trim();
     if(/^(?:本报告的)?证据边界声明|^来源限制|^时效性(?:与来源限制|提示)|^原文的整体限制/.test(name))return 'limits';
+    if(/^(?:参考文献|参考资料|引用文献)$/.test(name))return 'references';
     if(/^(?:城市概况|区域基本盘|经济概况|经济运行|人口|财政)|产业总体定位$/.test(name))return 'city';
     if(/^(?:政策工具适配性|补链优先级清单|待确认事项|待核实事项汇总|核查事项|优先级最高核查项|行动与待核事项|季度.*行动|全年行动)/.test(name))return 'action';
     if(/^(?:可参照的)?政策(?:工具|意见|$)|^(?:区级|本地|国家层面)政策工具|^(?:产业政策|招商政策|支持政策|政策支持)/.test(name))return 'policy';
@@ -281,6 +283,8 @@ function buildReportBrief(text){
   });});
   if(remaining.length){if(!limits.length)chunks.push('## 原文的整体限制');remaining.forEach(function(row){used[row.number]=true;chunks.push('**原文第 '+row.number+' 段**\n'+row.text);});}
   if(!Object.keys(used).length&&ordinal){chunks.push('## 正文摘录');sections.forEach(addSection);}
+  var references=sections.filter(function(section){return section.group==='references'&&section.paragraphs.length;});
+  references.forEach(addSection);
   return chunks.join('\n\n');
 }
 
@@ -386,14 +390,16 @@ function downloadReportPDF(mode){
   if(!context){toast('当前方向暂无报告，请先完成产业分析');return;}
   function esc(value){return String(value==null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
   var rs=context.state, city=context.city, topic=context.topic;
-  var kind=mode==='short'?'快速简报':'研判报告';
+  var kind=mode==='short'?'快速简报':(typeof reportPublicationLabel==='function'?reportPublicationLabel(context,'研判报告'):'研判报告');
   var date=rs.ts?new Date(rs.ts).toLocaleDateString('zh-CN'):'未记录';
   var status=typeof topicScoreDisplay==='function'?topicScoreDisplay(topic):'内容待核验';
   var isLegacy=!nativeReportState(topic)&&!(rs.evidenceStatusByTopic&&rs.evidenceStatusByTopic[topic]==='unreviewed');
   var statusHtml=isLegacy&&typeof rs.score==='number'&&isFinite(rs.score)?'研判置信度<b>'+rs.score+'%</b>':esc(status);
-  var sources=reportExportSourceRecords(context);
+  var published=typeof reportPublicationPhase==='function'&&reportPublicationPhase(context)>=2;
+  var sources=published?[]:reportExportSourceRecords(context);
   var sourceHeading=typeof reportExportSourceHeading==='function'?reportExportSourceHeading(context):'来源索引';
-  var body=mode==='short'?buildReportBrief(context.text):context.text;
+  var publication=typeof reportPublicationForContext==='function'?reportPublicationForContext(context):context.text;
+  var body=mode==='short'?buildReportBrief(publication):publication;
   var html='<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>'+esc(city+' · '+kind)+'</title><style>'+
     '@page{size:A4;margin:16mm 17mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
     'body{font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif;color:#1e293b;line-height:1.75;font-size:11px;margin:0;overflow-wrap:anywhere}'+
@@ -405,8 +411,8 @@ function downloadReportPDF(mode){
     '.report-end{break-inside:auto;page-break-inside:auto;margin-top:6px;padding-top:4px;border-top:1px solid #d8e0ed;color:#667590;font-size:9px}.report-end p{margin:0;orphans:1;widows:1}'+
     '</style></head><body><header class="cover"><div class="brand">慧小招 · 招商研判</div><h1>'+esc(city)+' · '+kind+'</h1><div class="subtitle">'+esc(topic)+'</div><div class="meta">生成时间：'+esc(date)+' · '+statusHtml+'</div><p class="meta">'+(mode==='short'?'现有正文摘录，保留原文条件与不确定性。':'当前方向已保存正文；原始研究文件请从报告文件入口下载。')+'</p></header>'+
     '<main>'+reportMdToHtml(body)+'</main>'+
-    (sources.length?'<section class="source-list"><h2>'+esc(sourceHeading)+'</h2><p class="source-items">'+sources.map(function(source){return '<span class="source-item">'+esc(source.kind)+'：'+(/^https?:\/\//.test(source.value)?'<a href="'+esc(source.value)+'">'+esc(source.value)+'</a>':esc(source.value))+'</span>';}).join('； ')+'</p></section>':'<p class="source-list">未保存独立来源索引，请逐项核对正文中的来源说明。</p>')+
-    '<footer class="report-end"><p>本报告为 AI 辅助研判；待核、推断、政策有效期和适用条件仍需逐项确认。 · 慧小招 · '+esc(city)+' · '+esc(date)+'</p></footer></body></html>';
+    (sources.length?'<section class="source-list"><h2>'+esc(sourceHeading)+'</h2><p class="source-items">'+sources.map(function(source){return '<span class="source-item">'+esc(source.kind)+'：'+(/^https?:\/\//.test(source.value)?'<a href="'+esc(source.value)+'">'+esc(source.value)+'</a>':esc(source.value))+'</span>';}).join('； ')+'</p></section>':published?'':'<p class="source-list">未保存独立来源索引，请逐项核对正文中的来源说明。</p>')+
+    '<footer class="report-end"><p>'+(published?'':'本报告为 AI 辅助研判；待核、推断、政策有效期和适用条件仍需逐项确认。 · ')+'慧小招 · '+esc(city)+' · '+esc(date)+'</p></footer></body></html>';
   printReportDocument(html);
 }
 
@@ -414,12 +420,13 @@ function downloadReport(mode){return downloadReportPDF(mode);}
 
 function downloadReportTxt(mode){
   var context=reportExportContext();if(!context){toast('当前方向暂无报告');return;}
-  var kind=mode==='short'?'快速简报':'研判报告';
-  var text=mode==='short'?buildReportBrief(context.text):context.text;
+  var kind=mode==='short'?'快速简报':(typeof reportPublicationLabel==='function'?reportPublicationLabel(context,'研判报告'):'研判报告');
+  var published=typeof reportPublicationPhase==='function'&&reportPublicationPhase(context)>=2;
+  var publication=typeof reportPublicationForContext==='function'?reportPublicationForContext(context):context.text;
+  var text=mode==='short'?buildReportBrief(publication):publication;
   var content=[context.city+' · '+context.topic+' · '+kind,
     '生成时间：'+(context.ts?new Date(context.ts).toLocaleDateString('zh-CN'):'未记录'),
-    (!nativeReportState(context.topic)&&!(context.state.evidenceStatusByTopic&&context.state.evidenceStatusByTopic[context.topic]==='unreviewed')&&typeof context.state.score==='number')?'置信度：'+context.state.score+'%':(typeof topicScoreDisplay==='function'?topicScoreDisplay(context.topic):'内容待核验'),'',text,'',
-    (typeof reportExportSourceHeading==='function'?reportExportSourceHeading(context):'来源索引')+'：'].concat(reportExportSourceRecords(context).map(function(source){return source.kind+'：'+source.value;})).concat([
+    (!nativeReportState(context.topic)&&!(context.state.evidenceStatusByTopic&&context.state.evidenceStatusByTopic[context.topic]==='unreviewed')&&typeof context.state.score==='number')?'置信度：'+context.state.score+'%':(typeof topicScoreDisplay==='function'?topicScoreDisplay(context.topic):'内容待核验'),'',text,''].concat(published?[]:[(typeof reportExportSourceHeading==='function'?reportExportSourceHeading(context):'来源索引')+'：'].concat(reportExportSourceRecords(context).map(function(source){return source.kind+'：'+source.value;}))).concat(published?[]:[
     '', '本文件来自当前方向已保存正文，待核结论与政策条件继续适用。原始研究文件请从报告文件入口下载。']).join('\n');
   var filename=context.city+'_'+context.topic+'_'+kind+'.txt';
   var blob=new Blob([content],{type:'text/plain;charset=utf-8'}),url=URL.createObjectURL(blob);

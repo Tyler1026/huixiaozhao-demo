@@ -42,6 +42,7 @@ function environment(reply = response(fullText), implementation = source) {
     nativeReportState() {return null;},
   };
   vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.join(root,'frontend/shared/report-publication.js'),'utf8'),context);
   const shared=fs.readFileSync(path.join(root,'frontend/index/script-02-sections/12-part-00.js'),'utf8');
   vm.runInContext(declaration('savedEvidenceIdentity',shared),context);
   const added=['reportMaterialIdentity','reportClientFingerprint','reportJobForTopic','reportRunBanner','refreshReportRunUi','reportStreamMetadataEvent','reportStateStamp','reportTopicStamp','topicOperationStamp','touchTopicPending'];
@@ -90,6 +91,38 @@ test('successful full generation sends exact identity, preserves native receipt 
   assert.equal(c.REPORTSTATE.p.scoreByTopic['核电配套'], null);
   assert.equal(c.REPORTSTATE.p.evidenceStatusByTopic['核电配套'], 'unreviewed');
   assert.equal(c.window._reportGenerating, false);
+});
+
+for(const app of ['index','ops'])test(app+' limited composition preserves the prior reviewed report and retains the new text separately',async()=>{
+  const implementation=fs.readFileSync(path.join(root,'frontend',app,app==='index'?'script-02-sections':'script-03-sections','12-tail.js'),'utf8');
+  const reply={ok:true,text:async()=>[
+    {type:'research.complete',analysis:{composition:{status:'limited',diagnostics:['资料支撑不足']}}},
+    {choices:[{delta:{content:fullText}}]},
+    {choices:[{delta:{},finish_reason:'stop'}]}
+  ].map(row=>'data: '+JSON.stringify(row)).join('\n\n')+'\n\ndata: [DONE]'};
+  const {c,events}=environment(reply,implementation),state=c.REPORTSTATE.p,topic='核电配套';
+  const previous='此前通过成文审稿的报告';state.aiReportByTopic[topic]=previous;
+  state.researchByTopic={[topic]:{topic,reportText:previous,analysis:{composition:{status:'reviewed'}}}};
+  state.userGeneratedTopics={[topic]:true};
+  const before=JSON.stringify(state.researchByTopic);await c.triggerReport(2);
+  assert.equal(state.aiReportByTopic[topic],previous);assert.equal(JSON.stringify(state.researchByTopic),before);
+  assert.equal(state.partialByTopic[topic].text,fullText);assert.equal(state.partialByTopic[topic].status,'incomplete');
+  assert.equal(state.partialByTopic[topic].metadata.analysis.composition.status,'limited');
+  assert.match(events.toasts.at(-1),/阶段性研判.*历史中查看/);
+});
+
+test('a reviewed archive also keeps a limited result out of the current draft',async()=>{
+  const reply={ok:true,text:async()=>[
+    {type:'research.complete',analysis:{composition:{status:'limited'}}},
+    {choices:[{delta:{content:fullText}}]},{choices:[{delta:{},finish_reason:'stop'}]}
+  ].map(row=>'data: '+JSON.stringify(row)).join('\n\n')+'\n\ndata: [DONE]'};
+  const {c}=environment(reply),topic='核电配套';
+  c.REPORTSTATE.p.aiReportByTopic[topic]='本轮草稿';
+  c.REPORT_HISTORY={p:[{topic,text:'之前的已审稿报告',phase:2,composition:{status:'reviewed'}}]};
+  await c.triggerReport(2);
+  assert.equal(c.REPORTSTATE.p.aiReportByTopic[topic],'本轮草稿');
+  assert.equal(c.REPORTSTATE.p.partialByTopic[topic].text,fullText);
+  assert.equal(c.REPORT_HISTORY.p[0].text,'之前的已审稿报告');
 });
 
 test('completion waits for acknowledged cloud save after streaming finishes', async () => {
@@ -391,7 +424,7 @@ test('busy view replaces stale failure and generation actions with status and a 
   const html=c.reportBottomBarInner(c.PROJECTS.p);
   assert.match(html,/正在检索来源/);assert.match(html,/disabled aria-busy="true"/);
   assert.doesNotMatch(html,/上次生成未完成|onclick="triggerReport|待确认事项已完成/);
-  assert.match(c.reportRunBanner(c.PROJECTS.p),/完整报告生成中/);
+  assert.match(c.reportRunBanner(c.PROJECTS.p),/产业研判生成中/);
 });
 
 test('sources panel binds to the exact report and escapes untrusted fields and credential URLs',()=>{

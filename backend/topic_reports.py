@@ -13,6 +13,7 @@ import re
 import hashlib
 from urllib.parse import urlsplit
 from .report_analysis import company_profile, analytical_priority, policy_context, review_priorities, priority_feedback
+from .topic_composition import compose_report
 
 
 class TopicReportError(ValueError):
@@ -261,12 +262,168 @@ def _retry_selection(raw, plan, context, research, phase, complete, system, prom
     return plan,diagnostics
 
 
+def _render_final_report(plan, context, research, catalog, used):
+    """Publish evidence and recommendations, keeping workflow state out of prose.
+
+    A bibliography entry identifies a document, not an excerpt or independent
+    verification. Several preserved evidence records may share one citation.
+    """
+    documents, labels = {}, {}
+    for sid in used:
+        row = catalog[sid]
+        # Fragments locate passages inside the same original document.
+        document = row['url'].split('#', 1)[0]
+        if document not in documents:
+            documents[document] = (str(len(documents) + 1), row)
+        labels[sid] = documents[document][0]
+
+    def link(sid):
+        url = catalog[sid]['url'].replace(')', '%29').replace('(', '%28')
+        return '['+labels[sid]+']('+url+')'
+
+    def citations(ids):
+        seen, links = set(), []
+        for sid in ids:
+            if labels[sid] not in seen:
+                seen.add(labels[sid]); links.append(link(sid))
+        return ''.join(links)
+
+    def bibliography():
+        lines = ['', '## 参考文献', '']
+        for number, row in documents.values():
+            date = row.get('published_at') or row.get('published')
+            publisher = row.get('publisher') or row.get('source') or urlsplit(row['url']).hostname
+            description = '．'.join(_md(value) for value in (publisher, row.get('title'), date) if value)
+            if not description:
+                description = _md(row['url'])
+            url = row['url'].replace(')', '%29').replace('(', '%28')
+            lines += ['['+number+'] '+description+'．[原文]('+url+')']
+        return lines
+
+    def source_records():
+        return [dict({key:value for key, value in catalog[sid].items() if not key.startswith('_')},
+                     label=labels[sid]) for sid in used]
+
+    composition = plan.get('composition') or {}
+    if composition.get('status') == 'reviewed':
+        out = ['# '+_md(context['city']+' · '+context['topic']+' · 产业研判报告'), '']
+        for ordinal, chapter in zip('一二三四五', composition['chapters']):
+            from .topic_composition import TITLES
+            out += ['## '+ordinal+'、'+TITLES[chapter['id']], '']
+            for paragraph in chapter['paragraphs']:
+                out += [_md(paragraph['text'])+' '+citations(paragraph['evidence_ids']), '']
+        return '\n'.join(out + bibliography()).strip(), source_records()
+
+    rendered = set()
+
+    def facts(ids):
+        out = []
+        for sid in ids:
+            row = catalog[sid]
+            # Do not lengthen a report by repeating the same original passage.
+            identity = (labels[sid], row['quote'])
+            if identity in rendered:
+                continue
+            rendered.add(identity)
+            policy = policy_context(dict(row, source_excerpt=row.get('_fulltext', row['quote'])))
+            if policy:
+                out += ['**'+policy['label']+'**', '']
+            out += [_md(row['quote'])+' '+link(sid), '']
+            if policy:
+                for label, key in [('有效期与适用规则', 'validity'), ('适用条件与材料', 'conditions')]:
+                    if policy[key]:
+                        out += ['**'+label+'**', '']
+                        out += [_md(value)+' '+link(sid) for value in policy[key]] + ['']
+                if policy['limitations']:
+                    out += ['；'.join(_md(value) for value in policy['limitations']), '']
+        return out
+
+    analytical = [row for row in plan.get('analytical_priorities', [])
+                  if row.get('state') == 'reviewed_inference']
+    out = ['# '+_md(context['city']+' · '+context['topic']+' · 产业研判稿'), '']
+    if not research_coverage(research)['complete']:
+        # Preserve the material limit without exposing retrieval logs as a
+        # section of the finished report or implying a full industrial census.
+        out += ['本文分析范围限于已取得资料所覆盖的企业、环节和时期，不代表完整的产业普查。', '']
+    out += ['## 一、产业基础判断', ''] + facts(plan['basis'])
+    if not plan['basis']:
+        out += ['现有公开材料不足以支持对本地产业规模、企业总量及完整配套能力作出总体判断。', '']
+
+    out += ['## 二、产业链缺口分析', '']
+    chain_facts = facts(plan['chain'])
+    if chain_facts:
+        out += chain_facts
+    for row in analytical:
+        out += ['### '+_md(row['focus']), '',
+                '**分析范围：** '+_md({'local':'本地原文范围', 'local_enterprise':'本地关联企业业务',
+                                      'industry':'行业共性，非本地缺失', 'project':'具名项目范围'}[row['scope']]),
+                '**比较判断：** '+_md(row['comparison'])+' '+citations(row['evidence_ids']), '']
+        for label, key in [('现有供给', 'supply_ids'), ('需求条件', 'demand_ids'),
+                           ('约束条件', 'constraint_ids'), ('相反情况', 'counter_ids'),
+                           ('主体与地域', 'identity_ids')]:
+            passages = facts(row.get(key, []))
+            if passages:
+                out += ['**'+label+'**', ''] + passages
+    if not analytical:
+        out += ['现有材料尚不能支持本地各环节的缺口排序；材料未覆盖的环节不认定为本地缺失。', '']
+
+    out += ['## 三、补链优先级清单', '']
+    if analytical:
+        for rank, row in enumerate(analytical, 1):
+            out += ['### '+str(rank)+'. '+_md(row['focus']), '',
+                    _md(row['reason'])+' '+citations(row['evidence_ids']), '']
+    else:
+        out += ['当前公开材料不足以形成可靠的项目优先级。行业层面的技术约束可作为研究方向，不能直接替代本地供需缺口或投资收益判断。', '']
+
+    out += ['## 四、目标企业画像', '']
+    if plan['companies']:
+        out += ['以下画像限定于公开披露的产品、业务阶段与地域关系；企业的投资及采购意向不由产品能力推定。', '']
+        for row in plan['companies']:
+            refs = row.get('all_evidence_ids', row['evidence_ids'])
+            out += ['### '+_md(row['name'])+' · '+_md(row['product']), '',
+                    '**公开披露产品：** '+_md(row['product'])+' '+citations(refs),
+                    '**业务阶段：** '+_md(row.get('stage', '资料未明确披露')),
+                    '**地域范围：** '+_md(row.get('scope_label', '生产地未明确披露')), '']
+            out += facts(refs)
+    else:
+        out += ['现有材料尚不足以形成具备直接产品依据的目标企业名单。', '']
+
+    out += ['## 五、实施建议', '']
+    if analytical:
+        for rank, row in enumerate(analytical, 1):
+            out += [str(rank)+'. **'+_md(row['focus'])+'：** '+_md(row['action'])+' '+citations(row['evidence_ids'])]
+    elif plan['priorities']:
+        # These are bounded work proposals tied to an actual passage. They do
+        # not publish the confirmation form or upgrade its contents to facts.
+        actions = {
+            'verify_supply': '组织供需对接，比较产品规格、应用条件与交付要求，在对接结果基础上确定后续招引范围。',
+            'verify_policy': '依据正式政策文本建立项目适用条件清单，按适用对象、有效期和申报要求安排服务。',
+            'verify_timeline': '建立项目进度台账，区分规划、建设和投产阶段，并按实际进度安排对接。',
+            'contact_demand': '与相关主体开展需求访谈，围绕产品应用、采购条件及投资安排形成具体对接任务。',
+        }
+        for rank, row in enumerate(plan['priorities'], 1):
+            out += [str(rank)+'. **'+_md(row['focus'])+'：** '+actions[row['action']]+' '+citations(row['evidence_ids'])]
+    else:
+        out += ['以本文有明确产品依据的企业和环节作为前期沟通范围；在获得具体需求和承接条件后，再形成项目排序与招引安排。']
+
+    return '\n'.join(out + bibliography()).strip(), source_records()
+
+
 def render_report(plan, context, research, phase):
     """Render bounded source quotes, not arbitrary model assertions."""
     catalog = evidence_catalog(research)
     used = list(dict.fromkeys(plan['basis'] + (plan['chain'] if phase == 2 else []) +
                 [sid for row in plan['priorities'] + plan.get('analytical_priorities', []) for sid in row['evidence_ids']] +
-                [sid for row in (plan['companies'] if phase == 2 else []) for sid in row.get('all_evidence_ids',row['evidence_ids'])]))
+                [sid for row in (plan['companies'] if phase == 2 else []) for sid in row.get('all_evidence_ids',row['evidence_ids'])] +
+                [sid for chapter in (plan.get('composition') or {}).get('chapters', [])
+                 for paragraph in chapter['paragraphs'] for sid in paragraph['evidence_ids']]))
+    if phase == 2 and (plan.get('composition') or {}).get('status') == 'reviewed':
+        # A published bibliography contains the actual cited originals in
+        # first-citation order, not all documents considered during research.
+        used = list(dict.fromkeys(sid for chapter in plan['composition']['chapters']
+                                  for paragraph in chapter['paragraphs'] for sid in paragraph['evidence_ids']))
+    if phase == 2:
+        return _render_final_report(plan, context, research, catalog, used)
     labels = {sid: 'S'+str(i+1) for i, sid in enumerate(used)}
 
     def link(sid):
@@ -356,7 +513,7 @@ def render_report(plan, context, research, phase):
     return '\n'.join(out).strip(), [dict({k:v for k,v in catalog[sid].items() if not k.startswith('_')}, label=labels[sid]) for sid in used]
 
 
-def build_report(context, research, phase, complete):
+def build_report(context, research, phase, complete, *, on_progress=None):
     if phase not in (1, 2):
         raise TopicReportError('invalid_phase', '报告阶段无效。')
     catalog=evidence_catalog(research)
@@ -375,6 +532,13 @@ def build_report(context, research, phase, complete):
     plan,selection_diagnostics=_retry_selection(raw,plan,context,research,phase,complete,system,prompt)
     approved, diagnostics = review_priorities(plan.get('analytical_priorities',[]), evidence_catalog(research),context,complete)
     plan['analytical_priorities'] = approved
+    if phase == 2:
+        if research_coverage(research)['complete']:
+            plan['composition'] = compose_report(plan, context, catalog, complete, on_progress=on_progress)
+        else:
+            plan['composition'] = {'contract': 'topic-composition-v1', 'status': 'limited',
+                'chapters': [], 'diagnostics': [{'chapter': 'report', 'code': 'research_incomplete'}],
+                'calls': 0, 'revised': False}
     text, sources = render_report(plan, context, research, phase)
     policies, catalog = [], evidence_catalog(research)
     for source in sources:
@@ -388,5 +552,7 @@ def build_report(context, research, phase, complete):
                 'selection_diagnostics':selection_diagnostics,
                 'research_coverage':research_coverage(research),
                 'policy_count':len(policies),'policies':policies}
+    if phase == 2:
+        analysis['composition'] = plan['composition']
     return {'text': text, 'sources': sources, 'plan': plan, 'status': 'unreviewed','analysis':analysis,
             'researchCoverage':analysis['research_coverage']}
