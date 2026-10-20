@@ -33,6 +33,12 @@ body,.app-shell,.workspace {background:#f5f6f1;color:#20342e}
   background:radial-gradient(ellipse at 90% 0%,#dce8dcb8 0%,#edf2e600 57%),#f5f7ef;
   border-color:#dce5d7;
 }
+.kb-topic-grid {grid-template-columns:repeat(var(--kb-topic-columns,4),minmax(0,1fr))}
+.kb-topic-overview[data-kb-many="true"] .kb-overview-clip {
+  max-height:min(420px,52vh);max-height:min(420px,52dvh);
+  overflow-y:auto;overscroll-behavior:contain;
+  scrollbar-width:thin;scrollbar-color:#b4c5ae transparent;
+}
 .kb-overview-heading h2 {font-size:11px;line-height:18px;font-weight:500;letter-spacing:1.7px;color:#7b8b77}
 .kb-overview-heading>div:first-child {min-width:0}
 .kb-overview-heading p {
@@ -50,9 +56,10 @@ body,.app-shell,.workspace {background:#f5f6f1;color:#20342e}
   border-color:#d5dfd0;background:#fffefa;
   box-shadow:0 2px 8px #314d2805;
 }
-.kb-topic-card[data-kb-topic="1"] {--kb-topic-accent:#3c7065;--kb-topic-tint:#eaf2e8}
-.kb-topic-card[data-kb-topic="2"] {--kb-topic-accent:#607650;--kb-topic-tint:#f0f3e4}
-.kb-topic-card[data-kb-topic="3"] {--kb-topic-accent:#8e7851;--kb-topic-tint:#f4f1e5}
+.kb-topic-card[data-kb-theme="industry"],.kb-topic-card[data-kb-theme="technology"],.kb-topic-card[data-kb-theme="general"] {--kb-topic-accent:#4d735b;--kb-topic-tint:#edf3e6}
+.kb-topic-card[data-kb-theme="park"],.kb-topic-card[data-kb-theme="location"],.kb-topic-card[data-kb-theme="services"] {--kb-topic-accent:#3c7065;--kb-topic-tint:#eaf2e8}
+.kb-topic-card[data-kb-theme="enterprise"],.kb-topic-card[data-kb-theme="talent"],.kb-topic-card[data-kb-theme="finance"] {--kb-topic-accent:#607650;--kb-topic-tint:#f0f3e4}
+.kb-topic-card[data-kb-theme="policy"] {--kb-topic-accent:#8e7851;--kb-topic-tint:#f4f1e5}
 .kb-topic-card:hover {border-color:#9fb497;box-shadow:0 3px 12px #314d2810}
 .kb-topic-card.active,.kb-topic-card.is-active {border-color:#6f957d;box-shadow:0 0 0 1px #6f957d}
 .kb-topic-material {isolation:isolate;overflow:hidden}
@@ -71,10 +78,10 @@ body,.app-shell,.workspace {background:#f5f6f1;color:#20342e}
   -webkit-mask-composite:source-in;
   mask-composite:intersect;
 }
-.kb-topic-card[data-kb-topic="0"] .kb-topic-art {object-position:60% 42%}
-.kb-topic-card[data-kb-topic="1"] .kb-topic-art {object-position:78% 54%}
-.kb-topic-card[data-kb-topic="2"] .kb-topic-art {object-position:64% 54%}
-.kb-topic-card[data-kb-topic="3"] .kb-topic-art {object-position:52% 68%;opacity:.42}
+.kb-topic-card[data-kb-theme="industry"] .kb-topic-art,.kb-topic-card[data-kb-theme="technology"] .kb-topic-art {object-position:60% 42%}
+.kb-topic-card[data-kb-theme="park"] .kb-topic-art,.kb-topic-card[data-kb-theme="location"] .kb-topic-art,.kb-topic-card[data-kb-theme="services"] .kb-topic-art {object-position:78% 54%}
+.kb-topic-card[data-kb-theme="enterprise"] .kb-topic-art,.kb-topic-card[data-kb-theme="talent"] .kb-topic-art,.kb-topic-card[data-kb-theme="finance"] .kb-topic-art {object-position:64% 54%}
+.kb-topic-card[data-kb-theme="policy"] .kb-topic-art {object-position:52% 68%;opacity:.42}
 .kb-topic-material>:not(.kb-topic-art) {position:relative;z-index:2}
 .kb-topic-card .kb-topic-number {
   background:transparent;color:var(--kb-topic-accent);padding:4px 0 4px 24px;
@@ -121,6 +128,9 @@ body,.app-shell,.workspace {background:#f5f6f1;color:#20342e}
 .top-meta .i>.client-brand-icon,.org-block>.i>.client-brand-icon {width:15px;height:15px}
 .kb-workspace button:focus-visible,.kb-workspace a:focus-visible {outline-color:#6d9277}
 .kb-topic-art,.client-brand-icon {user-select:none}
+@media(max-width:1120px) {
+  .kb-topic-grid {grid-template-columns:repeat(var(--kb-topic-mobile-columns,2),minmax(0,1fr))}
+}
 @media(max-width:820px) {
   .kb-toolbar .kb-nav-toggle {display:inline-flex}
   .kb-overview-heading p {font-size:20px;line-height:28px;letter-spacing:0}
@@ -130,7 +140,7 @@ body,.app-shell,.workspace {background:#f5f6f1;color:#20342e}
   .kb-overview-heading h2 {font-size:10px;line-height:16px;letter-spacing:.8px}
   .kb-overview-heading p {font-size:16px;line-height:23px;max-width:210px}
   .kb-topic-art {opacity:.4}
-  .kb-topic-card[data-kb-topic="3"] .kb-topic-art {opacity:.37}
+  .kb-topic-card[data-kb-theme="policy"] .kb-topic-art {opacity:.37}
 }
 @media(max-width:480px) {
   body.kb-view .kb-toolbar {grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}

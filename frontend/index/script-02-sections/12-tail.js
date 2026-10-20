@@ -3984,6 +3984,8 @@ function kbBindOverviewScroll(page){
   function allowed(target,keyboard){
     var node=target&&target.nodeType===3?target.parentElement:target;
     if(!node||!node.closest)return true;
+    var cards=node.closest('.kb-overview-clip');
+    if(cards&&cards.scrollHeight>cards.clientHeight+1)return false;
     var excluded='input,textarea,select,[contenteditable]:not([contenteditable="false"]),#kbTopicsPanel,#kbSourcesPanel,.kb-panel-backdrop';
     if(keyboard)excluded+=',button,a,summary,[role="button"]';
     return !node.closest(excluded);
@@ -4050,10 +4052,12 @@ function kbPage(p){
     '链主与存量企业':'梳理重点企业、上下游关系与配套需求',
     '政策、规划与领导关注':'查阅政策支持、发展规划与重点关注事项'
   };
+  var topicCount=(p.kb||[]).length;
   var topics=(p.kb||[]).map(function(k,i){
-    return '<article class="kb-topic-card" data-kb-topic="'+i+'">'+
+    var presentation=kbTopicPresentation(k.t),art=kbTopicArtwork(k.t);
+    return '<article class="kb-topic-card" data-kb-topic="'+i+'" data-kb-theme="'+presentation.theme+'" data-kb-icon="'+presentation.icon+'">'+
       '<button type="button" class="kb-topic-material" onclick="kbClosePanels();kbDetail('+i+')" aria-label="查看'+escape(k.t)+'资料">'+
-      '<img class="kb-topic-art" src="'+HXZ_CARD_ART[i]+'" alt="" aria-hidden="true"><span class="kb-topic-number" aria-hidden="true">'+String(i+1).padStart(2,'0')+'</span><span class="kb-topic-title">'+escape(k.t)+'</span>'+
+      (art?'<img class="kb-topic-art" src="'+escape(art)+'" alt="" aria-hidden="true">':'')+'<span class="kb-topic-number" aria-hidden="true">'+String(i+1).padStart(2,'0')+'</span><span class="kb-topic-title">'+escape(k.t)+'</span>'+
       '<p>'+escape(topicDescriptions[k.t]||'查阅本板块已有资料与补充材料')+'</p><span class="kb-topic-read">查看资料 <span aria-hidden="true">↗</span></span></button>'+
       '<button type="button" class="kb-topic-question" onclick="askAboutKb('+i+')" aria-label="围绕'+escape(k.t)+'提问">围绕此板块提问 <span aria-hidden="true">→</span></button></article>';
   }).join('');
@@ -4062,7 +4066,7 @@ function kbPage(p){
     '<nav class="kb-toolbar" aria-label="智库工具"><button type="button" id="kbToggle-topics" class="kb-nav-toggle" aria-controls="kbTopicsPanel" aria-expanded="false" onclick="kbTogglePanel(\'topics\')">历史对话</button>'+
     '<button type="button" onclick="uploadHint()">上传材料</button><button type="button" onclick="openMemoryBank()">记忆库</button><button type="button" onclick="showDownloadReport()">下载报告</button>'+
     '<button type="button" id="kbToggle-sources" class="kb-source-toggle" aria-controls="kbSourcesPanel" aria-expanded="false" onclick="kbTogglePanel(\'sources\')">回答依据</button></nav></header>'+
-    '<section class="kb-topic-overview" aria-labelledby="kbOverviewTitle"><div class="kb-overview-heading"><div><h2 id="kbOverviewTitle">城市知识全景</h2><p><span class="brand-slogan-lead">读懂城市，</span><span class="brand-slogan-result">让招引更有方向。</span></p></div><div class="kb-overview-actions"><button type="button" class="kb-overview-toggle" id="kbOverviewToggle" aria-controls="kbOverviewCards" aria-expanded="true" onclick="kbToggleOverview()">收起板块 ↑</button><button type="button" class="kb-global-scope" onclick="clearKbActiveTopic();kbClosePanels()">全库提问 <span aria-hidden="true">↗</span></button></div></div><div id="kbOverviewCards" class="kb-overview-body" aria-hidden="false"><div class="kb-overview-clip"><div class="kb-topic-grid">'+topics+'</div></div></div></section>'+
+    '<section class="kb-topic-overview" data-kb-many="'+(topicCount>4)+'" aria-labelledby="kbOverviewTitle"><div class="kb-overview-heading"><div><h2 id="kbOverviewTitle">城市知识全景</h2><p><span class="brand-slogan-lead">读懂城市，</span><span class="brand-slogan-result">让招引更有方向。</span></p></div><div class="kb-overview-actions"><button type="button" class="kb-overview-toggle" id="kbOverviewToggle" aria-controls="kbOverviewCards" aria-expanded="true" onclick="kbToggleOverview()">收起板块 ↑</button><button type="button" class="kb-global-scope" onclick="clearKbActiveTopic();kbClosePanels()">全库提问 <span aria-hidden="true">↗</span></button></div></div><div id="kbOverviewCards" class="kb-overview-body" aria-hidden="false"><div class="kb-overview-clip"><div class="kb-topic-grid" style="--kb-topic-columns:'+kbTopicColumns(topicCount)+';--kb-topic-mobile-columns:'+Math.min(2,Math.max(1,topicCount))+'">'+topics+'</div></div></div></section>'+
     '<div class="kb-workbench-grid"><button class="kb-panel-backdrop" aria-label="关闭侧栏" onclick="kbClosePanels()"></button>'+
     '<aside id="kbTopicsPanel" class="kb-topics-panel" aria-label="历史会话"><div class="kb-pane-heading"><h2>历史对话</h2><button id="kbTopicsClose" class="kb-panel-close" type="button" onclick="kbClosePanels()" aria-label="关闭历史对话">×</button></div>'+
     '<button type="button" class="kb-new-conversation" onclick="kbNewSession(cur);kbClosePanels()"><span aria-hidden="true">＋</span> 新对话</button>'+
