@@ -57,13 +57,21 @@ test('binding twice does not multiply listeners or reduce the 48px threshold',()
  const h=harness(),before=Object.fromEntries(Object.entries(h.page.listeners).map(([k,v])=>[k,v.length]));h.c.kbBindOverviewScroll(h.page);assert.deepEqual(Object.fromEntries(Object.entries(h.page.listeners).map(([k,v])=>[k,v.length])),before);
  h.fire('wheel',{deltaY:24});assertState(h,false);h.fire('wheel',{deltaY:24});assertState(h,true);
 });
-test('wheel follows accumulated direction, reverses to expand, and never prevents native scrolling',()=>{
+test('wheel collapses after the threshold but upward reading and inertial rebound never reopen it',()=>{
  const h=harness();const first=h.fire('wheel',{deltaY:30});assert.equal(first.prevented,undefined);assertState(h,false);h.fire('wheel',{deltaY:18});assertState(h,true);
- h.fire('wheel',{deltaY:-30});assertState(h,true);h.fire('wheel',{deltaY:-18});assertState(h,false);
+ for(const deltaY of [-30,-18,-1,-120,-600,2,-4,-80]){const event=h.fire('wheel',{deltaY});assertState(h,true);assert.equal(event.prevented,undefined);}
+ h.c.kbToggleOverview();assertState(h,false);
 });
 test('wheel reversals and long input gaps reset the accumulated movement',()=>{
  const h=harness();h.fire('wheel',{deltaY:30});h.fire('wheel',{deltaY:-20});h.fire('wheel',{deltaY:20});assertState(h,false);h.fire('wheel',{deltaY:28});assertState(h,true);
  h.c.kbSetOverviewCollapsed(h.page,false,true);h.advance(300);h.fire('wheel',{deltaY:30});h.advance(241);h.fire('wheel',{deltaY:30});assertState(h,false);h.fire('wheel',{deltaY:18});assertState(h,true);
+});
+test('upward keyboard navigation clears partial collapse movement without consuming native keys',()=>{
+ for(const key of ['PageUp','Home','ArrowUp',' ']){
+  const h=harness();h.fire('wheel',{deltaY:30});
+  const event=h.fire('keydown',{key,shiftKey:key===' ',target:h.scroll});assertState(h,false);assert.equal(event.prevented,undefined);
+  h.fire('wheel',{deltaY:30});assertState(h,false);h.fire('wheel',{deltaY:18});assertState(h,true);
+ }
 });
 test('pinch wheel, horizontal intent and editable fields cannot change the overview',()=>{
  const h=harness();for(const extra of [{deltaY:100,ctrlKey:true},{deltaY:80,deltaX:100},{deltaY:100,target:h.input},{deltaY:100,target:h.textarea},{deltaY:100,target:h.editable}]){h.fire('wheel',extra);assertState(h,false);}
@@ -71,21 +79,21 @@ test('pinch wheel, horizontal intent and editable fields cannot change the overv
 test('nested source and history panel scrolling does not collapse or expand the overview',()=>{
  const h=harness();for(const parent of [h.topics,h.sources]){const nested=parent.appendChild(new Element('div'));h.fire('wheel',{deltaY:100,target:nested});assertState(h,false);h.c.kbSetOverviewCollapsed(h.page,true,true);h.fire('wheel',{deltaY:-100,target:nested});assertState(h,true);h.c.kbSetOverviewCollapsed(h.page,false,true);}
 });
-test('passive touch swipe collapses upward and expands downward after the threshold',()=>{
+test('passive touch swipe collapses upward but downward reading never reopens the cards',()=>{
  const h=harness();for(const name of ['touchstart','touchmove','touchend']){assert.ok(h.page.listeners[name]?.length,'bind '+name);assert.ok(h.page.listeners[name].every(x=>x.options===true||x.options?.passive===true),name+' must be passive');}
  h.fire('touchmove',{touches:[{clientY:100}]});assertState(h,false);
  h.fire('touchstart',{touches:[{clientY:300}]});h.fire('touchmove',{touches:[{clientY:270}]});assertState(h,false);h.fire('touchmove',{touches:[{clientY:252}]});assertState(h,true);h.fire('touchend',{touches:[]});
- h.fire('touchstart',{touches:[{clientY:200}]});h.fire('touchmove',{touches:[{clientY:248}]});assertState(h,false);h.fire('touchend',{touches:[]});
+ h.fire('touchstart',{touches:[{clientY:200}]});for(const clientY of [230,248,400,650]){const event=h.fire('touchmove',{touches:[{clientY}]});assertState(h,true);assert.equal(event.prevented,undefined);}h.fire('touchend',{touches:[]});
+ h.c.kbToggleOverview();assertState(h,false);
 });
 test('touch editing, nested panels and multitouch gestures never change cards',()=>{
  const h=harness();for(const target of [h.input,h.textarea,h.editable,h.sources.appendChild(new Element()),h.topics.appendChild(new Element())]){h.fire('touchstart',{target,touches:[{clientY:300}]});h.fire('touchmove',{target,touches:[{clientY:100}]});h.fire('touchend',{target,touches:[]});assertState(h,false);}
  h.fire('touchstart',{touches:[{clientY:300},{clientY:330}]});h.fire('touchmove',{touches:[{clientY:100},{clientY:130}]});assertState(h,false);
 });
 test('keyboard navigation controls overview only from a noninteractive region',()=>{
- const h=harness();for(const key of ['PageDown','End']){h.fire('keydown',{key,target:h.scroll});assertState(h,true);h.fire('keydown',{key:'Home',target:h.scroll});assertState(h,false);}
+ const h=harness();for(const key of ['PageDown','End']){h.fire('keydown',{key,target:h.scroll});assertState(h,true);h.c.kbToggleOverview();assertState(h,false);}
  h.fire('keydown',{key:'ArrowDown',target:h.scroll});assertState(h,false);h.fire('keydown',{key:'ArrowDown',target:h.scroll});assertState(h,true);
- h.fire('keydown',{key:'ArrowUp',target:h.scroll});assertState(h,true);h.fire('keydown',{key:'ArrowUp',target:h.scroll});assertState(h,false);
- for(const key of ['PageUp','Home']){h.c.kbSetOverviewCollapsed(h.page,true,true);h.fire('keydown',{key,target:h.scroll});assertState(h,false);}
+ for(const key of ['PageUp','Home','ArrowUp'])for(let i=0;i<3;i++){const event=h.fire('keydown',{key,target:h.scroll});assertState(h,true);assert.equal(event.prevented,undefined);}
  for(const tag of ['button','a','select','input','textarea']){h.c.kbSetOverviewCollapsed(h.page,false,true);h.fire('keydown',{key:'PageDown',target:h.page.appendChild(new Element(tag))});assertState(h,false);}
  h.fire('keydown',{key:'PageDown',target:h.editable});assertState(h,false);
  for(const modifier of ['ctrlKey','altKey','metaKey']){h.fire('keydown',{key:'PageDown',[modifier]:true,target:h.scroll});assertState(h,false);}
@@ -110,22 +118,34 @@ test('native scrollbar drag responds only to primary pointer on the scrollbar ed
 });
 test('layout scroll during collapse animation resets drag anchor without reversing intent',()=>{
  const h=harness();h.fire('pointerdown',{target:h.scroll,button:0,clientX:699});h.scroll.scrollTop=48;h.fire('scroll');assertState(h,true);
- h.scroll.scrollTop=500;h.fire('scroll');assertState(h,true);h.advance(321);h.scroll.scrollTop=452;h.fire('scroll');assertState(h,false);
+ h.scroll.scrollTop=500;h.fire('scroll');assertState(h,true);h.advance(321);h.scroll.scrollTop=452;const upward=h.fire('scroll');assertState(h,true);assert.equal(upward.prevented,undefined);
  h.fire('pointercancel',{},h.document.body);assert.equal(h.document.body.listeners.pointerup.length,0);assert.equal(h.document.body.listeners.pointercancel.length,0);
- h.advance(500);h.scroll.scrollTop=700;h.fire('scroll');assertState(h,false);
+ h.advance(500);h.scroll.scrollTop=700;h.fire('scroll');assertState(h,true);
+ h.c.kbToggleOverview();assertState(h,false);
 });
 test('page native scrollbar works without observing unrelated nested scrolls',()=>{
  const h=harness();h.fire('pointerdown',{target:h.page,button:0,clientX:699});h.scroll.scrollTop=200;h.fire('scroll',{target:h.scroll});assertState(h,false);
  h.page.scrollTop=48;h.fire('scroll',{target:h.page});assertState(h,true);h.fire('pointerup',{},h.document.body);
+});
+test('native scrollbar upward drags cannot reopen collapsed cards on either scroll container',()=>{
+ for(const targetName of ['page','scroll']){
+  const h=harness(),target=h[targetName];target.scrollTop=700;
+  h.c.kbToggleOverview();assertState(h,true);h.advance(500);
+  h.fire('pointerdown',{target,button:0,clientX:699});
+  for(const scrollTop of [680,650,400,0]){target.scrollTop=scrollTop;const event=h.fire('scroll',{target});assertState(h,true);assert.equal(event.prevented,undefined);}
+  h.fire('pointerup',{},h.document.body);assert.equal(h.document.body.listeners.pointerup.length,0);
+  h.c.kbToggleOverview();assertState(h,false);
+ }
 });
 test('touch horizontal intent and multi-touch interruption cannot reuse vertical movement',()=>{
  const h=harness();h.fire('touchstart',{touches:[{clientX:200,clientY:300}]});h.fire('touchmove',{touches:[{clientX:100,clientY:280}]});assertState(h,false);
  h.fire('touchmove',{touches:[{clientX:100,clientY:260},{clientX:130,clientY:260}]});h.fire('touchmove',{touches:[{clientX:100,clientY:100}]});assertState(h,false);
  h.fire('touchcancel',{touches:[]});h.fire('touchmove',{touches:[{clientX:100,clientY:0}]});assertState(h,false);
 });
-test('Space collapses and Shift+Space expands from the reading area',()=>{
+test('Space collapses and Shift+Space retains native upward reading without reopening cards',()=>{
  const h=harness();h.fire('keydown',{key:' ',target:h.scroll});assertState(h,true);
- h.fire('keydown',{key:' ',shiftKey:true,target:h.scroll});assertState(h,false);
+ const shifted=h.fire('keydown',{key:' ',shiftKey:true,target:h.scroll});assertState(h,true);assert.equal(shifted.prevented,undefined);
+ h.c.kbToggleOverview();assertState(h,false);
  h.document.activeElement=h.cardButton;h.fire('keydown',{key:' ',target:h.scroll});assertState(h,false);
  h.document.activeElement=h.scroll;h.fire('keydown',{key:' ',target:h.page});assertState(h,true);
 });
