@@ -25,7 +25,7 @@ REQUIRED_KINDS = {'basis': {'fact', 'analysis'}, 'chain': {'fact', 'analysis'},
                   'actions': {'recommendation'}}
 CRITERIA = {
     'basis': '说明当前城市与本产业的具体基础、能力和发展阶段。不能以全国统计冒充本地，不能只有原文堆叠。',
-    'chain': '说明供给、需求或技术约束之间的关系，区分已有能力与具体瓶颈，保留反证；不能把未检索到写成缺失。',
+    'chain': '说明现有供给与实际需求、技术约束或正式规划目标之间的关系，区分已有能力、现实瓶颈与规划培育任务，保留反证；不能把未检索到写成缺失。',
     'priorities': '说明所提方向为什么值得优先推进、与其他方向的取舍及适用条件；不虚构量化排名和经济收益。',
     'companies': '逐家说明已验证产品、业务阶段、地域关系及与研究方向的具体关联，不把研发当量产或能力当投资意向。',
     'actions': '行动须对应已分析对象，写清先做什么、后做什么、进入下一步需要的条件，不能只有泛泛核实口号。',
@@ -85,7 +85,7 @@ def _safe_plan(plan):
             ('name', 'product', 'evidence_ids', 'identity_ids', 'all_evidence_ids', 'stage', 'scope', 'scope_label')
             if key in row} for row in plan.get('companies', [])],
         'analytical_priorities': [{key: row[key] for key in
-            ('focus', 'scope', 'comparison', 'reason', 'action', 'evidence_ids',
+            ('focus', 'scope', 'opportunity_type', 'policy_ids', 'comparison', 'reason', 'action', 'evidence_ids',
              'supply_ids', 'demand_ids', 'constraint_ids', 'counter_ids', 'identity_ids')
             if key in row} for row in plan.get('analytical_priorities', [])],
     }
@@ -250,7 +250,7 @@ _WRITING_SYSTEM = '''你是产业研究报告撰稿人。只输出严格JSON，�
 格式：{"chapters":[{"id":"要求的章节ID","paragraphs":[{"kind":"fact或analysis或recommendation","text":"正文段落","evidence_ids":["资料ID"]}]}]}。
 每段必须绑定能支持其全部内容的原始资料ID。fact必须逐字使用一段原文或完整原句，保留主语、时间、地域、否定、计划/完成及条件；不要拼接局部短语。analysis可以写清比较、原因与取舍；recommendation提出具体对象、先后步骤和进入下一步的条件。每段只写一个完整论点，禁止把简单事项反复扩写。
 每章应有实质分析，不能只是摘录或泛泛核实口号。不以字数凑篇幅，不编造数字、市场规模、排名、收益、投资意向或本地缺口。全国行业事实不能当本地事实，企业注册地址不能当生产地址，研发不能当量产，已有产品不能当采购/投资承诺。审慎表达必须贴着具体判断，不能只在结尾放一个免责段落。
-企业章只写给定已通过产品校验的企业与产品，完整说明其已知业务阶段与地域关系；不得自行增加候选企业。产业优先级只展开已审核研判，不推翻反证，不用缺少信息证明不存在。
+企业章只写给定已通过产品校验的企业与产品，完整说明其已知业务阶段与地域关系；不得自行增加候选企业。产业优先级只展开已审核研判，不推翻反证，不用缺少信息证明不存在。opportunity_type=constraint是有现实依据的需求或约束；planned_development是正式本地规划中的培育方向，须明确是拟推进的任务，不能把规划、技术攻关目标写成已经存在的本地供应缺口。没有现实缺口时，应解释已有能力如何承接规划目标以及仍需落实的具体条件，不能用泛泛待核口号代替分析。
 政策金额、比例、资格、门槛、有效期必须完整保留。引用征求意见稿、草案或过期政策时必须在同章明确标注该状态，不能当现行支持。
 正文不写URL、引用编号、HTML、章节编号、内部字段名、生成过程、证据核验过程、待确认事项或来源操作说明；服务器会生成引用和参考文献。确实没有依据时不要虚写合格内容。'''
 

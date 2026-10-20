@@ -20,8 +20,8 @@ for(const app of ['index','ops']){
   const html=c._renderRichChain('测试方向',segments,null,{},[], 'partial',{assessment:rated});
   assert.match(html,/仅规划材料/);assert.match(html,/已归类的待核节点保留在对应泳道/);
   assert.doesNotMatch(html,/chain-pending-facts/);
-  assert.ok(html.indexOf('仅规划材料')>html.indexOf('上游</span>'));
-  assert.ok(html.indexOf('仅规划材料')<html.indexOf('中游</span>'));
+  assert.ok(html.indexOf('>仅规划材料</div>')>html.indexOf('上游</span>'));
+  assert.ok(html.indexOf('>仅规划材料</div>')<html.indexOf('中游</span>'));
   assert.match(html,/industry-chain-node judgment-unknown/);
   assert.equal(JSON.stringify(segments),before);
  });
@@ -34,10 +34,10 @@ for(const app of ['index','ops']){
   assert.match(html,/已有支撑 <b[^>]*>1<\/b>/);assert.match(html,/尚不能评价 <b[^>]*>28<\/b>/);
   assert.equal((html.match(/industry-chain-node judgment-unknown/g)||[]).length,28);
   for(const [index,segment] of segments.entries())for(const node of segment.nodes){
-    assert.ok(html.indexOf(node.name)>html.indexOf(segment.seg+'</span>'));
+    assert.ok(html.indexOf('>'+node.name+'</div>')>html.indexOf(segment.seg+'</span>'));
     const end=index<2?html.indexOf(segments[index+1].seg+'</span>'):html.indexOf('尚未分类的材料项');
-    assert.ok(html.indexOf(node.name)<end);
-    assert.equal(html.split(node.name).length-1,1);
+    assert.ok(html.indexOf('>'+node.name+'</div>')<end);
+    assert.equal(html.split('>'+node.name+'</div>').length-1,1);
   }
   assert.match(html,/尚未归类的已有设施/);assert.doesNotMatch(html,/chain-pending-facts|暂未形成可展示的环节评价/);
   assert.match(html,/不能据此推断现实缺失/);
@@ -69,7 +69,7 @@ for(const app of ['index','ops']){
   const {c}=setup(app),value=assessment({level:'attention',evidence_strength:'single_source',summary:'关键依赖仍需核查。',dimensions:[{key:'supply',label:'供给能力',level:'supported',evidence_strength:'multiple_sources',findings:[]},{key:'dependency',label:'关键依赖',level:'weak',evidence_strength:'single_source',findings:[]}]});
   const nodes=[{assessment:assessment({level:'weak'})},{assessment:assessment({level:'attention'})},{assessment:assessment({level:'supported'})},{assessment:assessment()},{}];
   const html=c.chainAssessmentPanel(value,nodes);for(const key of ['supply','dependency','capacity','coordination'])assert.ok(html.includes('data-dimension="'+key+'"'));
-  assert.match(html,/本次 5 个材料节点/);assert.match(html,/补链研判/);assert.match(html,/以引用材料对应时间为准，不代表实时认证/);assert.match(html,/关键依赖仍需核查/);assert.match(html,/优先补链 <b[^>]*>2<\/b>/);assert.match(html,/待研判 <b[^>]*>2<\/b>/);assert.match(html,/更新研判/);
+  assert.match(html,/本次 5 个材料节点/);assert.match(html,/补链研判/);assert.match(html,/以引用材料对应时间为准，不代表实时认证/);assert.match(html,/关键依赖仍需核查/);assert.match(html,/优先补链 <b[^>]*>2<\/b>/);assert.match(html,/待研判 <b[^>]*>2<\/b>/);assert.match(html,/补查材料并更新评价/);
   const capacity=html.match(/data-dimension="capacity"([\s\S]*?)<\/div><div class="chain-assessment-dimension"/)[1];assert.match(capacity,/尚未评价/);assert.doesNotMatch(capacity,/存在短板/);assert.match(html,/<details class="chain-factual-dimensions"/);
  });
  test(app+' compact assessment criteria remain collapsed and explain all four non-numeric rules',()=>{
@@ -110,7 +110,7 @@ for(const app of ['index','ops']){
   const {c}=setup(app),value=assessment({judgment:judgment('mid')}),nodes=['strong','mid','weak','unknown'].map(level=>({assessment:assessment({judgment:judgment(level)})}));
   const html=c.chainAssessmentPanel(value,nodes,1);assert.match(html,/含待归类 1 项/);for(const text of ['已有基础','重点培育','优先补链','待研判'])assert.match(html,new RegExp(text+' <b[^>]*>1<\\/b>'));
   assert.match(html,/黄色表示规划培育或行业风险关注，不代表已确认本地缺口/);assert.match(html,/<details class="chain-factual-dimensions"/);assert.doesNotMatch(html,/<details[^>]*\bopen\b/);
-  assert.equal(c.chainNeedsAssessment(nodes,value),false);assert.equal(c.chainNeedsAssessment([{assessment:assessment()}],value),true);assert.equal(c.chainNeedsAssessment(nodes,assessment()),true);assert.equal(c.chainNeedsAssessment([{}],value),true);
+  assert.equal(c.chainNeedsAssessment(nodes,value),true);assert.equal(c.chainNeedsAssessment([{assessment:assessment()}],value),true);assert.equal(c.chainNeedsAssessment(nodes,assessment()),true);assert.equal(c.chainNeedsAssessment([{}],value),true);
  });
  test(app+' malformed new judgment levels cannot become CSS or replace pending with a guessed category',()=>{
   const {c}=setup(app);for(const level of ['mid" onclick="alert(1)','__proto__','orange']){const value=assessment({level:'weak',judgment:judgment(level)}),html=c.chainNodeCardHtml({name:'待判环节',assessment:value});assert.equal(c.chainAssessmentView(value).level,'unknown');assert.equal(c.chainNeedsAssessment([{assessment:value}],value),true);assert.match(html,/judgment-unknown/);assert.doesNotMatch(html,/onclick="alert|judgment-orange|judgment-__proto__/);}

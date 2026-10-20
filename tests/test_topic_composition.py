@@ -256,14 +256,19 @@ class TopicCompositionTests(unittest.TestCase):
         self.assertEqual(result['diagnostics'][0]['code'], 'required_source_context_exceeds_bound')
 
     def test_partial_research_never_receives_a_reviewed_final_title(self):
-        research, _, _, context, _ = fixture()
+        research, _, _, context, chapters = fixture()
         research['status'] = 'pending'
         research['errors'] = [{'code': 'search_timeout'}]
-        with patch('backend.topic_reports.compose_report', side_effect=AssertionError('must not compose')):
+        with patch('backend.topic_reports.compose_report', return_value={
+                'status': 'reviewed', 'chapters': list(chapters.values()), 'diagnostics': []}):
             result = build_report(context, research, 2, lambda *args: skeleton(research))
         self.assertEqual(result['analysis']['composition']['status'], 'limited')
+        self.assertEqual(result['analysis']['composition']['review_status'], 'passed')
         self.assertEqual(result['analysis']['composition']['diagnostics'][0]['code'], 'research_incomplete')
         self.assertIn('产业研判稿', result['text'])
+        self.assertNotIn('产业研判报告', result['text'])
+        self.assertIn(chapters['actions']['paragraphs'][0]['text'], result['text'])
+        self.assertIn('不代表完整产业普查', result['text'])
 
     def test_reviewed_composition_survives_second_render_with_all_cited_sources(self):
         research, catalog, plan, context, chapters = fixture()
@@ -289,10 +294,14 @@ class TopicCompositionTests(unittest.TestCase):
         plan['composition'] = {'status': 'reviewed', 'chapters': list(chapters.values())}
         text, sources = render_report(plan, context, research, 2)
         self.assertNotIn('https://official.example/unused', text)
-        self.assertNotIn('unused-source', {source['id'] for source in sources})
+        self.assertIn('unused-source', {source['id'] for source in sources})
+        self.assertFalse(next(source for source in sources if source['id'] == 'unused-source')['cited_in_report'])
         expected = list(dict.fromkeys(sid for chapter in chapters.values()
                                      for paragraph in chapter['paragraphs'] for sid in paragraph['evidence_ids']))
-        self.assertEqual([source['id'] for source in sources], expected)
+        cited = {source['id']: source for source in sources if source['cited_in_report']}
+        self.assertEqual(set(cited), set(expected))
+        # Two excerpts belong to the same original filing.
+        self.assertEqual([cited[sid]['label'] for sid in expected], ['1', '2', '3', '1'])
 
     def test_build_report_attaches_review_and_limited_title_is_honest(self):
         research, _, _, context, chapters = fixture()

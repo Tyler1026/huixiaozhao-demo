@@ -23,6 +23,8 @@ function reportAnalyticalPriorities(state, topic){
   var seen=Object.create(null),out=[];
   analysis.priorities.forEach(function(row){
     if(!row||row.state!=='reviewed_inference'||!Object.prototype.hasOwnProperty.call(scopes,row.scope))return;
+    var opportunity=row.opportunity_type==null?'constraint':row.opportunity_type;
+    if(opportunity!=='constraint'&&opportunity!=='planned_development')return;
     if(['focus','comparison','reason','action'].some(function(key){return typeof row[key]!=='string'||!row[key].trim();}))return;
     var focus=row.focus.trim();if(seen[focus]||!Array.isArray(row.evidence_ids)||!row.evidence_ids.length)return;
     var ids=[],valid=true;
@@ -32,7 +34,7 @@ function reportAnalyticalPriorities(state, topic){
     });
     if(!valid||!ids.length)return;
     seen[focus]=true;
-    out.push({focus:focus,scope:row.scope,scopeLabel:scopes[row.scope],comparison:row.comparison,reason:row.reason,action:row.action,
+    out.push({focus:focus,scope:row.scope,scopeLabel:scopes[row.scope],opportunity_type:opportunity,opportunityLabel:opportunity==='planned_development'?'规划培育':'约束补链',comparison:row.comparison,reason:row.reason,action:row.action,
       evidence_ids:ids,sources:ids.map(function(id){return Object.assign({},sourceMap[id]);}),state:row.state,
       missing:Array.isArray(row.missing)?row.missing.filter(function(item){return typeof item==='string'&&item.trim();}):[]});
   });

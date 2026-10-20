@@ -75,6 +75,7 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
         if 'sourceIdentity' in body and not identity_matches(body['sourceIdentity'], identity):
             raise AuthError(409, 'evidence_changed', '材料已更新，请刷新后重新生成图谱')
         fingerprint = chain_input_fingerprint(context, identity)
+        context = dict(context, _prefer_assessment=True, _parallel_assessment=True)
     except AuthError as error:
         return error_response(handler, error)
 
@@ -157,7 +158,7 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
             heartbeat_thread.start()
         event('research.status', stage='retrieval', message='正在分别检索上游、中游和下游的公开原文')
         try:
-            findings = research(context['city'], topic, mode='chain', basis=context['chunks'],
+            findings = research(context['city'], topic, mode='chain', basis=context['chunks'], deadline_seconds=80,
                                 progress=lambda progress: event('research.status', **progress))
         except Exception:
             findings = {'city': context['city'], 'topic': topic, 'status': 'unavailable',
@@ -193,10 +194,12 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
             assessment_result = {'assessment': unavailable_assessment(context),
                                  'node_assessments': {}, 'sources': []}
         from .chain_node_research import select_node_targets, merge_node_research
-        targets = select_node_targets(result, assessment_result, limit=30, include_supported=True)
+        # Search missing comparisons, not every already-supported node. Leave
+        # most of the request window for the actual comparison and review.
+        targets = select_node_targets(result, assessment_result, limit=12, include_supported=False)
         batches = [targets[i:i+6] for i in range(0, len(targets), 6)]
         for batch_index, batch in enumerate(batches):
-            budget = min(25, max(0, 190 - (clock() - started)))
+            budget = min(20, max(0, 140 - (clock() - started)))
             if budget < 5:
                 remaining = [node for pending in batches[batch_index:] for node in pending]
                 findings = merge_node_research(findings, {
@@ -250,6 +253,7 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
             for node_id, judgment in (reasoned.get('node_judgments') or {}).items():
                 assessment_result.setdefault('node_assessments', {}).setdefault(node_id, unavailable_assessment(context))['judgment'] = judgment
             assessment_result['sources'] = list(assessment_result.get('sources') or []) + list(reasoned.get('sources') or [])
+            assessment_result['review_diagnostics'] = reasoned.get('review_diagnostics', [])
         except Exception:
             from .chain_weakness import unknown
             assessment_result['assessment']['judgment'] = unknown('本次实际薄弱程度复核未完成，保留事实材料。')
@@ -319,6 +323,7 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
                     'generation': generation,
                     'taxonomy': result.get('taxonomy', {}), 'coverage': result.get('coverage', {}),
                     'assessment': result['assessment'],
+                    'reviewDiagnostics': assessment_result.get('review_diagnostics', []),
                     'nodeResearch': findings.get('node_research', {}),
                     'publicResearch': findings.get('public_research', {}),
                     'edges': []}

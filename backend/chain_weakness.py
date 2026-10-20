@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 from .chain_assessment import _nodes, _sentences, _node_scope, _aliases, _GEO, _DENIAL, _UNCERTAIN, _CONDITIONAL, _planned, _literal_span, _node_gap_object_matches
 from .chain_reasoning import (_parse, _clean_text, _premise, _enterprise_links,
@@ -51,7 +52,7 @@ def unknown(reason='未取得足以比较本环节实际能力与需求的证据
             'action': '补查实际供给、交付状态和具体约束。',
             'limitations': ['政策提及和未检索到材料均不用于判定实际强弱。'],
             'premises': [], 'counter_evidence': [], 'evidence_ids': [],
-            'policy_context': [], 'missing': []}
+            'policy_context': [], 'missing': [], 'evaluation_state': 'not_assessed'}
 
 
 def _local_site_location(sentence, subject, context):
@@ -600,14 +601,40 @@ local_presence用于正式披露的注册/办公关联，subject为同一原段�
                'nodes': [{'node_id': k, 'name': v} for k, v in names.items()], 'evidence': evidence}
     try:
         combined = []
-        for start in range(0, len(payload['nodes']), 8):
-            batch = dict(payload, nodes=payload['nodes'][start:start+8])
+        batches = [dict(payload, nodes=payload['nodes'][start:start+8])
+                   for start in range(0, len(payload['nodes']), 8)]
+        def propose(batch):
             try:
                 raw = _parse(complete(system, json.dumps(batch, ensure_ascii=False), 5000))
-                if isinstance(raw.get('nodes'), list):
-                    combined.extend(raw['nodes'])
+                return batch, raw, None
             except Exception:
-                continue
+                return batch, None, 'proposal_unavailable'
+        # Each independent batch uses the same immutable catalog. Bounded
+        # concurrency reserves time for the separate final review rather than
+        # spending the whole request on serial extraction calls.
+        if context.get('_parallel_assessment') and len(batches) > 1:
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                outputs = list(executor.map(propose, batches))
+        else:
+            outputs = [propose(batch) for batch in batches]
+        for batch, raw, error in outputs:
+            if error:
+                for node in batch['nodes']:
+                    key = node['node_id']
+                    result['node_judgments'][key].update(
+                        reason='本轮评价未完成，已有原文仍保留。', evaluation_state='model_unavailable')
+                    result['review_diagnostics'].append({'node_id': key, 'stage': 'proposal', 'code': error})
+            else:
+                rows = raw.get('nodes') if isinstance(raw.get('nodes'), list) else []
+                combined.extend(rows)
+                covered = {row.get('node_id') for row in rows if isinstance(row, dict)
+                           and isinstance(row.get('node_id'), str)}
+                for node in batch['nodes']:
+                    key = node['node_id']
+                    if key not in covered:
+                        result['node_judgments'][key].update(
+                            reason='本轮模型未完成该环节的评价，已有原文仍保留。', evaluation_state='proposal_incomplete')
+                        result['review_diagnostics'].append({'node_id': key, 'stage': 'proposal', 'code': 'proposal_incomplete'})
         proposals, duplicates = {}, set()
         for row in combined[:60]:
             if not isinstance(row, dict):
@@ -616,6 +643,7 @@ local_presence用于正式披露的注册/办公关联，subject为同一原段�
             if isinstance(key, str) and key in names and row.get('level') == 'unknown':
                 missing = [x for x in row.get('missing', []) if _clean_text(x, 140)] if isinstance(row.get('missing'), list) else []
                 result['node_judgments'][key]['missing'] = missing[:5]
+                result['node_judgments'][key]['evaluation_state'] = 'insufficient_evidence'
             if 'premise_ids' in row:
                 ids, against = row.get('premise_ids'), row.get('counter_evidence_ids', [])
                 if (not isinstance(ids, list) or not isinstance(against, list)
@@ -624,6 +652,10 @@ local_presence用于正式披露的注册/办公关联，subject为同一原段�
                 row = dict(row, premises=[fact_refs[k] for k in ids], counter_evidence=[fact_refs[k] for k in against])
             candidate = _candidate(row, names, catalog, binding_context)
             if not candidate:
+                if isinstance(key, str) and key in names and row.get('level') != 'unknown':
+                    result['review_diagnostics'].append({'node_id': key, 'stage': 'binding', 'code': 'unbound_proposal'})
+                    result['node_judgments'][key].update(
+                        reason='本轮判断未能与该环节原文对应，已有资料仍保留。', evaluation_state='source_binding_failed')
                 continue
             if key in proposals:
                 duplicates.add(key)
@@ -672,6 +704,14 @@ scope=local_enterprise仅表示已严格绑定本地关联法律实体的业务�
                 for key, valid in decisions.items():
                     if valid is True:
                         result['node_judgments'][key] = _judgment(batch[key])
+                        result['node_judgments'][key]['evaluation_state'] = 'assessed'
+                    elif key not in conflicts:
+                        result['node_judgments'][key].update(
+                            reason='本轮判断未通过原文复核，保留资料供继续分析。', evaluation_state='review_rejected')
+                for key in set(batch) - set(decisions):
+                    result['node_judgments'][key].update(
+                        reason='本轮复核没有完成该环节，已有原文仍保留。', evaluation_state='review_incomplete')
+                    result['review_diagnostics'].append({'node_id': key, 'stage': stage, 'code': 'review_missing'})
                 return decisions
 
             decisions = review_batch(proposals, 'primary')
@@ -683,7 +723,10 @@ scope=local_enterprise仅表示已严格绑定本地关联法律实体的业务�
             if alternatives:
                 review_batch(alternatives, 'limited_basis')
     except Exception:
-        pass  # Never fall back to old policy-based colors.
+        result['review_diagnostics'].append({'stage': 'review', 'code': 'review_unavailable'})
+        for judgment in result['node_judgments'].values():
+            if judgment['level'] == 'unknown':
+                judgment.update(reason='本轮复核未完成，已有原文仍保留。', evaluation_state='review_incomplete')
     for key, name in names.items():
         result['node_judgments'][key]['policy_context'] = [sid for sid, source in catalog.items()
             if name in source['quote'] and _POLICY_ONLY.search(source['quote'])][:4]

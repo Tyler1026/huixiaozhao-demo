@@ -52,3 +52,12 @@ test('ambiguous source ids are rejected, repeated citation ids are counted once'
   meta.analysis.priorities[0].evidence_ids=['a','a'];assert.equal(read(state)[0].sources.length,1);
   meta.sources.push({...meta.sources[0],quote:'冲突原文'});assert.deepEqual(read(state),[]);
 });
+test('planned development remains a distinct reviewed opportunity with the same source requirements',()=>{
+  const state=fixture(),rows=state.researchByTopic.方向甲.analysis.priorities;rows[0].opportunity_type='planned_development';
+  const before=JSON.stringify(state),result=read(state);
+  assert.equal(result[0].opportunity_type,'planned_development');assert.equal(result[0].opportunityLabel,'规划培育');
+  assert.equal(result[1].opportunity_type,'constraint');assert.equal(result[1].opportunityLabel,'约束补链');
+  assert.equal(JSON.stringify(state),before);
+  rows[0].state='pending_review';assert.equal(read(state).length,1);
+  rows[0].state='reviewed_inference';rows[0].evidence_ids=['missing'];assert.equal(read(state).length,1);
+});

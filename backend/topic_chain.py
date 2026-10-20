@@ -151,10 +151,14 @@ def chain_source_catalog(research, context=None, *, limit=MAX_SOURCES):
         if (not isinstance(quote, str) or not 20 <= len(quote) <= MAX_QUOTE_CHARS
                 or not isinstance(url, str) or row.get('retrieval') != 'fetched'
                 or source.get('retrieval') != 'fetched' or row.get('status') not in ('source', 'single_source', 'cross_checked')
-                or source.get('source_type') not in ('government', 'disclosure', 'company')
+                or source.get('source_type') not in ('government', 'disclosure', 'company', 'research')
                 or any(isinstance(v.get(field), str) and v[field] in _DERIVED
                        for v in (row, source) for field in ('origin', 'sourceKind', 'source_kind'))):
             continue
+        if source.get('source_type') == 'research':
+            from .public_research import academic_primary_source_type
+            if academic_primary_source_type(url) != 'research':
+                continue
         fulltext = source.get('fulltext')
         if (not isinstance(fulltext, str) or quote not in fulltext or not fulltext
                 or source.get('fulltext_sha256') != _digest(fulltext)
@@ -529,6 +533,8 @@ def _retained_selection(result):
 
 
 def _constraint_selection(context, research, payload, result, complete):
+    if context.get('_prefer_assessment'):
+        return []
     catalog = chain_source_catalog(research, context)
     allowed = set(payload.get('constraint_sources') or []) & set(catalog)
     if not allowed:
@@ -563,6 +569,8 @@ def _constraint_selection(context, research, payload, result, complete):
 
 def _actual_selection(context, research, result, complete):
     """One bounded, source-only selection of overlooked operating activities."""
+    if context.get('_prefer_assessment'):
+        return []
     catalog = chain_source_catalog(research, context)
     allowed = {sid: row for sid, row in catalog.items() if any(_actual_clauses(row['quote']))}
     if not allowed:
@@ -728,6 +736,19 @@ def build_chain(context, research, complete):
     except Exception as error:
         return _source_only_chain(context, research, error)
     payload = json.loads(prompt)
+    if context.get('_prefer_assessment'):
+        # Reserve the interactive request for evaluation and its independent
+        # review. Actual products are recovered from original text without
+        # two more selection calls that could consume the review deadline.
+        actual_catalog = chain_source_catalog(research, context)
+        actual = []
+        for row in _literal_activity_selection(context, research):
+            ids = [sid for sid in row['evidence_ids'] if sid in actual_catalog
+                   and _explicit_actual_subject(row['name'], [actual_catalog[sid]], context.get('topic'))]
+            if ids:
+                actual.append(dict(row, evidence_ids=ids))
+        if actual:
+            result = normalize_chain_plan({'nodes': actual + _retained_selection(result)}, research, context)
     missing = [lane for lane in result['coverage']['missing_lanes']
                if payload.get('facet_sources', {}).get(lane)]
     if missing:
@@ -740,6 +761,8 @@ def build_chain(context, research, complete):
             '每个缺失阶段最多选择3个原文完整短语及对应evidence_ids。'
             '不重复existing_nodes，不补其他阶段；原文不足则返回空nodes。')
         try:
+            if context.get('_prefer_assessment'):
+                raise TopicChainError('assessment_reserved', '优先保留评价时间，以原文补全缺失环节。')
             supplement = complete(supplement_system, json.dumps(supplement_prompt, ensure_ascii=False), 2200)
             if isinstance(supplement, str):
                 supplement = json.loads(supplement.strip().removeprefix('```json').removesuffix('```').strip())
