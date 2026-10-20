@@ -1,8 +1,18 @@
 /* Project the server-reviewed priorities belonging to this exact saved report.
  * This is a display adapter, not another recommendation or scoring pipeline. */
+function reportOpportunityInfo(type){
+  var kinds={
+    constraint:{label:'约束补链',boundary:'基于原文披露的实际需求或约束，提交时仍需明确具体诉求和适用条件。'},
+    planned_development:{label:'规划培育',boundary:'依据正式规划形成的培育机会，不表示本地存在现实供给缺口。'},
+    capability_collaboration:{label:'产业协作',boundary:'依据已有产品和能力形成的协作方向，不表示本地存在供给缺口，也不表示企业已有投资或采购意向。'},
+    validation_collaboration:{label:'联合验证',boundary:'围绕研发或应用验证形成的合作方向，不表示已量产或已有采购订单。'}
+  };
+  return Object.prototype.hasOwnProperty.call(kinds,type)?kinds[type]:null;
+}
 function reportAnalyticalPriorities(state, topic){
   if(!state||typeof topic!=='string'||!topic)return [];
-  var text=state.aiReportByTopic&&state.aiReportByTopic[topic];
+  var byTopic=state.aiReportByTopic||{};
+  var text=Object.prototype.hasOwnProperty.call(byTopic,topic)?byTopic[topic]:state.topic===topic?state.text:null;
   var research=state.researchByTopic&&state.researchByTopic[topic];
   if(typeof text!=='string'||!text.trim()||!research||research.topic!==topic||research.reportText!==text)return [];
   var analysis=research.analysis;
@@ -24,7 +34,7 @@ function reportAnalyticalPriorities(state, topic){
   analysis.priorities.forEach(function(row){
     if(!row||row.state!=='reviewed_inference'||!Object.prototype.hasOwnProperty.call(scopes,row.scope))return;
     var opportunity=row.opportunity_type==null?'constraint':row.opportunity_type;
-    if(opportunity!=='constraint'&&opportunity!=='planned_development')return;
+    var kind=reportOpportunityInfo(opportunity);if(!kind)return;
     if(['focus','comparison','reason','action'].some(function(key){return typeof row[key]!=='string'||!row[key].trim();}))return;
     var focus=row.focus.trim();if(seen[focus]||!Array.isArray(row.evidence_ids)||!row.evidence_ids.length)return;
     var ids=[],valid=true;
@@ -34,7 +44,7 @@ function reportAnalyticalPriorities(state, topic){
     });
     if(!valid||!ids.length)return;
     seen[focus]=true;
-    out.push({focus:focus,scope:row.scope,scopeLabel:scopes[row.scope],opportunity_type:opportunity,opportunityLabel:opportunity==='planned_development'?'规划培育':'约束补链',comparison:row.comparison,reason:row.reason,action:row.action,
+    out.push({focus:focus,scope:row.scope,scopeLabel:scopes[row.scope],opportunity_type:opportunity,opportunityLabel:kind.label,opportunityBoundary:kind.boundary,comparison:row.comparison,reason:row.reason,action:row.action,
       evidence_ids:ids,sources:ids.map(function(id){return Object.assign({},sourceMap[id]);}),state:row.state,
       missing:Array.isArray(row.missing)?row.missing.filter(function(item){return typeof item==='string'&&item.trim();}):[]});
   });

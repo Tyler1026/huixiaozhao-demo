@@ -146,14 +146,19 @@ test('native history and PDF/TXT exports agree for 100, true 0 and unclassified'
   assert.ok(out.text.at(-1).includes('置信度：81%'));
 });
 
-test('native report preserves publication identity in the snapshot and cannot submit an entire direction', async () => {
+test('native report preserves its identity while an empty direction list opens a direct-demand form without submitting', async () => {
   const {context: c, project: p, report: r} = harness(publication());
   r.score = 0; r.scoreStatus = 'unclassified';
   const snapshot=c.demandReportSnapshot(c.cur,p.topic);
   assert.equal(snapshot.sourceReportId,p.reportRequestId);
   assert.equal(snapshot.scoreStatus,'unclassified');
   assert.equal(snapshot.text,r.text);
-  assert.equal(await c.submitDemand(),false);
+  const before=JSON.stringify({projects:c.PROJECTS,reports:c.REPORTSTATE}),opened=[],requests=[];
+  c.openDirectDemandComposer=context=>{opened.push(context);return true;};
+  c.fetch=async(...args)=>{requests.push(args);throw new Error('opening the form must not submit');};
+  assert.equal(await c.submitDemand(),true);
+  assert.equal(opened.length,1);assert.equal(opened[0].fromReport,true);
+  assert.equal(requests.length,0);assert.equal(JSON.stringify({projects:c.PROJECTS,reports:c.REPORTSTATE}),before);
   assert.equal(c.DEMANDS.length,0);
   assert.equal(Object.values(c.PROJECTS).filter(project=>project.isDemand).length,0);
   assert.equal(c.topicScoreDisplay(p.topic,c.cur),'核验分类待校核');

@@ -101,3 +101,48 @@ test('direct demand summary names direct submission without implying an analysis
   const e=boot();const html=e.c.industryDemandSummaryHtml({demandContract:'industry-demand-v1',demandOrigin:'direct',demandTitle:'<需求标题>',topic:'用户自填需求',demandSpec:{description:'<script>测试</script>',conditions:'现场承接条件',source:'user_direct'}});
   assert.match(html,/直接提交/);assert.doesNotMatch(html,/来自分析|对应建议|原报告/);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/<script>/);
 });
+test('empty report directions open an editable user-stated request without submitting or inventing a description',async()=>{
+  const e=boot();e.c.P=()=>e.c.PROJECTS[e.c.cur];e.c.reportAnalyticalPriorities=()=>[];
+  const before=snapshot(e);assert.equal(e.c.chooseIndustryDemand(),true);
+  assert.equal(e.c.DIRECT_DEMAND_DRAFT.key,'parent');assert.equal(e.dom.directDemandTitle.value,'原有分析方向');
+  assert.equal(e.dom.directDemandDescription.value,'');assert.equal(e.events.posts.length,0);assert.equal(snapshot(e),before);
+  assert.match(e.events.modals.at(-1)[1],/所填内容不作为报告结论/);assert.match(e.events.modals.at(-1)[1],/当前城市：闵行区/);
+  assert.equal(await e.c.submitDirectDemand(),false);assert.equal(e.events.posts.length,0);
+  e.dom.directDemandDescription.value='用户说明的实际招引诉求';assert.equal(await e.c.submitDirectDemand(),true);
+  assert.equal(e.events.posts[0].body.mode,'direct');assert.equal(e.events.posts[0].body.demand.description,'用户说明的实际招引诉求');
+  assert.equal(e.events.posts[0].body.sourceIdentity,undefined);assert.equal(e.c.PROJECTS.parent.topic,'原有分析方向');
+});
+test('the selected city takes precedence over an earlier workspace in cityKeys',()=>{
+  const e=boot();e.setKeys(['other','parent']);e.c.AUTH={scope:'user',projectKeys:['other','parent']};
+  assert.equal(e.c.directDemandWorkspaceKey(),'parent');assert.equal(e.c.openDirectDemandComposer({fromReport:true}),true);
+  assert.equal(e.c.DIRECT_DEMAND_DRAFT.key,'parent');assert.equal(e.dom.directDemandTitle.value,'原有分析方向');
+  e.c.cur='other';assert.equal(e.c.directDemandWorkspaceKey(),'other');assert.equal(e.c.openDirectDemandComposer({fromReport:true}),true);
+  assert.equal(e.c.DIRECT_DEMAND_DRAFT.key,'other');assert.equal(e.dom.directDemandTitle.value,'');
+});
+test('a selected child resolves to its authorized root without reusing the first city',()=>{
+  const e=boot();e.setKeys(['other','parent']);e.c.PROJECTS.child={id:'child',isDemand:true,workspaceId:'parent',topic:'子需求'};e.c.cur='child';
+  assert.equal(e.c.directDemandWorkspaceKey(),'parent');assert.equal(e.c.openDirectDemandComposer({fromReport:true}),true);
+  assert.equal(e.c.DIRECT_DEMAND_DRAFT.key,'parent');
+});
+test('an unauthorized or missing selected root never falls back to a different city',()=>{
+  const e=boot();e.c.AUTH={scope:'user',projectKeys:['other']};e.setKeys(['other','parent']);
+  assert.equal(e.c.directDemandWorkspaceKey(),null);assert.equal(e.c.openDirectDemandComposer(),false);
+  assert.equal(e.c.DIRECT_DEMAND_DRAFT,null);assert.equal(e.events.modals.length,0);
+  e.c.cur='child';e.c.PROJECTS.child={workspaceId:'missing',topic:'无根项目'};assert.equal(e.c.directDemandWorkspaceKey(),null);
+});
+test('without a selected city only one authorized workspace may be inferred',()=>{
+  const e=boot();e.c.cur=null;e.setKeys(['other','parent']);assert.equal(e.c.directDemandWorkspaceKey(),null);
+  e.setKeys(['parent']);assert.equal(e.c.directDemandWorkspaceKey(),'parent');
+});
+test('switching selected cities during direct submission rejects the old response even when both cities remain listed',async()=>{
+  const e=boot();e.setKeys(['other','parent']);e.open();const g=gate();
+  e.setTransport(async request=>{await g.promise;return {ok:true,status:200,json:async()=>e.receipt(request)};});
+  const pending=e.c.submitDirectDemand();e.c.cur='other';const before=snapshot(e);g.resolve();
+  assert.equal(await pending,false);assert.equal(snapshot(e),before);assert.equal(e.events.persisted,0);
+});
+test('report title context stays escaped and never fills the substantive request fields',()=>{
+  const e=boot();e.c.PROJECTS.parent.topic='<img src=x onerror=1> 分析';
+  assert.equal(e.c.openDirectDemandComposer({fromReport:true}),true);assert.equal(e.dom.directDemandTitle.value,'<img src=x onerror=1> 分析');
+  assert.equal(e.dom.directDemandDescription.value,'');assert.equal(e.dom.directDemandConditions.value,'');
+  assert.doesNotMatch(e.events.modals.at(-1)[1],/<img/);
+});
