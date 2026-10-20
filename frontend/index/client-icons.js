@@ -496,14 +496,16 @@
     var overview = document.getElementById('kbOverviewToggle');
     if (overview) actionIcon(overview, overview.getAttribute('aria-expanded') === 'true' ? 'collapse' : 'expand');
 
-    var topicIcons = ['industry-chain', 'city', 'enterprise', 'document'];
     document.querySelectorAll('.kb-topic-card[data-kb-topic] .kb-topic-number').forEach(function (number) {
       var card = number.closest('.kb-topic-card');
-      var key = topicIcons[Number(card.getAttribute('data-kb-topic'))];
-      if (!key || number.parentElement.querySelector(':scope > .client-topic-icon')) return;
+      var key = card.getAttribute('data-kb-icon') || 'knowledge-library';
+      if (!window.hxzIcons.has(key)) key = 'knowledge-library';
+      var existing = number.parentElement.querySelector(':scope > .client-topic-icon');
+      if (existing && existing.getAttribute('data-hxz-icon') === key) return;
       var svg = iconNode(key, 16);
       svg.classList.add('client-topic-icon');
-      number.before(svg);
+      if (existing) existing.replaceWith(svg);
+      else number.before(svg);
     });
 
     // These existing, dedicated icon spans are safe to replace without touching

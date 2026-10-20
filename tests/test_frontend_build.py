@@ -23,6 +23,7 @@ class FrontendBuildTests(unittest.TestCase):
         scripts=re.findall(r'<script\b([^>]*)>(.*?)</script\s*>',page,re.S|re.I)
         inline='\n'.join(body for attributes,body in scripts if not re.search(r'\bsrc\s*=',attributes,re.I))
         self.assertIn('window.hxzClientIcons = Object.freeze',inline)
-        self.assertIn('var HXZ_CARD_ART = Object.freeze',inline)
+        self.assertIn('var HXZ_BRAND_IMAGES = Object.freeze',inline)
+        self.assertIn('function kbTopicPresentation(',inline)
         self.assertNotIn('const previewState',page)
         self.assertNotIn('Local design fixture',page)

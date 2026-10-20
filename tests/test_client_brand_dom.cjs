@@ -313,3 +313,51 @@ test('client icon decoration stays idempotent across repeated refresh and one na
   assert.equal(h.app.querySelectorAll('svg').length, initial);
   assert.equal(h.calls.network + h.calls.writes, 0);
 });
+
+for (const count of [6, 9]) {
+  test(count + ' semantic topic icons survive reordering and refresh and update when a topic changes', () => {
+    const h = harness(), {e} = h;
+    vm.runInContext(fs.readFileSync(path.join(root, 'frontend/index/kb-presentation.js'), 'utf8'), h.c, {filename: 'kb-presentation.js'});
+    const titles = ['主导产业与产业链', '园区与承载条件', '链主与存量企业', '政策、规划与领导关注', '科技创新', '区位交通', '人才与团队', '产业基金', '未分类专题'];
+    const grid = h.app.appendChild(e('div', {class: 'kb-topic-grid'}));
+    const entries = titles.slice(0, count).map((title, index) => {
+      const presentation = h.c.kbTopicPresentation(title);
+      const number = e('span', {class: 'kb-topic-number', 'aria-hidden': 'true'}, String(index + 1).padStart(2, '0'));
+      const heading = e('span', {class: 'kb-topic-title'}, title);
+      const material = e('button', {class: 'kb-topic-material', onclick: 'kbClosePanels();kbDetail(' + index + ')'}, [number, heading]);
+      const question = e('button', {class: 'kb-topic-question', onclick: 'askAboutKb(' + index + ')'}, '围绕此板块提问');
+      const card = grid.appendChild(e('article', {class: 'kb-topic-card', 'data-kb-topic': String(index), 'data-kb-icon': presentation.icon, 'data-kb-theme': presentation.theme}, [material, question]));
+      return {card, number, heading, material, question, index, icon: presentation.icon};
+    });
+    const assertCards = () => entries.forEach(entry => {
+      const icons = entry.card.querySelectorAll('svg.client-topic-icon');
+      assert.equal(icons.length, 1, 'Exactly one semantic icon for original card ' + entry.index);
+      assert.equal(icons[0].getAttribute('data-hxz-icon'), entry.icon);
+      assert.equal(entry.card.getAttribute('data-kb-topic'), String(entry.index));
+      assert.equal(entry.number.textContent, String(entry.index + 1).padStart(2, '0'));
+      assert.equal(entry.material.getAttribute('onclick'), 'kbClosePanels();kbDetail(' + entry.index + ')');
+      assert.equal(entry.question.getAttribute('onclick'), 'askAboutKb(' + entry.index + ')');
+    });
+    h.run(); assertCards();
+    const initialCount = h.app.querySelectorAll('svg').length;
+    for (let i = 0; i < 5; i++) h.refresh();
+    assertCards(); assert.equal(h.app.querySelectorAll('svg').length, initialCount);
+
+    // Move the existing cards, retaining their business identity and callbacks.
+    entries.slice().reverse().forEach(entry => grid.appendChild(entry.card));
+    h.flush(); h.refresh(); assertCards();
+    assert.equal(h.app.querySelectorAll('svg').length, initialCount);
+
+    const changed = entries.at(-1), oldIcon = changed.card.querySelector('.client-topic-icon');
+    const next = h.c.kbTopicPresentation('产业金融与基金');
+    assert.notEqual(next.icon, changed.icon, 'The fixture must require a real icon replacement');
+    changed.heading.textContent = '产业金融与基金';
+    changed.card.setAttribute('data-kb-icon', next.icon);
+    changed.card.setAttribute('data-kb-theme', next.theme);
+    changed.icon = next.icon;
+    h.flush(); h.refresh(); assertCards();
+    assert.notEqual(changed.card.querySelector('.client-topic-icon'), oldIcon, 'Replace the stale icon when semantics change');
+    assert.equal(h.app.querySelectorAll('svg').length, initialCount);
+    assert.equal(h.calls.network + h.calls.writes, 0);
+  });
+}

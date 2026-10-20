@@ -138,3 +138,48 @@ test('Space in inputs, editable areas or buttons keeps native interaction withou
   h.c.kbSetOverviewCollapsed(h.page,false,true);
  }
 });
+
+for(const count of [6,9]){
+ test(count+' cards keep wheel scrolling inside their native overflow area without folding the overview',()=>{
+  const h=harness(),clip=h.cards.appendChild(new Element('div'));clip.classList.add('kb-overview-clip');
+  clip.clientHeight=180;clip.scrollHeight=count*90;
+  const cardTargets=Array.from({length:count},()=>clip.appendChild(new Element('button')));
+  for(const top of [0,120,clip.scrollHeight-clip.clientHeight]){
+   clip.scrollTop=top;
+   for(const deltaY of [96,-96]){
+    const event=h.fire('wheel',{target:cardTargets.at(-1),deltaY});
+    assertState(h,false);assert.equal(event.prevented,undefined,'native wheel scrolling is not intercepted');
+   }
+  }
+  h.c.kbSetOverviewCollapsed(h.page,true,true);
+  const upward=h.fire('wheel',{target:clip,deltaY:-120});assertState(h,true);assert.equal(upward.prevented,undefined);
+  h.c.kbSetOverviewCollapsed(h.page,false,true);
+  // Ignoring the nested region must not disable the original reading-area gesture.
+  h.advance(500);h.fire('wheel',{target:h.scroll,deltaY:48});assertState(h,true);
+ });
+
+ test(count+' cards keep native touch scrolling separate from the overview folding gesture',()=>{
+  const h=harness(),clip=h.cards.appendChild(new Element('div'));clip.classList.add('kb-overview-clip');
+  clip.clientHeight=180;clip.scrollHeight=count*90;
+  const target=clip.appendChild(new Element('button'));
+  for(const top of [0,clip.scrollHeight-clip.clientHeight]){
+   clip.scrollTop=top;
+   h.fire('touchstart',{target,touches:[{clientX:100,clientY:300}]});
+   const up=h.fire('touchmove',{target,touches:[{clientX:100,clientY:100}]});
+   assertState(h,false);assert.equal(up.prevented,undefined);
+   const down=h.fire('touchmove',{target,touches:[{clientX:100,clientY:450}]});
+   assertState(h,false);assert.equal(down.prevented,undefined);
+   h.fire('touchend',{target,touches:[]});
+  }
+  // A new gesture in the main reading area retains its existing 48px behavior.
+  h.fire('touchstart',{target:h.scroll,touches:[{clientX:100,clientY:300}]});
+  h.fire('touchmove',{target:h.scroll,touches:[{clientX:100,clientY:252}]});assertState(h,true);
+ });
+}
+
+test('a card region without overflow retains the original overview wheel behavior',()=>{
+ const h=harness(),clip=h.cards.appendChild(new Element('div'));clip.classList.add('kb-overview-clip');
+ clip.clientHeight=180;clip.scrollHeight=180;
+ const target=clip.appendChild(new Element('button'));
+ h.fire('wheel',{target,deltaY:48});assertState(h,true);
+});
