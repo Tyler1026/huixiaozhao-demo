@@ -13,6 +13,7 @@ function between(text,start,end){
  return text.slice(from,to);
 }
 const actualFunctions=[
+ fs.readFileSync(path.join(root,'frontend/index/kb-presentation.js'),'utf8'),
  between(source.report,'function reportMdToHtml(','/* 所有导出从当前方向取正文'),
  between(source.known,'function _kbText(','// === AI精选概括'),
  between(source.known,'function _kbNums(','function _getDisplayKnown('),
@@ -134,12 +135,12 @@ test('kbDetail retains filtering, user-first sorting and original indexes for ev
  h.c.KB_CONFIRMS={'workspace-a':{1:{4:{status:'confirmed'}}}};
  const html=h.render(1),ids=[...html.matchAll(/id="kb-card-1-(\d+)"/g)].map(m=>Number(m[1]));
  assert.deepEqual(ids,[5,3,2,4,1]);assert.doesNotMatch(html,/id="kb-card-1-0"/);assert.equal(JSON.stringify(kb),before);
- for(const index of ids){assert.match(html,new RegExp('editKbItem\\(1,'+index+'\\)'));assert.match(html,new RegExp('deleteKbItem\\(1,'+index+'\\)'));}
+ for(const index of ids){assert.match(html,new RegExp('editKbItem\\(1,'+index+',-1\\)'));assert.match(html,new RegExp('deleteKbItem\\(1,'+index+'\\)'));}
  assert.match(html,/confirmKbItem\(1,2\)/);assert.doesNotMatch(html,/confirmKbItem\(1,[01345]\)/);
- for(const code of ['confirmKbItem(1,2)','editKbItem(1,5)','deleteKbItem(1,1)']){
+ for(const code of ['confirmKbItem(1,2)','editKbItem(1,5,-1)','deleteKbItem(1,1)']){
   assert.ok(html.includes('onclick="'+code+'"'));vm.runInContext(code,h.c);
  }
- assert.deepEqual(h.actions,[['confirm',1,2],['edit',1,5],['delete',1,1]]);
+ assert.deepEqual(h.actions,[['confirm',1,2],['edit',1,5,-1],['delete',1,1]]);
 });
 
 test('duplicate warnings preserve representative source indexes and data layer',()=>{
@@ -374,7 +375,7 @@ test('document sections retain one original fact per body while managing actions
   assert.match(details[2],/<summary>更多操作<\/summary>/);assert.match(details[2],/deleteKbItem\(0,\d+\)/);
   assert.doesNotMatch(section.replace(details[0],''),/deleteKbItem/);
   const header=section.match(/<header\b[^>]*>([\s\S]*?)<\/header>/)?.[1]||'';
-  assert.match(header,/class="kb-detail-edit" onclick="editKbItem\(0,\d+\)"/);
+  assert.match(header,/class="kb-detail-edit" onclick="editKbItem\(0,\d+,-1\)"/);
  }
  const pending=sections.find(section=>section.includes('confirmKbItem'));
  assert.ok(pending);assert.match(pending.replace(/<details\b[^>]*>[\s\S]*?<\/details>/,''),/confirmKbItem\(0,1\)/);
@@ -423,23 +424,28 @@ test('bottom of the real scroll range selects the final section even before its 
  assert.deepEqual(h.buttons.map(b=>b.attrs['aria-current']),[undefined,undefined,'location','location',undefined,undefined]);assert.equal(h.calls.length,0);
 });
 
-test('four topic themes and fallback change only the dialog theme without mutating source content',()=>{
- const raw='## 原始资料\n全部正文与条件保持不变。',kb=freeze(Array.from({length:6},(_,i)=>({t:'主题'+i,known:[{text:raw,origin:'report'}]}))),h=harness(kb),before=JSON.stringify(kb);
- const expected=['indigo','teal','violet','amber','indigo','indigo'];
- expected.forEach((theme,index)=>{
+test('detail themes and semantic icon hosts follow titles when topics are reordered or exceed four',()=>{
+ const raw='## 原始资料\n全部正文与条件保持不变。';
+ const cases=[['政策、规划与领导关注','policy','document'],['人才服务','talent','team'],['主导产业与产业链','industry','industry-chain'],['未知资料','general','knowledge-library'],['链主与存量企业','enterprise','enterprise'],['园区与承载条件','park','city'],['科技创新','technology','technology'],['交通区位','location','transportation']];
+ const kb=freeze(cases.map(([title])=>({t:title,known:[{text:raw,origin:'report'}]}))),h=harness(kb),before=JSON.stringify(kb);
+ cases.forEach(([,theme,icon],index)=>{
   const html=h.render(index),tag=html.match(/<div class="kb-detail-dialog"[^>]*>/)?.[0]||'';
   assert.match(tag,new RegExp('data-kb-theme="'+theme+'"'));
+  assert.match(html,new RegExp('class="kb-detail-topic-icon" data-kb-icon="'+icon+'" aria-hidden="true"'));
   assert.equal((html.match(/id="kb-card-/g)||[]).length,1);assert.match(html,new RegExp('id="kb-card-'+index+'-0"'));
   assert.match(html,/<h2>原始资料<\/h2>/);assert.equal((html.match(/全部正文与条件保持不变。/g)||[]).length,1);
  });
  assert.equal(JSON.stringify(kb),before);
 });
 
-test('mosaic is four empty hidden decorative pieces and does not introduce controls or text',()=>{
- const html=harness([{t:'政策',known:['正文包含真实政策条件。']}]).render();
- const mosaic=html.match(/<div class="kb-detail-mosaic"([^>]*)>([\s\S]*?)<\/div>/);
- assert.ok(mosaic);assert.match(mosaic[1],/aria-hidden="true"/);assert.equal((mosaic[2].match(/<span><\/span>/g)||[]).length,4);
- assert.equal(visibleText(mosaic[2]).trim(),'');assert.doesNotMatch(mosaic[0],/tabindex|onclick|<button|<a\b|role=/);
+test('semantic topic icon host is decorative and the shared adapter fills it with the project icon',()=>{
+ const html=harness([{t:'政策',icon:'📜',known:['正文包含真实政策条件。']}]).render();
+ const host=html.match(/<div class="kb-detail-topic-icon"([^>]*)>([\s\S]*?)<\/div>/);
+ assert.ok(host);assert.match(host[1],/aria-hidden="true"/);assert.match(host[1],/data-kb-icon="document"/);
+ assert.equal(visibleText(host[2]).trim(),'');assert.doesNotMatch(host[0],/tabindex|onclick|<button|<a\b|role=/);
+ assert.doesNotMatch(html,/kb-detail-mosaic|📜/);
+ const adapter=fs.readFileSync(path.join(root,'frontend/index/client-icons.js'),'utf8');
+ assert.match(adapter,/querySelectorAll\('\.kb-detail-topic-icon'\)/);assert.match(adapter,/fillIcon\(host,window\.hxzIcons\.has\(key\)\?key:'knowledge-library',32\)/);
 });
 
 test('section and source labels style existing metadata without duplicating their numbers',()=>{
@@ -475,17 +481,27 @@ function cssRuleParents(css,selector){
  for(let i=0;i<css.length;i++){
   const c=css[i];if(quote){if(c==='\\')i++;else if(c===quote)quote=null;continue;}if(c==='"'||c==="'"){quote=c;continue;}
   if(c==='{'){
-   const name=css.slice(start,i).trim();if(name===selector)matches.push(stack.slice());stack.push(name);start=i+1;
+   const name=css.slice(start,i).trim();if(name.split(',').map(value=>value.trim()).includes(selector))matches.push(stack.slice());stack.push(name);start=i+1;
   }else if(c==='}'){stack.pop();start=i+1;}
  }
  return matches;
 }
-test('all topic palettes and the decorative mosaic apply at desktop as well as mobile widths',()=>{
- const css=fs.readFileSync(path.join(root,'frontend/index/style-01.css'),'utf8');
- for(const selector of ['.kb-detail-dialog[data-kb-theme="teal"]','.kb-detail-dialog[data-kb-theme="violet"]','.kb-detail-dialog[data-kb-theme="amber"]','.kb-detail-mosaic']){
+test('detail semantic themes and shared icon styles apply at desktop and mobile widths',()=>{
+ const css=fs.readFileSync(path.join(root,'frontend/index/kb-detail-brand.css'),'utf8');
+ for(const selector of ['.kb-detail-dialog','.kb-detail-dialog[data-kb-theme="park"]','.kb-detail-dialog[data-kb-theme="location"]','.kb-detail-dialog[data-kb-theme="services"]','.kb-detail-dialog[data-kb-theme="enterprise"]','.kb-detail-dialog[data-kb-theme="talent"]','.kb-detail-dialog[data-kb-theme="finance"]','.kb-detail-dialog[data-kb-theme="policy"]','.kb-detail-topic-icon']){
   assert.ok(cssRuleParents(css,selector).some(parents=>!parents.some(p=>/^@media\b/.test(p))),selector+' needs a viewport-independent rule');
  }
- assert.match(css,/\.kb-detail-mosaic\{[^}]*pointer-events:none/);
+ assert.match(css,/--kb-accent:#16594c/);assert.match(css,/background:#fffefa/);assert.doesNotMatch(css,/kb-detail-mosaic|data-kb-theme="(?:teal|violet|amber|indigo)"/);
+ assert.ok(cssRuleParents(css,'.kb-detail-topic-icon').some(parents=>parents.some(p=>/^@media\(max-width:480px\)/.test(p))));
+ const manifest=fs.readFileSync(path.join(root,'frontend/manifest.json'),'utf8');assert.match(manifest,/frontend\/index\/kb-detail-brand\.css/);
+});
+
+test('editable detail list entries preserve native list markers and position edit controls independently',()=>{
+ const css=fs.readFileSync(path.join(root,'frontend/index/kb-detail-brand.css'),'utf8');
+ const rule=css.match(/\.kb-detail-richtext li\.kb-detail-block\s*\{([^}]+)\}/)?.[1]||'';assert.match(rule,/display:list-item/);
+ assert.match(css,/\.kb-detail-richtext li\.kb-detail-block>\.kb-detail-block-edit\s*\{[^}]*position:absolute/);
+ assert.ok(cssRuleParents(css,'.kb-detail-richtext li.kb-detail-block').some(parents=>!parents.some(p=>/^@media\b/.test(p))));
+ assert.ok(cssRuleParents(css,'.kb-detail-richtext li.kb-detail-block').some(parents=>parents.some(p=>/^@media\(max-width:480px\)/.test(p))));
 });
 
 test('editor overlays the reader, preserves all reader nodes and restores original inert state on cancel',()=>{
@@ -1013,4 +1029,107 @@ for(const [name,corrupt] of malformedRevisionCases)test('malformed server revisi
 test('malformed revision maps and mismatched map identifiers cannot inject source edits',()=>{
  const item={text:'原始正文',origin:'report'},h=actionHarness([item]),record=sourceRevision(item);
  for(const map of [[record],{'wrong-key':record},null,'invalid']){h.c.KB_EDITS['workspace-a']=map;assert.equal(h.c.kbEditRecords('workspace-a').length,0);assert.equal(h.effective()[0],item);}
+});
+
+// Every visible detail entry targets its own original source interval.
+test('visible detail blocks expose independent edit controls with original record and block indexes',()=>{
+ const raw='## 区域概况\n第一项完整条件。\n\n第二项完整条件。\n来源：https://official.example/report',h=harness([{t:'城市概况',known:[{text:raw,origin:'report'}]}]);
+ const html=h.render(),controls=[...html.matchAll(/class="kb-detail-block-edit" onclick="([^"]+)"/g)].map(m=>m[1]);
+ assert.deepEqual(controls,['editKbDetailBlock(0,0,0)','editKbDetailBlock(0,0,1)','editKbDetailBlock(0,0,2)','editKbDetailBlock(0,0,3)']);
+ assert.equal((html.match(/data-kb-block="\d+"/g)||[]).length,4);assert.match(html,/onclick="editKbItem\(0,0,-1\)"/);
+});
+
+for(const blockIndex of [1,3])test('editing visible block '+blockIndex+' preserves all neighbors, line endings and immutable source metadata',async()=>{
+ const raw='  标题\r\n\r\n第二条原文\r\n\t\r\n第三条原文\r\n来源：https://official.example/report?x=1&y=2\r\n  ';
+ const item=freeze({text:raw,origin:'report',nature:'base',source:{url:'https://official.example/report?x=1&y=2'},custom:{stable:true}}),known=freeze(['前一份资料',item,'后一份资料']),h=actionHarness(known),before=JSON.stringify(known);
+ const source=h.c.kbDetailSourceText(item),part=h.c.kbDetailBlocks(source)[blockIndex];assert.equal(h.c.editKbDetailBlock(0,1,blockIndex),true);
+ assert.equal(h.c.kbEditSession.blockMode,true);assert.equal(h.c.kbEditSession.segmentIndex,blockIndex);assert.equal(h.textarea().value,part.original);
+ assert.match(h.nodes.get('kbEditorLocation').textContent||h.nodes.get('kbEditorLocation').innerHTML,new RegExp('第 '+(blockIndex+1)+' / 4 条'));
+ h.textarea().value='这一条的修订内容';await h.c.saveKbEdit(0,1);
+ const expected=source.slice(0,part.start)+'这一条的修订内容'+source.slice(part.end);
+ assert.equal(h.effective()[1].text,expected);assert.equal(h.effects.requests.length,1);assert.equal(h.effects.requests[0].body.sourceIndex,1);assert.equal(h.effects.requests[0].body.text,expected);
+ assert.equal(JSON.stringify(known),before);assert.equal(h.effective()[0],'前一份资料');assert.equal(h.effective()[2],'后一份资料');assert.equal(h.c.kbEditSession,null);
+});
+
+test('identical visible paragraphs remain separately editable by original offsets',async()=>{
+ const raw='重复正文\r\n\r\n重复正文\r\n来源：原始档案',h=actionHarness([{text:raw,origin:'report'}]);
+ assert.equal(h.c.editKbDetailBlock(0,0,1),true);assert.equal(h.textarea().value,'重复正文');h.textarea().value='仅改后一处';await h.c.saveKbEdit(0,0);
+ assert.equal(h.effective()[0].text,'重复正文\r\n\r\n仅改后一处\r\n来源：原始档案');assert.equal(h.project.kb[0].known[0].text,raw);
+});
+
+test('visible block controls keep original known indexes after user-first ordering',async()=>{
+ const known=[{text:'首份资料第一条\n首份资料第二条',origin:'report'},{text:'第二份资料第一条\n第二份资料第二条',origin:'report'},{text:'人工资料第一条\n人工资料第二条',origin:'user',ts:100}],h=actionHarness(known),before=JSON.stringify(known);
+ const html=h.render(),ids=[...html.matchAll(/id="kb-card-0-(\d+)"/g)].map(m=>Number(m[1]));assert.deepEqual(ids,[2,0,1]);
+ const section=html.match(/<section id="kb-card-0-2"[\s\S]*?<\/section>/)?.[0]||'',code=section.match(/onclick="(editKbDetailBlock\(0,2,1\))"/)?.[1];assert.ok(code);
+ vm.runInContext(code,h.c);assert.equal(h.textarea().value,'人工资料第二条');h.textarea().value='人工资料第二条已修订';await h.c.saveKbEdit(0,2);
+ assert.equal(h.effects.requests[0].body.sourceIndex,2);assert.equal(h.effective()[2].text,'人工资料第一条\n人工资料第二条已修订');assert.equal(h.effective()[0],known[0]);assert.equal(h.effective()[1],known[1]);assert.equal(JSON.stringify(known),before);
+});
+
+test('header modification opens the complete record directly instead of its first short segment',async()=>{
+ const raw='标题\n第一项条件\n第二项条件\n来源：原文',h=actionHarness([{text:raw,origin:'report'}]),html=h.render();
+ const code=html.match(/class="kb-detail-edit" onclick="([^"]+)"/)?.[1];assert.equal(code,'editKbItem(0,0,-1)');vm.runInContext(code,h.c);
+ assert.equal(h.c.kbEditSession.segmentIndex,-1);assert.equal(h.textarea().value,raw);assert.match(h.nodes.get('kbEditorLocation').textContent||h.nodes.get('kbEditorLocation').innerHTML,/全文编辑$/);
+ h.textarea().value=raw.replace('第二项条件','第二项已修订');await h.c.saveKbEdit(0,0);assert.equal(h.effective()[0].text,raw.replace('第二项条件','第二项已修订'));
+});
+
+test('contiguous Markdown lists retain a single semantic container while every item has its own edit action',()=>{
+ const raw='2. 第二项\n5) 第五项\n5、重复第五项\n\n- 第一项补充\n- 第二项补充\n\n12. 重新开始的编号',c=harness().c,html=c.kbDetailEditableHtml(raw,3,7);
+ assert.equal((html.match(/<ol class="kb-detail-editable-list">/g)||[]).length,2);assert.equal((html.match(/<ul class="kb-detail-editable-list">/g)||[]).length,1);
+ assert.deepEqual([...html.matchAll(/<li value="(\d+)" class="kb-detail-block"/g)].map(m=>Number(m[1])),[2,5,5,12]);
+ assert.deepEqual([...html.matchAll(/onclick="editKbDetailBlock\(3,7,(\d+)\)"/g)].map(m=>Number(m[1])),[0,1,2,3,4,5]);
+ assert.match(html,/<\/ol><ul class="kb-detail-editable-list">/);assert.match(html,/<\/ul><ol class="kb-detail-editable-list">/);assert.equal((html.match(/<li\b/g)||[]).length,6);
+});
+
+test('table and quotation entries preserve complete blocks and exact original separators',async()=>{
+ const table='| 条件 | 内容 |\r\n| --- | --- |\r\n| 年限 | 三年 |',quote='> 限定条件\r\n> 仅在有效期内申请。',raw='前文\r\n\r\n'+table+'\r\n\r\n'+quote+'\r\n末尾',h=actionHarness([{text:raw,origin:'report'}]);
+ const parts=h.c.kbDetailBlocks(raw);assert.deepEqual(Array.from(parts,p=>p.kind),['text','table','quote','text']);assert.equal(parts[1].original,table);assert.equal(parts[2].original,quote);
+ const reconstructed=parts.reduce((state,p)=>({text:state.text+raw.slice(state.at,p.start)+p.original,at:p.end}),{text:'',at:0});assert.equal(reconstructed.text+raw.slice(reconstructed.at),raw);
+ const html=h.c.kbDetailEditableHtml(raw,0,0);assert.equal((html.match(/<table>/g)||[]).length,1);assert.equal((html.match(/<blockquote>/g)||[]).length,1);assert.equal((html.match(/class="kb-detail-block-edit"/g)||[]).length,4);
+ h.c.editKbDetailBlock(0,0,1);assert.equal(h.textarea().value,table.replace(/\r\n/g,'\n'));h.textarea().value=h.textarea().value.replace('三年','五年');await h.c.saveKbEdit(0,0);
+ assert.equal(h.effective()[0].text,raw.replace('三年','五年'));assert.ok(h.effective()[0].text.includes(quote));
+});
+
+test('a long visible paragraph opens as one complete entry with its links intact',async()=>{
+ const long='招商项目原始条件。'.repeat(160)+' https://official.example/report?a=1&b=2',raw='开头\n'+long+'\n结尾',h=actionHarness([raw]);
+ assert.ok(h.c.kbEditorSegments(raw).length>3);assert.equal(h.c.kbDetailBlocks(raw).length,3);h.c.editKbDetailBlock(0,0,1);assert.equal(h.textarea().value,long);assert.equal(h.c.kbEditSession.parts.length,3);
+ h.textarea().value=long+' 补充核查结果。';await h.c.saveKbEdit(0,0);assert.equal(h.effective()[0].text,'开头\n'+long+' 补充核查结果。\n结尾');
+});
+
+test('invalid visible block indexes cannot open an editor, discard a draft or mutate knowledge',()=>{
+ const known=['第一条\n第二条'],h=actionHarness(known),before=JSON.stringify(known);
+ for(const index of [undefined,null,NaN,Infinity,-1,2,0.5,'1'])assert.equal(h.c.editKbDetailBlock(0,0,index),false);
+ assert.equal(h.c.kbEditSession,null);h.c.editKbDetailBlock(0,0,1);h.textarea().value='待保存修改';const session=h.c.kbEditSession,panel=h.panel();
+ for(const index of [undefined,null,NaN,Infinity,-1,2,0.5,'1'])assert.equal(h.c.editKbDetailBlock(0,0,index),false);
+ assert.equal(h.c.kbEditSession,session);assert.equal(h.panel(),panel);assert.equal(h.textarea().value,'待保存修改');assert.equal(h.nodes.has('kbEditorDiscard'),false);assert.equal(h.effects.requests.length,0);assert.equal(JSON.stringify(known),before);
+});
+
+test('opening another visible entry protects a dirty draft and honors keep or discard choice',()=>{
+ const h=actionHarness(['第一条\n第二条\n第三条']);h.c.editKbDetailBlock(0,0,1);h.textarea().value='第二条未保存';const session=h.c.kbEditSession;
+ assert.equal(h.c.editKbDetailBlock(0,0,2),false);assert.ok(h.nodes.has('kbEditorDiscard'));assert.equal(h.c.kbEditSession,session);assert.equal(h.textarea().value,'第二条未保存');
+ h.c.kbKeepEditing();assert.equal(h.textarea().value,'第二条未保存');assert.equal(h.c.editKbDetailBlock(0,0,2),false);h.c.kbDiscardEdit();
+ assert.equal(h.c.kbEditSession.segmentIndex,2);assert.equal(h.c.kbEditSession.blockMode,true);assert.equal(h.textarea().value,'第三条');assert.equal(h.effects.requests.length,0);assert.deepEqual(h.project.kb[0].known,['第一条\n第二条\n第三条']);
+});
+
+test('entry navigation preserves multiple drafts and table grouping when switching through whole text',async()=>{
+ const raw='第一条\n| 项目 | 内容 |\n| --- | --- |\n| 年限 | 三年 |\n第三条',h=actionHarness([raw]);h.c.editKbDetailBlock(0,0,2);h.textarea().value='第三条修订';h.c.kbSelectEditorPart(0);h.textarea().value='第一条修订';
+ h.c.kbSelectEditorPart(-1);assert.equal(h.textarea().value,raw.replace('第一条','第一条修订').replace('第三条','第三条修订'));h.c.kbSelectEditorPart(1);
+ assert.equal(h.c.kbEditSession.blockMode,true);assert.equal(h.c.kbEditSession.parts.length,3);assert.match(h.textarea().value,/\| 年限 \| 三年 \|/);h.textarea().value=h.textarea().value.replace('三年','四年');await h.c.saveKbEdit(0,0);
+ assert.equal(h.effective()[0].text,raw.replace('第一条','第一条修订').replace('三年','四年').replace('第三条','第三条修订'));
+});
+
+test('opening and saving an unchanged entry leaves exact status, whitespace and line endings untouched',async()=>{
+ const raw='⚠️   开头\r\n\r\n  第二条  \r\n\t\r\n末尾\r\n',item=freeze({text:raw,origin:'report',source:{id:'original'}}),h=actionHarness([item]),before=JSON.stringify(item);
+ h.c.editKbDetailBlock(0,0,1);await h.c.saveKbEdit(0,0);assert.equal(JSON.stringify(item),before);assert.equal(h.effects.requests.length,0);assert.equal(h.effects.persist,0);assert.equal(h.c.kbEditSession,null);
+});
+
+test('untrusted entry HTML stays escaped in both detail controls and selected-entry preview',()=>{
+ const raw='正文\n</div><script>globalThis.pwned=true</script>\n<img src=x onerror="globalThis.pwned=true">',h=actionHarness([{text:raw,origin:'report'}]),html=h.c.kbDetailEditableHtml(raw,0,0);
+ assert.doesNotMatch(html,/<script\b|<img\b/);assert.match(html,/&lt;script&gt;/);assert.equal((html.match(/class="kb-detail-block-edit"/g)||[]).length,3);
+ h.c.editKbDetailBlock(0,0,1);h.c.kbSetEditorMode('preview');const preview=h.nodes.get('kbEditorPreview').innerHTML;assert.doesNotMatch(preview,/<script\b|<img\b/);assert.match(preview,/&lt;script&gt;/);assert.equal(h.c.pwned,undefined);assert.equal(h.effects.requests.length,0);
+});
+
+test('after deleting an entry, reopening the next visible block targets the updated original interval',async()=>{
+ const raw='第一条\n第二条\n第三条',h=actionHarness([raw]);h.c.editKbDetailBlock(0,0,1);h.textarea().value='';await h.c.saveKbEdit(0,0);assert.equal(h.effective()[0].text,'第一条\n\n第三条');
+ h.c.editKbDetailBlock(0,0,1);assert.equal(h.textarea().value,'第三条');h.textarea().value='第三条已修订';await h.c.saveKbEdit(0,0);
+ assert.equal(h.effective()[0].text,'第一条\n\n第三条已修订');assert.equal(h.edits().length,1);assert.equal(h.edits()[0].revision,2);assert.equal(h.effects.requests[1].body.sourceItem,raw);assert.equal(h.project.kb[0].known[0],raw);
 });

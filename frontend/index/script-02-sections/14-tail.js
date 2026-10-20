@@ -1788,7 +1788,7 @@ function kbEditorSync(s){
 function kbEditorCurrentText(s){return s.segmentIndex<0?s.fullDraft:kbEditorJoinParts(s);}
 function kbEditorHasChanges(s){kbEditorSync(s);return kbEditorCurrentText(s)!==s.source;}
 function kbEditorNavigation(s){
-  return '<p>选择要修改的短段 <span>'+s.parts.length+'</span></p><nav aria-label="编辑段落">'+s.parts.map(function(part,index){
+  return '<p>选择要修改的'+(s.blockMode?'条目':'短段')+' <span>'+s.parts.length+'</span></p><nav aria-label="编辑段落">'+s.parts.map(function(part,index){
     return '<button type="button" data-kb-edit-part="'+index+'" aria-current="'+(index===s.segmentIndex?'true':'false')+'" onclick="kbSelectEditorPart('+index+')"><b>'+String(index+1).padStart(2,'0')+'</b><span>'+kbEscape(part.label||'空白段落')+'</span></button>';
   }).join('')+'</nav><button class="kb-editor-whole" onclick="kbSelectEditorPart(-1)" aria-pressed="'+(s.segmentIndex<0)+'">编辑全文</button>';
 }
@@ -1796,37 +1796,45 @@ function kbSelectEditorPart(index){
   var s=kbEditSession;if(!s||s.saving||document.getElementById('kbEditorDiscard')||!Number.isInteger(index)||index< -1||index>=s.parts.length)return;
   kbEditorSync(s);
   if(index<0&&s.segmentIndex>=0){s.fullOrigin=s.fullDraft=kbEditorJoinParts(s);}
-  else if(index>=0&&s.segmentIndex<0){s.segmentSource=s.fullDraft;s.parts=kbEditorSegments(s.segmentSource);index=s.parts.length?Math.min(index,s.parts.length-1):-1;}
+  else if(index>=0&&s.segmentIndex<0){s.segmentSource=s.fullDraft;s.parts=s.blockMode?kbDetailBlocks(s.segmentSource):kbEditorSegments(s.segmentSource);index=s.parts.length?Math.min(index,s.parts.length-1):-1;}
   s.segmentIndex=index;s.segmentVersion++;
   var value=index<0?s.fullDraft:s.parts[index].draft;
   s.initial=kbEditorNormalize(index<0?s.fullOrigin:s.parts[index].original);
   var ta=document.getElementById('kb-edit-'+s.kbIdx+'-'+s.itemIdx);if(ta)ta.value=kbEditorNormalize(value);
   var nav=document.getElementById('kbEditorSegments');if(nav)nav.innerHTML=kbEditorNavigation(s);
-  var where=document.getElementById('kbEditorLocation');if(where)where.textContent=index<0?'全文编辑':'第 '+(index+1)+' / '+s.parts.length+' 段 · 只修改当前短段';
+  var where=document.getElementById('kbEditorLocation');if(where)where.textContent=kbEditorLocation(s);
   kbSetEditorMode('edit');kbEditorChanged();
+}
+function kbEditorLocation(s){
+  return s.segmentIndex<0?'全文编辑':'第 '+(s.segmentIndex+1)+' / '+s.parts.length+(s.blockMode?' 条 · 仅修改本条':' 段 · 只修改当前短段');
 }
 function kbEditBeforeUnload(event){
   var s=kbEditSession;if(s&&kbEditorHasChanges(s)){event.preventDefault();event.returnValue='';}
 }
 if(typeof window.addEventListener==='function')window.addEventListener('beforeunload',kbEditBeforeUnload);
-function editKbItem(kbIdx,itemIdx){return kbOpenEditor(kbIdx,itemIdx,false);}
-function kbOpenEditor(kbIdx,itemIdx,isNew){
+function editKbItem(kbIdx,itemIdx,selection){return kbOpenEditor(kbIdx,itemIdx,false,selection);}
+function editKbDetailBlock(kbIdx,itemIdx,blockIndex){return kbOpenEditor(kbIdx,itemIdx,false,{blockIndex:blockIndex});}
+function kbOpenEditor(kbIdx,itemIdx,isNew,selection){
   if(!Number.isInteger(kbIdx)||!Number.isInteger(itemIdx))return false;
   var p=P(),k=p&&p.kb&&p.kb[kbIdx];
   if(!k||!Array.isArray(k.known)||itemIdx<0)return false;
   var effective=kbEffectiveKnown(p,kbIdx,cur);
   if(!isNew&&itemIdx>=effective.length)return false;
-  if(kbEditSession&&!kbCancelEdit(false,function(){kbOpenEditor(kbIdx,itemIdx,isNew);}))return false;
+  var raw=isNew?null:effective[itemIdx],source=isNew?'':kbDetailSourceText(raw);
+  var blockMode=!!selection&&typeof selection==='object',parts=blockMode?kbDetailBlocks(source):kbEditorSegments(source);
+  if(blockMode&&(!Number.isInteger(selection.blockIndex)||selection.blockIndex<0||selection.blockIndex>=parts.length))return false;
+  if(selection!==undefined&&selection!==-1&&!blockMode)return false;
+  var partIndex=blockMode?selection.blockIndex:selection===-1?-1:!isNew&&parts.length>1?0:-1;
+  if(kbEditSession&&!kbCancelEdit(false,function(){kbOpenEditor(kbIdx,itemIdx,isNew,selection);}))return false;
   var modal=document.getElementById('kbDetailModal');
   if(!modal){kbDetail(kbIdx);modal=document.getElementById('kbDetailModal');}
   var dialog=modal&&modal.querySelector('.kb-detail-dialog');if(!dialog)return false;
-  var raw=isNew?null:effective[itemIdx],source=isNew?'':kbDetailSourceText(raw),parts=kbEditorSegments(source),partIndex=!isNew&&parts.length>1?0:-1;
   var revision=isNew?null:kbEditRecord(cur,raw);
   var sourceIndex=isNew?null:revision?revision.sourceIndex:itemIdx;
   if(!revision&&!isNew)revision=kbSourceEdit(p,kbIdx,sourceIndex,cur);
   var orig=kbEditorNormalize(partIndex<0?source:parts[partIndex].draft);
   var meta=isNew?{title:'补充结论',source:k.t}:kbDetailMeta(raw,itemIdx);
-  kbEditSession={id:++kbEditSequence,key:cur,project:p,topic:k,known:k.known,kbIdx:kbIdx,itemIdx:itemIdx,isNew:!!isNew,raw:raw,snapshot:JSON.stringify(raw),sourceIndex:sourceIndex,sourceItem:sourceIndex===null?null:JSON.parse(JSON.stringify(k.known[sourceIndex])),editId:revision?revision.id:null,revision:revision?revision.revision:0,baseReportVersion:sourceIndex===null?null:JSON.parse(JSON.stringify(p.baseReportVersion||null)),initial:orig,source:source,segmentSource:source,parts:parts,segmentIndex:partIndex,segmentVersion:0,fullOrigin:source,fullDraft:source,epoch:originalUploadEpoch(),obscured:[]};
+  kbEditSession={id:++kbEditSequence,key:cur,project:p,topic:k,known:k.known,kbIdx:kbIdx,itemIdx:itemIdx,isNew:!!isNew,raw:raw,snapshot:JSON.stringify(raw),sourceIndex:sourceIndex,sourceItem:sourceIndex===null?null:JSON.parse(JSON.stringify(k.known[sourceIndex])),editId:revision?revision.id:null,revision:revision?revision.revision:0,baseReportVersion:sourceIndex===null?null:JSON.parse(JSON.stringify(p.baseReportVersion||null)),initial:orig,source:source,segmentSource:source,parts:parts,blockMode:blockMode,segmentIndex:partIndex,segmentVersion:0,fullOrigin:source,fullDraft:source,epoch:originalUploadEpoch(),obscured:[]};
   var panel=document.createElement('div');panel.id='kbEditorPanel';panel.className='kb-editor-panel';
   panel.setAttribute('role','region');panel.setAttribute('aria-label',isNew?'补充知识资料':'修改知识资料');
   panel.setAttribute('data-mode','edit');panel.setAttribute('onkeydown','kbEditKey(event)');
@@ -1834,7 +1842,7 @@ function kbOpenEditor(kbIdx,itemIdx,isNew){
     '<button class="kb-detail-close" aria-label="取消编辑" onclick="kbCancelEdit()">✕</button></header>'+
     '<div class="kb-editor-toolbar"><div role="tablist" aria-label="编辑视图"><button id="kbEditorTabEdit" role="tab" aria-selected="true" aria-controls="kbEditorInput" onclick="kbSetEditorMode(\'edit\')">编辑原文</button><button id="kbEditorTabPreview" role="tab" aria-selected="false" aria-controls="kbEditorPreview" onclick="kbSetEditorMode(\'preview\')">预览效果</button></div><span id="kbEditorCount"></span></div>'+
     '<div class="kb-editor-workspace">'+(!isNew&&parts.length>1?'<aside id="kbEditorSegments" class="kb-editor-segments">'+kbEditorNavigation(kbEditSession)+'</aside>':'')+
-    '<div class="kb-editor-content"><div id="kbEditorInput" role="tabpanel" aria-labelledby="kbEditorTabEdit"><label class="kb-editor-label" for="kb-edit-'+kbIdx+'-'+itemIdx+'">'+(isNew?'补充内容':'资料正文')+' <span id="kbEditorLocation">'+(partIndex<0?'全文编辑':'第 1 / '+parts.length+' 段 · 只修改当前短段')+'</span></label><textarea id="kb-edit-'+kbIdx+'-'+itemIdx+'" class="kb-editor-textarea" placeholder="输入内容，可保留分段、编号和来源链接…" oninput="kbEditorChanged()">'+kbEscape(orig)+'</textarea><p class="kb-editor-help">切换段落会保留草稿；保存时仅替换改动的部分，其他正文和来源不变。</p></div>'+
+    '<div class="kb-editor-content"><div id="kbEditorInput" role="tabpanel" aria-labelledby="kbEditorTabEdit"><label class="kb-editor-label" for="kb-edit-'+kbIdx+'-'+itemIdx+'">'+(isNew?'补充内容':'资料正文')+' <span id="kbEditorLocation">'+kbEditorLocation(kbEditSession)+'</span></label><textarea id="kb-edit-'+kbIdx+'-'+itemIdx+'" class="kb-editor-textarea" placeholder="输入内容，可保留分段、编号和来源链接…" oninput="kbEditorChanged()">'+kbEscape(orig)+'</textarea><p class="kb-editor-help">切换条目会保留草稿；保存时仅替换改动的部分，其他正文和来源不变。</p></div>'+
     '<div id="kbEditorPreview" class="kb-detail-richtext kb-editor-preview" role="tabpanel" aria-labelledby="kbEditorTabPreview" hidden></div></div></div>'+
     '<details class="kb-editor-attachments"><summary>添加参考附件</summary><p>附件会单独保存，取消正文编辑不会删除已上传附件。</p><button onclick="editPickFile('+kbIdx+','+itemIdx+')">选择附件</button><span id="kb-file-hint-'+kbIdx+'-'+itemIdx+'">支持 PDF、Word、TXT 等资料</span></details>'+
     '<footer class="kb-editor-footer"><span id="kbEditorStatus" role="status"></span><div><button class="kb-detail-secondary" onclick="kbCancelEdit()">取消</button><button id="kbEditorSave" class="kb-detail-ask" onclick="saveKbEdit('+kbIdx+','+itemIdx+')">保存并返回</button></div><small>Ctrl / ⌘ + Enter 保存</small></footer>';
@@ -1953,7 +1961,9 @@ async function saveKbEdit(kbIdx,itemIdx){
     kbDetail(kbIdx);var sc2=document.querySelector('#kbDetailModal .kb-detail-scroll');
     var savedIdx=kbEffectiveKnown(p,kbIdx,s.key).findIndex(function(item){return item&&item._kbEditId===record.id;});
     var savedCard=document.getElementById('kb-card-'+kbIdx+'-'+savedIdx);
-    if(sc2){sc2.scrollTop=st;if(savedCard)sc2.scrollTop=Math.max(0,sc2.scrollTop+savedCard.getBoundingClientRect().top-sc2.getBoundingClientRect().top-20);}
+    var savedTarget=savedCard;
+    if(savedCard&&s.blockMode&&s.segmentIndex>=0&&typeof savedCard.querySelector==='function')savedTarget=savedCard.querySelector('[data-kb-block="'+s.segmentIndex+'"]')||savedCard;
+    if(sc2){sc2.scrollTop=st;if(savedTarget)sc2.scrollTop=Math.max(0,sc2.scrollTop+savedTarget.getBoundingClientRect().top-sc2.getBoundingClientRect().top-20);}
     if(typeof refreshKbProgress==='function')refreshKbProgress();toast('已保存到云端，问答将使用更新后的内容。');
   }catch(error){
     if(kbEditSession===s){s.saveError=error&&error.message||'保存未完成，草稿已保留。';toast(s.saveError);}
@@ -2025,6 +2035,35 @@ function kbDetailSourceText(value){
   var text=value&&typeof value==='object'?value.text:value;
   return String(text==null?'':text).replace(/^[\u2705\u26a0\ufe0f]+[ \t]*/, '');
 }
+// Each visible entry keeps its own source interval. Tables and quotations stay whole.
+function kbDetailBlocks(text){
+  text=String(text);var lines=[],match,re=/[^\r\n]+/g,parts=[];
+  while((match=re.exec(text)))if(match[0].trim())lines.push({start:match.index,end:match.index+match[0].length,text:match[0]});
+  lines.forEach(function(line){
+    var kind=/^\s*\|.*\|\s*$/.test(line.text)?'table':/^\s*>/.test(line.text)?'quote':'text';
+    var last=parts[parts.length-1],gap=last?text.slice(last.end,line.start).replace(/\r\n?/g,'\n'):'';
+    if(last&&kind!=='text'&&last.kind===kind&&gap==='\n'){last.end=line.end;last.original=last.draft=text.slice(last.start,last.end);return;}
+    parts.push({start:line.start,end:line.end,original:line.text,draft:line.text,kind:kind,label:Array.from(line.text.trim().replace(/^#{1,6}\s+|^[-*]\s+/, '')).slice(0,42).join('')});
+  });
+  return parts;
+}
+function kbDetailEditableHtml(value,kbIdx,itemIdx){
+  var text=kbDetailSourceText(value),out=[],listTag='',previous=null;
+  function closeList(){if(listTag){out.push('</'+listTag+'>');listTag='';}}
+  kbDetailBlocks(text).forEach(function(part,index){
+    var html=kbDetailTextHtml(part.original),row=html.match(/^<(ul|ol)>\s*<li(?: value="(\d+)")?>([\s\S]*)<\/li>\s*<\/\1>$/);
+    var control='<button type="button" class="kb-detail-block-edit" onclick="editKbDetailBlock('+kbIdx+','+itemIdx+','+index+')" aria-label="修改第 '+(index+1)+' 条内容">修改本条</button>';
+    if(row){
+      if(listTag!==row[1]||!previous||text.slice(previous.end,part.start).replace(/\r\n?/g,'\n')!=='\n')closeList();
+      if(!listTag){listTag=row[1];out.push('<'+listTag+' class="kb-detail-editable-list">');}
+      out.push('<li'+(row[2]?' value="'+row[2]+'"':'')+' class="kb-detail-block" data-kb-block="'+index+'"><div class="kb-detail-block-content">'+row[3]+'</div>'+control+'</li>');
+    }else{
+      closeList();out.push('<div class="kb-detail-block" data-kb-block="'+index+'"><div class="kb-detail-block-content">'+html+'</div>'+control+'</div>');
+    }
+    previous=part;
+  });
+  closeList();return out.join('');
+}
 function kbDetailMeta(value,index){
   var item=value&&typeof value==='object'?value:{},text=kbDetailSourceText(value),first=text.split(/\r?\n/).filter(function(line){return line.trim();})[0]||'';
   var file=String(item.sourceFile||item.src||item.cite||''),name=file.split(/[\\/]/).pop();
@@ -2092,7 +2131,8 @@ function kbDetail(i){
   if(kbEditSession&&!kbCancelEdit(false,function(){kbDetail(i);}))return;
   var k=P().kb[i]; if(!k) return;
   curKb=i;
-  var detailTheme=['indigo','teal','violet','amber'][i]||'indigo';
+  var presentation=typeof kbTopicPresentation==='function'?kbTopicPresentation(k.t):{theme:'general',icon:'knowledge-library'};
+  var detailTheme=presentation.theme;
 
   // 已知条目列表。显示规则（用户 2026-09-18 定）：
   //   用户补充(全部) + 待确认⚠️(全部) + 精选6条(其余里挑)
@@ -2155,8 +2195,8 @@ function kbDetail(i){
     return '<section id="kb-card-'+i+'-'+pair.origIdx+'" class="kb-detail-article" data-kb-section="'+pair.origIdx+'">'+
       '<header class="kb-detail-article-head"><div class="kb-detail-meta"><span class="kb-detail-section-label">资料 '+meta.number+'</span><span class="kb-detail-source-label" title="'+kbEscape(meta.file||meta.source)+'">'+kbEscape(meta.source)+'</span>'+
       (state?'<span class="kb-detail-state '+(warn&&!confirmed?'is-pending':'')+'">'+state+'</span>':'')+'</div>'+
-      '<div class="kb-detail-title-row"><h3>'+kbEscape(meta.title)+'</h3><button class="kb-detail-edit" onclick="editKbItem('+i+','+pair.origIdx+')" aria-label="修改'+kbEscape(meta.title)+'">✎ 修改</button></div></header>'+
-      '<div class="kb-detail-richtext">'+kbDetailTextHtml(raw)+'</div>'+
+      '<div class="kb-detail-title-row"><h3>'+kbEscape(meta.title)+'</h3><button class="kb-detail-edit" onclick="editKbItem('+i+','+pair.origIdx+',-1)" aria-label="修改全文：'+kbEscape(meta.title)+'">修改全文</button></div></header>'+
+      '<div class="kb-detail-richtext">'+kbDetailEditableHtml(raw,i,pair.origIdx)+'</div>'+
       (duplicateCount&&warn&&!confirmed?'<p class="kb-detail-duplicate">合并了 '+(duplicateCount+1)+' 条同义表述，确认时将一并更新。</p>':'')+
       '<footer class="kb-detail-article-actions">'+confirm+manage+'</footer></section>';
   }).join(''):'<p class="kb-detail-empty">暂无已知内容，可基于此主题提问或补充资料。</p>';
@@ -2176,7 +2216,7 @@ function kbDetail(i){
         '<header class="kb-detail-header"><div class="kb-detail-heading"><span class="kb-detail-eyebrow">城市智库 / 资料阅读</span>'+
           '<h2 id="kbDetailTitle">'+kbEscape(k.t)+'</h2>'+
           '<p>'+kbEscape(_getDisplaySub(i)||k.sub)+'</p></div>'+
-          '<div class="kb-detail-mosaic" aria-hidden="true"><span></span><span></span><span></span><span></span></div>'+
+          '<div class="kb-detail-topic-icon" data-kb-icon="'+presentation.icon+'" aria-hidden="true"></div>'+
           '<button class="kb-detail-close" aria-label="关闭知识详情" onclick="closeKbDetail()">✕</button></header>'+
         '<div class="kb-detail-layout">'+
           '<aside class="kb-detail-index"><p>本页目录 <span>'+_displayPairs.length+'</span></p><nav aria-label="资料目录">'+indexHtml+'</nav>'+

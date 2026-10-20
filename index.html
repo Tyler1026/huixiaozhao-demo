@@ -2793,6 +2793,233 @@ body.industry-view .chain-node-drawer-content a { color:#3c7553; }
   .client-settings-page .toggle-row input[type="checkbox"],
   .client-settings-page .toggle-row input[type="checkbox"]::after { transition:none; }
 }
+/* Knowledge reading and editing share the client VI without changing the dialog layout. */
+.kb-detail-overlay {
+  background:rgba(23,44,35,.32);
+  backdrop-filter:blur(4px);
+}
+.kb-detail-dialog,.kb-detail-dialog[data-kb-theme] {
+  --kb-accent:#16594c;
+  --kb-ink:#16594c;
+  --kb-tint:#edf3e9;
+  --kb-line:#d8e3d4;
+  --kb-stroke:#d8e3d4;
+  background:#fffefa;
+  color:#3f554a;
+  border:1px solid #d8e1d4;
+  box-shadow:0 20px 64px rgba(23,44,35,.18);
+}
+.kb-detail-dialog[data-kb-theme="park"],
+.kb-detail-dialog[data-kb-theme="location"],
+.kb-detail-dialog[data-kb-theme="services"] {
+  --kb-tint:#eaf2e8;
+  --kb-line:#d2e1d6;
+  --kb-stroke:#d2e1d6;
+}
+.kb-detail-dialog[data-kb-theme="enterprise"],
+.kb-detail-dialog[data-kb-theme="talent"],
+.kb-detail-dialog[data-kb-theme="finance"] {
+  --kb-tint:#f0f3e4;
+  --kb-line:#dbe2cc;
+  --kb-stroke:#dbe2cc;
+}
+.kb-detail-dialog[data-kb-theme="policy"] {
+  --kb-tint:#f4f1e5;
+  --kb-line:#e4decc;
+  --kb-stroke:#e4decc;
+}
+.kb-detail-header,.kb-editor-header {
+  background:linear-gradient(115deg,var(--kb-tint),#fffefa 76%);
+  border-bottom-color:#e0e7db;
+}
+.kb-detail-eyebrow {color:#70816f;letter-spacing:1px}
+.kb-detail-eyebrow:before {background:#789277;border-radius:50%;transform:none;width:5px;height:5px}
+.kb-detail-header h2,.kb-editor-header h2 {color:#203b30;font-weight:600}
+.kb-detail-header p,.kb-editor-header p {color:#6b7e6c}
+.kb-detail-topic-icon {
+  display:flex;align-items:center;justify-content:center;flex:none;
+  width:58px;height:58px;align-self:center;margin:0 4px;
+  color:#16594c;background:#fffefa99;border:1px solid var(--kb-line);border-radius:15px;
+}
+.kb-detail-topic-icon .client-brand-icon {width:30px;height:30px;stroke-width:1.6}
+.kb-detail-close {
+  display:inline-flex;align-items:center;justify-content:center;
+  background:#eef2e9;color:#657b65;border:1px solid #dde6d8;
+}
+.kb-detail-close:hover {background:#e3ecde;color:#16594c;border-color:#c5d5bd}
+.kb-detail-close .client-brand-icon {width:15px;height:15px}
+.kb-detail-index,.kb-editor-segments {background:#f5f6f1;border-color:#e0e7db}
+.kb-detail-index>p,.kb-editor-segments>p {color:#60765f;font-weight:500}
+.kb-detail-index>p>span,.kb-detail-index small {color:#80917b}
+.kb-detail-index-link {color:#5f745f;border-radius:8px}
+.kb-detail-index-link>span:first-child {color:#8c9c82}
+.kb-detail-index-link:hover {background:#e9efdf;color:#16594c}
+.kb-detail-index-link[aria-current] {background:#e3ecdc;color:#16594c;font-weight:600}
+.kb-detail-index-link[aria-current]>span:first-child {color:#4f7851}
+.kb-detail-scroll,.kb-editor-preview {scrollbar-color:#bbcab1 transparent;scrollbar-width:thin}
+.kb-detail-mobile-index {color:#62795e;border-color:#e0e7db}
+.kb-detail-article {border-color:#e1e7da}
+.kb-detail-article-head {background:linear-gradient(100deg,var(--kb-tint),#f9faf4);border-left-color:#719370}
+.kb-detail-meta {color:#7a8973}
+.kb-detail-section-label {color:#54774e;font-weight:600}
+.kb-detail-source-label {color:#66775d;background:#fffefaab;border-color:var(--kb-line)}
+.kb-detail-article h3 {color:#2b4635;font-weight:600}
+.kb-detail-state {background:#e7efde;color:#637a52}
+.kb-detail-state.is-pending {background:#f4ecd8;color:#8e6a38}
+.kb-detail-title-row {align-items:flex-start}
+.kb-detail-edit,.kb-detail-block-edit {
+  display:inline-flex;align-items:center;justify-content:center;gap:5px;
+  color:#53744f;border:1px solid #cfddc5;background:#fffefa;
+  border-radius:7px;font-family:inherit;font-weight:400;white-space:nowrap;cursor:pointer;
+}
+.kb-detail-edit {padding:6px 9px;font-size:11px;line-height:1.55}
+.kb-detail-edit:hover,.kb-detail-block-edit:hover {
+  color:#16594c;border-color:#9cb391;background:#edf3e7;
+}
+.kb-detail-edit .client-brand-icon,.kb-detail-block-edit .client-brand-icon {width:13px;height:13px}
+.kb-detail-richtext {color:#405540;font-size:14px;line-height:1.95}
+.kb-detail-richtext strong {color:#285d42}
+.kb-detail-richtext h1,.kb-detail-richtext h2,.kb-detail-richtext h3,.kb-detail-richtext h4 {color:#315638;font-weight:600}
+.kb-detail-richtext h1:before,.kb-detail-richtext h2:before,
+.kb-detail-richtext h3:before,.kb-detail-richtext h4:before {border-color:#799571;transform:none;border-radius:2px}
+.kb-detail-richtext li {background:#f3f6ec;border-left-color:#d7e2c9}
+.kb-detail-richtext li:nth-child(even) {background:#f8f9f2}
+.kb-detail-richtext li::marker {color:#648255}
+.kb-detail-richtext blockquote {background:var(--kb-tint);border-color:#8ca77d;color:#647557}
+.kb-detail-richtext hr {border-color:#dfe6d5}
+.kb-detail-richtext th,.kb-detail-richtext td {border-color:#dce5d3}
+.kb-detail-richtext th {background:#edf2e5;color:#557343}
+.kb-detail-richtext .num {background:#e8efde;color:#416d3e}
+.kb-detail-richtext .warn,.kb-detail-caution {color:#92633d;background:#f6ead6}
+.kb-detail-note {color:#77876a}
+.kb-detail-citation {color:#50794c;background:#eef3e4;border-color:#d7e2c8}
+.kb-detail-source-link {color:#537847;border-color:#aabf98}
+.kb-detail-source-link:hover {color:#16594c}
+.kb-detail-block {
+  position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;
+  align-items:start;gap:12px;padding:10px 0;
+  border-bottom:1px solid #edf0e6;
+}
+.kb-detail-block:first-child {padding-top:0}
+.kb-detail-block:last-child {border-bottom:0;padding-bottom:0}
+.kb-detail-block-content {min-width:0}
+.kb-detail-block-content>:first-child {margin-top:0}
+.kb-detail-block-content>:last-child {margin-bottom:0}
+.kb-detail-block-edit {
+  margin-top:2px;padding:4px 7px;font-size:10.5px;line-height:1.6;
+  background:transparent;border-color:transparent;color:#6c8263;
+}
+.kb-detail-block:hover>.kb-detail-block-edit,
+.kb-detail-block:focus-within>.kb-detail-block-edit {border-color:#d0ddc7;background:#f5f8ee;color:#426c3e}
+.kb-detail-richtext .kb-detail-editable-list {margin:0 0 17px;padding-left:24px}
+.kb-detail-richtext li.kb-detail-block {
+  display:list-item;padding:11px 101px 11px 13px;
+  border-bottom:0;border-left:2px solid #d7e2c9;
+}
+.kb-detail-richtext li.kb-detail-block>.kb-detail-block-edit {position:absolute;right:8px;top:9px;margin:0}
+.kb-detail-confirm {
+  display:inline-flex;align-items:center;justify-content:center;gap:5px;
+  background:#edf4e7;border-color:#cdddc3;color:#527d46;
+}
+.kb-detail-manage {color:#7d8d73}
+.kb-detail-manage-actions button,.kb-detail-article-actions>.kb-detail-secondary {
+  display:inline-flex;align-items:center;gap:5px;
+  color:#6c7e5e;border-color:#d9e2ce;background:#fffefa;padding:5px 9px;border-radius:7px;font-size:11px;
+}
+.kb-detail-manage-actions .is-danger {color:#a16a55}
+.kb-detail-manage-actions .is-danger:hover {background:#f8efe7;border-color:#dfc7b6}
+.kb-detail-duplicate {color:#9a7750}
+.kb-detail-empty,.kb-detail-more {color:#7b8c70}
+.kb-detail-related h3 {color:#6c825d}
+.kb-detail-related span {background:#edf2e4!important;color:#5e7c4d!important;border:1px solid #dce5cc;border-radius:6px!important}
+.kb-detail-disclaimer {color:#87957c;border-color:#e1e7d8}
+.kb-detail-dialog>div[style*="padding:0 22px"]>div:first-child {color:#7b8d6d!important}
+.kb-detail-dialog>div[style*="padding:0 22px"]>div:last-child {background:#edf2e3!important}
+.kb-detail-dialog>div[style*="padding:0 22px"]>div:last-child>div {background:#759762!important}
+.kb-detail-footer,.kb-editor-footer {background:#f5f6f1;border-color:#e0e7db}
+.kb-detail-footer button,.kb-editor-footer button,.kb-editor-discard footer button {
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+}
+.kb-detail-ask {background:#16594c;border-color:#16594c;color:#fffefa}
+.kb-detail-ask:hover {background:#104b40;border-color:#104b40;filter:none}
+.kb-detail-secondary {background:#fffefa;color:#62785c;border-color:#d1ddc7}
+.kb-detail-secondary:hover {background:#edf3e5;color:#16594c;border-color:#b6c9a9}
+.kb-detail-footer .client-brand-icon,.kb-editor-footer .client-brand-icon {width:14px;height:14px}
+.kb-editor-panel {background:#fffefa}
+.kb-editor-toolbar {border-color:#e0e7db;background:#fffefa}
+.kb-editor-toolbar [role="tablist"] {background:#edf1e6;border:1px solid #e0e7d6}
+.kb-editor-toolbar button {display:inline-flex;align-items:center;justify-content:center;gap:6px;color:#748269}
+.kb-editor-toolbar button[aria-selected="true"] {background:#fffefa;color:#16594c;box-shadow:0 1px 4px #314d2812}
+.kb-editor-toolbar>span {color:#7e8c74}
+.kb-editor-toolbar .client-brand-icon {width:13px;height:13px}
+.kb-editor-segments nav button {color:#6a7d60}
+.kb-editor-segments nav b {color:#8a9b7e}
+.kb-editor-segments nav button:hover {background:#eaf0df}
+.kb-editor-segments nav button[aria-current="true"] {background:#fffefa;border-color:#cfddc3;color:#315f42;box-shadow:0 2px 6px #314d2806}
+.kb-editor-segments nav button[aria-current="true"] b {color:#547b48}
+.kb-editor-whole {display:flex;align-items:center;justify-content:center;gap:5px;background:#fffefa;color:#627956;border-color:#d1ddc7}
+.kb-editor-whole[aria-pressed="true"] {color:#16594c;background:#e9f0df;border-color:#a3bb91}
+.kb-editor-label {color:#596f50}
+.kb-editor-label>span {color:#557e46}
+.kb-editor-textarea {color:#344e36;background:#fffefa;border-color:#cbdac0}
+.kb-editor-textarea:focus {border-color:#729466;box-shadow:0 0 0 3px #16594c0b}
+.kb-editor-textarea::placeholder {color:#91a084}
+.kb-editor-help {color:#829375}
+.kb-editor-attachments {border-color:#cfddc2;color:#6c815c;background:#fafbf5}
+.kb-editor-attachments p {color:#849676}
+.kb-editor-attachments button {display:inline-flex;align-items:center;gap:5px;color:#5b7950;background:#f0f5e7;border-color:#cfdec0}
+.kb-editor-attachments button:hover {background:#e6efd8}
+.kb-editor-footer>span {color:#6d815d}
+.kb-editor-footer small {color:#8c9d7e}
+.kb-editor-discard {background:#263c2c55}
+.kb-editor-discard>div {background:#fffefa;border:1px solid #d8e2cc;box-shadow:0 16px 48px #263c2c24}
+.kb-editor-discard h3 {color:#294a33}
+.kb-editor-discard p {color:#6d815e}
+.kb-editor-discard-action {color:#996951;background:#fffefa;border-color:#e3d3c1}
+.kb-detail-dialog button:focus-visible,.kb-detail-dialog summary:focus-visible,
+.kb-detail-dialog a:focus-visible {outline:2px solid #759468;outline-offset:3px}
+@media(max-width:720px) {
+  .kb-detail-topic-icon {width:42px;height:42px;border-radius:11px;margin:0}
+  .kb-detail-topic-icon .client-brand-icon {width:24px;height:24px}
+  .kb-detail-header {gap:10px}
+  .kb-detail-header h2 {font-size:19px}
+  .kb-detail-index-link {padding:8px;font-size:11px}
+  .kb-detail-richtext {font-size:13px}
+  .kb-detail-block {gap:9px}
+  .kb-detail-block-edit {border-color:#dbe5d1;background:#f7f9f0}
+  .kb-detail-edit {padding:5px 7px;font-size:10.5px}
+  .kb-editor-toolbar {gap:8px}
+  .kb-editor-toolbar button {gap:4px}
+  .kb-editor-segments {border-color:#dfe7d4}
+}
+@media(max-width:480px) {
+  .kb-detail-header {padding:17px 17px 15px}
+  .kb-detail-scroll {padding:19px 17px 24px}
+  .kb-detail-topic-icon {width:34px;height:34px;border-radius:10px}
+  .kb-detail-topic-icon .client-brand-icon {width:21px;height:21px}
+  .kb-detail-header h2 {font-size:18px;overflow-wrap:anywhere}
+  .kb-detail-title-row {gap:8px}
+  .kb-detail-article h3 {font-size:16px}
+  .kb-detail-block {grid-template-columns:minmax(0,1fr);gap:3px;padding:11px 0}
+  .kb-detail-block-edit {justify-self:end;margin-top:1px;padding:3px 7px}
+  .kb-detail-richtext li.kb-detail-block {padding:11px 12px 41px}
+  .kb-detail-richtext li.kb-detail-block>.kb-detail-block-edit {top:auto;bottom:7px;right:8px}
+  .kb-detail-footer {justify-content:flex-start;padding:11px 12px;gap:6px}
+  .kb-detail-footer button {font-size:10.5px;padding:8px;gap:4px}
+  .kb-detail-footer .kb-detail-ask {margin-left:auto}
+  .kb-detail-footer .client-brand-icon {width:12px;height:12px}
+  .kb-editor-header {padding:16px 17px 13px}
+  .kb-editor-toolbar {padding:9px 14px}
+  .kb-editor-toolbar button {padding:7px 8px;font-size:11px}
+  .kb-editor-toolbar>span {font-size:10px}
+  .kb-editor-content {padding:13px 16px}
+  .kb-editor-attachments {margin-right:16px;margin-left:16px;font-size:11px}
+  .kb-editor-footer {padding:11px 16px;gap:7px}
+  .kb-editor-footer button {font-size:11px;padding:8px 10px}
+}
+@media(prefers-reduced-motion:reduce) {
+  .kb-detail-overlay {backdrop-filter:none}
+}
 </style><script>/*
 ISC License
 
@@ -13261,7 +13488,7 @@ function kbEditorSync(s){
 function kbEditorCurrentText(s){return s.segmentIndex<0?s.fullDraft:kbEditorJoinParts(s);}
 function kbEditorHasChanges(s){kbEditorSync(s);return kbEditorCurrentText(s)!==s.source;}
 function kbEditorNavigation(s){
-  return '<p>选择要修改的短段 <span>'+s.parts.length+'</span></p><nav aria-label="编辑段落">'+s.parts.map(function(part,index){
+  return '<p>选择要修改的'+(s.blockMode?'条目':'短段')+' <span>'+s.parts.length+'</span></p><nav aria-label="编辑段落">'+s.parts.map(function(part,index){
     return '<button type="button" data-kb-edit-part="'+index+'" aria-current="'+(index===s.segmentIndex?'true':'false')+'" onclick="kbSelectEditorPart('+index+')"><b>'+String(index+1).padStart(2,'0')+'</b><span>'+kbEscape(part.label||'空白段落')+'</span></button>';
   }).join('')+'</nav><button class="kb-editor-whole" onclick="kbSelectEditorPart(-1)" aria-pressed="'+(s.segmentIndex<0)+'">编辑全文</button>';
 }
@@ -13269,37 +13496,45 @@ function kbSelectEditorPart(index){
   var s=kbEditSession;if(!s||s.saving||document.getElementById('kbEditorDiscard')||!Number.isInteger(index)||index< -1||index>=s.parts.length)return;
   kbEditorSync(s);
   if(index<0&&s.segmentIndex>=0){s.fullOrigin=s.fullDraft=kbEditorJoinParts(s);}
-  else if(index>=0&&s.segmentIndex<0){s.segmentSource=s.fullDraft;s.parts=kbEditorSegments(s.segmentSource);index=s.parts.length?Math.min(index,s.parts.length-1):-1;}
+  else if(index>=0&&s.segmentIndex<0){s.segmentSource=s.fullDraft;s.parts=s.blockMode?kbDetailBlocks(s.segmentSource):kbEditorSegments(s.segmentSource);index=s.parts.length?Math.min(index,s.parts.length-1):-1;}
   s.segmentIndex=index;s.segmentVersion++;
   var value=index<0?s.fullDraft:s.parts[index].draft;
   s.initial=kbEditorNormalize(index<0?s.fullOrigin:s.parts[index].original);
   var ta=document.getElementById('kb-edit-'+s.kbIdx+'-'+s.itemIdx);if(ta)ta.value=kbEditorNormalize(value);
   var nav=document.getElementById('kbEditorSegments');if(nav)nav.innerHTML=kbEditorNavigation(s);
-  var where=document.getElementById('kbEditorLocation');if(where)where.textContent=index<0?'全文编辑':'第 '+(index+1)+' / '+s.parts.length+' 段 · 只修改当前短段';
+  var where=document.getElementById('kbEditorLocation');if(where)where.textContent=kbEditorLocation(s);
   kbSetEditorMode('edit');kbEditorChanged();
+}
+function kbEditorLocation(s){
+  return s.segmentIndex<0?'全文编辑':'第 '+(s.segmentIndex+1)+' / '+s.parts.length+(s.blockMode?' 条 · 仅修改本条':' 段 · 只修改当前短段');
 }
 function kbEditBeforeUnload(event){
   var s=kbEditSession;if(s&&kbEditorHasChanges(s)){event.preventDefault();event.returnValue='';}
 }
 if(typeof window.addEventListener==='function')window.addEventListener('beforeunload',kbEditBeforeUnload);
-function editKbItem(kbIdx,itemIdx){return kbOpenEditor(kbIdx,itemIdx,false);}
-function kbOpenEditor(kbIdx,itemIdx,isNew){
+function editKbItem(kbIdx,itemIdx,selection){return kbOpenEditor(kbIdx,itemIdx,false,selection);}
+function editKbDetailBlock(kbIdx,itemIdx,blockIndex){return kbOpenEditor(kbIdx,itemIdx,false,{blockIndex:blockIndex});}
+function kbOpenEditor(kbIdx,itemIdx,isNew,selection){
   if(!Number.isInteger(kbIdx)||!Number.isInteger(itemIdx))return false;
   var p=P(),k=p&&p.kb&&p.kb[kbIdx];
   if(!k||!Array.isArray(k.known)||itemIdx<0)return false;
   var effective=kbEffectiveKnown(p,kbIdx,cur);
   if(!isNew&&itemIdx>=effective.length)return false;
-  if(kbEditSession&&!kbCancelEdit(false,function(){kbOpenEditor(kbIdx,itemIdx,isNew);}))return false;
+  var raw=isNew?null:effective[itemIdx],source=isNew?'':kbDetailSourceText(raw);
+  var blockMode=!!selection&&typeof selection==='object',parts=blockMode?kbDetailBlocks(source):kbEditorSegments(source);
+  if(blockMode&&(!Number.isInteger(selection.blockIndex)||selection.blockIndex<0||selection.blockIndex>=parts.length))return false;
+  if(selection!==undefined&&selection!==-1&&!blockMode)return false;
+  var partIndex=blockMode?selection.blockIndex:selection===-1?-1:!isNew&&parts.length>1?0:-1;
+  if(kbEditSession&&!kbCancelEdit(false,function(){kbOpenEditor(kbIdx,itemIdx,isNew,selection);}))return false;
   var modal=document.getElementById('kbDetailModal');
   if(!modal){kbDetail(kbIdx);modal=document.getElementById('kbDetailModal');}
   var dialog=modal&&modal.querySelector('.kb-detail-dialog');if(!dialog)return false;
-  var raw=isNew?null:effective[itemIdx],source=isNew?'':kbDetailSourceText(raw),parts=kbEditorSegments(source),partIndex=!isNew&&parts.length>1?0:-1;
   var revision=isNew?null:kbEditRecord(cur,raw);
   var sourceIndex=isNew?null:revision?revision.sourceIndex:itemIdx;
   if(!revision&&!isNew)revision=kbSourceEdit(p,kbIdx,sourceIndex,cur);
   var orig=kbEditorNormalize(partIndex<0?source:parts[partIndex].draft);
   var meta=isNew?{title:'补充结论',source:k.t}:kbDetailMeta(raw,itemIdx);
-  kbEditSession={id:++kbEditSequence,key:cur,project:p,topic:k,known:k.known,kbIdx:kbIdx,itemIdx:itemIdx,isNew:!!isNew,raw:raw,snapshot:JSON.stringify(raw),sourceIndex:sourceIndex,sourceItem:sourceIndex===null?null:JSON.parse(JSON.stringify(k.known[sourceIndex])),editId:revision?revision.id:null,revision:revision?revision.revision:0,baseReportVersion:sourceIndex===null?null:JSON.parse(JSON.stringify(p.baseReportVersion||null)),initial:orig,source:source,segmentSource:source,parts:parts,segmentIndex:partIndex,segmentVersion:0,fullOrigin:source,fullDraft:source,epoch:originalUploadEpoch(),obscured:[]};
+  kbEditSession={id:++kbEditSequence,key:cur,project:p,topic:k,known:k.known,kbIdx:kbIdx,itemIdx:itemIdx,isNew:!!isNew,raw:raw,snapshot:JSON.stringify(raw),sourceIndex:sourceIndex,sourceItem:sourceIndex===null?null:JSON.parse(JSON.stringify(k.known[sourceIndex])),editId:revision?revision.id:null,revision:revision?revision.revision:0,baseReportVersion:sourceIndex===null?null:JSON.parse(JSON.stringify(p.baseReportVersion||null)),initial:orig,source:source,segmentSource:source,parts:parts,blockMode:blockMode,segmentIndex:partIndex,segmentVersion:0,fullOrigin:source,fullDraft:source,epoch:originalUploadEpoch(),obscured:[]};
   var panel=document.createElement('div');panel.id='kbEditorPanel';panel.className='kb-editor-panel';
   panel.setAttribute('role','region');panel.setAttribute('aria-label',isNew?'补充知识资料':'修改知识资料');
   panel.setAttribute('data-mode','edit');panel.setAttribute('onkeydown','kbEditKey(event)');
@@ -13307,7 +13542,7 @@ function kbOpenEditor(kbIdx,itemIdx,isNew){
     '<button class="kb-detail-close" aria-label="取消编辑" onclick="kbCancelEdit()">✕</button></header>'+
     '<div class="kb-editor-toolbar"><div role="tablist" aria-label="编辑视图"><button id="kbEditorTabEdit" role="tab" aria-selected="true" aria-controls="kbEditorInput" onclick="kbSetEditorMode(\'edit\')">编辑原文</button><button id="kbEditorTabPreview" role="tab" aria-selected="false" aria-controls="kbEditorPreview" onclick="kbSetEditorMode(\'preview\')">预览效果</button></div><span id="kbEditorCount"></span></div>'+
     '<div class="kb-editor-workspace">'+(!isNew&&parts.length>1?'<aside id="kbEditorSegments" class="kb-editor-segments">'+kbEditorNavigation(kbEditSession)+'</aside>':'')+
-    '<div class="kb-editor-content"><div id="kbEditorInput" role="tabpanel" aria-labelledby="kbEditorTabEdit"><label class="kb-editor-label" for="kb-edit-'+kbIdx+'-'+itemIdx+'">'+(isNew?'补充内容':'资料正文')+' <span id="kbEditorLocation">'+(partIndex<0?'全文编辑':'第 1 / '+parts.length+' 段 · 只修改当前短段')+'</span></label><textarea id="kb-edit-'+kbIdx+'-'+itemIdx+'" class="kb-editor-textarea" placeholder="输入内容，可保留分段、编号和来源链接…" oninput="kbEditorChanged()">'+kbEscape(orig)+'</textarea><p class="kb-editor-help">切换段落会保留草稿；保存时仅替换改动的部分，其他正文和来源不变。</p></div>'+
+    '<div class="kb-editor-content"><div id="kbEditorInput" role="tabpanel" aria-labelledby="kbEditorTabEdit"><label class="kb-editor-label" for="kb-edit-'+kbIdx+'-'+itemIdx+'">'+(isNew?'补充内容':'资料正文')+' <span id="kbEditorLocation">'+kbEditorLocation(kbEditSession)+'</span></label><textarea id="kb-edit-'+kbIdx+'-'+itemIdx+'" class="kb-editor-textarea" placeholder="输入内容，可保留分段、编号和来源链接…" oninput="kbEditorChanged()">'+kbEscape(orig)+'</textarea><p class="kb-editor-help">切换条目会保留草稿；保存时仅替换改动的部分，其他正文和来源不变。</p></div>'+
     '<div id="kbEditorPreview" class="kb-detail-richtext kb-editor-preview" role="tabpanel" aria-labelledby="kbEditorTabPreview" hidden></div></div></div>'+
     '<details class="kb-editor-attachments"><summary>添加参考附件</summary><p>附件会单独保存，取消正文编辑不会删除已上传附件。</p><button onclick="editPickFile('+kbIdx+','+itemIdx+')">选择附件</button><span id="kb-file-hint-'+kbIdx+'-'+itemIdx+'">支持 PDF、Word、TXT 等资料</span></details>'+
     '<footer class="kb-editor-footer"><span id="kbEditorStatus" role="status"></span><div><button class="kb-detail-secondary" onclick="kbCancelEdit()">取消</button><button id="kbEditorSave" class="kb-detail-ask" onclick="saveKbEdit('+kbIdx+','+itemIdx+')">保存并返回</button></div><small>Ctrl / ⌘ + Enter 保存</small></footer>';
@@ -13426,7 +13661,9 @@ async function saveKbEdit(kbIdx,itemIdx){
     kbDetail(kbIdx);var sc2=document.querySelector('#kbDetailModal .kb-detail-scroll');
     var savedIdx=kbEffectiveKnown(p,kbIdx,s.key).findIndex(function(item){return item&&item._kbEditId===record.id;});
     var savedCard=document.getElementById('kb-card-'+kbIdx+'-'+savedIdx);
-    if(sc2){sc2.scrollTop=st;if(savedCard)sc2.scrollTop=Math.max(0,sc2.scrollTop+savedCard.getBoundingClientRect().top-sc2.getBoundingClientRect().top-20);}
+    var savedTarget=savedCard;
+    if(savedCard&&s.blockMode&&s.segmentIndex>=0&&typeof savedCard.querySelector==='function')savedTarget=savedCard.querySelector('[data-kb-block="'+s.segmentIndex+'"]')||savedCard;
+    if(sc2){sc2.scrollTop=st;if(savedTarget)sc2.scrollTop=Math.max(0,sc2.scrollTop+savedTarget.getBoundingClientRect().top-sc2.getBoundingClientRect().top-20);}
     if(typeof refreshKbProgress==='function')refreshKbProgress();toast('已保存到云端，问答将使用更新后的内容。');
   }catch(error){
     if(kbEditSession===s){s.saveError=error&&error.message||'保存未完成，草稿已保留。';toast(s.saveError);}
@@ -13498,6 +13735,35 @@ function kbDetailSourceText(value){
   var text=value&&typeof value==='object'?value.text:value;
   return String(text==null?'':text).replace(/^[\u2705\u26a0\ufe0f]+[ \t]*/, '');
 }
+// Each visible entry keeps its own source interval. Tables and quotations stay whole.
+function kbDetailBlocks(text){
+  text=String(text);var lines=[],match,re=/[^\r\n]+/g,parts=[];
+  while((match=re.exec(text)))if(match[0].trim())lines.push({start:match.index,end:match.index+match[0].length,text:match[0]});
+  lines.forEach(function(line){
+    var kind=/^\s*\|.*\|\s*$/.test(line.text)?'table':/^\s*>/.test(line.text)?'quote':'text';
+    var last=parts[parts.length-1],gap=last?text.slice(last.end,line.start).replace(/\r\n?/g,'\n'):'';
+    if(last&&kind!=='text'&&last.kind===kind&&gap==='\n'){last.end=line.end;last.original=last.draft=text.slice(last.start,last.end);return;}
+    parts.push({start:line.start,end:line.end,original:line.text,draft:line.text,kind:kind,label:Array.from(line.text.trim().replace(/^#{1,6}\s+|^[-*]\s+/, '')).slice(0,42).join('')});
+  });
+  return parts;
+}
+function kbDetailEditableHtml(value,kbIdx,itemIdx){
+  var text=kbDetailSourceText(value),out=[],listTag='',previous=null;
+  function closeList(){if(listTag){out.push('</'+listTag+'>');listTag='';}}
+  kbDetailBlocks(text).forEach(function(part,index){
+    var html=kbDetailTextHtml(part.original),row=html.match(/^<(ul|ol)>\s*<li(?: value="(\d+)")?>([\s\S]*)<\/li>\s*<\/\1>$/);
+    var control='<button type="button" class="kb-detail-block-edit" onclick="editKbDetailBlock('+kbIdx+','+itemIdx+','+index+')" aria-label="修改第 '+(index+1)+' 条内容">修改本条</button>';
+    if(row){
+      if(listTag!==row[1]||!previous||text.slice(previous.end,part.start).replace(/\r\n?/g,'\n')!=='\n')closeList();
+      if(!listTag){listTag=row[1];out.push('<'+listTag+' class="kb-detail-editable-list">');}
+      out.push('<li'+(row[2]?' value="'+row[2]+'"':'')+' class="kb-detail-block" data-kb-block="'+index+'"><div class="kb-detail-block-content">'+row[3]+'</div>'+control+'</li>');
+    }else{
+      closeList();out.push('<div class="kb-detail-block" data-kb-block="'+index+'"><div class="kb-detail-block-content">'+html+'</div>'+control+'</div>');
+    }
+    previous=part;
+  });
+  closeList();return out.join('');
+}
 function kbDetailMeta(value,index){
   var item=value&&typeof value==='object'?value:{},text=kbDetailSourceText(value),first=text.split(/\r?\n/).filter(function(line){return line.trim();})[0]||'';
   var file=String(item.sourceFile||item.src||item.cite||''),name=file.split(/[\\/]/).pop();
@@ -13565,7 +13831,8 @@ function kbDetail(i){
   if(kbEditSession&&!kbCancelEdit(false,function(){kbDetail(i);}))return;
   var k=P().kb[i]; if(!k) return;
   curKb=i;
-  var detailTheme=['indigo','teal','violet','amber'][i]||'indigo';
+  var presentation=typeof kbTopicPresentation==='function'?kbTopicPresentation(k.t):{theme:'general',icon:'knowledge-library'};
+  var detailTheme=presentation.theme;
 
   // 已知条目列表。显示规则（用户 2026-09-18 定）：
   //   用户补充(全部) + 待确认⚠️(全部) + 精选6条(其余里挑)
@@ -13628,8 +13895,8 @@ function kbDetail(i){
     return '<section id="kb-card-'+i+'-'+pair.origIdx+'" class="kb-detail-article" data-kb-section="'+pair.origIdx+'">'+
       '<header class="kb-detail-article-head"><div class="kb-detail-meta"><span class="kb-detail-section-label">资料 '+meta.number+'</span><span class="kb-detail-source-label" title="'+kbEscape(meta.file||meta.source)+'">'+kbEscape(meta.source)+'</span>'+
       (state?'<span class="kb-detail-state '+(warn&&!confirmed?'is-pending':'')+'">'+state+'</span>':'')+'</div>'+
-      '<div class="kb-detail-title-row"><h3>'+kbEscape(meta.title)+'</h3><button class="kb-detail-edit" onclick="editKbItem('+i+','+pair.origIdx+')" aria-label="修改'+kbEscape(meta.title)+'">✎ 修改</button></div></header>'+
-      '<div class="kb-detail-richtext">'+kbDetailTextHtml(raw)+'</div>'+
+      '<div class="kb-detail-title-row"><h3>'+kbEscape(meta.title)+'</h3><button class="kb-detail-edit" onclick="editKbItem('+i+','+pair.origIdx+',-1)" aria-label="修改全文：'+kbEscape(meta.title)+'">修改全文</button></div></header>'+
+      '<div class="kb-detail-richtext">'+kbDetailEditableHtml(raw,i,pair.origIdx)+'</div>'+
       (duplicateCount&&warn&&!confirmed?'<p class="kb-detail-duplicate">合并了 '+(duplicateCount+1)+' 条同义表述，确认时将一并更新。</p>':'')+
       '<footer class="kb-detail-article-actions">'+confirm+manage+'</footer></section>';
   }).join(''):'<p class="kb-detail-empty">暂无已知内容，可基于此主题提问或补充资料。</p>';
@@ -13649,7 +13916,7 @@ function kbDetail(i){
         '<header class="kb-detail-header"><div class="kb-detail-heading"><span class="kb-detail-eyebrow">城市智库 / 资料阅读</span>'+
           '<h2 id="kbDetailTitle">'+kbEscape(k.t)+'</h2>'+
           '<p>'+kbEscape(_getDisplaySub(i)||k.sub)+'</p></div>'+
-          '<div class="kb-detail-mosaic" aria-hidden="true"><span></span><span></span><span></span><span></span></div>'+
+          '<div class="kb-detail-topic-icon" data-kb-icon="'+presentation.icon+'" aria-hidden="true"></div>'+
           '<button class="kb-detail-close" aria-label="关闭知识详情" onclick="closeKbDetail()">✕</button></header>'+
         '<div class="kb-detail-layout">'+
           '<aside class="kb-detail-index"><p>本页目录 <span>'+_displayPairs.length+'</span></p><nav aria-label="资料目录">'+indexHtml+'</nav>'+
@@ -16053,17 +16320,29 @@ render();
       ['.kb-panel-close, .kb-detail-close, .collapse-detail', 'error', '关闭'],
       ['.composer-wrap [onclick="clearKbActiveTopic()"][title="取消"]', 'error', '取消'],
       ['.kb-detail-edit', 'edit'],
+      ['.kb-detail-block-edit', 'edit'],
       ['.kb-detail-confirm', 'success'],
       ['.kb-detail-manage .is-danger', 'delete'],
       ['.kb-detail-footer [onclick^="addKbItem"]', 'add'],
       ['.kb-detail-footer [onclick^="pickLocalFile"]', 'upload'],
       ['.kb-detail-footer .kb-detail-ask', 'next'],
+      ['#kbEditorTabEdit', 'edit'],
+      ['#kbEditorTabPreview', 'document'],
+      ['#kbEditorSave', 'success'],
+      ['.kb-editor-attachments button', 'attachment'],
+      ['.kb-editor-whole', 'document'],
+      ['.kb-editor-footer .kb-detail-secondary', 'back'],
+      ['.kb-detail-article-actions > .kb-detail-secondary', 'refresh'],
       ['.kb-scope-bar [onclick="clearKbActiveTopic()"]', 'refresh']
     ];
     actions.forEach(function (entry) {
       document.querySelectorAll(entry[0]).forEach(function (control) {
         actionIcon(control, entry[1], entry[2], entry[3]);
       });
+    });
+    document.querySelectorAll('.kb-detail-topic-icon').forEach(function(host){
+      var key=host.getAttribute('data-kb-icon')||'knowledge-library';
+      fillIcon(host,window.hxzIcons.has(key)?key:'knowledge-library',32);
     });
     var overview = document.getElementById('kbOverviewToggle');
     if (overview) actionIcon(overview, overview.getAttribute('aria-expanded') === 'true' ? 'collapse' : 'expand');
