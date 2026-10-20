@@ -481,17 +481,29 @@
       ['.kb-panel-close, .kb-detail-close, .collapse-detail', 'error', '关闭'],
       ['.composer-wrap [onclick="clearKbActiveTopic()"][title="取消"]', 'error', '取消'],
       ['.kb-detail-edit', 'edit'],
+      ['.kb-detail-block-edit', 'edit'],
       ['.kb-detail-confirm', 'success'],
       ['.kb-detail-manage .is-danger', 'delete'],
       ['.kb-detail-footer [onclick^="addKbItem"]', 'add'],
       ['.kb-detail-footer [onclick^="pickLocalFile"]', 'upload'],
       ['.kb-detail-footer .kb-detail-ask', 'next'],
+      ['#kbEditorTabEdit', 'edit'],
+      ['#kbEditorTabPreview', 'document'],
+      ['#kbEditorSave', 'success'],
+      ['.kb-editor-attachments button', 'attachment'],
+      ['.kb-editor-whole', 'document'],
+      ['.kb-editor-footer .kb-detail-secondary', 'back'],
+      ['.kb-detail-article-actions > .kb-detail-secondary', 'refresh'],
       ['.kb-scope-bar [onclick="clearKbActiveTopic()"]', 'refresh']
     ];
     actions.forEach(function (entry) {
       document.querySelectorAll(entry[0]).forEach(function (control) {
         actionIcon(control, entry[1], entry[2], entry[3]);
       });
+    });
+    document.querySelectorAll('.kb-detail-topic-icon').forEach(function(host){
+      var key=host.getAttribute('data-kb-icon')||'knowledge-library';
+      fillIcon(host,window.hxzIcons.has(key)?key:'knowledge-library',32);
     });
     var overview = document.getElementById('kbOverviewToggle');
     if (overview) actionIcon(overview, overview.getAttribute('aria-expanded') === 'true' ? 'collapse' : 'expand');
