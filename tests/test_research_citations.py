@@ -233,6 +233,41 @@ class ResearchCitationTests(unittest.TestCase):
         self.assertNotIn('SECRET_TEXT', json.dumps(diagnostic))
         self.assertNotIn(ROOT, json.dumps(diagnostic))
 
+    def test_unbracketed_source_numbers_cannot_silently_create_empty_frames(self):
+        for marker in ('来源:1', '来源：1', '来源 1', '来源1',
+                       'source:1', 'Source: 1', 'sources 1',
+                       '来源:0', '来源:-1', '来源:999', '来源:\n1',
+                       '[附注：来源:1]', '[note: source:1]', '来源(1)', '来源：−1'):
+            with self.subTest(marker=marker), self.assertRaises(CitationError):
+                bind_text(f'OFFLINE claim ({marker}).', [evidence('only')],
+                          'competition', '竞对地区')
+
+    def test_unbracketed_marker_in_provider_fails_as_safe_citation_quality(self):
+        transport = Transport([evidence('only')], [body('bad', '来源:1 SECRET_TEXT')])
+        with self.assertRaises(provider.FullProviderError) as caught:
+            live(transport).run_part('transport', '交通网络', {'city': 'OFFLINE城'}, {})
+        self.assertEqual(caught.exception.failure_code, 'quality')
+        diagnostic = worker._failure_diagnostics(caught.exception, 'provider', 'transport', '交通网络')
+        self.assertEqual(diagnostic['issues'], ['citation_reference'])
+        self.assertNotIn('SECRET_TEXT', json.dumps(diagnostic))
+        self.assertNotIn(ROOT, json.dumps(diagnostic))
+
+    def test_source_number_guard_preserves_supported_markers_urls_and_normal_prose(self):
+        source = evidence('doc?source:1&来源:2')
+        text = f'数据来源于2025年公报。数据来源：2025年统计公报。OpenSource1。 [官方原文]({source["url"]})'
+        bound, frame = bind_text(text, [source], 'competition', '竞对地区')
+        self.assertEqual(bound, text)
+        self.assertEqual(frame['explicit_url_references'], [1])
+        self.assertEqual(frame['references'], [])
+        for marker in ('【来源:1】', '来源[1]', '[source:1]'):
+            with self.subTest(marker=marker):
+                bound, frame = bind_text('claim ' + marker, [source], 'competition', '竞对地区')
+                self.assertIn(source['url'], bound)
+                self.assertEqual(frame['references'], [1])
+        bound, frame = bind_text('claim 来源[1] 3个要点', [source], 'competition', '竞对地区')
+        self.assertIn(source['url'], bound)
+        self.assertEqual(frame['references'], [1])
+
     def test_ordinary_prose_explicit_links_and_url_query_brackets_are_not_rewritten(self):
         records = [evidence('doc'), evidence('doc?q=[1]')]
         text = rf'notes [analysis] \[1] [1]({records[0]["url"]}) {records[1]["url"]}'

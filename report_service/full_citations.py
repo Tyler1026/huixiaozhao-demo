@@ -21,6 +21,9 @@ _INNER_PREFIX = re.compile(r'^(?:来源|sources?)\s*[:：]\s*', re.I)
 _INNER_MARKER = re.compile(r'^(?:来源|sources?\b)', re.I)
 _NUMBERS = re.compile(r'[1-9][0-9]*(?:\s*[,，、;；]\s*[1-9][0-9]*)*')
 _LINK = re.compile(r'\[[^\]\n]*\]\(https?://[^\s()]+\)')
+_UNBOUND_SOURCE_NUMBER = re.compile(
+    r'(?<![A-Za-z0-9_])(?:来源|sources?)\s*[:：]?\s*(?:[（(]\s*)?'
+    r'(?!\d{4}\s*年)[-+−]?\d', re.I)
 
 
 class CitationError(ValueError):
@@ -87,7 +90,8 @@ def bind_text(text, evidence, stage, part):
 
     The new syntax is 【来源:1】; existing unambiguous 来源[1] and grouped
     来源[1,2] are accepted too. Bare numeric brackets are ambiguous and fail
-    closed. Explicit URLs/Markdown links must use exact current-frame URLs;
+    closed. Unbracketed source numbers also fail rather than bypass binding.
+    Explicit URLs/Markdown links must use exact current-frame URLs;
     ordinary brackets retain their text. The first use defines a part-qualified
     label with the exact URL; repeated uses refer to it without duplicating URLs.
     """
@@ -130,11 +134,13 @@ def bind_text(text, evidence, stage, part):
     protected = url_spans + [match.span() for match in _LINK.finditer(text)]
     used = []
     expanded = set()
+    resolved_spans = []
 
     def resolve(match):
         raw = match.group(1) if match.group(1) is not None else match.group(2)
         inner = _INNER_PREFIX.match(raw.strip())
-        marked = bool(_INNER_MARKER.match(raw.strip()) or _SOURCE_PREFIX.search(text[:match.start()]))
+        prefix = _SOURCE_PREFIX.search(text[:match.start()])
+        marked = bool(_INNER_MARKER.match(raw.strip()) or prefix)
         if any(start <= match.start() < end for start, end in url_spans):
             return match.group(0)
         if not marked and any(start <= match.start() < end for start, end in protected):
@@ -151,6 +157,7 @@ def bind_text(text, evidence, stage, part):
             raise CitationError() from None
         if any(number > len(sources) for number in indexes):
             raise CitationError()
+        resolved_spans.append((prefix.start() if prefix else match.start(), match.end()))
         used.extend(indexes)
         labels = []
         for number in indexes:
@@ -167,8 +174,12 @@ def bind_text(text, evidence, stage, part):
 
     bound = _BRACKETS.sub(resolve, text)
     remaining = _BRACKETS.sub('', masked)
-    if re.search(r'(?:来源|sources?)\s*[:：]?\s*[\[【]|(?<!\\)[\[【]\s*(?:来源|sources?\b|[-+]?\d)',
-                 remaining, re.I):
+    unbound = list(masked)
+    for start, end in protected + resolved_spans:
+        unbound[start:end] = ' ' * (end - start)
+    if (_UNBOUND_SOURCE_NUMBER.search(''.join(unbound))
+            or re.search(r'(?:来源|sources?)\s*[:：]?\s*[\[【]|(?<!\\)[\[【]\s*(?:来源|sources?\b|[-+]?\d)',
+                         remaining, re.I)):
         raise CitationError()
     frame = {'version': 1, 'stage': stage, 'part': part, 'sources': sources,
              'references': used, 'explicit_url_references': explicit_urls,
