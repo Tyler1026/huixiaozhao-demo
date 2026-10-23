@@ -85,6 +85,9 @@ def manage_invite(body, session, *, headers=None, token=None, admin_config=None,
     action = body.get('action')
     result = {}
     if action == 'create':
+        monthly_enabled = body.get('monthlyEnabled', True)
+        if type(monthly_enabled) is not bool:
+            raise AuthError(400, 'invalid_input', '月度更新选项格式不正确')
         city = _text(body.get('city'), '城市', 128)
         province = _text(body.get('province'), '省份', 128, optional=True)
         email = _text(body.get('distributedEmail'), '分发邮箱', 254, optional=True)
@@ -122,7 +125,8 @@ def manage_invite(body, session, *, headers=None, token=None, admin_config=None,
             projects[key] = project
             canonical = dict(projectKey=key, inviteCode=code, ownerUser=None,
                              province=province, createdAt=int(now_seconds * 1000),
-                             monthlyEnabled=True, nextReportAt=next_month_report_at(now_seconds))
+                             monthlyEnabled=monthly_enabled,
+                             nextReportAt=next_month_report_at(now_seconds) if monthly_enabled else 0)
             state.setdefault('CITY_WORKSPACES', {})[city] = canonical
             result['reused'] = False
         else:
@@ -156,6 +160,45 @@ def manage_invite(body, session, *, headers=None, token=None, admin_config=None,
     _save(session, state)
     result.update(ok=True, invite=dict(copy.deepcopy(invite), code=code))
     return result
+
+
+def manage_monthly_report(body, session, *, headers=None, token=None, admin_config=None, now=None):
+    """Change only an existing canonical workspace's future monthly schedule.
+
+    Called inside the same serialized transaction used by invitations and the
+    monthly scheduler. Repeating the desired state never moves its due date.
+    Existing report requests remain untouched, including pending/running jobs.
+    """
+    if not isinstance(body, dict) or body.get('action') != 'set_monthly':
+        raise AuthError(400, 'invalid_action', '不支持的月度更新操作')
+    state = _load(session)
+    actor = require_session(headers or {}, state, token=token, admin_config=admin_config, now=now)
+    if actor.get('scope') != 'admin':
+        raise AuthError(403, 'admin_required', '请使用管理端账号登录')
+    city = _text(body.get('city'), '城市', 128)
+    key = _text(body.get('projectKey'), '工作区', 256)
+    enabled = body.get('monthlyEnabled')
+    expected_enabled = body.get('expectedMonthlyEnabled')
+    expected_next = body.get('expectedNextReportAt')
+    if (type(enabled) is not bool or type(expected_enabled) is not bool
+            or type(expected_next) is not int or expected_next < 0):
+        raise AuthError(400, 'invalid_input', '月度更新选项或原计划格式不正确')
+    canonical = get_city_workspace(state, city)
+    if canonical is None or canonical['projectKey'] != key:
+        raise AuthError(404, 'city_workspace_not_found', '未找到对应地区主工作区，请刷新后重试')
+    if canonical['monthlyEnabled'] == enabled:
+        return dict(ok=True, changed=False, city=city, projectKey=key,
+                    cityWorkspace=copy.deepcopy(canonical))
+    if (canonical['monthlyEnabled'] != expected_enabled
+            or canonical['nextReportAt'] != expected_next):
+        raise AuthError(409, 'monthly_schedule_changed', '月度更新计划已变化，请刷新后重新操作')
+    if enabled and not canonical['province'].strip():
+        raise AuthError(409, 'monthly_province_required', '该地区缺少省级地区，暂不能启用月度更新')
+    canonical['monthlyEnabled'] = enabled
+    canonical['nextReportAt'] = next_month_report_at(time.time() if now is None else now) if enabled else 0
+    _save(session, state)
+    return dict(ok=True, changed=True, city=city, projectKey=key,
+                cityWorkspace=copy.deepcopy(canonical))
 
 
 def remove_member(body, session, *, headers=None, token=None, admin_config=None, now=None):

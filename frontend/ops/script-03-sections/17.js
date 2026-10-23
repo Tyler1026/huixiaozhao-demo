@@ -204,7 +204,36 @@ function opsMonthlyInfo(city){
   if(workspace.monthlyEnabled&&workspace.nextReportAt&&!isNaN(date.getTime()))next=date.toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})+'（北京时间）';
   return {label:label,next:next,tone:tone};
 }
-function opsMonthlyCell(city){var info=opsMonthlyInfo(city);return '<span class="ops-ui-badge '+info.tone+'">'+_authEscape(info.label)+'</span><div class="ops-ui-cell-meta">下次：'+_authEscape(info.next)+'</div>';}
+function opsMonthlyCell(city){
+  var info=opsMonthlyInfo(city),workspace=opsCityWorkspace(city);
+  return '<span class="ops-ui-badge '+info.tone+'">'+_authEscape(info.label)+'</span><div class="ops-ui-cell-meta">下次：'+_authEscape(info.next)+'</div>'+
+    (AUTH&&AUTH.scope==='admin'&&workspace&&typeof workspace.monthlyEnabled==='boolean'?'<button class="ops-ui-button" style="margin-top:8px" onclick="'+opsHandler('openMonthlyReportModal',city)+'">'+(workspace.monthlyEnabled?'停用月度更新':'启用月度更新')+'</button>':'');
+}
+var OPS_MONTHLY_DRAFT=null;
+function openMonthlyReportModal(city){
+  if(!AUTH||AUTH.scope!=='admin'){toast('需要管理员登录');return;}
+  if(OPS_MONTHLY_DRAFT&&OPS_MONTHLY_DRAFT.pending){toast('月度更新设置正在保存，请稍候');return;}
+  var workspace=opsCityWorkspace(city);if(!workspace||typeof workspace.monthlyEnabled!=='boolean'){toast('未找到地区主工作区，请刷新后重试');return;}
+  var enabled=!workspace.monthlyEnabled;
+  OPS_MONTHLY_DRAFT={city:city,projectKey:workspace.projectKey,monthlyEnabled:enabled,expectedMonthlyEnabled:workspace.monthlyEnabled,expectedNextReportAt:workspace.nextReportAt,epoch:_authEpoch,pending:false};
+  openModal((enabled?'启用':'停用')+'月度报告更新',
+    '<p><strong>'+_authEscape(city)+'</strong> · 地区主工作区</p><p>'+(enabled?'启用后从下个月开始，每月 1 日 09:00（北京时间）自动更新报告。':'停用后不再自动安排新的月度报告。')+'</p><p class="ops-ui-muted">已排队或正在生成的报告继续处理，已有报告、邀请码和客户资料保留。</p><p id="opsMonthlyError" role="alert" style="color:#b91c1c"></p>',
+    '<button class="ghost-button" onclick="closeModal()">取消</button><button id="opsMonthlySave" class="primary-button" onclick="saveMonthlyReportSettings()">确认'+(enabled?'启用':'停用')+'</button>');
+}
+function saveMonthlyReportSettings(){
+  var draft=OPS_MONTHLY_DRAFT;if(!draft||draft.pending)return Promise.resolve(false);
+  if(!AUTH||AUTH.scope!=='admin'||draft.epoch!==_authEpoch){toast('会话已变化，请重新登录');return Promise.resolve(false);}
+  var button=document.getElementById('opsMonthlySave'),error=document.getElementById('opsMonthlyError');
+  draft.pending=true;if(button)button.disabled=true;if(error)error.textContent='';
+  return _authJson('/api/admin/city-workspaces',{action:'set_monthly',city:draft.city,projectKey:draft.projectKey,monthlyEnabled:draft.monthlyEnabled,expectedMonthlyEnabled:draft.expectedMonthlyEnabled,expectedNextReportAt:draft.expectedNextReportAt}).then(function(data){
+    if(draft.epoch!==_authEpoch)return false;
+    var saved=data.cityWorkspace;
+    if(data.city!==draft.city||data.projectKey!==draft.projectKey||typeof data.changed!=='boolean'||!saved||saved.projectKey!==draft.projectKey||saved.monthlyEnabled!==draft.monthlyEnabled||typeof saved.nextReportAt!=='number'||!Number.isFinite(saved.nextReportAt)||saved.nextReportAt<0)throw new Error('保存响应不完整，请刷新后检查');
+    CITY_WORKSPACES[draft.city]=saved;
+    if(OPS_MONTHLY_DRAFT===draft){OPS_MONTHLY_DRAFT=null;if(document.getElementById('opsMonthlySave'))closeModal();}
+    render();toast(draft.monthlyEnabled?'月度报告更新已启用，下个月开始执行':'月度报告更新已停用');return true;
+  }).catch(function(failure){if(draft.epoch===_authEpoch){if(error&&error.isConnected!==false)error.textContent=failure.message||'尚未保存，请重试';else toast(failure.message||'尚未保存，请重试');}return false;}).then(function(result){draft.pending=false;if(button&&button.isConnected!==false)button.disabled=false;return result;});
+}
 function opsFilterChange(section,key,value){if(!OPS_UI[section])return;OPS_UI[section][key]=value;opsRefreshList(section);}
 function opsRefreshList(section){
   var targets={invitations:['opsInviteResults',opsInviteResults],users:['opsUserResults',opsUserResults],reports:['opsReportResults',function(){return rrPanel(OPS_UI.reports);}],demands:['opsDemandResults',opsDemandResults]};
@@ -1442,7 +1471,7 @@ function opsReports(){
 }
 function opsMonthlyOverview(){
   var map=typeof CITY_WORKSPACES!=='undefined'&&CITY_WORKSPACES||{},cities=Object.keys(map).filter(function(city){return !!opsCityWorkspace(city);}).sort();
-  if(!cities.length)return opsEmpty('暂无月度更新地区','在「地区与邀请码」设置地区主工作区后，每月 1 日 09:00（北京时间）更新报告。');
+  if(!cities.length)return opsEmpty('暂无月度更新地区','在「地区与邀请码」设置地区主工作区，可按需启用每月 1 日 09:00（北京时间）的报告更新。');
   return '<section class="ops-ui-card" style="margin-bottom:16px"><div class="ops-ui-card-head"><h2>月度报告更新</h2><span class="ops-ui-muted">每月 1 日 09:00（北京时间）</span></div><div class="ops-ui-table-wrap"><table class="ops-ui-table"><thead><tr><th scope="col">地区</th><th scope="col">状态与下次更新</th></tr></thead><tbody>'+cities.map(function(city){return '<tr><td>'+_authEscape(city)+'</td><td>'+opsMonthlyCell(city)+'</td></tr>';}).join('')+'</tbody></table></div></section>';
 }
 function opsDemandSpecificationHtml(item){
@@ -1927,7 +1956,7 @@ function opsViewUser(user){
 /* 一个地区只登记一个主工作区；同一码多人加入，不从历史项目推断归属。 */
 function opsInvitations(){
   var state=OPS_UI.invitations;
-  return '<div class="ops-ui-page">'+opsPageHead('地区与邀请码','同一地区共用一个主工作区和当前邀请码。首位加入者为主账号，后续为成员；每月 1 日 09:00（北京时间）更新城市报告。','<button class="ops-ui-button is-primary" onclick="openInviteCodeModal()">＋ 设置地区 / 获取邀请码</button>')+'<div class="ops-ui-toolbar"><label class="ops-ui-search">搜索邀请码<input id="opsInviteSearch" value="'+_authEscape(state.query)+'" placeholder="搜索邀请码 / 地区 / 工作区 / 主账号 / 分发邮箱" oninput="opsFilterChange(\'invitations\',\'query\',this.value)"></label><label class="ops-ui-filter">有效状态<select id="opsInviteStatus" onchange="opsFilterChange(\'invitations\',\'status\',this.value)">'+[['all','全部状态'],['active','生效中'],['revoked','已作废']].map(function(item){return '<option value="'+item[0]+'"'+(state.status===item[0]?' selected':'')+'>'+item[1]+'</option>';}).join('')+'</select></label><label class="ops-ui-filter">分发状态<select id="opsInviteDistribution" onchange="opsFilterChange(\'invitations\',\'distribution\',this.value)">'+[['all','全部分发状态'],['pending','未分发'],['distributed','已分发']].map(function(item){return '<option value="'+item[0]+'"'+(state.distribution===item[0]?' selected':'')+'>'+item[1]+'</option>';}).join('')+'</select></label></div><div id="opsInviteResults">'+opsInviteResults()+'</div></div>';
+  return '<div class="ops-ui-page">'+opsPageHead('地区与邀请码','同一地区共用一个主工作区和当前邀请码。首位加入者为主账号，后续为成员；月度更新可单独启用或停用，启用后每月 1 日 09:00（北京时间）执行。','<button class="ops-ui-button is-primary" onclick="openInviteCodeModal()">＋ 设置地区 / 获取邀请码</button>')+'<div class="ops-ui-toolbar"><label class="ops-ui-search">搜索邀请码<input id="opsInviteSearch" value="'+_authEscape(state.query)+'" placeholder="搜索邀请码 / 地区 / 工作区 / 主账号 / 分发邮箱" oninput="opsFilterChange(\'invitations\',\'query\',this.value)"></label><label class="ops-ui-filter">有效状态<select id="opsInviteStatus" onchange="opsFilterChange(\'invitations\',\'status\',this.value)">'+[['all','全部状态'],['active','生效中'],['revoked','已作废']].map(function(item){return '<option value="'+item[0]+'"'+(state.status===item[0]?' selected':'')+'>'+item[1]+'</option>';}).join('')+'</select></label><label class="ops-ui-filter">分发状态<select id="opsInviteDistribution" onchange="opsFilterChange(\'invitations\',\'distribution\',this.value)">'+[['all','全部分发状态'],['pending','未分发'],['distributed','已分发']].map(function(item){return '<option value="'+item[0]+'"'+(state.distribution===item[0]?' selected':'')+'>'+item[1]+'</option>';}).join('')+'</select></label></div><div id="opsInviteResults">'+opsInviteResults()+'</div></div>';
 }
 function opsInviteResults(){
   var all=Object.keys(INVITE_CODES||{}).filter(function(code){return /^[A-Z0-9_-]{1,64}$/.test(code);});
@@ -2013,10 +2042,17 @@ function clearInviteDistributed(code){return _saveAdminInvite({action:'distribut
 function openInviteCodeModal(){
   openModal('设置地区 / 获取邀请码',
     '<label style="display:grid;gap:6px;font-size:13px;color:#52637a">省级地区<input id="invProvinceInput" type="text" placeholder="如 湖北省；直辖市填上海市" style="min-height:40px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:8px;font-size:14px"></label>'+
-    '<label style="display:grid;gap:6px;font-size:13px;color:#52637a;margin-top:10px">城市 / 区县<input id="invCityInput" type="text" placeholder="如 随州市 / 闵行区" style="min-height:40px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:8px;font-size:14px"></label>'+
+    '<label style="display:grid;gap:6px;font-size:13px;color:#52637a;margin-top:10px">城市 / 区县<input id="invCityInput" type="text" placeholder="如 随州市 / 闵行区" oninput="updateInviteMonthlyOption()" style="min-height:40px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:8px;font-size:14px"></label>'+
+    '<label style="display:grid;gap:6px;font-size:13px;color:#52637a;margin-top:10px">新地区月度报告更新<select id="invMonthlyEnabled" style="min-height:40px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:8px;font-size:14px"><option value="false">仅本次，不开启月度更新</option><option value="true">每月 1 日 09:00 自动更新（北京时间）</option></select></label><p id="invMonthlyHint" style="margin:8px 0 0;font-size:12px;color:#8492a6">此选项仅用于新地区；已有地区保留原计划，可在月度更新栏单独修改。</p>'+
     '<label style="display:grid;gap:6px;font-size:13px;color:#52637a;margin-top:10px">分发邮箱（选填）<input id="invEmailInput" type="text" placeholder="对方邮箱，方便日后核对" style="min-height:40px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:8px;font-size:14px"></label>'+
-    '<p style="margin:10px 0 0;font-size:12px;color:#8492a6">同一地区再次获取时复用现有主工作区和邀请码；已作废的码可换新，工作区不变。同一码可供多人加入，首位为主账号，后续为成员。每月 1 日 09:00（北京时间）自动更新报告。</p>',
+    '<p style="margin:10px 0 0;font-size:12px;color:#8492a6">同一地区再次获取时复用现有主工作区和邀请码；已作废的码可换新，工作区不变。同一码可供多人加入，首位为主账号，后续为成员。</p>',
     '<button class="ghost-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="doGenerateInviteCode()">获取邀请码</button>');
+}
+function updateInviteMonthlyOption(){
+  var city=document.getElementById('invCityInput'),select=document.getElementById('invMonthlyEnabled'),hint=document.getElementById('invMonthlyHint');
+  if(!select)return;
+  var workspace=city&&opsCityWorkspace(city.value.trim());select.disabled=!!workspace;
+  if(hint)hint.textContent=workspace?'已有地区的月度更新'+(workspace.monthlyEnabled?'已启用':'已停用')+'，获取邀请码不改变原计划。请在月度更新栏单独修改。':'此选项仅用于新地区；已有地区保留原计划，可在月度更新栏单独修改。';
 }
 function doGenerateInviteCode(){
   var provinceEl=document.getElementById('invProvinceInput'),province=(provinceEl&&provinceEl.value||'').trim();
@@ -2024,7 +2060,9 @@ function doGenerateInviteCode(){
   var el=document.getElementById('invCityInput'),city=(el&&el.value||'').trim();
   if(!city){toast('请输入目标城市');if(el)el.focus();return;}
   var emailEl=document.getElementById('invEmailInput');
-  return _saveAdminInvite({action:'create',province:province,city:city,distributedEmail:(emailEl&&emailEl.value||'').trim()});
+  var payload={action:'create',province:province,city:city,distributedEmail:(emailEl&&emailEl.value||'').trim()},monthly=document.getElementById('invMonthlyEnabled');
+  if(monthly&&!opsCityWorkspace(city))payload.monthlyEnabled=monthly.value==='true';
+  return _saveAdminInvite(payload);
 }
 function revokeInviteCode(code){if(INVITE_CODES[code])return _saveAdminInvite({action:'revoke',code:code});}
 
