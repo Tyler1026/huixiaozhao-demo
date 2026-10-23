@@ -104,7 +104,7 @@ class StandardSmoothGenerationTests(unittest.TestCase):
             provider(fail)._gather_evidence('enterprises_1', '候选池', '测试城', prior, mode='standard')
         self.assertEqual(caught.exception.failure_code, 'timeout')
 
-    def test_other_research_final_parts_keep_one_complementary_search_for_short_coverage(self):
+    def test_other_research_final_parts_use_one_bounded_batch_for_short_coverage(self):
         for stage in ('economy', 'transport', 'life', 'industry', 'competition', 'policy', 'chain'):
             with self.subTest(stage=stage):
                 queries = []
@@ -120,9 +120,12 @@ class StandardSmoothGenerationTests(unittest.TestCase):
                 part = contract.get_stage(stage, mode='standard')['parts'][-1]
                 out = provider(search)._gather_evidence(stage, part, '测试城', prior, mode='standard')
                 all_sources = prior[stage]['metadata']['evidence'] + out
-                self.assertEqual(queries, [full_provider._queries_for(stage, part, '测试城')[0],
-                                          f'测试城 {part} 补充资料 统计公报 官方发布 年度报告'])
-                self.assertEqual(counts, [providers.DEFAULT_SEARCH_COUNT] * 2)
+                self.assertEqual(queries[0], full_provider._queries_for(stage, part, '测试城')[0])
+                self.assertEqual(set(queries[1:]), {
+                    f'测试城 {part} 补充资料 统计公报 官方发布 年度报告',
+                    *(f'测试城 {part} {topic}' for topic in full_provider._EMPTY_SEARCH_TOPICS[stage]),
+                })
+                self.assertEqual(counts, [providers.MAX_SEARCH_COUNT] * 4)
                 self.assertEqual(len({contract.canonical_url(item['url']) for item in all_sources}), 5)
                 self.assertEqual(prior, saved)
 

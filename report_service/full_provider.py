@@ -844,6 +844,8 @@ class FullLiveProvider:
         complete_population = (mode == 'standard' and stage_id == 'population'
                                and part == get_stage(stage_id, mode=mode)['parts'][-1])
         ordinary_research = mode == 'standard' and stage_id in _EMPTY_SEARCH_TOPICS
+        complete_research = (ordinary_research
+                             and part == get_stage(stage_id, mode=mode)['parts'][-1])
         company_check = stage_id == 'fact_check' and part == '五星企业信号'
         targeted_check = company_check and bool(self._selected_companies(prior))
         if company_check:
@@ -922,10 +924,10 @@ class FullLiveProvider:
             cached = cached_query(query)
             if cached:
                 return [{'_cached_evidence_record': entry} for entry in cached]
-            # The final population part must close the whole chapter's source
+            # The final ordinary research part must close the chapter's source
             # deficit. Use the existing transport bound rather than letting a
             # small per-query default discard potentially useful candidates.
-            count = providers.MAX_SEARCH_COUNT if complete_population or expand else self._live.search_count
+            count = providers.MAX_SEARCH_COUNT if complete_research or expand else self._live.search_count
             payload = self._live._search(query, count)
             return self._live._normalize_results(payload)
 
@@ -1028,7 +1030,13 @@ class FullLiveProvider:
                 and len({canonical_url(item['url']) for item in cached + usable})
                     < contract.minimum_evidence_urls(mode))
         if empty_recovery or final_deficit:
-            if empty_recovery:
+            if complete_research and not complete_population:
+                # Zero-result recovery and chapter completion share this one
+                # batch. Keep the part in both complementary topic queries.
+                supplements = [f'{place} {part} 补充资料 统计公报 官方发布 年度报告']
+                supplements.extend(f'{place} {part} {topic}'
+                                   for topic in _EMPTY_SEARCH_TOPICS[stage_id])
+            elif empty_recovery:
                 supplements = [queries[0]] + [f'{place} {part} {topic}'
                                               for topic in _EMPTY_SEARCH_TOPICS[stage_id]]
             else:
@@ -1080,7 +1088,7 @@ class FullLiveProvider:
                                   query_count=len(queries), successful_queries=successes,
                                   failed_queries=len(failures), cached_source_count=0,
                                   evidence_count=0, **result_counts))
-        if complete_population:
+        if complete_research:
             found = len({canonical_url(item['url']) for item in cached + usable})
             required = contract.minimum_evidence_urls(mode)
             if found < required:
@@ -1092,7 +1100,8 @@ class FullLiveProvider:
                 error.safe_metrics.update(operation='search', elapsed_ms=int((time.monotonic() - started) * 1000),
                                           query_count=len(queries), successful_queries=successes,
                                           failed_queries=len(failures), cached_source_count=len(cached),
-                                          evidence_count=found, min_evidence_urls=required)
+                                          evidence_count=found, min_evidence_urls=required,
+                                          **result_counts)
                 raise error from None
         # A failed optional lookup need not discard other real excerpts. All
         # downstream identity, cross-source and stage validation still apply.
