@@ -196,7 +196,7 @@ function opsMonthlyInfo(city){
   var monthly=(typeof REPORT_REQUESTS!=='undefined'?REPORT_REQUESTS:[]).filter(function(r){return r&&r.city===city&&r.projectKey===workspace.projectKey&&r.autoPublish===true&&/^\d{4}-\d{2}$/.test(r.scheduledMonth||'');}).sort(function(a,b){return String(b.scheduledMonth).localeCompare(String(a.scheduledMonth))||(b.ts||0)-(a.ts||0);})[0];
   var label=workspace.monthlyEnabled?'已启用，等待首轮更新':'已停用',tone='is-muted';
   if(monthly){
-    label=monthly.scheduledMonth+' · '+(monthly.publicationSkipped==='newer-report-already-published'?'已有更新版本':monthly.status==='done'?(monthly.pushed?'已更新':'待发布'):({pending:'排队中',running:'生成中',failed:'需处理',blocked:'需处理',cancelled:'已取消'}[monthly.status]||'待处理'));
+    label=monthly.scheduledMonth+' · '+(monthly.publicationSkipped==='newer-report-already-published'?'已有更新版本':monthly.status==='done'?(monthly.pushed?'已更新':'待发布'):({pending:'排队中',running:'生成中',pause_requested:'正在暂停',paused:'需处理',failed:'需处理',blocked:'需处理',cancelled:'已取消'}[monthly.status]||'待处理'));
     tone=monthly.status==='done'&&monthly.pushed?'is-on':['failed','blocked','cancelled'].indexOf(monthly.status)>=0?'is-danger':'is-muted';
   }
   if(!workspace.monthlyEnabled){label='已停用'+(monthly?' · '+label:'');tone='is-muted';}
@@ -1442,7 +1442,7 @@ function opsCityProfile(){
 }
 
 function opsReportRows(){return (REPORT_REQUESTS||[]).concat(typeof _rrOutboxRows==='function'?_rrOutboxRows():[]);}
-function opsReportLabel(row){if(row.submissionBlocked||['failed','cancelled','blocked'].indexOf(row.status)>=0)return '需处理';return {done:'已完成',pending:'排队中',running:'运行中'}[row.status]||'待处理';}
+function opsReportLabel(row){if(row.submissionBlocked||['failed','cancelled','blocked','paused'].indexOf(row.status)>=0)return '需处理';return {done:'已完成',pending:'排队中',running:'运行中',pause_requested:'正在暂停'}[row.status]||'待处理';}
 function opsBrandOverviewHero(){
   return '<section class="ops-brand-hero" aria-label="城市招商协同"><div class="ops-brand-hero-copy"><span class="ops-brand-kicker">城市有底稿 · 招商有方向</span><h2>把城市、资源与项目，<br>连接起来。</h2><p>围绕城市研究、资料管理与项目跟进，<br>让每一项招商工作都有清楚的下一步。</p></div><div class="ops-brand-hero-art"><img src="'+opsBrandImage('city')+'" alt="城市与园区建筑概念图"><span>城市招商 · 协同工作</span></div></section>';
 }
@@ -1454,8 +1454,8 @@ function opsOverview(){
   var projects=Object.keys(PROJECTS||{}),cities=Object.create(null);projects.forEach(function(k){var p=PROJECTS[k];if(p&&p.city)cities[p.city]=true;});
   var users=Object.keys(USER_PROFILES||{}),codes=Object.keys(INVITE_CODES||{}),reports=opsReportRows();
   var demandCount=projects.filter(function(k){return PROJECTS[k]&&PROJECTS[k].isDemand===true;}).length;
-  var activeReports=reports.filter(function(r){return !r.submissionBlocked&&(r.status==='pending'||r.status==='running');}).length;
-  var attention=reports.filter(function(r){return r.submissionBlocked||['failed','cancelled','blocked'].indexOf(r.status)>=0;}).length;
+  var activeReports=reports.filter(function(r){return !r.submissionBlocked&&['pending','running','pause_requested'].indexOf(r.status)>=0;}).length;
+  var attention=reports.filter(function(r){return r.submissionBlocked||['failed','cancelled','blocked','paused'].indexOf(r.status)>=0;}).length;
   var activeCodes=codes.filter(function(c){return !INVITE_CODES[c].revoked;}).length;
   var metrics=[['报告任务',reports.length,activeReports+' 进行中 · '+attention+' 需处理','reports'],['招商项目',demandCount,Object.keys(cities).length+' 个城市工作数据','demands'],['生效邀请码',activeCodes,codes.length+' 个邀请码总计','invitations'],['注册用户',users.length,'查看联系人与所属工作区','users']];
   var stats='<div class="ops-ui-stats">'+metrics.map(function(m){return '<button class="ops-ui-stat" onclick="'+opsHandler('opsGo',m[3])+'"><span class="ops-brand-stat-label">'+opsIcon({reports:'report',demands:'demand',invitations:'permissions',users:'account'}[m[3]],17)+m[0]+'</span><strong class="ops-ui-stat-value">'+m[1]+'</strong><span class="ops-ui-muted">'+m[2]+'</span></button>';}).join('')+'</div>';

@@ -115,6 +115,24 @@ class SyncRouteTests(unittest.TestCase):
                     node.keys=[k for k,v in kept];node.values=[v for k,v in kept]
                 return node
         extracted=StripCancelledRank().visit(extracted)
+        # Only the new native pause states join the existing running rank;
+        # website fencing/real queue state tests exercise their behavior.
+        class StripPauseRank(ast.NodeTransformer):
+            def visit_Assign(self, node):
+                if (any(isinstance(t, ast.Name) and t.id == '_rr_rank' for t in node.targets)
+                        and isinstance(node.value, ast.Dict)):
+                    pairs = list(zip(node.value.keys, node.value.values))
+                    kept = []
+                    for key, value in pairs:
+                        if isinstance(key, ast.Constant) and key.value in ('paused', 'pause_requested'):
+                            self_outer.assertEqual(ast.dump(value), ast.dump(ast.Constant(value=1)))
+                        else:
+                            kept.append((key, value))
+                    node.value.keys = [k for k, v in kept]
+                    node.value.values = [v for k, v in kept]
+                return self.generic_visit(node)
+        self_outer = self
+        extracted = StripPauseRank().visit(extracted)
         # The session-selection fix changes exactly these assignments. Keep the
         # legacy-merge gate intact everywhere else; behavior is tested separately.
         class RestoreLegacyChatSelection(ast.NodeTransformer):

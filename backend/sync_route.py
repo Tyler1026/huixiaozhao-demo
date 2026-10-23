@@ -120,7 +120,8 @@ def handle_sync(self, raw, deps):
         # （claim/orchestrator/sync_to_kb 等）事后写回的旧状态更新都不能把它
         # 覆盖回 pending/running/failed/done——这正是"卡死任务允许用户手动取消"
         # 功能的服务端语义保证。
-        _rr_rank = {'pending': 0, 'running': 1, 'failed': 2, 'done': 3, 'cancelled': 4}
+        _rr_rank = {'pending': 0, 'running': 1, 'pause_requested': 1, 'paused': 1,
+                    'failed': 2, 'done': 3, 'cancelled': 4}
         def _merge_rr(old_list, new_list):
             by_id = {r.get('id'): dict(r) for r in (old_list or []) if isinstance(r, dict)}
             for r in (new_list or []):

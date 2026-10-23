@@ -153,6 +153,9 @@ function rrWaveRows(r){
   '</div>';
 }
 function rrProgress(r){
+  if(r.status==='paused'||r.status==='pause_requested'){
+    return '<div class="ops-ui-report-policy" style="margin-top:8px;padding:10px;border:1px solid #fde68a;border-radius:8px;background:#fffbeb">'+rrHtml(rrPolicyInfo(r))+'</div>';
+  }
   if(r.status!=='running') return '';
   var ts=rrTimeSplit(r);
   var fd=r.filesDone||0, ft=r.filesTotal||16;
@@ -180,6 +183,17 @@ function rrProgress(r){
     rrIssuesBanner(r)+
     rrWaveRows(r)+'</div>';
 }
+function rrPolicyInfo(r){
+  var causes={manual:'管理员请求暂停',wall_time_exhausted:'已到无人介入期限',task_work_exhausted:'已到全包工作时间上限',stage_work_exhausted:'已到本章工作时间上限',quality_repeated:'连续质量核验未通过',step_attempts_exhausted:'已到本步骤启动次数上限',report_retries_exhausted:'已到全包自动重试上限',configuration:'配置需要处理',artifact:'交付需要处理'};
+  var p=r.executionPolicy||{},u=p.usage||{};
+  var text=r.status==='pause_requested'?'暂停已请求，当前步骤完成后停止领取新工作。':'已完成成果和累计用量已保留，等待管理员明确继续。';
+  if(causes[p.pause_reason])text+=' '+causes[p.pause_reason]+'。';
+  function number(value){return typeof value==='number'&&isFinite(value)&&value>=0?value:null;}
+  var attempts=number(u.attempts_total),retries=number(u.retries),work=number(u.work_seconds);
+  if(attempts!==null&&retries!==null)text+=' 累计启动 '+attempts+' 次，自动重试 '+retries+' 次。';
+  if(work!==null)text+=' 累计工作 '+Math.floor(work/60)+' 分钟。';
+  return text+' 次数和工作时间受限，费用需另行核对。';
+}
 function rrIssuesBanner(r){
   var iss=r.issues||[];
   if(!iss.length) return '';
@@ -200,9 +214,9 @@ function rrPanel(options){
   var escape=rrHtml;
   var requests=REPORT_REQUESTS.concat(_rrOutboxRows()).slice().reverse().filter(function(r){
     var matches=!query||[r.province,r.city,r.id,r.by].join(' ').toLowerCase().indexOf(query)!==-1;
-    if(status==='active')matches=matches&&!r.submissionBlocked&&(r.status==='pending'||r.status==='running');
+    if(status==='active')matches=matches&&!r.submissionBlocked&&['pending','running','pause_requested'].indexOf(r.status)>=0;
     else if(status==='done')matches=matches&&r.status==='done';
-    else if(status==='attention')matches=matches&&(r.submissionBlocked||['failed','cancelled','blocked'].indexOf(r.status)!==-1);
+    else if(status==='attention')matches=matches&&(r.submissionBlocked||['failed','cancelled','blocked','paused'].indexOf(r.status)!==-1);
     return matches;
   });
   var rows=requests.map(function(r){
@@ -246,7 +260,7 @@ function rrPanel(options){
     if(r.submissionBlocked){
       cancelBtn='<button onclick="_rrDiscardBlocked(\''+rrInlineString(r.id)+'\')" style="flex-shrink:0;padding:6px 12px;border:1px solid #fca5a5;border-radius:8px;background:#fff;color:#dc2626;cursor:pointer">移除未提交项</button>';
     }
-    if(!r.submissionPending&&(r.status==='pending'||r.status==='running')){
+    if(!r.submissionPending&&['pending','running','pause_requested','paused'].indexOf(r.status)>=0){
       cancelBtn='<button onclick="cancelReportRequest(\''+rrInlineString(r.id)+'\',this)" style="flex-shrink:0;padding:6px 12px;background:#fff;border:1.5px solid #fca5a5;border-radius:8px;font-size:12px;color:#dc2626;cursor:pointer;font-weight:600;white-space:nowrap"><span data-ops-icon="error" data-ops-icon-size="16"></span> 取消</button>';
     }
     return '<div class="ops-row ops-ui-report-row" style="align-items:flex-start;flex-direction:column"><div class="ops-ui-report-row-head" style="display:flex;align-items:center;gap:10px;width:100%">'+

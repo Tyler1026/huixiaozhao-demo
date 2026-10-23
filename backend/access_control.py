@@ -475,7 +475,7 @@ def _prepare_requests(incoming, state, principal, allowed, refs):
             if 'projectKey' in record and record['projectKey'] != old.get('projectKey'):
                 _deny('workspace_immutable', '不能更改报告所属工作区')
             value = copy.deepcopy(old)
-            if record.get('status') == 'cancelled' and old.get('status') in ('pending', 'running'):
+            if record.get('status') == 'cancelled' and old.get('status') in ('pending', 'running', 'paused', 'pause_requested'):
                 value['status'] = 'cancelled'
             elif record.get('status', old.get('status')) != old.get('status'):
                 _deny('report_immutable', '报告进度由服务器管理')

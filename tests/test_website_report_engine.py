@@ -365,11 +365,15 @@ class WebsiteEngineTests(unittest.TestCase):
         self.assertFalse(json.loads(handler.wfile.getvalue())['ok'])
         self.assertEqual(self.path.read_bytes(),saved)
 
-    def test_configuration_resume_preserves_completed_research_and_cannot_revive_cancelled(self):
+    def test_legacy_configuration_resume_preserves_completed_research_and_cannot_revive_cancelled(self):
         from report_service.full_store import FullStore
         stages=({'id':'one','filename':'one.md','parts':('first','second')},)
         store=FullStore(Path(self.temp.name)/'queue.db',stages=stages)
         r=store.create('offline','测试省','测试区','resume',False)
+        # Explicit pre-policy fixture: new v1 jobs require versioned continue,
+        # covered separately by test_full_execution_policy.
+        with store.db() as connection:
+            connection.execute('DELETE FROM full_execution_policies WHERE report_id=?', (r['id'],))
         lease=store.claim(synthetic=False)
         store.finish_part(lease['step_id'],lease['token'],{'text':'OFFLINE committed checkpoint','metadata':{}})
         lease=store.claim(synthetic=False);store.fail_part(lease['step_id'],lease['token'],'configuration',False)
