@@ -953,7 +953,8 @@ class SelectedCompanyFactCheckTests(unittest.TestCase):
                 chat_payloads = iter((payload, corrected))
                 router = RecordingRouter({
                     'exa.ai/search': (200, json.dumps({'results': [
-                        {'url': url, 'text': 'OFFLINE核查摘录；' + '；'.join(c['claim'] for c in checks)}
+                        {'url': url, 'title': 'OFFLINE制造业资助办法',
+                         'text': 'OFFLINE核查摘录\n' + '\n'.join(c['claim'] for c in checks)}
                         for url in FactCheckPartCommitGateTests.URLS]})),
                     'chat/completions': (200, lambda request: json.dumps(
                         {'choices': [{'message': {'content': json.dumps(next(chat_payloads))}}]})),
@@ -976,6 +977,22 @@ class FactCheckPartCommitGateTests(unittest.TestCase):
 
     @classmethod
     def _checks(cls, category, count):
+        if category == 'policy':
+            checks = []
+            for index in range(count):
+                quote = (f'OFFLINE制造业资助办法，测试省工业和信息化厅：对在测试省注册的制造业企业，'
+                         f'设备投资达到{index + 1}00万元且验收合格的，给予不超过{index + 1}0万元补助。'
+                         '本办法自2026年1月1日起施行，有效期至2028年12月31日。')
+                clause = {'document_name': 'OFFLINE制造业资助办法', 'quote': quote,
+                          'issuer': '测试省工业和信息化厅', 'beneficiary': '在测试省注册的制造业企业',
+                          'benefit': f'给予不超过{index + 1}0万元补助',
+                          'conditions': f'设备投资达到{index + 1}00万元且验收合格',
+                          'validity': '自2026年1月1日起施行，有效期至2028年12月31日', 'region': '测试省'}
+                checks.append({'claim': quote, 'category': category, 'direction': None,
+                               'source': cls.URLS[0], 'cross_source': cls.URLS[1],
+                               'year': '2026', 'verdict': '待核实', 'region': '测试省',
+                               'policy_clause': clause, 'cross_policy_clause': copy.deepcopy(clause)})
+            return checks
         return [{'claim': f'OFFLINE不同核验主张{index}', 'category': category,
                  'direction': None, 'source': cls.URLS[0], 'cross_source': cls.URLS[1],
                  'year': '2026', 'verdict': '两源口径不同，待核实'} for index in range(count)]
@@ -984,7 +1001,10 @@ class FactCheckPartCommitGateTests(unittest.TestCase):
         payload = {'text': '\n'.join(f'OFFLINE本批具体核查事项{i}' for i in range(20)), 'checks': checks}
         router = RecordingRouter({
             'exa.ai/search': (200, json.dumps({'results': [
-                {'url': url, 'text': 'OFFLINE实际摘录；' + '；'.join(check['claim'] for check in checks)}
+                {'url': url, 'title': 'OFFLINE制造业资助办法',
+                 'text': ('OFFLINE实际摘录\n' + '\n'.join(check['claim'] for check in checks)
+                                     if part == '政策金额' else
+                                     'OFFLINE实际摘录；' + '；'.join(check['claim'] for check in checks))}
                 for url in self.URLS]})),
             'chat/completions': (200, json.dumps({'choices': [{'message': {'content': json.dumps(payload)}}]})),
         })
@@ -1007,8 +1027,15 @@ class FactCheckPartCommitGateTests(unittest.TestCase):
                 for saved, original in zip(actual, checks):
                     for key in ('claim', 'category', 'direction', 'source', 'cross_source', 'year'):
                         self.assertEqual(saved[key], original[key])
-                    self.assertEqual(saved['support_status'], 'pending')
-                    self.assertIn('待核实', saved['verdict'])
+                    if category == 'policy':
+                        self.assertEqual(saved['policy_clause_validation']['classification'], 'normative_clause')
+                        self.assertEqual(saved['policy_clause_validation']['status'], 'fields_located')
+                        self.assertFalse(saved['policy_clause_validation']['legal_completeness_confirmed'])
+                        self.assertEqual(saved['support_status'], 'pending')
+                        self.assertIn('待核实', saved['verdict'])
+                    else:
+                        self.assertEqual(saved['support_status'], 'pending')
+                        self.assertIn('待核实', saved['verdict'])
                 self.assertEqual(len(result['metadata']['evidence']), 2)
 
     def test_below_floor_empty_and_wrong_categories_fail_before_return(self):
@@ -1019,7 +1046,10 @@ class FactCheckPartCommitGateTests(unittest.TestCase):
                     with self.assertRaises(fp.FullProviderError) as failure:
                         self._run(part, checks)
                     self.assertEqual(failure.exception.failure_code, 'quality')
-                    self.assertIn(f'fact_check part {category} checks', str(failure.exception))
+                    if part == '政策金额' and checks and checks[0]['category'] != 'policy':
+                        self.assertIn('policy_batch_contains_other_category', str(failure.exception))
+                    else:
+                        self.assertIn(f'fact_check part {category} checks', str(failure.exception))
 
     def test_duplicate_grounded_checks_cannot_fill_policy_or_economic_floor(self):
         for part, category, minimum in (('经济关键数字', 'economic', 9), ('政策金额', 'policy', 3)):
@@ -1036,12 +1066,21 @@ class FactCheckPartCommitGateTests(unittest.TestCase):
                 with self.subTest(part=part, bad_url=bad_url):
                     checks = self._checks(category, minimum)
                     checks[-1]['cross_source'] = bad_url
+                    if category == 'policy' and bad_url not in self.URLS:
+                        with self.assertRaisesRegex(fp.FullProviderError, 'policy_clause_not_in_saved'):
+                            self._run(part, checks)
+                        continue
                     result = self._run(part, checks)
                     last = result['metadata']['checks'][-1]
                     self.assertEqual(last['support_status'], 'pending')
                     self.assertEqual(last['cross_source'], '')
-                    self.assertIn('待核实', last['verdict'])
-                    self.assertFalse(last['source_support']['supported'])
+                    if category == 'policy':
+                        self.assertIn('待核实', last['verdict'])
+                        self.assertEqual(last['policy_clause_validation']['classification'], 'normative_clause')
+                        self.assertFalse(last['source_support']['supported'])
+                    else:
+                        self.assertIn('待核实', last['verdict'])
+                        self.assertFalse(last['source_support']['supported'])
 
 
 class HighStarEntityQuoteGateTests(unittest.TestCase):

@@ -841,6 +841,13 @@ class FullLiveProvider:
         seen = set()
         retrieval = "exa_fulltext" if self.search_provider == "exa" else "brave_snippet"
         queries = _queries_for(stage_id, part, place)
+        if mode == 'standard' and stage_id == 'fact_check' and part == '政策金额':
+            # Replace, never add to, the existing two-query budget. Lookup
+            # operative government documents rather than investment results.
+            queries = [
+                f'{place} 产业扶持 奖励 补助 规范性文件 实施办法 申报条件 政府官网 site:gov.cn',
+                f'{place} 财政奖补 政策原文 受益对象 资金标准 有效期 申请指南 site:gov.cn',
+            ]
         complete_population = (mode == 'standard' and stage_id == 'population'
                                and part == get_stage(stage_id, mode=mode)['parts'][-1])
         ordinary_research = mode == 'standard' and stage_id in _EMPTY_SEARCH_TOPICS
@@ -1211,6 +1218,9 @@ class FullLiveProvider:
             user_blocks.append('经济和政策每条检查必须给出source_quote及cross_source_quote原文、metric、region、统计year；'
                                '两段分别逐字来自对应URL并支持同一对象、指标、年份、地区及数值。只有一个来源则保留该来源，'
                                'cross_source留空、verdict明确单源待交叉核验；无法支持则写具体待核缺口，禁止编造第二来源。')
+        if mode == 'standard' and stage_id == 'fact_check' and part == '政策金额':
+            from .full_policy import POLICY_CHECK_PROMPT
+            user_blocks.append(POLICY_CHECK_PROMPT)
         if stage_id == 'fact_check':
             quota = {'经济关键数字': '至少9条economic核验，分别针对不同的已研究经济主张',
                      '政策金额': '至少3条policy核验，针对已研究政策中的金额、条件或有效期',
@@ -1443,7 +1453,21 @@ class FullLiveProvider:
             meta["candidates"] = self._ground_companies(stage_id, parsed.get("candidates"), evidence, place=place)
             meta["selected"] = self._ground_companies(stage_id, parsed.get("selected"), evidence, place=place)
         elif stage_id == "fact_check":
-            meta["checks"] = self._ground_checks(stage_id, parsed.get("checks"), evidence, prior=prior, place=place, mode=mode)
+            raw_checks = parsed.get('checks')
+            policy_bindings = None
+            if mode == 'standard' and part == '政策金额':
+                from .full_policy import PolicyCheckError, prepare_policy_checks
+                try:
+                    raw_checks, policy_bindings = prepare_policy_checks(raw_checks, evidence)
+                except PolicyCheckError as exc:
+                    raise FullProviderError('policy check rejected: ' + str(exc), 'quality') from None
+            meta["checks"] = self._ground_checks(stage_id, raw_checks, evidence, prior=prior, place=place, mode=mode)
+            if policy_bindings is not None:
+                from .full_policy import PolicyCheckError, attach_policy_bindings
+                try:
+                    attach_policy_bindings(meta['checks'], policy_bindings)
+                except PolicyCheckError as exc:
+                    raise FullProviderError('policy check rejected: ' + str(exc), 'quality') from None
             if parsed.get("high_star_unavailable") is True:
                 meta["high_star_unavailable"] = True
                 meta["high_star_note"] = parsed.get("high_star_note", "")

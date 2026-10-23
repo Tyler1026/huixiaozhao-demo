@@ -124,6 +124,8 @@ _METRICS = (
     ('一般公共预算支出', ('一般公共预算支出',)),
     ('工业总产值', ('工业总产值',)),
     ('社会消费品零售总额', ('社会消费品零售总额',)),
+    ('商品房销售面积', ('商品房销售面积', '房屋销售面积', '销售面积')),
+    ('商品房销售额', ('商品房销售额', '商品房销售金额', '房屋销售额', '销售金额', '销售额')),
     ('营业收入', ('营业收入', '营收')),
     ('投资', ('总投资', '项目投资', '投资额', '工程投资')),
     ('产能', ('产能', '年产')),
@@ -297,12 +299,173 @@ def _claim_spans(text):
     return output
 
 
+_DIRECTION_METRICS = _METRICS + (
+    ('第一产业增加值', ('第一产业增加值',)),
+    ('第二产业增加值', ('第二产业增加值',)),
+    ('第三产业增加值', ('第三产业增加值',)),
+)
+_DIRECTION_QUANTITY = re.compile(
+    r'(?<![\d.])([+\-−－]?)(\d[\d,]*(?:\.\d+)?)'
+    r'\s*(个百分点|百分点|亿元|万元|元|万吨|吨|万亩|亩|%|％)')
+_DIRECTION_WORD = re.compile(
+    r'负增长|零增长|持平|不变(?!价)|增长(?!率)|增加|上升|提高|提升|'
+    r'下降|减少|降低|下滑|回落|萎缩|收窄|缩小|扩大|放缓')
+_RATE_NOUN = re.compile(r'增速|增长率|增长速度|增长幅度|下降幅度|增幅|降幅')
+_FLAT_WORD = re.compile(r'零增长|持平|不变(?!价)')
+_NEGATED_CHANGE_PREFIX = re.compile(r'(?:未|没有|并非|不再|不是|不)(?:出现|保持|明显|显著)?$')
+
+
+def _change_relations(text, metric=''):
+    """Bind each stated change to its local metric and quantity, not a word set.
+
+    This intentionally does not infer parallel-list mappings, unknown metric
+    aliases, comparisons or table columns. Ambiguous change claims stay pending.
+    A rate *change* (增速回落) is separate from the underlying metric's change.
+    """
+    dense = _compact(_URL.sub('', text))
+    metrics = []
+    for label, aliases in _DIRECTION_METRICS:
+        for alias in aliases:
+            for match in re.finditer(re.escape(alias), dense, re.IGNORECASE):
+                metrics.append((match.start(), match.end(), label))
+    # Prefer the complete label over an overlapping shorter alias.
+    metrics = [item for item in metrics if not any(
+        other[0] <= item[0] and item[1] <= other[1] and
+        other[1] - other[0] > item[1] - item[0] for other in metrics)]
+    metrics = sorted(set(metrics))
+    def inside_metric(start, end):
+        # "增加值" is part of the disclosed metric, not an increase action.
+        return any(left <= start and end <= right for left, right, _ in metrics)
+
+    fallback = {label for label, aliases in _DIRECTION_METRICS
+                if any(alias.lower() in metric.lower() for alias in aliases)}
+
+    def context_at(position):
+        boundary = max((dense.rfind(mark, 0, position) for mark in '。！？\n'), default=-1) + 1
+        preceding = [item for item in metrics if boundary <= item[0] and item[1] <= position]
+        if preceding:
+            start, end, label = max(preceding, key=lambda item: (item[1], item[1] - item[0]))
+            context = dense[end:position]
+            # "A、B分别..." requires an explicit aligned-list parser, not nearest B.
+            if '分别' in context and len({item[2] for item in preceding}) > 1:
+                return None, context
+            return label, context
+        return (next(iter(fallback)) if len(fallback) == 1 else None), dense[boundary:position]
+
+    relations, invalid, used_words = [], False, set()
+    previous_end = 0
+    for match in _DIRECTION_QUANTITY.finditer(dense):
+        label, context = context_at(match.start())
+        # Direction words cannot leak from another numeric item or comma clause.
+        local_start = max(previous_end, *(dense.rfind(mark, 0, match.start()) + 1 for mark in '，,；;。！？'))
+        local = dense[local_start:match.start()]
+        words = [word for word in _DIRECTION_WORD.finditer(local)
+                 if not inside_metric(local_start + word.start(), local_start + word.end())]
+        word = words[-1].group() if words else ''
+        if words:
+            used_words.add((local_start + words[-1].start(), local_start + words[-1].end()))
+        rate = list(_RATE_NOUN.finditer(context))
+        # 增长率/增速 = the metric's rate; 增速回落 = a change of that rate.
+        scope = 'rate_change' if word and rate and rate[-1].end() <= len(context) - len(local) + words[-1].start() else 'metric_change'
+        sign, number, unit = match.groups()
+        value = Decimal(number.replace(',', ''))
+        negative = sign in {'-', '−', '－'} and value != 0
+        role = ('baseline' if re.search(r'(?:由|从)(?:原来的?)?(?:约)?$', local)
+                else 'endpoint' if word and re.search(r'(?:至|(?<!达)到)(?:约)?$', local)
+                else 'change')
+        direction = ('down' if word in {'负增长', '下降', '减少', '降低', '下滑', '回落', '萎缩', '收窄', '缩小', '放缓'}
+                     else 'flat' if word in {'零增长', '持平', '不变'}
+                     else 'up' if word else '')
+        local_invalid = False
+        if words and _NEGATED_CHANGE_PREFIX.search(local[:words[-1].start()]):
+            local_invalid = True
+        if not direction and unit in {'%', '％'}:
+            if negative:
+                direction = 'down'
+            elif rate:
+                direction = 'down' if rate[-1].group() in {'下降幅度', '降幅'} else 'up'
+        if direction:
+            if negative and role == 'change':
+                if direction == 'up':
+                    direction = 'down'  # "增长-6%" is a negative growth rate.
+                elif direction == 'down' and word not in {'负增长', ''}:
+                    local_invalid = True  # Do not guess the intent of "下降-6%".
+            if value == 0:
+                direction = 'flat'
+            elif direction == 'flat':
+                local_invalid = True
+            quantity = (('percentage_point', value) if unit.endswith('百分点')
+                        else next(iter(_quantities(number + unit))))
+            if negative and role in {'baseline', 'endpoint'}:
+                quantity = (quantity[0], -quantity[1])
+            if not local_invalid:
+                relations.append((label, quantity, direction, scope, role))
+        invalid = invalid or local_invalid
+        previous_end = match.end()
+
+    for match in _DIRECTION_WORD.finditer(dense):
+        if inside_metric(*match.span()) or match.span() in used_words or match.group() in {'零增长', '持平', '不变'}:
+            continue
+        label, context = context_at(match.start())
+        tail = re.split(r'[，,；;。！？]', dense[match.end():], maxsplit=1)[0]
+        # An unparsed number/unit is not permission to drop its magnitude.
+        if re.search(r'\d', tail) or _NEGATED_CHANGE_PREFIX.search(context):
+            invalid = True
+            continue
+        direction = 'down' if match.group() in {'负增长', '下降', '减少', '降低', '下滑', '回落', '萎缩', '收窄', '缩小', '放缓'} else 'up'
+        scope = 'rate_change' if _RATE_NOUN.search(context) else 'metric_change'
+        relations.append((label, None, direction, scope, 'change'))
+
+    # Explicit flat statements need no number (e.g. "GDP与上年持平").
+    for match in _FLAT_WORD.finditer(dense):
+        if inside_metric(*match.span()):
+            continue
+        label, context = context_at(match.start())
+        if _NEGATED_CHANGE_PREFIX.search(context):
+            invalid = True
+            continue
+        scope = 'rate_change' if _RATE_NOUN.search(context) else 'metric_change'
+        relations.append((label, None, 'flat', scope, 'change'))
+    return relations, invalid
+
+
+def _change_support(claim, span, metric=''):
+    requested, invalid = _change_relations(claim, metric)
+    if invalid:
+        return False, set()
+    if not requested:
+        return True, set()
+    # An unrelated ambiguous source clause cannot validate a change, but also
+    # must not discard another metric's explicit valid relation in this span.
+    available, _ = _change_relations(span, metric)
+    implied = set()
+    for label, quantity, direction, scope, role in requested:
+        if label is None:
+            return False, set()
+        matches = [value for other_label, value, other_direction, other_scope, other_role in available
+                   if other_label == label and other_direction == direction and other_scope == scope
+                   and (other_role == role or (quantity is None and other_role == 'endpoint'))]
+        if quantity is None and matches:
+            continue
+        if quantity in matches:
+            continue
+        if direction == 'flat' and (quantity is None or quantity == ('percent', Decimal(0))):
+            if None in matches or any(value is not None and value[1] == 0 for value in matches):
+                if quantity is not None:
+                    implied.add(quantity)
+                continue
+        return False, set()
+    return True, implied
+
+
 def source_support(claim, observations, url, *, quote='', year=None, region='', metric=''):
-    """Conservative same-span quantity/metric/year/region binding for one URL.
+    """Conservative same-span quantity/metric/change/year/region binding for one URL.
 
     An exact quote can narrow the span; it cannot substitute for its contents.
     A document's explicit statistical title supplies its reporting year, but
-    its publication date does not. Two URLs are evaluated independently.
+    its publication date does not. Change direction, rate-vs-level scope and
+    explicit baseline/endpoint roles are local to each quantity and metric.
+    Two URLs are evaluated independently.
     """
     if not isinstance(claim, str) or not isinstance(url, str) or not isinstance(quote, str):
         return {'supported': False, 'reason': 'invalid_claim_or_reference'}
@@ -337,7 +500,10 @@ def source_support(claim, observations, url, *, quote='', year=None, region='', 
             statistic_years.update(re.search(r'20\d{2}', document).group() for document in claim_documents)
         for span in spans:
             dense = _compact(span)
-            if quantities and not quantities <= _quantities(dense):
+            change_supported, implied_quantities = _change_support(claim, span, metric)
+            if not change_supported:
+                continue
+            if quantities and not quantities <= (_quantities(dense) | implied_quantities):
                 continue
             if groups and not all(any(alias.lower() in dense.lower() for alias in aliases) for _, aliases in groups):
                 continue

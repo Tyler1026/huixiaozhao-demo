@@ -22,11 +22,16 @@ class StructuredTransport:
         url=request.full_url; payload=json.loads(request.data); self.calls.append((url,payload))
         if url.endswith('/search'):
             digest=hashlib.sha256(payload['query'].encode()).hexdigest()[:12]
+            policy_lookup = ('规范性文件' in payload['query'] or '财政奖补 政策原文' in payload['query'])
             results=[]
             for i in range(8):
                 source=f'https://stats.gov.cn/fixture/{digest}/{i}'
                 results.append({'url':source,'title':'OFFLINE FIXTURE','text':'OFFLINE FIXTURE '+ ' '.join(f'测试企业{n}' for n in range(25))+' 经济政策扩产资料；不是事实。\n'+
                                 '\n'.join(self.signal_quote(n) for n in range(5)), 'publishedDate':'2026-09-01'})
+                if policy_lookup:
+                    results[-1]['title'] = 'OFFLINE制造业资助办法'
+                    results[-1]['text'] = ('OFFLINE制造业资助办法\n测试省工业和信息化厅\n'
+                                           + '\n'.join(self.policy_check(n, source, '')['claim'] for n in range(3)))
                 self.sources.append(source)
             return Response(url, {'results':results})
         text=payload['messages'][-1]['content']
@@ -53,6 +58,8 @@ class StructuredTransport:
                             **({'company_name':f'测试企业{i}','source_quote':self.signal_quote(i),
                                 'cross_source_quote':self.signal_quote(i)} if category=='high_star' else {})}
                            for i in range(count)]
+            if category == 'policy':
+                data['checks'] = [self.policy_check(i, refs[i % 8], refs[(i + 1) % 8]) for i in range(count)]
         elif stage=='scoring':
             prefix='本次评分唯一身份名单（name和direction须逐项精确保留）：'
             targets=json.loads(next(line[len(prefix):] for line in text.splitlines() if line.startswith(prefix)))
@@ -68,6 +75,19 @@ class StructuredTransport:
     @staticmethod
     def signal_quote(n):
         return f'测试企业{n}在2026年披露OFFLINE扩产信号{n}；仅供协议测试，不是实际事实。'
+    @staticmethod
+    def policy_check(n, source, cross):
+        quote = (f'对在测试省注册的制造业企业，设备投资达到{n + 1}00万元且验收合格的，'
+                 f'给予不超过{n + 1}0万元补助。本办法自2026年1月1日起施行，有效期至2028年12月31日。')
+        def clause():
+            return {'document_name': 'OFFLINE制造业资助办法', 'quote': quote,
+                    'issuer': '测试省工业和信息化厅', 'beneficiary': '在测试省注册的制造业企业',
+                    'benefit': f'给予不超过{n + 1}0万元补助',
+                    'conditions': f'设备投资达到{n + 1}00万元且验收合格',
+                    'validity': '自2026年1月1日起施行，有效期至2028年12月31日', 'region': '测试省'}
+        return {'claim': quote, 'source': source, 'cross_source': cross, 'year': '2026',
+                'verdict': '待核实', 'category': 'policy', 'direction': None, 'region': '测试省',
+                'policy_clause': clause(), 'cross_policy_clause': clause()}
 
 
 def provider(transport):
@@ -142,6 +162,11 @@ class LiveProtocolAcceptance(unittest.TestCase):
                               '五星企业信号': ('high_star',5)}[part]
             self.assertEqual(len(result['metadata']['checks']),minimum)
             self.assertTrue(all(check['category']==category for check in result['metadata']['checks']))
+            if category == 'policy':
+                self.assertTrue(all(check['policy_clause_validation']['classification'] == 'normative_clause'
+                                    for check in result['metadata']['checks']))
+                self.assertTrue(all(check['policy_clause_validation']['legal_completeness_confirmed'] is False
+                                    for check in result['metadata']['checks']))
         out=assemble('fact_check',parts)
         self.assertEqual(validate('fact_check',out['text'],out['metadata']),[])
         self.assertEqual(len(out['metadata']['checks']),17)
