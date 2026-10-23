@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 from .auth import (AuthError, SESSION_COOKIE_NAME, SESSION_TTL_SECONDS,
                    handle_auth, require_session)
-from .admin_invites import manage_invite, remove_member
+from .admin_invites import manage_invite, manage_monthly_report, remove_member
 
 
 def respond(handler, status, value, *, cookie=None):
@@ -101,9 +101,12 @@ _OPERATIONS = {
 def dispatch_auth(handler, method, path, raw, session_factory, *, admin_config=None, secure=True):
     """Return True for handled auth/admin requests, including safe failures."""
     operation = _OPERATIONS.get((method, path))
-    admin_action = method == 'POST' and path in ('/api/admin/invites', '/api/auth/members')
+    admin_actions = {'/api/admin/invites': manage_invite,
+                     '/api/admin/city-workspaces': manage_monthly_report,
+                     '/api/auth/members': remove_member}
+    admin_action = method == 'POST' and path in admin_actions
     if operation is None and not admin_action:
-        if path.startswith('/api/auth/') or path == '/api/admin/invites':
+        if path.startswith('/api/auth/') or path in admin_actions:
             respond(handler, 405, {'ok': False, 'error': 'method_not_allowed', 'message': '请求方式不支持'})
             return True
         return False
@@ -114,7 +117,7 @@ def dispatch_auth(handler, method, path, raw, session_factory, *, admin_config=N
         if admin_action:
             try:
                 with session_factory() as session:
-                    action = manage_invite if path == '/api/admin/invites' else remove_member
+                    action = admin_actions[path]
                     result = action(body, session, headers=handler.headers, admin_config=admin_config)
             except AuthError:
                 raise

@@ -4,6 +4,7 @@ Every privileged operation uses a real server-created authentication session.
 The serialized store is in memory; no network or production state is touched.
 """
 import contextlib
+import concurrent.futures
 import copy
 import io
 import json
@@ -13,6 +14,7 @@ from unittest.mock import patch
 
 from backend import admin_invites, auth, auth_routes
 from backend.access_control import allowed_project_keys, scoped_sync_view
+from backend.city_workspaces import next_month_report_at
 
 
 NOW = 1_900_000_000
@@ -147,6 +149,143 @@ class AdminInvitationTests(unittest.TestCase):
             self.assertTrue(auth_routes.dispatch_auth(handler, 'POST', path,
                             json.dumps(body).encode(), self.store.factory, admin_config=ADMIN))
         return handler
+
+    def monthly(self, body, *, token=None, now=NOW):
+        with self.store.factory() as session:
+            return admin_invites.manage_monthly_report(body, session, token=token,
+                                                      admin_config=ADMIN, now=now)
+
+    def monthly_body(self, city, enabled):
+        record = self.store.state['CITY_WORKSPACES'][city]
+        return {'action': 'set_monthly', 'city': city, 'projectKey': record['projectKey'],
+                'monthlyEnabled': enabled, 'expectedMonthlyEnabled': record['monthlyEnabled'],
+                'expectedNextReportAt': record['nextReportAt']}
+
+    def test_create_monthly_choice_is_boolean_and_omission_keeps_legacy_default(self):
+        token = self.login()
+        disabled = self.manage({'action': 'create', 'city': '一次测试市', 'monthlyEnabled': False}, token=token)
+        self.assertFalse(disabled['cityWorkspace']['monthlyEnabled'])
+        self.assertEqual(disabled['cityWorkspace']['nextReportAt'], 0)
+        legacy = self.manage({'action': 'create', 'city': '兼容测试市'}, token=token)
+        self.assertTrue(legacy['cityWorkspace']['monthlyEnabled'])
+        self.assertEqual(legacy['cityWorkspace']['nextReportAt'], next_month_report_at(NOW))
+        before = self.store.raw
+        for value in (None, 'false', 'true', 0, 1, [], {}):
+            with self.subTest(value=value):
+                self.assert_error(400, 'invalid_input', self.manage,
+                                  {'action': 'create', 'city': '无效测试市', 'monthlyEnabled': value}, token=token)
+        self.assertEqual(self.store.raw, before)
+
+    def test_reusing_or_replacing_invite_never_changes_existing_monthly_plan(self):
+        token = self.login()
+        for enabled in (False, True):
+            with self.subTest(enabled=enabled):
+                city = '已有计划' + str(enabled)
+                first = self.manage({'action': 'create', 'city': city, 'monthlyEnabled': enabled}, token=token)
+                before = copy.deepcopy(first['cityWorkspace'])
+                reused = self.manage({'action': 'create', 'city': city, 'monthlyEnabled': not enabled}, token=token)
+                self.assertEqual(reused['cityWorkspace'], before)
+                self.manage({'action': 'revoke', 'code': first['invite']['code']}, token=token)
+                replacement = self.manage({'action': 'create', 'city': city, 'monthlyEnabled': not enabled}, token=token)
+                self.assertNotEqual(replacement['invite']['code'], first['invite']['code'])
+                before['inviteCode'] = replacement['invite']['code']
+                self.assertEqual(replacement['cityWorkspace'], before)
+
+    def test_monthly_toggle_is_committed_idempotent_and_only_changes_schedule(self):
+        token = self.login()
+        created = self.manage({'action': 'create', 'city': '计划测试市', 'province': '测试省', 'monthlyEnabled': False}, token=token)
+        state = self.store.state
+        state['REPORT_REQUESTS'] = [{'id': 'already-queued', 'city': '计划测试市', 'status': 'pending'}]
+        self.store.replace(state)
+        before = self.store.state
+        enable = self.monthly_body('计划测试市', True)
+        result = self.monthly(enable, token=token)
+        self.assertTrue(result['changed'])
+        self.assertEqual(result['cityWorkspace']['nextReportAt'], next_month_report_at(NOW))
+        after = self.store.state
+        expected = copy.deepcopy(before)
+        expected['CITY_WORKSPACES']['计划测试市'].update(monthlyEnabled=True, nextReportAt=next_month_report_at(NOW))
+        self.assertEqual(after, expected)
+        writes = self.store.writes
+        repeated = self.monthly(enable, token=token, now=NOW + 60)
+        self.assertFalse(repeated['changed'])
+        self.assertEqual(self.store.writes, writes)
+        self.assertEqual(self.store.state, after)
+        disable = self.monthly_body('计划测试市', False)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+            results = list(pool.map(lambda _: self.monthly(disable, token=token), range(6)))
+        self.assertEqual(sum(r['changed'] for r in results), 1)
+        expected['CITY_WORKSPACES']['计划测试市'].update(monthlyEnabled=False, nextReportAt=0)
+        self.assertEqual(self.store.state, expected)
+        self.assertEqual(created['project'], self.store.state['PROJECTS'][created['project']['id']])
+
+    def test_monthly_update_requires_current_admin_origin_and_explicit_valid_target(self):
+        token = self.login()
+        self.manage({'action': 'create', 'city': '权限测试市'}, token=token)
+        body = self.monthly_body('权限测试市', False)
+        for actor in (None, self.login('ordinary'), self.login('owner-a')):
+            before = self.store.raw
+            result = self.http('/api/admin/city-workspaces', body, actor)
+            self.assertIn(result.status, (401, 403))
+            self.assertFalse(result.body['ok'])
+            self.assertEqual(self.store.raw, before)
+        for field, value in (('city', 'other'), ('projectKey', 'root-a')):
+            wrong = dict(body, **{field: value})
+            self.assert_error(404, 'city_workspace_not_found', self.monthly, wrong, token=token)
+        for field, value in (('monthlyEnabled', 'false'), ('monthlyEnabled', 0),
+                             ('expectedMonthlyEnabled', None), ('expectedNextReportAt', True),
+                             ('expectedNextReportAt', -1)):
+            self.assert_error(400, 'invalid_input', self.monthly, dict(body, **{field: value}), token=token)
+        missing = dict(body); del missing['monthlyEnabled']
+        self.assert_error(400, 'invalid_input', self.monthly, missing, token=token)
+        before = self.store.raw
+        handler = Handler(token); handler.headers['Origin'] = 'https://unrelated.invalid'
+        self.assertTrue(auth_routes.dispatch_auth(handler, 'POST', '/api/admin/city-workspaces',
+                        json.dumps(body).encode(), self.store.factory, admin_config=ADMIN))
+        self.assertEqual(handler.status, 403)
+        self.assertEqual(self.store.raw, before)
+        handler = Handler(token)
+        self.assertTrue(auth_routes.dispatch_auth(handler, 'GET', '/api/admin/city-workspaces',
+                        b'', self.store.factory, admin_config=ADMIN))
+        self.assertEqual(handler.status, 405)
+        result = self.http('/api/admin/city-workspaces', body, token)
+        self.assertEqual(result.status, 200)
+        self.assertTrue(result.body['changed'])
+        self.assertFalse(result.body['cityWorkspace']['monthlyEnabled'])
+        self.assertEqual(result.body['cityWorkspace']['nextReportAt'], 0)
+        self.assertNotIn(token, result.wfile.getvalue().decode())
+        self.assertNotIn('Set-Cookie', dict(result.response_headers))
+
+    def test_monthly_update_rejects_stale_plan_and_failed_save_without_success_receipt(self):
+        token = self.login()
+        self.manage({'action': 'create', 'city': '事务测试市'}, token=token)
+        body = self.monthly_body('事务测试市', False)
+        for changes in ({'expectedMonthlyEnabled': False}, {'expectedNextReportAt': 0}):
+            before = self.store.raw
+            self.assert_error(409, 'monthly_schedule_changed', self.monthly, dict(body, **changes), token=token)
+            self.assertEqual(self.store.raw, before)
+        before = self.store.raw
+        for failure_mode in (False, None, 1, 'raise'):
+            self.store.raise_write = failure_mode == 'raise'
+            self.store.write_result = failure_mode
+            result = self.http('/api/admin/city-workspaces', body, token)
+            self.assertEqual(result.status, 503)
+            self.assertFalse(result.body['ok'])
+            self.assertNotIn('cityWorkspace', result.body)
+            self.assertEqual(self.store.raw, before)
+
+    def test_new_monthly_enable_rejects_missing_province_without_changing_legacy_creation(self):
+        token = self.login()
+        self.manage({'action': 'create', 'city': '旧无省份市', 'monthlyEnabled': False}, token=token)
+        body = self.monthly_body('旧无省份市', True)
+        before = self.store.raw
+        self.assert_error(409, 'monthly_province_required', self.monthly, body, token=token)
+        self.assertEqual(self.store.raw, before)
+        # An already-enabled legacy record may still be stopped safely.
+        self.manage({'action': 'create', 'city': '旧默认市'}, token=token)
+        result = self.monthly(self.monthly_body('旧默认市', False), token=token)
+        self.assertFalse(result['cityWorkspace']['monthlyEnabled'])
+        self.assertEqual(result['cityWorkspace']['nextReportAt'], 0)
 
     def test_create_requires_a_real_current_admin_session(self):
         ordinary = self.login('ordinary')

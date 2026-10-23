@@ -179,6 +179,87 @@ test('province is required and successful/reused saves trust the exact server wo
   assert.equal(h.ctx.CITY_WORKSPACES['闵行区'].projectKey, 'main');
 });
 
+test('new-city form sends explicit monthly choice and preserves existing workspace plans', async () => {
+  const h = await boot(); h.admin(); h.ctx.toast = () => {};
+  h.ctx.openInviteCodeModal();
+  assert.match(h.modals.at(-1).body, /id="invMonthlyEnabled"/);
+  assert.match(h.modals.at(-1).body, /option value="false">仅本次/);
+  assert.match(h.modals.at(-1).body, /已有地区保留原计划/);
+  h.input('invProvinceInput', '湖北省'); h.input('invCityInput', '随州市'); h.input('invEmailInput', '');
+  const choice = h.input('invMonthlyEnabled', 'false', {tagName: 'SELECT'});
+  const hint = h.input('invMonthlyHint');
+  let payload;
+  h.ctx.fetch = async (url, options) => {
+    payload = JSON.parse(options.body);
+    return response(200, {ok: true, invite: {code: 'NEW', city: '随州市', projKey: 'suizhou'},
+      project: {id: 'suizhou', city: '随州市', workspaceId: 'suizhou'},
+      cityWorkspace: {projectKey: 'suizhou', inviteCode: 'NEW', monthlyEnabled: false, nextReportAt: 0}});
+  };
+  await h.ctx.doGenerateInviteCode();
+  assert.equal(payload.monthlyEnabled, false);
+  choice.value = 'true'; h.ctx.updateInviteMonthlyOption();
+  assert.equal(choice.disabled, true); assert.match(hint.textContent, /已停用/);
+  await h.ctx.doGenerateInviteCode();
+  assert.equal(Object.hasOwn(payload, 'monthlyEnabled'), false);
+  assert.equal(h.ctx.CITY_WORKSPACES['随州市'].monthlyEnabled, false);
+  h.nodes.invCityInput.value = '另一个市'; h.ctx.updateInviteMonthlyOption();
+  assert.equal(choice.disabled, false);
+  h.ctx._saveAdminInvite = async value => {payload = value; return true;};
+  await h.ctx.doGenerateInviteCode(); assert.equal(payload.monthlyEnabled, true);
+});
+
+test('monthly controls require admin and commit only the explicit server-confirmed schedule', async () => {
+  const h = await boot(); h.admin(); const original = seedCity(h);
+  h.ctx.toast = () => {}; h.ctx.render = () => {};
+  const projectsBefore = JSON.stringify(h.ctx.PROJECTS), requestsBefore = JSON.stringify(h.ctx.REPORT_REQUESTS);
+  const disabled = {...original, monthlyEnabled: false, nextReportAt: 0};
+  assert.match(h.ctx.opsMonthlyCell('闵行区'), /停用月度更新/);
+  h.ctx.AUTH.scope = 'client';
+  assert.doesNotMatch(h.ctx.opsMonthlyCell('闵行区'), /openMonthlyReportModal/);
+  h.ctx.openMonthlyReportModal('闵行区'); assert.equal(h.modals.length, 0);
+  h.ctx.AUTH.scope = 'admin'; h.ctx.openMonthlyReportModal('闵行区');
+  assert.match(h.modals.at(-1).body, /已排队或正在生成的报告继续处理/);
+  h.input('opsMonthlySave'); h.input('opsMonthlyError');
+  let payload, resolve, requests = 0;
+  h.ctx.fetch = (url, options) => {
+    requests++; assert.equal(url, '/api/admin/city-workspaces'); payload = JSON.parse(options.body);
+    return new Promise(done => {resolve = done;});
+  };
+  const first = h.ctx.saveMonthlyReportSettings();
+  await h.ctx.saveMonthlyReportSettings(); assert.equal(requests, 1);
+  assert.equal(h.ctx.CITY_WORKSPACES['闵行区'].monthlyEnabled, true);
+  assert.deepEqual(payload, {action: 'set_monthly', city: '闵行区', projectKey: 'main', monthlyEnabled: false,
+    expectedMonthlyEnabled: true, expectedNextReportAt: original.nextReportAt});
+  resolve(response(200, {ok: true, changed: true, city: '闵行区', projectKey: 'main', cityWorkspace: disabled}));
+  assert.equal(await first, true);
+  assert.equal(h.ctx.CITY_WORKSPACES['闵行区'].monthlyEnabled, false);
+  assert.equal(h.ctx.CITY_WORKSPACES['闵行区'].nextReportAt, 0);
+  assert.match(h.ctx.opsMonthlyCell('闵行区'), /启用月度更新/);
+  assert.equal(JSON.stringify(h.ctx.PROJECTS), projectsBefore);
+  assert.equal(JSON.stringify(h.ctx.REPORT_REQUESTS), requestsBefore);
+});
+
+test('monthly failures, invalid receipts and late responses never change saved UI state', async () => {
+  const h = await boot(); h.admin(); const original = seedCity(h);
+  h.ctx.toast = () => {}; h.ctx.render = () => {};
+  h.input('opsMonthlySave'); const error = h.input('opsMonthlyError');
+  h.ctx.openMonthlyReportModal('闵行区');
+  h.ctx.fetch = async () => response(409, {ok: false, error: 'monthly_schedule_changed', message: '计划已变化'});
+  assert.equal(await h.ctx.saveMonthlyReportSettings(), false);
+  assert.match(error.textContent, /计划已变化/);
+  assert.equal(h.ctx.CITY_WORKSPACES['闵行区'], original);
+  h.ctx.fetch = async () => response(200, {ok: true, changed: true, city: '其他市', projectKey: 'main',
+    cityWorkspace: {...original, monthlyEnabled: false, nextReportAt: 0}});
+  assert.equal(await h.ctx.saveMonthlyReportSettings(), false);
+  assert.equal(h.ctx.CITY_WORKSPACES['闵行区'], original);
+  let resolve;
+  h.ctx.fetch = () => new Promise(done => {resolve = done;});
+  const pending = h.ctx.saveMonthlyReportSettings(); h.ctx._authEpoch++;
+  resolve(response(200, {ok: true, changed: true, city: '闵行区', projectKey: 'main',
+    cityWorkspace: {...original, monthlyEnabled: false, nextReportAt: 0}}));
+  assert.equal(await pending, false); assert.equal(h.ctx.CITY_WORKSPACES['闵行区'], original);
+});
+
 test('RAG create entry uses the invitation service and does not write local synthetic workspaces', async () => {
   const h = await boot(); h.admin(); h.ctx.opsTab = 'rag'; h.ctx.toast = () => {};
   h.ctx.ragAddCityModal();
