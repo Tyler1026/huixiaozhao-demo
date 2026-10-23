@@ -29,6 +29,7 @@ function harness(app = 'index') {
   };
   ctx.window = ctx;
   vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend/shared/sync-feedback.js'),'utf8'),ctx);
   if (app === 'index') {
     vm.runInContext(idx03.slice(idx03.indexOf('var AUTH=')).replace('\nloadAuth();', ''), ctx);
     vm.runInContext(idx06.slice(0, idx06.indexOf('/* 随州常驻')), ctx);
@@ -262,6 +263,9 @@ async function bootPage(name, session, serverState = {PROJECTS: {}}) {
     fetch: async (url, options = {}) => {calls.push({url, options}); return url === '/api/auth/session' ? session : options.method === 'POST' ? response(200, {ok: true}) : response(200, serverState);},
   };
   ctx.window = ctx; ctx.globalThis = ctx; vm.createContext(ctx);
+  for (const file of ['frontend/shared/kb-materials.js','frontend/shared/sync-feedback.js']) {
+    if (!manifest[name].parts.includes(file)) vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),ctx);
+  }
   for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
     if (!/\bsrc=/.test(match[1])) vm.runInContext(match[2], ctx, {filename: name});
   }

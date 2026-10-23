@@ -1888,7 +1888,7 @@ function ciSave(projKey, idx){
       '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#22c55e;cursor:pointer;flex-shrink:0">撤回</button>';
   }
   updateConfirmProgress(projKey);
-  toast('✓ 修改已保存');
+  toast('修改已暂存，正在同步到云端');
 }
 
 /* 附件相关 */

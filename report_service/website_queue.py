@@ -66,8 +66,24 @@ def _replace_base_topics(existing, replacement):
         if not isinstance(known, list):
             raise ValueError('invalid workspace knowledge')
         topic = copy.deepcopy(original)
-        topic['known'] = (copy.deepcopy(generated['known']) if generated else []) + [copy.deepcopy(item) for item in known
-                         if not isinstance(item, dict) or item.get('nature') != 'base']
+        retained = [copy.deepcopy(item) for item in known
+                    if not isinstance(item, dict) or item.get('nature') != 'base']
+        # Historical uploads were attached only to a generated base record.
+        # Preserve their own text/provenance when that base record is replaced.
+        for item in known:
+            if not isinstance(item, dict) or item.get('nature') != 'base':
+                continue
+            for annotation in item.get('annotations') or []:
+                if not isinstance(annotation, dict) or not isinstance(annotation.get('text'), str):
+                    continue
+                value = copy.deepcopy(annotation)
+                value.update(origin=value.get('origin') or 'admin',
+                             nature=value.get('nature') if value.get('nature') != 'base' else 'support')
+                value['nature'] = value.get('nature') or 'support'
+                value['previousBaseText'] = item.get('text', '')
+                if value not in retained:
+                    retained.append(value)
+        topic['known'] = (copy.deepcopy(generated['known']) if generated else []) + retained
         if generated:
             for field in ('icon', 'sub', 'tag', 'calls'):
                 topic.setdefault(field, copy.deepcopy(generated[field]))
@@ -333,8 +349,11 @@ class WebsiteQueue:
                 if r.get('engine') == ENGINE and r.get('status') == 'cancelled':
                     self.store.cancel(TENANT, report_id(r['id']))
                 elif r.get('status') == 'pending' and r.get('engine') in (None, ENGINE):
+                    from .user_materials import snapshot
+                    materials = snapshot(state, r)
+                    options = {'input_context': materials} if materials is not None else {}
                     job = self.store.create(TENANT, r['province'], r['city'], r['id'],
-                                            synthetic=False, mode=r.get('mode', 'standard'))
+                                            synthetic=False, mode=r.get('mode', 'standard'), **options)
                     r.update(engine=ENGINE, engineReportId=job['id'], status='running',
                              total=job['stages_total'], done=job['stages_done'])
                     r['claimTs'] = r.get('claimTs') or int(time.time() * 1000)

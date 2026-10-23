@@ -157,21 +157,13 @@ function persist(){
     // 同时写入 localStorage（保证同账号任何设备刷新都读到最新快照）
     try{ localStorage.setItem(LS_KEY, JSON.stringify(data)); }catch(_){}
     try{ localStorage.setItem('hxz_uploads', JSON.stringify(_slimUploads())); }catch(_){}
-    // 同步到服务器（静默，不影响主流程）
-    // 防抖sync：最多5秒同步一次，避免堆积请求占满连接池影响AI问答
-    if(window._serverSyncLock) return;
-    if(!window._syncTimer){var syncEpoch=_authEpoch;window._syncTimer=setTimeout(function(){ window._syncTimer=null;
-      if(window._serverSyncLock||!AUTH||_authState!=='ready'||syncEpoch!==_authEpoch) return;
-      try{var _sd=JSON.parse(localStorage.getItem('huixiaozhao_kb_v1')||'{}');
-      fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_safeSyncSnapshot(JSON.parse(localStorage.getItem('huixiaozhao_kb_v1')||'{}')))})
-        .then(function(r){return r.json();}).then(function(resp){
-          if(resp&&resp.rejected==='stale-generation'){
-            // 本会话数据早于服务端reset：重新拉服务端数据自愈(取得新gen+干净数据)
-            console.warn('[sync] write rejected by reset barrier, resyncing from server');
-            if(typeof restoreFromServer==='function') restoreFromServer(function(){ if(typeof render==='function')try{render();}catch(_){} });
-          }
-        }).catch(function(){});}catch(_){}
-    },5000); }
+    // Serialize the live snapshot even when browser storage is full.
+    workspaceSyncPrepare(_safeSyncSnapshot(data));
+    if(window._serverSyncLock)return;
+    if(!window._syncTimer){window._syncTimer=setTimeout(function(){
+      window._syncTimer=null;
+      if(!window._serverSyncLock)workspaceSyncSend();
+    },5000);}
   }catch(e){ console.warn('[persist] failed:',e.message); }
 }
 

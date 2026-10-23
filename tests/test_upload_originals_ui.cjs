@@ -2,7 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const read=p=>fs.readFileSync(path.join(__dirname,'..',p),'utf8');
 const tail=read('frontend/index/script-02-sections/14-tail.js');
-const core=tail.slice(tail.indexOf('function uploadOriginalUrl('),tail.indexOf('/* 文本切 chunk'));
+const core=tail.slice(tail.indexOf('function uploadOriginalUrl('),tail.indexOf('/* 摄取完成'));
 const receipt={ok:true,upload:{name:'材料.txt',originalId:'a'.repeat(32),size:4,chunks:1,originalSha256:'c'.repeat(64)},original:{id:'a'.repeat(32)},fileChunks:[{id:'upload:aaa:0',text:'测试文字',originalId:'a'.repeat(32)}]};
 function boot(){
   const calls=[],messages=[],finalized=[];

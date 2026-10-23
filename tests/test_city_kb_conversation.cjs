@@ -55,14 +55,14 @@ function harness(disk=new Map()){
   localStorage:{getItem:key=>disk.get(key)||null,setItem:(k,v)=>disk.set(k,v),removeItem:k=>disk.delete(k)},
   persist(){},aiAvatar:()=>'',curOnbPrefs:()=>({}),toast(){},renderComposer(){},closeKbDetail(){},closeKbHistory(){},render(){},saveAuth(){},_slimUploads:()=>({}),
   kbClosePanels(){c.panelsClosed=(c.panelsClosed||0)+1;},kbWorkspaceRefresh(){refreshes++;},P:()=>c.PROJECTS[c.cur],topicTags:()=>[],buildKBCorpus:()=>[{id:'candidate-only',text:'不得冒充被使用的来源'}],kbSearch:(_q,corpus)=>corpus,
-  fetch(url,options){const body=JSON.parse(options.body);if(url==='/api/sync'){sync.push(body);return Promise.resolve({ok:true});}api.push(body);const f=feeds.shift();assert.ok(f,'missing response feed');return Promise.resolve(f.response(options.signal));}
+  fetch(url,options){const body=JSON.parse(options.body);if(url==='/api/sync'){sync.push(body);return Promise.resolve({ok:true,json:async()=>({ok:true})});}api.push(body);const f=feeds.shift();assert.ok(f,'missing response feed');return Promise.resolve(f.response(options.signal));}
  };
  c.window=c;vm.createContext(c);
- const code=[known.slice(known.indexOf('function kbValueEqual('),known.indexOf('// 判断一条known')),layout.slice(layout.indexOf('function kbDraftQuestion('),layout.indexOf('function kbTogglePanel(')),tail.slice(tail.indexOf('function kbKnownChunk('),tail.indexOf('function buildKBCorpus(')),tail.slice(tail.indexOf('function _kbChatTombKey('),tail.indexOf('function _tombKbChatSession(')),tail.slice(tail.indexOf('var KB_CHAT={};'),tail.indexOf('/* ══ KB_CHAT')),
+ const code=[fs.readFileSync(path.join(__dirname,'../frontend/shared/kb-materials.js'),'utf8'),known.slice(known.indexOf('function kbValueEqual('),known.indexOf('// 判断一条known')),layout.slice(layout.indexOf('function kbDraftQuestion('),layout.indexOf('function kbTogglePanel(')),tail.slice(tail.indexOf('function kbKnownChunk('),tail.indexOf('function buildKBCorpus(')),tail.slice(tail.indexOf('function _kbChatTombKey('),tail.indexOf('function _tombKbChatSession(')),tail.slice(tail.indexOf('var KB_CHAT={};'),tail.indexOf('/* ══ KB_CHAT')),
   tail.slice(tail.indexOf('function _mergeKbChat('),tail.indexOf('/* ══ 多会话')),
   tail.slice(tail.indexOf('var KB_SESSION_IDLE_MS'),tail.indexOf('// 渲染对话区顶部')),
   tail.slice(tail.indexOf('function kbChatPush('),tail.indexOf('// 更新最后一条 AI')),
-  tail.slice(tail.indexOf('function kbChatReplay('),tail.indexOf('// 招引方向派生')),
+  tail.slice(tail.indexOf('function kbLongTermButton('),tail.indexOf('// 招引方向派生')),
   tail.slice(tail.indexOf('var KB_API ='),tail.indexOf('/* ══ RAG ENGINE END')),
   tail.slice(tail.indexOf('function kbRefreshTopicScope('),tail.indexOf('// 真实文件选择器'))].join('\n');
  vm.runInContext(code,c);c.renderKbSessionBar=()=>{};

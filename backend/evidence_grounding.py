@@ -11,6 +11,7 @@ import re
 import unicodedata
 from urllib.parse import urlsplit
 from .auth import AuthError
+from .kb_context import saved_materials, chat_sources, bounded_correction_context
 
 _URL = re.compile(r'https?://[^\s<>\]）)"\']+')
 _UNCERTAIN = re.compile(r'待核|未核|未见|未检索|未找到|暂无|不详|推断|推测|可能|据称|线索|第三方|自媒体|过期|失效|有效期')
@@ -77,22 +78,11 @@ def project_context(body, state):
     corpus = []
     has_source_revision = False
     # Base knowledge and current direction only; same city is NOT an access key.
-    keys = list(dict.fromkeys([root, key]))
-    for k in keys:
-        project = projects.get(k) or {}
-        if k != key and (project.get('workspaceId') or k) != root:
-            continue
-        from .kb_edits import effective_known
-        for section_index, section in enumerate(project.get('kb') or []):
-            for item in effective_known(state, k, section_index):
-                if isinstance(item, dict) and item.get('_kbEditId'):
-                    edits = (state.get('KB_EDITS') or {}).get(k) or {}
-                    revision = edits.get(item['_kbEditId'])
-                    if isinstance(revision, dict) and revision.get('sourceIndex') is not None:
-                        has_source_revision = True
-                text = _text(item)
-                if text.strip():
-                    corpus.append({'text': text, 'cite': (item.get('src') or section.get('t') or '') if isinstance(item, dict) else section.get('t', ''), 'topic': section.get('t', ''), 'origin': item.get('origin', '') if isinstance(item, dict) else '', 'nature': item.get('nature', '') if isinstance(item, dict) else ''})
+    for item in saved_materials(state, key):
+        correction = item.get('correction') or {}
+        if correction.get('status') == 'active' and correction.get('sourceIndex') is not None:
+            has_source_revision = True
+        corpus.append(item)
     by_topic = rs.get('aiReportByTopic') or {}
     report = by_topic.get(topic)
     if not report and topic == (rs.get('topic') or p.get('topic')):
@@ -116,7 +106,15 @@ def project_context(body, state):
                                'topic': topic, 'origin': 'user_demand', 'nature': 'user_stated'})
     dedup, positions = [], {}
     for chunk in corpus:
-        sig = hashlib.sha256(chunk['text'].encode()).hexdigest()
+        # Independent originals and explicit user corrections retain their
+        # provenance even if another document contains the identical sentence.
+        identity = chunk['text']
+        if chunk.get('sourceKind') == 'uploaded_excerpt' or chunk.get('correction'):
+            identity = json.dumps([chunk['text'], chunk.get('projectKey'),
+                                   chunk.get('originalId') or chunk.get('sourceFile'),
+                                   (chunk.get('correction') or {}).get('editId')],
+                                  ensure_ascii=False, sort_keys=True)
+        sig = hashlib.sha256(identity.encode()).hexdigest()
         chunk['id'] = 'ev_'+sig[:20]
         if sig in positions:
             # Identical report text is still current-topic evidence even if
@@ -169,18 +167,36 @@ def evidence_catalog(chunks):
         # is still a requested target, not an independently saved product fact.
         if isinstance(chunk, dict) and chunk.get('origin') == 'user_demand':
             continue
+        user_material = (chunk.get('origin') in ('user', 'admin')
+                         or chunk.get('nature') in ('fix', 'interview')
+                         or chunk.get('sourceKind') == 'uploaded_excerpt')
         text = _text(chunk)
         for line in text.splitlines():
             line = line.strip()
-            if len(line) < 12 or len(line) > 3500:
+            if not line or (len(line) < 12 and not user_material) or len(line) > 3500:
                 continue
-            urls = [_url(x.rstrip('.,;，。；')) for x in _URL.findall(line)]
+            # Explicit provenance attached to this exact saved chunk may be a
+            # URL; a link in a neighbouring line still cannot support it.
+            source = dict(chunk, text=line)
+            urls = chat_sources([source])[0]['urls']
             # A block can contain several unrelated companies. A URL on a
             # different line does not establish provenance for this sentence.
             # Keep unlinked sentences visible as pending, never URL-backed.
             urls = list(dict.fromkeys(x for x in urls if x))[:6]
             sid = 'src_'+hashlib.sha256((chunk.get('id', '')+'\0'+line).encode()).hexdigest()[:20]
-            out.append({'id': sid, 'quote': line, 'urls': urls, 'cite': chunk.get('cite', ''), 'date': (_DATE.search(line).group(0) if _DATE.search(line) else ''), 'status': 'pending' if _UNCERTAIN.search(line) or not urls else 'source', 'topic': chunk.get('topic', '')})
+            row = {'id': sid, 'quote': line, 'urls': urls, 'cite': chunk.get('cite', ''),
+                   'date': (_DATE.search(line).group(0) if _DATE.search(line) else ''),
+                   'status': 'pending' if user_material or _UNCERTAIN.search(line) or not urls else 'source',
+                   'topic': chunk.get('topic', '')}
+            for field in ('sourceFile', 'originalId', 'originalSha256', 'sourceKind', 'correction', 'relatedSource',
+                          'account', 'ts', 'materialId'):
+                if field in chunk:
+                    row[field] = copy.deepcopy(chunk[field])
+            if row.get('correction'):
+                row['correction'] = bounded_correction_context(row['correction'])
+            if row.get('relatedSource'):
+                row['relatedSource'] = bounded_correction_context(row['relatedSource'])
+            out.append(row)
     return list({x['id']: x for x in out}.values())
 
 
@@ -234,7 +250,15 @@ def _refs(item, catalog, value=''):
 
 
 def _basis(refs):
-    return [{'id': r['id'], 'quote': r['quote'], 'urls': r['urls'], 'date': r['date'], 'status': r['status'], 'cite': r['cite']} for r in refs]
+    result = []
+    for ref in refs:
+        row = {field: copy.deepcopy(ref[field]) for field in ('id', 'quote', 'urls', 'date', 'status', 'cite')}
+        for field in ('sourceFile', 'originalId', 'originalSha256', 'sourceKind', 'correction', 'relatedSource',
+                      'account', 'ts', 'materialId'):
+            if field in ref:
+                row[field] = copy.deepcopy(ref[field])
+        result.append(row)
+    return result
 
 
 def _key(name):

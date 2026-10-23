@@ -16,6 +16,10 @@ from .auth_routes import error_response, require_admin, respond
 from .access_control import authorize_project
 
 MAX_FILE_BYTES = 20 * 1024 * 1024
+MAX_TEXT_CHARS = 2_000_000
+MAX_TEXT_CHUNKS = 10_000
+CHUNK_CHARS = 600
+CHUNK_VERSION = 2
 MIME = {'.pdf': 'application/pdf', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         '.txt': 'text/plain', '.md': 'text/markdown', '.csv': 'text/csv', '.json': 'application/json'}
 SCHEMA = """
@@ -88,29 +92,59 @@ def file_record(original, key, body, actor, chunks):
     return {'name': original['filename'], 'size': original['size_bytes'],
             'originalId': original['id'], 'originalSha256': original['sha256'],
             'contentType': original['content_type'], 'projectKey': key,
-            'ts': int(time.time() * 1000), 'chunks': chunks,
+            'ts': int(time.time() * 1000), 'chunks': chunks, 'chunkVersion': CHUNK_VERSION,
             'kbIdx': body.get('kbIdx'), 'topic': body.get('topic', ''),
             'mode': body.get('mode', 'append'), 'account': actor}
 
 
-def user_chunks(text, filename, topic, original_id):
+def text_chunks(text):
+    """Keep the entire extracted body; reject oversized input before storage.
+
+    Prefer sentence/paragraph boundaries, but always consume the remainder of
+    a long paragraph. Small paragraphs stay together so short qualifications
+    are not thrown away merely because they occupy their own line.
+    """
+    if not isinstance(text, str):
+        raise AuthError(400, 'invalid_text', '正文格式不正确')
+    if len(text) > MAX_TEXT_CHARS:
+        raise AuthError(413, 'text_too_large', '正文超过200万字符，请拆分文件后上传')
     chunks, buf = [], ''
-    for para in re.split(r'\n{2,}', text.replace('\r\n', '\n').strip()):
-        para = para.strip()
-        if not para:
+
+    def append(value):
+        if value.strip():
+            chunks.append(value.strip())
+        if len(chunks) > MAX_TEXT_CHUNKS:
+            raise AuthError(413, 'too_many_chunks', '正文分段过多，请拆分文件后上传')
+
+    for para in re.split(r'\n\s*\n', text.replace('\r\n', '\n').replace('\r', '\n')):
+        if not para.strip():
             continue
-        buf += (' ' if buf else '') + para
+        buf += ('\n\n' if buf else '') + para.strip()
+        start = 0
+        while len(buf) - start > CHUNK_CHARS:
+            boundary = max(buf.rfind(mark, start + CHUNK_CHARS // 2, start + CHUNK_CHARS)
+                           for mark in ('\n', '。', '！', '？', ';', '；', '. ', '! ', '? '))
+            cut = boundary + 1 if boundary >= 0 else start + CHUNK_CHARS
+            append(buf[start:cut])
+            start = cut
+            while start < len(buf) and buf[start].isspace():
+                start += 1
+        buf = buf[start:]
         if len(buf) >= 120:
-            chunks.append(buf[:300]); buf = ''
-    if buf:
-        chunks.append(buf[:300])
+            append(buf)
+            buf = ''
+    append(buf)
+    return chunks
+
+
+def user_chunks(text, filename, topic, original_id, *, parts=None):
     return [{'id': 'upload:' + original_id + ':' + str(i), 'topic': topic,
              'tags': ['上传', filename.rsplit('.', 1)[0]], 'text': value,
              'cite': filename, 'originalId': original_id}
-            for i, value in enumerate(chunks[:30])]
+            for i, value in enumerate(text_chunks(text) if parts is None else parts)]
 
 
-def mutate_admin(state, body, actor, noise_filter):
+def mutate_admin(state, body, actor, noise_filter, *, parts=None, original_id=None, material_id=None):
     key = body['projectKey']
     projects = state['PROJECTS']
     filename = body.get('filename', '上传文档')
@@ -132,14 +166,18 @@ def mutate_admin(state, body, actor, noise_filter):
     _ts = int(_tt.time() * 1000)
     # 切分文档为结构化 chunks（每条带来源标记，前端据此着色）
     import re as _re
-    parts = [x.strip() for x in _re.split(r'\n\s*\n', text) if len(x.strip()) >= 20]
+    parts = text_chunks(text) if parts is None else parts
     chunks = []
     for para in parts:
-        para = _re.sub(r'\s+', ' ', para)[:420]
+        para = _re.sub(r'\s+', ' ', para)
         if noise_filter(para):   # 过滤附注/免责/页码等无价值模板话
             continue
         chunks.append({'text': para, 'origin': origin, 'nature': nature,
                        'src': filename, 'ts': _ts, 'account': by_account})
+        if original_id:
+            chunks[-1]['originalId'] = original_id
+        if material_id:
+            chunks[-1]['materialId'] = material_id
     # 找/建目标主题
     tp = next((t for t in p['kb'] if t.get('t') == topic), None)
     if not tp:
@@ -228,6 +266,10 @@ def mutate_admin(state, body, actor, noise_filter):
                 best.setdefault('annotations', []).append({
                     'origin': origin, 'nature': nature, 'src': filename,
                     'text': nc['text'], 'ts': _ts, 'account': by_account})
+                if original_id:
+                    best['annotations'][-1]['originalId'] = original_id
+                if material_id:
+                    best['annotations'][-1]['materialId'] = material_id
                 matched_ct += 1
             else:
                 leftover.append(nc)
@@ -254,8 +296,11 @@ def handle_upload(handler, raw, session_factory, parser, admin_config, noise_fil
             if error or not isinstance(text, str) or not text.strip():
                 raise AuthError(422, 'extraction_failed', error or '文件没有可解析的正文')
             body['text'] = text
-        elif not isinstance(body.get('text', ''), str):
-            raise AuthError(400, 'invalid_text', '正文格式不正确')
+        # Validate and partition before opening the transaction. No input is
+        # acknowledged after silently dropping its tail or later paragraphs.
+        parts = text_chunks(body.get('text', ''))
+        if not parts:
+            raise AuthError(422, 'extraction_failed', '文件没有可解析的正文')
         with session_factory() as session:
             state = json.loads(session.read())
             principal = require_session(handler.headers, state, admin_config=admin_config)
@@ -278,8 +323,28 @@ def handle_upload(handler, raw, session_factory, parser, admin_config, noise_fil
                         'chunks': record['chunks'], 'fileChunks': [c for c in state.get('KB_FILE_CHUNKS', {}).get(key, [])
                                                                if c.get('originalId') == original['id']]})
             if admin:
-                result = mutate_admin(state, body, actor, noise_filter)
-                chunks = []
+                material_id = original['id'] if original else uuid.uuid4().hex
+                result = mutate_admin(state, body, actor, noise_filter,
+                                      parts=parts, original_id=original['id'] if original else None,
+                                      material_id=material_id)
+                # An annotation is a presentation link, not the durable
+                # evidence store: report refreshes can replace its base.
+                if original:
+                    chunks = user_chunks(body['text'], original['filename'], result['topic'], original['id'], parts=parts)
+                else:
+                    filename = body.get('filename') or '上传文档'
+                    chunks = [{'id': 'note:' + material_id + ':' + str(i),
+                               'materialId': material_id, 'topic': result['topic'],
+                               'text': part, 'cite': filename}
+                              for i, part in enumerate(parts)]
+                    state['PROJECTS'][key]['kbUploads'][-1]['materialId'] = material_id
+                for chunk in chunks:
+                    chunk.update(origin=body.get('origin', 'admin'),
+                                 nature=body.get('nature', 'support'), account=actor,
+                                 materialId=material_id, projectKey=key,
+                                 ts=state['PROJECTS'][key]['kbUploads'][-1]['ts'])
+                state.setdefault('KB_FILE_CHUNKS', {}).setdefault(key, []).extend(chunks)
+                result.update(chunks=len(chunks), fileChunks=chunks)
             else:
                 project = state['PROJECTS'][key]
                 idx = body.get('kbIdx')
@@ -287,7 +352,7 @@ def handle_upload(handler, raw, session_factory, parser, admin_config, noise_fil
                 if idx is not None and (type(idx) is not int or idx < 0 or idx >= len(kb)):
                     raise AuthError(400, 'invalid_topic', '主题已变化，请刷新后重新上传')
                 topic = kb[idx]['t'] if idx is not None else '上传材料'
-                chunks = user_chunks(body['text'], original['filename'], topic, original['id'])
+                chunks = user_chunks(body['text'], original['filename'], topic, original['id'], parts=parts)
                 if not chunks:
                     raise AuthError(422, 'extraction_failed', '文件没有可解析的正文')
                 state.setdefault('KB_FILE_CHUNKS', {}).setdefault(key, []).extend(chunks)

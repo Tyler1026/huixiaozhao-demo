@@ -103,6 +103,52 @@ def _source_current(record, project, section, index):
             and _same(record.get('baseReportVersion'), project.get('baseReportVersion')))
 
 
+def _projected_edit(record, original=None, *, needs_review=False, reason=''):
+    """A correction stays user testimony, including after its source changes."""
+    item = copy.deepcopy(original) if isinstance(original, dict) else {}
+    source = record.get('sourceItem')
+    source_text = source if isinstance(source, str) else (source or {}).get('text', '')
+    correction = {'editId': record['id'], 'revision': record['revision'],
+                  'status': 'needs_review' if needs_review else 'active',
+                  'sourceText': source_text if isinstance(source_text, str) else '',
+                  'sourceVersion': copy.deepcopy(record.get('baseReportVersion')),
+                  'sectionTitle': record['sectionTitle'], 'sourceIndex': record['sourceIndex']}
+    if reason:
+        correction['reason'] = reason
+    item.update(text=re.sub(r'^\s*✅\s*', '', record['text']), origin='user', nature='fix',
+                ts=record['ts'], account=record['account'], _kbEditId=record['id'],
+                _kbRevision=record['revision'], _kbUserEdited=True,
+                _kbEditStatus=correction['status'], verificationStatus='user_stated')
+    if record['sourceIndex'] is not None:
+        item['correction'] = correction
+    return item
+
+
+def retained_corrections(state, key):
+    """Return detached corrections without applying them to any newer source.
+
+    Deleted/invalid records never return. The old source is provenance and
+    conflict context only; it is not reintroduced as a current factual row.
+    """
+    project = (state.get('PROJECTS') or {}).get(key)
+    if not isinstance(project, dict):
+        return []
+    sections = project.get('kb') if isinstance(project.get('kb'), list) else []
+    result = []
+    for identity, record in _records(state, key).items():
+        if (not _valid_record(record, identity) or record.get('deleted')
+                or record['sourceIndex'] is None):
+            continue
+        index = record['sectionIndex']
+        section = sections[index] if index < len(sections) else None
+        if isinstance(section, dict) and _source_current(record, project, section, index):
+            continue
+        reason = ('base_version_changed' if not _same(record.get('baseReportVersion'), project.get('baseReportVersion'))
+                  else 'source_changed')
+        result.append(_projected_edit(record, record['sourceItem'], needs_review=True, reason=reason))
+    return sorted(result, key=lambda item: (item['ts'], item['_kbEditId']))
+
+
 def effective_known(state, key, section_index):
     """Clone one section and apply only revisions still bound to its exact source."""
     project = (state.get('PROJECTS') or {}).get(key)
@@ -123,18 +169,22 @@ def effective_known(state, key, section_index):
     for record in matched:
         if record['sourceIndex'] is not None:
             replacements.setdefault(record['sourceIndex'], []).append(record)
-    def projected(record, original=None):
-        item = copy.deepcopy(original) if isinstance(original, dict) else {}
-        item.update(text=re.sub(r'^\s*✅\s*', '', record['text']), origin='user', nature='fix',
-                    ts=record['ts'], account=record['account'], _kbEditId=record['id'],
-                    _kbRevision=record['revision'], _kbUserEdited=True)
-        return item
     for source_index, candidates in replacements.items():
         if len(candidates) == 1:
-            result[source_index] = projected(candidates[0], result[source_index])
+            result[source_index] = _projected_edit(candidates[0], result[source_index])
     for record in sorted((record for record in matched if record['sourceIndex'] is None),
                          key=lambda record: (record['ts'], record['id'])):
-        result.append(projected(record))
+        result.append(_projected_edit(record))
+    # Preserve detached corrections beside their named section. If the section
+    # was removed/renamed, show them once in the first surviving section.
+    for item in retained_corrections(state, key):
+        title = item['correction']['sectionTitle']
+        matching = [i for i, value in enumerate(sections)
+                    if isinstance(value, dict) and value.get('t') == title]
+        target = matching[0] if matching else next((i for i, value in enumerate(sections)
+                                                  if isinstance(value, dict) and isinstance(value.get('known'), list)), None)
+        if target == section_index:
+            result.append(item)
     return result
 
 
@@ -158,6 +208,24 @@ def save_edit(body, state, principal, *, now_ms=None):
         _fail(403, 'workspace_forbidden', '没有该工作区的访问权限')
     if not _same(body['resetGen'], state.get('RESET_GEN')):
         _fail(409, 'stale_generation', '数据已重置，请刷新后重试')
+    if action == 'delete':
+        # Restoring/hiding a retained correction must remain possible after a
+        # monthly publication has replaced or removed its original section.
+        edit_id = body['editId']
+        previous = _records(state, key).get(edit_id) if isinstance(edit_id, str) else None
+        if not _valid_record(previous, edit_id) or previous['revision'] != body['expectedRevision']:
+            _fail(409, 'edit_conflict', '修订已更新，请重新打开资料')
+        if (previous['sectionTitle'] != title or previous['sourceIndex'] != body['sourceIndex']
+                or not _same(previous['sourceItem'], body['sourceItem'])
+                or not _same(previous['baseReportVersion'], body['baseReportVersion'])
+                or previous['sourceIndex'] is not None and previous['sectionIndex'] != index):
+            _fail(409, 'edit_conflict', '修订所对应的资料已变化，请重新打开')
+        stamp = int(time.time() * 1000) if now_ms is None else now_ms
+        if type(stamp) is not int or stamp < 0:
+            _fail(503, 'storage_unavailable', '资料修订暂不可用，请稍后重试')
+        record = dict(previous, revision=previous['revision'] + 1, ts=stamp, deleted=True)
+        state['KB_EDITS'][key][edit_id] = record
+        return {'ok': True, 'record': copy.deepcopy(record)}
     project, section = _section(state, key, index, title)
     source_index, source_item, version = body['sourceIndex'], body['sourceItem'], body['baseReportVersion']
     if source_index is None:

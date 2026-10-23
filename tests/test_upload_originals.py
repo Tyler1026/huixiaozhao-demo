@@ -1,6 +1,7 @@
 """Upload originals: fail closed, atomic bytes/references and scoped recovery."""
 import base64
 import concurrent.futures
+import copy
 from contextlib import contextmanager
 import hashlib
 import io
@@ -85,6 +86,41 @@ class OriginalValidationTests(unittest.TestCase):
         self.assertNotEqual(a[0]['id'],b[0]['id'])
         self.assertEqual(a[0]['originalId'],'a'*32)
 
+    def test_long_paragraph_and_all_later_paragraphs_are_preserved(self):
+        text = '连续背景资料' * 400 + '尾部纠正：白鹭专项额度842万元。'
+        text += '\n\n' + '\n\n'.join('第%d段有独立事实和校验依据。' % i + '材料具体说明。' * 20 for i in range(80))
+        text += '\n\n最后一段纠正：签约目标28家。'
+        chunks = uploads.user_chunks(text, '完整资料.txt', '产业', 'a'*32)
+        self.assertGreater(len(chunks), 30)
+        self.assertEqual(''.join(''.join(c['text'] for c in chunks).split()), ''.join(text.split()))
+        self.assertTrue(any('白鹭专项额度842万元' in c['text'] for c in chunks))
+        self.assertTrue(any('签约目标28家' in c['text'] for c in chunks))
+        self.assertTrue(all(len(c['text']) <= uploads.CHUNK_CHARS for c in chunks))
+
+    def test_oversized_extraction_is_rejected_before_opening_storage(self):
+        h=handler();factory=Mock()
+        with patch.object(uploads,'MAX_TEXT_CHARS',20):
+            uploads.handle_upload(h,json.dumps(body()).encode(),factory,
+                                  lambda *a:('完整正文'*20,None),None,lambda t:False)
+        self.assertEqual(response(h)['error'],'text_too_large')
+        self.assertEqual(h.send_response.call_args.args[0],413)
+        factory.assert_not_called()
+
+    def test_too_many_chunks_rejects_instead_of_truncating(self):
+        with patch.object(uploads,'MAX_TEXT_CHUNKS',2):
+            with self.assertRaises(AuthError) as caught:
+                uploads.user_chunks(('完整段落'*30+'\n\n')*3,'资料.txt','产业','a'*32)
+        self.assertEqual(caught.exception.code,'too_many_chunks')
+
+    def test_admin_long_text_and_short_qualification_are_not_discarded(self):
+        state=copy.deepcopy(STATE)
+        text='资料背景'*220+'最终金额为842万元。\n\n仅限首年。'
+        result=uploads.mutate_admin(state,{'projectKey':KEY,'text':text,'topic':'产业'},
+                                   'admin',lambda t:False)
+        known=state['PROJECTS'][KEY]['kb'][0]['known']
+        self.assertGreater(result['chunks'],1)
+        self.assertEqual(''.join(''.join(row['text'] for row in known).split()),''.join(text.split()))
+
     def test_admin_text_confirmation_does_not_claim_original(self):
         written=[]
         @contextmanager
@@ -93,7 +129,33 @@ class OriginalValidationTests(unittest.TestCase):
         with patch.object(uploads,'require_session',return_value={'scope':'admin','user':'admin'}):
             uploads.handle_upload(h,json.dumps({'projectKey':KEY,'text':CONTENT.decode(),'topic':'产业','source':'chat'}).encode(),factory,Mock(),None,lambda t:False,admin=True)
         self.assertTrue(response(h)['ok']);self.assertNotIn('original',response(h))
-        self.assertNotIn('UPLOADS',json.loads(written[0]))
+        saved=json.loads(written[0])
+        self.assertNotIn('UPLOADS',saved)
+        self.assertTrue(saved['KB_FILE_CHUNKS'][KEY])
+        self.assertTrue(all('originalId' not in c for c in saved['KB_FILE_CHUNKS'][KEY]))
+        self.assertTrue(all(c.get('materialId') for c in saved['KB_FILE_CHUNKS'][KEY]))
+
+    def test_admin_text_matching_base_retains_independent_evidence_after_refresh(self):
+        from backend.topic_evidence import topic_report_context
+        from report_service.website_queue import _replace_base_topics
+        text='白鹭设备研发专项额度842万元，仅用于符合目录的新增项目。'
+        initial=copy.deepcopy(STATE)
+        initial['PROJECTS'][KEY].update(city='测试市',topic='白鹭设备')
+        initial['PROJECTS'][KEY]['kb']=[{'t':'产业','known':[{'text':text,'nature':'base'}]}]
+        written=[]
+        @contextmanager
+        def factory():yield SimpleNamespace(read=lambda:json.dumps(initial),write=lambda value:written.append(value) or True)
+        with patch.object(uploads,'require_session',return_value={'scope':'admin','user':'admin'}):
+            h=handler()
+            uploads.handle_upload(h,json.dumps({'projectKey':KEY,'topic':'产业','text':text,'source':'chat'}).encode(),
+                                  factory,Mock(),None,lambda text:False,admin=True)
+        self.assertEqual(response(h)['matched'],1)
+        saved=json.loads(written[0])
+        saved['PROJECTS'][KEY]['kb']=_replace_base_topics(saved['PROJECTS'][KEY]['kb'],[
+            {'t':'产业','icon':'','sub':'','tag':'','calls':[],
+             'known':[{'text':'新月报告。','nature':'base'}]}])
+        context=topic_report_context({'projectKey':KEY,'topic':'白鹭设备'},saved)
+        self.assertTrue(any(text in c['text'] for c in context['chunks']))
 
 
 @unittest.skipUnless(os.environ.get('HXZ_TEST_DATABASE_URL'),'isolated PostgreSQL CI fixture only')
@@ -191,6 +253,52 @@ class OriginalPostgresTests(unittest.TestCase):
         state,rows=self.read();audit=state['PROJECTS'][KEY]['kbUploads'][0]
         self.assertEqual(audit['originalId'],rows[0][0]);self.assertEqual(audit['by'],'actual-admin')
         self.assertEqual(state['UPLOADS'][KEY][0]['account'],'actual-admin')
+        self.assertTrue(state['KB_FILE_CHUNKS'][KEY])
+        self.assertTrue(all(c['originalId']==rows[0][0] for c in state['KB_FILE_CHUNKS'][KEY]))
+
+    def test_admin_matched_evidence_survives_base_replacement_and_remains_retrievable(self):
+        from backend.topic_evidence import topic_report_context
+        from report_service.website_queue import _replace_base_topics
+        text='白鹭设备产业专项补贴额度842万元，申报企业需在本地持续经营三年。'
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                state=copy.deepcopy(STATE)
+                state['PROJECTS'][KEY].update(topic='白鹭设备',city='测试市')
+                state['PROJECTS'][KEY]['kb']=[{'t':'产业','known':[{'text':text,'nature':'base','origin':'report'}]}]
+                cur.execute('UPDATE sync_data SET data=%s WHERE id=1',(json.dumps(state),))
+        value=body(fileB64=base64.b64encode(text.encode()).decode(),source='file',topic='产业',kbIdx=None)
+        with patch.object(uploads,'require_session',return_value={'scope':'admin','user':'admin'}):
+            _,result=self.send(value,admin=True)
+        self.assertTrue(result['ok']);self.assertEqual(result['matched'],1)
+        state,rows=self.read()
+        replacement=[{'t':'产业','icon':'','sub':'','tag':'','calls':[],
+                      'known':[{'text':'新的基础报告。','nature':'base','origin':'report'}]}]
+        state['PROJECTS'][KEY]['kb']=_replace_base_topics(state['PROJECTS'][KEY]['kb'],replacement)
+        self.assertNotIn('annotations',state['PROJECTS'][KEY]['kb'][0]['known'][0])
+        context=topic_report_context({'projectKey':KEY,'topic':'白鹭设备'},state)
+        self.assertTrue(any(text in c['text'] and c['originalId']==rows[0][0] for c in context['chunks']))
+
+    def test_tail_beyond_old_thirtieth_chunk_is_retrievable_after_fresh_read(self):
+        from backend.topic_evidence import topic_report_context
+        text='\n\n'.join('白鹭设备背景材料%d，项目须提供详细证明。'%i for i in range(90))
+        text+='\n\n白鹭设备最终核准专项额度842万元。'
+        value=body(fileB64=base64.b64encode(text.encode()).decode())
+        self.assertTrue(self.send(value)[1]['ok'])
+        state,_=self.read();state['PROJECTS'][KEY].update(topic='白鹭设备',city='测试市')
+        context=topic_report_context({'projectKey':KEY,'topic':'白鹭设备'},state,limit=200)
+        self.assertTrue(any('最终核准专项额度842万元' in c['text'] for c in context['chunks']))
+
+    def test_admin_failed_commit_rolls_back_independent_chunks_and_original(self):
+        @contextmanager
+        def failing():
+            with self.factory() as session:
+                session.write=lambda value:False
+                yield session
+        with patch.object(uploads,'require_session',return_value={'scope':'admin','user':'admin'}):
+            _,result=self.send(body(source='file',topic='产业',kbIdx=None),factory=failing,admin=True)
+        self.assertFalse(result['ok'])
+        state,rows=self.read();self.assertEqual(rows,[])
+        self.assertNotIn('UPLOADS',state);self.assertNotIn('KB_FILE_CHUNKS',state)
 
     def test_postgres_copy_backup_restore_recovers_references_and_exact_original(self):
         # Isolated local fixture only: exercise PostgreSQL's real BYTEA export /
