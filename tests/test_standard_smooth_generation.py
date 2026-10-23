@@ -104,18 +104,64 @@ class StandardSmoothGenerationTests(unittest.TestCase):
             provider(fail)._gather_evidence('enterprises_1', '候选池', '测试城', prior, mode='standard')
         self.assertEqual(caught.exception.failure_code, 'timeout')
 
-    def test_final_part_adds_one_complementary_search_when_real_source_coverage_is_short(self):
+    def test_other_research_final_parts_keep_one_complementary_search_for_short_coverage(self):
+        for stage in ('economy', 'transport', 'life', 'industry', 'competition', 'policy', 'chain'):
+            with self.subTest(stage=stage):
+                queries = []
+                counts = []
+                def search(request, timeout):
+                    payload = json.loads(request.data)
+                    query = payload['query']
+                    queries.append(query)
+                    counts.append(payload['numResults'])
+                    return response(request, [evidence(4 if '补充资料' in query else 3)])
+                prior = {stage: {'metadata': {'evidence': [evidence(i) for i in range(3)]}}}
+                saved = copy.deepcopy(prior)
+                part = contract.get_stage(stage, mode='standard')['parts'][-1]
+                out = provider(search)._gather_evidence(stage, part, '测试城', prior, mode='standard')
+                all_sources = prior[stage]['metadata']['evidence'] + out
+                self.assertEqual(queries, [full_provider._queries_for(stage, part, '测试城')[0],
+                                          f'测试城 {part} 补充资料 统计公报 官方发布 年度报告'])
+                self.assertEqual(counts, [providers.DEFAULT_SEARCH_COUNT] * 2)
+                self.assertEqual(len({contract.canonical_url(item['url']) for item in all_sources}), 5)
+                self.assertEqual(prior, saved)
+
+    def test_population_final_part_uses_bounded_topic_batch_and_retrieves_later_source(self):
         queries = []
+        counts = []
+        expected = [
+            '测试城 人才引进 就业 劳动力',
+            '测试城 人才与劳动力 补充资料 统计公报 官方发布 年度报告',
+            '测试城 人力资源 社会保障 事业发展 统计公报 就业 技能人才',
+            '测试城 第七次人口普查 受教育程度 劳动年龄人口',
+            '测试城 统计年鉴 从业人员 职业教育 毕业生',
+        ]
         def search(request, timeout):
-            query = json.loads(request.data)['query']
+            payload = json.loads(request.data)
+            query = payload['query']
             queries.append(query)
-            return response(request, [evidence(4 if '补充资料' in query else 3)])
+            counts.append(payload['numResults'])
+            # Only the seventh result of a complementary topic supplies a
+            # new canonical URL. The old five-result request loses it.
+            records = [evidence(3)]
+            if query == expected[2]:
+                records = [evidence(3)] * 6 + [evidence(4)]
+            return response(request, records[:payload['numResults']])
         prior = {'population': {'metadata': {'evidence': [evidence(i) for i in range(3)]}}}
+        saved = copy.deepcopy(prior)
         out = provider(search)._gather_evidence('population', '人才与劳动力', '测试城', prior, mode='standard')
+        self.assertEqual(queries[0], expected[0])
+        # The four requests share one concurrent batch, so arrival order is
+        # not part of the contract. There must be no extra or missing query.
+        self.assertCountEqual(queries[1:], expected[1:])
+        self.assertEqual(counts, [providers.MAX_SEARCH_COUNT] * 5)
         all_sources = prior['population']['metadata']['evidence'] + out
-        self.assertEqual(len(queries), 2)
-        self.assertIn('补充资料', queries[-1])
-        self.assertEqual(len({contract.canonical_url(item['url']) for item in all_sources}), 5)
+        self.assertEqual({contract.canonical_url(item['url']) for item in all_sources},
+                         {evidence(i)['url'] for i in range(5)})
+        new_sources = [item for item in out if item['url'] == evidence(4)['url']]
+        self.assertEqual(len(new_sources), 1)
+        self.assertEqual(new_sources[0]['search_query'], expected[2])
+        self.assertEqual(prior, saved)
 
 
 if __name__ == '__main__':

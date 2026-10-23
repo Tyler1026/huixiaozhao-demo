@@ -68,6 +68,8 @@ def _provider_issue(error):
         return 'repeated_lines'
     if message == 'part source url policy failed':
         return 'url_policy'
+    if message == 'stage distinct source url floor not met':
+        return 'evidence_floor'
     if message.startswith('prior context for stage'):
         return 'prior_context_bound'
     if message.startswith(('model output is not json', 'model json unparseable')) or 'non-object json' in message:
@@ -131,6 +133,7 @@ def _safe_provider_metrics(error):
     if type(metrics) is not dict:
         return {}
     limits = {'line_count': 10_000, 'min_lines': 10_000,
+              'evidence_count': 10_000, 'min_evidence_urls': 10_000,
               'text_chars': MAX_RESULT_BYTES, 'literal_newline_count': 10_000,
               'elapsed_ms': 7_200_000, 'query_count': 10_000,
               'successful_queries': 10_000, 'failed_queries': 10_000,
