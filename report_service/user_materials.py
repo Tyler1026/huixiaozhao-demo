@@ -12,6 +12,10 @@ CONTEXT_KEY = '__user_materials__'
 MAX_SNAPSHOT_BYTES = 24 * 1024 * 1024
 
 
+class MaterialsPendingRepair(Exception):
+    """A durable original still needs extraction before inputs can be frozen."""
+
+
 def canonical(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
 
@@ -40,6 +44,7 @@ def validate_snapshot(value):
 def snapshot(state, request):
     from backend.city_workspaces import get_city_workspace
     from backend.kb_context import saved_materials
+    from backend.upload_repair import pending_legacy_uploads
     city = request['city']
     binding = get_city_workspace(state, city)
     key = request.get('projectKey') or (binding or {}).get('projectKey')
@@ -50,6 +55,8 @@ def snapshot(state, request):
     project = (state.get('PROJECTS') or {}).get(key)
     if not isinstance(project, dict) or project.get('city') != city:
         raise ValueError('report workspace is unavailable')
+    if pending_legacy_uploads(state, key):
+        raise MaterialsPendingRepair('workspace originals are still being repaired')
     rows = []
 
     def add(item, topic, kind):

@@ -14,6 +14,65 @@ from backend import upload_repair as repair
 from backend.sync_transaction import PostgresSession
 
 
+class PendingLegacyUploadTests(unittest.TestCase):
+    def state(self):
+        return {'PROJECTS': {'root': {'workspaceId': 'root', 'city': '同城'},
+                             'child': {'workspaceId': 'root', 'city': '同城'},
+                             'foreign': {'workspaceId': 'foreign', 'city': '同城'}},
+                'UPLOADS': {'root': [{'name': '父工作区.txt', 'originalId': 'a' * 32}],
+                            'child': [{'name': '当前工作区.txt', 'originalId': 'b' * 32}],
+                            'foreign': [{'name': '其他工作区.txt', 'originalId': 'c' * 32}]}}
+
+    def test_gate_reads_current_and_accessible_parent_without_same_city_neighbors(self):
+        state = self.state(); before = copy.deepcopy(state)
+        rows = repair.pending_legacy_uploads(state, 'child')
+        self.assertEqual({row['projectKey'] for row in rows}, {'root', 'child'})
+        self.assertEqual({row['originalId'] for row in rows}, {'a' * 32, 'b' * 32})
+        self.assertEqual(state, before)
+        rows[0]['name'] = 'caller change'
+        self.assertEqual(state, before)
+
+    def test_scoped_state_does_not_require_inaccessible_parent(self):
+        state = self.state(); state['PROJECTS'].pop('root')
+        self.assertEqual([row['projectKey'] for row in repair.pending_legacy_uploads(state, 'child')], ['child'])
+
+    def test_completed_current_version_and_permanent_failure_do_not_block(self):
+        state = self.state()
+        state['UPLOADS']['root'][0]['chunkVersion'] = uploads.CHUNK_VERSION
+        state['UPLOADS']['child'][0]['chunkRepair'] = {
+            'version': uploads.CHUNK_VERSION, 'status': 'failed', 'code': 'original_not_found'}
+        self.assertEqual(repair.pending_legacy_uploads(state, 'child'), [])
+        state['UPLOADS']['child'][0]['chunkRepair']['version'] = uploads.CHUNK_VERSION - 1
+        self.assertEqual(len(repair.pending_legacy_uploads(state, 'child')), 1)
+
+    def test_running_lease_and_expired_lease_both_wait_for_committed_repair(self):
+        state = self.state()
+        state['UPLOADS']['root'][0]['chunkRepair'] = {'version': uploads.CHUNK_VERSION,
+                                                       'status': 'running', 'leaseUntil': 10**20}
+        state['UPLOADS']['child'][0]['chunkRepair'] = {'version': uploads.CHUNK_VERSION,
+                                                        'status': 'running', 'leaseUntil': 1}
+        self.assertEqual(len(repair.pending_legacy_uploads(state, 'child')), 2)
+
+    def test_missing_invalid_or_inactive_originals_cannot_block_forever(self):
+        for change in ({'originalId': None}, {'originalId': 'bad'}, {'originalId': 'A' * 32},
+                       {'originalId': 1}, {'deleted': True}, {'pending': True},
+                       {'parseFailed': True}, {'projectKey': 'foreign'}):
+            with self.subTest(change=change):
+                state = self.state()
+                state['UPLOADS']['root'] = []
+                state['UPLOADS']['child'][0].update(change)
+                self.assertEqual(repair.pending_legacy_uploads(state, 'child'), [])
+        state = self.state()
+        state['UPLOADS']['root'] = []
+        state['UPLOAD_TOMBS'] = {'child::当前工作区.txt': 1}
+        self.assertEqual(repair.pending_legacy_uploads(state, 'child'), [])
+
+    def test_duplicate_receipts_are_reported_once_per_project_and_original(self):
+        state = self.state()
+        state['UPLOADS']['child'].append(copy.deepcopy(state['UPLOADS']['child'][0]))
+        self.assertEqual(len(repair.pending_legacy_uploads(state, 'child')), 2)
+
+
 @unittest.skipUnless(os.environ.get('HXZ_TEST_DATABASE_URL'), 'isolated PostgreSQL CI fixture only')
 class LegacyRepairPostgresTests(unittest.TestCase):
     def setUp(self):

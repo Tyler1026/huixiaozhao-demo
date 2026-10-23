@@ -14978,10 +14978,12 @@ function kbVerifyMaterial(){
     // 智能匹配：从全部智库条目中找与新文件内容最相关的条目对比
   var _allKnown=[];
   if(p.kb){
-    p.kb.forEach(function(t){
-      (t.known||[]).forEach(function(x){
-        var _xt=_kbText(x); if(_xt.indexOf('\ud83d\udcce')!==0)
-          _allKnown.push(_xt.replace(/^[\u2705\u26a0\ufe0f\s]+/,''));
+    p.kb.forEach(function(t,sectionIndex){
+      kbEffectiveKnown(p,sectionIndex,cur).forEach(function(x){
+        var _xt=_kbText(x); if(_xt.indexOf('\ud83d\udcce')!==0){
+          var state=x&&x._kbEditStatus==='needs_review'?'【旧版本用户修订，待复核】':x&&x._kbUserEdited?'【用户修订，待核验】':'';
+          _allKnown.push(state+_xt.replace(/^[\u2705\u26a0\ufe0f\s]+/,''));
+        }
       });
     });
   }
@@ -15068,7 +15070,7 @@ function kbVerifyMaterial(){
 
   var prompt=
     '【新上传文件原文】\n'+newText+'\n\n'
-    +'【智库已有结论（正确基准）】\n'
+    +'【智库已有材料（保留用户修订状态）】\n'
     +(topicKnown.length
         ? (topicKnown.join('\n')
            +'\n（以上为智库 '+_allKnown.length+' 条结论中与本文件相关的 '+topicKnown.length+' 条）')
@@ -15076,6 +15078,7 @@ function kbVerifyMaterial(){
     +'\n\n'
     +'任务：逐条核验新上传文件中每一个数据点。\n\n'
     +'核验方法：文件中的每个数字/百分比/数量，都去智库已有结论里找同一指标。\n'
+    +'- 用户修订尚待核验，旧版本用户修订尚待复核；保留其状态，不当作已核实事实。\n'
     +'- 数值一致 → 标记 ✅\n'
     +'- 数值不同 → 标记 ❌ 并写明双方数值\n'
     +'- 智库无此数据无法核验 → 标记 ⚠️ 新增数据\n\n'
@@ -15308,14 +15311,17 @@ function kbIncrementalAnalysis(){
   // question 只放简短指令，现有结论摘要用于提示 AI，新材料走 chunks
   var existingTitles=[];
   if(kbIdx!=null && p.kb && p.kb[kbIdx]){
-    (p.kb[kbIdx].known||[]).forEach(function(x){
-      var _xt2=_kbText(x); if(_xt2.indexOf('📎')!==0) existingTitles.push(x.replace(/^[\u2705\u26a0\ufe0f\s]+/,'').substring(0,40));
+    kbEffectiveKnown(p,kbIdx,cur).forEach(function(x){
+      var _xt2=_kbText(x); if(_xt2.indexOf('📎')!==0){
+        var state=x&&x._kbEditStatus==='needs_review'?'【旧版本用户修订，待复核】':x&&x._kbUserEdited?'【用户修订，待核验】':'';
+        existingTitles.push(state+_xt2.replace(/^[\u2705\u26a0\ufe0f\s]+/,'').substring(0,40));
+      }
     });
   }
   var existingHint=existingTitles.length ? '（已有结论摘要：'+existingTitles.slice(0,6).join('；')+'）' : '';
 
   var prompt='请基于提供的新材料，对比'+p.city+'「'+topicLabel+'」智库中已有结论'+existingHint+'，找出真正的新增信息或补充要点。'
-    +'要求：①如果新材料与现有数据一致，直接说"与现有数据一致，无需更新"；②只输出真正新增的、现有智库中没有的信息；③不要使用"不一致"标签来描述实际一致的数据；④每条新发现独立成行，关键数据加粗；⑤若存在真正矛盾（数据不同），明确标注【矛盾】并列出新旧数据对比；⑥不编造材料中未提及的数据。';
+    +'要求：①如果新材料与现有数据一致，直接说"与现有数据一致，无需更新"；②只输出真正新增的、现有智库中没有的信息；③不要使用"不一致"标签来描述实际一致的数据；④每条新发现独立成行，关键数据加粗；⑤若存在真正矛盾（数据不同），明确标注【矛盾】并列出新旧数据对比；⑥不编造材料中未提及的数据；⑦保留用户修订的待核验/待复核状态，不当作已核实事实。';
 
   var thinking=document.createElement('div');
   thinking.className='message';
@@ -15570,8 +15576,8 @@ function kbRAGQueryFull(){
   });
   // 和主题 known 结论一起作为上下文
   var kHint=kbIdx!=null&&p.kb ? p.kb[kbIdx] : null;
-  var knownChunks=kHint ? (kHint.known||[]).slice(0,4).map(function(t,i){
-    return {id:'known:'+i,topic:kHint.t,tags:[],text:_kbText(t).replace(/^[\u2705\u26a0\ufe0f\s]+/,''),cite:kHint.t+'（已有结论）'};
+  var knownChunks=kHint ? kbEffectiveKnown(p,kbIdx,cur).slice(0,4).map(function(t,i){
+    var chunk=kbKnownChunk(t,kHint.t,i);chunk.id='known:'+i;chunk.text=_kbText(t).replace(/^[\u2705\u26a0\ufe0f\s]+/,'');chunk.cite=kHint.t+'（已有结论）';return chunk;
   }) : [];
   var chunks=knownChunks.concat(allUploadChunks).slice(0,12);
 

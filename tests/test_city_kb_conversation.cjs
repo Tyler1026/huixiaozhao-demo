@@ -180,6 +180,28 @@ for(const name of ['kbVerifyMaterial','kbIncrementalAnalysis'])test('legacy '+na
  assert.equal(c.KB_CHAT['workspace:a'].sessions[0].messages.filter(m=>m.role==='ai').length,0);assert.equal(c.KB_CHAT['workspace:a'].sessions[1].messages.length,0);assert.equal(c.kbIsRequestPending(),false);
 });
 
+for(const name of ['kbVerifyMaterial','kbIncrementalAnalysis','kbRAGQueryFull'])for(const replaced of [false,true])test(name+' sends object materials with '+(replaced?'retained correction status':'the active 10-to-28 correction'),async()=>{
+ const h=harness(),c=h.c,f=feed();h.feeds.push(f);
+ const original={text:'园区产值10亿元',nature:'base'};c.PROJECTS.a.kb[0].known=[original];
+ c.KB_EDITS={a:{e1:{id:'e1',sectionIndex:0,sectionTitle:'政策',sourceIndex:0,sourceItem:original,baseReportVersion:null,text:'园区产值28亿元，白鹭842',status:'edited',revision:1,ts:1,account:'ryan'}}};
+ if(replaced){c.PROJECTS.a.baseReportVersion={version:2};c.PROJECTS.a.kb[0].known=[{text:'新报告产值99亿元',nature:'base'}];}
+ c.document.querySelector=()=>null;c._kbText=x=>typeof x==='string'?x:x.text;
+ c._lastIngestChunks=[{text:'园区产值28亿元',topic:'政策'}];c.KB_FILE_CHUNKS.a=c._lastIngestChunks;c._lastIngestTopicLabel='政策';c._lastIngestKbIdx=0;
+ c.buildKBCorpus=()=>c.knowledgeMaterialCorpus('a',c.PROJECTS.a);
+ const end=name==='kbVerifyMaterial'?'/* ── 校验发现矛盾后':name==='kbIncrementalAnalysis'?'/* 新要点追加面板':'function kbFileParsed(';
+ vm.runInContext(tail.slice(tail.indexOf('function '+name+'(){'),tail.indexOf(end,tail.indexOf('function '+name+'(){'))),c);
+ assert.doesNotThrow(()=>c[name]());await flush();assert.equal(h.api.length,1);assert.equal(h.api[0].projectKey,'a');
+ if(name==='kbRAGQueryFull'){
+  const corrected=h.api[0].chunks.find(x=>x.text.includes('白鹭842'));assert.ok(corrected);assert.equal(corrected.correction.status,replaced?'needs_review':'active');
+  assert.ok(!h.api[0].chunks.some(x=>x.text==='园区产值10亿元'));
+ }else{
+  assert.match(h.api[0].question,/园区产值28亿元，白鹭842/);assert.doesNotMatch(h.api[0].question,/园区产值10亿元/);
+  assert.match(h.api[0].question,replaced?/【旧版本用户修订，待复核】/:/【用户修订，待核验】/);
+ }
+ assert.equal(original.text,'园区产值10亿元');
+ c.kbSwitchSession('s2');sendAnswer(f);await flush();assert.equal(c.kbIsRequestPending(),false);
+});
+
 test('opening answer evidence always ensures visibility instead of toggling it off',()=>{
  const h=harness(),c=h.c;let opens=0,toggles=0;
  c.KB_CHAT['workspace:a'].sessions[0].messages=[{id:'a1',role:'ai',text:'答复',sources:[{text:'原文',urls:[]}]}];

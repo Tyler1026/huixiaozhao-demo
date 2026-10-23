@@ -24,9 +24,44 @@ _worker = None
 
 def _active(state, key, record):
     return (isinstance((state.get('PROJECTS') or {}).get(key), dict)
+            and record.get('projectKey', key) == key
             and not record.get('deleted') and not record.get('pending')
             and not record.get('parseFailed')
             and not (state.get('UPLOAD_TOMBS') or {}).get(key + '::' + str(record.get('name', ''))))
+
+
+def pending_legacy_uploads(state, project_key):
+    """Read-only gate before freezing a report's workspace input snapshot.
+
+    Active leases are still pending: extraction has not committed full chunks
+    yet. Permanent failures for this algorithm version and text-only legacy
+    uploads cannot improve by waiting, so they never block a report forever.
+    The caller supplies its authorized state, as for saved_materials().
+    """
+    from .kb_context import workspace_keys
+    pending, seen = [], set()
+    for key in workspace_keys(state, project_key):
+        records = (state.get('UPLOADS') or {}).get(key, [])
+        for record in records if isinstance(records, list) else []:
+            if not isinstance(record, dict) or not _active(state, key, record):
+                continue
+            original_id = record.get('originalId')
+            if not isinstance(original_id, str) or not re.fullmatch('[a-f0-9]{32}', original_id):
+                continue
+            if type(record.get('chunkVersion')) is int and record['chunkVersion'] >= CHUNK_VERSION:
+                continue
+            repair = record.get('chunkRepair') or {}
+            if (isinstance(repair, dict) and repair.get('version') == CHUNK_VERSION
+                    and repair.get('status') == 'failed'):
+                continue
+            identity = (key, original_id)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            pending.append({'projectKey': key, 'originalId': original_id,
+                            'name': record.get('name', ''),
+                            'status': repair.get('status', 'pending') if isinstance(repair, dict) else 'pending'})
+    return pending
 
 
 def _leased(repair, now):

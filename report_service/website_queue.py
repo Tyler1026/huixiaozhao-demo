@@ -349,13 +349,23 @@ class WebsiteQueue:
                 if r.get('engine') == ENGINE and r.get('status') == 'cancelled':
                     self.store.cancel(TENANT, report_id(r['id']))
                 elif r.get('status') == 'pending' and r.get('engine') in (None, ENGINE):
-                    from .user_materials import snapshot
-                    materials = snapshot(state, r)
+                    from .user_materials import MaterialsPendingRepair, snapshot
+                    try:
+                        materials = snapshot(state, r)
+                    except MaterialsPendingRepair:
+                        # Repair commits under the same state lock. Waiting here
+                        # prevents a permanent snapshot of legacy short excerpts.
+                        waiting = '正在补全历史上传材料，完成后开始报告'
+                        if r.get('step') != waiting:
+                            r['step'] = waiting
+                            changed = True
+                        continue
                     options = {'input_context': materials} if materials is not None else {}
                     job = self.store.create(TENANT, r['province'], r['city'], r['id'],
                                             synthetic=False, mode=r.get('mode', 'standard'), **options)
                     r.update(engine=ENGINE, engineReportId=job['id'], status='running',
-                             total=job['stages_total'], done=job['stages_done'])
+                             total=job['stages_total'], done=job['stages_done'],
+                             step='正在准备报告输入')
                     r['claimTs'] = r.get('claimTs') or int(time.time() * 1000)
                     changed = True
             if changed:

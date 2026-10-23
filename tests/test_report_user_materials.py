@@ -11,7 +11,8 @@ from backend.sync_transaction import file_session
 from report_service.full_context import scoped_prior, scoring_prior_batches
 from report_service.full_provider import FullLiveProvider
 from report_service.full_store import FullStore
-from report_service.user_materials import CONTEXT_KEY, prompt_context, select, snapshot, validate_snapshot
+from report_service.user_materials import (CONTEXT_KEY, MaterialsPendingRepair,
+                                           prompt_context, select, snapshot, validate_snapshot)
 from report_service.website_queue import WebsiteQueue, _replace_base_topics
 
 
@@ -76,6 +77,52 @@ class ReportUserMaterialsTests(unittest.TestCase):
             job = store.claim(synthetic=False)
             self.assertIn('白鹭842', json.dumps(job['input_context'], ensure_ascii=False))
             self.assertEqual(json.loads(path.read_text())['REPORT_REQUESTS'][0]['status'], 'running')
+
+    def test_queue_waits_for_repair_without_blocking_other_workspaces(self):
+        s = corrected()
+        original_id = 'a' * 32
+        s['UPLOADS']['p'][0]['originalId'] = original_id
+        s['UPLOADS']['p'][0]['chunkRepair'] = {'version': 2, 'status': 'running',
+                                              'leaseUntil': 9999999999999}
+        s['KB_FILE_CHUNKS']['p'][0].update(originalId=original_id, text='旧的短片段')
+        s['REPORT_REQUESTS'] = [
+            {'id': 'rrwaiting', 'projectKey': 'p', 'city': '离线测试市',
+             'province': '测试省', 'status': 'pending'},
+            {'id': 'rrother', 'projectKey': 'other', 'city': '其他市',
+             'province': '测试省', 'status': 'pending'}]
+        with self.assertRaises(MaterialsPendingRepair):
+            snapshot(s, s['REPORT_REQUESTS'][0])
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'state.json'
+            path.write_text(json.dumps(s))
+            store = FullStore(Path(folder) / 'jobs.db', stages=[{'id': 'one', 'parts': ['one']}])
+            queue = WebsiteQueue(store, lambda: file_session(str(path), lambda: None))
+            queue.ingest()
+            saved = json.loads(path.read_text())
+            self.assertEqual(saved['REPORT_REQUESTS'][0]['status'], 'pending')
+            self.assertIn('补全历史上传材料', saved['REPORT_REQUESTS'][0]['step'])
+            self.assertEqual(saved['REPORT_REQUESTS'][1]['status'], 'running')
+            self.assertEqual(store.claim(synthetic=False)['city'], '其他市')
+            self.assertIsNone(store.claim(synthetic=False))
+            saved['UPLOADS']['p'][0].update(chunkVersion=2,
+                                          chunkRepair={'version': 2, 'status': 'ready'})
+            saved['KB_FILE_CHUNKS']['p'][0]['text'] = '修复后完整尾部：批准用地93亩。'
+            path.write_text(json.dumps(saved))
+            queue.ingest()
+            job = store.claim(synthetic=False)
+            self.assertEqual(job['city'], '离线测试市')
+            self.assertIn('批准用地93亩', json.dumps(job['input_context'], ensure_ascii=False))
+            self.assertNotIn('旧的短片段', json.dumps(job['input_context'], ensure_ascii=False))
+            self.assertEqual(json.loads(path.read_text())['REPORT_REQUESTS'][0]['status'], 'running')
+
+    def test_failed_repair_and_text_only_legacy_uploads_do_not_wait_forever(self):
+        s = corrected()
+        upload = s['UPLOADS']['p'][0]
+        upload.update(originalId='b' * 32, chunkRepair={'version': 2, 'status': 'failed'})
+        self.assertIsNotNone(snapshot(s, {'projectKey': 'p', 'city': '离线测试市'}))
+        upload.pop('originalId')
+        upload.pop('chunkRepair')
+        self.assertIsNotNone(snapshot(s, {'projectKey': 'p', 'city': '离线测试市'}))
 
     def test_long_saved_note_is_fully_segmented_before_prompt_selection(self):
         s = state()
