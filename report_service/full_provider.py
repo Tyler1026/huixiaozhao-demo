@@ -822,6 +822,8 @@ class FullLiveProvider:
         seen = set()
         retrieval = "exa_fulltext" if self.search_provider == "exa" else "brave_snippet"
         queries = _queries_for(stage_id, part, place)
+        complete_population = (mode == 'standard' and stage_id == 'population'
+                               and part == get_stage(stage_id, mode=mode)['parts'][-1])
         company_check = stage_id == 'fact_check' and part == '五星企业信号'
         targeted_check = company_check and bool(self._selected_companies(prior))
         if company_check:
@@ -896,7 +898,11 @@ class FullLiveProvider:
             cached = cached_query(query)
             if cached:
                 return [{'_cached_evidence_record': entry} for entry in cached]
-            payload = self._live._search(query, self._live.search_count)
+            # The final population part must close the whole chapter's source
+            # deficit. Use the existing transport bound rather than letting a
+            # small per-query default discard potentially useful candidates.
+            count = providers.MAX_SEARCH_COUNT if complete_population else self._live.search_count
+            payload = self._live._search(query, count)
             return self._live._normalize_results(payload)
 
         # Three concurrent searches keep five enterprise lookups or six
@@ -973,18 +979,36 @@ class FullLiveProvider:
                 and part == get_stage(stage_id, mode=mode)['parts'][-1]
                 and len({canonical_url(item['url']) for item in cached + usable})
                     < contract.minimum_evidence_urls(mode)):
-            # One complementary query before the immutable final checkpoint,
-            # instead of repeating the same sparse search across retries.
-            query = f'{place} {part} 补充资料 统计公报 官方发布 年度报告'
-            queries.append(query)
-            try:
-                keep_results(retrieve(query), query)
-                successes += 1
-            except Exception as exc:
-                error = _to_provider_error(exc)
-                failures.append(error)
-                if error.failure_code in {'configuration', 'rate_limit'}:
-                    critical = error
+            supplements = [f'{place} {part} 补充资料 统计公报 官方发布 年度报告']
+            if complete_population:
+                # Earlier parts are immutable. A single repeated supplement
+                # cannot recover a sparse chapter, so cover complementary
+                # topics in the same transport-timeout window. Consume in
+                # query order to retain deterministic evidence numbering.
+                supplements.extend(template.format(place=place)
+                                   for template in _POPULATION_COMPLETION_QUERIES)
+            queries.extend(supplements)
+            if complete_population:
+                with ThreadPoolExecutor(max_workers=4) as executor:
+                    pending = [executor.submit(retrieve, query) for query in supplements]
+                    for query, future in zip(supplements, pending):
+                        try:
+                            keep_results(future.result(), query)
+                            successes += 1
+                        except Exception as exc:
+                            error = _to_provider_error(exc)
+                            failures.append(error)
+                            if error.failure_code in {'configuration', 'rate_limit'}:
+                                critical = error
+            else:
+                try:
+                    keep_results(retrieve(supplements[0]), supplements[0])
+                    successes += 1
+                except Exception as exc:
+                    error = _to_provider_error(exc)
+                    failures.append(error)
+                    if error.failure_code in {'configuration', 'rate_limit'}:
+                        critical = error
             usable = self._usable_evidence(out)
         may_reuse = mode == 'standard' and candidate_missing is None and not part.startswith('候选池')
         if critical is not None or (failures and not usable and not (may_reuse and cached)):
@@ -993,6 +1017,20 @@ class FullLiveProvider:
                                       query_count=len(queries), successful_queries=successes,
                                       failed_queries=len(failures), cached_source_count=len(cached))
             raise error from None
+        if complete_population:
+            found = len({canonical_url(item['url']) for item in cached + usable})
+            required = contract.minimum_evidence_urls(mode)
+            if found < required:
+                # Fail before paying for prose that cannot pass stage
+                # validation. Retain transport failures when the missing
+                # coverage may be due to an unavailable lookup.
+                error = failures[0] if failures else FullProviderError(
+                    'stage distinct source URL floor not met', 'quality')
+                error.safe_metrics.update(operation='search', elapsed_ms=int((time.monotonic() - started) * 1000),
+                                          query_count=len(queries), successful_queries=successes,
+                                          failed_queries=len(failures), cached_source_count=len(cached),
+                                          evidence_count=found, min_evidence_urls=required)
+                raise error from None
         # A failed optional lookup need not discard other real excerpts. All
         # downstream identity, cross-source and stage validation still apply.
         return usable or (cached if may_reuse else [])
@@ -1553,6 +1591,15 @@ def _queries_for(stage_id, part, place):
     if templates is None:
         return [f'{place} 招商调研 {part}（{stage_id}）']
     return [query.format(place=place) for query in templates]
+
+
+# A bounded final-chapter repair, not an open-ended search loop. These topics
+# cover population and workforce evidence beyond the last part's fixed query.
+_POPULATION_COMPLETION_QUERIES = (
+    '{place} 人力资源 社会保障 事业发展 统计公报 就业 技能人才',
+    '{place} 第七次人口普查 受教育程度 劳动年龄人口',
+    '{place} 统计年鉴 从业人员 职业教育 毕业生',
+)
 
 
 # Per-stage, per-part queries.  Each part maps to 1+ independent Chinese queries
