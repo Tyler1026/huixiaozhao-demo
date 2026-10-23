@@ -492,7 +492,8 @@ def validate(stage_id, text, metadata=None, synthetic=False, *, mode='standard')
     nlines = len(content_lines)
     if not synthetic and content_lines:
         from .full_citations import comparison_keys
-        compared = comparison_keys(content_lines, meta.get('citation_frames', []))
+        compared = comparison_keys(content_lines, meta.get('citation_frames', []),
+                                   meta.get('citation_finalizations', []))
         repeated = sum(n - 1 for n in Counter(compared).values() if n > 1)
         if repeated > len(content_lines) * .2:
             errors.append('repeated filler exceeds 20 percent of substantive lines')

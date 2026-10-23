@@ -606,7 +606,7 @@ class EnterprisePartGateTests(unittest.TestCase):
         cases = [('首次一行正文', '补齐一行正文', 'part line floor not met'),
                  ('\n'.join('首次重复正文' for _ in range(16)), '独立补齐正文', 'part contains repeated filler'),
                  ('\n'.join(f'首次安全正文{i}' for i in range(16)),
-                  '不安全补齐来源 http://127.0.0.1/private', 'part source URL policy failed')]
+                  '不安全补齐来源 http://127.0.0.1/private', 'research citation reference is invalid')]
         for first_text, extra_text, message in cases:
             with self.subTest(message=message):
                 p, router, prior, _, _ = self._completion_fixture(
@@ -614,6 +614,7 @@ class EnterprisePartGateTests(unittest.TestCase):
                 with self.assertRaises(fp.FullProviderError) as caught:
                     p.run_part('enterprises_1', '候选池2', {'city': '测试城', 'mode': 'deep'}, prior)
                 self.assertEqual(str(caught.exception), message)
+                self.assertEqual(caught.exception.failure_code, 'quality')
                 self.assertEqual(tuple(map(len, self._completion_calls(router))), (3, 2))
         # The final floor applies to the complete merged body, without throwing
         # away a short but substantive first response.

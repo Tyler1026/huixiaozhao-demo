@@ -265,6 +265,7 @@ class FullLiveProvider:
 
         parsed = self._parse_part(stage_id, part, payload, all_evidence, prior)
         text = parsed["text"]
+        bound_segments = [text]
         if mode == 'standard' and stage_id in {'action', 'summary', 'compact'}:
             from .full_synthesis import synthesis_issues, correction_context
             issues = synthesis_issues(text, prior)
@@ -283,28 +284,34 @@ class FullLiveProvider:
         metadata = None
         if stage_id.startswith('enterprises_') and part.startswith('候选池'):
             metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior, mode=mode)
-            text, metadata = self._complete_candidate_batch(
+            text, metadata, bound_segments = self._complete_candidate_batch(
                 stage_id, part, place, prior, prior_text, floor, mode,
                 parsed, metadata, previous, evidence)
         previous_text = previous.get('text', '') if isinstance(previous, dict) else previous
         previous_frames = previous.get('metadata', {}).get('citation_frames', []) if isinstance(previous, dict) else []
+        previous_finalizations = previous.get('metadata', {}).get('citation_finalizations', []) if isinstance(previous, dict) else []
         citation_frames = None
-        if '_citation_frame' in parsed:
-            citation_frames = list(previous_frames) + [parsed['_citation_frame']]
+        current_frames = (metadata or {}).get('citation_frames', [])
+        if not current_frames and '_citation_frame' in parsed:
+            current_frames = [parsed['_citation_frame']]
+        if current_frames:
+            citation_frames = list(previous_frames) + current_frames
         if mode == 'standard' and stage_id == 'fact_check' and part == '五星企业信号':
             metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior, mode=mode)
             feedback = self._high_star_gap(parsed, metadata)
             if feedback:
                 text, metadata = self._project_standard_high_star(prior, metadata, feedback)
         try:
-            self._validate_part_text(text, floor, previous_text, citation_frames=citation_frames)
+            self._validate_part_text(text, floor, previous_text, citation_frames=citation_frames,
+                                     citation_finalizations=previous_finalizations)
         except FullProviderError as exc:
             if (mode != 'standard' or stage_id not in _REPETITION_CORRECTION_STAGES
                     or exc.failure_code != 'quality' or str(exc) != 'part contains repeated filler'):
                 raise
             # Only the actual unchanged repetition gate permits one rewrite.
             # Reuse all inputs; no search, checkpoint or automatic text cleanup.
-            feedback = self._repetition_feedback(text, previous_text, citation_frames=citation_frames)
+            feedback = self._repetition_feedback(text, previous_text, citation_frames=citation_frames,
+                                                citation_finalizations=previous_finalizations)
             try:
                 payload = self._chat_part(stage_id, part, place, prior_text,
                                           self._usable_evidence(saved_evidence + evidence),
@@ -315,7 +322,8 @@ class FullLiveProvider:
             text = parsed['text']
             if '_citation_frame' in parsed:
                 citation_frames = list(previous_frames) + [parsed['_citation_frame']]
-            self._validate_part_text(text, floor, previous_text, citation_frames=citation_frames)
+            self._validate_part_text(text, floor, previous_text, citation_frames=citation_frames,
+                                     citation_finalizations=previous_finalizations)
         projection_audit = []
         if mode == 'standard' and stage_id in {'action', 'summary', 'compact'}:
             from .full_synthesis import project_decision_text, project_location_prose
@@ -331,9 +339,19 @@ class FullLiveProvider:
             metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior, mode=mode)
         if stage_id.startswith('enterprises_'):
             from .full_synthesis import project_location_prose
+            bound_text = text
             text, location_audit = project_location_prose(text, metadata.get('candidates', []) + metadata.get('selected', []), all_evidence, place=place)
             projection_audit.extend(location_audit)
-            self._validate_part_text(text, floor, previous_text)
+            if current_frames:
+                from .full_citations import CitationError, finalize_enterprise_text
+                try:
+                    text, finalization = finalize_enterprise_text(
+                        bound_text, text, current_frames, stage_id, part, segments=bound_segments)
+                except CitationError:
+                    raise FullProviderError('enterprise citation finalization is invalid', 'quality') from None
+                metadata['citation_finalizations'] = [finalization]
+            self._validate_part_text(text, floor, previous_text, citation_frames=citation_frames,
+                                     citation_finalizations=list(previous_finalizations) + metadata.get('citation_finalizations', []))
         if projection_audit:
             metadata['factual_projection'] = projection_audit
         if stage_id.startswith('enterprises_'):
@@ -556,13 +574,13 @@ class FullLiveProvider:
                 if line.strip() and line.strip() != '---']
 
     @classmethod
-    def _repetition_feedback(cls, text, previous_text, *, citation_frames=None):
+    def _repetition_feedback(cls, text, previous_text, *, citation_frames=None, citation_finalizations=()):
         lines = cls._content_lines(text)
         previous = [line.strip() for line in str(previous_text or '').splitlines() if line.strip()]
         if citation_frames is not None:
             from .full_citations import comparison_keys
-            lines = comparison_keys(lines, citation_frames)
-            previous = comparison_keys(previous, citation_frames)
+            lines = comparison_keys(lines, citation_frames, citation_finalizations)
+            previous = comparison_keys(previous, citation_frames, citation_finalizations)
         return {
             'kind': 'research_repetition',
             'current_line_count': len(lines),
@@ -570,7 +588,7 @@ class FullLiveProvider:
             'shared_prior_line_count': len(set(lines).intersection(previous)),
         }
 
-    def _validate_part_text(self, text, floor, previous_text='', *, citation_frames=None):
+    def _validate_part_text(self, text, floor, previous_text='', *, citation_frames=None, citation_finalizations=()):
         lines = self._content_lines(text)
         if len(lines) < floor:
             raise FullProviderError('part line floor not met', 'quality', safe_metrics={
@@ -578,7 +596,7 @@ class FullLiveProvider:
                 'literal_newline_count': text.count(r'\n'),
             })
         from .full_citations import comparison_keys
-        compared = comparison_keys(lines, citation_frames) if citation_frames is not None else lines
+        compared = comparison_keys(lines, citation_frames, citation_finalizations) if citation_frames is not None else lines
         repeated = sum(n - 1 for n in Counter(compared).values() if n > 1)
         if repeated > len(lines) * .2:
             raise FullProviderError('part contains repeated filler', 'quality')
@@ -586,7 +604,7 @@ class FullLiveProvider:
             combined = previous_text.rstrip() + '\n\n---\n\n' + text
             combined_lines = [line.strip() for line in combined.splitlines() if line.strip()]
             if citation_frames is not None:
-                combined_lines = comparison_keys(combined_lines, citation_frames)
+                combined_lines = comparison_keys(combined_lines, citation_frames, citation_finalizations)
             repeats = sum(n - 1 for n in Counter(combined_lines).values() if n > 1)
             if repeats > len(combined_lines) * .2:
                 raise FullProviderError('part contains repeated filler', 'quality')
@@ -746,10 +764,10 @@ class FullLiveProvider:
         raw = parsed.get('candidates')
         candidates = metadata.get('candidates', [])
         if not isinstance(raw, list) or len(raw) != 5 or len(candidates) != 5:
-            return text, metadata
+            return text, metadata, [text]
         assoc = self._assoc(metadata['evidence'])
         if any(canonical_url(company.get('url')) not in assoc for company in candidates):
-            return text, metadata
+            return text, metadata, [text]
         saved = previous.get('metadata', {}).get('candidates', []) if isinstance(previous, dict) else []
         excluded = [company['name'] for company in saved]
         from .company_identity import candidate_identity
@@ -764,7 +782,7 @@ class FullLiveProvider:
                 accepted.append(company)
                 seen.add(identity)
         if not 1 <= len(accepted) <= 4:
-            return text, metadata
+            return text, metadata, [text]
 
         missing = 5 - len(accepted)
         excluded.extend(company['name'] for company in accepted)
@@ -793,7 +811,9 @@ class FullLiveProvider:
         supplement = self._ground_companies(stage_id, extra_raw, combined_evidence)
         completed = dict(metadata, evidence=combined_evidence,
                          candidates=accepted + supplement, selected=[])
-        return text + '\n\n' + extra['text'], completed
+        if '_citation_frame' in extra:
+            completed['citation_frames'] = list(metadata.get('citation_frames', [])) + [copy.deepcopy(extra['_citation_frame'])]
+        return text + '\n\n' + extra['text'], completed, [text, extra['text']]
 
     def _validate_company_part(self, part, metadata, previous):
         """Validate a small enterprise checkpoint before it becomes immutable.
@@ -1122,8 +1142,8 @@ class FullLiveProvider:
         return host.lower() or "未知来源"
 
     def _chat_part(self, stage_id, part, place, prior_text, evidence, *, mode='standard', min_lines=None, target_names=None, excluded_names=None, candidate_count=5, scoring_targets=None, scoring_batch=None, correction_feedback=None):
-        from .full_citations import RESEARCH_STAGES
-        bind_citations = stage_id in RESEARCH_STAGES
+        from .full_citations import CITATION_STAGES
+        bind_citations = stage_id in CITATION_STAGES
         if bind_citations:
             # Freeze precisely the list used below, not accumulated stage
             # evidence or the potentially different list of another call.
@@ -1416,7 +1436,9 @@ class FullLiveProvider:
         # Only the private return type created at the real chat boundary may
         # supply a frame. A similarly named field in model JSON is discarded.
         from .full_citations import BoundPayload
-        obj.pop('_citation_frame', None)
+        for field in ('_citation_frame', '_citation_frames', '_citation_finalization',
+                      '_citation_finalizations', 'citation_frames', 'citation_finalizations'):
+            obj.pop(field, None)
         if isinstance(payload, BoundPayload):
             obj['_citation_frame'] = copy.deepcopy(payload.citation_frame)
         return obj
@@ -1438,8 +1460,8 @@ class FullLiveProvider:
 
     def _build_metadata(self, stage_id, part, place, evidence, parsed, prior=None, *, mode='standard'):
         meta = {"evidence": evidence}
-        from .full_citations import RESEARCH_STAGES
-        if stage_id in RESEARCH_STAGES and '_citation_frame' in parsed:
+        from .full_citations import CITATION_STAGES
+        if stage_id in CITATION_STAGES and '_citation_frame' in parsed:
             # A list preserves every part's frame through the existing stage
             # assembly; a single dict would be overwritten by the next part.
             meta['citation_frames'] = [copy.deepcopy(parsed['_citation_frame'])]

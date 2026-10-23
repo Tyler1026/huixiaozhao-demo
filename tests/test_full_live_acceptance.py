@@ -38,7 +38,7 @@ class StructuredTransport:
         stage=re.search(r'当前阶段：([^\n]+)',text).group(1)
         part=re.search(r'当前子章节：([^\n]+)',text).group(1)
         refs=list(dict.fromkeys(self.sources))[-8:]
-        if stage=='fact_check':
+        if stage=='fact_check' or stage.startswith('enterprises_'):
             # Targeted company searches retain only their accepted sources;
             # the offline model must cite URLs actually present in its prompt.
             refs=re.findall(r'^\[\d+\].*? — (https://[^\s（]+)（发布日期：',text,re.MULTILINE)
@@ -106,7 +106,7 @@ class DeepStructuredTransport(StructuredTransport):
             part = re.search(r'当前子章节：([^\n]+)', user).group(1)
             start, end = {'扩产信号': (0, 5), '扩产信号2': (5, 10), '扩产信号3': (10, 15),
                           '扩产信号4': (15, 20), '扩产信号5': (20, 25)}[part]
-            refs = list(dict.fromkeys(self.sources))[-8:]
+            refs = re.findall(r'^\[\d+\].*? — (https://[^\s（]+)（发布日期：', user, re.MULTILINE)
             payload = json.loads(response.body)
             body = json.loads(payload['choices'][0]['message']['content'])
             body['selected'] = [self.company(n, refs[n % len(refs)]) for n in range(start, end)]
