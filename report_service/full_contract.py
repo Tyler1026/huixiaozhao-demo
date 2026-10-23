@@ -487,10 +487,13 @@ def validate(stage_id, text, metadata=None, synthetic=False, *, mode='standard')
         text = text or ""
 
     stage = get_stage(stage_id, mode=mode)
+    meta = metadata if isinstance(metadata, dict) else {}
     content_lines = [line.strip() for line in text.splitlines() if line.strip()]
     nlines = len(content_lines)
     if not synthetic and content_lines:
-        repeated = sum(n - 1 for n in Counter(content_lines).values() if n > 1)
+        from .full_citations import comparison_keys
+        compared = comparison_keys(content_lines, meta.get('citation_frames', []))
+        repeated = sum(n - 1 for n in Counter(compared).values() if n > 1)
         if repeated > len(content_lines) * .2:
             errors.append('repeated filler exceeds 20 percent of substantive lines')
     if nlines < stage["min_lines"]:
@@ -503,7 +506,6 @@ def validate(stage_id, text, metadata=None, synthetic=False, *, mode='standard')
 
     errors.extend(_validate_urls(text))
 
-    meta = metadata if isinstance(metadata, dict) else {}
     errors.extend(_validate_evidence(stage["research"], meta, synthetic, stage_id, mode=mode))
 
     if stage_id == 'industry':

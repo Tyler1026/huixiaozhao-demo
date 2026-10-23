@@ -36,6 +36,7 @@ invented, and never turned into a confirmed ``未落地``.
 from __future__ import annotations
 
 import datetime
+import copy
 import json
 import re
 import time
@@ -286,20 +287,24 @@ class FullLiveProvider:
                 stage_id, part, place, prior, prior_text, floor, mode,
                 parsed, metadata, previous, evidence)
         previous_text = previous.get('text', '') if isinstance(previous, dict) else previous
+        previous_frames = previous.get('metadata', {}).get('citation_frames', []) if isinstance(previous, dict) else []
+        citation_frames = None
+        if '_citation_frame' in parsed:
+            citation_frames = list(previous_frames) + [parsed['_citation_frame']]
         if mode == 'standard' and stage_id == 'fact_check' and part == '五星企业信号':
             metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior, mode=mode)
             feedback = self._high_star_gap(parsed, metadata)
             if feedback:
                 text, metadata = self._project_standard_high_star(prior, metadata, feedback)
         try:
-            self._validate_part_text(text, floor, previous_text)
+            self._validate_part_text(text, floor, previous_text, citation_frames=citation_frames)
         except FullProviderError as exc:
             if (mode != 'standard' or stage_id not in _REPETITION_CORRECTION_STAGES
                     or exc.failure_code != 'quality' or str(exc) != 'part contains repeated filler'):
                 raise
             # Only the actual unchanged repetition gate permits one rewrite.
             # Reuse all inputs; no search, checkpoint or automatic text cleanup.
-            feedback = self._repetition_feedback(text, previous_text)
+            feedback = self._repetition_feedback(text, previous_text, citation_frames=citation_frames)
             try:
                 payload = self._chat_part(stage_id, part, place, prior_text,
                                           self._usable_evidence(saved_evidence + evidence),
@@ -308,7 +313,9 @@ class FullLiveProvider:
                 raise _to_provider_error(correction_exc)
             parsed = self._parse_part(stage_id, part, payload, all_evidence, prior)
             text = parsed['text']
-            self._validate_part_text(text, floor, previous_text)
+            if '_citation_frame' in parsed:
+                citation_frames = list(previous_frames) + [parsed['_citation_frame']]
+            self._validate_part_text(text, floor, previous_text, citation_frames=citation_frames)
         projection_audit = []
         if mode == 'standard' and stage_id in {'action', 'summary', 'compact'}:
             from .full_synthesis import project_decision_text, project_location_prose
@@ -549,9 +556,13 @@ class FullLiveProvider:
                 if line.strip() and line.strip() != '---']
 
     @classmethod
-    def _repetition_feedback(cls, text, previous_text):
+    def _repetition_feedback(cls, text, previous_text, *, citation_frames=None):
         lines = cls._content_lines(text)
         previous = [line.strip() for line in str(previous_text or '').splitlines() if line.strip()]
+        if citation_frames is not None:
+            from .full_citations import comparison_keys
+            lines = comparison_keys(lines, citation_frames)
+            previous = comparison_keys(previous, citation_frames)
         return {
             'kind': 'research_repetition',
             'current_line_count': len(lines),
@@ -559,19 +570,23 @@ class FullLiveProvider:
             'shared_prior_line_count': len(set(lines).intersection(previous)),
         }
 
-    def _validate_part_text(self, text, floor, previous_text=''):
+    def _validate_part_text(self, text, floor, previous_text='', *, citation_frames=None):
         lines = self._content_lines(text)
         if len(lines) < floor:
             raise FullProviderError('part line floor not met', 'quality', safe_metrics={
                 'line_count': len(lines), 'min_lines': floor, 'text_chars': len(text),
                 'literal_newline_count': text.count(r'\n'),
             })
-        repeated = sum(n - 1 for n in Counter(lines).values() if n > 1)
+        from .full_citations import comparison_keys
+        compared = comparison_keys(lines, citation_frames) if citation_frames is not None else lines
+        repeated = sum(n - 1 for n in Counter(compared).values() if n > 1)
         if repeated > len(lines) * .2:
             raise FullProviderError('part contains repeated filler', 'quality')
         if isinstance(previous_text, str) and previous_text.strip():
             combined = previous_text.rstrip() + '\n\n---\n\n' + text
             combined_lines = [line.strip() for line in combined.splitlines() if line.strip()]
+            if citation_frames is not None:
+                combined_lines = comparison_keys(combined_lines, citation_frames)
             repeats = sum(n - 1 for n in Counter(combined_lines).values() if n > 1)
             if repeats > len(combined_lines) * .2:
                 raise FullProviderError('part contains repeated filler', 'quality')
@@ -1091,6 +1106,12 @@ class FullLiveProvider:
         return host.lower() or "未知来源"
 
     def _chat_part(self, stage_id, part, place, prior_text, evidence, *, mode='standard', min_lines=None, target_names=None, excluded_names=None, candidate_count=5, scoring_targets=None, scoring_batch=None, correction_feedback=None):
+        from .full_citations import RESEARCH_STAGES
+        bind_citations = stage_id in RESEARCH_STAGES
+        if bind_citations:
+            # Freeze precisely the list used below, not accumulated stage
+            # evidence or the potentially different list of another call.
+            evidence = copy.deepcopy(evidence)
         instructions = _PART_INSTRUCTIONS.get(stage_id, _DEFAULT_PART_INSTRUCTION)
         user_blocks = [
             f"地区：{place}",
@@ -1122,6 +1143,13 @@ class FullLiveProvider:
                 )
             user_blocks.append("\n".join(ev_parts))
         user_blocks.append("本子章节任务：\n" + instructions)
+        if bind_citations:
+            user_blocks.append('来源编号仅对应本次上方列出的检索来源。引用时使用【来源:1】或【来源:1,2】，'
+                               '编号须在本次列表范围内；不得使用裸[1]、前序章节的编号或自行编造编号。'
+                               '完整URL也必须逐字出现在本次检索来源中，不得仅因前序正文出现而沿用。'
+                               'Markdown链接也只允许本次来源中的HTTPS URL。'
+                               '不得自行生成“部件名来源1”这类服务器标签。'
+                               '服务器会在保存前把本次编号绑定为实际来源URL。')
         stage = get_stage(stage_id, mode=mode)
         floor = min_lines if min_lines is not None else (stage['min_lines'] + len(stage['parts']) - 1) // len(stage['parts'])
         user_blocks.append(f'本子章节至少{floor}行实质内容，建议{floor}至{floor + 8}行，每条独立换行（JSON text中使用\\n），不以空行、分隔符或重复句子凑数。'
@@ -1308,7 +1336,17 @@ class FullLiveProvider:
         started = time.monotonic()
         try:
             data = self._live._chat(messages, providers.MAX_OUTPUT_TOKENS, json_mode=True)
-            return self._extract_text(data)
+            payload = self._extract_text(data)
+            if not bind_citations:
+                return payload
+            from .full_citations import BoundPayload, CitationError, bind_text
+            parsed = self._parse_part(stage_id, part, payload, evidence, None)
+            try:
+                text, frame = bind_text(parsed['text'], evidence, stage_id, part)
+            except CitationError:
+                raise FullProviderError('research citation reference is invalid', 'quality') from None
+            parsed['text'] = text
+            return BoundPayload(json.dumps(parsed, ensure_ascii=False, allow_nan=False), frame)
         except Exception as exc:
             error = _to_provider_error(exc)
             error.safe_metrics.update(operation='chat', elapsed_ms=int((time.monotonic() - started) * 1000))
@@ -1356,6 +1394,12 @@ class FullLiveProvider:
             raise FullProviderError(
                 f"stage {stage_id!r} part {part!r}: model JSON missing non-empty 'text'", "quality"
             )
+        # Only the private return type created at the real chat boundary may
+        # supply a frame. A similarly named field in model JSON is discarded.
+        from .full_citations import BoundPayload
+        obj.pop('_citation_frame', None)
+        if isinstance(payload, BoundPayload):
+            obj['_citation_frame'] = copy.deepcopy(payload.citation_frame)
         return obj
 
     def _parse_json(self, payload):
@@ -1375,6 +1419,11 @@ class FullLiveProvider:
 
     def _build_metadata(self, stage_id, part, place, evidence, parsed, prior=None, *, mode='standard'):
         meta = {"evidence": evidence}
+        from .full_citations import RESEARCH_STAGES
+        if stage_id in RESEARCH_STAGES and '_citation_frame' in parsed:
+            # A list preserves every part's frame through the existing stage
+            # assembly; a single dict would be overwritten by the next part.
+            meta['citation_frames'] = [copy.deepcopy(parsed['_citation_frame'])]
         if stage_id == 'industry':
             from .full_directions import normalise_directions
             try:
