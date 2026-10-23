@@ -45,6 +45,12 @@ def _contract_issue(error):
 def _provider_issue(error):
     # No substring of the exception itself leaves this process. Even parse
     # errors may include raw model text or upstream response material.
+    try:
+        reason = getattr(error, 'diagnostic_reason', None)
+    except Exception:
+        reason = None
+    if type(reason) is str and reason == 'no_usable_search_evidence':
+        return 'no_usable_search_evidence'
     raw_message = str(error)
     entity_issues = {
         'company identity needs a retrieved source URL': 'company_identity_source',
@@ -134,6 +140,10 @@ def _safe_provider_metrics(error):
         return {}
     limits = {'line_count': 10_000, 'min_lines': 10_000,
               'evidence_count': 10_000, 'min_evidence_urls': 10_000,
+              'normalized_result_count': 10_000, 'usable_result_count': 10_000,
+              'rejected_result_count': 10_000, 'non_https_result_count': 10_000,
+              'empty_excerpt_count': 10_000, 'invalid_url_count': 10_000,
+              'other_rejected_result_count': 10_000,
               'text_chars': MAX_RESULT_BYTES, 'literal_newline_count': 10_000,
               'elapsed_ms': 7_200_000, 'query_count': 10_000,
               'successful_queries': 10_000, 'failed_queries': 10_000,

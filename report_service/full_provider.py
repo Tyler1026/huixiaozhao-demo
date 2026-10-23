@@ -81,9 +81,11 @@ class FullProviderError(providers.ProviderError):
 
     VALID_CODES = frozenset({"configuration", "rate_limit", "timeout", "upstream", "quality"})
 
-    def __init__(self, message, failure_code, *, safe_metrics=None):
+    def __init__(self, message, failure_code, *, safe_metrics=None, diagnostic_reason=None):
         self.failure_code = failure_code
         self.safe_metrics = dict(safe_metrics) if isinstance(safe_metrics, dict) else {}
+        self.diagnostic_reason = (diagnostic_reason if type(diagnostic_reason) is str and diagnostic_reason in
+                                  {'no_usable_search_evidence'} else None)
         super().__init__(message)
 
 
@@ -237,7 +239,9 @@ class FullLiveProvider:
             if not evidence:
                 raise FullProviderError(
                     f"research stage {stage_id!r} part {part!r} requires search evidence "
-                    "but none was retrieved (fail closed)", 'quality'
+                    "but none was retrieved (fail closed)", 'quality',
+                    diagnostic_reason='no_usable_search_evidence',
+                    safe_metrics={'operation': 'search', 'evidence_count': 0}
                 )
 
         all_evidence = self._usable_evidence(old_evidence + saved_evidence + evidence)
@@ -824,6 +828,7 @@ class FullLiveProvider:
         queries = _queries_for(stage_id, part, place)
         complete_population = (mode == 'standard' and stage_id == 'population'
                                and part == get_stage(stage_id, mode=mode)['parts'][-1])
+        ordinary_research = mode == 'standard' and stage_id in _EMPTY_SEARCH_TOPICS
         company_check = stage_id == 'fact_check' and part == '五星企业信号'
         targeted_check = company_check and bool(self._selected_companies(prior))
         if company_check:
@@ -870,6 +875,10 @@ class FullLiveProvider:
                 queries = [f'{topic} 全国 产业链 企业 竞争 风险', f'{topic} {place} 招商 产业链 匹配']
         started = time.monotonic()
         failures, successes = [], 0
+        result_counts = dict.fromkeys(('normalized_result_count', 'usable_result_count',
+                                     'rejected_result_count', 'non_https_result_count',
+                                     'empty_excerpt_count', 'invalid_url_count',
+                                     'other_rejected_result_count'), 0)
         previous = prior.get(stage_id, {}) if isinstance(prior, dict) else {}
         saved_sources = self._usable_evidence(previous.get('metadata', {}).get('evidence', [])) if isinstance(previous, dict) else []
 
@@ -894,14 +903,14 @@ class FullLiveProvider:
                         cached.append(dict(observation, excerpt=excerpt))
             return cached
 
-        def retrieve(query):
+        def retrieve(query, *, expand=False):
             cached = cached_query(query)
             if cached:
                 return [{'_cached_evidence_record': entry} for entry in cached]
             # The final population part must close the whole chapter's source
             # deficit. Use the existing transport bound rather than letting a
             # small per-query default discard potentially useful candidates.
-            count = providers.MAX_SEARCH_COUNT if complete_population else self._live.search_count
+            count = providers.MAX_SEARCH_COUNT if complete_population or expand else self._live.search_count
             payload = self._live._search(query, count)
             return self._live._normalize_results(payload)
 
@@ -942,9 +951,12 @@ class FullLiveProvider:
                     seen.add(canon)
                     out.append(entry)
                     continue
+                result_counts['normalized_result_count'] += 1
                 url = item.get("url", "")
                 canon = canonical_url(url)
                 if not canon:
+                    result_counts['rejected_result_count'] += 1
+                    result_counts['invalid_url_count'] += 1
                     continue
                 snippet = item.get('snippet')
                 entry = {
@@ -960,7 +972,23 @@ class FullLiveProvider:
                     "search_place": place,
                 }
                 if not self._usable_evidence([entry]):
+                    # Mutually exclusive primary rejection reasons, counted
+                    # per observed result (not per distinct source URL).
+                    result_counts['rejected_result_count'] += 1
+                    normalized_url = contract.normalize_url(url)
+                    if normalized_url is None:
+                        reason = 'invalid_url_count'
+                    elif normalized_url[0] != 'https':
+                        reason = 'non_https_result_count'
+                    elif not entry['excerpt'].strip() or entry['excerpt'].strip() == url.strip():
+                        reason = 'empty_excerpt_count'
+                    elif contract._validate_urls(url):
+                        reason = 'invalid_url_count'
+                    else:
+                        reason = 'other_rejected_result_count'
+                    result_counts[reason] += 1
                     continue
+                result_counts['usable_result_count'] += 1
                 new_source = canon not in seen
                 seen.add(canon)
                 out.append(entry)
@@ -975,11 +1003,21 @@ class FullLiveProvider:
         metadata = previous.get('metadata', {}) if isinstance(previous, dict) else {}
         cached = metadata.get('evidence', []) if isinstance(metadata, dict) else []
         cached = self._usable_evidence(cached)
-        if (mode == 'standard' and critical is None and candidate_missing is None
+        # A successful lookup with no usable evidence gets one bounded repair
+        # wave. Do not turn upstream failures into quality failures or add this
+        # wave to population's existing final-chapter completion batch.
+        empty_recovery = (ordinary_research and not complete_population and not failures
+                          and not usable and not cached)
+        final_deficit = (mode == 'standard' and critical is None and candidate_missing is None
                 and part == get_stage(stage_id, mode=mode)['parts'][-1]
                 and len({canonical_url(item['url']) for item in cached + usable})
-                    < contract.minimum_evidence_urls(mode)):
-            supplements = [f'{place} {part} 补充资料 统计公报 官方发布 年度报告']
+                    < contract.minimum_evidence_urls(mode))
+        if empty_recovery or final_deficit:
+            if empty_recovery:
+                supplements = [queries[0]] + [f'{place} {part} {topic}'
+                                              for topic in _EMPTY_SEARCH_TOPICS[stage_id]]
+            else:
+                supplements = [f'{place} {part} 补充资料 统计公报 官方发布 年度报告']
             if complete_population:
                 # Earlier parts are immutable. A single repeated supplement
                 # cannot recover a sparse chapter, so cover complementary
@@ -988,9 +1026,10 @@ class FullLiveProvider:
                 supplements.extend(template.format(place=place)
                                    for template in _POPULATION_COMPLETION_QUERIES)
             queries.extend(supplements)
-            if complete_population:
-                with ThreadPoolExecutor(max_workers=4) as executor:
-                    pending = [executor.submit(retrieve, query) for query in supplements]
+            if len(supplements) > 1:
+                with ThreadPoolExecutor(max_workers=len(supplements)) as executor:
+                    pending = [executor.submit(retrieve, query, expand=empty_recovery)
+                               for query in supplements]
                     for query, future in zip(supplements, pending):
                         try:
                             keep_results(future.result(), query)
@@ -1015,8 +1054,17 @@ class FullLiveProvider:
             error = critical or failures[0]
             error.safe_metrics.update(operation='search', elapsed_ms=int((time.monotonic() - started) * 1000),
                                       query_count=len(queries), successful_queries=successes,
-                                      failed_queries=len(failures), cached_source_count=len(cached))
+                                      failed_queries=len(failures), cached_source_count=len(cached),
+                                      **result_counts)
             raise error from None
+        if ordinary_research and not usable and not cached:
+            raise FullProviderError(
+                'no usable search evidence', 'quality',
+                diagnostic_reason='no_usable_search_evidence',
+                safe_metrics=dict(operation='search', elapsed_ms=int((time.monotonic() - started) * 1000),
+                                  query_count=len(queries), successful_queries=successes,
+                                  failed_queries=len(failures), cached_source_count=0,
+                                  evidence_count=0, **result_counts))
         if complete_population:
             found = len({canonical_url(item['url']) for item in cached + usable})
             required = contract.minimum_evidence_urls(mode)
@@ -1600,6 +1648,21 @@ _POPULATION_COMPLETION_QUERIES = (
     '{place} 第七次人口普查 受教育程度 劳动年龄人口',
     '{place} 统计年鉴 从业人员 职业教育 毕业生',
 )
+
+
+# Only ordinary standard research may recover a wholly unusable search. The
+# part name stays in every query; enterprise and fact-check identities retain
+# their dedicated lookup rules. Never rewrite an observed source's scheme.
+_EMPTY_SEARCH_TOPICS = {
+    'economy': ('统计公报 统计局 官方发布', '国民经济 政府工作报告 专项规划'),
+    'population': ('人口普查 人口统计 官方发布', '人力资源 社会保障 统计公报'),
+    'transport': ('交通运输 自然资源 官方公报', '基础设施 专项规划 政府工作报告'),
+    'life': ('公共服务 统计公报 官方发布', '教育 医疗 住房 民生 政府工作报告'),
+    'industry': ('工业经济 经信局 官方发布', '产业规划 园区 主导产业 政府工作报告'),
+    'competition': ('营商环境 发展规划 统计公报', '区域对比 招商 产业发展 官方发布'),
+    'policy': ('政策文件 政府公报 正式发布', '产业扶持 实施办法 官方通知'),
+    'chain': ('产业链 工业经济 官方发布', '重点企业 配套 产业规划 官方资料'),
+}
 
 
 # Per-stage, per-part queries.  Each part maps to 1+ independent Chinese queries
