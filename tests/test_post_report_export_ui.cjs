@@ -25,7 +25,7 @@ function boot(extra={}){
       }
       return {style:{},setAttribute(){},click(){},remove(){}};
     }},printCalls:0,...extra};
-  c.P=()=>c.PROJECTS[c.cur];vm.createContext(c);vm.runInContext(funcs.map(f=>declaration(...f)).join('\n'),c);
+  c.P=()=>c.PROJECTS[c.cur];vm.createContext(c);vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend/shared/kb-materials.js'),'utf8')+'\n'+funcs.map(f=>declaration(...f)).join('\n'),c);
   return {c,project,state,printed,toasts,documents,timers};
 }
 test('numbered compact report creates substantive brief and keeps eligibility, uncertainty and original numbering',()=>{

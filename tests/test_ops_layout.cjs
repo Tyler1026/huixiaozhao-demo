@@ -38,6 +38,7 @@ async function boot() {
     fetch: async (url, options = {}) => {calls.push({url, options}); return response(401, {ok: false, error: 'not_authenticated', message: '请登录'});},
   };
   ctx.window = ctx; ctx.globalThis = ctx; vm.createContext(ctx);
+  for(const file of ['frontend/shared/kb-materials.js','frontend/shared/sync-feedback.js'])if(!manifest['ops.html'].parts.includes(file))vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),ctx);
   for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
     if (!/\bsrc=/.test(match[1])) vm.runInContext(match[2], ctx, {filename: 'ops.html'});
   }

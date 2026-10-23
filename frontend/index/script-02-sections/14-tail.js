@@ -291,7 +291,8 @@ function clearPersist(){
   var flush=function(){
     try{
       if(!AUTH||_authState!=='ready')return;
-      var body=JSON.stringify(_safeSyncSnapshot(JSON.parse(localStorage.getItem(LS_KEY)||'{}')));
+      var pending=typeof WORKSPACE_SYNC!=='undefined'&&WORKSPACE_SYNC.pending;
+      var body=workspaceSyncCurrent(pending)?pending.body:JSON.stringify(_safeSyncSnapshot(JSON.parse(localStorage.getItem(LS_KEY)||'{}')));
       if(navigator.sendBeacon){
         var blob=new Blob([body],{type:'application/json'});
         navigator.sendBeacon('/api/sync', blob);
@@ -539,7 +540,10 @@ function kbSyncSession(key,st,selectionOnly){
   if(!AUTH||_authState!=='ready'||!_isAuthorizedChatKey(key))return Promise.resolve(false);
   var sessions=selectionOnly?st.sessions.filter(function(s){return s.id===st.activeId;}).map(function(s){return {id:s.id,title:s.title,ts:s.ts,messages:[]};}):st.sessions;
   var body={KB_CHAT:{},RESET_GEN:RESET_GEN};body.KB_CHAT[key]={sessions:sessions,activeId:st.activeId,selectedAt:st.selectedAt||0};
-  return fetch('/api/sync',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),keepalive:!!selectionOnly}).then(function(r){return !!r.ok;}).catch(function(){return false;});
+  var pending=typeof WORKSPACE_SYNC!=='undefined'?WORKSPACE_SYNC.pending:null;
+  return fetch('/api/sync',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),keepalive:!!selectionOnly})
+    .then(function(response){return response.json().then(function(result){if(!response.ok||!result||result.ok!==true||result.rejected)throw new Error('会话尚未保存');return true;});})
+    .catch(function(){if(pending&&typeof workspaceSyncCurrent==='function'&&workspaceSyncCurrent(pending)&&WORKSPACE_SYNC.pending===pending)workspaceSyncNotice('会话尚未保存到云端，请重试。',true);return false;});
 }
 function kbRequestContext(){
   if(!AUTH||_authState!=='ready'||!cur)return null;
@@ -668,13 +672,15 @@ function kbActiveTopic(){var key=kbScopeKey(),name=key&&_kbTopicScopes[key],p=P(
 function kbSafeSources(sources){
   return (Array.isArray(sources)?sources:[]).filter(function(source){return source&&typeof source==='object';}).slice(0,20).map(function(source){
     var urls=[];(Array.isArray(source.urls)?source.urls:[]).forEach(function(raw){try{var u=new URL(String(raw));if(/^https?:$/.test(u.protocol)&&!u.username&&!u.password&&urls.indexOf(u.href)<0)urls.push(u.href);}catch(_){}});
-    return {id:String(source.id||''),cite:String(source.cite||''),topic:String(source.topic||''),text:String(source.text||''),urls:urls,traceable:urls.length>0};
+    var result={id:String(source.id||''),cite:String(source.cite||''),topic:String(source.topic||''),text:String(source.text||''),urls:urls,traceable:urls.length>0};
+    if(source.correction&&typeof source.correction==='object'&&['active','needs_review'].indexOf(source.correction.status)>=0)result.correction={status:source.correction.status,sectionTitle:String(source.correction.sectionTitle||'').slice(0,500)};
+    return result;
   });
 }
 function kbSourcesHtml(sources){
   if(!sources.length)return '<p class="kb-sources-empty">本次回答未返回可追溯材料，相关结论需要另行核实。</p>';
   return sources.map(function(s,i){return '<article class="kb-source-card"><strong>['+(i+1)+'] '+kbEscape(s.cite||s.topic||'材料片段')+'</strong>'+
-    '<p>'+kbEscape(s.text.slice(0,220))+'</p>'+(s.text.length>220?'<details><summary>查看完整片段</summary><p>'+kbEscape(s.text)+'</p></details>':'')+
+    (s.correction?'<p class="kb-detail-state">'+(s.correction.status==='needs_review'?'旧修订 · 待复核（原材料已更新）':'用户纠正 · 待核验')+'</p>':'')+'<p>'+kbEscape(s.text.slice(0,220))+'</p>'+(s.text.length>220?'<details><summary>查看完整片段</summary><p>'+kbEscape(s.text)+'</p></details>':'')+
     (s.urls.length?'<div class="kb-source-links">'+s.urls.map(function(u,n){return '<a href="'+kbEscape(u)+'" target="_blank" rel="noopener noreferrer">原始来源'+(s.urls.length>1?' '+(n+1):'')+'</a>';}).join(' ' )+'</div>':'<small>未附原始链接 · 待核来源</small>')+'</article>';}).join('');
 }
 function kbRenderSources(sources,context,state){
@@ -692,7 +698,8 @@ function kbSubmitQuestion(query,options){
   var session=KB_CHAT[current.key].sessions.filter(function(s){return s.id===current.sessionId;})[0];
   var ctx=kbBeginRequest(query,container,kbHistory(session,query,false));if(!ctx)return false;
   var node=document.createElement('div');node.className='message is-user';node.innerHTML='<div class="message-bubble"><p>'+kbEscape(query)+'</p></div>';
-  container.appendChild(node);kbChatPush('user',node.outerHTML,{context:ctx,plainText:query});
+  container.appendChild(node);var savedUser=kbChatPush('user',node.outerHTML,{context:ctx,plainText:query});
+  var userBubble=node.querySelector('.message-bubble');if(userBubble&&savedUser&&typeof userBubble.insertAdjacentHTML==='function')userBubble.insertAdjacentHTML('beforeend',kbLongTermButton(savedUser));
   kbTrackScroll(ctx,container);kbScrollToEnd(container);
   var topic=options.topic||kbActiveTopic();ctx.topic=topic?topic.t:'';
   if(options.chunks)kbAnswerRender(container,query,options.chunks,(P()||{}).city,ctx);
@@ -1094,6 +1101,16 @@ function restoreIngestCtx(m){
   window._lastIngestKbIdx = (m.kbIdx===undefined||m.kbIdx===null?null:m.kbIdx);
 }
 // 把已存的历史对话回放进 #kbConv（在 render 重建容器后调用）
+function kbLongTermButton(message){
+  if(!message||message.role!=='user'||!message.id)return '';
+  return '<div><button type="button" class="kb-detail-secondary" onclick="kbSaveUserMessage('+kbEscape(JSON.stringify(message.id))+')">保存为长期材料 / 纠正</button></div>';
+}
+function kbSaveUserMessage(id){
+  var store=kbSessionStore(cur),message=null;
+  (store&&store.sessions||[]).some(function(session){message=(session.messages||[]).find(function(item){return item.id===id&&item.role==='user';});return !!message;});
+  if(!message){toast('消息已变化，请重新选择');return;}
+  openLongTermMaterial(cur,kbPlainMessage(message));
+}
 function kbChatReplay(){
   kbCancelHiddenRequests();
   try{renderKbSessionBar();}catch(_){}
@@ -1120,7 +1137,7 @@ function kbChatReplay(){
     if(!m.text && m.html){ frag+=m.html; return; }
     var content=m.text||'';
     if(m.role==='user'){
-      frag+='<div class="message is-user"><div class="message-bubble"><p>'+content+'</p></div></div>';
+      frag+='<div class="message is-user"><div class="message-bubble"><p>'+content+'</p>'+kbLongTermButton(m)+'</div></div>';
     } else {
       // 回放时去除交互按钮（onclick已失效）
       var safeContent=content.replace(/<button[^>]*onclick[^>]*>.*?<\/button>/gi,'').replace(/<div[^>]*id="kbIngestActions"[^>]*>.*?<\/div>/gi,'');
@@ -1339,29 +1356,10 @@ function fillComposer(q){
    ══════════════════════════════════════════════════════════════ */
 
 /* ── 1. 知识语料库 buildKBCorpus(city) ── */
-function kbKnownChunk(item,topic,index){
-  var structured=item&&typeof item==='object'?item:null;
-  var chunk={id:topic+':'+index,topic:topic,tags:topicTags(topic),text:structured?String(structured.text||''):String(item||''),cite:topic,
-    origin:structured?(structured.origin||'ai'):'ai',nature:structured?(structured.nature||'base'):'base'};
-  ['src','source','sources','url','urls','quote'].forEach(function(field){if(structured&&structured[field]!==undefined)chunk[field]=structured[field];});
-  return chunk;
-}
+function kbKnownChunk(item,topic,index){return materialKnownChunk(item,topic,index);}
 function buildKBCorpus(city){
   var p=P(); var isSZ=city&&city.indexOf('随州')>=0;
-  // 每条 chunk: {id, topic, tags:[], text, cite}
-  var chunks=[];
-  if(p&&p.kb){
-    p.kb.forEach(function(k,ki){
-      kbEffectiveKnown(p,ki,cur).forEach(function(t,i){
-        var chunk=kbKnownChunk(t,k.t,i);
-        chunks.push(chunk);
-      });
-    });
-  }
-  // 上传文件 chunk 只在「当前项目城市 === 请求城市」时纳入，杜绝跨城市材料泄漏
-  var _curCity = (cur && PROJECTS[cur] && PROJECTS[cur].city) || '';
-  var fc=(cur && _curCity===city && KB_FILE_CHUNKS[cur])||[];
-  if(fc.length){ chunks=chunks.concat(fc); console.log('[RAG] +'+fc.length+' file chunks'); }
+  var chunks=p&&p.city===city?knowledgeMaterialCorpus(cur,p):[];
   // 追加竞争格局数据（随州专项）
   if(isSZ){
     var compChunks=[
@@ -1985,27 +1983,8 @@ function kbEditKey(event){
   if(event.key==='Escape'){event.preventDefault();event.stopPropagation();if(document.getElementById('kbEditorDiscard'))kbKeepEditing();else kbCancelEdit();}
   else if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();if(!document.getElementById('kbEditorDiscard'))saveKbEdit(kbEditSession.kbIdx,kbEditSession.itemIdx);}
 }
-function kbValidateEditReceipt(record,body){
-  return record&&typeof record==='object'&&typeof record.id==='string'&&record.id&&
-    Number.isInteger(record.revision)&&record.revision>body.expectedRevision&&
-    record.status==='edited'&&typeof record.account==='string'&&typeof record.ts==='number'&&isFinite(record.ts)&&
-    (body.sourceIndex===null||record.sectionIndex===body.sectionIndex)&&record.sectionTitle===body.sectionTitle&&record.sourceIndex===body.sourceIndex&&
-    kbValueEqual(record.sourceItem,body.sourceItem)&&kbValueEqual(record.baseReportVersion,body.baseReportVersion)&&
-    (body.editId===null||record.id===body.editId)&&
-    (body.action==='delete'?record.deleted===true:record.text===body.text&&record.deleted!==true);
-}
-async function kbRequestEdit(body){
-  var controller=typeof AbortController==='function'?new AbortController():null;
-  var timer=controller?setTimeout(function(){controller.abort();},20000):null;
-  try{
-    var response=await fetch('/api/kb-edit',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:controller?controller.signal:undefined});
-    var result=await response.json();
-    if(!response.ok||!result||!result.ok)throw new Error(result&&result.message||'保存未完成，请重试。');
-    if(!kbValidateEditReceipt(result.record,body))throw new Error('保存回执不完整，请刷新确认后重试。');
-    return result.record;
-  }catch(error){if(error&&error.name==='AbortError')throw new Error('保存响应超时，草稿已保留；请刷新确认云端结果后重试。');if(error&&error.name==='TypeError')throw new Error('连接中断，草稿已保留，请稍后重试。');throw error;}
-  finally{if(timer!==null)clearTimeout(timer);}
-}
+function kbValidateEditReceipt(record,body){return materialValidateEditReceipt(record,body);}
+async function kbRequestEdit(body){return materialRequestEdit(body);}
 async function saveKbEdit(kbIdx,itemIdx){
   if(document.getElementById('kbEditorDiscard'))return;
   var s=kbEditSession;if(!s||s.saving||s.kbIdx!==kbIdx||s.itemIdx!==itemIdx)return;
@@ -2043,18 +2022,17 @@ async function saveKbEdit(kbIdx,itemIdx){
 async function kbRemoveRevision(kbIdx,itemIdx){
   var p=P(),item=p&&kbEffectiveKnown(p,kbIdx,cur)[itemIdx],record=item&&kbEditRecord(cur,item);
   if(!record||window._kbRemovingRevision)return;
-  var note=record.sourceIndex===null;
-  if(!confirm(note?'删除这条补充资料？':'恢复为报告原文？当前人工修订将停止用于问答。'))return;
-  var epoch=originalUploadEpoch(),key=cur;
-  window._kbRemovingRevision=true;
+  var note=record.sourceIndex===null,retained=item._kbEditStatus==='needs_review';
+  if(!confirm(retained?'删除这条待复核的旧修订？':note?'删除这条补充资料？':'恢复为报告原文？当前人工修订将停止用于问答。'))return;
+  var epoch=originalUploadEpoch(),key=cur;window._kbRemovingRevision=true;
   try{
-    var result=await kbRequestEdit({projectKey:key,sectionIndex:kbIdx,sectionTitle:p.kb[kbIdx].t,sourceIndex:record.sourceIndex,sourceItem:record.sourceItem,baseReportVersion:record.baseReportVersion,editId:record.id,expectedRevision:record.revision,action:'delete',resetGen:typeof RESET_GEN==='undefined'?null:RESET_GEN});
-    if(!originalUploadSessionCurrent(epoch))return;
-    window._serverRestoreSeq=(window._serverRestoreSeq||0)+1;window._serverSyncLock=false;
-    if(!KB_EDITS[key])KB_EDITS[key]={};KB_EDITS[key][result.id]=result;
-    if(cur===key&&P()===p){kbDetail(kbIdx);if(typeof refreshKbProgress==='function')refreshKbProgress();toast(note?'补充资料已删除。':'已恢复报告原文。');}
-  }catch(error){toast(error&&error.message||'未完成，请重试。');}
+    await materialDeleteRevision(key,record);if(!originalUploadSessionCurrent(epoch))return;
+    if(cur===key&&P()===p){kbDetail(kbIdx);if(typeof refreshKbProgress==='function')refreshKbProgress();toast(retained?'旧修订已删除。':note?'补充资料已删除。':'已恢复报告原文。');}
+  }catch(error){if(originalUploadSessionCurrent(epoch))toast(error&&error.message||'未完成，请重试。');}
   finally{window._kbRemovingRevision=false;}
+}
+function kbReviewRetained(kbIdx,itemIdx){
+  var item=materialEffectiveKnown(P(),kbIdx,cur)[itemIdx];if(item&&item._kbEditStatus==='needs_review')openLongTermMaterial(cur,item.text);
 }
 function addKbItem(kbIdx){
   var p=P(),k=p&&p.kb&&p.kb[kbIdx];if(!k||!Array.isArray(k.known))return;
@@ -2252,20 +2230,21 @@ function kbDetail(i){
     var raw=_rawKnown[pair.origIdx],meta=kbDetailMeta(raw,pos),warn=pair.text.indexOf('⚠️')>=0;
     var confirmed=KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][i]&&KB_CONFIRMS[cur][i][pair.origIdx];
     var isUser=raw&&typeof raw==='object'&&raw.origin==='user';
-    var edited=!!(raw&&raw._kbUserEdited);
+    var edited=!!(raw&&raw._kbUserEdited),needsReview=raw&&raw._kbEditStatus==='needs_review';
     if(edited)confirmed=false;
-    var state=edited?'已修改 · 待核验':confirmed&&confirmed.status==='confirmed'?'已确认':warn?'待确认':isUser?'用户补充':'';
+    var state=needsReview?'旧修订 · 待复核':edited?'已修改 · 待核验':confirmed&&confirmed.status==='confirmed'?'已确认':warn?'待确认':isUser?'用户补充':'';
     var duplicateCount=((window.__kbDupMap&&window.__kbDupMap[i]&&window.__kbDupMap[i][pair.origIdx])||[]).length;
     var protectedBase=raw&&raw.nature==='base'&&P().baseReportVersion;
     var revision=edited&&kbEditRecord(cur,raw);
-    var manage=revision?'<button class="kb-detail-secondary" onclick="kbRemoveRevision('+i+','+pair.origIdx+')">'+(revision.sourceIndex===null?'删除补充':'恢复原文')+'</button>':protectedBase?'':'<details class="kb-detail-manage"><summary>更多操作</summary><div class="kb-detail-manage-actions">'+
+    var manage=revision?'<button class="kb-detail-secondary" onclick="kbRemoveRevision('+i+','+pair.origIdx+')">'+(needsReview?'删除旧修订':revision.sourceIndex===null?'删除补充':'恢复原文')+'</button>':protectedBase?'':'<details class="kb-detail-manage"><summary>更多操作</summary><div class="kb-detail-manage-actions">'+
       '<button class="is-danger" onclick="deleteKbItem('+i+','+pair.origIdx+')" title="删除该条">✕ 删除</button></div></details>';
     var confirm=warn&&!confirmed&&!edited&&!protectedBase?'<button class="kb-detail-confirm" onclick="confirmKbItem('+i+','+pair.origIdx+')">✓ 确认'+(duplicateCount?'（'+(duplicateCount+1)+' 条）':'')+'</button>':'';
     return '<section id="kb-card-'+i+'-'+pair.origIdx+'" class="kb-detail-article" data-kb-section="'+pair.origIdx+'">'+
       '<header class="kb-detail-article-head"><div class="kb-detail-meta"><span class="kb-detail-section-label">资料 '+meta.number+'</span><span class="kb-detail-source-label" title="'+kbEscape(meta.file||meta.source)+'">'+kbEscape(meta.source)+'</span>'+
       (state?'<span class="kb-detail-state '+(warn&&!confirmed?'is-pending':'')+'">'+state+'</span>':'')+'</div>'+
-      '<div class="kb-detail-title-row"><h3>'+kbEscape(meta.title)+'</h3><button class="kb-detail-edit" onclick="editKbItem('+i+','+pair.origIdx+',-1)" aria-label="修改全文：'+kbEscape(meta.title)+'">修改全文</button></div></header>'+
-      '<div class="kb-detail-richtext">'+kbDetailEditableHtml(raw,i,pair.origIdx)+'</div>'+
+      '<div class="kb-detail-title-row"><h3>'+kbEscape(meta.title)+'</h3><button class="kb-detail-edit" onclick="'+(needsReview?'kbReviewRetained('+i+','+pair.origIdx+')':'editKbItem('+i+','+pair.origIdx+',-1)')+'" aria-label="'+(needsReview?'重新核对：':'修改全文：')+kbEscape(meta.title)+'">'+(needsReview?'重新核对':'修改全文')+'</button></div></header>'+
+      (needsReview?'<p class="kb-detail-disclaimer">原材料已更新。这条用户纠正保留待复核，尚未替换新材料；请重新核对后保存。</p>':'')+
+      '<div class="kb-detail-richtext">'+(needsReview?kbDetailTextHtml(raw.text):kbDetailEditableHtml(raw,i,pair.origIdx))+'</div>'+
       (duplicateCount&&warn&&!confirmed?'<p class="kb-detail-duplicate">合并了 '+(duplicateCount+1)+' 条同义表述，确认时将一并更新。</p>':'')+
       '<footer class="kb-detail-article-actions">'+confirm+manage+'</footer></section>';
   }).join(''):'<p class="kb-detail-empty">暂无已知内容，可基于此主题提问或补充资料。</p>';
@@ -2375,10 +2354,12 @@ function askAboutKb(i){
 }
 // 真实文件选择器：弹系统文件夹
 function pickLocalFile(kbTopicIdx){
+  var key=cur,epoch=originalUploadEpoch();
   var inp=document.createElement('input');
   inp.type='file';inp.multiple=true;
   inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
   inp.onchange=function(){
+    if(cur!==key||!originalUploadSessionCurrent(epoch))return;
     var files=Array.from(inp.files||[]);
     if(!files.length)return;
     closeKbDetail();
@@ -2445,26 +2426,6 @@ function ingestFiles(files, kbTopicIdx){
   });
 }
 
-/* 文本切 chunk — 按段落，每块约150字 */
-function textToChunks(text, fname, p, kbTopicIdx){
-  var topic=kbTopicIdx!=null&&p&&p.kb[kbTopicIdx] ? p.kb[kbTopicIdx].t : '上传材料';
-  text=text.replace(/\r\n/g,'\n').trim();
-  var paras=text.split(/\n{2,}/), chunks=[], buf='', ci=0;
-  paras.forEach(function(para){
-    para=para.trim(); if(!para) return;
-    buf+=(buf?' ':'')+para;
-    if(buf.length>=120){
-      chunks.push({id:'file:'+fname+':'+ci, topic:topic,
-        tags:topicTags(topic).concat([fname.replace(/\.[^.]+$/,''),'上传']),
-        text:buf.slice(0,300), cite:fname});
-      buf=''; ci++;
-    }
-  });
-  if(buf.trim()) chunks.push({id:'file:'+fname+':'+ci, topic:topic,
-    tags:topicTags(topic).concat(['上传']), text:buf.slice(0,300), cite:fname});
-  return chunks.slice(0,30);
-}
-
 /* 摄取完成 — 存 KB_FILE_CHUNKS，更新 kb.known，触发 RAG 摘要 */
 function finalizeIngest(chunks, files, kbTopicIdx, p, parseFailed){
   parseFailed = parseFailed || [];
@@ -2495,7 +2456,7 @@ function finalizeIngest(chunks, files, kbTopicIdx, p, parseFailed){
 
   refreshKbProgress();
   var c=document.getElementById('kbConv'); if(!c) return;
-  var totalChunks=KB_FILE_CHUNKS[cur].length;
+  var totalChunks=knowledgeMaterialCorpus(cur,p).length;
   var topicLabel=kbTopicIdx!=null&&p.kb&&p.kb[kbTopicIdx] ? p.kb[kbTopicIdx].t : '城市智库';
   var nd=document.createElement('div'); nd.className='message';
   // 【2026-09-21】此前无论是否真的解析出内容，一律提示「✅ 已摄取 N 个文件」。
@@ -2674,10 +2635,12 @@ function kbVerifyMaterial(){
     // 智能匹配：从全部智库条目中找与新文件内容最相关的条目对比
   var _allKnown=[];
   if(p.kb){
-    p.kb.forEach(function(t){
-      (t.known||[]).forEach(function(x){
-        var _xt=_kbText(x); if(_xt.indexOf('\ud83d\udcce')!==0)
-          _allKnown.push(_xt.replace(/^[\u2705\u26a0\ufe0f\s]+/,''));
+    p.kb.forEach(function(t,sectionIndex){
+      kbEffectiveKnown(p,sectionIndex,cur).forEach(function(x){
+        var _xt=_kbText(x); if(_xt.indexOf('\ud83d\udcce')!==0){
+          var state=x&&x._kbEditStatus==='needs_review'?'【旧版本用户修订，待复核】':x&&x._kbUserEdited?'【用户修订，待核验】':'';
+          _allKnown.push(state+_xt.replace(/^[\u2705\u26a0\ufe0f\s]+/,''));
+        }
       });
     });
   }
@@ -2764,7 +2727,7 @@ function kbVerifyMaterial(){
 
   var prompt=
     '【新上传文件原文】\n'+newText+'\n\n'
-    +'【智库已有结论（正确基准）】\n'
+    +'【智库已有材料（保留用户修订状态）】\n'
     +(topicKnown.length
         ? (topicKnown.join('\n')
            +'\n（以上为智库 '+_allKnown.length+' 条结论中与本文件相关的 '+topicKnown.length+' 条）')
@@ -2772,6 +2735,7 @@ function kbVerifyMaterial(){
     +'\n\n'
     +'任务：逐条核验新上传文件中每一个数据点。\n\n'
     +'核验方法：文件中的每个数字/百分比/数量，都去智库已有结论里找同一指标。\n'
+    +'- 用户修订尚待核验，旧版本用户修订尚待复核；保留其状态，不当作已核实事实。\n'
     +'- 数值一致 → 标记 ✅\n'
     +'- 数值不同 → 标记 ❌ 并写明双方数值\n'
     +'- 智库无此数据无法核验 → 标记 ⚠️ 新增数据\n\n'
@@ -2974,7 +2938,7 @@ function kbConfirmOverwrite(){
              :'本次校验未发现矛盾条目，无需覆盖');
     return;
   }
-  window._pendingConflicts={kbIdx:kbIdx, conflicts:conflicts};
+  window._pendingConflicts={key:cur,epoch:originalUploadEpoch(),kbIdx:kbIdx, conflicts:conflicts};
   showConflictPanel(kbIdx, conflicts);
 }
 
@@ -3004,14 +2968,17 @@ function kbIncrementalAnalysis(){
   // question 只放简短指令，现有结论摘要用于提示 AI，新材料走 chunks
   var existingTitles=[];
   if(kbIdx!=null && p.kb && p.kb[kbIdx]){
-    (p.kb[kbIdx].known||[]).forEach(function(x){
-      var _xt2=_kbText(x); if(_xt2.indexOf('📎')!==0) existingTitles.push(x.replace(/^[\u2705\u26a0\ufe0f\s]+/,'').substring(0,40));
+    kbEffectiveKnown(p,kbIdx,cur).forEach(function(x){
+      var _xt2=_kbText(x); if(_xt2.indexOf('📎')!==0){
+        var state=x&&x._kbEditStatus==='needs_review'?'【旧版本用户修订，待复核】':x&&x._kbUserEdited?'【用户修订，待核验】':'';
+        existingTitles.push(state+_xt2.replace(/^[\u2705\u26a0\ufe0f\s]+/,'').substring(0,40));
+      }
     });
   }
   var existingHint=existingTitles.length ? '（已有结论摘要：'+existingTitles.slice(0,6).join('；')+'）' : '';
 
   var prompt='请基于提供的新材料，对比'+p.city+'「'+topicLabel+'」智库中已有结论'+existingHint+'，找出真正的新增信息或补充要点。'
-    +'要求：①如果新材料与现有数据一致，直接说"与现有数据一致，无需更新"；②只输出真正新增的、现有智库中没有的信息；③不要使用"不一致"标签来描述实际一致的数据；④每条新发现独立成行，关键数据加粗；⑤若存在真正矛盾（数据不同），明确标注【矛盾】并列出新旧数据对比；⑥不编造材料中未提及的数据。';
+    +'要求：①如果新材料与现有数据一致，直接说"与现有数据一致，无需更新"；②只输出真正新增的、现有智库中没有的信息；③不要使用"不一致"标签来描述实际一致的数据；④每条新发现独立成行，关键数据加粗；⑤若存在真正矛盾（数据不同），明确标注【矛盾】并列出新旧数据对比；⑥不编造材料中未提及的数据；⑦保留用户修订的待核验/待复核状态，不当作已核实事实。';
 
   var thinking=document.createElement('div');
   thinking.className='message';
@@ -3121,121 +3088,44 @@ function newFactsPanelHtml(kbIdx, newFacts, topicLabel){
 }
 
 /* 单独追加一条新要点到智库 */
-function kbAppendSingleFact(kbIdx, factIdx, btnEl){
-  // 从按钮属性读 kbIdx，null/NaN 时兜底为 0
-  var _kid = kbIdx;
-  if((_kid==null||_kid!==_kid) && btnEl){
-    var attr = btnEl.getAttribute('data-kbidx');
-    _kid = (attr!=null && attr!=='null') ? parseInt(attr) : 0;
-  }
-  if(_kid==null||_kid!==_kid||_kid<0) _kid=0;
-  // 从 data-fact 读文本
-  var f='';
-  if(btnEl && btnEl.getAttribute('data-fact')) f=decodeURIComponent(btnEl.getAttribute('data-fact'));
-  if(!f && window._lastNewFacts) f=(window._lastNewFacts[factIdx]||'');
-  if(!f){ toast('要点文本丢失，请重新分析'); return; }
-  var p=P(); if(!p||!p.kb||!p.kb[_kid]) _kid=0;
-  if(!p||!p.kb||!p.kb[_kid]) return;
-  var k=p.kb[_kid];
-  var clean=f.replace(/^[\u2022\-\*\d\.\)\s]+/,'').replace(/\*\*/g,'').trim();
-  var entry='\u26a0\ufe0f '+clean;
-  if(k.known.indexOf(entry)<0){ k.known.push(entry); persist(); refreshKbProgress(); }
-  var btn=btnEl||document.querySelector('[data-factidx="'+factIdx+'"]');
-  var btn=btnEl||document.querySelector('[data-factidx="'+factIdx+'"]');
-  if(btn){
-    btn.disabled=false;
-    btn.textContent='\u21a9 \u64a4\u56de';
-    btn.style.background='#fef2f2';
-    btn.style.color='#dc2626';
-    btn.style.border='1px solid #fecaca';
-    btn.setAttribute('data-entry', encodeURIComponent(entry));
-    btn.setAttribute('data-undo-kid', _kid);
-    btn.onclick=function(){ kbUndoSingleFact(this); };
-  }
-  var rows=document.querySelectorAll('.topic-row');
-  if(rows[_kid]){rows[_kid].scrollIntoView({behavior:'smooth',block:'center'});setTimeout(function(){rows[_kid].style.outline='2px solid #6366f1';setTimeout(function(){rows[_kid].style.outline='';},1500);},300);}
-  toast('\u2705 \u5df2\u52a0\u5165\u300c'+k.t+'\u300d\uff08\u26a0\ufe0f\u5f85\u9886\u5bfc\u786e\u8ba4\uff09');
+async function kbAppendSingleFact(kbIdx,factIdx,btnEl){
+  var index=Number.isInteger(kbIdx)&&kbIdx>=0?kbIdx:0,key=cur;
+  var text=btnEl&&btnEl.getAttribute('data-fact')?decodeURIComponent(btnEl.getAttribute('data-fact')):(window._lastNewFacts||[])[factIdx];
+  if(!text){toast('要点文本丢失，请重新分析');return;}
+  if(btnEl&&btnEl.disabled)return;if(btnEl)btnEl.disabled=true;
+  try{
+    var record=await materialSaveText(key,index,null,String(text).replace(/^[\u2022\-\*\d\.\)\s]+/,'').replace(/\*\*/g,'').trim());
+    if(key!==cur)return;
+    if(btnEl){btnEl.textContent='撤回';btnEl.setAttribute('data-edit-id',record.id);btnEl.setAttribute('data-project',key);btnEl.onclick=function(){kbUndoSingleFact(this);};}
+    refreshKbProgress();toast('要点已保存到云端，仍需核验。');
+  }catch(error){toast(error.message||'尚未保存，请重试');}
+  finally{if(btnEl)btnEl.disabled=false;}
 }
-
-/* 把新发现追加到智库 known[]，标记 ⚠️ 待确认，原有条目完全不动 */
-/* 撤回单条已加入的要点 */
-function kbUndoSingleFact(btnEl){
-  var entry = btnEl ? decodeURIComponent(btnEl.getAttribute('data-entry')||'') : '';
-  var _kid  = btnEl ? parseInt(btnEl.getAttribute('data-undo-kid')||'0') : 0;
-  if(!entry) return;
-  var p=P(); if(!p||!p.kb||!p.kb[_kid]) return;
-  var k=p.kb[_kid];
-  var idx=k.known.indexOf(entry);
-  if(idx>=0){ k.known.splice(idx,1); persist(); refreshKbProgress(); }
-  // 恢复按钮为「+ 加入」
-  if(btnEl){
-    btnEl.textContent='\u271a \u52a0\u5165';
-    btnEl.style.background='#eff6ff';
-    btnEl.style.color='#1d4ed8';
-    btnEl.style.border='1px solid #bfdbfe';
-    // 恢复原来的 onclick
-    var factIdx = btnEl.getAttribute('data-factidx');
-    var kbidx   = btnEl.getAttribute('data-kbidx');
-    btnEl.onclick = null;
-    btnEl.setAttribute('onclick','kbAppendSingleFact('+kbidx+','+factIdx+',this)');
-  }
-  toast('\u21a9 \u5df2\u64a4\u56de\uff0c\u8981\u70b9\u5df2\u4ece\u300c'+k.t+'\u300d\u79fb\u9664');
+async function kbUndoSingleFact(btnEl){
+  var key=btnEl&&btnEl.getAttribute('data-project'),id=btnEl&&btnEl.getAttribute('data-edit-id');
+  var record=materialEditRecords(key).find(function(item){return item.id===id&&!item.deleted;});if(!record)return;
+  if(btnEl.disabled)return;btnEl.disabled=true;
+  try{await materialDeleteRevision(key,record);btnEl.textContent='＋ 加入';btnEl.onclick=function(){kbAppendSingleFact(Number(this.getAttribute('data-kbidx')),Number(this.getAttribute('data-factidx')),this);};refreshKbProgress();toast('已从云端撤回该要点');}
+  catch(error){toast(error.message||'撤回未完成，请重试');}
+  finally{btnEl.disabled=false;}
 }
-
-function kbAppendNewFacts(kbIdx, facts, btnEl){
-  var _kid = kbIdx;
-  if((_kid==null||_kid!==_kid) && btnEl){
-    var attr = btnEl.getAttribute('data-kbidx');
-    _kid = (attr!=null && attr!=='null') ? parseInt(attr) : 0;
-  }
-  if(_kid==null||_kid!==_kid||_kid<0) _kid=0;
-  var p=P(); if(!p||!p.kb||!p.kb[_kid]) _kid=0;
-  if(!p||!p.kb||!p.kb[_kid]) return;
-  var k=p.kb[_kid];
-
-  // 检测新旧数据冲突：如果新条目与现有条目涉及同一主题但数据不同，标记为冲突
-  var conflicts=[], noConflicts=[];
-  (facts||[]).forEach(function(f){
-    var clean=f.replace(/^[\u2022\-\*\d\.\)\s]+/,'').replace(/\*\*/g,'').trim();
-    if(!clean) return;
-    // 提取关键词（前10个字）与现有known比较
-    var keywords=clean.substring(0,15);
-    var conflictWith=null;
-    (k.known||[]).forEach(function(existing,ei){
-      var existClean=existing.replace(/^[\u2705\u26a0\ufe0f\s]+/,'');
-      // 如果新旧条目前15字有重叠关键词，视为潜在冲突
-      if(existClean.substring(0,15)===keywords || 
-         (keywords.length>8 && existClean.indexOf(keywords.substring(0,8))>=0)){
-        conflictWith={idx:ei, old:existClean, new:clean};
-      }
-    });
-    if(conflictWith) conflicts.push(conflictWith);
-    else noConflicts.push(clean);
+async function kbAppendNewFacts(kbIdx,facts,btnEl){
+  var index=Number.isInteger(kbIdx)&&kbIdx>=0?kbIdx:0,key=cur,project=PROJECTS[key];if(!project||!project.kb[index])return;
+  if(btnEl&&btnEl.disabled)return;if(btnEl)btnEl.disabled=true;
+  var existing=materialEffectiveKnown(project,index,key),conflicts=[],notes=[],saved=0;
+  (facts||[]).forEach(function(fact){
+    var clean=String(fact).replace(/^[\u2022\-\*\d\.\)\s]+/,'').replace(/\*\*/g,'').trim();if(!clean)return;
+    var keyword=clean.slice(0,15),found=-1;
+    existing.forEach(function(item,i){var text=String(item&&typeof item==='object'?item.text:item).replace(/^[\u2705\u26a0\ufe0f\s]+/,'');if(text.slice(0,15)===keyword||(keyword.length>8&&text.indexOf(keyword.slice(0,8))>=0))found=i;});
+    if(found>=0)conflicts.push({idx:found,old:String(existing[found]&&typeof existing[found]==='object'?existing[found].text:existing[found]),new:clean});else notes.push(clean);
   });
-
-  // 无冲突的直接追加（标记⚠️待确认）
-  var added=0;
-  noConflicts.forEach(function(clean){
-    var entry='\u26a0\ufe0f '+clean;
-    if(k.known.indexOf(entry)<0){ k.known.push(entry); added++; }
-  });
-
-  // 有冲突的弹出确认面板
-  if(conflicts.length>0){
-    window._pendingConflicts={kbIdx:_kid, conflicts:conflicts};
-    showConflictPanel(_kid, conflicts);
-  }
-
-  persist(); refreshKbProgress();
-  if(added>0 && conflicts.length===0){
-    var boxes=document.querySelectorAll('[onclick^="kbAppendNewFacts"]');
-    boxes.forEach(function(b){var box=b.closest('div[style*="background:#f0f7ff"]');if(box)box.innerHTML='<span style="font-size:12px;color:#059669">\u2705 已追加 '+added+' 条到「'+k.t+'」，可在主题卡确认</span>';});
-    toast('\u2705 已追加 '+added+' 条到「'+k.t+'」\uff08\u26a0\ufe0f待确认\uff09');
-  } else if(conflicts.length>0){
-    toast('发现 '+conflicts.length+' 条数据冲突，请确认采用哪一项');
-  }
-  var rows=document.querySelectorAll('.topic-row');
-  if(rows[_kid]){rows[_kid].scrollIntoView({behavior:'smooth',block:'center'});}
+  try{
+    for(var i=0;i<notes.length;i++){await materialSaveText(key,index,null,notes[i]);saved++;}
+    if(key!==cur)return;
+    if(conflicts.length){window._pendingConflicts={key:key,epoch:originalUploadEpoch(),kbIdx:index,conflicts:conflicts};showConflictPanel(index,conflicts);}
+    refreshKbProgress();toast((saved?'已保存 '+saved+' 条到云端。':'')+(conflicts.length?'请确认 '+conflicts.length+' 条冲突采用哪项。':'材料仍需核验。'));
+  }catch(error){toast('已保存 '+saved+' 条；其余尚未保存：'+(error.message||'请重试'));}
+  finally{if(btnEl)btnEl.disabled=false;}
 }
 
 /* 冲突确认面板：并列展示新旧数据 */
@@ -3290,62 +3180,42 @@ function showConflictPanel(kbIdx, conflicts){
 }
 
 /* 单条冲突确认 */
-function resolveConflict(kbIdx, conflictIdx, choice){
-  var pc=window._pendingConflicts; if(!pc) return;
-  var c=pc.conflicts[conflictIdx]; if(!c) return;
-  var p=P(); if(!p||!p.kb||!p.kb[kbIdx]) return;
-  var k=p.kb[kbIdx];
-
-  if(choice==='new'){
-    if(c.idx>=0){
-      // 替换已定位的旧数据
-      k.known[c.idx]='\u2705 '+c.new;
-    } else {
-      // 未精确定位时，追加为新条目
-      k.known.push('\u2705 '+c.new);
+async function kbSaveConflict(index,conflict){
+  var pending=window._pendingConflicts,key=pending.key||cur;
+  if(key!==cur||(pending.epoch!==undefined&&pending.epoch!==originalUploadEpoch()))throw new Error('工作区已变化，请重新校验材料。');
+  var current=materialEffectiveKnown(PROJECTS[key],index,key),text=conflict.new;
+  if(conflict.idx>=0){
+    var item=current[conflict.idx];if(item===undefined)throw new Error('原资料已变化，请重新校验。');
+    var full=String(item&&typeof item==='object'?item.text:item);
+    if(!conflict.old||full.indexOf(conflict.old)<0)throw new Error('原资料已变化，请重新校验，避免覆盖新的修订。');
+    text=full.replace(conflict.old,conflict.new);
+  }
+  return materialSaveText(key,index,conflict.idx>=0?conflict.idx:null,text);
+}
+async function resolveConflict(kbIdx,conflictIdx,choice){
+  var pending=window._pendingConflicts,conflict=pending&&pending.conflicts[conflictIdx];if(!conflict||conflict.saving||conflict.resolved)return;
+  conflict.saving=true;
+  try{
+    if(choice==='new')await kbSaveConflict(kbIdx,conflict);
+    conflict.resolved=choice;
+    var status=document.getElementById('conflict-status-'+conflictIdx);if(status)status.textContent=choice==='new'?'已保存新材料到云端':'已保留原资料';
+    if(pending.conflicts.every(function(item){return item.resolved;})){closeModal();refreshKbProgress();toast('冲突已处理，采用的新材料已保存到云端。');}
+  }catch(error){toast(error.message||'尚未保存，请重试');}
+  finally{conflict.saving=false;}
+}
+async function resolveAllConflicts(choice){
+  var pending=window._pendingConflicts;if(!pending||pending.saving)return;pending.saving=true;
+  try{
+    for(var i=0;i<pending.conflicts.length;i++){
+      var conflict=pending.conflicts[i];if(conflict.resolved)continue;
+      if(choice==='new')await kbSaveConflict(pending.kbIdx,conflict);
+      conflict.resolved=choice;
+      var status=document.getElementById('conflict-status-'+i);if(status)status.textContent=choice==='new'?'已保存到云端':'已保留原资料';
     }
-  }
-  // choice==='old' 保持不变
-
-  // 标记已处理
-  c.resolved=choice;
-  var oldEl=document.getElementById('conflict-old-'+conflictIdx);
-  var newEl=document.getElementById('conflict-new-'+conflictIdx);
-  var statusEl=document.getElementById('conflict-status-'+conflictIdx);
-  if(choice==='new'){
-    if(newEl) newEl.style.border='3px solid #22c55e';
-    if(oldEl) oldEl.style.opacity='0.4';
-    if(statusEl){ statusEl.textContent='✓ 已采用新材料数据'; statusEl.style.color='#16a34a'; }
-  } else {
-    if(oldEl) oldEl.style.border='3px solid #3b82f6';
-    if(newEl) newEl.style.opacity='0.4';
-    if(statusEl){ statusEl.textContent='✓ 已保留现有数据'; statusEl.style.color='#3b82f6'; }
-  }
-
-  // 检查是否全部已处理
-  var allDone=pc.conflicts.every(function(x){return x.resolved;});
-  if(allDone){
-    persist(); refreshKbProgress();
-    setTimeout(function(){ closeModal(); toast('\u2705 数据冲突已全部确认'); render(); },600);
-  } else {
-    persist();
-  }
+    closeModal();refreshKbProgress();toast(choice==='new'?'新材料已全部保存到云端，仍需核验。':'已保留原资料');
+  }catch(error){toast('部分冲突尚未处理：'+(error.message||'请重试'));}
+  finally{pending.saving=false;}
 }
-
-/* 批量确认所有冲突 */
-function resolveAllConflicts(choice){
-  var pc=window._pendingConflicts; if(!pc) return;
-  var p=P(); if(!p||!p.kb||!p.kb[pc.kbIdx]) return;
-  var k=p.kb[pc.kbIdx];
-  pc.conflicts.forEach(function(c){
-    if(choice==='new') k.known[c.idx]='\u2705 '+c.new;
-    c.resolved=choice;
-  });
-  persist(); refreshKbProgress();
-  closeModal(); toast('\u2705 数据冲突已全部确认（'+(choice==='new'?'采用新数据':'保留旧数据')+')');
-  render();
-}
-
 
 /* 结合全库重新分析（原有行为） */
 function kbRAGQueryFull(){
@@ -3363,8 +3233,8 @@ function kbRAGQueryFull(){
   });
   // 和主题 known 结论一起作为上下文
   var kHint=kbIdx!=null&&p.kb ? p.kb[kbIdx] : null;
-  var knownChunks=kHint ? (kHint.known||[]).slice(0,4).map(function(t,i){
-    return {id:'known:'+i,topic:kHint.t,tags:[],text:_kbText(t).replace(/^[\u2705\u26a0\ufe0f\s]+/,''),cite:kHint.t+'（已有结论）'};
+  var knownChunks=kHint ? kbEffectiveKnown(p,kbIdx,cur).slice(0,4).map(function(t,i){
+    var chunk=kbKnownChunk(t,kHint.t,i);chunk.id='known:'+i;chunk.text=_kbText(t).replace(/^[\u2705\u26a0\ufe0f\s]+/,'');chunk.cite=kHint.t+'（已有结论）';return chunk;
   }) : [];
   var chunks=knownChunks.concat(allUploadChunks).slice(0,12);
 
@@ -3440,22 +3310,24 @@ function uploadHint(){
     ['🏢','园区资料','厂房、能耗、用地等承载条件明细'],
     ['📇','目标企业名单','已接触或拟核验的企业清单']
   ];
-  var body='<p class="modal-intro">上传后我会结合城市智库与公开信息研判；材料仅用于本次分析，园区承载、企业采购和领导任务仍需政府授权材料确认。</p>'+
+  var body='<p class="modal-intro">上传成功后，原件和可读取正文会保存到当前工作区，供后续问答与研判检索。上传内容仍需核验，可在记忆库查看和删除。</p>'+
     '<p style="font-size:12.5px;font-weight:700;color:#4a5568;margin:12px 0 8px">推荐上传以下材料：</p>'+'<ul class="material-guide">'+mats.map(function(m){return '<li><i class="i">'+m[0]+'</i><span><strong>'+m[1]+'</strong><small>'+m[2]+'</small></span></li>'}).join('')+'</ul>';
   var foot='<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="doUpload()">选择文件上传</button>';
   openModal('上传城市与产业材料',body,foot);
 }
 // 真实动作：弹系统文件夹选择文件，选完后在对话里出现「已上传文件 + 解析结果」
 function doUpload(){
+  var key=cur,epoch=originalUploadEpoch();
   closeModal();
   var inp=document.createElement('input');
   inp.type='file';inp.multiple=true;
   inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
   inp.onchange=function(){
+    if(cur!==key||!originalUploadSessionCurrent(epoch))return;
     var files=Array.from(inp.files||[]);
     if(!files.length)return;
     if(view!=='knowledge'){view='knowledge';render();}
-    setTimeout(function(){ingestFiles(files,null);},100);
+    setTimeout(function(){if(cur===key&&originalUploadSessionCurrent(epoch))ingestFiles(files,null);},100);
   };
   inp.click();
 }

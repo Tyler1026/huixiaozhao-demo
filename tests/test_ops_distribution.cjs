@@ -31,6 +31,7 @@ async function boot() {
     fetch: async () => ({status: 401, ok: false, json: async () => ({ok: false, error: 'not_authenticated', message: '请登录'})}),
   };
   ctx.window = ctx; ctx.globalThis = ctx; vm.createContext(ctx);
+  for(const file of ['frontend/shared/kb-materials.js','frontend/shared/sync-feedback.js'])if(!manifest['ops.html'].parts.includes(file))vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),ctx);
   for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
     if (!/\bsrc=/.test(match[1])) vm.runInContext(match[2], ctx, {filename: 'ops.html'});
   }
@@ -70,20 +71,22 @@ test('RAG structured materials and annotation-only queries work in empty-search 
     h.ctx.ragProjKey = () => 'a';
     h.input('ragQ', '新增补链');
     h.ctx.ragDoSearch();
-    assert.ok(h.ctx.ragHits.some(hit => hit.item === material), 'the real shared search retains the original structured item');
+    assert.ok(h.ctx.ragHits.some(hit => hit.item.text === material.annotations[0].text && hit.item.by === '人工' && hit.relatedSource.sourceText === material.text), 'annotation hits retain their provenance and related old source');
     let corpus;
     h.ctx.kbSearch = (_query, values) => {corpus = values; if (searchThrows) throw new Error('offline fallback'); return [];};
     assert.doesNotThrow(() => h.ctx.ragDoSearch());
     assert.ok(corpus.every(item => typeof item.text === 'string'));
-    assert.ok(corpus.some(item => item.text.includes('原始政策正文') && item.text.includes('新增补链招商线索')));
-    assert.ok(h.ctx.ragHits.some(hit => hit.item === material));
+    assert.ok(corpus.some(item => item.text === '原始政策正文'));
+    assert.ok(corpus.some(item => item.text === '新增补链招商线索'));
+    assert.ok(corpus.every(item=>!item.text.includes('[object Object]')));
+    assert.ok(h.ctx.ragHits.some(hit => hit.item.text === material.annotations[0].text && hit.item.by === '人工'));
     assert.equal(h.ctx.ragQuery, '新增补链');
     h.input('ragQ', '原始政策正文'); h.ctx.ragDoSearch();
     assert.ok(h.ctx.ragHits.some(hit => hit.item === material));
   }
 });
 
-test('RAG hit display receives original material metadata and legacy plain-string fallback', async () => {
+test('RAG hit display receives original material metadata and legacy text plus topic', async () => {
   const {ctx} = await boot();
   const material = {text: '正文', annotations: [{text: '补充'}], account: '来源账号', src: '材料名', nature: 'base'};
   ctx.ragQuery = '正文';
@@ -91,7 +94,8 @@ test('RAG hit display receives original material metadata and legacy plain-strin
   const rendered = []; ctx.ragRenderChunk = value => {rendered.push(value); return '<div>rendered</div>';};
   const html = ctx.ragHitsView();
   assert.equal(rendered[0], material);
-  assert.equal(rendered[1], '旧字符串');
+  assert.equal(rendered[1].text, '旧字符串');
+  assert.equal(rendered[1].topic, '政策');
   assert.match(html, /召回 <b[^>]*>2<\/b> 条材料/);
 });
 

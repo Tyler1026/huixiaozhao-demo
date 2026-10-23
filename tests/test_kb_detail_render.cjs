@@ -12,7 +12,7 @@ function between(text,start,end){
  assert.ok(from>=0&&to>from,'production function boundaries exist: '+start);
  return text.slice(from,to);
 }
-const actualFunctions=[
+const actualFunctions=[fs.readFileSync(path.join(__dirname,'../frontend/shared/kb-materials.js'),'utf8'),
  fs.readFileSync(path.join(root,'frontend/index/kb-presentation.js'),'utf8'),
  between(source.report,'function reportMdToHtml(','/* 所有导出从当前方向取正文'),
  between(source.known,'function _kbText(','// === AI精选概括'),

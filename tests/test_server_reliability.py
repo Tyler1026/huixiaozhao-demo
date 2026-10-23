@@ -93,11 +93,13 @@ class ServerReliabilityTests(unittest.TestCase):
         self.assertFalse(result['ok'])
 
     def test_upload_write_failure_reported(self):
-        data = {'projectKey': 'p', 'topic': 'industry', 'text': '', 'mode': 'append'}
+        data = {'projectKey': 'p', 'topic': 'industry',
+                'text': '白鹭设备项目的专项额度为842万元，需提交完整申报材料后核验。', 'mode': 'append'}
         result, writes = environment(json.dumps(data).encode(),
             store='{"PROJECTS":{"p":{"kb":[]}}}', write_ok=False, path='/api/kb-upload')
         self.assertEqual(len(writes), 1)
         self.assertFalse(result['ok'])
+        self.assertEqual(result['error'], 'storage_unavailable')
 
 
 if __name__ == '__main__':

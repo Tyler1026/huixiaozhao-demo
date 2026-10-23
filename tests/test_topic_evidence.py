@@ -229,7 +229,7 @@ class TopicEvidenceTests(unittest.TestCase):
         state['PROJECTS'][KEY]['onboarding'] = {'capacity': ['无新增用地']}
         self.assertNotEqual(baseline, read(state)['sourceFingerprint'])
 
-    def test_source_bound_revision_is_used_without_reintroducing_original(self):
+    def test_source_bound_revision_replaces_fact_and_keeps_explicit_correction_context(self):
         state = fixture()
         state['RESET_GEN'] = 'reset-1'
         known(state, '聚变能源原始说法：已经批准，尚需核实。')
@@ -243,7 +243,10 @@ class TopicEvidenceTests(unittest.TestCase):
         result = read(state)
         self.assertNotEqual(result['sourceFingerprint'], baseline)
         self.assertIn('尚未批准', topic_evidence_prompt(result))
-        self.assertNotIn('已经批准', topic_evidence_prompt(result))
+        self.assertFalse(any('已经批准' in row['text'] for row in result['chunks']))
+        self.assertEqual(result['chunks'][0]['correction']['sourceText'], original['text'])
+        self.assertEqual(result['chunks'][0]['correction']['status'], 'active')
+        self.assertIn('不是当前事实', topic_evidence_prompt(result))
         self.assertEqual(result['chunks'][0]['sourceFile'], '02_industry.md')
 
     def test_orphaned_foreign_project_upload_is_not_read(self):

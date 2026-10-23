@@ -54,6 +54,10 @@ CREATE TABLE IF NOT EXISTS full_events (
  id INTEGER PRIMARY KEY AUTOINCREMENT, report_id TEXT NOT NULL,
  at REAL NOT NULL, kind TEXT NOT NULL, stage TEXT, part TEXT, code TEXT
 );
+CREATE TABLE IF NOT EXISTS full_input_context (
+ report_id TEXT PRIMARY KEY REFERENCES full_reports(id),
+ payload TEXT NOT NULL, sha256 TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS full_checkpoint_archive (
  id INTEGER PRIMARY KEY AUTOINCREMENT,
  report_id TEXT NOT NULL REFERENCES full_reports(id),
@@ -160,12 +164,17 @@ class FullStore:
             return STAGES
         return self.stages
 
-    def create(self, tenant, province, city, key, synthetic=True, *, mode='standard'):
+    def create(self, tenant, province, city, key, synthetic=True, *, mode='standard', input_context=None):
         tenant, province, city, key = map(_text, (tenant, province, city, key))
         if not isinstance(synthetic, bool):
             raise ValueError('synthetic must be boolean')
         if mode not in ('standard', 'deep'):
             raise ValueError('invalid report mode')
+        from .user_materials import canonical, validate_snapshot
+        input_context = validate_snapshot(input_context)
+        if input_context is not None and input_context['city'] != city:
+            raise ValueError('workspace materials city does not match report')
+        context_payload = canonical(input_context) if input_context is not None else None
         rid = hashlib.sha256(('full-v1\0' + tenant + '\0' + key).encode()).hexdigest()
         stages = self._definition()
         # Store the requested business mode with the immutable task definition;
@@ -198,6 +207,16 @@ class FullStore:
                 c.execute('INSERT INTO full_steps(id,report_id,ordinal,stage,part,status) VALUES(?,?,?,?,?,?)',
                           (f'{rid}:{i}', rid, i, '__bundle__', 'bundle', 'pending'))
                 self._event(c, rid, 'created')
+            if context_payload is not None:
+                saved_context = c.execute('SELECT payload FROM full_input_context WHERE report_id=?', (rid,)).fetchone()
+                if saved_context is None:
+                    started = c.execute('SELECT COUNT(*) FROM full_steps WHERE report_id=? AND attempts>0', (rid,)).fetchone()[0]
+                    if started:
+                        raise Conflict('cannot attach workspace materials to a started report')
+                    c.execute('INSERT INTO full_input_context(report_id,payload,sha256) VALUES(?,?,?)',
+                              (rid, context_payload, hashlib.sha256(context_payload.encode()).hexdigest()))
+                # A retry after website commit failure keeps the first complete
+                # snapshot. Later material edits belong to the next report.
         return self.get(tenant, rid) | {'created': not bool(old)}
 
     def _event(self, c, rid, kind, stage=None, part=None, code=None):
@@ -258,13 +277,27 @@ class FullStore:
                           (token, min(now + ttl, deadline), deadline, now, row['id']))
                 c.execute("UPDATE full_reports SET status='running',heartbeat_at=?,failure_code=NULL WHERE id=?", (now, row['report_id']))
                 self._event(c, row['report_id'], 'started', row['stage'], row['part'])
+                context_row = c.execute('SELECT payload,sha256 FROM full_input_context WHERE report_id=?', (row['report_id'],)).fetchone()
+                input_context = None
+                if context_row:
+                    try:
+                        if hashlib.sha256(context_row['payload'].encode()).hexdigest() != context_row['sha256']:
+                            raise ValueError('workspace materials integrity failure')
+                        from .user_materials import validate_snapshot
+                        input_context = validate_snapshot(json.loads(context_row['payload']))
+                    except (ValueError, TypeError):
+                        c.execute("UPDATE full_reports SET status='failed',failure_code='artifact' WHERE id=?", (row['report_id'],))
+                        c.execute("UPDATE full_steps SET status='failed',token=NULL,expires=NULL,failure_code='artifact' WHERE id=?", (row['id'],))
+                        self._event(c, row['report_id'], 'failed', row['stage'], row['part'], 'artifact')
+                        continue
                 return {'report_id': row['report_id'], 'step_id': row['id'], 'stage': row['stage'],
                         'part': row['part'], 'attempts': row['attempts'] + 1, 'token': token,
                         'deadline': deadline, 'tenant': report['tenant'], 'province': report['province'],
                         'city': report['city'], 'synthetic': bool(report['synthetic']),
                         'request_key': report['request_key'],
                         'mode': (json.loads(report['definition']) or [{}])[0].get('report_mode', 'standard'),
-                        'definition': json.loads(report['definition'])}
+                        'definition': json.loads(report['definition']),
+                        'input_context': input_context}
         return None
 
     def heartbeat(self, sid, token, ttl=120):

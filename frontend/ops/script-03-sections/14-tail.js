@@ -1,3 +1,4 @@
+var KB_EDITS={};
 
 function _tombKbItem(pk,kbIdx,text){
   if(!pk) return;
@@ -117,6 +118,7 @@ function restoreFromServer(callback){
     _applyKbItemTombs(srv.PROJECTS);
     _applyKbItemTombs(PROJECTS);
     _mergeTombs(srv.KB_CONFIRM_TOMBS);
+    KB_EDITS = srv.KB_EDITS || {};
     KB_CONFIRMS      = _mergeConfirms(srv.KB_CONFIRMS || {});  // 只进不退
     KB_FILE_CHUNKS   = srv.KB_FILE_CHUNKS   || {};
     KB_UNLOCKED      = srv.KB_UNLOCKED      || {};
@@ -869,14 +871,17 @@ function editKbItem(kbIdx,itemIdx){
   if(!card)return;
   var p=P();if(!p)return;
   var k=p.kb[kbIdx];if(!k)return;
-  var orig=(k.known[itemIdx]||'').replace('\u26a0\ufe0f ','').replace('\u2705 ','');
+  var item=materialEffectiveKnown(p,kbIdx,cur)[itemIdx];
+  if(item&&item._kbEditStatus==='needs_review'){openLongTermMaterial(cur,item.text);return;}
+  window._opsKbEditContext={key:cur,kbIdx:kbIdx,itemIdx:itemIdx,epoch:originalUploadEpoch(),snapshot:JSON.stringify(item)};
+  var orig=String(item&&typeof item==='object'?item.text:item||'').replace('\u26a0\ufe0f ','').replace('\u2705 ','');
   if(_isKbPlaceholder(orig)) orig='';   // 占位符不回填进输入框，避免被原样保存成条目
   card.innerHTML=
     '<div style="padding:10px 13px">'+
       '<div style="font-size:11px;color:#6366f1;font-weight:650;margin-bottom:6px">修改内容（领导确认后写入知识库）</div>'+
       '<textarea id="kb-edit-'+kbIdx+'-'+itemIdx+'" '+
         'style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #6366f1;border-radius:8px;font-size:13px;line-height:1.6;color:#1e293b;resize:vertical;min-height:72px;outline:none" '+
-        'onkeydown="if(event.key===\'Enter\'&&event.metaKey)saveKbEdit('+kbIdx+','+itemIdx+')">'+orig+'</textarea>'+
+        'onkeydown="if(event.key===\'Enter\'&&event.metaKey)saveKbEdit('+kbIdx+','+itemIdx+')">'+_authEscape(orig)+'</textarea>'+
       '<div style="margin:8px 0 0;padding:8px 10px;background:#f8faff;border:1.5px dashed #c7d2fe;border-radius:8px;cursor:pointer;text-align:center;font-size:12px;color:#4f46e5" '+
         'onclick="editPickFile('+kbIdx+','+itemIdx+')" '+
         'ondragover="event.preventDefault();this.style.background=\'#eef2ff\'" '+
@@ -901,22 +906,15 @@ function editKbItem(kbIdx,itemIdx){
   if(ta){ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}
 }
 
-function saveKbEdit(kbIdx,itemIdx){
-  var ta=document.getElementById('kb-edit-'+kbIdx+'-'+itemIdx);
-  if(!ta)return;
-  var newText=ta.value.trim();
-  if(!newText){toast('内容不能为空');return;}
-  var p=P();if(!p)return;
-  var k=p.kb[kbIdx];if(!k)return;
-  // 写回 known，添加 ✅ 已确认标记
-  k.known[itemIdx]='\u2705 '+newText;
-  if(!KB_CONFIRMS[cur])KB_CONFIRMS[cur]={};
-  if(!KB_CONFIRMS[cur][kbIdx])KB_CONFIRMS[cur][kbIdx]={};
-  KB_CONFIRMS[cur][kbIdx][itemIdx]={status:'edited',text:newText,ts:Date.now()};
-  persist();
-  buildKBCorpus(p.city);
-  kbDetail(kbIdx);
-  toast('\u2705 已更新并写入知识库');
+async function saveKbEdit(kbIdx,itemIdx){
+  var ta=document.getElementById('kb-edit-'+kbIdx+'-'+itemIdx);if(!ta||ta.disabled)return;
+  var text=ta.value.trim(),key=cur,epoch=originalUploadEpoch();if(!text){toast('内容不能为空');return;}
+  var edit=window._opsKbEditContext,current=materialEffectiveKnown(P(),kbIdx,key)[itemIdx];
+  if(!edit||edit.key!==key||edit.kbIdx!==kbIdx||edit.itemIdx!==itemIdx||edit.epoch!==epoch||JSON.stringify(current)!==edit.snapshot){toast('资料或工作区已变化，请保留草稿并重新打开后修改。');return;}
+  ta.disabled=true;
+  try{await materialSaveText(key,kbIdx,itemIdx,text);if(!originalUploadSessionCurrent(epoch))return;kbDetail(kbIdx);toast('修改已保存到云端，内容仍需核验。');}
+  catch(error){toast(error.message||'尚未保存，请重试');}
+  finally{ta.disabled=false;}
 }
 
 /* 【2026-09-23 修复】占位条目残留：原来 addKbItem 先把占位符 push 进 kb.known
@@ -938,24 +936,19 @@ function cancelKbEdit(kbIdx,itemIdx){
   }
   kbDetail(kbIdx);
 }
-function addKbItem(kbIdx){
-  // 领导手动新增一条 known 条目
-  var p=P();if(!p)return;
-  var k=p.kb[kbIdx];if(!k)return;
-  k.known.push(KB_ITEM_PLACEHOLDER);
-  kbDetail(kbIdx);
-  // 自动触发最后一条的编辑
-  setTimeout(function(){editKbItem(kbIdx,k.known.length-1);},50);
-}
+function addKbItem(kbIdx){openLongTermMaterial(cur,'');}
 
 function kbDetail(i){
-  var k=P().kb[i]; if(!k) return;
+  var original=P().kb[i]; if(!original) return;
+  var k=Object.assign({},original,{known:materialEffectiveKnown(P(),i,cur)});
   curKb=i;
 
   // 已知条目列表
   var knownHtml=(k.known&&k.known.length)
     ? '<div style="display:flex;flex-direction:column;gap:8px">'+
-        k.known.map(function(x,xi){
+        k.known.map(function(item,xi){
+          var x=String(item&&typeof item==='object'?item.text:item||'');
+          var edited=!!(item&&item._kbEditId);
           var warn=x.indexOf('⚠️')>=0;
           var isFile=x.indexOf('📎')===0;
           var clean=x.replace('⚠️ ','');
@@ -973,14 +966,16 @@ function kbDetail(i){
           var txtColor=warn?'#78350f':isFile?'#14532d':'#1e293b';
           // 检查是否已确认
           var confirmed=KB_CONFIRMS[cur]&&KB_CONFIRMS[cur][i]&&KB_CONFIRMS[cur][i][xi];
-          var isConfirmed=!!confirmed;
+          var isConfirmed=!!confirmed&&!edited;
           // 已确认条目：绿色样式
           if(isConfirmed){
             bg='#f0fdf4';bd='#86efac';accent='#22c55e';icon='\u2705';txtColor='#14532d';
           }
           // ⚠️ 条目的操作按钮
           var actionBtns='';
-          if(warn&&!isConfirmed){
+          if(edited){
+            actionBtns='<p style="font-size:12px;color:#6366f1">'+(item._kbEditStatus==='needs_review'?'原材料已更新 · 旧修订待复核':'已修改 · 待核验')+'</p><button onclick="editKbItem('+i+','+xi+')">'+(item._kbEditStatus==='needs_review'?'重新核对':'修改')+'</button>';
+          } else if(warn&&!isConfirmed){
             actionBtns='<div style="display:flex;gap:6px;margin-top:8px">'+
               '<button onclick="confirmKbItem('+i+','+xi+')" '+
                 'style="flex:1;padding:6px 0;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12px;color:#166534;cursor:pointer;font-weight:600" '+
@@ -1006,7 +1001,7 @@ function kbDetail(i){
                 '<div style="display:flex;gap:8px;align-items:flex-start">'+
                   '<span style="font-size:12px;flex-shrink:0;margin-top:2px;color:'+accent+'">'+icon+'</span>'+
                   '<div style="flex:1">'+
-                    '<span style="font-size:13px;color:'+txtColor+';line-height:1.7">'+highlightKeyData(clean)+'</span>'+
+                    '<span style="font-size:13px;color:'+txtColor+';line-height:1.7">'+highlightKeyData(_authEscape(clean))+'</span>'+
                     badgeHtml+
                     actionBtns+
                   '</div>'+
@@ -1161,10 +1156,12 @@ function askAboutKb(i){
 }
 // 真实文件选择器：弹系统文件夹
 function pickLocalFile(kbTopicIdx){
+  var key=cur,epoch=originalUploadEpoch();
   var inp=document.createElement('input');
   inp.type='file';inp.multiple=true;
   inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
   inp.onchange=function(){
+    if(cur!==key||!originalUploadSessionCurrent(epoch))return;
     var files=Array.from(inp.files||[]);
     if(!files.length)return;
     closeKbDetail();
@@ -1231,26 +1228,6 @@ function ingestFiles(files, kbTopicIdx){
   });
 }
 
-/* 文本切 chunk — 按段落，每块约150字 */
-function textToChunks(text, fname, p, kbTopicIdx){
-  var topic=kbTopicIdx!=null&&p&&p.kb[kbTopicIdx] ? p.kb[kbTopicIdx].t : '上传材料';
-  text=text.replace(/\r\n/g,'\n').trim();
-  var paras=text.split(/\n{2,}/), chunks=[], buf='', ci=0;
-  paras.forEach(function(para){
-    para=para.trim(); if(!para) return;
-    buf+=(buf?' ':'')+para;
-    if(buf.length>=120){
-      chunks.push({id:'file:'+fname+':'+ci, topic:topic,
-        tags:topicTags(topic).concat([fname.replace(/\.[^.]+$/,''),'上传']),
-        text:buf.slice(0,300), cite:fname});
-      buf=''; ci++;
-    }
-  });
-  if(buf.trim()) chunks.push({id:'file:'+fname+':'+ci, topic:topic,
-    tags:topicTags(topic).concat(['上传']), text:buf.slice(0,300), cite:fname});
-  return chunks.slice(0,30);
-}
-
 /* 摄取完成 — 存 KB_FILE_CHUNKS，更新 kb.known，触发 RAG 摘要 */
 function finalizeIngest(chunks, files, kbTopicIdx, p, parseFailed){
   parseFailed=parseFailed||[];
@@ -1278,7 +1255,7 @@ function finalizeIngest(chunks, files, kbTopicIdx, p, parseFailed){
   }
 
   var c=document.getElementById('kbConv'); if(!c) return;
-  var totalChunks=KB_FILE_CHUNKS[cur].length;
+  var totalChunks=knowledgeMaterialCorpus(cur,p).length;
   var topicLabel=kbTopicIdx!=null&&p.kb&&p.kb[kbTopicIdx] ? p.kb[kbTopicIdx].t : '城市智库';
   var nd=document.createElement('div'); nd.className='message';
   nd.innerHTML='<img src="'+aiAvatar()+'"><div class="message-bubble">'+
@@ -1374,22 +1351,24 @@ function uploadHint(){
     ['🏢','园区资料','厂房、能耗、用地等承载条件明细'],
     ['📇','目标企业名单','已接触或拟核验的企业清单']
   ];
-  var body='<p class="modal-intro">上传后我会结合城市智库与公开信息研判；材料仅用于本次分析，园区承载、企业采购和领导任务仍需政府授权材料确认。</p>'+
+  var body='<p class="modal-intro">上传成功后，原件和可读取正文会保存到当前工作区，供后续问答与研判检索。上传内容仍需核验，可在记忆库查看和删除。</p>'+
     '<ul class="material-guide">'+mats.map(function(m){return '<li><i class="i">'+m[0]+'</i><span><strong>'+m[1]+'</strong><small>'+m[2]+'</small></span></li>'}).join('')+'</ul>';
   var foot='<button class="secondary-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="doUpload()">选择文件上传</button>';
   openModal('上传城市与产业材料',body,foot);
 }
 // 真实动作：弹系统文件夹选择文件，选完后在对话里出现「已上传文件 + 解析结果」
 function doUpload(){
+  var key=cur,epoch=originalUploadEpoch();
   closeModal();
   var inp=document.createElement('input');
   inp.type='file';inp.multiple=true;
   inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
   inp.onchange=function(){
+    if(cur!==key||!originalUploadSessionCurrent(epoch))return;
     var files=Array.from(inp.files||[]);
     if(!files.length)return;
     if(view!=='knowledge'){view='knowledge';render();}
-    setTimeout(function(){ingestFiles(files,null);},100);
+    setTimeout(function(){if(cur===key&&originalUploadSessionCurrent(epoch))ingestFiles(files,null);},100);
   };
   inp.click();
 }

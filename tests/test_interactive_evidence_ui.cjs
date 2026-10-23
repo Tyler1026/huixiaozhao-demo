@@ -11,7 +11,7 @@ function boot(){
  const c={console,JSON,Math,Date,Promise,URL,TextDecoder,TextEncoder,PROJECTS:{a:{id:'a',city:'同城',topic:'当前方向',reportRequestId:'r1',funnel:{old:true}}},REPORTSTATE:{a:{text:'完整报告'}},cur:'other',
   document:{getElementById:id=>nodes[id]||null},persist(){},render(){},renderOpsV2(){},toast:m=>messages.push(m),_authEscape:s=>String(s),_funnelClueId:(_k,n)=>n,
   fetch:async(url,o)=>{calls.push({url,body:JSON.parse(o.body)});return {ok:true,text:async()=>''};}};
- c.window=c;vm.createContext(c);vm.runInContext(source,c);const reader=tail.slice(tail.indexOf('async function readTopicReportStream('),tail.indexOf('async function syncTopicReportInputs('));vm.runInContext(reader,c);
+ c.window=c;vm.createContext(c);vm.runInContext(read('frontend/shared/kb-materials.js'),c);vm.runInContext(source,c);const reader=tail.slice(tail.indexOf('async function readTopicReportStream('),tail.indexOf('async function syncTopicReportInputs('));vm.runInContext(reader,c);
  return {c,calls,nodes,messages};
 }
 function stream(obj,stop=true){return {ok:true,text:async()=> 'data: '+JSON.stringify({choices:[{delta:{content:JSON.stringify(obj)},finish_reason:stop?'stop':null}]})+'\n\ndata: [DONE]\n\n'};}

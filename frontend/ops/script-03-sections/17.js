@@ -69,8 +69,10 @@ function _authReadSync(response){
   return response.json();
 }
 function _authResetView(){
+  if(typeof materialResetSession==='function')materialResetSession();
+  if(typeof workspaceSyncReset==='function')workspaceSyncReset();
   PROJECTS={};USER_PROFILES={};CITY_ACCOUNTS={};INVITE_CODES={};REPORT_REQUESTS=[];
-  ['REPORTSTATE','REPORT_HISTORY','UPLOADS','KB_FILE_CHUNKS','KB_CHAT','KB_CONFIRMS','KB_CONFIRM_TOMBS','KB_ITEM_TOMBS','KB_UNLOCKED','PENDING_CONFIRMS','DOCK_LOGS','SUBPROJ','UPLOAD_TOMBS','KB_CHAT_TOMBS','CITY_BASE_PACKAGES','CITY_WORKSPACES'].forEach(function(k){if(typeof window[k]!=='undefined')window[k]={};});
+  ['KB_EDITS','REPORTSTATE','REPORT_HISTORY','UPLOADS','KB_FILE_CHUNKS','KB_CHAT','KB_CONFIRMS','KB_CONFIRM_TOMBS','KB_ITEM_TOMBS','KB_UNLOCKED','PENDING_CONFIRMS','DOCK_LOGS','SUBPROJ','UPLOAD_TOMBS','KB_CHAT_TOMBS','CITY_BASE_PACKAGES','CITY_WORKSPACES'].forEach(function(k){if(typeof window[k]!=='undefined')window[k]={};});
   ['DEMANDS','REPORT_REQUESTS','OPS_ENT'].forEach(function(k){if(typeof window[k]!=='undefined')window[k]=[];});
   if(window._syncTimer){clearTimeout(window._syncTimer);window._syncTimer=null;}
   window._serverSyncLock=false;window._verifyInProgress=false;window._reportGenerating=false;
@@ -281,7 +283,7 @@ function ragWorkspaceOverview(activeKey){
   var rows=Object.keys(byCity).sort().map(function(city){
     var workspace=opsCityWorkspace(city);
     var items=byCity[city].map(function(key){
-      var p=PROJECTS[key],count=(p.kb||[]).reduce(function(n,t){return n+(t.known||[]).length;},0),isOn=key===activeKey;
+      var p=PROJECTS[key],count=knowledgeMaterialCorpus(key,p).length,isOn=key===activeKey;
       return '<button class="ops-ui-recent-row" onclick="'+opsHandler('ragSelectWorkspace',key)+'"'+(isOn?' aria-current="true"':'')+'><span><strong>'+_authEscape(opsWorkspaceKind(key))+'</strong><small>'+_authEscape(key)+'</small></span><span>'+count+' 条材料</span></button>';
     }).join('');
     return '<section class="ops-ui-card" style="margin-bottom:10px"><div class="ops-ui-card-head"><h2>'+_authEscape(city)+'</h2><span class="ops-ui-muted">'+(workspace?'已设置地区主工作区':'未设置地区主工作区')+'</span></div>'+items+'</section>';
@@ -311,7 +313,7 @@ function ragProjKey(){
 }
 function ragCityOptions(){
   var activeKey=ragProjKey();
-  return Object.keys(PROJECTS).filter(function(key){return PROJECTS[key]&&Array.isArray(PROJECTS[key].kb);}).sort(function(a,b){var x=PROJECTS[a].city||a,y=PROJECTS[b].city||b;return x.localeCompare(y)||a.localeCompare(b);}).map(function(key){var p=PROJECTS[key],count=p.kb.reduce(function(n,t){return n+(t.known||[]).length;},0);return '<option value="'+_authEscape(key)+'"'+(key===activeKey?' selected':'')+'>'+_authEscape((p.city||key)+' · '+opsWorkspaceKind(key)+' · '+key+' · '+count+' 条材料')+'</option>';}).join('');
+  return Object.keys(PROJECTS).filter(function(key){return PROJECTS[key]&&Array.isArray(PROJECTS[key].kb);}).sort(function(a,b){var x=PROJECTS[a].city||a,y=PROJECTS[b].city||b;return x.localeCompare(y)||a.localeCompare(b);}).map(function(key){var p=PROJECTS[key],count=knowledgeMaterialCorpus(key,p).length;return '<option value="'+_authEscape(key)+'"'+(key===activeKey?' selected':'')+'>'+_authEscape((p.city||key)+' · '+opsWorkspaceKind(key)+' · '+key+' · '+count+' 条材料')+'</option>';}).join('');
 }
 function opsRagSelectTab(tab){if(['materials','upload','query','history'].indexOf(tab)<0)return;OPS_UI.rag.tab=tab;renderOpsV2();}
 function opsRag(){
@@ -319,7 +321,7 @@ function opsRag(){
   var actions='<button class="ops-ui-button is-primary" onclick="ragAddCityModal()">＋ 设置地区工作区</button>';
   var head=opsPageHead('城市智库','按工作区维护材料、补充事实和核对检索结果。',actions);
   if(!key)return '<div class="ops-ui-page">'+head+opsEmpty('暂无已初始化的城市智库','先设置地区主工作区与邀请码，再上传材料或生成城市报告。','research')+'</div>';
-  var p=PROJECTS[key],total=p.kb.reduce(function(n,t){return n+(t.known||[]).length;},0),rs=REPORTSTATE[key]||{};
+  var p=PROJECTS[key],total=knowledgeMaterialCorpus(key,p).length,rs=REPORTSTATE[key]||{};
   var current=OPS_UI.rag.tab;
   var tabs=[['materials','材料浏览'],['upload','上传补充'],['query','检索问答'],['history','版本与日志']];
   var tabbar='<div class="ops-ui-subnav" role="group" aria-label="智库功能">'+tabs.map(function(tab){return '<button class="ops-ui-subnav-button'+(current===tab[0]?' is-active':'')+'" aria-pressed="'+(current===tab[0]?'true':'false')+'" onclick="'+opsHandler('opsRagSelectTab',tab[0])+'">'+tab[1]+'</button>';}).join('')+'</div>';
@@ -462,16 +464,7 @@ function ragDoSearch(){
   if(!q.trim())return;
   ragQuery=q;
   var key=ragProjKey(), p=PROJECTS[key];
-  var corpus=[];
-  (p&&Array.isArray(p.kb)?p.kb:[]).forEach(function(t){
-    if(!t)return;
-    var topic=ragItemText(t.t);
-    (Array.isArray(t.known)?t.known:[]).forEach(function(item,i){
-      var annotations=item&&Array.isArray(item.annotations)?item.annotations:[];
-      var text=[ragItemText(item)].concat(annotations.map(ragItemText)).filter(Boolean).join('\n');
-      corpus.push({id:topic+':'+i,topic:topic,tags:[],text:text,cite:topic,item:item});
-    });
-  });
+  var corpus=knowledgeMaterialCorpus(key,p);
   var hits=[];
   try{ hits=(typeof kbSearch==='function')?(kbSearch(q,corpus,8)||[]):[]; }catch(e){ hits=[]; }
   if(!hits.length){
@@ -483,12 +476,12 @@ function ragDoSearch(){
   renderOpsV2();
 }
 function ragHitsView(){
-  if(!ragHits.length) return '<div style="margin-top:12px;padding:12px;background:#fff5e9;border:1px solid #efcfaa;border-radius:8px;font-size:12.5px;color:#7a4a1f">未召回任何材料 —— 该问题在当前智库中没有覆盖，政府端问这个问题时 AI 只能靠通用知识回答（幻觉风险），建议补充相关材料。</div>';
+  if(!ragHits.length) return '<div style="margin-top:12px;padding:12px;background:#fff5e9;border:1px solid #efcfaa;border-radius:8px;font-size:12.5px;color:#7a4a1f">本次检索未命中材料。请调整关键词，或补充并保存相关材料。实际问答会根据问题检索已保存的材料。</div>';
   var qTerms=ragQuery.trim();
   return '<div style="margin-top:12px">'+
-    '<div style="font-size:12px;color:#667590;margin-bottom:8px">「'+ragEsc(ragQuery)+'」召回 <b style="color:#0757ad">'+ragHits.length+'</b> 条材料（按相关度排序，即政府端提问时喂给 AI 的上下文）：</div>'+
+    '<div style="font-size:12px;color:#667590;margin-bottom:8px">「'+ragEsc(ragQuery)+'」召回 <b style="color:#0757ad">'+ragHits.length+'</b> 条材料（本地检索预览；实际问答会按问题重新检索已保存材料）：</div>'+
     ragHits.map(function(h,i){
-      var card=ragRenderChunk(Object.prototype.hasOwnProperty.call(h,'item')?h.item:h.text,i+1,qTerms);
+      var card=ragRenderChunk(Object.prototype.hasOwnProperty.call(h,'item')?h.item:h,i+1,qTerms);
       // 前3名加蓝框+主题标；其余灰
       var head='<div style="display:flex;gap:8px;align-items:center;margin:0 0 4px 24px">'+
         '<span style="font-size:10px;font-weight:700;color:#fff;background:'+(i<3?'#0757ad':'#9aa5b5')+';border-radius:8px;padding:1px 7px">TOP '+(i+1)+'</span>'+
@@ -501,7 +494,7 @@ function ragChatBox(p,key){
   var msgs=ragChatMsgs.map(function(m,i){
     if(m.workspaceKey!==key)return '';
     if(m.role==='user'){
-      return '<div style="display:flex;justify-content:flex-end;margin:6px 0"><div style="max-width:78%;background:#0757ad;color:#fff;border-radius:12px 12px 2px 12px;padding:8px 12px;font-size:12.5px;line-height:1.6;white-space:pre-wrap">'+ragEsc(m.content)+'</div></div>';
+      return '<div style="display:flex;justify-content:flex-end;margin:6px 0"><div style="max-width:78%;background:#0757ad;color:#fff;border-radius:12px 12px 2px 12px;padding:8px 12px;font-size:12.5px;line-height:1.6;white-space:pre-wrap">'+ragEsc(m.content)+'<div><button type="button" onclick="ragSaveUserMaterial('+i+','+_authEscape(JSON.stringify(key))+')">保存为长期材料 / 纠正</button></div></div></div>';
     }
     var canAdd=ragCanCommitMessage(m,key);
     var addBtn=canAdd?('<div style="margin-top:6px"><button onclick="ragChatCommit('+i+','+_authEscape(JSON.stringify(key))+')" style="border:1px solid #bfe5e0;background:#e4f5f3;color:#006d70;border-radius:6px;font-size:11px;cursor:pointer;padding:4px 11px">＋ 把这条结论加入智库</button></div>'):'';
@@ -523,6 +516,10 @@ function ragChatBox(p,key){
       '<button class="primary-button" style="min-height:40px" '+(ragChatBusy?'disabled':'')+' onclick="ragChatSend('+_authEscape(JSON.stringify(key))+')">'+(ragChatBusy?'生成中…':'发送')+'</button>'+
     '</div></div>';
 }
+function ragSaveUserMaterial(index,key){
+  var message=ragChatMsgs[index];if(key!==ragProjKey()||!message||message.role!=='user'||message.workspaceKey!==key){toast('工作区或消息已变化');return;}
+  openLongTermMaterial(key,message.content);
+}
 function ragChatScrollBottom(){ var el=document.getElementById('ragChatScroll'); if(el)el.scrollTop=el.scrollHeight; }
 function ragChatSend(key){
   if(key!==ragProjKey()||!PROJECTS[key])return;
@@ -532,13 +529,12 @@ function ragChatSend(key){
   if(!q)return;
   var p=PROJECTS[key],requestEpoch=++ragChatEpoch;
   function current(){return requestEpoch===ragChatEpoch&&ragChatWorkspace===key&&ragProjKey()===key;}
-  var corpus=[];
-  (p.kb||[]).forEach(function(t){(t.known||[]).forEach(function(txt,i){var s=(txt&&typeof txt==='object')?(txt.text||''):txt;corpus.push({id:t.t+':'+i,topic:t.t,text:s,cite:t.t});});});
+  var corpus=knowledgeMaterialCorpus(key,p);
   ragChatMsgs.push({role:'user',content:q,workspaceKey:key});
   var aiMsg={role:'assistant',content:'',streaming:true,workspaceKey:key};ragChatMsgs.push(aiMsg);
   ragChatBusy=true;ragChatHint='';renderOpsV2();ragChatScrollBottom();
   var hist=ragChatMsgs.filter(function(m){return m.workspaceKey===key&&m.content&&!m.streaming;}).slice(-8).map(function(m){return {role:m.role,content:m.content};});
-  return fetch('/api/kb-chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,chunks:corpus,city:p.city,mode:'chat',stream:true,history:hist})})
+  return fetch('/api/kb-chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,chunks:corpus,city:p.city,projectKey:key,mode:'chat',stream:true,history:hist})})
     .then(function(resp){
       if(!current())return;
       if(!resp.ok||!resp.body)throw new Error('HTTP '+resp.status);
@@ -569,7 +565,7 @@ function ragChatSend(key){
 }
 function ragChatCommit(msgIdx, key){
   var m=ragChatMsgs[msgIdx];if(!ragCanCommitMessage(m,key)){if(typeof toast==='function')toast('工作区已变化，请在当前工作区重新确认结论。');return;}
-  var p=PROJECTS[key];
+  var p=PROJECTS[key],commitEpoch=originalUploadEpoch();
   // 用页面内 modal 替代 prompt/confirm（嵌入式浏览器不支持原生弹窗）
   ragCommitModal({
     key:key, city:p.city, topics:(p.kb||[]).map(function(t){return t.t;}),
@@ -582,13 +578,14 @@ function ragChatCommit(msgIdx, key){
         body:JSON.stringify({projectKey:key,city:p.city,topic:topic,text:m.content,
           filename:'对话确认',mode:mode,origin:'admin',nature:nature,by:(getOpsOperator()||'管理端'),source:'chat'})})
         .then(function(r){return r.json();}).then(function(res){
+          if(!originalUploadSessionCurrent(commitEpoch)||!ragCanCommitMessage(m,key))return;
           if(res.ok){
             var extra=res.matched?('，命中已有 '+res.matched+' 条'):'';
             toast&&toast('已加入智库 '+res.chunks+' 条（'+(nature==='fix'?'修正':'佐证')+'）'+extra);
             m.committed=true;
             restoreFromServer(function(){renderOpsV2();});
           } else { toast&&toast('入库失败：'+(res.error||'')); }
-        }).catch(function(e){toast&&toast('入库出错');});
+        }).catch(function(e){if(originalUploadSessionCurrent(commitEpoch)&&ragCanCommitMessage(m,key))toast&&toast('入库出错');});
     }
   });
 }
@@ -677,13 +674,10 @@ function ragBaseVsSupportLayout(p,key){
   '</div>';
   // 收集该工作区全部主题下的补充材料(base之外)，按account分组
   var byAccount={};
-  p.kb.forEach(function(t){
-    (t.known||[]).forEach(function(it){
-      if(!(it&&typeof it==='object')) return;
-      if(it.nature==='base') return; // 基础包内容不在右侧重复出现
+  knowledgeMaterialCorpus(key,p).forEach(function(it){
+      if(it.nature==='base'&&!it._kbEditId) return; // 基础包内容不在右侧重复出现
       var who=it.account||(it.origin==='admin'?'管理员':(it.origin==='user'?'用户':'未知'));
       (byAccount[who]=byAccount[who]||[]).push(it);
-    });
   });
   var accounts=Object.keys(byAccount).sort(function(a,b){return byAccount[b].length-byAccount[a].length;});
   var rightHtml=!accounts.length?
@@ -752,7 +746,7 @@ function ragMdTables(s){
 function ragRenderChunk(raw, idx, hl){
   // 兼容结构化 chunk（对象）与旧字符串
   var origin='ai', nature='base', srcName='', annots=[], account='';
-  if(raw && typeof raw==='object'){ origin=raw.origin||'ai'; nature=raw.nature||'base'; srcName=raw.src||''; annots=Array.isArray(raw.annotations)?raw.annotations.filter(function(a){return a&&typeof a==='object';}):[]; account=raw.account||''; }
+  if(raw && typeof raw==='object'){ origin=raw.origin||'ai'; nature=raw.nature||'base'; srcName=raw.sourceFile||raw.src||raw.cite||''; annots=Array.isArray(raw.annotations)?raw.annotations.filter(function(a){return a&&typeof a==='object';}):[]; account=raw.account||''; }
   var text=ragItemText(raw);
   // 1) 抽取【标题】前缀
   var title=null; var m=text.match(/^【([^】]{2,40})】\s*/);
@@ -761,7 +755,7 @@ function ragRenderChunk(raw, idx, hl){
   var sources=[];
   text=text.replace(/[（(]来源[:：]\s*(https?:\/\/[^，,）)\s]+)\s*[，,]?\s*([\d]{4}-[\d]{2}-[\d]{2})?\s*[）)]/g,function(_,url,date){
     sources.push({url:url,date:date||''});return '';});
-  var pending=/未获公开来源|待核实|二手来源/.test(text);
+  var pending=/未获公开来源|待核实|二手来源/.test(text)||origin==='user'||origin==='admin';
   // 3) 转义后做行内渲染 —— 先把 markdown 表格转成 HTML table
   var html=ragMdTables(ragEsc(text.trim()));
   html=html.replace(/\*\*([^*]{1,60})\*\*/g,'<b style="color:#0b183b">$1</b>');   // **bold**
@@ -784,6 +778,7 @@ function ragRenderChunk(raw, idx, hl){
       (gov?'<span data-ops-icon="public-service" data-ops-icon-size="12"></span>':'<span data-ops-icon="citation" data-ops-icon-size="12"></span>')+' '+dom+(s.date?' · '+s.date:'')+' ↗</a>';
   }).join(' ');
   if(pending) srcHtml+=(srcHtml?' ':'')+'<span style="display:inline-flex;font-size:10.5px;padding:2px 8px;border-radius:9px;background:#fff0de;color:#a34c09;border:1px solid #f2d9b8"><span data-ops-icon="warning" data-ops-icon-size="12"></span> 待核实</span>';
+  if(raw&&raw._kbEditStatus==='needs_review')srcHtml+='<span style="font-size:11px;color:#a34c09">旧修订 · 原材料已更新，待重新核对</span>';
   // 来源标识：AI 基础材料无条；具体账号标注加彩色左条+徽章
   var os=ragOriginStyle(origin,nature,account);
   var origBadge=os?('<span style="display:inline-flex;align-items:center;font-size:10px;padding:2px 8px;border-radius:9px;background:'+os.bg+';color:'+os.bt+';border:1px solid '+os.bc+'">'+os.badge+(srcName?' · '+ragEsc(srcName):'')+'</span>'):'';
@@ -889,23 +884,7 @@ function cpProjKey(){
 }
 /* 只读当前选定工作区：同城名称不构成资料共享授权。 */
 function cpCorpus(city){
-  var out=[], selected=cpCityMap()[city];
-  Object.keys(PROJECTS).forEach(function(k){
-    var p=PROJECTS[k];
-    if(!p||k!==selected) return;
-    (p.kb||[]).forEach(function(t){
-      (t.known||[]).forEach(function(it,i){
-        var s=(it&&typeof it==='object')?(it.text||''):it;
-        if(!s) return;
-        var org=(it&&typeof it==='object')?(it.origin||''):'';
-        var nat=(it&&typeof it==='object')?(it.nature||''):'';
-        var src=(it&&typeof it==='object')?(it.src||''):'';
-        out.push({id:k+':'+t.t+':'+i, topic:t.t, text:s,
-                  cite:(src||t.t)+(nat?('·'+nat):''), origin:org, nature:nat});
-      });
-    });
-  });
-  return out;
+  var key=cpCityMap()[city];return key?knowledgeMaterialCorpus(key,PROJECTS[key]):[];
 }
 /* 该城市的问卷答案：同城任一项目填过就算（政府端按项目存）*/
 function cpOnboarding(city){

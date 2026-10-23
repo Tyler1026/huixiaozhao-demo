@@ -213,6 +213,11 @@ class FullLiveProvider:
             raise _to_provider_error(exc)
 
         place = self._place(job)
+        from .user_materials import CONTEXT_KEY, prompt_context, select
+        submitted_materials = select((job or {}).get('input_context'), stage_id, part)
+        if submitted_materials:
+            prior = dict(prior or {})
+            prior[CONTEXT_KEY] = prompt_context(submitted_materials)
         prior_text = '' if stage_id == 'scoring' else self._render_prior(prior, stage_id, part, mode=mode)
         floor = self._part_floor(stage_id, part, prior, mode)
 
@@ -366,6 +371,8 @@ class FullLiveProvider:
             saved = previous.get('metadata', {}).get('directions')
             if saved and [(d['id'], d['name']) for d in saved] != [(d['id'], d['name']) for d in metadata['directions']]:
                 raise FullProviderError('industry direction identities changed between parts', 'quality')
+        if submitted_materials:
+            metadata['user_materials'] = prior[CONTEXT_KEY]['metadata']['user_materials']
         return {"text": text, "metadata": metadata}
 
     # -- helpers (reuse composed provider transport/search/chat) ---------------
@@ -479,7 +486,7 @@ class FullLiveProvider:
             relevant = _RELEVANT_PRIOR.get(stage_id)
             entries = []
             for key, value in prior.items():
-                if relevant is not None and key not in relevant and key != stage_id:
+                if relevant is not None and key not in relevant and key != stage_id and key != '__user_materials__':
                     continue
                 text = value if isinstance(value, str) else ""
                 entities = ""

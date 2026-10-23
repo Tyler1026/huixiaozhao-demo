@@ -4,6 +4,7 @@ The HTTP handler is real and upstream is a local stub. This proves request and
 SSE contracts, not the correctness of any model answer or a live browser flow.
 """
 import ast
+import copy
 import json
 import unittest
 from pathlib import Path
@@ -79,10 +80,16 @@ class ChatContextHttpTests(unittest.TestCase):
 
     request = evidence_test.StreamBoundaryTests.request
 
+    def save_corpus(self, chunks):
+        state = self.h.state()
+        state['PROJECTS']['a']['kb'] = [{'t': '经济', 'known': copy.deepcopy(chunks)}]
+        self.h.replace(state)
+
     def test_sources_are_exact_six_model_chunks_in_retrieval_order(self):
         chunks = [{'id': 'source-'+str(i), 'cite': '材料'+str(i), 'topic': '经济',
                    'text': '地区生产总值 GDP 支持数据 '+str(i),
                    'src': 'https://issuer.example/'+str(i)} for i in range(9)]
+        self.save_corpus(chunks)
         status, text = self.request(REPLY, 'chat', {'question': 'GDP', 'chunks': chunks})
         self.assertEqual(status, 200)
         frames = events(text)
@@ -104,17 +111,20 @@ class ChatContextHttpTests(unittest.TestCase):
         self.assertIn('[DONE]', text)
 
     def test_absent_sources_and_empty_result_are_distinct(self):
+        self.save_corpus([{'id': 'no-url', 'cite': '经济主题', 'text': 'GDP总量参见来源[1]。'}])
         _, text = self.request(REPLY, 'chat', {'question': 'GDP', 'chunks': [
             {'id': 'no-url', 'cite': '经济主题', 'text': 'GDP总量参见来源[1]。'}]})
         source = events(text)[0]['sources'][0]
         self.assertEqual(source['urls'], [])
         self.assertFalse(source['traceable'])
+        self.save_corpus([{'id': 'not-selected', 'text': '财政收入', 'src': 'https://issuer.example/private'}])
         _, empty_text = self.request(REPLY, 'chat', {'question': 'xyzzy', 'chunks': [
             {'id': 'not-selected', 'text': '财政收入', 'src': 'https://issuer.example/private'}]})
         self.assertEqual(events(empty_text)[0]['sources'], [])
         self.assertNotIn('issuer.example/private', empty_text)
 
     def test_followup_history_is_sent_once_and_source_scope_never_comes_from_history(self):
+        self.save_corpus([])
         question = '只复述我上轮的代号'
         _, text = self.request(REPLY, 'chat', {'question': question, 'chunks': [], 'history': [
             {'role': 'user', 'content': '记住代号白鹭842。'},
@@ -139,6 +149,30 @@ class ChatContextHttpTests(unittest.TestCase):
         self.assertIn('workspace_forbidden', raw.decode())
         self.h.ns['DS_OPENER'].open.assert_not_called()
 
+    def test_saved_correction_replaces_stale_browser_corpus_in_actual_request(self):
+        from backend.kb_edits import save_edit
+        old = {'text': '半导体园区产值为10亿元。', 'origin': 'report', 'nature': 'base'}
+        self.save_corpus([old])
+        state = self.h.state()
+        save_edit({'projectKey': 'a', 'sectionIndex': 0, 'sectionTitle': '经济',
+                   'sourceIndex': 0, 'sourceItem': old, 'baseReportVersion': None,
+                   'editId': None, 'expectedRevision': 0, 'resetGen': state.get('RESET_GEN'),
+                   'text': '该园区产值更正为28亿元，白鹭842。'},
+                  state, {'scope': 'admin', 'user': 'offline'}, now_ms=123)
+        self.h.replace(state)
+        _, text = self.request(REPLY, 'chat', {'question': '半导体园区产值',
+            'chunks': [{'text': '伪造：产值99亿元'}], 'city': '错误城市'})
+        source = events(text)[0]['sources'][0]
+        self.assertIn('28亿元', source['text'])
+        self.assertIn('10亿元', source['correction']['sourceText'])
+        payload = json.loads(self.h.ns['DS_OPENER'].open.call_args.args[0].data)
+        content = payload['input'][-1]['content']
+        self.assertIn('白鹭842', content)
+        self.assertIn('不能作为当前事实', content)
+        self.assertIn('存储状态（服务端确认）', content)
+        self.assertIn('不表示材料未保存', content)
+        self.assertNotIn('99亿元', content)
+
     def test_legacy_no_project_key_reads_only_supplied_material(self):
         _, text = self.request(REPLY, 'chat', {'projectKey': '', 'question': 'GDP', 'chunks': [
             {'id': 'provided', 'text': 'GDP只见当前所给片段。'}]})
@@ -146,6 +180,8 @@ class ChatContextHttpTests(unittest.TestCase):
         self.assertEqual([x['id'] for x in events(text)[0]['sources']], ['provided'])
         self.assertNotIn('OTHER_WORKSPACE_SECRET', text)
         self.assertNotIn('星河动力', text)
+        payload = json.loads(self.h.ns['DS_OPENER'].open.call_args.args[0].data)
+        self.assertNotIn('存储状态（服务端确认）', payload['input'][-1]['content'])
 
     def test_json_chat_contract_still_only_contains_original_choices(self):
         raw = json.dumps({'status': 'completed', 'output': [{'type': 'message', 'content': [

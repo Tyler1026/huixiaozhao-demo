@@ -1,6 +1,6 @@
 {
   "index.html": {
-    "sha256": "2dfbc062b67562803a6d157c4b0c57b5ce127d36525de7e9f1b0c17c22acae23",
+    "sha256": "314949a2382a59aff8b2b0230e743e0404605cbe6e35615b6f10369079731022",
     "parts": [
       "frontend/index/markup-01.html",
       "frontend/index/style-01.css",
@@ -21,6 +21,8 @@
       "frontend/index/script-01.js",
       "frontend/index/markup-03.html",
       "frontend/shared/report-publication.js",
+      "frontend/shared/kb-materials.js",
+      "frontend/shared/sync-feedback.js",
       "frontend/index/script-02-sections/00.js",
       "frontend/index/script-02-sections/01.js",
       "frontend/index/script-02-sections/02.js",
@@ -58,7 +60,7 @@
     ]
   },
   "ops.html": {
-    "sha256": "65fb279ea9427713e8d8f91fb2ba25a8bc3c313368d041bec7569d28ef2b539c",
+    "sha256": "a5e7c63b48d3f1043790edea4e8605e18b7560649cd4bcb26ee7ee65be5ef907",
     "parts": [
       "frontend/ops/markup-01.html",
       "frontend/ops/style-01.css",
@@ -73,6 +75,8 @@
       "frontend/ops/brand-icons.js",
       "frontend/ops/brand-assets.js",
       "frontend/shared/report-publication.js",
+      "frontend/shared/kb-materials.js",
+      "frontend/shared/sync-feedback.js",
       "frontend/ops/script-03-sections/00.js",
       "frontend/ops/script-03-sections/01.js",
       "frontend/ops/script-03-sections/02.js",

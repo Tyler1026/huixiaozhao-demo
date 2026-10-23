@@ -177,13 +177,17 @@ class EditContractTests(unittest.TestCase):
     def test_notes_order_and_monthly_survival(self):
         first = self.save(body(sourceIndex=None, sourceItem=None, baseReportVersion=None, text='第一条补充'))
         second = self.save(body(sourceIndex=None, sourceItem=None, baseReportVersion=None, text='第二条补充'))
-        self.save(body())
+        revision = self.save(body())
         self.state['PROJECTS'][KEY]['baseReportVersion'] = {'requestId': 'report-b'}
         self.state['PROJECTS'][KEY]['kb'].reverse()
         notes = kb_edits.effective_known(self.state, KEY, 1)
         self.assertEqual(notes[0], self.state['PROJECTS'][KEY]['kb'][1]['known'][0])
-        self.assertEqual({note['_kbEditId'] for note in notes[2:]}, {first['id'], second['id']})
-        self.assertEqual([note['_kbEditId'] for note in notes[2:]], sorted([first['id'], second['id']]))
+        independent_notes = [note for note in notes[2:] if not note.get('correction')]
+        self.assertEqual({note['_kbEditId'] for note in independent_notes}, {first['id'], second['id']})
+        self.assertEqual([note['_kbEditId'] for note in independent_notes], sorted([first['id'], second['id']]))
+        retained = [note for note in notes[2:] if note.get('correction')]
+        self.assertEqual([note['_kbEditId'] for note in retained], [revision['id']])
+        self.assertEqual(retained[0]['correction']['status'], 'needs_review')
 
     def test_source_change_invalidates_saved_overlay_without_losing_record(self):
         record = self.save()

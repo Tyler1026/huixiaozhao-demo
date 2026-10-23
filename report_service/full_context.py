@@ -135,7 +135,7 @@ def _enterprise_stage_view(prior, stage_id, part, mode='deep'):
     return view
 
 
-def scoped_prior(prior, stage_id, part, mode='deep'):
+def _scoped_prior(prior, stage_id, part, mode='deep'):
     """Return the full facts required by a research or decision substep.
 
     Other stages retain their existing dependency handling. Scoring is split
@@ -190,6 +190,15 @@ def scoped_prior(prior, stage_id, part, mode='deep'):
         }
     _keep(view, prior, 'scoring')
     return view
+
+
+def scoped_prior(prior, stage_id, part, mode='deep'):
+    result = _scoped_prior(prior, stage_id, part, mode=mode)
+    from .user_materials import CONTEXT_KEY
+    if isinstance(prior, dict) and CONTEXT_KEY in prior:
+        result = dict(result)
+        result[CONTEXT_KEY] = copy.deepcopy(prior[CONTEXT_KEY])
+    return result
 
 
 def scoring_prior_batches(prior, part):

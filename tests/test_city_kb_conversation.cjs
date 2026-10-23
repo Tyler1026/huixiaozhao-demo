@@ -55,14 +55,14 @@ function harness(disk=new Map()){
   localStorage:{getItem:key=>disk.get(key)||null,setItem:(k,v)=>disk.set(k,v),removeItem:k=>disk.delete(k)},
   persist(){},aiAvatar:()=>'',curOnbPrefs:()=>({}),toast(){},renderComposer(){},closeKbDetail(){},closeKbHistory(){},render(){},saveAuth(){},_slimUploads:()=>({}),
   kbClosePanels(){c.panelsClosed=(c.panelsClosed||0)+1;},kbWorkspaceRefresh(){refreshes++;},P:()=>c.PROJECTS[c.cur],topicTags:()=>[],buildKBCorpus:()=>[{id:'candidate-only',text:'不得冒充被使用的来源'}],kbSearch:(_q,corpus)=>corpus,
-  fetch(url,options){const body=JSON.parse(options.body);if(url==='/api/sync'){sync.push(body);return Promise.resolve({ok:true});}api.push(body);const f=feeds.shift();assert.ok(f,'missing response feed');return Promise.resolve(f.response(options.signal));}
+  fetch(url,options){const body=JSON.parse(options.body);if(url==='/api/sync'){sync.push(body);return Promise.resolve({ok:true,json:async()=>({ok:true})});}api.push(body);const f=feeds.shift();assert.ok(f,'missing response feed');return Promise.resolve(f.response(options.signal));}
  };
  c.window=c;vm.createContext(c);
- const code=[known.slice(known.indexOf('function kbValueEqual('),known.indexOf('// 判断一条known')),layout.slice(layout.indexOf('function kbDraftQuestion('),layout.indexOf('function kbTogglePanel(')),tail.slice(tail.indexOf('function kbKnownChunk('),tail.indexOf('function buildKBCorpus(')),tail.slice(tail.indexOf('function _kbChatTombKey('),tail.indexOf('function _tombKbChatSession(')),tail.slice(tail.indexOf('var KB_CHAT={};'),tail.indexOf('/* ══ KB_CHAT')),
+ const code=[fs.readFileSync(path.join(__dirname,'../frontend/shared/kb-materials.js'),'utf8'),known.slice(known.indexOf('function kbValueEqual('),known.indexOf('// 判断一条known')),layout.slice(layout.indexOf('function kbDraftQuestion('),layout.indexOf('function kbTogglePanel(')),tail.slice(tail.indexOf('function kbKnownChunk('),tail.indexOf('function buildKBCorpus(')),tail.slice(tail.indexOf('function _kbChatTombKey('),tail.indexOf('function _tombKbChatSession(')),tail.slice(tail.indexOf('var KB_CHAT={};'),tail.indexOf('/* ══ KB_CHAT')),
   tail.slice(tail.indexOf('function _mergeKbChat('),tail.indexOf('/* ══ 多会话')),
   tail.slice(tail.indexOf('var KB_SESSION_IDLE_MS'),tail.indexOf('// 渲染对话区顶部')),
   tail.slice(tail.indexOf('function kbChatPush('),tail.indexOf('// 更新最后一条 AI')),
-  tail.slice(tail.indexOf('function kbChatReplay('),tail.indexOf('// 招引方向派生')),
+  tail.slice(tail.indexOf('function kbLongTermButton('),tail.indexOf('// 招引方向派生')),
   tail.slice(tail.indexOf('var KB_API ='),tail.indexOf('/* ══ RAG ENGINE END')),
   tail.slice(tail.indexOf('function kbRefreshTopicScope('),tail.indexOf('// 真实文件选择器'))].join('\n');
  vm.runInContext(code,c);c.renderKbSessionBar=()=>{};
@@ -178,6 +178,28 @@ for(const name of ['kbVerifyMaterial','kbIncrementalAnalysis'])test('legacy '+na
  c[name]();await flush();assert.equal(c.kbIsRequestPending(),true);assert.equal(h.api.length,1);assert.equal(h.api[0].projectKey,'a');
  c.kbSwitchSession('s2');sendAnswer(f,'旧材料不得进入新会话');await flush();
  assert.equal(c.KB_CHAT['workspace:a'].sessions[0].messages.filter(m=>m.role==='ai').length,0);assert.equal(c.KB_CHAT['workspace:a'].sessions[1].messages.length,0);assert.equal(c.kbIsRequestPending(),false);
+});
+
+for(const name of ['kbVerifyMaterial','kbIncrementalAnalysis','kbRAGQueryFull'])for(const replaced of [false,true])test(name+' sends object materials with '+(replaced?'retained correction status':'the active 10-to-28 correction'),async()=>{
+ const h=harness(),c=h.c,f=feed();h.feeds.push(f);
+ const original={text:'园区产值10亿元',nature:'base'};c.PROJECTS.a.kb[0].known=[original];
+ c.KB_EDITS={a:{e1:{id:'e1',sectionIndex:0,sectionTitle:'政策',sourceIndex:0,sourceItem:original,baseReportVersion:null,text:'园区产值28亿元，白鹭842',status:'edited',revision:1,ts:1,account:'ryan'}}};
+ if(replaced){c.PROJECTS.a.baseReportVersion={version:2};c.PROJECTS.a.kb[0].known=[{text:'新报告产值99亿元',nature:'base'}];}
+ c.document.querySelector=()=>null;c._kbText=x=>typeof x==='string'?x:x.text;
+ c._lastIngestChunks=[{text:'园区产值28亿元',topic:'政策'}];c.KB_FILE_CHUNKS.a=c._lastIngestChunks;c._lastIngestTopicLabel='政策';c._lastIngestKbIdx=0;
+ c.buildKBCorpus=()=>c.knowledgeMaterialCorpus('a',c.PROJECTS.a);
+ const end=name==='kbVerifyMaterial'?'/* ── 校验发现矛盾后':name==='kbIncrementalAnalysis'?'/* 新要点追加面板':'function kbFileParsed(';
+ vm.runInContext(tail.slice(tail.indexOf('function '+name+'(){'),tail.indexOf(end,tail.indexOf('function '+name+'(){'))),c);
+ assert.doesNotThrow(()=>c[name]());await flush();assert.equal(h.api.length,1);assert.equal(h.api[0].projectKey,'a');
+ if(name==='kbRAGQueryFull'){
+  const corrected=h.api[0].chunks.find(x=>x.text.includes('白鹭842'));assert.ok(corrected);assert.equal(corrected.correction.status,replaced?'needs_review':'active');
+  assert.ok(!h.api[0].chunks.some(x=>x.text==='园区产值10亿元'));
+ }else{
+  assert.match(h.api[0].question,/园区产值28亿元，白鹭842/);assert.doesNotMatch(h.api[0].question,/园区产值10亿元/);
+  assert.match(h.api[0].question,replaced?/【旧版本用户修订，待复核】/:/【用户修订，待核验】/);
+ }
+ assert.equal(original.text,'园区产值10亿元');
+ c.kbSwitchSession('s2');sendAnswer(f);await flush();assert.equal(c.kbIsRequestPending(),false);
 });
 
 test('opening answer evidence always ensures visibility instead of toggling it off',()=>{

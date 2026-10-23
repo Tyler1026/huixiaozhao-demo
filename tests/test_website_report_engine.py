@@ -32,7 +32,7 @@ class MemoryStore:
             for name in names:
                 self.payloads[name] = ('\n'.join('OFFLINE FIXTURE — NOT REAL RESEARCH ' + str(n) + '。' * 100 for n in range(150))).encode()
 
-    def create(self, tenant, province, city, key, synthetic, *, mode='standard'):
+    def create(self, tenant, province, city, key, synthetic, *, mode='standard', input_context=None):
         self.calls.append((tenant, key, synthetic))
         rid = report_id(key)
         self.jobs.setdefault(rid, {'id': rid, 'city': city, 'province': province, 'synthetic': synthetic,

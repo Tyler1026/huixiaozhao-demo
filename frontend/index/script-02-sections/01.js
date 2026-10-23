@@ -187,77 +187,12 @@ function _kbText(x){
   return t;
 }
 // Server-owned edits are projected over the immutable report records only for reading.
-function kbValueEqual(a,b){
-  if(a===b)return true;
-  if(a===null||b===null||typeof a!==typeof b||typeof a!=='object')return false;
-  if(Array.isArray(a)!==Array.isArray(b))return false;
-  var ak=Object.keys(a).sort(),bk=Object.keys(b).sort();
-  if(ak.length!==bk.length)return false;
-  if(Array.isArray(a)&&a.length!==b.length)return false;
-  for(var i=0;i<ak.length;i++)if(ak[i]!==bk[i]||!kbValueEqual(a[ak[i]],b[bk[i]]))return false;
-  return true;
-}
-function kbEditRecords(key){
-  var map=typeof KB_EDITS!=='undefined'&&KB_EDITS&&KB_EDITS[key];
-  if(!map||typeof map!=='object'||Array.isArray(map))return [];
-  function index(value){return Number.isInteger(value)&&value>=0;}
-  return Object.keys(map).map(function(id){return map[id];}).filter(function(record){
-    if(!record||typeof record!=='object'||Array.isArray(record)||typeof record.id!=='string'||!record.id||
-        !Object.prototype.hasOwnProperty.call(map,record.id)||map[record.id]!==record||
-        !index(record.sectionIndex)||typeof record.sectionTitle!=='string'||!record.sectionTitle.trim()||
-        typeof record.text!=='string'||!record.text.trim()||Array.from(record.text).length>200000||
-        !index(record.revision)||record.revision===0||typeof record.ts!=='number'||!isFinite(record.ts)||record.ts<0||
-        typeof record.account!=='string'||record.status!=='edited'||
-        (Object.prototype.hasOwnProperty.call(record,'deleted')&&typeof record.deleted!=='boolean')||
-        !['sourceIndex','sourceItem','baseReportVersion'].every(function(field){return Object.prototype.hasOwnProperty.call(record,field);}))return false;
-    if(record.sourceIndex===null)return record.sourceItem===null&&record.baseReportVersion===null;
-    return index(record.sourceIndex)&&(typeof record.sourceItem==='string'||
-      record.sourceItem!==null&&typeof record.sourceItem==='object'&&!Array.isArray(record.sourceItem));
-  }).sort(function(a,b){return a.ts-b.ts||(a.id<b.id?-1:a.id>b.id?1:0);});
-}
-function kbEditRecord(key,item){
-  var id=item&&typeof item==='object'&&item._kbEditId;
-  if(typeof id!=='string')return null;
-  var records=kbEditRecords(key);
-  for(var i=0;i<records.length;i++)if(records[i].id===id&&!records[i].deleted)return records[i];
-  return null;
-}
-function kbSourceEdit(project,sectionIndex,sourceIndex,key){
-  var section=project&&Array.isArray(project.kb)&&project.kb[sectionIndex];
-  if(!section||!Number.isInteger(sectionIndex)||!Number.isInteger(sourceIndex)||
-      !Array.isArray(section.known)||sourceIndex<0||sourceIndex>=section.known.length)return null;
-  var version=project.baseReportVersion===undefined?null:project.baseReportVersion,matches=[];
-  kbEditRecords(key===undefined?(typeof cur==='undefined'?'':cur):key).forEach(function(record){
-    if(record.sectionIndex===sectionIndex&&record.sectionTitle===section.t&&record.sourceIndex===sourceIndex&&
-        kbValueEqual(record.sourceItem,section.known[sourceIndex])&&kbValueEqual(record.baseReportVersion,version))matches.push(record);
-  });
-  var live=matches.filter(function(record){return !record.deleted;});
-  // Ambiguous duplicated source revisions must fail closed in both the UI and AI projection.
-  if(live.length>1)return null;
-  return live.length===1?live[0]:matches.length?matches[matches.length-1]:null;
-}
-function kbEffectiveKnown(project,sectionIndex,key){
-  var section=project&&Array.isArray(project.kb)&&project.kb[sectionIndex];
-  if(!section||!Number.isInteger(sectionIndex)||!Array.isArray(section.known))return [];
-  key=key===undefined?(typeof cur==='undefined'?'':cur):key;
-  function effective(raw,record){
-    var item=raw&&typeof raw==='object'&&!Array.isArray(raw)?Object.assign({},raw):{};
-    item.text=record.text.replace(/^\s*\u2705\s*/,'');
-    item.origin='user';item.nature='fix';item._kbUserEdited=true;
-    item._kbEditId=record.id;item._kbRevision=record.revision;item.ts=record.ts;item.account=record.account;
-    return item;
-  }
-  var result=section.known.map(function(raw,index){
-    var record=kbSourceEdit(project,sectionIndex,index,key);
-    return record&&!record.deleted?effective(raw,record):raw;
-  });
-  var uniqueTitle=project.kb.filter(function(candidate){return candidate&&candidate.t===section.t;}).length===1;
-  if(uniqueTitle)kbEditRecords(key).forEach(function(record){
-    if(!record.deleted&&record.sourceIndex===null&&record.sourceItem===null&&record.baseReportVersion===null&&record.sectionTitle===section.t)
-      result.push(effective(null,record));
-  });
-  return result;
-}
+// Keep established entry points; all clients share the same validated projection.
+function kbValueEqual(a,b){return materialValueEqual(a,b);}
+function kbEditRecords(key){return materialEditRecords(key);}
+function kbEditRecord(key,item){return materialEditRecord(key,item);}
+function kbSourceEdit(project,sectionIndex,sourceIndex,key){return materialSourceEdit(project,sectionIndex,sourceIndex,key);}
+function kbEffectiveKnown(project,sectionIndex,key){return materialEffectiveKnown(project,sectionIndex,key);}
 
 // 判断一条known是否为无用条目（纯标题/报告头/表格数据/碎片）
 function _isJunkKbItem(text){

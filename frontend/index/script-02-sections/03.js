@@ -173,6 +173,8 @@ function _purgeAuthCache(){
   try{var raw=localStorage.getItem('huixiaozhao_kb_v1');if(raw)localStorage.setItem('huixiaozhao_kb_v1',JSON.stringify(_safeSyncSnapshot(JSON.parse(raw))));}catch(_){}
 }
 function _authResetView(){
+  if(typeof materialResetSession==='function')materialResetSession();
+  if(typeof workspaceSyncReset==='function')workspaceSyncReset();
   if(typeof kbResetChatRequests==='function')kbResetChatRequests();
   PROJECTS={};USER_PROFILES={};CITY_ACCOUNTS={};INVITE_CODES={};
   ['KB_EDITS','REPORTSTATE','REPORT_HISTORY','UPLOADS','KB_FILE_CHUNKS','KB_CHAT','KB_CONFIRMS','KB_CONFIRM_TOMBS','KB_ITEM_TOMBS','KB_UNLOCKED','PENDING_CONFIRMS','DOCK_LOGS','SUBPROJ','UPLOAD_TOMBS','KB_CHAT_TOMBS','CITY_BASE_PACKAGES'].forEach(function(k){if(typeof window[k]!=='undefined')window[k]={};});
