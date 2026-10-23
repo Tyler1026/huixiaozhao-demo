@@ -76,6 +76,8 @@ def _provider_issue(error):
         return 'url_policy'
     if message == 'stage distinct source url floor not met':
         return 'evidence_floor'
+    if message == 'research citation reference is invalid':
+        return 'citation_reference'
     if message.startswith('prior context for stage'):
         return 'prior_context_bound'
     if message.startswith(('model output is not json', 'model json unparseable')) or 'non-object json' in message:
