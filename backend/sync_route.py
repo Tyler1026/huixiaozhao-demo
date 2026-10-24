@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Callable
 from .sync_merge import _apply_kb_item_tombs, _clue_tombstoned, _merge_invite_codes, _merge_kb_item_tombs, _merge_map, _merge_report_history
 from .city_workspaces import protect_city_sync
+from .enterprise_sync import apply_ops_enterprise_tombs, merge_ops_enterprise_tombs
 
 
 def _chat_selection(old, incoming, sessions):
@@ -52,6 +53,7 @@ def handle_sync(self, raw, deps):
         if not isinstance(existing, dict):
             raise ValueError('stored state must be an object')
         protect_city_sync(incoming, existing)
+        _ops_ent_tombs = merge_ops_enterprise_tombs(existing, incoming)
         # -- 空 body 保护：整体为空或只有极少字段的写入直接拒绝 --
         # 防止未登录/初始化态的浏览器把空 localStorage 推上来清空全库。
         if isinstance(incoming, dict):
@@ -69,7 +71,7 @@ def handle_sync(self, raw, deps):
             # 在下面的合并循环里也不会被裸覆盖（未出现的 key 不会被写入 existing）。
             _protected_incoming = any(incoming.get(k) for k in
                 ('OPS_ENT','DEMANDS','KB_CHAT','PENDING_CONFIRMS','KB_CONFIRMS',
-                 'REPORT_REQUESTS','CITY_ACCOUNTS','INVITE_CODES','CITY_BASE_PACKAGES'))
+                 'REPORT_REQUESTS','CITY_ACCOUNTS','INVITE_CODES','CITY_BASE_PACKAGES','DELETED_OPS_ENT'))
             if _core_had and not _core_incoming and not _protected_incoming:
                 print('[sync] rejected empty write (keys=%r)' % (sorted(_incoming_keys),))
                 resp = json.dumps({'ok': False, 'rejected': 'empty-payload'}).encode()
@@ -372,6 +374,7 @@ def handle_sync(self, raw, deps):
             _n_rm = _apply_kb_item_tombs(existing.get('PROJECTS'), _itomb)
             if _n_rm:
                 print('[sync] kb item tombs removed %d entrie(s)' % _n_rm)
+        apply_ops_enterprise_tombs(existing, _ops_ent_tombs)
         data_str = json.dumps(existing, ensure_ascii=False)
     except Exception as e:
         print(f"[sync] merge error: {e}")

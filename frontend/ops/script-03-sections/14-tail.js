@@ -67,6 +67,7 @@ function restore(){
       applyTopicStateIntegrity();
       DOCK_LOGS=data.DOCK_LOGS||{};
       OPS_ENT=data.OPS_ENT||[];
+      window.DELETED_OPS_ENT=Array.isArray(data.DELETED_OPS_ENT)?data.DELETED_OPS_ENT:[];
       if(data.REPORT_REQUESTS) REPORT_REQUESTS=data.REPORT_REQUESTS;
 
 
@@ -85,7 +86,7 @@ function _acceptServerGeneration(srv){
   if(!srv.RESET_GEN||srv.RESET_GEN===RESET_GEN)return false;
   ['PROJECTS','UPLOADS','KB_CONFIRMS','KB_CONFIRM_TOMBS','KB_ITEM_TOMBS','KB_FILE_CHUNKS','KB_UNLOCKED','REPORTSTATE','REPORT_HISTORY','PENDING_CONFIRMS','DOCK_LOGS','KB_CHAT','KB_CHAT_TOMBS','UPLOAD_TOMBS','CITY_BASE_PACKAGES','CITY_WORKSPACES','SUBPROJ'].forEach(function(key){if(typeof window[key]!=='undefined')window[key]={};});
   ['OPS_ENT','DEMANDS','REPORT_REQUESTS'].forEach(function(key){if(typeof window[key]!=='undefined')window[key]=[];});
-  window.DELETED_PROJECTS=[];window.DELETED_CLUES=[];cur=null;
+  window.DELETED_PROJECTS=[];window.DELETED_CLUES=[];window.DELETED_OPS_ENT=[];cur=null;
   ['huixiaozhao_kb_v1','hxz_reportstate','hxz_rpt_history','hxz_report_history','hxz_uploads','HXZ_UPLOAD_TOMBS','HXZ_KBCHAT_TOMBS','hxz_subproj'].forEach(function(key){try{localStorage.removeItem(key);}catch(_){}});
   RESET_GEN=srv.RESET_GEN;return true;
 }
@@ -129,6 +130,7 @@ function restoreFromServer(callback){
     if(srv.REPORT_REQUESTS) REPORT_REQUESTS = srv.REPORT_REQUESTS;
     // An explicitly empty server list is authoritative after a reset.
     OPS_ENT = Array.isArray(srv.OPS_ENT) ? srv.OPS_ENT : [];
+    window.DELETED_OPS_ENT=Array.isArray(srv.DELETED_OPS_ENT)?srv.DELETED_OPS_ENT:[];
     USER_PROFILES=_safeProfiles(srv.USER_PROFILES);CITY_ACCOUNTS={};
     INVITE_CODES=srv.INVITE_CODES||{};
     CITY_WORKSPACES=srv.CITY_WORKSPACES||{};

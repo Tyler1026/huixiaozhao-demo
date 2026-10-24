@@ -76,7 +76,7 @@ function _authResetView(){
   ['DEMANDS','REPORT_REQUESTS','OPS_ENT'].forEach(function(k){if(typeof window[k]!=='undefined')window[k]=[];});
   if(window._syncTimer){clearTimeout(window._syncTimer);window._syncTimer=null;}
   window._serverSyncLock=false;window._verifyInProgress=false;window._reportGenerating=false;
-  window.DELETED_PROJECTS=[];window.DELETED_CLUES=[];window.__lastSyncFp=null;
+  window.DELETED_PROJECTS=[];window.DELETED_CLUES=[];window.DELETED_OPS_ENT=[];window.__lastSyncFp=null;
   cur=null;view='login';window._opsDataReady=false;
   if(document.body&&document.body.classList&&typeof document.body.classList.remove==='function')document.body.classList.remove('ops-mode');
   _opsRenderedTab=null;_opsRenderedScope=null;if(typeof ragResetChat==='function')ragResetChat(null,false);
@@ -141,6 +141,7 @@ function render(){
   renderOpsV2();
 }
 function opsRefreshData(){
+  if(opsEntImportFiles.pending||opsEntDelete.pending||(typeof WORKSPACE_SYNC!=='undefined'&&WORKSPACE_SYNC.pending))return;
   if(AUTH&&AUTH.scope==='admin'&&window._opsDataReady)return restoreFromServer(function(ok){
     if(ok){render._opsLoadError='';renderOpsV2();}
     else{render._opsRestored=false;render._opsLoadError='unavailable';render();}
@@ -2596,8 +2597,7 @@ function parseEntTable(text){
     if(OPS_ENT.find(function(e){return e.name===name;})) continue;
     var signal=ci.signal>=0?(p[ci.signal]||''):'';
     var hasSig=!!signal && !/无(信号|公开)/.test(signal) && signal!=='-';
-    OPS_ENT.push({
-      id:'ent_'+Date.now().toString(36)+'_'+added,
+    var entity={
       name:name,
       industry:ci.ind>=0?p[ci.ind]||'':'',
       product:ci.prod>=0?p[ci.prod]||'':'',
@@ -2608,7 +2608,9 @@ function parseEntTable(text){
       signal:hasSig?signal:'（无扩张信号）',
       signalSrc:ci.src>=0?p[ci.src]||'':'',
       hasMoveSignal:hasSig, status:'manual', matches:[]
-    });
+    };
+    opsEntEnsureId(entity);
+    OPS_ENT.push(entity);
     added++;
   }
   return added;
@@ -2649,13 +2651,14 @@ function parseEntProfile(text, fname){
   var match=field(['匹配环节','匹配','环节']);
   var noSig=/无(任何)?(公开)?(的)?(扩张|迁址|新建)/.test(text) || /信号来源[:：]\s*无/.test(text);
   var hasSig=!!signal && !noSig;
-  OPS_ENT.push({
-    id:'ent_'+Date.now().toString(36)+'_'+Math.floor(Math.random()*1000),
+  var entity={
     name:name, industry:industry, product:product, region:region, scale:scale,
     kind:industry||'待扫描确认', gap:match,
     signal:hasSig?signal:'（无扩张信号）', signalSrc:src,
     hasMoveSignal:hasSig, status:'manual', matches:[]
-  });
+  };
+  opsEntEnsureId(entity);
+  OPS_ENT.push(entity);
   return 1;
 }
 
@@ -2811,44 +2814,45 @@ function opsPushEntToCity(projKey){resourceReviewChooseResources(projKey);}
 function opsDoPushToCity(projKey, count){resourceReviewConfirmSelection(projKey);}
 
 function opsEntImport(){
+  if(opsEntImportFiles.pending){toast('企业文件正在处理，请稍候');return;}
   var inp=document.createElement('input');
-  inp.type='file'; inp.multiple=true;
-  inp.accept='.txt,.csv,.md,.xlsx,.xls';
-  inp.onchange=function(){
-    var files=Array.from(inp.files||[]);
-    if(!files.length)return;
-    var total=0;
-    var done=0;
-    files.forEach(function(f){
-      if(/\.(xlsx|xls)$/i.test(f.name)){
-        // Excel: 只记录文件名提示，提醒用另存为 CSV
-        toast('请将 '+f.name+' 另存为 CSV 格式后重新导入');
-        done++; return;
-      }
-      var reader=new FileReader();
-      reader.onload=function(e){
-        var text=e.target.result||'';
-        var added=0;
-        var isCsv=/\.csv$/i.test(f.name);
-        // 判定：CSV 或 带表头的多列文本 → 结构化逐行；否则 → 整个文件=一家企业档案
-        var firstLine=(text.split(/\n/)[0]||'').trim();
-        var looksTabular=isCsv || (/[,\t，]/.test(firstLine) && /企业名称|名称|company|name/i.test(firstLine));
-        if(looksTabular){
-          added+=parseEntTable(text);
-        } else {
-          added+=parseEntProfile(text, f.name);
-        }
-        total+=added;
-        done++;
-        if(done===files.length){
-          opsTab='enterprises'; renderOpsV2();
-          toast('已导入 '+total+' 家企业，点「全局扫描」评估匹配方向');
-        }
-      };
-      reader.readAsText(f,'utf-8');
-    });
-  };
+  inp.type='file';inp.multiple=true;inp.accept='.txt,.csv,.md,.xlsx,.xls';
+  inp.onchange=function(){return opsEntImportFiles(Array.from(inp.files||[]));};
   inp.click();
+}
+
+async function opsEntImportFiles(files){
+  if(!files.length||opsEntImportFiles.pending)return;
+  if(!AUTH||AUTH.scope!=='admin'||!window._opsDataReady){toast('请等待企业数据加载完成后再导入');return;}
+  var epoch=_authEpoch,total=0,issues=[];
+  opsEntImportFiles.pending=true;
+  // A read started before this batch must not replace partially imported rows.
+  window._serverRestoreSeq=(window._serverRestoreSeq||0)+1;
+  try{
+    for(var i=0;i<files.length;i++){
+      var file=files[i];
+      if(/\.(xlsx|xls)$/i.test(file.name)){issues.push('请将 '+file.name+' 另存为 CSV 后重新导入');continue;}
+      if(!/\.(txt|csv|md)$/i.test(file.name)){issues.push(file.name+' 格式不支持');continue;}
+      try{
+        var text=await new Promise(function(resolve,reject){
+          var reader=new FileReader();
+          reader.onload=function(event){resolve(String(event.target.result||''));};
+          reader.onerror=reader.onabort=function(){reject(new Error('读取失败'));};
+          reader.readAsText(file,'utf-8');
+        });
+        if(epoch!==_authEpoch||!AUTH||AUTH.scope!=='admin')return;
+        var firstLine=(text.split(/\n/)[0]||'').trim();
+        var tabular=/\.csv$/i.test(file.name)||(/[,\t，]/.test(firstLine)&&/企业名称|名称|company|name/i.test(firstLine));
+        if(text.trim())total+=tabular?parseEntTable(text):parseEntProfile(text,file.name);
+      }catch(error){issues.push(file.name+' 读取失败，请重试');}
+    }
+    if(epoch!==_authEpoch||!AUTH||AUTH.scope!=='admin')return;
+    if(!total){toast(issues.length?issues.join('；'):'未导入新企业，文件为空、无有效记录或企业已存在');return;}
+    opsTab='enterprises';renderOpsV2();
+    var saved=await persist();
+    if(epoch!==_authEpoch||!AUTH||AUTH.scope!=='admin')return;
+    toast(saved?'已导入并保存 '+total+' 家企业'+(issues.length?'；'+issues.join('；'):'，可继续扫描匹配方向'):'已读取 '+total+' 家企业，但尚未保存，请点「重试保存」');
+  }finally{opsEntImportFiles.pending=false;}
 }
 
 /* 扫描单家企业：匹配所有城市的缺口方向 */
@@ -2958,12 +2962,34 @@ function opsEntPushModal(idx){var e=OPS_ENT[idx];if(!e||!e.id){toast('请先保�
 function opsEntDoPush(entIdx, miArr){opsEntPushModal(entIdx);}
 
 /* 删除企业 */
-function opsEntDelete(idx){
-  if(!confirm('确认删除该企业？')) return;
-  OPS_ENT.splice(idx,1);
+async function opsEntDelete(idx){
+  if(!AUTH||AUTH.scope!=='admin'||!window._opsDataReady){toast('请等待企业数据加载完成后再删除');return;}
+  var entity=OPS_ENT[idx];
+  if(!entity||!confirm('确认删除该企业？'))return;
+  opsEntDelete.pending=(opsEntDelete.pending||0)+1;
+  window._serverRestoreSeq=(window._serverRestoreSeq||0)+1;
+  try{
+  var epoch=_authEpoch,previousId=entity.id;
+  var id=String(opsEntEnsureId(entity));
+  // Legacy records need a saved identity before an explicit deletion can target them.
+  if(previousId!==entity.id)opsEntDelete.unconfirmedIds.add(entity);
+  if(opsEntDelete.unconfirmedIds.has(entity)){
+    if(!(await persist())){toast('企业编号尚未保存，请重试保存后再删除');return;}
+    opsEntDelete.unconfirmedIds.delete(entity);
+  }
+  if(epoch!==_authEpoch||!AUTH||AUTH.scope!=='admin')return;
+  var current=OPS_ENT.indexOf(entity);
+  if(current<0)return;
+  window.DELETED_OPS_ENT=Array.isArray(window.DELETED_OPS_ENT)?window.DELETED_OPS_ENT:[];
+  if(window.DELETED_OPS_ENT.indexOf(id)<0)window.DELETED_OPS_ENT.push(id);
+  OPS_ENT.splice(current,1);
   renderOpsV2();
-  toast('已删除');
+  var saved=await persist();
+  if(epoch!==_authEpoch||!AUTH||AUTH.scope!=='admin')return;
+  toast(saved?'已删除并保存':'删除尚未保存，请点「重试保存」');
+  }finally{opsEntDelete.pending--;}
 }
+opsEntDelete.unconfirmedIds=new WeakSet();
 
 /* 推送到指定城市（从城市概览页触发）*/
 function opsPushEntToCity(projKey){resourceReviewChooseResources(projKey);}
