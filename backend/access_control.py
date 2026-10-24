@@ -30,7 +30,7 @@ _META_FIELDS = frozenset({'cur', 'view', 'syncTs', 'RESET_GEN', 'clientUser'})
 _MEMBER_FIELDS = (PROJECT_MAP_FIELDS | COMPOSITE_MAP_FIELDS | _READONLY_FIELDS
                   | _META_FIELDS | {'KB_CHAT', 'DEMANDS', 'REPORT_REQUESTS',
                                     'DELETED_PROJECTS', 'DELETED_CLUES'})
-_STATE_FIELDS = _MEMBER_FIELDS | AUTH_TABLES | {'AUTH_SESSIONS', 'RAG_AUDIT', 'REPORT_PUBLICATIONS'}
+_STATE_FIELDS = _MEMBER_FIELDS | AUTH_TABLES | {'AUTH_SESSIONS', 'RAG_AUDIT', 'REPORT_PUBLICATIONS', 'DELETED_OPS_ENT'}
 _SECRET_NAMES = frozenset({
     'pwd', 'password', 'passwordhash', 'pwdhash', 'token', 'sessiontoken',
     'accesstoken', 'refreshtoken', 'authorization', 'cookie', 'setcookie',

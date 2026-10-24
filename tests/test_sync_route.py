@@ -54,6 +54,20 @@ class SyncRouteTests(unittest.TestCase):
                     node.elts=[e for e in node.elts if not (isinstance(e,ast.Constant) and e.value in NEW_KEYS)]
                 return node
         extracted=StripInviteCodesAdditions().visit(extracted_fn)
+        # Enterprise deletions add only two helper calls. Keep the inherited
+        # empty-write and merge rules pinned; their behavior has dedicated tests.
+        class StripEnterpriseDeletionAdditions(ast.NodeTransformer):
+            def visit_Assign(self, node):
+                if ast.dump(node) == ast.dump(ast.parse(
+                        '_ops_ent_tombs = merge_ops_enterprise_tombs(existing, incoming)').body[0]):
+                    return None
+                return self.generic_visit(node)
+            def visit_Expr(self, node):
+                if ast.dump(node) == ast.dump(ast.parse(
+                        'apply_ops_enterprise_tombs(existing, _ops_ent_tombs)').body[0]):
+                    return None
+                return self.generic_visit(node)
+        extracted=StripEnterpriseDeletionAdditions().visit(extracted)
         # 【2026-09-30】空写保护误杀 REPORT_REQUESTS 等局部更新的修复带来两处偏移，
         # 同样不存在于旧基线里：
         # (1) 新增 `_protected_incoming = any(...)` 赋值语句，判断 incoming 是否

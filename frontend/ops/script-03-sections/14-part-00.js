@@ -23,6 +23,7 @@ function persist(){
       PENDING_CONFIRMS:PENDING_CONFIRMS,
       DOCK_LOGS:DOCK_LOGS,
       OPS_ENT:OPS_ENT,
+      DELETED_OPS_ENT:window.DELETED_OPS_ENT||[],
       DEMANDS:DEMANDS,
       REPORT_REQUESTS:REPORT_REQUESTS,
       // 【2026-09-21 修复】管理端从不读写问答记忆，但原来写的是
