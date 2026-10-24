@@ -11716,8 +11716,14 @@ function ragSearchBox(){
         'onkeydown="if(event.key===\'Enter\')ragDoSearch()" '+
         'style="flex:1;min-height:40px;padding:8px 12px;border:1px solid #d8e0ed;border-radius:8px;font-size:13px">'+
       '<button class="primary-button" style="min-height:40px" onclick="ragDoSearch()">检索测试</button>'+
-      (ragHits?'<button class="ghost-button" style="min-height:40px" onclick="ragHits=null;ragQuery=\'\';renderOpsV2()">清除</button>':'')+
+      (ragHits?'<button class="ghost-button" style="min-height:40px" onclick="ragClearSearch()">清除</button>':'')+
     '</div>'+(ragHits?ragHitsView():'')+'</div>';
+}
+function ragClearSearch(){
+  ragHits=null;ragQuery='';
+  // Clear the live draft before renderOpsV2 captures it for view restoration.
+  var input=document.getElementById('ragQ');if(input)input.value='';
+  renderOpsV2();
 }
 /* Keep original items for source/annotation rendering; index only plain text. */
 function ragItemText(item){
