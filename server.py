@@ -1177,6 +1177,21 @@ class Handler(BaseHTTPRequestHandler):
         if not q:
             return error_response(self, AuthError(400, 'question_required', '请填写问题'))
 
+        if mode == 'onboard_options':
+            from backend.kb_context import onboarding_request_context
+            try:
+                saved_onboarding = onboarding_request_context(body, self._scoped_state)
+            except AuthError as error:
+                return error_response(self, error)
+            chunks = saved_onboarding['chunks']
+            city = saved_onboarding['city']
+            q = '为' + city + '生成招商偏好问卷推荐选项'
+            history, prefs = [], {}
+            # Keep this operation in its own route even if a caller supplies a
+            # report purpose or stale browser context along with the request.
+            body = {'projectKey': saved_onboarding['projectKey'], 'question': q,
+                    'mode': mode, 'stream': stream}
+
         if body.get('purpose') == 'report_priorities':
             from backend.topic_priorities_route import serve_topic_priorities
             return serve_topic_priorities(self, body, complete=_complete_topic_plan, audit=audit_log)

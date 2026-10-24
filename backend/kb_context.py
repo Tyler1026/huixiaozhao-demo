@@ -254,6 +254,32 @@ def chat_request_context(body, state):
             'chunks': rows, 'onboarding': copy.deepcopy(project.get('onboarding') or {})}
 
 
+def onboarding_request_context(body, state):
+    """Require a visible workspace; browser material and city are not evidence."""
+    key = body.get('projectKey')
+    if not isinstance(key, str) or not key.strip():
+        raise AuthError(403, 'project_required', '请选择有权限的工作区')
+    try:
+        keys = workspace_keys(state, key)
+    except AuthError:
+        raise AuthError(403, 'workspace_forbidden', '无权访问该工作区') from None
+    project = state['PROJECTS'][key]
+    # A demand can use its visible canonical parent's materials, but an absent
+    # or inconsistent parent must not silently become a different city scope.
+    if (project.get('workspaceId') or key) != keys[0]:
+        raise AuthError(403, 'workspace_forbidden', '无权访问该工作区')
+    city = project.get('city')
+    if not isinstance(city, str) or not city.strip():
+        raise AuthError(409, 'city_required', '工作区城市信息缺失，请联系管理员核对')
+    city = city.strip()
+    if any(not isinstance(state['PROJECTS'][item].get('city'), str)
+           or state['PROJECTS'][item]['city'].strip() != city for item in keys):
+        raise AuthError(409, 'workspace_city_mismatch', '工作区城市信息不一致，请联系管理员核对')
+    context = chat_request_context({'projectKey': key}, state)
+    context['city'] = city
+    return context
+
+
 def chat_sources(chunks):
     """Project only selected chunks; a valid URL is not a factual endorsement."""
     sources = []

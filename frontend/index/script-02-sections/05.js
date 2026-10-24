@@ -30,6 +30,7 @@ function syncDetailPane(){
 }
 
 function render(){
+  if(typeof onbCancelHiddenRequests==='function')onbCancelHiddenRequests();
   document.body.classList.toggle('kb-view',view==='knowledge'&&!!AUTH);
   document.body.classList.toggle('industry-view',view==='report'&&!!AUTH);
   document.body.classList.toggle('docking-view',(view==='home'||view==='docking')&&!!AUTH);
