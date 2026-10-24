@@ -62,7 +62,7 @@
     ]
   },
   "ops.html": {
-    "sha256": "f2e711549acd2666ac6e77f2a91be67b5e194237d50dd35207bd4a6caba9d3f7",
+    "sha256": "684bb1906a768a085af0302546910cc81fda23ba0b5a7541654e2407acc103c8",
     "parts": [
       "frontend/ops/markup-01.html",
       "frontend/ops/style-01.css",
