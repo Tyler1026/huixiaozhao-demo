@@ -21,7 +21,7 @@ const implementation = [
   between(tail, 'var OWNED_FILE_PICKER=', '/* 编辑框附件上传'),
   between(tail, 'function editPickFile(', 'function editDropFile('),
   between(tail, 'function processEditFiles(', 'var kbEditSession='),
-  between(tail, 'function kbEditorContextCurrent(', 'function kbEditorChanged('),
+  between(tail, 'function kbEditorAuthorization(', 'function kbEditorChanged('),
   between(tail, 'function kbCancelEdit(', 'function kbKeepEditing('),
   between(tail, 'function pickLocalFile(', '/* ── 文件摄取'),
   between(tail, 'function doUpload(){', 'function uploadParsed('),
@@ -86,7 +86,7 @@ function setup() {
   const c = {
     console, Array, Object, String, Number, Math, Date, Promise, document,
     cur: 'a', view: 'knowledge', role: 'user', _authEpoch: 1, _authState: 'ready',
-    AUTH: {user: 'owner', projKey: 'a', projectKeys: ['a', 'b']}, PROJECTS: {a: project},
+    AUTH: {user: 'owner', scope: 'project', role: 'owner', projKey: 'a', projectKeys: ['a', 'b']}, PROJECTS: {a: project}, RESET_GEN: 'fixture-generation',
     REPORTSTATE: {}, REPORT_HISTORY: {}, _scrollMemory: {key: 'a', tops: {}},
     _renderedScrollKey: 'a', detailOpen: false,
     localStorage: {removeItem() {}},
@@ -108,7 +108,7 @@ function setup() {
   };
   c.window = c; vm.createContext(c); vm.runInContext(implementation, c);
   c.render._routed = true; c.render._serverSynced = true;
-  c.kbEditSession = {key: 'a', epoch: 1, kbIdx: 0, itemIdx: 0, segmentVersion: 1,
+  c.kbEditSession = {key: 'a', epoch: 1, authorization: c.kbEditorAuthorization(), resetGen: c.RESET_GEN, kbIdx: 0, itemIdx: 0, segmentVersion: 1,
     project, topic: project.kb[0], obscured: []};
   function open(name) { c[name](...(name === 'editPickFile' ? [0, 0] : name === 'pickLocalFile' ? [0] : [])); return c.OWNED_FILE_PICKER.input; }
   function drain() { while (timers.length) timers.shift()(); }
