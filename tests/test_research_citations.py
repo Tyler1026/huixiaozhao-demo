@@ -339,7 +339,7 @@ class ResearchCitationTests(unittest.TestCase):
                     parsed = runner._parse_part(stage, part, payload, [], {})
                     self.assertIn(ROOT + 'only', parsed['text'])
                     self.assertIn('_citation_frame', parsed)
-        for stage, part in (('enterprises_1', '候选池'), ('fact_check', '经济关键数字')):
+        for stage, part in (('scoring', '评分维度与权重'), ('fact_check', '经济关键数字')):
             with self.subTest(stage=stage):
                 runner = live(Transport([], ['claim 来源[999]']))
                 payload = runner._chat_part(stage, part, 'OFFLINE城', '', [evidence('only')])
