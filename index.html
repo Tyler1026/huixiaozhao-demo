@@ -5055,6 +5055,16 @@ var INVITE_CODES={};
 function canGenerateInviteCode(auth){ return false; }
 /* 组织成员管理权限：owner 可查看/移除同 projKey 下的其他账号，member 不可。 */
 function isOrgOwner(auth){ return !!(auth && auth.role==='owner'); }
+// Account labels come from the current authenticated session, never a shared
+// workspace's business contact (PROJECTS[cur].who).
+function currentAccountIdentity(){
+  var ready=AUTH&&_authState==='ready'&&AUTH.scope==='project'&&typeof AUTH.user==='string'&&AUTH.user.trim();
+  if(!ready)return {user:'',name:'未登录',org:'未填写',roleLabel:'未登录'};
+  var member=typeof AUTH.projKey==='string'&&Array.isArray(AUTH.projectKeys)&&AUTH.projectKeys.indexOf(AUTH.projKey)>=0;
+  return {user:AUTH.user,name:typeof AUTH.who==='string'&&AUTH.who.trim()?AUTH.who.trim():AUTH.user,
+    org:typeof AUTH.org==='string'&&AUTH.org.trim()?AUTH.org.trim():'未填写',
+    roleLabel:member&&AUTH.role==='owner'?'工作区负责人':member&&AUTH.role==='member'?'工作区成员':'身份待核验'};
+}
 function _authEscape(value){return String(value==null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function _safeProfiles(profiles){
   var result={}, fields=['name','phone','wechat','org','dept','title','city','ts','role','projKey','projectKeys','user','resident'];
@@ -6516,11 +6526,12 @@ function opsAction(id){
 }
 function brandLogo(){return 'data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50"><rect width="50" height="50" rx="25" fill="#0757ad"/><text x="25" y="33" font-size="22" fill="white" text-anchor="middle" font-family="sans-serif">慧</text></svg>')}
 function topbar(p){
+  var identity=currentAccountIdentity();
   return '<div class="topbar">'+
     '<div class="brand-block"><img src="data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"50\"><rect width=\"50\" height=\"50\" rx=\"25\" fill=\"%230757ad\"/><text x=\"25\" y=\"33\" font-size=\"22\" fill=\"white\" text-anchor=\"middle\" font-family=\"sans-serif\">慧</text></svg>')+'"><div><strong>慧小招</strong><span>AI 招商智能体</span></div></div>'+
     // 机构与身份固定（账号绑定，不可切换）；当前方向只读展示，切换在「招商对接」进行
     '<div class="org-block"><i class="i">🏛️</i>'+
-      '<strong style="font-weight:650">'+_authEscape(p.org)+' · '+_authEscape(p&&p.who||'—')+'</strong>'+
+      '<strong style="font-weight:650">'+_authEscape(identity.org)+' · '+_authEscape(identity.name)+'</strong>'+
       '<span style="margin:0 10px;color:#cbd7e6">/</span>'+
       '<strong id="topbarTopic" style="color:var(--blue-dark)">'+_authEscape((view==='home'||view==='docking')?'招商对接工作区':p.topic)+'</strong>'+
     '</div>'+
@@ -11986,14 +11997,16 @@ function kbPage(p){
     '<p class="kb-source-intro">只列出当前回答送入模型的材料。来源链接供你回到原文核实。</p><div id="kbSourcesList"><div class="kb-sources-empty"><span aria-hidden="true">▤</span><strong>随回答查看依据</strong><p>发送问题后，这里会展示本次参考的片段与已有出处。</p></div></div></aside></div></div>';
 }
 function settingsPage(p){
+  var identity=currentAccountIdentity();
   return '<div class="page">'+
     '<div class="page-header"><div><span class="eyebrow">PERSONALIZATION</span><h1>个人与提醒设置</h1>'+
     '<p>让协作，更合你的节奏。</p></div></div>'+
     '<div class="settings-scroll">'+authWorkspaceBlock('settings-section')+
     '<div class="settings-section"><h2>账号身份<span class="settings-readonly-badge">系统开通 · 只读</span></h2>'+
       '<div class="form-grid">'+
-      '<label>所属单位<input value="'+_authEscape(p.org)+'" disabled></label>'+
-      '<label>姓名 / 角色<input value="'+_authEscape(p.who)+' / 招商干部" disabled></label>'+
+      '<label>所属单位<input value="'+_authEscape(identity.org)+'" disabled></label>'+
+      '<label>姓名 / 角色<input value="'+_authEscape(identity.name)+' / '+_authEscape(identity.roleLabel)+'" disabled></label>'+
+      '<label>登录账号<input value="'+_authEscape(identity.user)+'" disabled></label>'+
       '<label>所属地区<input value="'+_authEscape(p.city)+'" disabled></label>'+
       '<label>数据权限<input value="仅限 '+_authEscape(p.city)+' 城市智库" disabled></label></div>'+
       '<div class="boundary-note" style="margin-top:14px"><i class="i">🔒</i>账号的地区与身份在开通时绑定，用户不可自行更改；如需变更请联系系统管理员。</div></div>'+
@@ -12230,9 +12243,10 @@ function detailNeeds(p){
 }
 // 设置页 → 右侧：账号与权限概览
 function detailSettings(p){
+  var identity=currentAccountIdentity();
   return '<div class="detail-header"><div><span class="eyebrow">ACCOUNT</span><h2>账号概览</h2><p>由系统开通 · 不可自行修改</p></div></div>'+
     '<div class="detail-scroll">'+
-      '<div class="detail-block"><h3>身份</h3><ul class="check-list"><li><i class="i">✔</i>'+_authEscape(p.org)+'</li><li><i class="i">✔</i>'+_authEscape(p.who)+' · 招商干部'+(AUTH&&AUTH.role==='owner'?' · 组织管理员':'')+'</li></ul></div>'+
+      '<div class="detail-block"><h3>身份</h3><ul class="check-list"><li><i class="i">✔</i>'+_authEscape(identity.org)+'</li><li><i class="i">✔</i>'+_authEscape(identity.name)+' · '+_authEscape(identity.roleLabel)+'</li><li><i class="i">✔</i>登录账号：'+_authEscape(identity.user)+'</li></ul></div>'+
       '<div class="detail-block"><h3>数据权限</h3><div class="info-callout" style="margin-top:0">仅可访问 <b>'+_authEscape(p.city)+'</b> 城市工作区；其他团队的数据需要单独授权。</div></div>'+
       orgMembersBlock()+
       '<div class="detail-block"><h3>安全边界</h3><div class="boundary-note" style="margin-top:0"><i class="i">🔒</i>确认关口、资源核验责任与企业触达边界，不因个人设置而跳过。</div></div>'+
@@ -17364,6 +17378,7 @@ render();
 
   window.brandLogo = function () { return '/static/skin/brand-girl.png'; };
   window.topbar = function (p) {
+    var identity=currentAccountIdentity();
     var label = moduleNames[window.view] || '招商工作区';
     var topic = window.view === 'home' || window.view === 'docking' ? '招商对接工作区' : p.topic;
     return '<header class="topbar client-topbar"><a class="brand-block" href="/" aria-label="慧小招首页">' + avatar(40) +
@@ -17374,8 +17389,8 @@ render();
       '<div class="client-notification"><button class="client-icon-button" type="button" onclick="toggleNotif(event)" aria-label="通知中心">' +
       icon('notification') + (unreadCount() ? '<b>' + unreadCount() + '</b>' : '') + '</button>' +
       '<div id="notifPanel" class="client-notification-panel" style="display:none" onclick="event.stopPropagation()">' + notifList() + '</div></div>' +
-      '<button class="client-account" type="button" onclick="go(\'settings\')" title="' + escape(p.org) + ' · 账号与协作">' +
-      escape(p.who || '账号与协作') + '</button><button class="client-logout" type="button" onclick="logout()">退出</button></div></header>';
+      '<button class="client-account" type="button" onclick="go(\'settings\')" title="' + escape(identity.user+' · '+identity.roleLabel) + '">' +
+      escape(identity.name) + '</button><button class="client-logout" type="button" onclick="logout()">退出</button></div></header>';
   };
   window.sidebar = function () {
     var readiness = kbReadiness();

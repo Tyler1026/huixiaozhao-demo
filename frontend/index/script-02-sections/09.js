@@ -99,11 +99,12 @@ function opsAction(id){
 }
 function brandLogo(){return 'data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50"><rect width="50" height="50" rx="25" fill="#0757ad"/><text x="25" y="33" font-size="22" fill="white" text-anchor="middle" font-family="sans-serif">慧</text></svg>')}
 function topbar(p){
+  var identity=currentAccountIdentity();
   return '<div class="topbar">'+
     '<div class="brand-block"><img src="data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"50\"><rect width=\"50\" height=\"50\" rx=\"25\" fill=\"%230757ad\"/><text x=\"25\" y=\"33\" font-size=\"22\" fill=\"white\" text-anchor=\"middle\" font-family=\"sans-serif\">慧</text></svg>')+'"><div><strong>慧小招</strong><span>AI 招商智能体</span></div></div>'+
     // 机构与身份固定（账号绑定，不可切换）；当前方向只读展示，切换在「招商对接」进行
     '<div class="org-block"><i class="i">🏛️</i>'+
-      '<strong style="font-weight:650">'+_authEscape(p.org)+' · '+_authEscape(p&&p.who||'—')+'</strong>'+
+      '<strong style="font-weight:650">'+_authEscape(identity.org)+' · '+_authEscape(identity.name)+'</strong>'+
       '<span style="margin:0 10px;color:#cbd7e6">/</span>'+
       '<strong id="topbarTopic" style="color:var(--blue-dark)">'+_authEscape((view==='home'||view==='docking')?'招商对接工作区':p.topic)+'</strong>'+
     '</div>'+

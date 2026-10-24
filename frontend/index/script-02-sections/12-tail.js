@@ -4169,14 +4169,16 @@ function kbPage(p){
     '<p class="kb-source-intro">只列出当前回答送入模型的材料。来源链接供你回到原文核实。</p><div id="kbSourcesList"><div class="kb-sources-empty"><span aria-hidden="true">▤</span><strong>随回答查看依据</strong><p>发送问题后，这里会展示本次参考的片段与已有出处。</p></div></div></aside></div></div>';
 }
 function settingsPage(p){
+  var identity=currentAccountIdentity();
   return '<div class="page">'+
     '<div class="page-header"><div><span class="eyebrow">PERSONALIZATION</span><h1>个人与提醒设置</h1>'+
     '<p>让协作，更合你的节奏。</p></div></div>'+
     '<div class="settings-scroll">'+authWorkspaceBlock('settings-section')+
     '<div class="settings-section"><h2>账号身份<span class="settings-readonly-badge">系统开通 · 只读</span></h2>'+
       '<div class="form-grid">'+
-      '<label>所属单位<input value="'+_authEscape(p.org)+'" disabled></label>'+
-      '<label>姓名 / 角色<input value="'+_authEscape(p.who)+' / 招商干部" disabled></label>'+
+      '<label>所属单位<input value="'+_authEscape(identity.org)+'" disabled></label>'+
+      '<label>姓名 / 角色<input value="'+_authEscape(identity.name)+' / '+_authEscape(identity.roleLabel)+'" disabled></label>'+
+      '<label>登录账号<input value="'+_authEscape(identity.user)+'" disabled></label>'+
       '<label>所属地区<input value="'+_authEscape(p.city)+'" disabled></label>'+
       '<label>数据权限<input value="仅限 '+_authEscape(p.city)+' 城市智库" disabled></label></div>'+
       '<div class="boundary-note" style="margin-top:14px"><i class="i">🔒</i>账号的地区与身份在开通时绑定，用户不可自行更改；如需变更请联系系统管理员。</div></div>'+
