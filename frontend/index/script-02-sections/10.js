@@ -146,6 +146,7 @@ function go(v){
   if(v==='report')cur=industryAnalysisWorkspaceKey(cur);
   if(isLocked(v)){
     var r=kbReadiness();
+    var summary=kbReadinessSummary(r);
     var vnames={report:'AI 匹配研判',home:'需求与建联',docking:'需求与建联'};
     var vn=vnames[v]||v;
     var tips=[];
@@ -163,19 +164,20 @@ function go(v){
           '<div style="flex:1;background:#f0f4ff;border-radius:6px;height:8px;overflow:hidden">'+
             '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:6px;transition:width .3s"></div>'+
           '</div>'+
-          '<span style="font-size:13px;font-weight:700;color:'+r.color+'">'+r.score+'%</span>'+
+          '<span style="font-size:13px;font-weight:700;color:'+r.color+'">材料量评分 '+r.score+'分</span>'+
         '</div>'+
+        '<p style="font-size:12px;color:#64748b;margin:0 0 8px">'+summary.sectionText+' · '+summary.statusText+'</p>'+
         '<p style="font-size:13px;color:#4a5568;margin:0 0 12px;line-height:1.7">'+
-          '&#128274; <strong>'+vn+'</strong>\u9700\u8981\u57ce\u5e02\u667a\u5e93\u5b8c\u6210\u5ea6\u8fbe\u5230 <strong>80%</strong>\u540e\u81ea\u52a8\u89e3\u9501\u3002\u5f53\u524d <strong style="color:'+r.color+'">'+r.score+'%</strong>\u3002</p>'+
-        '<p style="font-size:12px;color:#6366f1;margin:0 0 10px">\u{1f4a1} \u4e0a\u4f20\u8d8a\u591a\u6750\u6599\u3001\u9886\u5bfc\u786e\u8ba4\u8d8a\u591a\u7ed3\u8bba\uff0c\u7814\u5224\u6570\u636e\u53ef\u9760\u6027\u8d8a\u9ad8\u3002</p>'+
+          '&#128274; <strong>'+vn+'</strong>需要城市智库的材料量基础评分达到 <strong>80分</strong>后自动解锁；待确认事项仍需单独核实。</p>'+
+        '<p style="font-size:12px;color:#6366f1;margin:0 0 10px">'+summary.explanation+'</p>'+
         (tipsHtml?'<div style="margin-bottom:10px">'+
-          '<div style="font-size:11.5px;font-weight:650;color:#6366f1;margin-bottom:6px">\u5feb\u901f\u63d0\u5347\u5b8c\u6210\u5ea6\uff1a</div>'+
+          '<div style="font-size:11.5px;font-weight:650;color:#6366f1;margin-bottom:6px">可补充的材料与确认事项：</div>'+
           '<ul style="margin:0;padding:0;list-style:none">'+tipsHtml+'</ul></div>':'');
     var foot=
       '<button class="secondary-button" onclick="closeModal()">\u7ee7\u7eed\u5b8c\u5584\u57ce\u5e02\u667a\u5e93</button>'+
       '<button onclick="unlockView(\''+v+'\')" '+
         'style="padding:10px 18px;background:#f5f7fb;color:#64748b;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;cursor:pointer">'+
-        '\u5f3a\u5236\u89e3\u9501\uff08\u6570\u636e\u53ef\u9760\u6027\u8f83\u4f4e\uff09</button>';
+        '手动解锁（仍需核验事实）</button>';
     openModal('&#128274; '+vn+' \u5c1a\u672a\u89e3\u9501', body, foot);
     return;
   }

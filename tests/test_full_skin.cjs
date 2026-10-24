@@ -177,6 +177,9 @@ test('story navigation still respects the existing knowledge readiness gate', ()
     kbReadiness: () => ({score: 40, confirmed: 1, total: 2, files: 1, color: '#2D5BE3'}),
   }});
   const navigationSource = fs.readFileSync(path.join(root, 'frontend/index/script-02-sections/10.js'), 'utf8');
+  const readinessSource = fs.readFileSync(path.join(root, 'frontend/index/script-02-sections/09.js'), 'utf8');
+  context.P = () => ({kb: []});
+  vm.runInContext(readinessSource.slice(readinessSource.indexOf('function kbReadinessSummary('), readinessSource.indexOf('/* 按研判方向计算置信度')), context);
   vm.runInContext(navigationSource.slice(navigationSource.indexOf('function go(v)'), navigationSource.indexOf('\nfunction bind(')), context);
   context.go('report');
   assert.equal(context.view, 'knowledge');
