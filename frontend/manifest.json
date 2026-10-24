@@ -1,6 +1,6 @@
 {
   "index.html": {
-    "sha256": "179047a6166f70359bfcaa95d4531da8eb04f6696bc886ca5923981c7f5dd2a2",
+    "sha256": "d7aff0931aede24391b9316f72c5555c173a32bd0b06670af37583e52ad8cd56",
     "parts": [
       "frontend/index/markup-01.html",
       "frontend/index/style-01.css",
@@ -28,6 +28,9 @@
       "frontend/index/script-02-sections/01.js",
       "frontend/index/script-02-sections/02.js",
       "frontend/index/script-02-sections/03.js",
+      "frontend/index/submitted-demand-access.js",
+      "frontend/index/reminders.js",
+      "frontend/index/uploaded-materials.js",
       "frontend/index/script-02-sections/04.js",
       "frontend/index/script-02-sections/05.js",
       "frontend/index/script-02-sections/06.js",
@@ -62,7 +65,7 @@
     ]
   },
   "ops.html": {
-    "sha256": "f2e711549acd2666ac6e77f2a91be67b5e194237d50dd35207bd4a6caba9d3f7",
+    "sha256": "411ada0e9ea862dfef59594cd58a819e9b90b5cdda89006e98439f8d766717d8",
     "parts": [
       "frontend/ops/markup-01.html",
       "frontend/ops/style-01.css",

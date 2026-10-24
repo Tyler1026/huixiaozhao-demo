@@ -4804,12 +4804,19 @@ function _getDisplaySub(kbIdx){
   var p=P(), section=p&&p.kb&&p.kb[kbIdx];
   if(!section)return '';
   var effective=Object.assign({},section,{known:kbEffectiveKnown(p,kbIdx,cur)});
+  var uploads=typeof kbUploadedMaterialGroups==='function'?kbUploadedMaterialGroups(cur,kbIdx):[];
+  if(uploads.length){
+    effective.known=effective.known.filter(function(value){return !kbUploadedPlaceholder(value,uploads);});
+    var summary=typeof kbSectionSummary==='function'?kbSectionSummary(effective):{count:effective.known.length,sourceCount:0};
+    return summary.count+' 条知识内容 / '+summary.sourceCount+' 项来源记录 · 上传 '+uploads.length+' 个文件 / '+uploads.reduce(function(n,file){return n+file.items.length;},0)+' 个已保存片段 / '+uploads.length+' 项原件来源';
+  }
   return typeof kbSectionSummary==='function'?kbSectionSummary(effective).displaySub:(section.sub||'');
 }
 function _getDisplayTag(kbIdx){
   var p=P(), section=p&&p.kb&&p.kb[kbIdx];
   if(!section)return '';
   var effective=Object.assign({},section,{known:kbEffectiveKnown(p,kbIdx,cur)});
+  if(typeof kbUploadedMaterialGroups==='function'&&kbUploadedMaterialGroups(cur,kbIdx).length)return '有上传材料 · 内容待核';
   return typeof kbSectionSummary==='function'?kbSectionSummary(effective).displayTag:(section.tag||'');
 }
 function _kbMeta(x){ return (x&&typeof x==='object')?x:{text:String(x==null?'':x),origin:'ai',nature:'base'}; }
@@ -5055,6 +5062,16 @@ var INVITE_CODES={};
 function canGenerateInviteCode(auth){ return false; }
 /* 组织成员管理权限：owner 可查看/移除同 projKey 下的其他账号，member 不可。 */
 function isOrgOwner(auth){ return !!(auth && auth.role==='owner'); }
+// Account labels come from the current authenticated session, never a shared
+// workspace's business contact (PROJECTS[cur].who).
+function currentAccountIdentity(){
+  var ready=AUTH&&_authState==='ready'&&AUTH.scope==='project'&&typeof AUTH.user==='string'&&AUTH.user.trim();
+  if(!ready)return {user:'',name:'未登录',org:'未填写',roleLabel:'未登录'};
+  var member=typeof AUTH.projKey==='string'&&Array.isArray(AUTH.projectKeys)&&AUTH.projectKeys.indexOf(AUTH.projKey)>=0;
+  return {user:AUTH.user,name:typeof AUTH.who==='string'&&AUTH.who.trim()?AUTH.who.trim():AUTH.user,
+    org:typeof AUTH.org==='string'&&AUTH.org.trim()?AUTH.org.trim():'未填写',
+    roleLabel:member&&AUTH.role==='owner'?'工作区负责人':member&&AUTH.role==='member'?'工作区成员':'身份待核验'};
+}
 function _authEscape(value){return String(value==null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function _safeProfiles(profiles){
   var result={}, fields=['name','phone','wechat','org','dept','title','city','ts','role','projKey','projectKeys','user','resident'];
@@ -5075,6 +5092,11 @@ function _purgeAuthCache(){
   try{var raw=localStorage.getItem('huixiaozhao_kb_v1');if(raw)localStorage.setItem('huixiaozhao_kb_v1',JSON.stringify(_safeSyncSnapshot(JSON.parse(raw))));}catch(_){}
 }
 function _authResetView(){
+  if(typeof resetSubmittedDemandAccess==='function')resetSubmittedDemandAccess();
+  if(typeof resetOnboardingSession==='function')resetOnboardingSession();
+  if(typeof reminderResetSession==='function')reminderResetSession();
+  if(typeof resetOwnedFilePickers==='function')resetOwnedFilePickers();
+  if(typeof kbCloseUploadedMaterialReader==='function')kbCloseUploadedMaterialReader();
   if(typeof materialResetSession==='function')materialResetSession();
   if(typeof workspaceSyncReset==='function')workspaceSyncReset();
   if(typeof kbResetChatRequests==='function')kbResetChatRequests();
@@ -5175,6 +5197,369 @@ function P(){return cur&&PROJECTS[cur]||{}}
 function cityKeys(){
   return Object.keys(PROJECTS).filter(function(k){return AUTH&&_authWorkspaceOf(k)===AUTH.projKey;});
 }
+/* Existing-demand navigation is based on this session's server receipts, not
+ * browser-restored drafts. This does not replace authorization at any API. */
+var SUBMITTED_DEMAND_ACCESS=null, SUBMITTED_DEMAND_READ_SERIAL=0;
+function submittedDemandAuthIdentity(){
+  if(typeof AUTH==='undefined'||!AUTH||AUTH.scope!=='project'||_authState!=='ready'||
+      typeof AUTH.user!=='string'||!AUTH.user||typeof AUTH.projKey!=='string'||!AUTH.projKey||
+      !Array.isArray(AUTH.projectKeys)||AUTH.projectKeys.indexOf(AUTH.projKey)<0)return null;
+  return JSON.stringify([_authEpoch,AUTH.user,AUTH.scope,AUTH.role,AUTH.projKey,
+    AUTH.projectKeys.slice().sort(),typeof RESET_GEN==='undefined'?null:RESET_GEN]);
+}
+function resetSubmittedDemandAccess(){SUBMITTED_DEMAND_ACCESS=null;SUBMITTED_DEMAND_READ_SERIAL++;}
+function submittedDemandReadToken(){return {identity:submittedDemandAuthIdentity(),serial:++SUBMITTED_DEMAND_READ_SERIAL};}
+function submittedDemandReadCurrent(token){return !!token&&!!token.identity&&token.identity===submittedDemandAuthIdentity()&&token.serial===SUBMITTED_DEMAND_READ_SERIAL;}
+function submittedDemandStable(value){
+  if(Array.isArray(value))return value.map(submittedDemandStable);
+  if(value&&typeof value==='object'){var result={};Object.keys(value).sort().forEach(function(k){result[k]=submittedDemandStable(value[k]);});return result;}
+  return value;
+}
+function submittedDemandProof(key,projects,demands,tombs){
+  var root=AUTH.projKey,p=projects&&projects[key],base=projects&&projects[root];
+  if(!p||!base||key===root||base.isDemand===true||base.deleted===true||base.archived===true||
+      (base.workspaceId!=null&&base.workspaceId!==root)||
+      !Array.isArray(demands)||!Array.isArray(tombs)||tombs.indexOf(key)>=0||tombs.indexOf(root)>=0||
+      p.id!==key||p.isDemand!==true||p.demandContract!=='industry-demand-v1'||p.submissionState!=='submitted'||
+      p.workspaceId!==root||p.parentProjectKey!==root||p.deleted===true||p.archived===true||p.cancelled===true||p.closed===true||p.completed===true||
+      typeof p.city!=='string'||!p.city||p.city!==base.city||typeof p.demandTitle!=='string'||!p.demandTitle||
+      !Number.isSafeInteger(p.submittedAt)||p.submittedAt<=0||typeof p.submittedBy!=='string'||!p.submittedBy||
+      !p.demandSpec||typeof p.demandSpec!=='object'||Array.isArray(p.demandSpec))return null;
+  var rows=demands.filter(function(d){return d&&d.projKey===key;});
+  if(rows.length!==1)return null;
+  var d=rows[0],spec=p.demandSpec;
+  if(typeof d.id!=='string'||!d.id||demands.filter(function(row){return row&&row.id===d.id;}).length!==1||
+      d.deleted===true||d.archived===true||d.demandContract!==p.demandContract||d.demandOrigin!==p.demandOrigin||
+      d.city!==p.city||d.demandTitle!==p.demandTitle||d.topic!==p.demandTitle||
+      d.submittedAt!==p.submittedAt||d.submittedBy!==p.submittedBy||spec.title!==p.demandTitle||
+      typeof spec.description!=='string'||!spec.description||d.need!==spec.description||d.note!==(spec.conditions||'')||
+      JSON.stringify(submittedDemandStable(d.demandSpec))!==JSON.stringify(submittedDemandStable(spec)))return null;
+  var lineage;
+  if(p.demandOrigin==='direct'){
+    if(spec.source!=='user_direct'||p.topic!==p.demandTitle||typeof p.directRequestId!=='string'||!p.directRequestId||
+        d.directRequestId!==p.directRequestId||!/^[0-9a-f]{64}$/.test(p.directRequestFingerprint||'')||
+        d.directRequestFingerprint!==p.directRequestFingerprint)return null;
+    lineage=[p.directRequestId,p.directRequestFingerprint];
+  }else if(p.demandOrigin==='report'){
+    if(spec.source!=='user_confirmed'||p.sourceProjectKey!==root||d.sourceProjectKey!==root||
+        typeof p.sourceAnalysisTopic!=='string'||!p.sourceAnalysisTopic||p.topic!==p.sourceAnalysisTopic||
+        d.analysisTopic!==p.sourceAnalysisTopic||typeof p.sourcePriorityKey!=='string'||!p.sourcePriorityKey||
+        d.sourcePriorityKey!==p.sourcePriorityKey||typeof p.sourceReportIdentity!=='string'||!p.sourceReportIdentity||
+        !/^[0-9a-f]{64}$/.test(p.sourceReportFingerprint||'')||
+        JSON.stringify(submittedDemandStable(d.selectedPriority))!==JSON.stringify(submittedDemandStable(p.selectedPriority)))return null;
+    lineage=[p.sourceProjectKey,p.sourceAnalysisTopic,p.sourcePriorityKey,p.sourceReportIdentity,p.sourceReportFingerprint,p.selectedPriority];
+  }else return null;
+  return JSON.stringify(submittedDemandStable([key,root,p.city,p.demandTitle,p.topic,p.submittedAt,p.submittedBy,p.demandOrigin,spec,d.id,lineage]));
+}
+function acceptSubmittedDemandSnapshot(server,token){
+  var identity=submittedDemandAuthIdentity();
+  if(!identity||!submittedDemandReadCurrent(token))return false;
+  var proofs=Object.create(null),projects=server&&server.PROJECTS,demands=server&&server.DEMANDS;
+  if(projects&&typeof projects==='object'&&!Array.isArray(projects)&&Array.isArray(demands)){
+    Object.keys(projects).forEach(function(key){var proof=submittedDemandProof(key,projects,demands,server.DELETED_PROJECTS||[]);if(proof)proofs[key]=proof;});
+  }
+  // A newer authoritative empty/deleted result revokes previous navigation proof.
+  SUBMITTED_DEMAND_ACCESS={identity:identity,proofs:proofs};return true;
+}
+function acceptSubmittedDemandCreated(result,identity){
+  if(!identity||identity!==submittedDemandAuthIdentity()||!result||!result.project||!result.demand)return false;
+  var projects=Object.assign({},PROJECTS);projects[result.projectKey]=result.project;
+  var proof=submittedDemandProof(result.projectKey,projects,[result.demand],typeof DELETED_PROJECTS==='undefined'?[]:DELETED_PROJECTS);
+  if(!proof)return false;
+  // A creation receipt is newer than any previously started full-state request.
+  SUBMITTED_DEMAND_READ_SERIAL++;
+  if(!SUBMITTED_DEMAND_ACCESS||SUBMITTED_DEMAND_ACCESS.identity!==identity)SUBMITTED_DEMAND_ACCESS={identity:identity,proofs:Object.create(null)};
+  SUBMITTED_DEMAND_ACCESS.proofs[result.projectKey]=proof;return true;
+}
+function hasServerSubmittedDemand(){
+  var identity=submittedDemandAuthIdentity(),access=SUBMITTED_DEMAND_ACCESS;
+  if(!identity||!access||access.identity!==identity||typeof cur!=='string'||
+      typeof _authWorkspaceOf!=='function'||_authWorkspaceOf(cur)!==AUTH.projKey)return false;
+  var tombs=typeof DELETED_PROJECTS==='undefined'?[]:DELETED_PROJECTS;
+  return Object.keys(access.proofs).some(function(key){
+    var proof=submittedDemandProof(key,PROJECTS,typeof DEMANDS==='undefined'?[]:DEMANDS,tombs);
+    if(proof===access.proofs[key])return true;
+    delete access.proofs[key];return false;
+  });
+}
+/* Account preferences and workspace notifications come only from authenticated receipts. */
+var REMINDER_STATE=null, REMINDER_REQUEST_SEQ=0, REMINDER_POLL=null, REMINDER_PANEL_SEQ=0;
+var REMINDER_FIELDS=['statusChanges','overdue','dailyDigest'];
+function reminderContext(){
+  if(typeof AUTH==='undefined'||!AUTH||AUTH.scope!=='project'||typeof _authState==='undefined'||_authState!=='ready'||typeof AUTH.user!=='string'||!AUTH.user||typeof cur!=='string'||!cur)return null;
+  var workspace=typeof _authWorkspaceOf==='function'?_authWorkspaceOf(cur):null;
+  if(!workspace||!Array.isArray(AUTH.projectKeys)||AUTH.projectKeys.indexOf(workspace)<0)return null;
+  return {accountId:AUTH.user,projectKey:cur,workspaceId:workspace,epoch:_authEpoch,
+    key:JSON.stringify([_authEpoch,AUTH.user,cur,workspace])};
+}
+function reminderResetSession(){
+  REMINDER_STATE=null;
+  if(REMINDER_POLL){clearTimeout(REMINDER_POLL);REMINDER_POLL=null;}
+}
+function reminderState(){
+  var context=reminderContext();
+  if(!context){reminderResetSession();return null;}
+  if(!REMINDER_STATE||REMINDER_STATE.context.key!==context.key){
+    reminderResetSession();
+    REMINDER_STATE={context:context,loaded:false,loading:false,mutationPending:false,latestRequest:0,
+      accountEpoch:null,version:null,preferences:null,draft:null,dirty:false,error:'',notifications:[]};
+  }
+  return REMINDER_STATE;
+}
+function reminderCurrent(state){var context=reminderContext();return !!(context&&REMINDER_STATE===state&&context.key===state.context.key);}
+function reminderCopyPreferences(value){
+  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length!==3)return null;
+  var copy={};
+  for(var i=0;i<REMINDER_FIELDS.length;i++){var key=REMINDER_FIELDS[i];if(typeof value[key]!=='boolean')return null;copy[key]=value[key];}
+  return copy;
+}
+function reminderSamePreferences(a,b){return !!(a&&b&&REMINDER_FIELDS.every(function(key){return a[key]===b[key];}));}
+function reminderReceipt(data,state,requestId){
+  var context=state.context,preferences=reminderCopyPreferences(data&&data.preferences);
+  if(!data||data.ok!==true||data.requestId!==requestId||data.accountId!==context.accountId||
+    data.projectKey!==context.projectKey||data.workspaceId!==context.workspaceId||
+    typeof data.accountEpoch!=='string'||!data.accountEpoch||!Number.isSafeInteger(data.version)||data.version<0||
+    !preferences||!Array.isArray(data.notifications))throw new Error('提醒服务回执不完整，请重试');
+  if(state.accountEpoch!==null&&state.accountEpoch!==data.accountEpoch)throw new Error('提醒订阅已变化，请重新加载后再保存');
+  if(state.version!==null&&data.version<state.version)throw new Error('提醒服务返回旧版本，请重新加载');
+  var ids={};
+  data.notifications.forEach(function(item){
+    if(!item||typeof item.id!=='string'||!item.id||ids[item.id]||
+      ['status','verification','overdue','daily'].indexOf(item.type)<0||
+      typeof item.title!=='string'||typeof item.message!=='string'||
+      !Number.isFinite(item.createdAt)||item.createdAt<0||
+      !(item.readAt===null||(Number.isFinite(item.readAt)&&item.readAt>=0))||
+      item.workspaceId!==context.workspaceId||typeof item.projectKey!=='string'||!item.projectKey||
+      typeof item.sourceId!=='string')throw new Error('提醒列表回执不完整，请重试');
+    ids[item.id]=true;
+  });
+  return {accountEpoch:data.accountEpoch,version:data.version,preferences:preferences,
+    notifications:data.notifications.map(function(item){return Object.assign({},item);})};
+}
+function reminderRender(state){
+  if(!reminderCurrent(state))return;
+  // A reminder response must never rebuild a composer, page, or input node.
+  var badge=document.getElementById('reminderUnreadBadge'),count=state.loaded?state.notifications.filter(function(n){return n.readAt===null;}).length:0;
+  if(badge){badge.textContent=String(count);badge.hidden=count===0;}
+  var panel=document.getElementById('notifPanel');
+  if(panel&&typeof notifList==='function'){
+    var token=reminderPanelToken(state),header=panel.querySelector&&panel.querySelector('[data-reminder-panel-token]');
+    if(!header||header.getAttribute('data-reminder-panel-token')!==token){
+      var active=document.activeElement,focusId=active&&panel.contains(active)?active.id:null,scrollTop=panel.scrollTop;
+      panel.innerHTML=notifList();
+      if(focusId){var target=document.getElementById(focusId);if(target&&panel.contains(target)&&!target.disabled&&typeof target.focus==='function')target.focus({preventScroll:true});}
+      panel.scrollTop=scrollTop;
+    }
+  }
+  var section=document.getElementById('reminderPreferences');
+  if(section){
+    var loaded=state.loaded,draft=state.draft||state.preferences||{},disabled=!loaded||state.mutationPending;
+    REMINDER_FIELDS.forEach(function(key){var input=document.getElementById('reminder-'+key);if(input){if(input.checked!==(draft[key]===true))input.checked=draft[key]===true;if(input.disabled!==disabled)input.disabled=disabled;}});
+    var status=document.getElementById('reminderPreferencesStatus'),message=reminderStatusText(state);
+    if(status&&status.textContent!==message)status.textContent=message;
+    var save=document.getElementById('reminderPreferencesSave'),reload=document.getElementById('reminderPreferencesReload');
+    if(save){save.disabled=disabled;save.textContent=state.mutationPending?'正在保存…':'保存偏好';}
+    if(reload)reload.disabled=state.loading||state.mutationPending;
+  }
+}
+function reminderPanelToken(state){
+  if(!state)return 'none';
+  var signature=JSON.stringify([state.loaded,state.error,state.mutationPending,state.notifications.map(function(n){return [n.id,n.type,n.title,n.message,n.createdAt,n.readAt,typeof _fmtTimeAgo==='function'?_fmtTimeAgo(n.createdAt):''];})]);
+  if(signature!==state.panelSignature){state.panelSignature=signature;state.panelToken=String(++REMINDER_PANEL_SEQ);}
+  return state.panelToken;
+}
+function reminderStatusText(state){
+  return state&&state.error?state.error:!state||!state.loaded?'正在加载服务器保存的偏好…':state.mutationPending?'正在保存…':state.dirty?'有尚未保存的修改':'已加载服务器保存的偏好';
+}
+function reminderSchedule(state){
+  if(REMINDER_POLL){clearTimeout(REMINDER_POLL);REMINDER_POLL=null;}
+  if(!reminderCurrent(state))return;
+  REMINDER_POLL=setTimeout(function(){REMINDER_POLL=null;if(reminderCurrent(state))reminderLoad(true);},60000);
+}
+function reminderRequest(path,body,state){
+  var sequence=++REMINDER_REQUEST_SEQ,requestId='reminder-'+Date.now().toString(36)+'-'+sequence.toString(36);
+  state.latestRequest=sequence;
+  var options={credentials:'same-origin',headers:{Accept:'application/json'}},controller=typeof AbortController!=='undefined'?new AbortController():null,timer;
+  if(body){body=Object.assign({},body,{projectKey:state.context.projectKey,requestId:requestId});options.method='POST';options.headers['Content-Type']='application/json';options.body=JSON.stringify(body);}
+  else path+='?projectKey='+encodeURIComponent(state.context.projectKey)+'&requestId='+encodeURIComponent(requestId);
+  if(controller)options.signal=controller.signal;
+  var network=Promise.resolve().then(function(){return fetch(path,options);}).then(function(response){
+    return response.json().catch(function(){throw new Error('提醒服务响应异常，请重试');}).then(function(data){
+      if(response.ok!==true||!data||data.ok!==true){
+        var error=new Error(data&&data.message||'提醒服务暂时不可用，请重试');error.status=response.status;
+        if(response.status===401&&reminderCurrent(state)&&state.latestRequest===sequence&&typeof _authForget==='function'){_authForget();if(typeof render==='function')render();}
+        throw error;
+      }
+      if(!reminderCurrent(state)||state.latestRequest!==sequence)return null;
+      return reminderReceipt(data,state,requestId);
+    });
+  });
+  var timeout=new Promise(function(_,reject){timer=setTimeout(function(){if(controller)controller.abort();reject(new Error('提醒请求超时，请重试'));},20000);});
+  return Promise.race([network,timeout]).then(function(receipt){clearTimeout(timer);return receipt;},function(error){
+    clearTimeout(timer);
+    if(!reminderCurrent(state)||state.latestRequest!==sequence)return null;
+    throw error;
+  });
+}
+function reminderApply(state,receipt){
+  state.accountEpoch=receipt.accountEpoch;state.version=receipt.version;state.preferences=receipt.preferences;
+  state.notifications=receipt.notifications;state.loaded=true;state.error='';
+  if(!state.dirty)state.draft=Object.assign({},receipt.preferences);
+}
+function reminderLoad(force){
+  var state=reminderState();if(!state)return Promise.resolve(false);
+  if(state.loading||state.mutationPending||(!force&&state.loaded))return Promise.resolve(false);
+  state.loading=true;state.error='';
+  return reminderRequest('/api/reminders',null,state).then(function(receipt){
+    if(!receipt)return false;reminderApply(state,receipt);return true;
+  }).catch(function(error){if(reminderCurrent(state)){state.error=error.status===409?'提醒订阅或版本已变化，请重新加载后再保存':(error.message||'提醒加载失败，请重试');}return false;
+  }).then(function(ok){if(reminderCurrent(state)){state.loading=false;reminderRender(state);reminderSchedule(state);}return ok;});
+}
+function reminderEnsureLoaded(){var state=reminderState();if(state&&!state.loaded&&!state.loading&&!state.error)reminderLoad(false);}
+function reminderReload(){
+  var state=reminderState();if(!state||state.loading||state.mutationPending)return Promise.resolve(false);
+  // A fresh enrollment receipt may follow a server-side session/epoch change.
+  state.accountEpoch=null;state.version=null;
+  return reminderLoad(true);
+}
+function reminderEdit(key,checked){
+  var state=reminderState();if(!state||!state.loaded||state.mutationPending||REMINDER_FIELDS.indexOf(key)<0||typeof checked!=='boolean')return;
+  state.draft=Object.assign({},state.draft||state.preferences);state.draft[key]=checked;
+  state.dirty=!reminderSamePreferences(state.draft,state.preferences);state.error='';
+  reminderRender(state);
+}
+function reminderSave(){
+  var state=reminderState();if(!state||!state.loaded||state.mutationPending)return Promise.resolve(false);
+  var preferences=reminderCopyPreferences(state.draft);if(!preferences)return Promise.resolve(false);
+  var sentVersion=state.version,expectedVersion=sentVersion+(reminderSamePreferences(preferences,state.preferences)?0:1);
+  state.mutationPending=true;state.error='';reminderRender(state);
+  return reminderRequest('/api/reminder-preferences',{accountEpoch:state.accountEpoch,version:sentVersion,preferences:preferences},state).then(function(receipt){
+    if(!receipt)return false;
+    if(receipt.version!==expectedVersion||!reminderSamePreferences(preferences,receipt.preferences))throw new Error('保存回执与所选偏好或版本不一致，请重新加载确认');
+    state.dirty=false;reminderApply(state,receipt);if(typeof toast==='function')toast('站内提醒偏好已保存');return true;
+  }).catch(function(error){if(reminderCurrent(state))state.error=error.status===409?'偏好版本已变化，请重新加载后再保存':(error.message||'保存失败，请重试');return false;
+  }).then(function(ok){if(reminderCurrent(state)){state.mutationPending=false;reminderRender(state);reminderSchedule(state);}return ok;});
+}
+function reminderMarkRead(ids,all){
+  var state=reminderState();if(!state||!state.loaded||state.mutationPending)return Promise.resolve(false);
+  var requested=all?state.notifications.map(function(n){return n.id;}):(ids||[]).slice();
+  if(!requested.length)return Promise.resolve(true);
+  if(requested.some(function(id){return !state.notifications.some(function(n){return n.id===id;});}))return Promise.resolve(false);
+  state.mutationPending=true;state.error='';
+  var sentVersion=state.version,body={accountEpoch:state.accountEpoch,version:sentVersion};if(all)body.all=true;else body.ids=requested;
+  return reminderRequest('/api/reminders/read',body,state).then(function(receipt){
+    if(!receipt)return false;
+    if(receipt.version!==sentVersion||!reminderSamePreferences(state.preferences,receipt.preferences))throw new Error('提醒偏好或版本已变化，请重新加载');
+    if(requested.some(function(id){return !receipt.notifications.some(function(n){return n.id===id&&n.readAt!==null;});}))throw new Error('已读回执未确认，请重试');
+    reminderApply(state,receipt);return true;
+  }).catch(function(error){if(reminderCurrent(state))state.error=error.status===409?'提醒版本已变化，请重新加载后再试':(error.message||'已读状态保存失败，请重试');return false;
+  }).then(function(ok){if(reminderCurrent(state)){state.mutationPending=false;reminderRender(state);reminderSchedule(state);}return ok;});
+}
+function reminderNotifications(){var state=reminderState();return state&&state.loaded?state.notifications:[];}
+function reminderPreferencesSection(){
+  var state=reminderState(),loaded=!!(state&&state.loaded),draft=loaded?(state.draft||state.preferences):{},disabled=!loaded||state.mutationPending;
+  var rows=[['statusChanges','状态变化通知','需求阶段或核验结果有新进展时显示站内提醒'],['overdue','超时提醒','从启用跟踪或最近有效进展中较晚者起，3 个工作日无更新时显示站内提醒；仅按周一至周五计算，暂不处理法定节假日及调休'],['dailyDigest','每日摘要','服务器在北京时间 09:00 后保存当日一份站内摘要；首次启用从次日开始']];
+  return '<div class="settings-section" id="reminderPreferences"><h2>站内提醒偏好<span class="settings-editable-badge">账号全部工作区通用</span></h2>'+
+    '<p>首次启用后记录新事件，不追溯启用前的历史通知。提醒在本站铃铛中查看。</p>'+rows.map(function(row){return '<label class="toggle-row"><span><strong>'+row[1]+'</strong><small>'+row[2]+'</small></span><input id="reminder-'+row[0]+'" type="checkbox" aria-label="'+row[1]+'"'+(draft[row[0]]===true?' checked':'')+(disabled?' disabled':'')+' onchange="reminderEdit(\''+row[0]+'\',this.checked)"></label>';}).join('')+
+    '<p id="reminderPreferencesStatus" role="status" aria-live="polite">'+_authEscape(reminderStatusText(state))+'</p>'+
+    '<button type="button" id="reminderPreferencesSave" class="primary-button settings-save" onclick="reminderSave()"'+(disabled?' disabled':'')+'>'+(state&&state.mutationPending?'正在保存…':'保存偏好')+'</button> '+
+    '<button type="button" id="reminderPreferencesReload" class="secondary-button" onclick="reminderReload()"'+(state&&(state.loading||state.mutationPending)?' disabled':'')+'>重新加载</button></div>';
+}
+/* Read-only upload projection. Never append extracted text to editable known rows. */
+var KB_UPLOADED_READER_CONTEXT=null;
+function kbUploadEscape(value){return String(value==null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function kbUploadedReadingContext(key){
+  if(typeof AUTH==='undefined'||!AUTH||AUTH.scope!=='project'||typeof _authState==='undefined'||_authState!=='ready'||typeof AUTH.user!=='string'||!AUTH.user)return null;
+  if(typeof cur!=='string'||!cur||typeof PROJECTS==='undefined'||!PROJECTS[key]||typeof _authWorkspaceOf!=='function')return null;
+  var workspace=_authWorkspaceOf(key);
+  if(!workspace||workspace!==AUTH.projKey||_authWorkspaceOf(cur)!==workspace||!Array.isArray(AUTH.projectKeys)||AUTH.projectKeys.indexOf(workspace)<0)return null;
+  return {key:key,viewKey:cur,workspace:workspace,user:AUTH.user,epoch:typeof _authEpoch==='number'?_authEpoch:0};
+}
+function kbUploadedMaterialGroups(key,topicIndex){
+  if(!kbUploadedReadingContext(key))return [];
+  var project=PROJECTS[key],topics=Array.isArray(project.kb)?project.kb:[];
+  if(topicIndex!==null&&(!Number.isInteger(topicIndex)||!topics[topicIndex]))return [];
+  var receipts=typeof UPLOADS!=='undefined'&&Array.isArray(UPLOADS[key])?UPLOADS[key]:[];
+  var files=typeof KB_FILE_CHUNKS!=='undefined'&&Array.isArray(KB_FILE_CHUNKS[key])?KB_FILE_CHUNKS[key]:[];
+  var tombs=typeof UPLOAD_TOMBS!=='undefined'&&UPLOAD_TOMBS||{},counts=Object.create(null);
+  receipts.forEach(function(row){if(row&&typeof row.originalId==='string')counts[row.originalId]=(counts[row.originalId]||0)+1;});
+  return receipts.filter(function(row){
+    return row&&/^[a-f0-9]{32}$/.test(row.originalId||'')&&counts[row.originalId]===1&&
+      typeof row.name==='string'&&row.name&&!row.deleted&&!tombs[key+'::'+row.name]&&
+      (!row.projectKey||row.projectKey===key)&&(topicIndex===null||row.kbIdx===topicIndex);
+  }).map(function(row){
+    var expected=Number.isInteger(row.chunks)&&row.chunks>=0?row.chunks:null;
+    var blocked=row.pending?'解析中':row.parseFailed?'解析失败，暂无可阅读正文':'';
+    var originalUnavailable=row.chunkRepair&&['original_not_found','original_integrity_failed'].indexOf(row.chunkRepair.code)>=0;
+    var seen=Object.create(null),ambiguous=false,invalid=false,items=[];
+    files.forEach(function(chunk){
+      if(!chunk||chunk.originalId!==row.originalId)return;
+      if(chunk.deleted||chunk.pending||chunk.parseFailed||typeof chunk.text!=='string'||!chunk.text.trim())return;
+      if(chunk.projectKey&&chunk.projectKey!==key){invalid=true;return;}
+      var match=String(chunk.id||'').match(new RegExp('^upload:'+row.originalId+':(0|[1-9][0-9]*)$'));
+      if(!match||!Number.isSafeInteger(Number(match[1]))){invalid=true;return;}
+      var index=Number(match[1]);
+      if(seen[index]){ambiguous=true;seen[index].duplicate=true;return;}
+      var item={index:index,text:chunk.text,duplicate:false};seen[index]=item;items.push(item);
+    });
+    items=blocked?[]:items.filter(function(item){return !item.duplicate;}).sort(function(a,b){return a.index-b.index;});
+    var complete=!blocked&&!invalid&&!ambiguous&&expected!==null&&expected>0&&items.length===expected&&items.every(function(item,index){return item.index===index;});
+    var status=(originalUnavailable?'原件待检查；':'')+(blocked||(complete?'已保存全部 '+expected+' 个片段':items.length?'已保存 '+items.length+' / '+(expected===null?'总数未知':expected)+' 个片段，尚不完整':'暂无可阅读片段'));
+    return {originalId:row.originalId,name:row.name,kbIdx:row.kbIdx,expected:expected,items:items,complete:complete,status:status,originalUnavailable:!!originalUnavailable,
+      originalSha256:/^[a-f0-9]{64}$/.test(row.originalSha256||'')?row.originalSha256:'',record:row};
+  });
+}
+function kbUploadedPlaceholder(value,groups){
+  if(typeof value!=='string')return false;
+  return groups.some(function(group){return group.expected!==null&&value==='📎 '+group.name+' 已解析（'+group.expected+' 片段）';});
+}
+function kbUploadedMaterialReadButton(key,originalId){
+  var context=kbUploadedReadingContext(key);if(!context)return '';
+  var group=kbUploadedMaterialGroups(key,null).find(function(item){return item.originalId===originalId;});
+  if(!group)return '<span>原件关联不可用</span>';
+  if(!group.items.length)return '<span>'+kbUploadEscape(group.status)+'</span>';
+  var args=[key,originalId,context.epoch,context.user,context.viewKey].map(function(value){return JSON.stringify(value);}).join(',');
+  return '<button type="button" class="kb-detail-secondary" onclick="kbOpenUploadedMaterial('+kbUploadEscape(args)+')">'+(group.complete&&!group.originalUnavailable?'阅读全文':'查看已保存片段')+'（'+group.items.length+' 片段）</button>';
+}
+function kbUploadedMaterialSection(key,topicIndex){
+  var groups=kbUploadedMaterialGroups(key,topicIndex);if(!groups.length)return '';
+  var total=groups.reduce(function(n,group){return n+group.items.length;},0);
+  return '<section class="kb-uploaded-materials" aria-label="上传材料正文" style="margin:14px 0;padding:14px;border:1px solid #dbe4f0;border-radius:10px">'+
+    '<h3>上传材料正文</h3><p>'+groups.length+' 个文件 · '+total+' 个已保存片段 · '+groups.length+' 项原件来源</p><p>上传和解析不代表事实已核验。正文独立保存，不作为可编辑的知识条目。</p>'+
+    groups.map(function(group){var url=uploadOriginalUrl(key,group.record);return '<article data-original-id="'+group.originalId+'" style="padding:12px 0;border-top:1px solid #e2e8f0"><strong>'+kbUploadEscape(group.name)+'</strong><p>'+kbUploadEscape(group.status)+' · 上传原件，内容待核</p>'+kbUploadedMaterialReadButton(key,group.originalId)+(url?' <a href="'+kbUploadEscape(url)+'" download>下载原件</a>':'')+'</article>';}).join('')+'</section>';
+}
+function kbCloseUploadedMaterialReader(){
+  KB_UPLOADED_READER_CONTEXT=null;
+  var node=document.getElementById('kbUploadedMaterialReader');if(node)node.remove();
+}
+function kbUploadedMaterialStamp(group){
+  return JSON.stringify([group.name,group.expected,group.status,group.originalSha256,group.items.map(function(item){return [item.index,item.text];})]);
+}
+function kbCancelStaleUploadedMaterialReader(){
+  var saved=KB_UPLOADED_READER_CONTEXT;if(!saved)return;
+  var context=kbUploadedReadingContext(saved.key);
+  var group=context&&kbUploadedMaterialGroups(saved.key,null).find(function(item){return item.originalId===saved.originalId;});
+  if(!context||context.epoch!==saved.epoch||context.user!==saved.user||context.viewKey!==saved.viewKey||!group||!group.items.length||kbUploadedMaterialStamp(group)!==saved.groupStamp)kbCloseUploadedMaterialReader();
+}
+function kbOpenUploadedMaterial(key,originalId,epoch,user,viewKey){
+  var context=kbUploadedReadingContext(key);
+  if(!context||context.epoch!==epoch||context.user!==user||context.viewKey!==viewKey)return false;
+  var group=kbUploadedMaterialGroups(key,null).find(function(item){return item.originalId===originalId;});
+  if(!group||!group.items.length)return false;
+  kbCloseUploadedMaterialReader();
+  context.originalId=originalId;context.groupStamp=kbUploadedMaterialStamp(group);KB_UPLOADED_READER_CONTEXT=context;
+  var layer=document.createElement('div');layer.id='kbUploadedMaterialReader';layer.className='modal-layer';layer.style.zIndex='8890';
+  layer.onclick=function(event){if(event.target===layer)kbCloseUploadedMaterialReader();};
+  var url=uploadOriginalUrl(key,group.record);
+  layer.innerHTML='<div class="modal" role="dialog" aria-modal="true" aria-labelledby="kbUploadedReaderTitle"><header><h2 id="kbUploadedReaderTitle">'+kbUploadEscape(group.name)+'</h2><button type="button" aria-label="关闭原文阅读" onclick="kbCloseUploadedMaterialReader()">✕</button></header><div class="modal-body" style="max-height:70vh;overflow:auto">'+
+    '<p>'+kbUploadEscape(group.status)+' · 1 个文件 · 1 项上传原件来源</p><p>只读解析正文 · 下载原件可核对原始排版。上传和解析不代表事实已核验。</p>'+
+    (group.originalSha256?'<p style="overflow-wrap:anywhere">记录的原件 SHA256：'+kbUploadEscape(group.originalSha256)+'</p>':'')+
+    group.items.map(function(item){return '<section data-upload-chunk="'+item.index+'"><h3>片段 '+(item.index+1)+'</h3><pre style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit">'+kbUploadEscape(item.text)+'</pre></section>';}).join('')+
+    '</div><footer>'+(url?'<a href="'+kbUploadEscape(url)+'" download>下载原件</a>':'')+' <button type="button" onclick="kbCloseUploadedMaterialReader()">关闭</button></footer></div>';
+  document.body.appendChild(layer);
+  var close=layer.querySelector&&layer.querySelector('button');if(close)close.focus();
+  return true;
+}
 /* ===== 渲染骨架：用雷总真实DOM结构 ===== */
 var $=function(s){return document.querySelector(s)};
 function toast(t){var e=$('#toast');$('#toastMsg').textContent=t;e.classList.add('show');setTimeout(function(){e.classList.remove('show')},2200)}
@@ -5210,6 +5595,9 @@ function syncDetailPane(){
 }
 
 function render(){
+  if(typeof kbCancelStaleUploadedMaterialReader==='function')kbCancelStaleUploadedMaterialReader();
+  if(typeof cancelObsoleteFilePickers==='function')cancelObsoleteFilePickers();
+  if(typeof onbCancelHiddenRequests==='function')onbCancelHiddenRequests();
   document.body.classList.toggle('kb-view',view==='knowledge'&&!!AUTH);
   document.body.classList.toggle('industry-view',view==='report'&&!!AUTH);
   document.body.classList.toggle('docking-view',(view==='home'||view==='docking')&&!!AUTH);
@@ -5248,6 +5636,7 @@ function render(){
   }
   if(view==='setup'||!cur||!PROJECTS[cur]){var _root=$('#root');if(_root){_root.innerHTML='<div style="height:100vh;background:#f5f7fb">'+setupPage()+'</div>';bind();} return;}
   if(role==='ops')return renderOps();
+  if(typeof reminderEnsureLoaded==='function')reminderEnsureLoaded();
   var p=P();
   // 修复方向/报告错位：报告正文必须跟随当前方向 topic。刷新后缓存里 REPORTSTATE[cur].topic(旧方向)
   // 与 PROJECTS[cur].topic(当前方向) 可能不一致，导致标题显示当前方向、正文却是旧方向的报告。
@@ -5807,6 +6196,49 @@ var _onbAfter=null;  // 完成后的回调（首次=进入分析动画；设置�
 var _onbOpts={};     // 本次问卷各题实际选项：AI 结合城市生成，回退到 ONBOARD_Q 静态
 var _onbCity='';     // 本次问卷针对的城市（动态，不硬编码）
 var _onbCanClose=false; // 本次问卷是否允许关闭：设置页修改=true(不论是否已填写过)；首次建项目=false(必须作答才能建项目)
+var _onbSession=null;
+var _onbRequest=null;
+var _onbSessionId=0;
+
+function onbWorkspaceKey(city){
+  if(typeof AUTH==='undefined'||!AUTH||typeof cur==='undefined'||!cur)return '';
+  var p=PROJECTS[cur];
+  if(!p||p.city!==city)return '';
+  if(AUTH.scope==='admin')return cur;
+  return typeof _authWorkspaceOf==='function'&&_authWorkspaceOf(cur)?cur:'';
+}
+function onbSessionCurrent(session){
+  return !!session&&_onbSession===session&&session.originKey===(typeof cur==='undefined'?null:cur)
+    &&session.view===(typeof view==='undefined'?null:view)
+    &&session.user===(typeof AUTH==='undefined'||!AUTH?'':AUTH.user)
+    &&session.authEpoch===(typeof _authEpoch==='undefined'?0:_authEpoch)
+    &&session.authState===(typeof _authState==='undefined'?'':_authState)
+    &&session.projectKey===onbWorkspaceKey(session.city);
+}
+function cancelOnbRecommend(){
+  var request=_onbRequest; _onbRequest=null;
+  if(!request)return;
+  request.cancelled=true; clearTimeout(request.timer);
+  if(request.controller)request.controller.abort();
+  if(request.reader){try{Promise.resolve(request.reader.cancel()).catch(function(){});}catch(_){}}
+}
+function resetOnboardingSession(){
+  cancelOnbRecommend(); _onbSession=null; _onbAfter=null;
+  var host=document.getElementById('onbModalHost');if(host)host.innerHTML='';
+  try{document.removeEventListener('keydown',_onbEscHandler);}catch(_){}
+}
+function onbCancelHiddenRequests(){
+  if(_onbSession&&!onbSessionCurrent(_onbSession))resetOnboardingSession();
+}
+function onbEscape(value){
+  return String(value==null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function updateOnbRecommendControls(){
+  var session=_onbSession,button=document.getElementById('onbRecommendBtn'),status=document.getElementById('onbRecommendStatus');
+  if(!session)return;
+  if(button){button.disabled=!!_onbRequest||session.recommended||!session.projectKey;button.textContent=_onbRequest?'正在获取AI推荐…':session.recommended?'已获取AI推荐':'获取AI推荐';}
+  if(status)status.textContent=session.status||(!session.projectKey?'请先进入已授权的城市工作区；当前仍可手动填写。':'可直接填写保存；需要时再主动获取联网AI推荐。');
+}
 
 /* The main industry navigation opens the authorized city workspace. A demand
  * keeps its independent report when opened directly through switchProj. */
@@ -5834,20 +6266,30 @@ function _resolveOnbCity(explicit){
 function _resetOnbOpts(){ _onbOpts={}; ONBOARD_Q.forEach(function(it){ _onbOpts[it.k]=it.opts.slice(); }); }
 
 function openOnboarding(existing, afterFn, city, canClose){
+  resetOnboardingSession();
   _onbSel={}; _onbAfter=afterFn||null;
   // 【2026-09-17】关闭权限与"是否已填写过"解耦：旧代码用 !!existing 兼作关闭条件，
   // 导致设置页首次「去填写」进来没有 ✕、无法退出。显式传入 canClose 决定。
   _onbCanClose=!!canClose;
   _onbCity=_resolveOnbCity(city);
   _resetOnbOpts();
+  _onbRecSet={};
+  _onbSession={id:++_onbSessionId,city:_onbCity,projectKey:onbWorkspaceKey(_onbCity),originKey:typeof cur==='undefined'?null:cur,
+    view:typeof view==='undefined'?null:view,user:typeof AUTH==='undefined'||!AUTH?'':AUTH.user,authEpoch:typeof _authEpoch==='undefined'?0:_authEpoch,
+    authState:typeof _authState==='undefined'?'':_authState,recommended:false,status:''};
   // 预填已有答案（设置页修改场景）
   ONBOARD_Q.forEach(function(item){
     var v=existing&&existing[item.k];
     _onbSel[item.k]=v?(Array.isArray(v)?v.slice():[v]):[];
+    var custom=existing&&existing.__custom&&existing.__custom[item.k];
+    if(item.allowText&&typeof custom==='string'){
+      _onbSel[item.k+'__txt']=custom;
+      _onbSel[item.k]=_onbSel[item.k].filter(function(value){return value!==custom;});
+    }
   });
   var host=document.getElementById('onbModalHost')||(function(){var d=document.createElement('div');d.id='onbModalHost';document.body.appendChild(d);return d;})();
   host.innerHTML=onboardingModalHtml(!!existing);
-  // 先拉 AI 结合城市生成的推荐选项，生成后再显示整个问卷；失败/超时回退静态
+  // 默认只展示手填表单；联网推荐必须由用户单独点击。
   // 允许关闭时：绑定 ESC，并支持点击遮罩空白处关闭（与站内其它弹窗一致）
   if(_onbCanClose){
     try{ document.removeEventListener('keydown', _onbEscHandler); }catch(_){}
@@ -5857,95 +6299,113 @@ function openOnboarding(existing, afterFn, city, canClose){
       if(_lay) _lay.addEventListener('mousedown', function(ev){ if(ev.target===_lay) closeOnboarding(); });
     }catch(_){}
   }
-  fetchOnbRecommend(_onbCity);
+  renderOnbBody(); updateOnbRecommendControls();
 }
-// 向后端请求"结合城市实情"的推荐选项（mode=onboard_options，走 flash+联网）
-function fetchOnbRecommend(city){
-  var body=document.getElementById('onbBody');
-  var submitBtn=document.getElementById('onbSubmitBtn');
-  if(!city){ renderOnbBody(); return; }   // 无城市：直接用静态选项
-  if(body) body.innerHTML=onbLoadingHtml(city);
-  if(submitBtn){ submitBtn.disabled=true; submitBtn.style.opacity='.5'; }
-  var corpus=[];
-  try{ if(typeof buildKBCorpus==='function'){ corpus=kbSearch(city+' 产业 园区 企业规模 投资', buildKBCorpus(city), 8)||[]; } }catch(e){}
-  var done=false;
-  function finish(txt){ if(done)return; done=true; clearTimeout(to); if(txt)applyOnbRecommend(txt); renderOnbBody(); enableOnbSubmit(); }
-  var to=setTimeout(function(){ finish(''); }, 90000); // 90s 兜底
-  // 流式：首字节尽早到达，避免网关/浏览器长请求超时；累积完整 SSE 文本后再解析 JSON
-  fetch('/api/kb-chat',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:'为'+city+'生成招商偏好问卷推荐选项', chunks:corpus, city:city, mode:'onboard_options', stream:true})})
+// 仅由“获取AI推荐”按钮调用。材料由服务端从授权工作区重建，不发送浏览器拼接语料。
+function fetchOnbRecommend(){
+  var session=_onbSession;
+  if(!onbSessionCurrent(session)){onbCancelHiddenRequests();return Promise.resolve(false);}
+  if(_onbRequest||session.recommended||!session.projectKey)return Promise.resolve(false);
+  if(typeof AbortController==='undefined'){session.status='当前浏览器无法取消联网请求，请先手动填写。';updateOnbRecommendControls();return Promise.resolve(false);}
+  var request={session:session,controller:new AbortController(),reader:null,timer:null,cancelled:false};
+  _onbRequest=request;session.status='正在获取推荐，您仍可手动填写或保存。';updateOnbRecommendControls();
+  function active(){return _onbRequest===request&&!request.cancelled&&onbSessionCurrent(session);}
+  function finish(txt){
+    if(!active()){if(_onbRequest===request)cancelOnbRecommend();return false;}
+    clearTimeout(request.timer);_onbRequest=null;request.cancelled=true;
+    var applied=applyOnbRecommend(txt);
+    if(!applied){
+      request.controller.abort();
+      if(request.reader)try{Promise.resolve(request.reader.cancel()).catch(function(){});}catch(_){}
+    }
+    session.recommended=applied;session.status=applied?'推荐已补充，已有选择和手填内容保留。':'未取得完整推荐，已保留手填内容，可再次尝试。';
+    renderOnbBody();updateOnbRecommendControls();return applied;
+  }
+  request.timer=setTimeout(function(){
+    if(!active()){if(_onbRequest===request)cancelOnbRecommend();onbCancelHiddenRequests();return;}
+    cancelOnbRecommend();session.status='推荐等待超时，已停止接收；您可继续手动填写。';updateOnbRecommendControls();
+  },90000);
+  return fetch('/api/kb-chat',{method:'POST',headers:{'Content-Type':'application/json'},signal:request.controller.signal,
+    body:JSON.stringify({question:'为'+session.city+'生成招商偏好问卷推荐选项',projectKey:session.projectKey,city:session.city,mode:'onboard_options',stream:true})})
     .then(function(resp){
+      if(!active()){if(_onbRequest===request)cancelOnbRecommend();if(resp.body&&resp.body.cancel)try{Promise.resolve(resp.body.cancel()).catch(function(){});}catch(_){}return false;}
       if(!resp.ok||!resp.body){ throw new Error('HTTP '+resp.status); }
-      var reader=resp.body.getReader(), dec=new TextDecoder(), buf='', acc='';
+      var reader=request.reader=resp.body.getReader(), dec=new TextDecoder(), buf='', acc='',terminal='';
       function pump(){
+        if(!active()){if(_onbRequest===request)cancelOnbRecommend();return Promise.resolve(false);}
         return reader.read().then(function(r){
-          if(r.done){ finish(acc); return; }
+          if(!active()){if(_onbRequest===request)cancelOnbRecommend();return false;}
+          if(r.done)return finish(terminal==='stop'?acc:'');
           buf+=dec.decode(r.value,{stream:true});
           var lines=buf.split('\n'); buf=lines.pop();
           lines.forEach(function(line){
             line=line.trim(); if(line.indexOf('data:')!==0)return;
             var d=line.slice(5).trim(); if(!d||d==='[DONE]')return;
-            try{ var j=JSON.parse(d); var delta=((j.choices||[{}])[0].delta||{}).content||''; if(delta)acc+=delta; }catch(e){}
+            var j;try{j=JSON.parse(d);}catch(_){return;}
+            if(j.error)throw new Error('recommendation_failed');
+            var choice=(j.choices||[{}])[0],delta=(choice.delta||{}).content||'';
+            if(delta)acc+=delta;if(acc.length>65536)throw new Error('recommendation_too_large');
+            if(choice.finish_reason)terminal=choice.finish_reason;
           });
           return pump();
         });
       }
       return pump();
     })
-    .catch(function(e){ finish(''); });
+    .catch(function(){return finish('');});
 }
-function enableOnbSubmit(){ var b=document.getElementById('onbSubmitBtn'); if(b){ b.disabled=false; b.style.opacity='1'; } }
 // 解析 AI 返回的 JSON，把推荐选项并入 _onbOpts（推荐项置顶；静态兜底项去重保留在后）
 function applyOnbRecommend(txt){
-  if(!txt) return;
+  if(!txt) return false;
   var jsonStr=txt.replace(/```json/gi,'').replace(/```/g,'').trim();
   var m=jsonStr.match(/\{[\s\S]*\}/); if(m)jsonStr=m[0];
-  var obj=null; try{ obj=JSON.parse(jsonStr); }catch(e){ return; }
+  var obj=null; try{ obj=JSON.parse(jsonStr); }catch(e){ return false; }
+  if(!obj||typeof obj!=='object'||Array.isArray(obj))return false;
+  var applied=false;
   ONBOARD_Q.forEach(function(it){
     var rec=obj[it.k];
     if(Array.isArray(rec) && rec.length){
-      var clean=rec.map(function(x){return String(x).trim();}).filter(Boolean).slice(0,6);
+      var clean=rec.filter(function(x){return typeof x==='string';}).map(function(x){return x.trim().slice(0,160);}).filter(Boolean).slice(0,6);
+      if(!clean.length)return;
       // AI 命中时以推荐项为主，仅补 1 个"兜底/无门槛"通用项（取静态列表最后一项），不再堆叠全部静态项
       var merged=clean.slice();
       var optOut=it.opts[it.opts.length-1];
       if(optOut && merged.indexOf(optOut)<0) merged.push(optOut);
       _onbOpts[it.k]=merged;
       _onbRecSet[it.k]=clean;   // 记录哪些是 AI 推荐，渲染时打⭐
+      applied=true;
     }
-  });
+  });return applied;
 }
 var _onbRecSet={};  // {k:[被AI推荐的选项...]}
-function onbLoadingHtml(city){
-  return '<div style="text-align:center;padding:46px 20px">'+
-    '<div class="gov-spin" style="width:26px;height:26px;border-width:3px;margin:0 auto 16px"></div>'+
-    '<div style="font-size:14px;font-weight:650;color:#0b183b;margin-bottom:6px">正在结合「'+city+'」实情生成推荐选项…</div>'+
-    '<div style="font-size:12px;color:#8492a6;line-height:1.6">AI 正在读取该市城市智库与公开信息，<br>为您预填贴合本地的园区与产业方向</div></div>';
-}
 function onboardingModalHtml(isEdit){
   return '<div class="modal-layer" id="onbLayer" style="z-index:200">'+
     '<div class="modal" style="width:min(600px,100%)">'+
-      '<header><div><span class="eyebrow">ONBOARDING</span><h2 style="margin:2px 0 0">'+(isEdit?'修改招商偏好':'先了解您的招商偏好')+'</h2></div>'+
+      '<header><div><span class="eyebrow">ONBOARDING</span><h2 style="margin:2px 0 0">'+(_onbCanClose?(isEdit?'修改招商偏好':'填写招商偏好'):'先了解您的招商偏好')+'</h2></div>'+
         (_onbCanClose?'<button onclick="closeOnboarding()" aria-label="关闭" title="关闭（不保存）">✕</button>':'')+'</header>'+
-      '<div class="modal-body" id="onbBody"></div>'+
+      '<div class="modal-body"><div style="margin-bottom:18px"><button type="button" class="secondary-button" id="onbRecommendBtn" onclick="fetchOnbRecommend()">获取AI推荐</button>'+
+        '<p id="onbRecommendStatus" role="status" style="font-size:12px;color:#64748b;margin:8px 0"></p>'+
+        '<small style="color:#8492a6">推荐会联网生成；关闭后本页停止接收，已开始的服务端生成可能继续。</small></div><div id="onbBody"></div></div>'+
       '<footer><small style="margin-right:auto;color:#8492a6;font-size:11px;padding-left:2px">这些偏好会指导 AI 的招商研判，稍后可在「设置」中随时修改</small>'+
-        '<button class="primary-button" id="onbSubmitBtn" onclick="submitOnboarding()" style="min-width:130px">'+(isEdit?'保存修改':'开始分析 →')+'</button></footer>'+
+        '<button class="primary-button" id="onbSubmitBtn" onclick="submitOnboarding()" style="min-width:130px">'+(_onbCanClose?(isEdit?'保存修改':'保存偏好'):'开始分析 →')+'</button></footer>'+
     '</div></div>';
 }
 function renderOnbBody(){
   var el=document.getElementById('onbBody'); if(!el)return;
   el.innerHTML=ONBOARD_Q.map(function(item,qi){
     var sel=_onbSel[item.k]||[];
-    var opts=(_onbOpts[item.k]&&_onbOpts[item.k].length)?_onbOpts[item.k]:item.opts;
+    var opts=((_onbOpts[item.k]&&_onbOpts[item.k].length)?_onbOpts[item.k]:item.opts).slice();
+    sel.forEach(function(value){if(opts.indexOf(value)<0)opts.push(value);});
     var recSet=_onbRecSet[item.k]||[];
     var chips=opts.map(function(o){
       var on=sel.indexOf(o)>=0;
       var rec=recSet.indexOf(o)>=0;
-      return '<button type="button" onclick="toggleOnb('+qi+',\''+o.replace(/'/g,"\\'")+'\')" '+
+      return '<button type="button" onclick="toggleOnb('+qi+','+onbEscape(JSON.stringify(o))+')" '+
         'style="text-align:left;padding:9px 13px;border:1.5px solid '+(on?'#1a56db':(rec?'#f0d99a':'#e3ebf6'))+';border-radius:9px;'+
         'background:'+(on?'#eef3ff':(rec?'#fffdf5':'#fff'))+';color:'+(on?'#1a3fae':'#40506a')+';font-size:13px;font-weight:'+(on?'650':'500')+';cursor:pointer;transition:all .12s">'+
-        (on?'✓ ':(rec?'<span title="AI 结合本地推荐" style="color:#e0a516">★ </span>':''))+o+'</button>';
+        (on?'✓ ':(rec?'<span title="AI 结合本地推荐" style="color:#e0a516">★ </span>':''))+onbEscape(o)+'</button>';
     }).join('');
-    var custom=item.allowText?('<input id="onbTxt'+qi+'" placeholder="或补充说明…" value="'+(_onbCustom(item.k)||'')+'" '+
+    var custom=item.allowText?('<input id="onbTxt'+qi+'" placeholder="或补充说明…" value="'+onbEscape(_onbCustom(item.k)||'')+'" '+
       'oninput="setOnbCustom(\''+item.k+'\',this.value)" '+
       'style="margin-top:8px;width:100%;padding:8px 11px;border:1px solid #e3ebf6;border-radius:8px;font-size:12.5px;box-sizing:border-box;outline:none">'):'';
     return '<div style="margin-bottom:'+(qi===ONBOARD_Q.length-1?'4':'22')+'px">'+
@@ -5970,7 +6430,7 @@ function collectOnboarding(){
   ONBOARD_Q.forEach(function(item){
     var arr=(_onbSel[item.k]||[]).slice();
     var txt=(_onbSel[item.k+'__txt']||'').trim();
-    if(txt){ arr.push(txt); custom[item.k]=txt; }   // 记录自定义文本（用于后续分析最高优先级强调）
+    if(txt){ if(arr.indexOf(txt)<0)arr.push(txt); custom[item.k]=txt; }   // 记录自定义文本（用于后续分析最高优先级强调）
     out[item.k]=item.multi?arr:(arr.join('，'));
   });
   out.__custom=custom;   // 用户自定义输入单独留存
@@ -5979,14 +6439,14 @@ function collectOnboarding(){
 function closeOnboarding(){
   // 不允许关闭的场景（首次建项目必须作答）直接忽略，防止 ESC/遮罩绕过
   if(!_onbCanClose) return;
-  var h=document.getElementById('onbModalHost'); if(h)h.innerHTML='';
-  try{ document.removeEventListener('keydown', _onbEscHandler); }catch(_){}
+  resetOnboardingSession();
 }
 // ESC 关闭（仅在允许关闭时生效）
 function _onbEscHandler(e){
   if(e && (e.key==='Escape'||e.keyCode===27)){ closeOnboarding(); }
 }
 function submitOnboarding(){
+  if(!onbSessionCurrent(_onbSession)){onbCancelHiddenRequests();return;}
   var ans=collectOnboarding();
   var after=_onbAfter;
   _onbCanClose=true; closeOnboarding();   // 提交是正常出口，不受关闭守卫限制
@@ -6024,7 +6484,7 @@ function createProject(){
   var city=_locked?AUTH.city:((document.getElementById('setupCity')||{}).value);
   if(!city||!city.trim())return;
   city=city.trim();
-  // 首次进入：先弹招商偏好问卷（AI 结合该城市生成推荐选项），作答后再建项目+跑动画
+  // 首次进入先手填招商偏好，作答后再建项目；AI推荐需已授权工作区与单独点击。
   openOnboarding(null, function(ans){
     _startProjectAnalysis(city, ans);
   }, city);
@@ -6234,7 +6694,7 @@ var _summaryTimer=null;
 /* ── 下载分析报告 Modal ── */
 function showDownloadReport(){
   var context=reportExportContext();
-  if(!context){toast('当前方向暂无报告，请先完成产业分析');return;}
+  if(!context){toast(typeof view!=='undefined'&&view==='knowledge'?'城市智库暂无已发布的城市报告，请联系管理员。':'当前方向暂无报告，请先完成产业分析');return;}
   var p=context.project;
   function esc(value){return String(value==null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
   var files=(p.reportFiles||[]).filter(function(file){
@@ -6516,17 +6976,18 @@ function opsAction(id){
 }
 function brandLogo(){return 'data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50"><rect width="50" height="50" rx="25" fill="#0757ad"/><text x="25" y="33" font-size="22" fill="white" text-anchor="middle" font-family="sans-serif">慧</text></svg>')}
 function topbar(p){
+  var identity=currentAccountIdentity();
   return '<div class="topbar">'+
     '<div class="brand-block"><img src="data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"50\"><rect width=\"50\" height=\"50\" rx=\"25\" fill=\"%230757ad\"/><text x=\"25\" y=\"33\" font-size=\"22\" fill=\"white\" text-anchor=\"middle\" font-family=\"sans-serif\">慧</text></svg>')+'"><div><strong>慧小招</strong><span>AI 招商智能体</span></div></div>'+
     // 机构与身份固定（账号绑定，不可切换）；当前方向只读展示，切换在「招商对接」进行
     '<div class="org-block"><i class="i">🏛️</i>'+
-      '<strong style="font-weight:650">'+_authEscape(p.org)+' · '+_authEscape(p&&p.who||'—')+'</strong>'+
+      '<strong style="font-weight:650">'+_authEscape(identity.org)+' · '+_authEscape(identity.name)+'</strong>'+
       '<span style="margin:0 10px;color:#cbd7e6">/</span>'+
       '<strong id="topbarTopic" style="color:var(--blue-dark)">'+_authEscape((view==='home'||view==='docking')?'招商对接工作区':p.topic)+'</strong>'+
     '</div>'+
     '<div class="top-meta"><span><i class="i">🛰️</i>'+_authEscape(p.city)+'城市智库已连接</span><span><i class="i">🕒</i>当前时间 '+nowLabel()+'</span>'+
       '<span style="position:relative;cursor:pointer" onclick="toggleNotif(event)"><i class="i">🔔</i>'+
-        (unreadCount()>0?'<b style="position:absolute;top:-4px;right:-6px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:#c85b09;color:#fff;font-size:9px;line-height:15px;text-align:center;font-weight:700">'+unreadCount()+'</b>':'')+
+        '<b id="reminderUnreadBadge"'+(unreadCount()>0?'':' hidden')+' style="position:absolute;top:-4px;right:-6px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:#c85b09;color:#fff;font-size:9px;line-height:15px;text-align:center;font-weight:700">'+unreadCount()+'</b>'+
         '<div id="notifPanel" style="display:none;position:absolute;top:30px;right:0;width:380px;max-height:520px;overflow-y:auto;background:#fff;border:1px solid #d8e0ed;border-radius:12px;box-shadow:0 12px 32px rgba(11,24,59,.16);z-index:70;text-align:left;cursor:default" onclick="event.stopPropagation()">'+notifList()+'</div>'+
       '</span>'+
       (AUTH?'<button onclick="logout()" title="退出登录" style="display:inline-flex;align-items:center;gap:5px;min-height:32px;padding:0 11px;border:1px solid #f0d8d8;border-radius:8px;background:#fff;color:#b5504a;font-size:12.5px;cursor:pointer">\u21aa 退出</button>':'')+
@@ -6639,6 +7100,24 @@ function kbReadiness(){
     : (score>=80?'#2D5BE3':score>=50?'#f59e0b':score>=20?'#3b82f6':'#9aa5b5');
   return {score:score,rawScore:rawScore,total:warnTotal,confirmed:warnConfirmed,files:uploads,
           label:label,color:color,pendingWarn:pendingWarn};
+}
+
+/* Display-only summary: the existing quantity/confirmation score is not a section coverage rate. */
+function kbReadinessSummary(r){
+  r=r||kbReadiness();
+  var p=P(),sections=p&&Array.isArray(p.kb)?p.kb:[],filled=0;
+  sections.forEach(function(section,index){
+    var known=typeof kbEffectiveKnown==='function'?kbEffectiveKnown(p,index,cur):(section.known||[]);
+    if(known.some(function(item){
+      var text=_kbText(item);
+      return !!text&&!(typeof _isJunkKbItem==='function'&&_isJunkKbItem(text));
+    }))filled++;
+  });
+  return {
+    sectionText:'有材料板块 '+filled+'/'+sections.length,
+    statusText:(r.pendingWarn>0?r.pendingWarn+' 条待确认 · ':'')+'事实仍需逐项核验',
+    explanation:'评分仅反映现有材料量与确认进度，不代表板块覆盖率或事实正确率。'
+  };
 }
 
 
@@ -6770,6 +7249,7 @@ function hashTopic(s){
 function isLocked(v){
   if(['report','home','docking'].indexOf(v)<0) return false;
   if(!cur) return true;
+  if((v==='home'||v==='docking')&&typeof hasServerSubmittedDemand==='function'&&hasServerSubmittedDemand())return false;
   var p=P();
   // 已移除"随州始终解锁"特权：随州与新城市一致，产业分析/招商对接默认上锁，
   // 待城市智库有真实数据且完成度达标(≥80%)自动解锁，或用户手动强制解锁。
@@ -6801,33 +7281,35 @@ function unlockView(v){
    不描边、底色更淡、字号克制，够看清但不抢<h1>的视觉。 */
 function kbPageProgressInner(r){
   r=r||kbReadiness();
-  var warn='⚠️'; var info='ⓘ';
+  var summary=kbReadinessSummary(r),info='ⓘ';
   var tint=r.color+'0d'; // 更淡的底色（透明度从14降到0d）
   return '<div style="display:flex;align-items:center;gap:12px;margin-top:9px;padding:9px 14px;border-radius:8px;background:'+tint+'">'+
-    '<span style="font-size:14px;font-weight:650;color:'+r.color+';line-height:1;white-space:nowrap">材料覆盖 '+r.score+'%</span>'+
+    '<span style="font-size:14px;font-weight:650;color:'+r.color+';line-height:1;white-space:nowrap">材料量评分 '+r.score+'分</span>'+
     '<div style="flex:1;min-width:0">'+
       '<div style="background:#fff;border-radius:3px;height:6px;overflow:hidden;box-shadow:inset 0 0 0 1px '+r.color+'1f">'+
         '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:3px;transition:width .4s"></div>'+
       '</div>'+
-      '<div style="margin-top:4px;font-size:12px;font-weight:550;color:'+r.color+'">'+r.label+
-        '<span title="计算方式：智库覆盖度×80% + 上传材料×10%（上限 20%）+ 确认'+warn+'事项×20%"'+
+      '<div style="margin-top:4px;font-size:12px;font-weight:550;color:'+r.color+'">'+summary.sectionText+' · '+summary.statusText+
+        '<span title="'+summary.explanation+'"'+
           ' style="font-size:11px;color:#9aa5b5;cursor:help;margin-left:4px;font-weight:400">'+info+'</span>'+
       '</div>'+
     '</div>'+
   '</div>'+
-  (r.score<80?'<p style="font-size:11.5px;color:#a16207;margin:6px 0 0;padding:6px 12px;background:#fdf6e8;border-radius:6px">⚡ 补充材料、核查待确认项可完善覆盖；覆盖度不代表事实正确率（差 '+(80-r.score)+'% 自动解锁后续步骤）</p>':'');
+  (r.score<80?'<p style="font-size:11.5px;color:#a16207;margin:6px 0 0;padding:6px 12px;background:#fdf6e8;border-radius:6px">⚡ 可补充材料并核实待确认项；评分不能替代事实核验。</p>':'');
 }
 function kbProgressInner(r){
   r=r||kbReadiness();
+  var summary=kbReadinessSummary(r);
   return '<div style="padding:10px 14px 8px;border-top:1px solid #f0f4ff">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">'+
-      '<span style="font-size:10.5px;color:#9aa5b5;letter-spacing:.3px">城市智库材料覆盖</span>'+
-      '<span style="font-size:11px;font-weight:700;color:'+r.color+'">'+r.score+'%</span>'+
+      '<span style="font-size:10.5px;color:#9aa5b5;letter-spacing:.3px">材料量评分</span>'+
+      '<span style="font-size:11px;font-weight:700;color:'+r.color+'">'+r.score+'分</span>'+
     '</div>'+
     '<div style="height:4px;background:#f0f4ff;border-radius:2px;overflow:hidden">'+
       '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:2px;transition:width .4s"></div>'+
     '</div>'+
-    '<div style="font-size:10.5px;color:'+r.color+';margin-top:4px">'+r.label+
+    '<div style="font-size:10.5px;color:'+r.color+';margin-top:4px">'+summary.sectionText+'</div>'+
+    '<div style="font-size:10.5px;color:'+r.color+';margin-top:4px" title="'+summary.explanation+'">'+summary.statusText+
       ((UPLOADS[cur]||[]).length>0?' &middot; '+(UPLOADS[cur]||[]).length+'份材料':'')+'</div>'+
   '</div>';
 }
@@ -6846,11 +7328,8 @@ function sidebar(){
   var navMeta={
     knowledge: (function(){
       if(!p) return '完善材料·产业/园区/企业/政策';
-      var conf=r.confirmed||0;
-      var uploads=(UPLOADS[cur]||[]).length;
-      if(r.pendingWarn>0) return '⚠ '+r.pendingWarn+' 条待确认 · 数据覆盖 '+(r.rawScore!==undefined?r.rawScore:r.score)+'%';
-  if(r.score>=80) return '材料覆盖 '+r.score+'% · 事实仍需核验';
-      return conf>0?(conf+'条已确认 · '+uploads+'份材料 · '+r.score+'%'):'待完善 · 产业/园区/企业/政策';
+      var summary=kbReadinessSummary(r);
+      return '材料量评分 '+r.score+'分 · '+summary.sectionText+(r.pendingWarn>0?' · '+r.pendingWarn+' 条待确认':'');
     })(),
     report: '生成缺口分析与招引方向',
     home: '项目列表·对接进度',
@@ -6900,147 +7379,56 @@ function progressFooter(p){
         (n<_shown.length?'<div class="progress-line"></div>':'');
     }).join('')+'</div><div class="progress-mobile">📂 '+p.topic+' · 当前「'+stageNameOf(p,p.stage)+'」· 第 '+p.stage+' 步（进度跟随所选产业方向）</div></div>';
 }
-/* ===== 通知：铃铛 + 面板 + 点击落回对应研判 ===== */
-/* 通知：从当前城市的 PROJECTS 动态派生，不再硬编码具体产业名/城市。
-   已读状态用 localStorage 独立记忆（HXZ_NOTIF_READ = {id:true}），render 后不重置。 */
-var NOTIFS_READ={};
-try{NOTIFS_READ=JSON.parse(localStorage.getItem('HXZ_NOTIF_READ')||'{}')||{};}catch(_){NOTIFS_READ={};}
-function _saveNotifRead(){try{localStorage.setItem('HXZ_NOTIF_READ',JSON.stringify(NOTIFS_READ));}catch(_){}}
+/* Server-owned account preferences and workspace notifications. */
 function _fmtTimeAgo(ts){
-  if(!ts) return '';
+  if(!ts)return '';
   var diff=(Date.now()-ts)/1000;
-  if(diff<60) return '刚刚';
-  if(diff<3600) return Math.floor(diff/60)+'分钟前';
-  if(diff<86400) return Math.floor(diff/3600)+'小时前';
-  var d=new Date(ts); var pad=function(n){return n<10?'0'+n:n;};
-  var today=new Date(); today.setHours(0,0,0,0);
-  if(ts>=today.getTime()) return '今天 '+pad(d.getHours())+':'+pad(d.getMinutes());
-  return (d.getMonth()+1)+'/'+d.getDate()+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+  if(diff<60)return '刚刚';
+  if(diff<3600)return Math.floor(diff/60)+'分钟前';
+  if(diff<86400)return Math.floor(diff/3600)+'小时前';
+  return new Date(ts).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})+' 北京时间';
 }
-function _buildNotifs(){
-  var arr=[];
-  try{
-    if(typeof cityKeys!=='function') return [];
-    // 与招商对接列表用同一过滤（isDemand===true），避免多出"父项目当前方向"这种幽灵条目
-    var _dirs=cityKeys().filter(function(k){var x=PROJECTS[k];return x && x.isDemand===true && x.topic;});
-    _dirs.forEach(function(k){
-      var p=PROJECTS[k]; if(!p||!p.topic) return;
-      var title=typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(p):p.topic;
-      var stage=p.stage||1;
-      var log=(p.stageLog||[]);
-      var lastTs=log.length?Number(log[log.length-1].at||log[log.length-1].ts||0):0;
-      // 状态变化通知：最近一次阶段推进
-      if(log.length && lastTs){
-        var last=log[log.length-1];
-        var toName=stageNameOf(p,last.to);
-        var idA='stage:'+k+':'+last.to;
-        arr.push({
-          id:idA,
-          type:'状态变化', icon:'🔵', proj:k,
-          title:title+' · 已进入「'+toName+'」',
-          desc:'该需求阶段已推进至「'+toName+'」，可打开需求查看下一步动作。',
-          ts:lastTs, read: !!NOTIFS_READ[idA]
-        });
-      }
-      // 超时提醒：进入某阶段后 >3 天无进一步推进
-      if(lastTs && (Date.now()-lastTs) > 3*86400*1000 && stage<projStages(p).length){
-        var idB='stale:'+k+':'+stage;
-        arr.push({
-          id:idB,
-          type:'超时提醒', icon:'🟠', proj:k,
-          title:title+' · 已3个工作日无更新',
-          desc:'该需求在「'+stageNameOf(p,stage)+'」阶段停留超过 3 天，建议跟进资源端核验进度。',
-          ts:lastTs, read: !!NOTIFS_READ[idB]
-        });
-      }
-      // 待确认提醒：阶段=2（AI研判/双确认前）且已生成报告
-      if(stage===2 && typeof REPORTSTATE!=='undefined' && REPORTSTATE[k] && REPORTSTATE[k].text){
-        var rts=Number(REPORTSTATE[k].ts||0);
-        var idC='confirm:'+k+':'+rts;
-        arr.push({
-          id:idC,
-          type:'待确认', icon:'🟡', proj:k,
-          title:title+' · 报告待你确认',
-          desc:'AI 研判已完成，请核对报告后进入双确认与需求提交。',
-          ts:rts||Date.now(), read: !!NOTIFS_READ[idC]
-        });
-      }
-    });
-    // 每日摘要
-    var keys=_dirs;
-    if(keys.length){
-      var today=new Date(); today.setHours(9,0,0,0);
-      var sumId='daily:'+today.toDateString();
-      var stageBreak={};
-      keys.forEach(function(k){var s=PROJECTS[k].stage||1; stageBreak[s]=(stageBreak[s]||0)+1;});
-      var parts=Object.keys(stageBreak).sort().map(function(s){
-        var sample=keys.find(function(k){return (PROJECTS[k].stage||1)==s;});
-        return stageNameOf(PROJECTS[sample],parseInt(s))+' '+stageBreak[s]+' 个';
-      });
-      arr.push({
-        id:sumId, type:'每日摘要', icon:'📋', proj:null,
-        title:'每日摘要 · '+keys.length+' 条招商需求进行中',
-        desc:parts.join('，')+'。点开查看各条需求进展。',
-        ts:today.getTime(), read: !!NOTIFS_READ[sumId]
-      });
-    }
-  }catch(e){console.warn('[notif] build failed',e);}
-  // 按时间倒序，最多显示 6 条
-  arr.sort(function(a,b){return (b.ts||0)-(a.ts||0);});
-  arr=arr.slice(0,6);
-  arr.forEach(function(n){n.time=_fmtTimeAgo(n.ts);});
-  return arr;
-}
-Object.defineProperty(window,'NOTIFS',{get:function(){return _buildNotifs();},configurable:true});
-function unreadCount(){return NOTIFS.filter(function(n){return !n.read}).length}
+function reminderTypeLabel(type){return {status:'状态变化',verification:'核验进展',overdue:'超时提醒',daily:'每日摘要'}[type]||'站内提醒';}
+function unreadCount(){return reminderNotifications().filter(function(n){return n.readAt===null;}).length;}
 function notifList(){
-  return '<div style="padding:11px 15px;border-bottom:1px solid #eef1f5;font-size:13px;font-weight:650;display:flex;justify-content:space-between;align-items:center">通知 <button style="border:0;background:none;color:#0757ad;font-size:11px;cursor:pointer" onclick="markAllRead(event)">全部已读</button></div>'+
-    NOTIFS.map(function(n){
-      return '<div onclick="openNotif(\''+n.id+'\')" style="padding:13px 16px;border-bottom:1px solid #f2f5f9;cursor:pointer;display:flex;gap:10px;align-items:flex-start;'+(n.read?'opacity:.55':'')+'" onmouseover="this.style.background=\'#f7f9fc\'" onmouseout="this.style.background=\'\'">'+
-        '<span style="font-size:15px;flex:0 0 auto;line-height:1.4;margin-top:1px">'+n.icon+'</span>'+
-        '<span style="flex:1;min-width:0;overflow:hidden">'+
-          '<span style="font-size:13px;font-weight:600;color:#0b183b;display:block;word-break:break-word;line-height:1.45">'+_authEscape(n.title)+(n.read?'':' <b style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#c85b09;vertical-align:middle;margin-left:2px"></b>')+'</span>'+
-          '<span style="font-size:11.5px;color:#667590;line-height:1.55;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:4px;word-break:break-word">'+_authEscape(n.desc)+'</span>'+
-          '<span style="font-size:10.5px;color:#a8b2c2;display:block;margin-top:5px">'+n.type+' · '+n.time+'</span>'+
-        '</span>'+
-      '</div>';
-    }).join('');
+  var state=reminderState(),items=reminderNotifications();
+  var status=state&&state.error?'<p role="alert" style="padding:12px 16px">'+_authEscape(state.error)+' <button onclick="reminderReload()">重试</button></p>':
+    !state||!state.loaded?'<p role="status" style="padding:12px 16px">正在加载站内提醒…</p>':
+    !items.length?'<p style="padding:12px 16px">当前工作区暂无站内提醒</p>':'';
+  return '<div data-reminder-panel-token="'+reminderPanelToken(state)+'" style="padding:11px 15px;border-bottom:1px solid #eef1f5;font-size:13px;font-weight:650;display:flex;justify-content:space-between;align-items:center">站内提醒 <button type="button" id="reminderMarkAllRead" style="border:0;background:none;color:#0757ad;font-size:11px;cursor:pointer" onclick="markAllRead(event)"'+(!state||!state.loaded||state.mutationPending?' disabled':'')+'>全部已读</button></div>'+status+
+    items.map(function(n){return '<button type="button" id="reminderNotice-'+_authEscape(n.id)+'" onclick="openNotif('+_authEscape(JSON.stringify(n.id))+')" style="width:100%;text-align:left;background:none;border:0;padding:13px 16px;border-bottom:1px solid #f2f5f9;cursor:pointer;display:block;'+(n.readAt!==null?'opacity:.65':'')+'">'+
+      '<span style="font-size:13px;font-weight:600;color:#0b183b;display:block;word-break:break-word;line-height:1.45">'+_authEscape(n.title)+(n.readAt===null?' · 未读':'')+'</span>'+
+      '<span style="font-size:11.5px;color:#667590;display:block;line-height:1.55;word-break:break-word">'+_authEscape(n.message)+'</span>'+
+      '<span style="font-size:10.5px;color:#8490a5;display:block;margin-top:5px">'+reminderTypeLabel(n.type)+' · '+_authEscape(_fmtTimeAgo(n.createdAt))+'</span></button>';}).join('');
 }
-function toggleNotif(e){e.stopPropagation();var m=$('#notifPanel');if(m)m.style.display=m.style.display==='none'?'block':'none'}
-function markAllRead(e){e.stopPropagation();NOTIFS.forEach(function(n){NOTIFS_READ[n.id]=true});_saveNotifRead();render()}
+function toggleNotif(e){
+  e.stopPropagation();var panel=$('#notifPanel');
+  if(panel){var opening=panel.style.display==='none';panel.style.display=opening?'block':'none';if(opening)reminderLoad(true);}
+}
+function markAllRead(e){if(e)e.stopPropagation();return reminderMarkRead([],true);}
 function openNotif(id){
-  var n=NOTIFS.find(function(x){return x.id===id});if(!n)return;NOTIFS_READ[n.id]=true;_saveNotifRead();
-  var np=$('#notifPanel');if(np)np.style.display='none';
-  render();
-  // 每日摘要 = 全局概览（不属于单个项目），点开列出各研判状态
-  if(!n.proj){
-    var _mkeys=cityKeys().filter(function(k){var x=PROJECTS[k];return x&&x.isDemand===true&&x.topic;});
-    var rows=_mkeys.map(function(k){var x=PROJECTS[k];var sc=stColor(x.stage);
-      return '<div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #f2f5f9;cursor:pointer" onclick="closeModal();gotoProjFromNotif(\''+k+'\')">'+
-        '<span style="font-size:16px">📍</span>'+
-        '<span style="flex:1;min-width:0"><strong style="font-size:13.5px;color:#0b183b;display:block">'+_authEscape(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(x):x.topic)+'</strong>'+
-        '<small style="font-size:11px;color:#667590">'+x.city+' · '+stageDescOf(x,x.stage)+'</small></span>'+
-        '<span class="status-tag" style="color:'+sc.c+';background:'+sc.bg+'">'+stageNameOf(x,x.stage)+'</span></div>';
-    }).join('');
-    var body='<p class="modal-intro">今天 09:00 · '+P().who+' 名下 '+_mkeys.length+' 条招商需求进展如下，点任意一条进入。</p>'+rows+
-      '<div class="boundary-note" style="margin-top:14px"><i class="i">📋</i>每日摘要为全局汇总，不属于单条需求；系统每天 09:00 自动生成。</div>';
-    openModal('每日摘要 · 今日需求概览',body,'<button class="primary-button" onclick="closeModal()">知道了</button>');
-    return;
-  }
-  // 事件通知（状态变化/超时）= 前往对应研判
-  var pj=PROJECTS[n.proj];
-  var body='<div style="display:flex;align-items:flex-start;gap:11px;margin-bottom:14px">'+
-      '<span style="font-size:20px">'+n.icon+'</span>'+
-      '<div><div style="font-size:15px;font-weight:650;color:#0b183b">'+_authEscape(n.title)+'</div>'+
-      '<div style="font-size:11px;color:#8490a5;margin-top:3px">'+n.type+' · '+n.time+'</div></div></div>'+
-    '<div class="info-callout" style="margin-top:0">'+_authEscape(n.desc)+'</div>'+
-    '<div class="kv" style="margin-top:14px"><span class="kk" style="width:70px;color:#8490a5">相关需求</span><span class="vv">'+_authEscape(pj.city)+' · '+_authEscape(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(pj):pj.topic)+'</span></div>'+
-    '<div class="kv"><span class="kk" style="width:70px;color:#8490a5">当前阶段</span><span class="vv">'+stageNameOf(pj,pj.stage)+'</span></div>';
-  var foot='<button class="secondary-button" onclick="closeModal()">知道了</button>'+
-    '<button class="primary-button" onclick="closeModal();gotoProjFromNotif(\''+n.proj+'\')">前往该需求 ➜</button>';
-  openModal('通知详情',body,foot);
+  var state=reminderState(),context=state&&state.context.key;
+  var notification=reminderNotifications().find(function(n){return n.id===id;});
+  if(!notification)return Promise.resolve(false);
+  return reminderMarkRead([id],false).then(function(ok){
+    if(!ok||!reminderCurrent(state)||state.context.key!==context)return false;
+    var panel=$('#notifPanel');if(panel)panel.style.display='none';
+    var project=PROJECTS[notification.projectKey];
+    var canOpen=notification.type!=='daily'&&project&&typeof _authWorkspaceOf==='function'&&_authWorkspaceOf(notification.projectKey)===state.context.workspaceId;
+    var body='<h3>'+_authEscape(notification.title)+'</h3><p style="white-space:pre-wrap;overflow-wrap:anywhere">'+_authEscape(notification.message)+'</p>'+
+      '<p>'+reminderTypeLabel(notification.type)+' · '+_authEscape(_fmtTimeAgo(notification.createdAt))+'</p>';
+    if(notification.type==='daily')body+='<p>这是服务器当时保存的摘要快照；当前项目进度可能已经更新。</p>';
+    else if(!canOpen)body+='<p>相关需求当前不可访问，通知保留事件发生时的记录。</p>';
+    var foot='<button class="secondary-button" onclick="closeModal()">知道了</button>'+
+      (canOpen?'<button class="primary-button" onclick="closeModal();gotoProjFromNotif('+_authEscape(JSON.stringify(notification.projectKey))+')">前往该需求 ➜</button>':'');
+    openModal('站内提醒详情',body,foot);return true;
+  });
 }
-function gotoProjFromNotif(pk){if(!PROJECTS[pk])return;cur=pk;view='home';detailData=null;window.__projOpen=pk;render();toast('已定位到「'+(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(PROJECTS[pk]):PROJECTS[pk].topic)+'」需求')}
+function gotoProjFromNotif(pk){
+  var state=reminderState();
+  if(!state||!PROJECTS[pk]||_authWorkspaceOf(pk)!==state.context.workspaceId)return;
+  cur=pk;view='home';detailData=null;window.__projOpen=pk;render();
+}
 function toggleSw(e){e.stopPropagation();var m=$('#swMenu');m.style.display=m.style.display==='none'?'block':'none'}
 function switchProj(k){cur=k;view='report';detailData=null;try{_sanitizeReportState();}catch(_){}render();toast('已进入「'+(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(PROJECTS[k]):PROJECTS[k].topic)+'」'+(PROJECTS[k].isDemand?'需求':'研判工作区'))}
 function newProj(){var m=$('#swMenu');if(m)m.style.display='none';newProjModal()}
@@ -7048,6 +7436,7 @@ function go(v){
   if(v==='report')cur=industryAnalysisWorkspaceKey(cur);
   if(isLocked(v)){
     var r=kbReadiness();
+    var summary=kbReadinessSummary(r);
     var vnames={report:'AI 匹配研判',home:'需求与建联',docking:'需求与建联'};
     var vn=vnames[v]||v;
     var tips=[];
@@ -7065,19 +7454,20 @@ function go(v){
           '<div style="flex:1;background:#f0f4ff;border-radius:6px;height:8px;overflow:hidden">'+
             '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:6px;transition:width .3s"></div>'+
           '</div>'+
-          '<span style="font-size:13px;font-weight:700;color:'+r.color+'">'+r.score+'%</span>'+
+          '<span style="font-size:13px;font-weight:700;color:'+r.color+'">材料量评分 '+r.score+'分</span>'+
         '</div>'+
+        '<p style="font-size:12px;color:#64748b;margin:0 0 8px">'+summary.sectionText+' · '+summary.statusText+'</p>'+
         '<p style="font-size:13px;color:#4a5568;margin:0 0 12px;line-height:1.7">'+
-          '&#128274; <strong>'+vn+'</strong>\u9700\u8981\u57ce\u5e02\u667a\u5e93\u5b8c\u6210\u5ea6\u8fbe\u5230 <strong>80%</strong>\u540e\u81ea\u52a8\u89e3\u9501\u3002\u5f53\u524d <strong style="color:'+r.color+'">'+r.score+'%</strong>\u3002</p>'+
-        '<p style="font-size:12px;color:#6366f1;margin:0 0 10px">\u{1f4a1} \u4e0a\u4f20\u8d8a\u591a\u6750\u6599\u3001\u9886\u5bfc\u786e\u8ba4\u8d8a\u591a\u7ed3\u8bba\uff0c\u7814\u5224\u6570\u636e\u53ef\u9760\u6027\u8d8a\u9ad8\u3002</p>'+
+          '&#128274; <strong>'+vn+'</strong>需要城市智库的材料量基础评分达到 <strong>80分</strong>后自动解锁；待确认事项仍需单独核实。</p>'+
+        '<p style="font-size:12px;color:#6366f1;margin:0 0 10px">'+summary.explanation+'</p>'+
         (tipsHtml?'<div style="margin-bottom:10px">'+
-          '<div style="font-size:11.5px;font-weight:650;color:#6366f1;margin-bottom:6px">\u5feb\u901f\u63d0\u5347\u5b8c\u6210\u5ea6\uff1a</div>'+
+          '<div style="font-size:11.5px;font-weight:650;color:#6366f1;margin-bottom:6px">可补充的材料与确认事项：</div>'+
           '<ul style="margin:0;padding:0;list-style:none">'+tipsHtml+'</ul></div>':'');
     var foot=
       '<button class="secondary-button" onclick="closeModal()">\u7ee7\u7eed\u5b8c\u5584\u57ce\u5e02\u667a\u5e93</button>'+
       '<button onclick="unlockView(\''+v+'\')" '+
         'style="padding:10px 18px;background:#f5f7fb;color:#64748b;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;cursor:pointer">'+
-        '\u5f3a\u5236\u89e3\u9501\uff08\u6570\u636e\u53ef\u9760\u6027\u8f83\u4f4e\uff09</button>';
+        '手动解锁（仍需核验事实）</button>';
     openModal('&#128274; '+vn+' \u5c1a\u672a\u89e3\u9501', body, foot);
     return;
   }
@@ -7439,6 +7829,7 @@ function openIndustryDemandComposer(button){
 }
 async function submitIndustryDemand(){
   var draft=INDUSTRY_DEMAND_DRAFT;if(!draft||draft.pending)return false;
+  var demandNavigationIdentity=typeof submittedDemandAuthIdentity==='function'?submittedDemandAuthIdentity():null;
   var error=document.getElementById('industryDemandError'),button=document.getElementById('industryDemandSubmit');
   function fail(message){if(error)error.textContent=message;else toast(message);}
   var epoch=typeof _authEpoch==='number'?_authEpoch:0;
@@ -7457,6 +7848,7 @@ async function submitIndustryDemand(){
     if(!result.projectKey||!result.project||result.project.demandContract!=='industry-demand-v1'||result.project.sourceProjectKey!==draft.key||result.project.sourceAnalysisTopic!==draft.topic||result.project.sourcePriorityKey!==industryDemandPriorityKey(draft.priority)||!result.demand||result.demand.projKey!==result.projectKey||!result.reportState)throw new Error('服务端返回的需求与所选建议不一致，请刷新核对。');
     PROJECTS[result.projectKey]=result.project;REPORTSTATE[result.projectKey]=result.reportState;
     var index=DEMANDS.findIndex(function(row){return row.id===result.demand.id;});if(index<0)DEMANDS.push(result.demand);else DEMANDS[index]=result.demand;
+    if(typeof acceptSubmittedDemandCreated==='function')acceptSubmittedDemandCreated(result,demandNavigationIdentity);
     persist();
     if(INDUSTRY_DEMAND_DRAFT===draft){closeModal();INDUSTRY_DEMAND_DRAFT=null;render();}
     toast(result.created?'这条招商需求已提交，可在招商对接中单独查看':'这条建议已有需求，已保留原提交内容');return true;
@@ -7490,20 +7882,31 @@ function openDirectDemandComposer(context){
     DIRECT_DEMAND_DRAFT={key:key,epoch:dockingActionEpoch(),requestId:dockingRequestId(),pending:false,uncertain:false,attempt:null};
     if(topic)DIRECT_DEMAND_DRAFT.values={title:topic.slice(0,120),description:'',conditions:'',contactName:'',contactMethod:''};
   }
-  var body='<div class="docking-log-form"><div class="docking-log-context"><strong>直接提交明确的招商需求</strong><p>当前城市：'+escapeChainText(PROJECTS[key].city||'当前工作区')+'</p>'+(fromReport?'<p>你可以根据实际需要自行填写招商诉求。分析主题仅作为可编辑的名称参考，所填内容不作为报告结论。</p>':'')+'<p>需求进入管理端受理队列。管理端会填写负责人、下一步及处理反馈，你可以在这里持续补充资料。</p></div><label for="directDemandTitle">需求名称</label><input id="directDemandTitle" maxlength="120" placeholder="填写具体的招引对象或合作需求"><label for="directDemandDescription">具体招引诉求</label><textarea id="directDemandDescription" maxlength="6000" rows="5" placeholder="说明需要什么类型的企业、产品或能力，以及希望达成的合作"></textarea><label for="directDemandConditions">承接条件与要求 <span>（选填）</span></label><textarea id="directDemandConditions" maxlength="2000" rows="3" placeholder="可填写园区载体、合作方式、时间要求和其他条件"></textarea><div class="docking-form-columns"><div><label for="directDemandContactName">对接人 <span>（选填）</span></label><input id="directDemandContactName" maxlength="80"></div><div><label for="directDemandContactMethod">联系方式 <span>（选填）</span></label><input id="directDemandContactMethod" maxlength="240" placeholder="电话、邮箱或其他联系方式"></div></div><p class="docking-form-help">以上内容按你提交的需求保存。提交后可继续补充相关材料。</p><p id="directDemandError" class="docking-form-error" role="alert"></p></div>';
+  var body='<div class="docking-log-form"><div class="docking-log-context"><strong>直接提交明确的招商需求</strong><p>当前城市：'+escapeChainText(PROJECTS[key].city||'当前工作区')+'</p>'+(fromReport?'<p>你可以根据实际需要自行填写招商诉求。分析主题仅作为可编辑的名称参考，所填内容不作为报告结论。</p>':'')+'<p>需求进入管理端受理队列。管理端会填写负责人、下一步及处理反馈，你可以在这里持续补充资料。</p></div><p id="directDemandError" class="docking-form-error" role="alert" tabindex="-1" aria-atomic="true"></p><label for="directDemandTitle">需求名称</label><input id="directDemandTitle" maxlength="120" placeholder="填写具体的招引对象或合作需求"><label for="directDemandDescription">具体招引诉求</label><textarea id="directDemandDescription" maxlength="6000" rows="5" placeholder="说明需要什么类型的企业、产品或能力，以及希望达成的合作"></textarea><label for="directDemandConditions">承接条件与要求 <span>（选填）</span></label><textarea id="directDemandConditions" maxlength="2000" rows="3" placeholder="可填写园区载体、合作方式、时间要求和其他条件"></textarea><div class="docking-form-columns"><div><label for="directDemandContactName">对接人 <span>（选填）</span></label><input id="directDemandContactName" maxlength="80"></div><div><label for="directDemandContactMethod">联系方式 <span>（选填）</span></label><input id="directDemandContactMethod" maxlength="240" placeholder="电话、邮箱或其他联系方式"></div></div><p class="docking-form-help">以上内容按你提交的需求保存。提交后可继续补充相关材料。</p></div>';
   openModal('提交招商需求',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button id="directDemandSubmit" class="primary-button" onclick="submitDirectDemand()">提交给管理端</button>');
   if(DIRECT_DEMAND_DRAFT.values){var values=DIRECT_DEMAND_DRAFT.values;[['Title','title'],['Description','description'],['Conditions','conditions'],['ContactName','contactName'],['ContactMethod','contactMethod']].forEach(function(pair){var el=document.getElementById('directDemand'+pair[0]);if(el)el.value=values[pair[1]]||'';});}
   return true;
 }
 async function submitDirectDemand(){
   var draft=DIRECT_DEMAND_DRAFT;if(!draft||draft.pending)return false;
+  var demandNavigationIdentity=typeof submittedDemandAuthIdentity==='function'?submittedDemandAuthIdentity():null;
   var error=document.getElementById('directDemandError'),button=document.getElementById('directDemandSubmit');
-  function fail(message){if(error)error.textContent=message;else toast(message);}
+  function fail(message,fieldId){
+    ['Title','Description','Conditions','ContactName','ContactMethod'].forEach(function(name){
+      var field=document.getElementById('directDemand'+name);if(field){field.removeAttribute('aria-invalid');field.removeAttribute('aria-describedby');}
+    });
+    if(!error){if(message)toast(message);return;}
+    error.textContent=message;if(!message)return;
+    var field=fieldId&&document.getElementById(fieldId);
+    if(field){field.setAttribute('aria-invalid','true');field.setAttribute('aria-describedby','directDemandError');}
+    var focusTarget=field||error;if(focusTarget.focus)focusTarget.focus({preventScroll:true});
+    if(error.scrollIntoView)error.scrollIntoView({block:'start',behavior:'auto'});
+  }
   if(draft.epoch!==dockingActionEpoch()||directDemandWorkspaceKey()!==draft.key){fail('账号或工作区已变化，请重新打开需求表单。');return false;}
   function value(id){var el=document.getElementById(id);return el&&typeof el.value==='string'?el.value.trim():'';}
   var demand={title:value('directDemandTitle'),description:value('directDemandDescription'),conditions:value('directDemandConditions'),contactName:value('directDemandContactName'),contactMethod:value('directDemandContactMethod')};
-  if(!demand.title||demand.title.length>120||!demand.description||demand.description.length>6000){fail('请填写需求名称（120字以内）和具体招引诉求（6000字以内）。');return false;}
-  if(demand.conditions.length>2000||demand.contactName.length>80||demand.contactMethod.length>240){fail('补充内容超过长度限制，请精简后再提交。');return false;}
+  if(!demand.title||demand.title.length>120||!demand.description||demand.description.length>6000){fail('请填写需求名称（120字以内）和具体招引诉求（6000字以内）。',!demand.title||demand.title.length>120?'directDemandTitle':'directDemandDescription');return false;}
+  if(demand.conditions.length>2000||demand.contactName.length>80||demand.contactMethod.length>240){fail('补充内容超过长度限制，请精简后再提交。',demand.conditions.length>2000?'directDemandConditions':demand.contactName.length>80?'directDemandContactName':'directDemandContactMethod');return false;}
   var body={mode:'direct',projectKey:draft.key,requestId:draft.requestId,demand:demand},attempt=JSON.stringify(body);
   if(draft.uncertain&&draft.attempt!==attempt){fail('上次提交结果尚未确认，请先按原内容重试，避免产生重复需求。');return false;}
   if(draft.attempt&&draft.attempt!==attempt){draft.requestId=dockingRequestId();body.requestId=draft.requestId;attempt=JSON.stringify(body);}
@@ -7520,6 +7923,7 @@ async function submitDirectDemand(){
     if(current&&(current.directRequestId!==body.requestId||current.workspaceId!==draft.key||current.demandOrigin!=='direct'))throw dockingActionError('已有需求与回执不一致，请刷新核对。');
     if(!current)PROJECTS[result.projectKey]=result.project;var index=DEMANDS.findIndex(function(row){return row.id===result.demand.id;});if(index<0)DEMANDS.push(result.demand);
     if(typeof REPORTSTATE!=='undefined'&&!REPORTSTATE[result.projectKey])REPORTSTATE[result.projectKey]=result.reportState||{};
+    if(typeof acceptSubmittedDemandCreated==='function')acceptSubmittedDemandCreated(result,demandNavigationIdentity);
     try{persist();}catch(_){}
     if(DIRECT_DEMAND_DRAFT===draft){DIRECT_DEMAND_DRAFT=null;closeModal();window.__projOpen=result.projectKey;if(typeof dockingViewState==='function'){dockingViewState().selected=result.projectKey;dockingViewState().filter='all';dockingViewState().search='';}view='home';render();}
     toast('招商需求已提交，等待管理端受理');return true;
@@ -11365,6 +11769,7 @@ function generateTopicsFromKb(p){
 
 function homePage(p){
   var r=kbReadiness();
+  var summary=kbReadinessSummary(r);
   var running=reportJobForTopic(cur,p.topic);
 
   // ── 可靠性横幅 ──
@@ -11373,9 +11778,9 @@ function homePage(p){
       '<div style="flex:1;min-width:0">'+
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'+
           '<span style="font-size:12px;font-weight:650;color:'+(r.score>=80?'#1C43B5':'#92400e')+'">从城市智库继承数据</span>'+
-          '<span style="font-size:11px;color:'+(r.score>=80?'#2D5BE3':'#f59e0b')+';font-weight:700">'+r.score+'%</span>'+
-          '<span style="font-size:11px;color:'+(r.score>=80?'#2D5BE3':'#f59e0b')+'">'+r.label+'</span>'+
-          '<span title="仅表示材料覆盖与流程准备情况，不代表事实正确率。补充原始材料，并逐条核实待确认事项。" style="font-size:11px;color:#9aa5b5;cursor:help;text-decoration:underline dotted;margin-left:4px">ⓘ 如何提升</span>'+
+          '<span style="font-size:11px;color:'+(r.score>=80?'#2D5BE3':'#f59e0b')+';font-weight:700">材料量评分 '+r.score+'分</span>'+
+          '<span style="font-size:11px;color:'+(r.score>=80?'#2D5BE3':'#f59e0b')+'">'+summary.sectionText+' · '+summary.statusText+'</span>'+
+          '<span title="'+summary.explanation+'" style="font-size:11px;color:#9aa5b5;cursor:help;text-decoration:underline dotted;margin-left:4px">ⓘ 评分说明</span>'+
         '</div>'+
         '<div style="height:4px;background:'+(r.score>=80?'#E5EDFF':'#fef3c7')+';border-radius:2px;overflow:hidden">'+
           '<div style="height:100%;width:'+r.score+'%;background:'+(r.score>=80?'#2D5BE3':'#f59e0b')+';border-radius:2px;transition:width .4s"></div>'+
@@ -11665,6 +12070,7 @@ function memFileView(){
           (sizeStr?'<span style="font-size:11px;color:#b0bac8">'+sizeStr+'</span>':'')+
           '<span style="margin-left:auto;font-size:10.5px;color:#b0bac8">'+when+'</span>'+
         '</div>'+
+        (typeof kbUploadedMaterialReadButton==='function'?'<div style="margin-top:8px">'+kbUploadedMaterialReadButton(u._pk||cur,u.originalId)+'</div>':'')+
       '</div>'+
     '</div>';
   }).join('');
@@ -11986,26 +12392,22 @@ function kbPage(p){
     '<p class="kb-source-intro">只列出当前回答送入模型的材料。来源链接供你回到原文核实。</p><div id="kbSourcesList"><div class="kb-sources-empty"><span aria-hidden="true">▤</span><strong>随回答查看依据</strong><p>发送问题后，这里会展示本次参考的片段与已有出处。</p></div></div></aside></div></div>';
 }
 function settingsPage(p){
+  var identity=currentAccountIdentity();
   return '<div class="page">'+
     '<div class="page-header"><div><span class="eyebrow">PERSONALIZATION</span><h1>个人与提醒设置</h1>'+
     '<p>让协作，更合你的节奏。</p></div></div>'+
     '<div class="settings-scroll">'+authWorkspaceBlock('settings-section')+
     '<div class="settings-section"><h2>账号身份<span class="settings-readonly-badge">系统开通 · 只读</span></h2>'+
       '<div class="form-grid">'+
-      '<label>所属单位<input value="'+_authEscape(p.org)+'" disabled></label>'+
-      '<label>姓名 / 角色<input value="'+_authEscape(p.who)+' / 招商干部" disabled></label>'+
+      '<label>所属单位<input value="'+_authEscape(identity.org)+'" disabled></label>'+
+      '<label>姓名 / 角色<input value="'+_authEscape(identity.name)+' / '+_authEscape(identity.roleLabel)+'" disabled></label>'+
+      '<label>登录账号<input value="'+_authEscape(identity.user)+'" disabled></label>'+
       '<label>所属地区<input value="'+_authEscape(p.city)+'" disabled></label>'+
       '<label>数据权限<input value="仅限 '+_authEscape(p.city)+' 城市智库" disabled></label></div>'+
       '<div class="boundary-note" style="margin-top:14px"><i class="i">🔒</i>账号的地区与身份在开通时绑定，用户不可自行更改；如需变更请联系系统管理员。</div></div>'+
     onboardingSettingsSection(p)+
-    '<div class="settings-section"><h2>提醒偏好<span class="settings-editable-badge">可自行调整</span></h2>'+
-      '<div class="toggle-row"><span><strong>状态变化通知</strong><small>需求进度更新时提醒我</small></span><input type="checkbox" checked></div>'+
-      '<div class="toggle-row"><span><strong>超时提醒</strong><small>3 个工作日无更新时提醒</small></span><input type="checkbox" checked></div>'+
-      '<div class="toggle-row"><span><strong>每日摘要</strong><small>每天 09:00 汇总进行中事项</small></span><input type="checkbox" checked></div>'+
-      '<button class="primary-button settings-save" onclick="toast(\'提醒偏好已保存\')">保存偏好</button></div>'+
-    '<div class="settings-section"><h2>系统会据此调整</h2><ul class="plain-list">'+
-      ['首页任务提示','报告中的产业关注顺序','进度提醒频率'].map(function(x){return '<li>'+x+'</li>'}).join('')+'</ul>'+
-      '<div class="boundary-note"><i class="i">🔒</i>干部与确认关口、资源核验责任和企业触达边界，不会因个人设置而跳过。</div></div>'+
+    reminderPreferencesSection()+
+    '<div class="settings-section"><h2>提醒范围</h2><p>上述偏好只控制站内通知的生成和展示；不改变产业分析内容、工作流确认关口或企业触达权限。</p></div>'+
     '</div></div>';
 }
 /* 招商偏好画像：设置页可查看+修改（收起展示，点「修改」重开问卷）*/
@@ -12230,9 +12632,10 @@ function detailNeeds(p){
 }
 // 设置页 → 右侧：账号与权限概览
 function detailSettings(p){
+  var identity=currentAccountIdentity();
   return '<div class="detail-header"><div><span class="eyebrow">ACCOUNT</span><h2>账号概览</h2><p>由系统开通 · 不可自行修改</p></div></div>'+
     '<div class="detail-scroll">'+
-      '<div class="detail-block"><h3>身份</h3><ul class="check-list"><li><i class="i">✔</i>'+_authEscape(p.org)+'</li><li><i class="i">✔</i>'+_authEscape(p.who)+' · 招商干部'+(AUTH&&AUTH.role==='owner'?' · 组织管理员':'')+'</li></ul></div>'+
+      '<div class="detail-block"><h3>身份</h3><ul class="check-list"><li><i class="i">✔</i>'+_authEscape(identity.org)+'</li><li><i class="i">✔</i>'+_authEscape(identity.name)+' · '+_authEscape(identity.roleLabel)+'</li><li><i class="i">✔</i>登录账号：'+_authEscape(identity.user)+'</li></ul></div>'+
       '<div class="detail-block"><h3>数据权限</h3><div class="info-callout" style="margin-top:0">仅可访问 <b>'+_authEscape(p.city)+'</b> 城市工作区；其他团队的数据需要单独授权。</div></div>'+
       orgMembersBlock()+
       '<div class="detail-block"><h3>安全边界</h3><div class="boundary-note" style="margin-top:0"><i class="i">🔒</i>确认关口、资源核验责任与企业触达边界，不因个人设置而跳过。</div></div>'+
@@ -12672,6 +13075,7 @@ var KB_CONFIRMS={};  // {projKey:{kbIdx:{itemIdx:{status,text,ts}}}}
 // A server reset starts a new data generation. Never merge earlier local data into it.
 function _acceptServerGeneration(srv){
   if(!srv.RESET_GEN||srv.RESET_GEN===RESET_GEN)return false;
+  if(typeof resetSubmittedDemandAccess==='function')resetSubmittedDemandAccess();
   ['PROJECTS','UPLOADS','KB_EDITS','KB_CONFIRMS','KB_CONFIRM_TOMBS','KB_ITEM_TOMBS','KB_FILE_CHUNKS','KB_UNLOCKED','REPORTSTATE','REPORT_HISTORY','PENDING_CONFIRMS','DOCK_LOGS','KB_CHAT','KB_CHAT_TOMBS','UPLOAD_TOMBS','CITY_BASE_PACKAGES','CITY_WORKSPACES','SUBPROJ'].forEach(function(key){if(typeof window[key]!=='undefined')window[key]={};});
   ['OPS_ENT','DEMANDS','REPORT_REQUESTS'].forEach(function(key){if(typeof window[key]!=='undefined')window[key]=[];});
   window.DELETED_PROJECTS=[];window.DELETED_CLUES=[];cur=null;
@@ -12683,6 +13087,7 @@ var _serverRestoreSeq=0;
 function restoreFromServer(callback){
   if(!AUTH||_authState!=='ready'){if(callback)callback(false);return Promise.resolve(false);}
   var authEpoch=_authEpoch;
+  var demandReadToken=typeof submittedDemandReadToken==='function'?submittedDemandReadToken():null;
   // 生成/访谈进行中不做全量覆盖同步——否则刚生成的REPORTSTATE/访谈状态被服务端旧数据冲掉，
   // 表现为"报告跑一半自己跳走/进行不下去"。完成后调用方会再触发同步。
   if(window._reportGenerating || (window._interviewState && _interviewState.active)){
@@ -12704,7 +13109,13 @@ function restoreFromServer(callback){
     // Capture the live selection when the response arrives, not when the request
     // started: a user can change direction or page while the network is pending.
     var _userCur=cur,_userTopic=cur&&PROJECTS[cur]?PROJECTS[cur].topic:null,_userView=view;
-    if(_acceptServerGeneration(srv)){_userCur=null;_userTopic=null;_userView=null;}
+    var _editorBeforeRestore=typeof kbEditorSnapshotSession==='function'?kbEditorSnapshotSession():null;
+    var demandReadCurrent=typeof submittedDemandReadCurrent==='function'&&submittedDemandReadCurrent(demandReadToken);
+    if(_acceptServerGeneration(srv)){
+      _userCur=null;_userTopic=null;_userView=null;
+      if(demandReadCurrent)demandReadToken=submittedDemandReadToken();
+    }
+    if(typeof acceptSubmittedDemandSnapshot==='function')acceptSubmittedDemandSnapshot(srv,demandReadToken);
     // 服务器直接覆盖本地，不做合并——保证所有人看到同一份数据
     // 但保护本地刚提交的 isDemand 项目：5秒防抖内刷新时服务器尚无这些数据，直接覆盖会丢
     var _localDemandProj={}, _localDemandRS={}, _localDemands=(typeof DEMANDS!=='undefined')?DEMANDS.slice():[];
@@ -12882,6 +13293,7 @@ function restoreFromServer(callback){
     }
     if(_userView)view=_userView;
     applyTopicStateIntegrity();
+    if(typeof kbEditorRestoreSnapshot==='function')kbEditorRestoreSnapshot(_editorBeforeRestore);
     // 写回 localStorage（统一扁平格式）
     var flat={cur:cur,view:view,PROJECTS:PROJECTS,UPLOADS:UPLOADS,
       KB_CONFIRMS:KB_CONFIRMS,KB_CONFIRM_TOMBS:KB_CONFIRM_TOMBS,KB_FILE_CHUNKS:KB_FILE_CHUNKS,
@@ -12969,6 +13381,7 @@ window.addEventListener('storage', function(e){
       data.DOCK_LOGS,data.KB_UNLOCKED,data.CITY_ACCOUNTS,data.USER_PROFILES,data.INVITE_CODES,data.CITY_BASE_PACKAGES]);
     if(window.__lastSyncFp===_fp){ return; }  // 业务数据无变化：跳过整体覆盖与 render()，消除空转闪烁
     window.__lastSyncFp=_fp;
+    var _editorBeforeStorage=typeof kbEditorSnapshotSession==='function'?kbEditorSnapshotSession():null;
     // 同步关键数据（保留当前 view/cur/topic/stage 等用户操作状态）
     var _keepTopic=(cur&&PROJECTS[cur])?PROJECTS[cur].topic:null;
     var _keepStage=(cur&&PROJECTS[cur])?PROJECTS[cur].stage:null;
@@ -13060,6 +13473,7 @@ window.addEventListener('storage', function(e){
     _mergeUploadTombs(data.UPLOAD_TOMBS);
     KB_CHAT=_mergeKbChat(data.KB_CHAT, KB_CHAT);
     _applyUploadTombs();
+    if(typeof kbEditorRestoreSnapshot==='function')kbEditorRestoreSnapshot(_editorBeforeStorage);
 
     // 重渲染（仅影响当前视图）
     // report 视图下若用户 1.5s 内有过滚动，延迟执行避免打断阅读
@@ -14397,20 +14811,50 @@ function confirmKbItem(kbIdx,itemIdx){
 }
 
 
+/* Keep native file pickers attached and owned until selection or cancellation. */
+var OWNED_FILE_PICKER=null, OWNED_FILE_PICKER_HOST=null;
+function resetOwnedFilePickers(){
+  var state=OWNED_FILE_PICKER;OWNED_FILE_PICKER=null;
+  if(!state)return;
+  state.settled=true;state.input.onchange=null;state.input.oncancel=null;
+  state.input.value='';
+  if(state.input.parentNode)state.input.parentNode.removeChild(state.input);
+}
+function cancelObsoleteFilePickers(){
+  if(OWNED_FILE_PICKER&&!OWNED_FILE_PICKER.options.isCurrent())resetOwnedFilePickers();
+}
+function openOwnedFilePicker(options){
+  resetOwnedFilePickers();
+  if(!options.isCurrent())return null;
+  if(!OWNED_FILE_PICKER_HOST){
+    OWNED_FILE_PICKER_HOST=document.createElement('div');
+    OWNED_FILE_PICKER_HOST.id='clientFilePickerHost';
+    OWNED_FILE_PICKER_HOST.setAttribute('aria-hidden','true');
+    OWNED_FILE_PICKER_HOST.style.cssText='position:fixed;left:-10000px;top:0;width:1px;height:1px;overflow:hidden;';
+  }
+  if(OWNED_FILE_PICKER_HOST.parentNode!==document.body)document.body.appendChild(OWNED_FILE_PICKER_HOST);
+  var input=document.createElement('input');
+  input.type='file';input.multiple=options.multiple;input.accept=options.accept;input.tabIndex=-1;
+  var state={input:input,options:options,settled:false};OWNED_FILE_PICKER=state;
+  input.onchange=function(){
+    if(OWNED_FILE_PICKER!==state||state.settled)return;
+    var files=Array.from(input.files||[]),current=options.isCurrent();
+    resetOwnedFilePickers();
+    if(current&&files.length)options.onFiles(files);
+  };
+  input.oncancel=function(){if(OWNED_FILE_PICKER===state)resetOwnedFilePickers();};
+  OWNED_FILE_PICKER_HOST.appendChild(input);
+  try{input.click();}catch(error){resetOwnedFilePickers();throw error;}
+  return input;
+}
+
 /* 编辑框附件上传：读取文本内容填充 textarea */
 function editPickFile(kbIdx,itemIdx){
   var session=kbEditSession;if(!kbEditorContextCurrent(session)||session.kbIdx!==kbIdx||session.itemIdx!==itemIdx)return;
   var locationVersion=session.segmentVersion;
-  var inp=document.createElement('input');
-  inp.type='file'; inp.multiple=true;
-  inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
-  inp.onchange=function(){
-    if(kbEditSession!==session||!kbEditorContextCurrent(session)||session.segmentVersion!==locationVersion)return;
-    var files=Array.from(inp.files||[]);
-    if(!files.length)return;
-    processEditFiles(files,kbIdx,itemIdx);
-  };
-  inp.click();
+  openOwnedFilePicker({multiple:true,accept:'.pdf,.docx,.txt,.md,.csv,.json',
+    isCurrent:function(){return kbEditSession===session&&kbEditorContextCurrent(session)&&session.segmentVersion===locationVersion;},
+    onFiles:function(files){processEditFiles(files,kbIdx,itemIdx);}});
 }
 
 function editDropFile(e,kbIdx,itemIdx){
@@ -14529,7 +14973,7 @@ function kbOpenEditor(kbIdx,itemIdx,isNew,selection){
   if(!revision&&!isNew)revision=kbSourceEdit(p,kbIdx,sourceIndex,cur);
   var orig=kbEditorNormalize(partIndex<0?source:parts[partIndex].draft);
   var meta=isNew?{title:'补充结论',source:k.t}:kbDetailMeta(raw,itemIdx);
-  kbEditSession={id:++kbEditSequence,key:cur,project:p,topic:k,known:k.known,kbIdx:kbIdx,itemIdx:itemIdx,isNew:!!isNew,raw:raw,snapshot:JSON.stringify(raw),sourceIndex:sourceIndex,sourceItem:sourceIndex===null?null:JSON.parse(JSON.stringify(k.known[sourceIndex])),editId:revision?revision.id:null,revision:revision?revision.revision:0,baseReportVersion:sourceIndex===null?null:JSON.parse(JSON.stringify(p.baseReportVersion||null)),initial:orig,source:source,segmentSource:source,parts:parts,blockMode:blockMode,segmentIndex:partIndex,segmentVersion:0,fullOrigin:source,fullDraft:source,epoch:originalUploadEpoch(),obscured:[]};
+  kbEditSession={id:++kbEditSequence,key:cur,project:p,topic:k,known:k.known,kbIdx:kbIdx,itemIdx:itemIdx,isNew:!!isNew,raw:raw,snapshot:JSON.stringify(raw),sourceIndex:sourceIndex,sourceItem:sourceIndex===null?null:JSON.parse(JSON.stringify(k.known[sourceIndex])),editId:revision?revision.id:null,revision:revision?revision.revision:0,baseReportVersion:sourceIndex===null?null:JSON.parse(JSON.stringify(p.baseReportVersion||null)),initial:orig,source:source,segmentSource:source,parts:parts,blockMode:blockMode,segmentIndex:partIndex,segmentVersion:0,fullOrigin:source,fullDraft:source,epoch:originalUploadEpoch(),authorization:kbEditorAuthorization(),resetGen:typeof RESET_GEN==='undefined'?null:RESET_GEN,projectVersion:JSON.stringify(p.baseReportVersion===undefined?null:p.baseReportVersion),recordSnapshot:revision?JSON.stringify(revision):null,obscured:[]};
   var panel=document.createElement('div');panel.id='kbEditorPanel';panel.className='kb-editor-panel';
   panel.setAttribute('role','region');panel.setAttribute('aria-label',isNew?'补充知识资料':'修改知识资料');
   panel.setAttribute('data-mode','edit');panel.setAttribute('onkeydown','kbEditKey(event)');
@@ -14547,8 +14991,30 @@ function kbOpenEditor(kbIdx,itemIdx,isNew,selection){
   var ta=document.getElementById('kb-edit-'+kbIdx+'-'+itemIdx);if(ta){ta.focus();ta.setSelectionRange(0,0);}
   return true;
 }
+function kbEditorAuthorization(){
+  var auth=typeof AUTH==='undefined'?null:AUTH;
+  return JSON.stringify(auth?[auth.user,auth.scope,auth.role,auth.projKey,Array.isArray(auth.projectKeys)?auth.projectKeys.slice().sort():null,typeof _authState==='undefined'?null:_authState]:null);
+}
 function kbEditorContextCurrent(session){
-  var p=P();return !!session&&kbEditSession===session&&cur===session.key&&p===session.project&&p.kb&&p.kb[session.kbIdx]===session.topic&&originalUploadSessionCurrent(session.epoch);
+  var p=P();return !!session&&kbEditSession===session&&cur===session.key&&p===session.project&&p.kb&&p.kb[session.kbIdx]===session.topic&&originalUploadSessionCurrent(session.epoch)&&session.authorization===kbEditorAuthorization()&&session.resetGen===(typeof RESET_GEN==='undefined'?null:RESET_GEN);
+}
+function kbEditorSnapshotSession(){
+  return kbEditorContextCurrent(kbEditSession)?kbEditSession:null;
+}
+function kbEditorRestoreSnapshot(session){
+  // Only an accepted sync may rebind object references. A stale session never
+  // becomes current again, and the opened source/revision stays unchanged.
+  if(!session||kbEditSession!==session||cur!==session.key||!originalUploadSessionCurrent(session.epoch)||session.authorization!==kbEditorAuthorization()||session.resetGen!==(typeof RESET_GEN==='undefined'?null:RESET_GEN))return false;
+  var p=P(),k=p&&p.kb&&p.kb[session.kbIdx];
+  if(!k||!Array.isArray(k.known)||p.city!==session.project.city||p.workspaceId!==session.project.workspaceId||k.t!==session.topic.t||(p.deletedTopics||[]).indexOf(k.t)>=0||p.kb.filter(function(topic){return topic&&topic.t===k.t;}).length!==1)return false;
+  if(!kbValueEqual(p.baseReportVersion===undefined?null:p.baseReportVersion,JSON.parse(session.projectVersion)))return false;
+  if(session.editId){
+    var records=materialEditRecords(session.key).filter(function(record){return record.id===session.editId;});
+    if(records.length!==1||!kbValueEqual(records[0],JSON.parse(session.recordSnapshot)))return false;
+  }
+  if(!kbEditorTargetUnchanged(session,kbEffectiveKnown(p,session.kbIdx,session.key)))return false;
+  session.project=p;session.topic=k;session.known=k.known;
+  return true;
 }
 function kbEditorChanged(){
   var s=kbEditSession;if(!s)return;
@@ -14586,6 +15052,7 @@ function kbCancelEdit(force,afterDiscard){
   var panel=document.getElementById('kbEditorPanel'),dialog=panel&&panel.parentNode;
   s.obscured.forEach(function(entry){if(!entry.inert)entry.node.removeAttribute('inert');});
   if(panel)panel.remove();if(dialog)dialog.classList.remove('is-editing');kbEditSession=null;
+  cancelObsoleteFilePickers();
   var trigger=document.querySelector('#kb-card-'+s.kbIdx+'-'+s.itemIdx+' .kb-detail-edit');if(trigger)trigger.focus();
   return true;
 }
@@ -14611,6 +15078,22 @@ function kbEditKey(event){
   if(event.key==='Escape'){event.preventDefault();event.stopPropagation();if(document.getElementById('kbEditorDiscard'))kbKeepEditing();else kbCancelEdit();}
   else if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();if(!document.getElementById('kbEditorDiscard'))saveKbEdit(kbEditSession.kbIdx,kbEditSession.itemIdx);}
 }
+function kbEditorTargetUnchanged(session,current){
+  if(session.isNew)return true;
+  var snapshot=JSON.parse(session.snapshot);
+  // Uploaded markers can precede an independent note without changing that note.
+  // Resolve live revisions by identity; still require their exact opened version.
+  if(session.editId&&session.raw&&session.raw._kbEditId===session.editId){
+    var matches=current.filter(function(item){return item&&typeof item==='object'&&item._kbEditId===session.editId;});
+    if(matches.length!==1||!kbValueEqual(matches[0],snapshot))return false;
+    var record=kbEditRecord(session.key,matches[0]);
+    return !!record&&record.id===session.editId&&record.revision===session.revision&&
+      record.sectionTitle===session.topic.t&&record.sourceIndex===session.sourceIndex&&
+      kbValueEqual(record.sourceItem,session.sourceItem)&&kbValueEqual(record.baseReportVersion,session.baseReportVersion);
+  }
+  // Raw source items (including restored originals) remain bound to their index.
+  return kbValueEqual(current[session.sourceIndex],snapshot);
+}
 function kbValidateEditReceipt(record,body){return materialValidateEditReceipt(record,body);}
 async function kbRequestEdit(body){return materialRequestEdit(body);}
 async function saveKbEdit(kbIdx,itemIdx){
@@ -14621,17 +15104,18 @@ async function saveKbEdit(kbIdx,itemIdx){
   var p=P(),k=p&&p.kb&&p.kb[kbIdx];
   if(!kbEditorContextCurrent(s)){toast('工作区或登录状态已变化，请保留草稿并重新打开资料。');return;}
   var current=kbEffectiveKnown(p,kbIdx,cur);
-  if(k.known!==s.known||(!s.isNew&&!kbValueEqual(current[itemIdx],JSON.parse(s.snapshot)))){toast('这条资料已更新，请保留草稿并重新打开后修改。');return;}
+  if(k.known!==s.known||!kbEditorTargetUnchanged(s,current)){toast('这条资料已更新，请保留草稿并重新打开后修改。');return;}
   if(!s.isNew&&newText===s.source){kbCancelEdit(true);toast('内容未修改');return;}
   var body={projectKey:s.key,sectionIndex:kbIdx,sectionTitle:k.t,baseReportVersion:s.baseReportVersion,sourceIndex:s.sourceIndex,sourceItem:s.sourceItem,editId:s.editId,expectedRevision:s.revision,text:newText,resetGen:typeof RESET_GEN==='undefined'?null:RESET_GEN};
   s.saving=true;s.saveError='';kbEditorChanged();
   var controls=Array.from(document.querySelectorAll('#kbEditorPanel button, #kbEditorPanel textarea'));controls.forEach(function(node){node.disabled=true;});
   try{
     var record=await kbRequestEdit(body);
-    if(!originalUploadSessionCurrent(s.epoch))return;
+    if(!originalUploadSessionCurrent(s.epoch)||s.authorization!==kbEditorAuthorization()||s.resetGen!==(typeof RESET_GEN==='undefined'?null:RESET_GEN))return;
     window._serverRestoreSeq=(window._serverRestoreSeq||0)+1;window._serverSyncLock=false;
     if(!KB_EDITS[s.key])KB_EDITS[s.key]={};KB_EDITS[s.key][record.id]=record;
     if(!kbEditorContextCurrent(s))return;
+    p=P();
     s.saving=false;persist();buildKBCorpus(p.city);kbCancelEdit(true);
     var sc=document.querySelector('#kbDetailModal .kb-detail-scroll'),st=sc?sc.scrollTop:0;
     kbDetail(kbIdx);var sc2=document.querySelector('#kbDetailModal .kb-detail-scroll');
@@ -14813,9 +15297,11 @@ function kbDetail(i){
   //   用户补充(全部) + 待确认⚠️(全部) + 精选6条(其余里挑)
   // 待确认与用户补充是「额外附加」，不占精选 6 条的名额；数据层 known 始终全量。
   var _rawKnown=kbEffectiveKnown(P(),i,cur);
+  var uploadedGroups=typeof kbUploadedMaterialGroups==='function'?kbUploadedMaterialGroups(cur,i):[];
   var _userPairs=[], _warnPairs=[], _donePairs=[], _normalPairs=[]; // [{text, origIdx}]
   for(var _di=0;_di<_rawKnown.length;_di++){
     var _draw=_rawKnown[_di];
+    if(uploadedGroups.length&&kbUploadedPlaceholder(_draw,uploadedGroups))continue;
     var _dt=_kbText(_draw);
     var _isUser=(_draw && typeof _draw==='object' && _draw.origin==='user');
     // 【2026-09-18 修复】用户主动补充/修改的条目不走垃圾过滤。
@@ -14875,7 +15361,7 @@ function kbDetail(i){
       '<div class="kb-detail-richtext">'+(needsReview?kbDetailTextHtml(raw.text):kbDetailEditableHtml(raw,i,pair.origIdx))+'</div>'+
       (duplicateCount&&warn&&!confirmed?'<p class="kb-detail-duplicate">合并了 '+(duplicateCount+1)+' 条同义表述，确认时将一并更新。</p>':'')+
       '<footer class="kb-detail-article-actions">'+confirm+manage+'</footer></section>';
-  }).join(''):'<p class="kb-detail-empty">暂无已知内容，可基于此主题提问或补充资料。</p>';
+  }).join(''):(uploadedGroups.length?'<p class="kb-detail-empty">上传文件的解析正文见下方“上传材料正文”。</p>':'<p class="kb-detail-empty">暂无已知内容，可基于此主题提问或补充资料。</p>');
   if(_moreCount>0)knownHtml+='<p class="kb-detail-more">还有 '+_moreCount+' 条基础数据未展示，当前展示待确认项与精选资料。</p>';
 
   // 数据来源标签
@@ -14899,7 +15385,7 @@ function kbDetail(i){
             '<small>标题与内容来自原始材料</small></aside>'+
           '<div class="kb-detail-scroll" onscroll="kbUpdateDetailIndex()">'+
             '<details class="kb-detail-mobile-index"><summary>本页目录 · '+_displayPairs.length+' 段资料</summary><nav aria-label="窄屏资料目录">'+indexHtml+'</nav></details>'+
-            '<div id="kbDetailList-'+i+'">'+knownHtml+'</div>'+
+            '<div id="kbDetailList-'+i+'">'+knownHtml+(typeof kbUploadedMaterialSection==='function'?kbUploadedMaterialSection(cur,i):'')+'</div>'+
             (callsHtml?'<div class="kb-detail-related"><h3>相关资料类别</h3>'+callsHtml+'</div>':'')+
             '<p class="kb-detail-disclaimer">公开信息用于辅助研判；来源编号沿用原始材料，事实与适用条件仍需核实。</p>'+
           '</div></div>'+
@@ -14983,17 +15469,9 @@ function askAboutKb(i){
 // 真实文件选择器：弹系统文件夹
 function pickLocalFile(kbTopicIdx){
   var key=cur,epoch=originalUploadEpoch();
-  var inp=document.createElement('input');
-  inp.type='file';inp.multiple=true;
-  inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
-  inp.onchange=function(){
-    if(cur!==key||!originalUploadSessionCurrent(epoch))return;
-    var files=Array.from(inp.files||[]);
-    if(!files.length)return;
-    closeKbDetail();
-    ingestFiles(files,kbTopicIdx);
-  };
-  inp.click();
+  openOwnedFilePicker({multiple:true,accept:'.pdf,.docx,.txt,.md,.csv,.json',
+    isCurrent:function(){return cur===key&&originalUploadSessionCurrent(epoch);},
+    onFiles:function(files){closeKbDetail();ingestFiles(files,kbTopicIdx);}});
 }
 
 /* ── 文件摄取：读取 → 切 chunk → 存 KB_FILE_CHUNKS → 更新 kb.known ── */
@@ -15947,17 +16425,12 @@ function uploadHint(){
 function doUpload(){
   var key=cur,epoch=originalUploadEpoch();
   closeModal();
-  var inp=document.createElement('input');
-  inp.type='file';inp.multiple=true;
-  inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
-  inp.onchange=function(){
-    if(cur!==key||!originalUploadSessionCurrent(epoch))return;
-    var files=Array.from(inp.files||[]);
-    if(!files.length)return;
-    if(view!=='knowledge'){view='knowledge';render();}
-    setTimeout(function(){if(cur===key&&originalUploadSessionCurrent(epoch))ingestFiles(files,null);},100);
-  };
-  inp.click();
+  openOwnedFilePicker({multiple:true,accept:'.pdf,.docx,.txt,.md,.csv,.json',
+    isCurrent:function(){return cur===key&&originalUploadSessionCurrent(epoch);},
+    onFiles:function(files){
+      if(view!=='knowledge'){view='knowledge';render();}
+      setTimeout(function(){if(cur===key&&originalUploadSessionCurrent(epoch))ingestFiles(files,null);},100);
+    }});
 }
 function uploadParsed(fname){
   if(view!=='home'){view='home';render();}
@@ -16487,11 +16960,9 @@ function doVerify(i){
   }
   // 漏斗 match+1
   var f=CITY_FUNNEL.find(function(x){return x.city===d.city});if(f)f.match++;
-  // 【回传政府端】给对应城市干部推一条通知（黄金演示动线第4步）
-  var pk=projKeyByCityTopic(d.city,d.topic);
-  NOTIFS.unshift({id:'n'+Date.now(),type:'状态变化',icon:'🔵',proj:pk,title:d.topic+' · 资源端已反馈',desc:'资源端核验通过 1 家脱敏候选企业（'+r.alias+'），已进入对接流程，建议准备承接材料。',time:'刚刚',read:false});
+  // This local legacy action has no server notification receipt.
   closeModal();render();
-  toast('已记录核验结论：'+r.alias+' 通过，进入对接看板，并已通知政府端');
+  toast('已在当前页面记录核验结论：'+r.alias+' 通过；尚未确认服务端保存或通知');
 }
 /* 按城市+课题反查政府端项目key（用于回传通知定位） */
 function projKeyByCityTopic(city,topic){
@@ -17364,6 +17835,7 @@ render();
 
   window.brandLogo = function () { return '/static/skin/brand-girl.png'; };
   window.topbar = function (p) {
+    var identity=currentAccountIdentity();
     var label = moduleNames[window.view] || '招商工作区';
     var topic = window.view === 'home' || window.view === 'docking' ? '招商对接工作区' : p.topic;
     return '<header class="topbar client-topbar"><a class="brand-block" href="/" aria-label="慧小招首页">' + avatar(40) +
@@ -17372,10 +17844,10 @@ render();
       '</strong><small title="' + escape(p.org) + '">' + escape(p.city) + ' · <span id="topbarTopic">' + escape(topic) + '</span></small></div>' +
       '<div class="client-top-actions"><a href="/">首页</a><a href="/ops">运营端</a>' +
       '<div class="client-notification"><button class="client-icon-button" type="button" onclick="toggleNotif(event)" aria-label="通知中心">' +
-      icon('notification') + (unreadCount() ? '<b>' + unreadCount() + '</b>' : '') + '</button>' +
+      icon('notification') + '<b id="reminderUnreadBadge"'+(unreadCount()?'':' hidden')+'>' + unreadCount() + '</b></button>' +
       '<div id="notifPanel" class="client-notification-panel" style="display:none" onclick="event.stopPropagation()">' + notifList() + '</div></div>' +
-      '<button class="client-account" type="button" onclick="go(\'settings\')" title="' + escape(p.org) + ' · 账号与协作">' +
-      escape(p.who || '账号与协作') + '</button><button class="client-logout" type="button" onclick="logout()">退出</button></div></header>';
+      '<button class="client-account" type="button" onclick="go(\'settings\')" title="' + escape(identity.user+' · '+identity.roleLabel) + '">' +
+      escape(identity.name) + '</button><button class="client-logout" type="button" onclick="logout()">退出</button></div></header>';
   };
   window.sidebar = function () {
     var readiness = kbReadiness();

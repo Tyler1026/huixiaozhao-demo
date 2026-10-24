@@ -97,6 +97,7 @@ function openIndustryDemandComposer(button){
 }
 async function submitIndustryDemand(){
   var draft=INDUSTRY_DEMAND_DRAFT;if(!draft||draft.pending)return false;
+  var demandNavigationIdentity=typeof submittedDemandAuthIdentity==='function'?submittedDemandAuthIdentity():null;
   var error=document.getElementById('industryDemandError'),button=document.getElementById('industryDemandSubmit');
   function fail(message){if(error)error.textContent=message;else toast(message);}
   var epoch=typeof _authEpoch==='number'?_authEpoch:0;
@@ -115,6 +116,7 @@ async function submitIndustryDemand(){
     if(!result.projectKey||!result.project||result.project.demandContract!=='industry-demand-v1'||result.project.sourceProjectKey!==draft.key||result.project.sourceAnalysisTopic!==draft.topic||result.project.sourcePriorityKey!==industryDemandPriorityKey(draft.priority)||!result.demand||result.demand.projKey!==result.projectKey||!result.reportState)throw new Error('服务端返回的需求与所选建议不一致，请刷新核对。');
     PROJECTS[result.projectKey]=result.project;REPORTSTATE[result.projectKey]=result.reportState;
     var index=DEMANDS.findIndex(function(row){return row.id===result.demand.id;});if(index<0)DEMANDS.push(result.demand);else DEMANDS[index]=result.demand;
+    if(typeof acceptSubmittedDemandCreated==='function')acceptSubmittedDemandCreated(result,demandNavigationIdentity);
     persist();
     if(INDUSTRY_DEMAND_DRAFT===draft){closeModal();INDUSTRY_DEMAND_DRAFT=null;render();}
     toast(result.created?'这条招商需求已提交，可在招商对接中单独查看':'这条建议已有需求，已保留原提交内容');return true;
@@ -148,20 +150,31 @@ function openDirectDemandComposer(context){
     DIRECT_DEMAND_DRAFT={key:key,epoch:dockingActionEpoch(),requestId:dockingRequestId(),pending:false,uncertain:false,attempt:null};
     if(topic)DIRECT_DEMAND_DRAFT.values={title:topic.slice(0,120),description:'',conditions:'',contactName:'',contactMethod:''};
   }
-  var body='<div class="docking-log-form"><div class="docking-log-context"><strong>直接提交明确的招商需求</strong><p>当前城市：'+escapeChainText(PROJECTS[key].city||'当前工作区')+'</p>'+(fromReport?'<p>你可以根据实际需要自行填写招商诉求。分析主题仅作为可编辑的名称参考，所填内容不作为报告结论。</p>':'')+'<p>需求进入管理端受理队列。管理端会填写负责人、下一步及处理反馈，你可以在这里持续补充资料。</p></div><label for="directDemandTitle">需求名称</label><input id="directDemandTitle" maxlength="120" placeholder="填写具体的招引对象或合作需求"><label for="directDemandDescription">具体招引诉求</label><textarea id="directDemandDescription" maxlength="6000" rows="5" placeholder="说明需要什么类型的企业、产品或能力，以及希望达成的合作"></textarea><label for="directDemandConditions">承接条件与要求 <span>（选填）</span></label><textarea id="directDemandConditions" maxlength="2000" rows="3" placeholder="可填写园区载体、合作方式、时间要求和其他条件"></textarea><div class="docking-form-columns"><div><label for="directDemandContactName">对接人 <span>（选填）</span></label><input id="directDemandContactName" maxlength="80"></div><div><label for="directDemandContactMethod">联系方式 <span>（选填）</span></label><input id="directDemandContactMethod" maxlength="240" placeholder="电话、邮箱或其他联系方式"></div></div><p class="docking-form-help">以上内容按你提交的需求保存。提交后可继续补充相关材料。</p><p id="directDemandError" class="docking-form-error" role="alert"></p></div>';
+  var body='<div class="docking-log-form"><div class="docking-log-context"><strong>直接提交明确的招商需求</strong><p>当前城市：'+escapeChainText(PROJECTS[key].city||'当前工作区')+'</p>'+(fromReport?'<p>你可以根据实际需要自行填写招商诉求。分析主题仅作为可编辑的名称参考，所填内容不作为报告结论。</p>':'')+'<p>需求进入管理端受理队列。管理端会填写负责人、下一步及处理反馈，你可以在这里持续补充资料。</p></div><p id="directDemandError" class="docking-form-error" role="alert" tabindex="-1" aria-atomic="true"></p><label for="directDemandTitle">需求名称</label><input id="directDemandTitle" maxlength="120" placeholder="填写具体的招引对象或合作需求"><label for="directDemandDescription">具体招引诉求</label><textarea id="directDemandDescription" maxlength="6000" rows="5" placeholder="说明需要什么类型的企业、产品或能力，以及希望达成的合作"></textarea><label for="directDemandConditions">承接条件与要求 <span>（选填）</span></label><textarea id="directDemandConditions" maxlength="2000" rows="3" placeholder="可填写园区载体、合作方式、时间要求和其他条件"></textarea><div class="docking-form-columns"><div><label for="directDemandContactName">对接人 <span>（选填）</span></label><input id="directDemandContactName" maxlength="80"></div><div><label for="directDemandContactMethod">联系方式 <span>（选填）</span></label><input id="directDemandContactMethod" maxlength="240" placeholder="电话、邮箱或其他联系方式"></div></div><p class="docking-form-help">以上内容按你提交的需求保存。提交后可继续补充相关材料。</p></div>';
   openModal('提交招商需求',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button id="directDemandSubmit" class="primary-button" onclick="submitDirectDemand()">提交给管理端</button>');
   if(DIRECT_DEMAND_DRAFT.values){var values=DIRECT_DEMAND_DRAFT.values;[['Title','title'],['Description','description'],['Conditions','conditions'],['ContactName','contactName'],['ContactMethod','contactMethod']].forEach(function(pair){var el=document.getElementById('directDemand'+pair[0]);if(el)el.value=values[pair[1]]||'';});}
   return true;
 }
 async function submitDirectDemand(){
   var draft=DIRECT_DEMAND_DRAFT;if(!draft||draft.pending)return false;
+  var demandNavigationIdentity=typeof submittedDemandAuthIdentity==='function'?submittedDemandAuthIdentity():null;
   var error=document.getElementById('directDemandError'),button=document.getElementById('directDemandSubmit');
-  function fail(message){if(error)error.textContent=message;else toast(message);}
+  function fail(message,fieldId){
+    ['Title','Description','Conditions','ContactName','ContactMethod'].forEach(function(name){
+      var field=document.getElementById('directDemand'+name);if(field){field.removeAttribute('aria-invalid');field.removeAttribute('aria-describedby');}
+    });
+    if(!error){if(message)toast(message);return;}
+    error.textContent=message;if(!message)return;
+    var field=fieldId&&document.getElementById(fieldId);
+    if(field){field.setAttribute('aria-invalid','true');field.setAttribute('aria-describedby','directDemandError');}
+    var focusTarget=field||error;if(focusTarget.focus)focusTarget.focus({preventScroll:true});
+    if(error.scrollIntoView)error.scrollIntoView({block:'start',behavior:'auto'});
+  }
   if(draft.epoch!==dockingActionEpoch()||directDemandWorkspaceKey()!==draft.key){fail('账号或工作区已变化，请重新打开需求表单。');return false;}
   function value(id){var el=document.getElementById(id);return el&&typeof el.value==='string'?el.value.trim():'';}
   var demand={title:value('directDemandTitle'),description:value('directDemandDescription'),conditions:value('directDemandConditions'),contactName:value('directDemandContactName'),contactMethod:value('directDemandContactMethod')};
-  if(!demand.title||demand.title.length>120||!demand.description||demand.description.length>6000){fail('请填写需求名称（120字以内）和具体招引诉求（6000字以内）。');return false;}
-  if(demand.conditions.length>2000||demand.contactName.length>80||demand.contactMethod.length>240){fail('补充内容超过长度限制，请精简后再提交。');return false;}
+  if(!demand.title||demand.title.length>120||!demand.description||demand.description.length>6000){fail('请填写需求名称（120字以内）和具体招引诉求（6000字以内）。',!demand.title||demand.title.length>120?'directDemandTitle':'directDemandDescription');return false;}
+  if(demand.conditions.length>2000||demand.contactName.length>80||demand.contactMethod.length>240){fail('补充内容超过长度限制，请精简后再提交。',demand.conditions.length>2000?'directDemandConditions':demand.contactName.length>80?'directDemandContactName':'directDemandContactMethod');return false;}
   var body={mode:'direct',projectKey:draft.key,requestId:draft.requestId,demand:demand},attempt=JSON.stringify(body);
   if(draft.uncertain&&draft.attempt!==attempt){fail('上次提交结果尚未确认，请先按原内容重试，避免产生重复需求。');return false;}
   if(draft.attempt&&draft.attempt!==attempt){draft.requestId=dockingRequestId();body.requestId=draft.requestId;attempt=JSON.stringify(body);}
@@ -178,6 +191,7 @@ async function submitDirectDemand(){
     if(current&&(current.directRequestId!==body.requestId||current.workspaceId!==draft.key||current.demandOrigin!=='direct'))throw dockingActionError('已有需求与回执不一致，请刷新核对。');
     if(!current)PROJECTS[result.projectKey]=result.project;var index=DEMANDS.findIndex(function(row){return row.id===result.demand.id;});if(index<0)DEMANDS.push(result.demand);
     if(typeof REPORTSTATE!=='undefined'&&!REPORTSTATE[result.projectKey])REPORTSTATE[result.projectKey]=result.reportState||{};
+    if(typeof acceptSubmittedDemandCreated==='function')acceptSubmittedDemandCreated(result,demandNavigationIdentity);
     try{persist();}catch(_){}
     if(DIRECT_DEMAND_DRAFT===draft){DIRECT_DEMAND_DRAFT=null;closeModal();window.__projOpen=result.projectKey;if(typeof dockingViewState==='function'){dockingViewState().selected=result.projectKey;dockingViewState().filter='all';dockingViewState().search='';}view='home';render();}
     toast('招商需求已提交，等待管理端受理');return true;

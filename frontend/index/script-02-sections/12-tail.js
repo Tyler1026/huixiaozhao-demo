@@ -3548,6 +3548,7 @@ function generateTopicsFromKb(p){
 
 function homePage(p){
   var r=kbReadiness();
+  var summary=kbReadinessSummary(r);
   var running=reportJobForTopic(cur,p.topic);
 
   // ── 可靠性横幅 ──
@@ -3556,9 +3557,9 @@ function homePage(p){
       '<div style="flex:1;min-width:0">'+
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'+
           '<span style="font-size:12px;font-weight:650;color:'+(r.score>=80?'#1C43B5':'#92400e')+'">从城市智库继承数据</span>'+
-          '<span style="font-size:11px;color:'+(r.score>=80?'#2D5BE3':'#f59e0b')+';font-weight:700">'+r.score+'%</span>'+
-          '<span style="font-size:11px;color:'+(r.score>=80?'#2D5BE3':'#f59e0b')+'">'+r.label+'</span>'+
-          '<span title="仅表示材料覆盖与流程准备情况，不代表事实正确率。补充原始材料，并逐条核实待确认事项。" style="font-size:11px;color:#9aa5b5;cursor:help;text-decoration:underline dotted;margin-left:4px">ⓘ 如何提升</span>'+
+          '<span style="font-size:11px;color:'+(r.score>=80?'#2D5BE3':'#f59e0b')+';font-weight:700">材料量评分 '+r.score+'分</span>'+
+          '<span style="font-size:11px;color:'+(r.score>=80?'#2D5BE3':'#f59e0b')+'">'+summary.sectionText+' · '+summary.statusText+'</span>'+
+          '<span title="'+summary.explanation+'" style="font-size:11px;color:#9aa5b5;cursor:help;text-decoration:underline dotted;margin-left:4px">ⓘ 评分说明</span>'+
         '</div>'+
         '<div style="height:4px;background:'+(r.score>=80?'#E5EDFF':'#fef3c7')+';border-radius:2px;overflow:hidden">'+
           '<div style="height:100%;width:'+r.score+'%;background:'+(r.score>=80?'#2D5BE3':'#f59e0b')+';border-radius:2px;transition:width .4s"></div>'+
@@ -3848,6 +3849,7 @@ function memFileView(){
           (sizeStr?'<span style="font-size:11px;color:#b0bac8">'+sizeStr+'</span>':'')+
           '<span style="margin-left:auto;font-size:10.5px;color:#b0bac8">'+when+'</span>'+
         '</div>'+
+        (typeof kbUploadedMaterialReadButton==='function'?'<div style="margin-top:8px">'+kbUploadedMaterialReadButton(u._pk||cur,u.originalId)+'</div>':'')+
       '</div>'+
     '</div>';
   }).join('');
@@ -4169,26 +4171,22 @@ function kbPage(p){
     '<p class="kb-source-intro">只列出当前回答送入模型的材料。来源链接供你回到原文核实。</p><div id="kbSourcesList"><div class="kb-sources-empty"><span aria-hidden="true">▤</span><strong>随回答查看依据</strong><p>发送问题后，这里会展示本次参考的片段与已有出处。</p></div></div></aside></div></div>';
 }
 function settingsPage(p){
+  var identity=currentAccountIdentity();
   return '<div class="page">'+
     '<div class="page-header"><div><span class="eyebrow">PERSONALIZATION</span><h1>个人与提醒设置</h1>'+
     '<p>让协作，更合你的节奏。</p></div></div>'+
     '<div class="settings-scroll">'+authWorkspaceBlock('settings-section')+
     '<div class="settings-section"><h2>账号身份<span class="settings-readonly-badge">系统开通 · 只读</span></h2>'+
       '<div class="form-grid">'+
-      '<label>所属单位<input value="'+_authEscape(p.org)+'" disabled></label>'+
-      '<label>姓名 / 角色<input value="'+_authEscape(p.who)+' / 招商干部" disabled></label>'+
+      '<label>所属单位<input value="'+_authEscape(identity.org)+'" disabled></label>'+
+      '<label>姓名 / 角色<input value="'+_authEscape(identity.name)+' / '+_authEscape(identity.roleLabel)+'" disabled></label>'+
+      '<label>登录账号<input value="'+_authEscape(identity.user)+'" disabled></label>'+
       '<label>所属地区<input value="'+_authEscape(p.city)+'" disabled></label>'+
       '<label>数据权限<input value="仅限 '+_authEscape(p.city)+' 城市智库" disabled></label></div>'+
       '<div class="boundary-note" style="margin-top:14px"><i class="i">🔒</i>账号的地区与身份在开通时绑定，用户不可自行更改；如需变更请联系系统管理员。</div></div>'+
     onboardingSettingsSection(p)+
-    '<div class="settings-section"><h2>提醒偏好<span class="settings-editable-badge">可自行调整</span></h2>'+
-      '<div class="toggle-row"><span><strong>状态变化通知</strong><small>需求进度更新时提醒我</small></span><input type="checkbox" checked></div>'+
-      '<div class="toggle-row"><span><strong>超时提醒</strong><small>3 个工作日无更新时提醒</small></span><input type="checkbox" checked></div>'+
-      '<div class="toggle-row"><span><strong>每日摘要</strong><small>每天 09:00 汇总进行中事项</small></span><input type="checkbox" checked></div>'+
-      '<button class="primary-button settings-save" onclick="toast(\'提醒偏好已保存\')">保存偏好</button></div>'+
-    '<div class="settings-section"><h2>系统会据此调整</h2><ul class="plain-list">'+
-      ['首页任务提示','报告中的产业关注顺序','进度提醒频率'].map(function(x){return '<li>'+x+'</li>'}).join('')+'</ul>'+
-      '<div class="boundary-note"><i class="i">🔒</i>干部与确认关口、资源核验责任和企业触达边界，不会因个人设置而跳过。</div></div>'+
+    reminderPreferencesSection()+
+    '<div class="settings-section"><h2>提醒范围</h2><p>上述偏好只控制站内通知的生成和展示；不改变产业分析内容、工作流确认关口或企业触达权限。</p></div>'+
     '</div></div>';
 }
 /* 招商偏好画像：设置页可查看+修改（收起展示，点「修改」重开问卷）*/
