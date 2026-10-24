@@ -70,6 +70,7 @@
 
   window.brandLogo = function () { return '/static/skin/brand-girl.png'; };
   window.topbar = function (p) {
+    var identity=currentAccountIdentity();
     var label = moduleNames[window.view] || '招商工作区';
     var topic = window.view === 'home' || window.view === 'docking' ? '招商对接工作区' : p.topic;
     return '<header class="topbar client-topbar"><a class="brand-block" href="/" aria-label="慧小招首页">' + avatar(40) +
@@ -80,8 +81,8 @@
       '<div class="client-notification"><button class="client-icon-button" type="button" onclick="toggleNotif(event)" aria-label="通知中心">' +
       icon('notification') + (unreadCount() ? '<b>' + unreadCount() + '</b>' : '') + '</button>' +
       '<div id="notifPanel" class="client-notification-panel" style="display:none" onclick="event.stopPropagation()">' + notifList() + '</div></div>' +
-      '<button class="client-account" type="button" onclick="go(\'settings\')" title="' + escape(p.org) + ' · 账号与协作">' +
-      escape(p.who || '账号与协作') + '</button><button class="client-logout" type="button" onclick="logout()">退出</button></div></header>';
+      '<button class="client-account" type="button" onclick="go(\'settings\')" title="' + escape(identity.user+' · '+identity.roleLabel) + '">' +
+      escape(identity.name) + '</button><button class="client-logout" type="button" onclick="logout()">退出</button></div></header>';
   };
   window.sidebar = function () {
     var readiness = kbReadiness();

@@ -71,6 +71,10 @@ function harness(kind, options = {}) {
   sandbox.window = sandbox;
   sandbox.render.lastBusinessState = {reportId: 'preserve-me'};
   vm.createContext(sandbox);
+  if(kind==='client'){
+    const accountSource=fs.readFileSync(path.join(root,'frontend/index/script-02-sections/03.js'),'utf8');
+    vm.runInContext(accountSource.slice(accountSource.indexOf('function currentAccountIdentity(){'),accountSource.indexOf('function _authEscape(')),sandbox);
+  }
   vm.runInContext(sources[kind], sandbox, {filename: `full-skin-${kind}.js`});
   return {context: sandbox, calls, before, loadAgain() { vm.runInContext(sources[kind], sandbox); }};
 }
@@ -136,9 +140,10 @@ test('authentication query parameters cannot replace a confirmed session or sele
 
 test('client topbar escapes account and city data and preserves real navigation handlers', () => {
   const {context} = harness('client');
+  context.AUTH={user:'account',who:'<signed-in>',org:'Account org',scope:'project',role:'member',projKey:'a',projectKeys:['a']};context._authState='ready';
   const html = context.topbar({org: '<img onerror=bad()>', city: 'City<script>bad()</script>', topic: 'R&D', who: '<admin>'});
   assert.ok(!html.includes('<script>') && !html.includes('<img onerror'));
-  assert.ok(html.includes('&lt;admin&gt;') && html.includes('R&amp;D'));
+  assert.ok(html.includes('&lt;signed-in&gt;') && !html.includes('&lt;admin&gt;') && html.includes('R&amp;D'));
   assert.ok(html.includes('onclick="logout()"') && html.includes("go('settings')"));
   assert.ok(html.includes('href="/"') && html.includes('href="/ops"'));
 });
