@@ -52,7 +52,8 @@ def _name(value):
 
 
 def _secret(key):
-    return (str(key).upper().startswith('AUTH_') or _name(key) in _SECRET_NAMES)
+    return (str(key).upper().startswith('AUTH_') or _name(key) in _SECRET_NAMES
+            or str(key) == 'REMINDER_ACCOUNTS')
 
 
 def _key(value):

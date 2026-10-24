@@ -816,6 +816,9 @@ class Handler(BaseHTTPRequestHandler):
         if dispatch_auth(self, 'GET', path, b'', self._account_session,
                          admin_config=self._account_config(), secure=self._secure_cookie()):
             return
+        if path == '/api/reminders':
+            from backend.reminders import handle_request
+            return handle_request(self, b'', self._account_session, self._account_config())
         if path.startswith('/api/') or path == '/rag-log':
             try:
                 state = load_state(bool(_PG_AVAIL and DATABASE_URL), _db_get, SYNC_PATH)
@@ -1011,6 +1014,10 @@ class Handler(BaseHTTPRequestHandler):
         if dispatch_auth(self, 'POST', path, raw, self._account_session,
                          admin_config=self._account_config(), secure=self._secure_cookie()):
             return
+        if path in ('/api/reminder-preferences', '/api/reminders/read'):
+            from backend.reminders import handle_request
+            return handle_request(self, raw, self._account_session, self._account_config(),
+                                  operation='preferences' if path == '/api/reminder-preferences' else 'read')
         if path.startswith('/api/'):
             try:
                 check_origin(self.headers)
@@ -1176,6 +1183,21 @@ class Handler(BaseHTTPRequestHandler):
 
         if not q:
             return error_response(self, AuthError(400, 'question_required', '请填写问题'))
+
+        if mode == 'onboard_options':
+            from backend.kb_context import onboarding_request_context
+            try:
+                saved_onboarding = onboarding_request_context(body, self._scoped_state)
+            except AuthError as error:
+                return error_response(self, error)
+            chunks = saved_onboarding['chunks']
+            city = saved_onboarding['city']
+            q = '为' + city + '生成招商偏好问卷推荐选项'
+            history, prefs = [], {}
+            # Keep this operation in its own route even if a caller supplies a
+            # report purpose or stale browser context along with the request.
+            body = {'projectKey': saved_onboarding['projectKey'], 'question': q,
+                    'mode': mode, 'stream': stream}
 
         if body.get('purpose') == 'report_priorities':
             from backend.topic_priorities_route import serve_topic_priorities
@@ -1648,6 +1670,14 @@ if __name__ == "__main__":
         from backend.upload_repair import start_legacy_upload_repair
         start_legacy_upload_repair(_sync_transaction, _extract_doc_text)
     import threading
+    from backend.reminders import start_reminder_loop
+    def reminder_session():
+        if _PG_AVAIL and DATABASE_URL:
+            return _sync_transaction()
+        from backend.sync_transaction import file_session
+        return file_session(SYNC_PATH, _file_snapshot)
+    reminder_stop, reminder_thread = start_reminder_loop(
+        reminder_session, on_error=lambda code: print('[kb] ' + code))
     from report_service.hosted import start_supervisor
     start_supervisor()
 
@@ -1663,4 +1693,8 @@ if __name__ == "__main__":
 
     print(f"[kb] 服务启动 http://{HOST}:{PORT_GOV}  政府端=/  管理端=/ops")
     gov_server = ThreadingHTTPServer((HOST, PORT_GOV), Handler)
-    gov_server.serve_forever()
+    try:
+        gov_server.serve_forever()
+    finally:
+        reminder_stop.set()
+        reminder_thread.join(timeout=2)

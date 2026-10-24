@@ -1769,20 +1769,50 @@ function confirmKbItem(kbIdx,itemIdx){
 }
 
 
+/* Keep native file pickers attached and owned until selection or cancellation. */
+var OWNED_FILE_PICKER=null, OWNED_FILE_PICKER_HOST=null;
+function resetOwnedFilePickers(){
+  var state=OWNED_FILE_PICKER;OWNED_FILE_PICKER=null;
+  if(!state)return;
+  state.settled=true;state.input.onchange=null;state.input.oncancel=null;
+  state.input.value='';
+  if(state.input.parentNode)state.input.parentNode.removeChild(state.input);
+}
+function cancelObsoleteFilePickers(){
+  if(OWNED_FILE_PICKER&&!OWNED_FILE_PICKER.options.isCurrent())resetOwnedFilePickers();
+}
+function openOwnedFilePicker(options){
+  resetOwnedFilePickers();
+  if(!options.isCurrent())return null;
+  if(!OWNED_FILE_PICKER_HOST){
+    OWNED_FILE_PICKER_HOST=document.createElement('div');
+    OWNED_FILE_PICKER_HOST.id='clientFilePickerHost';
+    OWNED_FILE_PICKER_HOST.setAttribute('aria-hidden','true');
+    OWNED_FILE_PICKER_HOST.style.cssText='position:fixed;left:-10000px;top:0;width:1px;height:1px;overflow:hidden;';
+  }
+  if(OWNED_FILE_PICKER_HOST.parentNode!==document.body)document.body.appendChild(OWNED_FILE_PICKER_HOST);
+  var input=document.createElement('input');
+  input.type='file';input.multiple=options.multiple;input.accept=options.accept;input.tabIndex=-1;
+  var state={input:input,options:options,settled:false};OWNED_FILE_PICKER=state;
+  input.onchange=function(){
+    if(OWNED_FILE_PICKER!==state||state.settled)return;
+    var files=Array.from(input.files||[]),current=options.isCurrent();
+    resetOwnedFilePickers();
+    if(current&&files.length)options.onFiles(files);
+  };
+  input.oncancel=function(){if(OWNED_FILE_PICKER===state)resetOwnedFilePickers();};
+  OWNED_FILE_PICKER_HOST.appendChild(input);
+  try{input.click();}catch(error){resetOwnedFilePickers();throw error;}
+  return input;
+}
+
 /* 编辑框附件上传：读取文本内容填充 textarea */
 function editPickFile(kbIdx,itemIdx){
   var session=kbEditSession;if(!kbEditorContextCurrent(session)||session.kbIdx!==kbIdx||session.itemIdx!==itemIdx)return;
   var locationVersion=session.segmentVersion;
-  var inp=document.createElement('input');
-  inp.type='file'; inp.multiple=true;
-  inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
-  inp.onchange=function(){
-    if(kbEditSession!==session||!kbEditorContextCurrent(session)||session.segmentVersion!==locationVersion)return;
-    var files=Array.from(inp.files||[]);
-    if(!files.length)return;
-    processEditFiles(files,kbIdx,itemIdx);
-  };
-  inp.click();
+  openOwnedFilePicker({multiple:true,accept:'.pdf,.docx,.txt,.md,.csv,.json',
+    isCurrent:function(){return kbEditSession===session&&kbEditorContextCurrent(session)&&session.segmentVersion===locationVersion;},
+    onFiles:function(files){processEditFiles(files,kbIdx,itemIdx);}});
 }
 
 function editDropFile(e,kbIdx,itemIdx){
@@ -1958,6 +1988,7 @@ function kbCancelEdit(force,afterDiscard){
   var panel=document.getElementById('kbEditorPanel'),dialog=panel&&panel.parentNode;
   s.obscured.forEach(function(entry){if(!entry.inert)entry.node.removeAttribute('inert');});
   if(panel)panel.remove();if(dialog)dialog.classList.remove('is-editing');kbEditSession=null;
+  cancelObsoleteFilePickers();
   var trigger=document.querySelector('#kb-card-'+s.kbIdx+'-'+s.itemIdx+' .kb-detail-edit');if(trigger)trigger.focus();
   return true;
 }
@@ -2185,9 +2216,11 @@ function kbDetail(i){
   //   用户补充(全部) + 待确认⚠️(全部) + 精选6条(其余里挑)
   // 待确认与用户补充是「额外附加」，不占精选 6 条的名额；数据层 known 始终全量。
   var _rawKnown=kbEffectiveKnown(P(),i,cur);
+  var uploadedGroups=typeof kbUploadedMaterialGroups==='function'?kbUploadedMaterialGroups(cur,i):[];
   var _userPairs=[], _warnPairs=[], _donePairs=[], _normalPairs=[]; // [{text, origIdx}]
   for(var _di=0;_di<_rawKnown.length;_di++){
     var _draw=_rawKnown[_di];
+    if(uploadedGroups.length&&kbUploadedPlaceholder(_draw,uploadedGroups))continue;
     var _dt=_kbText(_draw);
     var _isUser=(_draw && typeof _draw==='object' && _draw.origin==='user');
     // 【2026-09-18 修复】用户主动补充/修改的条目不走垃圾过滤。
@@ -2247,7 +2280,7 @@ function kbDetail(i){
       '<div class="kb-detail-richtext">'+(needsReview?kbDetailTextHtml(raw.text):kbDetailEditableHtml(raw,i,pair.origIdx))+'</div>'+
       (duplicateCount&&warn&&!confirmed?'<p class="kb-detail-duplicate">合并了 '+(duplicateCount+1)+' 条同义表述，确认时将一并更新。</p>':'')+
       '<footer class="kb-detail-article-actions">'+confirm+manage+'</footer></section>';
-  }).join(''):'<p class="kb-detail-empty">暂无已知内容，可基于此主题提问或补充资料。</p>';
+  }).join(''):(uploadedGroups.length?'<p class="kb-detail-empty">上传文件的解析正文见下方“上传材料正文”。</p>':'<p class="kb-detail-empty">暂无已知内容，可基于此主题提问或补充资料。</p>');
   if(_moreCount>0)knownHtml+='<p class="kb-detail-more">还有 '+_moreCount+' 条基础数据未展示，当前展示待确认项与精选资料。</p>';
 
   // 数据来源标签
@@ -2271,7 +2304,7 @@ function kbDetail(i){
             '<small>标题与内容来自原始材料</small></aside>'+
           '<div class="kb-detail-scroll" onscroll="kbUpdateDetailIndex()">'+
             '<details class="kb-detail-mobile-index"><summary>本页目录 · '+_displayPairs.length+' 段资料</summary><nav aria-label="窄屏资料目录">'+indexHtml+'</nav></details>'+
-            '<div id="kbDetailList-'+i+'">'+knownHtml+'</div>'+
+            '<div id="kbDetailList-'+i+'">'+knownHtml+(typeof kbUploadedMaterialSection==='function'?kbUploadedMaterialSection(cur,i):'')+'</div>'+
             (callsHtml?'<div class="kb-detail-related"><h3>相关资料类别</h3>'+callsHtml+'</div>':'')+
             '<p class="kb-detail-disclaimer">公开信息用于辅助研判；来源编号沿用原始材料，事实与适用条件仍需核实。</p>'+
           '</div></div>'+
@@ -2355,17 +2388,9 @@ function askAboutKb(i){
 // 真实文件选择器：弹系统文件夹
 function pickLocalFile(kbTopicIdx){
   var key=cur,epoch=originalUploadEpoch();
-  var inp=document.createElement('input');
-  inp.type='file';inp.multiple=true;
-  inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
-  inp.onchange=function(){
-    if(cur!==key||!originalUploadSessionCurrent(epoch))return;
-    var files=Array.from(inp.files||[]);
-    if(!files.length)return;
-    closeKbDetail();
-    ingestFiles(files,kbTopicIdx);
-  };
-  inp.click();
+  openOwnedFilePicker({multiple:true,accept:'.pdf,.docx,.txt,.md,.csv,.json',
+    isCurrent:function(){return cur===key&&originalUploadSessionCurrent(epoch);},
+    onFiles:function(files){closeKbDetail();ingestFiles(files,kbTopicIdx);}});
 }
 
 /* ── 文件摄取：读取 → 切 chunk → 存 KB_FILE_CHUNKS → 更新 kb.known ── */
@@ -3319,17 +3344,12 @@ function uploadHint(){
 function doUpload(){
   var key=cur,epoch=originalUploadEpoch();
   closeModal();
-  var inp=document.createElement('input');
-  inp.type='file';inp.multiple=true;
-  inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
-  inp.onchange=function(){
-    if(cur!==key||!originalUploadSessionCurrent(epoch))return;
-    var files=Array.from(inp.files||[]);
-    if(!files.length)return;
-    if(view!=='knowledge'){view='knowledge';render();}
-    setTimeout(function(){if(cur===key&&originalUploadSessionCurrent(epoch))ingestFiles(files,null);},100);
-  };
-  inp.click();
+  openOwnedFilePicker({multiple:true,accept:'.pdf,.docx,.txt,.md,.csv,.json',
+    isCurrent:function(){return cur===key&&originalUploadSessionCurrent(epoch);},
+    onFiles:function(files){
+      if(view!=='knowledge'){view='knowledge';render();}
+      setTimeout(function(){if(cur===key&&originalUploadSessionCurrent(epoch))ingestFiles(files,null);},100);
+    }});
 }
 function uploadParsed(fname){
   if(view!=='home'){view='home';render();}

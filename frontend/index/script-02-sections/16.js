@@ -400,11 +400,9 @@ function doVerify(i){
   }
   // 漏斗 match+1
   var f=CITY_FUNNEL.find(function(x){return x.city===d.city});if(f)f.match++;
-  // 【回传政府端】给对应城市干部推一条通知（黄金演示动线第4步）
-  var pk=projKeyByCityTopic(d.city,d.topic);
-  NOTIFS.unshift({id:'n'+Date.now(),type:'状态变化',icon:'🔵',proj:pk,title:d.topic+' · 资源端已反馈',desc:'资源端核验通过 1 家脱敏候选企业（'+r.alias+'），已进入对接流程，建议准备承接材料。',time:'刚刚',read:false});
+  // This local legacy action has no server notification receipt.
   closeModal();render();
-  toast('已记录核验结论：'+r.alias+' 通过，进入对接看板，并已通知政府端');
+  toast('已在当前页面记录核验结论：'+r.alias+' 通过；尚未确认服务端保存或通知');
 }
 /* 按城市+课题反查政府端项目key（用于回传通知定位） */
 function projKeyByCityTopic(city,topic){
