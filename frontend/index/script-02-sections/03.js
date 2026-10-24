@@ -173,6 +173,7 @@ function _purgeAuthCache(){
   try{var raw=localStorage.getItem('huixiaozhao_kb_v1');if(raw)localStorage.setItem('huixiaozhao_kb_v1',JSON.stringify(_safeSyncSnapshot(JSON.parse(raw))));}catch(_){}
 }
 function _authResetView(){
+  if(typeof resetOnboardingSession==='function')resetOnboardingSession();
   if(typeof materialResetSession==='function')materialResetSession();
   if(typeof workspaceSyncReset==='function')workspaceSyncReset();
   if(typeof kbResetChatRequests==='function')kbResetChatRequests();
