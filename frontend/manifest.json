@@ -1,6 +1,6 @@
 {
   "index.html": {
-    "sha256": "5cb45f2f176979a35d0c5863d797499a47be85b6e75223071d69d68c5c325756",
+    "sha256": "179047a6166f70359bfcaa95d4531da8eb04f6696bc886ca5923981c7f5dd2a2",
     "parts": [
       "frontend/index/markup-01.html",
       "frontend/index/style-01.css",

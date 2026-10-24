@@ -436,10 +436,10 @@
     document.querySelectorAll('.topbar .brand-block > img:not([data-brand-mark])').forEach(function (image) {
       var holder = document.createElement('span');
       holder.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 34 34" class="client-brand-icon client-brand-mark" data-hxz-icon="qingxu-brand-mark" data-brand-mark="qingxu" aria-hidden="true" focusable="false" style="flex:0 0 34px">' +
-        '<rect x="3" y="3" width="12" height="12" rx="1" fill="#16594c"/>' +
-        '<rect x="18" y="3" width="12" height="12" rx="1" fill="#16594c" opacity=".38"/>' +
-        '<rect x="3" y="18" width="12" height="12" rx="1" fill="#ad6039"/>' +
-        '<rect x="18" y="18" width="12" height="12" rx="1" fill="#16594c"/></svg>';
+        '<rect x="3" y="3" width="12" height="12" rx="1" fill="#2D5BE3"/>' +
+        '<rect x="18" y="3" width="12" height="12" rx="1" fill="#2D5BE3" opacity=".38"/>' +
+        '<rect x="3" y="18" width="12" height="12" rx="1" fill="#8293AF"/>' +
+        '<rect x="18" y="18" width="12" height="12" rx="1" fill="#2D5BE3"/></svg>';
       image.replaceWith(holder.firstElementChild);
     });
   }

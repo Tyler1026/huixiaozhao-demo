@@ -465,7 +465,7 @@ function matchSend(){
   setTimeout(function(){var log=$('#matchChatLog'); if(log){log.scrollTop=log.scrollHeight;}},30);
 }
 function opsDock(){
-  var cols=[['匹配中','#013582','blue'],['对接中','#006d70','green'],['已对接','#5e6d82','gray'],['签约','#c85b09','orange']];
+  var cols=[['匹配中','#013582','blue'],['对接中','#1C43B5','green'],['已对接','#5e6d82','gray'],['签约','#c85b09','orange']];
   function card(k){
     var alert=k.alert?'<div style="margin-top:7px;display:flex;gap:6px;font-size:11px;color:#a85408;background:#fdf0e0;border-radius:6px;padding:5px 8px;line-height:1.5"><span>🔔</span><span>'+k.alert+'</span></div>':'';
     return '<div class="kanban-card"><strong>'+k.city+' · '+k.topic.replace('补链','').replace('升级','').replace('智能化','')+'</strong>'+
@@ -507,7 +507,7 @@ function opsCity(){
       return '<div class="fn-step"><div class="fn-v'+(stuck?' stuck':'')+'">'+s[1]+'</div><div class="fn-l">'+s[0]+'</div></div>';
     }).join('<div class="fn-arrow">›</div>');
     var conv=c.submit?Math.round(c.match/c.submit*100):0;var stuck=conv<50;
-    var diag=stuck?'<div style="margin-top:10px;display:flex;gap:7px;font-size:11.5px;color:#a85408;background:#fdf0e0;border-radius:7px;padding:8px 10px;line-height:1.6"><span>🔎</span><span>AI 卡点诊断：随州「'+(c.city.indexOf('·')>-1?c.city.split('·')[1]:c.city)+'」卡在'+(steps[stuckIdx]?steps[stuckIdx][0]:'匹配')+'环节。根因：资源库该方向暂无企业（燃料电池电堆/应急机器人/香菇提取三类最缺），建议优先补录或走行业协会/基金项目库外部渠道。</span></div>':'<div style="margin-top:10px;display:flex;gap:7px;font-size:11.5px;color:#046d5b;background:#e3f6f0;border-radius:7px;padding:8px 10px"><span>✓</span><span>AI 诊断：转化顺畅，无明显卡点。</span></div>';
+    var diag=stuck?'<div style="margin-top:10px;display:flex;gap:7px;font-size:11.5px;color:#a85408;background:#fdf0e0;border-radius:7px;padding:8px 10px;line-height:1.6"><span>🔎</span><span>AI 卡点诊断：随州「'+(c.city.indexOf('·')>-1?c.city.split('·')[1]:c.city)+'」卡在'+(steps[stuckIdx]?steps[stuckIdx][0]:'匹配')+'环节。根因：资源库该方向暂无企业（燃料电池电堆/应急机器人/香菇提取三类最缺），建议优先补录或走行业协会/基金项目库外部渠道。</span></div>':'<div style="margin-top:10px;display:flex;gap:7px;font-size:11.5px;color:#1C43B5;background:#EEF3FF;border-radius:7px;padding:8px 10px"><span>✓</span><span>AI 诊断：转化顺畅，无明显卡点。</span></div>';
     return '<div class="ops-card" style="margin-bottom:12px"><div class="ops-card-head"><span class="t">🗺️ '+c.city+'</span><span class="ops-badge '+(stuck?'orange':'green')+'" style="margin-left:auto">匹配转化 '+conv+'%</span></div><div class="ops-card-body"><div class="funnel">'+bars+'</div>'+diag+'</div></div>';
   }).join('');
   var _stuckFunnel=CITY_FUNNEL.filter(function(c){return c.submit&&c.match/c.submit<0.5});
@@ -519,7 +519,7 @@ function opsCity(){
 function opsOpen(){
   var rows=OPEN_ACCOUNTS.map(function(a){
     var _aSpec=a.org.indexOf('氢能')>-1?'氢能专用车产业补链':a.org.indexOf('农业')>-1?'香菇深加工补链':'智慧应急装备补链';
-    return '<tr><td><strong>'+a.city+'</strong></td><td>'+a.org+'<br><small style="color:#9aa5b5">'+_aSpec+'</small></td><td>'+a.who+' · '+a.role+'</td><td>'+a.crawl+'</td><td><span class="status-tag" style="color:#006d70;background:#e4f5f3">'+a.status+'</span></td></tr>';
+    return '<tr><td><strong>'+a.city+'</strong></td><td>'+a.org+'<br><small style="color:#9aa5b5">'+_aSpec+'</small></td><td>'+a.who+' · '+a.role+'</td><td>'+a.crawl+'</td><td><span class="status-tag" style="color:#1C43B5;background:#EEF3FF">'+a.status+'</span></td></tr>';
   }).join('');
   return '<div class="page"><div class="page-header"><div><span class="eyebrow">ACCOUNT & CITY</span><h1>账号 · 城市开通</h1><p>为新城市注册、绑定政府端账号，并触发每日 0 点数据抓取。</p></div>'+
     '<button class="ghost-button" onclick="openCity()"><i class="i">🔑</i>开通新城市</button></div>'+
@@ -559,7 +559,7 @@ function opsBoard(){
   var rows=CITY_FUNNEL.map(function(c){var conv=c.submit?Math.round(c.match/c.submit*100):0;
     var stuck=conv<50;
     return '<tr><td><strong>'+c.city+'</strong></td><td>'+c.submit+'</td><td>'+c.confirm+'</td><td>'+c.match+'</td><td>'+c.dock+'</td><td>'+c.sign+'</td>'+
-      '<td><span class="status-tag" style="color:'+(stuck?'#c85b09':'#006d70')+';background:'+(stuck?'#fff0de':'#e4f5f3')+'">'+conv+'%</span></td></tr>';
+      '<td><span class="status-tag" style="color:'+(stuck?'#c85b09':'#1C43B5')+';background:'+(stuck?'#fff0de':'#EEF3FF')+'">'+conv+'%</span></td></tr>';
   }).join('');
   var table='<div class="ops-card"><div class="ops-card-head"><span class="t">📊 各城市转化明细</span><span class="sub">红色转化率 = 存在卡点</span></div>'+
     '<div class="ops-card-body flush"><table class="ops-table"><thead><tr><th>城市</th><th>提交</th><th>确认</th><th>匹配</th><th>对接</th><th>签约</th><th>匹配转化</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';

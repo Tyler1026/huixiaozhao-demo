@@ -208,7 +208,7 @@ function detailAnalysis(p){
 }
 // 点报告结论 → 证据
 function detailFold(b){
-  var vj=b.type==='virt'?'<div class="warning-callout"><strong>虚实判断：待核实</strong><p>方向性表述，缺具体金额/地块/落地主体，需政府授权材料确认。</p></div>':'<div class="info-callout" style="border-color:#acd7ce;color:#155c58;background:#e9f7f6">虚实判断：<strong>实据</strong> · 有具体数据支撑，可作为研判依据。</div>';
+  var vj=b.type==='virt'?'<div class="warning-callout"><strong>虚实判断：待核实</strong><p>方向性表述，缺具体金额/地块/落地主体，需政府授权材料确认。</p></div>':'<div class="info-callout" style="border-color:#CCD8EF;color:#35445D;background:#EEF3FF">虚实判断：<strong>实据</strong> · 有具体数据支撑，可作为研判依据。</div>';
   var chk=b.chk?'<div class="detail-block"><h3>仍需确认</h3><div class="fact-with-icon warning"><i class="i">⚠</i><div><strong>'+b.chk+'</strong></div></div></div>':'';
   return '<div class="detail-header"><div><button class="text-action" style="margin:0 0 6px" onclick="backToAnalysis()">‹ 返回本次分析</button><span class="eyebrow">EVIDENCE</span><h2>判断依据</h2><p>点击的报告结论溯源</p></div></div>'+
     '<div class="detail-scroll">'+

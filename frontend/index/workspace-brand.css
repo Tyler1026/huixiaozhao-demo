@@ -4,62 +4,62 @@
 .docking-workspace .docking-badge .client-ui-icon { margin-right:4px; }
 .docking-clue-card>header>div { position:relative; padding-left:34px; }
 .docking-clue-card>header>div>.client-enterprise-icon {
-  position:absolute; left:0; top:3px; color:#52745e;
+  position:absolute; left:0; top:3px; color:var(--client-color-secondary);
 }
 .docking-workspace .client-empty-icon {
-  display:block; margin:0 0 13px; color:#72947a;
+  display:block; margin:0 0 13px; color:var(--client-color-muted);
 }
-.industry-page .industry-header p,.docking-header p { color:#526e59; }
-.industry-page .industry-topic-card>span[style*="font-size:11.5px"] { color:#62725f!important; }
-.industry-page .industry-topic-card>span[style*="font-size:9px"] { color:#70816b!important; }
+.industry-page .industry-header p,.docking-header p { color:var(--client-color-secondary); }
+.industry-page .industry-topic-card>span[style*="font-size:11.5px"] { color:var(--client-color-secondary)!important; }
+.industry-page .industry-topic-card>span[style*="font-size:9px"] { color:var(--client-color-muted)!important; }
 .industry-detail .detail-block p,.industry-detail .detail-copy,
 .industry-detail .detail-block>div[style*="font-size:12.5px"],
-.industry-detail .info-callout,.industry-detail .boundary-note { color:#687d60!important; }
-.industry-page .industry-history>div:not(:first-child)>div:first-child>span { color:#6b7c62!important; }
+.industry-detail .info-callout,.industry-detail .boundary-note { color:var(--client-color-secondary)!important; }
+.industry-page .industry-history>div:not(:first-child)>div:first-child>span { color:var(--client-color-secondary)!important; }
 .industry-page .industry-heading {
   font-family:"Songti SC","STSong","Noto Serif CJK SC",serif;
   font-weight:500!important;
 }
 /* The current source uses .chain-explorer for its newer report graph. */
 .industry-page .chain-explorer {
-  --chain-ink:#284d3a; --chain-copy:#596e5d;
-  border-color:#d9e3d3; background:#fffefa;
+  --chain-ink:var(--client-color-blue-dark); --chain-copy:var(--client-color-secondary);
+  border-color:var(--client-color-line); background:var(--client-color-surface);
 }
-.industry-page .chain-explorer-toolbar { background:#f8faf3; border-color:#e0e8d8; }
-.industry-page .chain-explorer-title>span { color:#74856a; }
-.industry-page .chain-explorer-title h2 { color:#31583e; }
+.industry-page .chain-explorer-toolbar { background:var(--client-color-paper); border-color:var(--client-color-blue-soft); }
+.industry-page .chain-explorer-title>span { color:var(--client-color-muted); }
+.industry-page .chain-explorer-title h2 { color:var(--client-color-blue); }
 .industry-page .chain-explorer-title p,.industry-page .chain-layout-caption,
-.industry-page .chain-layout-meta { color:#6b7c62; }
-.industry-page .chain-view-switch { border-color:#d7e2d0; background:#f1f5eb; }
-.industry-page .chain-view-switch button { color:#5d7357; }
-.industry-page .chain-view-switch button.is-active { background:#fffefa; color:#24543c; }
-.industry-page .chain-overview-metric { background:#fffefa; border-color:#e1e8dc; }
-.industry-page .chain-overview-metric strong { color:#315d43; }
-.industry-page .chain-overview-metric span { color:#738469; }
-.industry-page .chain-lane-index { color:#9a8056; background:#f3efe3; }
-.industry-page .chain-lane-heading h3 { color:#486746; }
-.industry-page .chain-lane-total { color:#718568; }
-.industry-page .chain-layout-node { background:#fffefa; border-color:#d7e2ce; }
-.industry-page .chain-layout-node:hover { border-color:#8cab7c; }
-.industry-page .chain-node-drawer { border-color:#d5e1cc; background:#fffefa; }
-.industry-page .chain-node-drawer-header { background:#f3f7eb; color:#57704d; }
-.industry-page .chain-generate-button { background:#f5f8ee; border-color:#c7d8bb; color:#557749; }
-.industry-page .chain-layout-node-name { color:#35553e; }
-.industry-page .chain-layout-node-summary { color:#5c7162; }
-.industry-page .chain-layout-node :is(.chain-layout-fact-meta,.chain-layout-node-meta,.chain-material-status,.chain-layout-evidence) { color:#627466; }
-.industry-page .chain-layout-node :is(.chain-layout-status,.chain-layout-quote-label,.chain-layout-entity) { color:#627466; }
+.industry-page .chain-layout-meta { color:var(--client-color-secondary); }
+.industry-page .chain-view-switch { border-color:var(--client-color-line); background:var(--client-color-blue-wash); }
+.industry-page .chain-view-switch button { color:var(--client-color-secondary); }
+.industry-page .chain-view-switch button.is-active { background:var(--client-color-surface); color:var(--client-color-blue-dark); }
+.industry-page .chain-overview-metric { background:var(--client-color-surface); border-color:var(--client-color-blue-soft); }
+.industry-page .chain-overview-metric strong { color:var(--client-color-blue); }
+.industry-page .chain-overview-metric span { color:var(--client-color-muted); }
+.industry-page .chain-lane-index { color:var(--client-color-muted); background:var(--client-color-blue-pale); }
+.industry-page .chain-lane-heading h3 { color:var(--client-color-secondary); }
+.industry-page .chain-lane-total { color:var(--client-color-muted); }
+.industry-page .chain-layout-node { background:var(--client-color-surface); border-color:var(--client-color-line); }
+.industry-page .chain-layout-node:hover { border-color:var(--client-color-subtle); }
+.industry-page .chain-node-drawer { border-color:var(--client-color-line); background:var(--client-color-surface); }
+.industry-page .chain-node-drawer-header { background:var(--client-color-blue-wash); color:var(--client-color-secondary); }
+.industry-page .chain-generate-button { background:var(--client-color-paper); border-color:var(--client-color-line-strong); color:var(--client-color-secondary); }
+.industry-page .chain-layout-node-name { color:var(--client-color-copy); }
+.industry-page .chain-layout-node-summary { color:var(--client-color-secondary); }
+.industry-page .chain-layout-node :is(.chain-layout-fact-meta,.chain-layout-node-meta,.chain-material-status,.chain-layout-evidence) { color:var(--client-color-secondary); }
+.industry-page .chain-layout-node :is(.chain-layout-status,.chain-layout-quote-label,.chain-layout-entity) { color:var(--client-color-secondary); }
 .industry-detail :is(.detail-block h3,.detail-block p,.detail-copy,.info-callout,.boundary-note),
-.industry-detail .detail-block .check-list li,.industry-detail .source-list li { color:#5c7162!important; }
-body.industry-view .chain-node-drawer { border-color:#d5e1cc; background:#fffefa; color:#5c7162; }
-body.industry-view .chain-node-drawer-header { background:#f3f7eb; color:#57704d; border-color:#dce5d5; }
+.industry-detail .detail-block .check-list li,.industry-detail .source-list li { color:var(--client-color-secondary)!important; }
+body.industry-view .chain-node-drawer { border-color:var(--client-color-line); background:var(--client-color-surface); color:var(--client-color-secondary); }
+body.industry-view .chain-node-drawer-header { background:var(--client-color-blue-wash); color:var(--client-color-secondary); border-color:var(--client-color-blue-soft); }
 body.industry-view .chain-node-drawer-header :is(h2,h3,strong),
-body.industry-view .chain-node-drawer-content>h3 { color:#31583e; }
-body.industry-view .chain-node-drawer-content { color:#5c7162; }
-body.industry-view .chain-node-drawer-close { color:#4d7151; border-color:#d2dfc8; background:#fffefa; }
-body.industry-view .chain-node-drawer :is(.chain-detail-status,.chain-layout-source-meta,.chain-layout-incomplete) { color:#627466; }
-body.industry-view .chain-node-drawer :is(.chain-layout-originals>h4,.chain-layout-source>h4) { color:#3c6147; }
-body.industry-view .chain-layout-source blockquote { background:#f4f7ed; border-color:#b6cbae; color:#536c55; }
-body.industry-view .chain-node-drawer-content a { color:#3c7553; }
+body.industry-view .chain-node-drawer-content>h3 { color:var(--client-color-blue); }
+body.industry-view .chain-node-drawer-content { color:var(--client-color-secondary); }
+body.industry-view .chain-node-drawer-close { color:var(--client-color-secondary); border-color:var(--client-color-line); background:var(--client-color-surface); }
+body.industry-view .chain-node-drawer :is(.chain-detail-status,.chain-layout-source-meta,.chain-layout-incomplete) { color:var(--client-color-secondary); }
+body.industry-view .chain-node-drawer :is(.chain-layout-originals>h4,.chain-layout-source>h4) { color:var(--client-color-copy); }
+body.industry-view .chain-layout-source blockquote { background:var(--client-color-blue-wash); border-color:var(--client-color-line-strong); color:var(--client-color-secondary); }
+body.industry-view .chain-node-drawer-content a { color:var(--client-color-secondary); }
 @media(max-width:420px) {
   .docking-clue-card>header>div { padding-left:28px; }
   .docking-clue-card>header>div>.client-enterprise-icon { width:19px; height:19px; }

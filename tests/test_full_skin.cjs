@@ -143,6 +143,54 @@ test('client topbar escapes account and city data and preserves real navigation 
   assert.ok(html.includes('href="/"') && html.includes('href="/ops"'));
 });
 
+test('client keeps the three primary modules in story order and their original navigation handlers', () => {
+  let directDemands = 0;
+  const {context, calls} = harness('client', {globals: {
+    cur: 'city-workspace', industryAnalysisWorkspaceKey: key => key,
+    openDirectDemandComposer() { directDemands++; },
+  }});
+  const navigationSource = fs.readFileSync(path.join(root, 'frontend/index/script-02-sections/10.js'), 'utf8');
+  vm.runInContext(navigationSource.slice(navigationSource.indexOf('function go(v)'), navigationSource.indexOf('\nfunction bind(')), context);
+  const html = context.sidebar();
+  const primary = html.match(/<div class="client-nav-group"><p>招商工作流程<\/p>([\s\S]*?)<\/div>/);
+  assert.ok(primary, 'all three modules belong to the same primary group');
+  const buttons = Array.from(primary[1].matchAll(/<button\b[^>]*onclick="([^"]+)"[^>]*>[\s\S]*?<strong>([^<]+)<\/strong>[\s\S]*?<\/button>/g));
+  assert.deepEqual(buttons.map(button => button[2]), ['城市智库', 'AI 匹配研判', '需求与建联']);
+  assert.deepEqual(buttons.map(button => button[1]), ["go('knowledge')", "go('report')", "go('home')"]);
+  assert.equal(html.includes('招商资料库'), false);
+  assert.ok(html.indexOf('openDirectDemandComposer()') > html.indexOf('</nav>'), 'direct submission remains a secondary shortcut after the primary navigation');
+  for (const [index, view] of ['knowledge', 'report', 'home'].entries()) {
+    vm.runInContext(buttons[index][1], context);
+    assert.equal(context.view, view);
+    assert.match(context.sidebar(), new RegExp('aria-current="page" onclick="go\\(\'' + view + '\'\\)"'));
+  }
+  assert.equal(calls.filter(call => call[0] === 'render').length, 3);
+  vm.runInContext('openDirectDemandComposer()', context);
+  assert.equal(directDemands, 1);
+  assert.equal(context.view, 'home');
+});
+
+test('story navigation still respects the existing knowledge readiness gate', () => {
+  const {context, calls} = harness('client', {globals: {
+    cur: 'city-workspace', industryAnalysisWorkspaceKey: key => key,
+    isLocked: view => view === 'report' || view === 'home',
+    kbReadiness: () => ({score: 40, confirmed: 1, total: 2, files: 1, color: '#2D5BE3'}),
+  }});
+  const navigationSource = fs.readFileSync(path.join(root, 'frontend/index/script-02-sections/10.js'), 'utf8');
+  vm.runInContext(navigationSource.slice(navigationSource.indexOf('function go(v)'), navigationSource.indexOf('\nfunction bind(')), context);
+  context.go('report');
+  assert.equal(context.view, 'knowledge');
+  let modal = calls.filter(call => call[0] === 'openModal').at(-1);
+  assert.match(modal[2][0], /AI 匹配研判/);
+  assert.match(modal[2][1], /城市智库/);
+  assert.match(modal[2][2], /unlockView\('report'\)/, 'existing explicit unlock remains available');
+  context.go('home');
+  assert.equal(context.view, 'knowledge');
+  modal = calls.filter(call => call[0] === 'openModal').at(-1);
+  assert.match(modal[2][0], /需求与建联/);
+  assert.equal(calls.filter(call => call[0] === 'render').length, 0);
+});
+
 test('registration steps retain field values and prevent advancing with incomplete current fields', () => {
   const {context, calls} = harness('client');
   const input = value => ({value, focus() { this.focused = true; }});

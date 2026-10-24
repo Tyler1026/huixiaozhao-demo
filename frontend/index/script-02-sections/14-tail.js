@@ -1245,7 +1245,7 @@ function showReport(){
   var verTag='<span class="status-tag" style="background:#eef3fb;color:#013582">v'+st.ver+(st.finalized?' · 已定稿':' · 草稿')+'</span>';
   var patchLog=st.patches.length?('<div style="margin-top:10px;padding:10px 12px;background:#f7f9fc;border-radius:8px;font-size:12px;color:#556"><strong>修订记录：</strong>'+st.patches.map(function(p,i){return '<div style="margin-top:4px">v'+(i+2)+' · 据补充「'+p+'」重新生成</div>'}).join('')+'</div>'):'';
   var optArea=st.finalized?
-    '<div class="report-footnote" style="color:#15803d">✅ 报告已定稿并锁定，可进行双确认递交。</div>':
+    '<div class="report-footnote" style="color:#1C43B5">✅ 报告已定稿并锁定，可进行双确认递交。</div>':
     '<div style="margin-top:14px;padding:13px 15px;background:#f3f7fd;border:1px solid #d8e0ed;border-radius:10px">'+
       '<div style="font-size:13px;font-weight:650;color:#0b183b;margin-bottom:8px">🔄 报告来回优化</div>'+
       '<div style="font-size:11.5px;color:#667590;margin-bottom:8px">补充材料或指出问题，我会<strong>结合你的补充重新生成一份完整报告</strong>（保留历史版本）；也可点每条「✎ 修正此条」直接人工改写。</div>'+
@@ -1517,7 +1517,7 @@ function generateKBAnswer(query, chunks, city){
       var isWarn=c.text.indexOf('⚠️')>=0||c.text.indexOf('待确认')>=0||c.text.indexOf('待领导')>=0;
       return '<li style="'+(isWarn?'color:#92400e':'color:#1a202c')+'">'+
         (isWarn?'<span style="color:#d97706;margin-right:4px">⚠</span>':
-                '<span style="color:#22c55e;margin-right:4px">•</span>')+
+                '<span style="color:#2D5BE3;margin-right:4px">•</span>')+
         c.text.replace('⚠️ ','')+'</li>';
     }).join('');
     paragraphs.push(
@@ -1535,7 +1535,7 @@ function generateKBAnswer(query, chunks, city){
       '<strong>补链优先级建议：</strong>①燃料电池电堆（整车成本53%，新楚风/程力有稳定采购需求）→②应急机器人/无人机系统（替代启灵/迅北斗外采依赖）→③香菇多糖/多肽提取（70万吨/年原料红利，就近落地降成本40%+）'+
     '</div>';
   } else if(isPark&&isSZ){
-    conclusion='<div style="background:#f0fdf4;border-left:3px solid #22c55e;padding:10px 14px;border-radius:0 8px 8px 0;margin-top:12px;font-size:12.5px;color:#14532d;line-height:1.75">'+
+    conclusion='<div style="background:#EEF3FF;border-left:3px solid #2D5BE3;padding:10px 14px;border-radius:0 8px 8px 0;margin-top:12px;font-size:12.5px;color:#17243E;line-height:1.75">'+
       '<strong>承接建议：</strong>氢能专用车→专汽产业园/随州高新区；智慧应急→曾都经开区（安全应急示范基地）；香菇精深加工→随县香菇产业园（洁净厂房条件需向管委会确认）'+
     '</div>';
   } else if(isComp&&isSZ){
@@ -2287,7 +2287,7 @@ function kbDetail(i){
               '<span>确认进度</span><span>'+done+' / '+total+'</span>'+
             '</div>'+
             '<div style="height:5px;background:#f0f4ff;border-radius:3px;overflow:hidden">'+
-              '<div style="height:100%;width:'+(total?Math.round(done/total*100):0)+'%;background:linear-gradient(90deg,#22c55e,#16a34a);border-radius:3px;transition:width .4s"></div>'+
+              '<div style="height:100%;width:'+(total?Math.round(done/total*100):0)+'%;background:linear-gradient(90deg,#2D5BE3,#2D5BE3);border-radius:3px;transition:width .4s"></div>'+
             '</div></div>';
         })()+
         '<footer class="kb-detail-footer">'+
@@ -2450,7 +2450,7 @@ function finalizeIngest(chunks, files, kbTopicIdx, p, parseFailed){
     var rows=document.querySelectorAll('.topic-row');
     if(rows[kbTopicIdx]){
       var em=rows[kbTopicIdx].querySelector('em');
-      if(em){em.textContent='已补充材料';em.style.color='#006d70';em.style.background='#e4f5f3';}
+      if(em){em.textContent='已补充材料';em.style.color='#1C43B5';em.style.background='#EEF3FF';}
     }
   }
 
@@ -2465,7 +2465,7 @@ function finalizeIngest(chunks, files, kbTopicIdx, p, parseFailed){
   var _okCount=_okFiles.length, _failCount=parseFailed.length;
   var _chipOk=_okFiles.map(function(f){
       var n=chunks.filter(function(c){return c.cite===f.name;}).length;
-      return '<span style="padding:3px 10px;background:#f0fdf4;color:#166534;border-radius:12px;font-size:11.5px;border:1px solid #bbf7d0">'+_authEscape(f.name)+' · '+n+' 片段</span>';
+      return '<span style="padding:3px 10px;background:#EEF3FF;color:#1C43B5;border-radius:12px;font-size:11.5px;border:1px solid #CCD8EF">'+_authEscape(f.name)+' · '+n+' 片段</span>';
     }).join('');
   var _chipFail=parseFailed.map(function(x){
       return '<span style="padding:3px 10px;background:#fef2f2;color:#b91c1c;border-radius:12px;font-size:11.5px;border:1px solid #fecaca">'+_authEscape(x.name)+' · 未解析</span>';
@@ -2820,11 +2820,11 @@ function kbVerifyMaterial(){
                 :'✓ 未发现明显错误');
           bubble.insertAdjacentHTML('beforeend',
             '<div style="margin-top:12px;padding:8px 12px;background:'+
-            (hasHighRisk?'#fff1f2':(allClear?'#f0fdf4':'#fffbeb'))+
+            (hasHighRisk?'#fff1f2':(allClear?'#EEF3FF':'#fffbeb'))+
             ';border-radius:8px;border:1px solid '+
-            (hasHighRisk?'#fecaca':(allClear?'#bbf7d0':'#fde68a'))+
+            (hasHighRisk?'#fecaca':(allClear?'#CCD8EF':'#fde68a'))+
             ';font-size:12px;font-weight:650;color:'+
-            (hasHighRisk?'#dc2626':(allClear?'#059669':'#d97706'))+
+            (hasHighRisk?'#dc2626':(allClear?'#2D5BE3':'#d97706'))+
             '">'+badgeText+
             '<span style="font-weight:400;color:#94a3b8;margin-left:8px">· 校验耗时 '+elapsed+'ms · 核验 '+_parsed.rows.length+' 个数据点 · 对比 '+topicKnown.length+'/'+_allKnown.length+' 条现有结论'+(_numHitCount?('（含 '+_numHitCount+' 条数值直接命中）'):'')+'</span>'+
             (hasHighRisk?'<button onclick="kbConfirmOverwrite()" style="margin-left:12px;padding:4px 12px;background:#dc2626;color:#fff;border:none;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer">人工核实</button>':(allClear?'':'<button onclick="kbConfirmOverwrite()" style="margin-left:12px;padding:4px 12px;background:#d97706;color:#fff;border:none;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer">逐条确认</button>'))+
@@ -3040,11 +3040,11 @@ function kbIncrementalAnalysis(){
           } else {
             // 无新增：明确提示，不展示追加面板
             bubble.insertAdjacentHTML('beforeend',
-              '<div style="margin-top:12px;padding:10px 14px;background:#f0fdf4;border-radius:10px;border:1px solid #bbf7d0;font-size:12.5px;color:#059669;font-weight:600">✓ 该材料未发现需要补充的新信息，智库结论无需更新</div>');
+              '<div style="margin-top:12px;padding:10px 14px;background:#EEF3FF;border-radius:10px;border:1px solid #CCD8EF;font-size:12.5px;color:#2D5BE3;font-weight:600">✓ 该材料未发现需要补充的新信息，智库结论无需更新</div>');
           }
           bubble.insertAdjacentHTML('beforeend','<div style="font-size:10.5px;color:#b0bac8;margin-top:6px">仅基于新材料 · '+elapsed+'ms · '+newChunks.length+' 个片段</div>');
           var _ib=document.querySelector('#kbIngestActions button:first-child');
-          if(_ib){_ib.disabled=false;_ib.textContent='✅ 已分析';_ib.style.background='#f0fdf4';_ib.style.color='#059669';_ib.style.border='1.5px solid #86efac';_ib.onclick=null;}
+          if(_ib){_ib.disabled=false;_ib.textContent='✅ 已分析';_ib.style.background='#EEF3FF';_ib.style.color='#2D5BE3';_ib.style.border='1.5px solid #B3C4E8';_ib.onclick=null;}
           kbChatPush('ai', ansNode.outerHTML,{context:requestContext,plainText:accText,sources:requestContext.sources||[]});
           kbFinishRequest(requestContext);
           return;
@@ -3162,10 +3162,10 @@ function showConflictPanel(kbIdx, conflicts){
               '<div style="font-size:13px;color:#1e293b;line-height:1.7;margin-bottom:10px">'+oldHighlighted+'</div>'+
               '<button onclick="resolveConflict('+kbIdx+','+ci+',\'old\')" style="width:100%;padding:8px;background:#fff;border:1.5px solid #fca5a5;border-radius:7px;font-size:12px;font-weight:600;color:#ef4444;cursor:pointer">保留旧数据</button>'+
             '</div>'+
-            '<div style="padding:12px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px" id="conflict-new-'+ci+'">'+
-              '<div style="font-size:11px;font-weight:600;color:#166534;margin-bottom:6px">新材料数据</div>'+
+            '<div style="padding:12px;background:#EEF3FF;border:1.5px solid #B3C4E8;border-radius:8px" id="conflict-new-'+ci+'">'+
+              '<div style="font-size:11px;font-weight:600;color:#1C43B5;margin-bottom:6px">新材料数据</div>'+
               '<div style="font-size:13px;color:#1e293b;line-height:1.7;margin-bottom:10px">'+newHighlighted+'</div>'+
-              '<button onclick="resolveConflict('+kbIdx+','+ci+',\'new\')" style="width:100%;padding:8px;background:#16a34a;border:none;border-radius:7px;font-size:12px;font-weight:600;color:#fff;cursor:pointer">采用新数据</button>'+
+              '<button onclick="resolveConflict('+kbIdx+','+ci+',\'new\')" style="width:100%;padding:8px;background:#2D5BE3;border:none;border-radius:7px;font-size:12px;font-weight:600;color:#fff;cursor:pointer">采用新数据</button>'+
             '</div>'+
           '</div>'+
         '</div>';

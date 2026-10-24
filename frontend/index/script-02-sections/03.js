@@ -33,7 +33,7 @@ function getCityBasePackage(city){
 
 
 
-var RES_COLOR={matched:{bg:'#e4f5f3',c:'#006d70'},checking:{bg:'#ebf3fd',c:'#013582'},none:{bg:'#fff0de',c:'#a34c09'}};
+var RES_COLOR={matched:{bg:'#EEF3FF',c:'#1C43B5'},checking:{bg:'#ebf3fd',c:'#013582'},none:{bg:'#fff0de',c:'#a34c09'}};
 
 var role='gov';   // 政府端固定，ops端在 localhost:5051
 var cur=null,view='setup',detailOpen=false,detailData=null,curKb=null,curDemand=null,curSub=null;

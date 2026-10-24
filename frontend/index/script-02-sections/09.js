@@ -118,7 +118,7 @@ function topbar(p){
 }
 
 /* 切换城市功能已移除：现改为只能通过账号密码登录进入对应城市，不允许前端切换到其他城市 */
-function stColor(s){return s>=4?{bg:'#e4f5f3',c:'#006d70'}:s>=3?{bg:'#ebf3fd',c:'#013582'}:{bg:'#fff0de',c:'#a34c09'}}
+function stColor(s){return s>=4?{bg:'#EEF3FF',c:'#1C43B5'}:s>=3?{bg:'#ebf3fd',c:'#013582'}:{bg:'#fff0de',c:'#a34c09'}}
 
 /* kb lock/readiness */
 var KB_UNLOCKED={};
@@ -219,7 +219,7 @@ function kbReadiness(){
     : (score>=80?'材料覆盖充分 · 事实仍需核验':score>=50?'材料基本覆盖':score>=20?'待补充材料':'未开始');
   var color=pendingWarn>0
     ? '#f59e0b'
-    : (score>=80?'#22c55e':score>=50?'#f59e0b':score>=20?'#3b82f6':'#9aa5b5');
+    : (score>=80?'#2D5BE3':score>=50?'#f59e0b':score>=20?'#3b82f6':'#9aa5b5');
   return {score:score,rawScore:rawScore,total:warnTotal,confirmed:warnConfirmed,files:uploads,
           label:label,color:color,pendingWarn:pendingWarn};
 }

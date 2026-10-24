@@ -491,7 +491,13 @@ test('detail semantic themes and shared icon styles apply at desktop and mobile 
  for(const selector of ['.kb-detail-dialog','.kb-detail-dialog[data-kb-theme="park"]','.kb-detail-dialog[data-kb-theme="location"]','.kb-detail-dialog[data-kb-theme="services"]','.kb-detail-dialog[data-kb-theme="enterprise"]','.kb-detail-dialog[data-kb-theme="talent"]','.kb-detail-dialog[data-kb-theme="finance"]','.kb-detail-dialog[data-kb-theme="policy"]','.kb-detail-topic-icon']){
   assert.ok(cssRuleParents(css,selector).some(parents=>!parents.some(p=>/^@media\b/.test(p))),selector+' needs a viewport-independent rule');
  }
- assert.match(css,/--kb-accent:#16594c/);assert.match(css,/background:#fffefa/);assert.doesNotMatch(css,/kb-detail-mosaic|data-kb-theme="(?:teal|violet|amber|indigo)"/);
+ const palette=fs.readFileSync(path.join(root,'frontend/index/qingxu.css'),'utf8');
+ assert.match(css,/--kb-accent:var\(--client-color-blue-dark\)/);
+ assert.match(css,/background:var\(--client-color-surface\)/);
+ assert.match(palette,/--client-color-blue:#2D5BE3;/i);
+ assert.match(palette,/--client-color-blue-dark:#1C43B5;/i);
+ assert.match(palette,/--client-color-surface:#FFFFFF;/i);
+ assert.doesNotMatch(css,/kb-detail-mosaic|data-kb-theme="(?:teal|violet|amber|indigo)"/);
  assert.ok(cssRuleParents(css,'.kb-detail-topic-icon').some(parents=>parents.some(p=>/^@media\(max-width:480px\)/.test(p))));
  const manifest=fs.readFileSync(path.join(root,'frontend/manifest.json'),'utf8');assert.match(manifest,/frontend\/index\/kb-detail-brand\.css/);
 });

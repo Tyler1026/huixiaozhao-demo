@@ -103,7 +103,7 @@ function onInviteCodeInput(){
     _authJson('/api/auth/invite/validate',{inviteCode:code}).then(function(data){
       if(sequence!==_regInviteSequence||!document.getElementById('regInviteCode')||input.value.trim().toUpperCase()!==code)return;
       if(city)city.value=data.city||'';
-      if(hint){hint.textContent='邀请码有效，将加入「'+(data.city||'')+'」工作区';hint.style.color='#0a8f5c';}
+      if(hint){hint.textContent='邀请码有效，将加入「'+(data.city||'')+'」工作区';hint.style.color='#2D5BE3';}
     }).catch(function(error){if(sequence!==_regInviteSequence)return;if(hint){hint.textContent=error.message||'验证失败，请重试';hint.style.color='#dc2626';}});
   },300);
 }
