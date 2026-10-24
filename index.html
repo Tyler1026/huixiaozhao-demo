@@ -6641,6 +6641,24 @@ function kbReadiness(){
           label:label,color:color,pendingWarn:pendingWarn};
 }
 
+/* Display-only summary: the existing quantity/confirmation score is not a section coverage rate. */
+function kbReadinessSummary(r){
+  r=r||kbReadiness();
+  var p=P(),sections=p&&Array.isArray(p.kb)?p.kb:[],filled=0;
+  sections.forEach(function(section,index){
+    var known=typeof kbEffectiveKnown==='function'?kbEffectiveKnown(p,index,cur):(section.known||[]);
+    if(known.some(function(item){
+      var text=_kbText(item);
+      return !!text&&!(typeof _isJunkKbItem==='function'&&_isJunkKbItem(text));
+    }))filled++;
+  });
+  return {
+    sectionText:'有材料板块 '+filled+'/'+sections.length,
+    statusText:(r.pendingWarn>0?r.pendingWarn+' 条待确认 · ':'')+'事实仍需逐项核验',
+    explanation:'评分仅反映现有材料量与确认进度，不代表板块覆盖率或事实正确率。'
+  };
+}
+
 
 /* 按研判方向计算置信度。
    核心：每个方向的置信度应反映「该方向报告自身」的数据充实度，而非城市级共享分——
@@ -6801,33 +6819,35 @@ function unlockView(v){
    不描边、底色更淡、字号克制，够看清但不抢<h1>的视觉。 */
 function kbPageProgressInner(r){
   r=r||kbReadiness();
-  var warn='⚠️'; var info='ⓘ';
+  var summary=kbReadinessSummary(r),info='ⓘ';
   var tint=r.color+'0d'; // 更淡的底色（透明度从14降到0d）
   return '<div style="display:flex;align-items:center;gap:12px;margin-top:9px;padding:9px 14px;border-radius:8px;background:'+tint+'">'+
-    '<span style="font-size:14px;font-weight:650;color:'+r.color+';line-height:1;white-space:nowrap">材料覆盖 '+r.score+'%</span>'+
+    '<span style="font-size:14px;font-weight:650;color:'+r.color+';line-height:1;white-space:nowrap">材料量评分 '+r.score+'分</span>'+
     '<div style="flex:1;min-width:0">'+
       '<div style="background:#fff;border-radius:3px;height:6px;overflow:hidden;box-shadow:inset 0 0 0 1px '+r.color+'1f">'+
         '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:3px;transition:width .4s"></div>'+
       '</div>'+
-      '<div style="margin-top:4px;font-size:12px;font-weight:550;color:'+r.color+'">'+r.label+
-        '<span title="计算方式：智库覆盖度×80% + 上传材料×10%（上限 20%）+ 确认'+warn+'事项×20%"'+
+      '<div style="margin-top:4px;font-size:12px;font-weight:550;color:'+r.color+'">'+summary.sectionText+' · '+summary.statusText+
+        '<span title="'+summary.explanation+'"'+
           ' style="font-size:11px;color:#9aa5b5;cursor:help;margin-left:4px;font-weight:400">'+info+'</span>'+
       '</div>'+
     '</div>'+
   '</div>'+
-  (r.score<80?'<p style="font-size:11.5px;color:#a16207;margin:6px 0 0;padding:6px 12px;background:#fdf6e8;border-radius:6px">⚡ 补充材料、核查待确认项可完善覆盖；覆盖度不代表事实正确率（差 '+(80-r.score)+'% 自动解锁后续步骤）</p>':'');
+  (r.score<80?'<p style="font-size:11.5px;color:#a16207;margin:6px 0 0;padding:6px 12px;background:#fdf6e8;border-radius:6px">⚡ 可补充材料并核实待确认项；评分不能替代事实核验。</p>':'');
 }
 function kbProgressInner(r){
   r=r||kbReadiness();
+  var summary=kbReadinessSummary(r);
   return '<div style="padding:10px 14px 8px;border-top:1px solid #f0f4ff">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">'+
-      '<span style="font-size:10.5px;color:#9aa5b5;letter-spacing:.3px">城市智库材料覆盖</span>'+
-      '<span style="font-size:11px;font-weight:700;color:'+r.color+'">'+r.score+'%</span>'+
+      '<span style="font-size:10.5px;color:#9aa5b5;letter-spacing:.3px">材料量评分</span>'+
+      '<span style="font-size:11px;font-weight:700;color:'+r.color+'">'+r.score+'分</span>'+
     '</div>'+
     '<div style="height:4px;background:#f0f4ff;border-radius:2px;overflow:hidden">'+
       '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:2px;transition:width .4s"></div>'+
     '</div>'+
-    '<div style="font-size:10.5px;color:'+r.color+';margin-top:4px">'+r.label+
+    '<div style="font-size:10.5px;color:'+r.color+';margin-top:4px">'+summary.sectionText+'</div>'+
+    '<div style="font-size:10.5px;color:'+r.color+';margin-top:4px" title="'+summary.explanation+'">'+summary.statusText+
       ((UPLOADS[cur]||[]).length>0?' &middot; '+(UPLOADS[cur]||[]).length+'份材料':'')+'</div>'+
   '</div>';
 }
@@ -6846,11 +6866,8 @@ function sidebar(){
   var navMeta={
     knowledge: (function(){
       if(!p) return '完善材料·产业/园区/企业/政策';
-      var conf=r.confirmed||0;
-      var uploads=(UPLOADS[cur]||[]).length;
-      if(r.pendingWarn>0) return '⚠ '+r.pendingWarn+' 条待确认 · 数据覆盖 '+(r.rawScore!==undefined?r.rawScore:r.score)+'%';
-  if(r.score>=80) return '材料覆盖 '+r.score+'% · 事实仍需核验';
-      return conf>0?(conf+'条已确认 · '+uploads+'份材料 · '+r.score+'%'):'待完善 · 产业/园区/企业/政策';
+      var summary=kbReadinessSummary(r);
+      return '材料量评分 '+r.score+'分 · '+summary.sectionText+(r.pendingWarn>0?' · '+r.pendingWarn+' 条待确认':'');
     })(),
     report: '生成缺口分析与招引方向',
     home: '项目列表·对接进度',
@@ -7048,6 +7065,7 @@ function go(v){
   if(v==='report')cur=industryAnalysisWorkspaceKey(cur);
   if(isLocked(v)){
     var r=kbReadiness();
+    var summary=kbReadinessSummary(r);
     var vnames={report:'AI 匹配研判',home:'需求与建联',docking:'需求与建联'};
     var vn=vnames[v]||v;
     var tips=[];
@@ -7065,19 +7083,20 @@ function go(v){
           '<div style="flex:1;background:#f0f4ff;border-radius:6px;height:8px;overflow:hidden">'+
             '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:6px;transition:width .3s"></div>'+
           '</div>'+
-          '<span style="font-size:13px;font-weight:700;color:'+r.color+'">'+r.score+'%</span>'+
+          '<span style="font-size:13px;font-weight:700;color:'+r.color+'">材料量评分 '+r.score+'分</span>'+
         '</div>'+
+        '<p style="font-size:12px;color:#64748b;margin:0 0 8px">'+summary.sectionText+' · '+summary.statusText+'</p>'+
         '<p style="font-size:13px;color:#4a5568;margin:0 0 12px;line-height:1.7">'+
-          '&#128274; <strong>'+vn+'</strong>\u9700\u8981\u57ce\u5e02\u667a\u5e93\u5b8c\u6210\u5ea6\u8fbe\u5230 <strong>80%</strong>\u540e\u81ea\u52a8\u89e3\u9501\u3002\u5f53\u524d <strong style="color:'+r.color+'">'+r.score+'%</strong>\u3002</p>'+
-        '<p style="font-size:12px;color:#6366f1;margin:0 0 10px">\u{1f4a1} \u4e0a\u4f20\u8d8a\u591a\u6750\u6599\u3001\u9886\u5bfc\u786e\u8ba4\u8d8a\u591a\u7ed3\u8bba\uff0c\u7814\u5224\u6570\u636e\u53ef\u9760\u6027\u8d8a\u9ad8\u3002</p>'+
+          '&#128274; <strong>'+vn+'</strong>需要城市智库的材料量基础评分达到 <strong>80分</strong>后自动解锁；待确认事项仍需单独核实。</p>'+
+        '<p style="font-size:12px;color:#6366f1;margin:0 0 10px">'+summary.explanation+'</p>'+
         (tipsHtml?'<div style="margin-bottom:10px">'+
-          '<div style="font-size:11.5px;font-weight:650;color:#6366f1;margin-bottom:6px">\u5feb\u901f\u63d0\u5347\u5b8c\u6210\u5ea6\uff1a</div>'+
+          '<div style="font-size:11.5px;font-weight:650;color:#6366f1;margin-bottom:6px">可补充的材料与确认事项：</div>'+
           '<ul style="margin:0;padding:0;list-style:none">'+tipsHtml+'</ul></div>':'');
     var foot=
       '<button class="secondary-button" onclick="closeModal()">\u7ee7\u7eed\u5b8c\u5584\u57ce\u5e02\u667a\u5e93</button>'+
       '<button onclick="unlockView(\''+v+'\')" '+
         'style="padding:10px 18px;background:#f5f7fb;color:#64748b;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;cursor:pointer">'+
-        '\u5f3a\u5236\u89e3\u9501\uff08\u6570\u636e\u53ef\u9760\u6027\u8f83\u4f4e\uff09</button>';
+        '手动解锁（仍需核验事实）</button>';
     openModal('&#128274; '+vn+' \u5c1a\u672a\u89e3\u9501', body, foot);
     return;
   }
@@ -7490,7 +7509,7 @@ function openDirectDemandComposer(context){
     DIRECT_DEMAND_DRAFT={key:key,epoch:dockingActionEpoch(),requestId:dockingRequestId(),pending:false,uncertain:false,attempt:null};
     if(topic)DIRECT_DEMAND_DRAFT.values={title:topic.slice(0,120),description:'',conditions:'',contactName:'',contactMethod:''};
   }
-  var body='<div class="docking-log-form"><div class="docking-log-context"><strong>直接提交明确的招商需求</strong><p>当前城市：'+escapeChainText(PROJECTS[key].city||'当前工作区')+'</p>'+(fromReport?'<p>你可以根据实际需要自行填写招商诉求。分析主题仅作为可编辑的名称参考，所填内容不作为报告结论。</p>':'')+'<p>需求进入管理端受理队列。管理端会填写负责人、下一步及处理反馈，你可以在这里持续补充资料。</p></div><label for="directDemandTitle">需求名称</label><input id="directDemandTitle" maxlength="120" placeholder="填写具体的招引对象或合作需求"><label for="directDemandDescription">具体招引诉求</label><textarea id="directDemandDescription" maxlength="6000" rows="5" placeholder="说明需要什么类型的企业、产品或能力，以及希望达成的合作"></textarea><label for="directDemandConditions">承接条件与要求 <span>（选填）</span></label><textarea id="directDemandConditions" maxlength="2000" rows="3" placeholder="可填写园区载体、合作方式、时间要求和其他条件"></textarea><div class="docking-form-columns"><div><label for="directDemandContactName">对接人 <span>（选填）</span></label><input id="directDemandContactName" maxlength="80"></div><div><label for="directDemandContactMethod">联系方式 <span>（选填）</span></label><input id="directDemandContactMethod" maxlength="240" placeholder="电话、邮箱或其他联系方式"></div></div><p class="docking-form-help">以上内容按你提交的需求保存。提交后可继续补充相关材料。</p><p id="directDemandError" class="docking-form-error" role="alert"></p></div>';
+  var body='<div class="docking-log-form"><div class="docking-log-context"><strong>直接提交明确的招商需求</strong><p>当前城市：'+escapeChainText(PROJECTS[key].city||'当前工作区')+'</p>'+(fromReport?'<p>你可以根据实际需要自行填写招商诉求。分析主题仅作为可编辑的名称参考，所填内容不作为报告结论。</p>':'')+'<p>需求进入管理端受理队列。管理端会填写负责人、下一步及处理反馈，你可以在这里持续补充资料。</p></div><p id="directDemandError" class="docking-form-error" role="alert" tabindex="-1" aria-atomic="true"></p><label for="directDemandTitle">需求名称</label><input id="directDemandTitle" maxlength="120" placeholder="填写具体的招引对象或合作需求"><label for="directDemandDescription">具体招引诉求</label><textarea id="directDemandDescription" maxlength="6000" rows="5" placeholder="说明需要什么类型的企业、产品或能力，以及希望达成的合作"></textarea><label for="directDemandConditions">承接条件与要求 <span>（选填）</span></label><textarea id="directDemandConditions" maxlength="2000" rows="3" placeholder="可填写园区载体、合作方式、时间要求和其他条件"></textarea><div class="docking-form-columns"><div><label for="directDemandContactName">对接人 <span>（选填）</span></label><input id="directDemandContactName" maxlength="80"></div><div><label for="directDemandContactMethod">联系方式 <span>（选填）</span></label><input id="directDemandContactMethod" maxlength="240" placeholder="电话、邮箱或其他联系方式"></div></div><p class="docking-form-help">以上内容按你提交的需求保存。提交后可继续补充相关材料。</p></div>';
   openModal('提交招商需求',body,'<button class="secondary-button" onclick="closeModal()">取消</button><button id="directDemandSubmit" class="primary-button" onclick="submitDirectDemand()">提交给管理端</button>');
   if(DIRECT_DEMAND_DRAFT.values){var values=DIRECT_DEMAND_DRAFT.values;[['Title','title'],['Description','description'],['Conditions','conditions'],['ContactName','contactName'],['ContactMethod','contactMethod']].forEach(function(pair){var el=document.getElementById('directDemand'+pair[0]);if(el)el.value=values[pair[1]]||'';});}
   return true;
@@ -7498,12 +7517,22 @@ function openDirectDemandComposer(context){
 async function submitDirectDemand(){
   var draft=DIRECT_DEMAND_DRAFT;if(!draft||draft.pending)return false;
   var error=document.getElementById('directDemandError'),button=document.getElementById('directDemandSubmit');
-  function fail(message){if(error)error.textContent=message;else toast(message);}
+  function fail(message,fieldId){
+    ['Title','Description','Conditions','ContactName','ContactMethod'].forEach(function(name){
+      var field=document.getElementById('directDemand'+name);if(field){field.removeAttribute('aria-invalid');field.removeAttribute('aria-describedby');}
+    });
+    if(!error){if(message)toast(message);return;}
+    error.textContent=message;if(!message)return;
+    var field=fieldId&&document.getElementById(fieldId);
+    if(field){field.setAttribute('aria-invalid','true');field.setAttribute('aria-describedby','directDemandError');}
+    var focusTarget=field||error;if(focusTarget.focus)focusTarget.focus({preventScroll:true});
+    if(error.scrollIntoView)error.scrollIntoView({block:'start',behavior:'auto'});
+  }
   if(draft.epoch!==dockingActionEpoch()||directDemandWorkspaceKey()!==draft.key){fail('账号或工作区已变化，请重新打开需求表单。');return false;}
   function value(id){var el=document.getElementById(id);return el&&typeof el.value==='string'?el.value.trim():'';}
   var demand={title:value('directDemandTitle'),description:value('directDemandDescription'),conditions:value('directDemandConditions'),contactName:value('directDemandContactName'),contactMethod:value('directDemandContactMethod')};
-  if(!demand.title||demand.title.length>120||!demand.description||demand.description.length>6000){fail('请填写需求名称（120字以内）和具体招引诉求（6000字以内）。');return false;}
-  if(demand.conditions.length>2000||demand.contactName.length>80||demand.contactMethod.length>240){fail('补充内容超过长度限制，请精简后再提交。');return false;}
+  if(!demand.title||demand.title.length>120||!demand.description||demand.description.length>6000){fail('请填写需求名称（120字以内）和具体招引诉求（6000字以内）。',!demand.title||demand.title.length>120?'directDemandTitle':'directDemandDescription');return false;}
+  if(demand.conditions.length>2000||demand.contactName.length>80||demand.contactMethod.length>240){fail('补充内容超过长度限制，请精简后再提交。',demand.conditions.length>2000?'directDemandConditions':demand.contactName.length>80?'directDemandContactName':'directDemandContactMethod');return false;}
   var body={mode:'direct',projectKey:draft.key,requestId:draft.requestId,demand:demand},attempt=JSON.stringify(body);
   if(draft.uncertain&&draft.attempt!==attempt){fail('上次提交结果尚未确认，请先按原内容重试，避免产生重复需求。');return false;}
   if(draft.attempt&&draft.attempt!==attempt){draft.requestId=dockingRequestId();body.requestId=draft.requestId;attempt=JSON.stringify(body);}
@@ -11365,6 +11394,7 @@ function generateTopicsFromKb(p){
 
 function homePage(p){
   var r=kbReadiness();
+  var summary=kbReadinessSummary(r);
   var running=reportJobForTopic(cur,p.topic);
 
   // ── 可靠性横幅 ──
@@ -11373,9 +11403,9 @@ function homePage(p){
       '<div style="flex:1;min-width:0">'+
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'+
           '<span style="font-size:12px;font-weight:650;color:'+(r.score>=80?'#1C43B5':'#92400e')+'">从城市智库继承数据</span>'+
-          '<span style="font-size:11px;color:'+(r.score>=80?'#2D5BE3':'#f59e0b')+';font-weight:700">'+r.score+'%</span>'+
-          '<span style="font-size:11px;color:'+(r.score>=80?'#2D5BE3':'#f59e0b')+'">'+r.label+'</span>'+
-          '<span title="仅表示材料覆盖与流程准备情况，不代表事实正确率。补充原始材料，并逐条核实待确认事项。" style="font-size:11px;color:#9aa5b5;cursor:help;text-decoration:underline dotted;margin-left:4px">ⓘ 如何提升</span>'+
+          '<span style="font-size:11px;color:'+(r.score>=80?'#2D5BE3':'#f59e0b')+';font-weight:700">材料量评分 '+r.score+'分</span>'+
+          '<span style="font-size:11px;color:'+(r.score>=80?'#2D5BE3':'#f59e0b')+'">'+summary.sectionText+' · '+summary.statusText+'</span>'+
+          '<span title="'+summary.explanation+'" style="font-size:11px;color:#9aa5b5;cursor:help;text-decoration:underline dotted;margin-left:4px">ⓘ 评分说明</span>'+
         '</div>'+
         '<div style="height:4px;background:'+(r.score>=80?'#E5EDFF':'#fef3c7')+';border-radius:2px;overflow:hidden">'+
           '<div style="height:100%;width:'+r.score+'%;background:'+(r.score>=80?'#2D5BE3':'#f59e0b')+';border-radius:2px;transition:width .4s"></div>'+

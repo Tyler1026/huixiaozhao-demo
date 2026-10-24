@@ -3548,6 +3548,7 @@ function generateTopicsFromKb(p){
 
 function homePage(p){
   var r=kbReadiness();
+  var summary=kbReadinessSummary(r);
   var running=reportJobForTopic(cur,p.topic);
 
   // ── 可靠性横幅 ──
@@ -3556,9 +3557,9 @@ function homePage(p){
       '<div style="flex:1;min-width:0">'+
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'+
           '<span style="font-size:12px;font-weight:650;color:'+(r.score>=80?'#1C43B5':'#92400e')+'">从城市智库继承数据</span>'+
-          '<span style="font-size:11px;color:'+(r.score>=80?'#2D5BE3':'#f59e0b')+';font-weight:700">'+r.score+'%</span>'+
-          '<span style="font-size:11px;color:'+(r.score>=80?'#2D5BE3':'#f59e0b')+'">'+r.label+'</span>'+
-          '<span title="仅表示材料覆盖与流程准备情况，不代表事实正确率。补充原始材料，并逐条核实待确认事项。" style="font-size:11px;color:#9aa5b5;cursor:help;text-decoration:underline dotted;margin-left:4px">ⓘ 如何提升</span>'+
+          '<span style="font-size:11px;color:'+(r.score>=80?'#2D5BE3':'#f59e0b')+';font-weight:700">材料量评分 '+r.score+'分</span>'+
+          '<span style="font-size:11px;color:'+(r.score>=80?'#2D5BE3':'#f59e0b')+'">'+summary.sectionText+' · '+summary.statusText+'</span>'+
+          '<span title="'+summary.explanation+'" style="font-size:11px;color:#9aa5b5;cursor:help;text-decoration:underline dotted;margin-left:4px">ⓘ 评分说明</span>'+
         '</div>'+
         '<div style="height:4px;background:'+(r.score>=80?'#E5EDFF':'#fef3c7')+';border-radius:2px;overflow:hidden">'+
           '<div style="height:100%;width:'+r.score+'%;background:'+(r.score>=80?'#2D5BE3':'#f59e0b')+';border-radius:2px;transition:width .4s"></div>'+
