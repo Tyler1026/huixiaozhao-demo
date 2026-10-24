@@ -109,6 +109,10 @@ def set_paragraph_spacing(paragraph):
     """Set 1.5x line spacing."""
     pf = paragraph.paragraph_format
     pf.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
+    # Keep a source and the assertion it supports on one page when they fit.
+    # Do not insert spaces or shorten the URL: it must remain copyable verbatim.
+    if re.search(r'https?://\S+', paragraph.text):
+        pf.keep_together = True
 
 
 def add_styled_paragraph(doc, text, size_pt=12, bold=False, bullet=False):
@@ -350,7 +354,7 @@ def _infer_compact_sections(content):
     current, current_label = None, None
     for line in content.splitlines():
         body = re.sub(r'^\s*\d+[.、．]\s+', '', line)
-        heading = re.match(r'^\s*#{1,6}\s+(.+?)\s*#*\s*$', body)
+        heading = re.match(r'^\s*#{1,6}\s+(.+?)(?:[ \t]+#+)?[ \t]*$', body)
         chinese = re.match(r'^\s*[一二三四五六七八九十百零〇]+[、．]\s*(\S[^。！？]{0,79})$', body)
         title = heading.group(1) if heading else chinese.group(1) if chinese else None
         lead = re.split(r'[：:，,]', body, maxsplit=1)[0].strip().replace('**', '')
@@ -383,11 +387,60 @@ def _display_direction_labels(text, directions):
                   label, text)
 
 
-def _render_reader_body(doc, lines, dense=False, directions=None):
+def _section_body_lines(lines, label):
+    """Suppress only a leading explicit title already represented by the wrapper.
+
+    Inferred groups keep their source lines intact.  At rendering time a matching
+    first heading is redundant with the section heading, but later headings and
+    ordinary prose (even when it contains the same words) are substantive input.
+    """
+    lines = list(lines)
+
+    def normalized(title):
+        title = re.sub(r'（续\d+）$', '', title.strip())
+        title = re.sub(r'^第[0-9０-９]+段\s*[·•]?\s*', '', title)
+        return re.sub(r'^[一二三四五六七八九十百零〇]+[、.．]\s*', '', title)
+
+    for index, line in enumerate(lines):
+        if not line.strip() or re.fullmatch(
+                r'\s*<!--\s*SECTION\s*[：:].*?-->\s*', line, re.IGNORECASE):
+            continue
+        heading = re.fullmatch(r'\s*#{1,6}\s+(.+?)(?:[ \t]+#+)?[ \t]*', line)
+        numbered = re.fullmatch(
+            r'\s*([一二三四五六七八九十百零〇]+[、.．]\s*\S[^。！？]{0,79})\s*', line)
+        title = heading.group(1) if heading else numbered.group(1) if numbered else None
+        if title and normalized(title) == normalized(label):
+            return lines[:index] + lines[index + 1:]
+        break
+    return lines
+
+
+def _decision_body_content(content, city):
+    """Make the copied compact artifact's own title neutral in the main report.
+
+    This applies only to its first nonempty, city-specific standalone title, not
+    to assertions about compact reports or quoted titles elsewhere in the body.
+    The source Markdown and its evidence remain unchanged.
+    """
+    lines = content.splitlines(keepends=True)
+    title = re.compile(
+        r'^(\s*(?:#{1,6}\s+)?' + re.escape(_region_label(city))
+        + r'招商调研)精简报告(?P<suffix>(?:（[^）\n]+）)?\s*)$')
+    for index, line in enumerate(lines):
+        if not line.strip():
+            continue
+        match = title.fullmatch(line)
+        if match:
+            lines[index] = match.group(1) + '报告' + match.group('suffix')
+        break
+    return ''.join(lines)
+
+
+def _render_reader_body(doc, lines, dense=False, directions=None, section_label=None):
     # The model's continuous 1..90 numbering is not a document hierarchy.
     # Keep all text, with a bold descriptive lead when one is present.
     rendered = []
-    for line in lines:
+    for line in _section_body_lines(lines, section_label) if section_label else lines:
         line = _display_direction_labels(line, directions or {})
         if line and not line.startswith(('#', '|', '>', '-', '*')) and '：' in line:
             lead, tail = line.split('：', 1)
@@ -404,11 +457,12 @@ def _render_reader_body(doc, lines, dense=False, directions=None):
             paragraph.paragraph_format.space_after = Pt(4)
 
 
-def _build_decision_main(doc, root, metadata):
+def _build_decision_main(doc, root, metadata, city):
     labels = ['研判正文', '目标企业清单', '企业匹配评分', '事实核验与资料边界']
-    sections, order = _split_compact_sections((root / '09_compact_report.md').read_text(encoding='utf-8'))
+    content = _decision_body_content((root / '09_compact_report.md').read_text(encoding='utf-8'), city)
+    sections, order = _split_compact_sections(content)
     if not order:
-        sections, order = _infer_compact_sections((root / '09_compact_report.md').read_text(encoding='utf-8'))
+        sections, order = _infer_compact_sections(content)
     elif sections.get('_preamble'):
         order.insert(0, '_preamble')
     directions = {item.get('id'): item.get('name') for item in metadata.get('02_industry_direction.md', {}).get('directions', [])}
@@ -422,7 +476,7 @@ def _build_decision_main(doc, root, metadata):
     _chapter(doc, labels[0], 0)
     for index, key in enumerate(order):
         _section(doc, section_labels[index], f'body_{index}')
-        _render_reader_body(doc, sections[key], directions=directions)
+        _render_reader_body(doc, sections[key], directions=directions, section_label=section_labels[index])
     doc.add_page_break()
     _chapter(doc, labels[1], 1)
     for number, filename in enumerate(('05a_target_enterprises_dir1.md', '05b_target_enterprises_dir2.md', '05c_target_enterprises_dir3.md'), 1):
@@ -586,7 +640,7 @@ def md_to_docx(input_dir, output_path, city_name, synthetic=False):
         metadata = json.loads(evidence_path.read_text(encoding='utf-8')).get('stages', {})
         if any(metadata.get(filename, {}).get('selected') for filename in (
                 '05a_target_enterprises_dir1.md', '05b_target_enterprises_dir2.md', '05c_target_enterprises_dir3.md')):
-            _build_decision_main(doc, input_path, metadata)
+            _build_decision_main(doc, input_path, metadata, city_name)
             doc.save(output_path)
             return output_path
 
@@ -715,7 +769,7 @@ def build_compact_docx(city, input_dir, output_path, synthetic=False):
         _add_contents(doc, render_order)
         for index, key in enumerate(render_order):
             _section(doc, key, f'chapter_{index}')
-            _render_reader_body(doc, sections[key], dense=True)
+            _render_reader_body(doc, sections[key], dense=True, section_label=key)
     else:
         if sections.get('_preamble'):
             render_order.insert(0, '_preamble')
@@ -724,7 +778,7 @@ def build_compact_docx(city, input_dir, output_path, synthetic=False):
             label = COMPACT_SECTION_LABELS.get(key, '概览' if key == '_preamble' else key)
             _chapter(doc, label, idx)
 
-            section_lines = sections.get(key, [])
+            section_lines = _section_body_lines(sections.get(key, []), label)
 
             # 评分章节和企业总览章节启用表格高亮
             is_score_section = key in ('评分', '企业总览')

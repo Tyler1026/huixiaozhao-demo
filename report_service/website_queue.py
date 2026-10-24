@@ -28,6 +28,46 @@ def report_id(request_id):
     return hashlib.sha256(('full-v1\0' + TENANT + '\0' + request_id).encode()).hexdigest()
 
 
+def _execution_policy_view(job):
+    """Expose only finite counters and static policy states, never audit inputs."""
+    policy = job.get('policy_projection')
+    if not isinstance(policy, dict) or policy.get('policy_version') != 'standard-live-v1':
+        return None
+    version = policy.get('version')
+    if type(version) is not int or version < 0:
+        return None
+    state = job['status'] if job.get('status') in ('completed', 'cancelled') else policy.get('state')
+    if state not in {'active', 'pause_requested', 'paused', 'completed', 'cancelled', 'failed'}:
+        return None
+    causes = {'manual', 'wall_time_exhausted', 'task_work_exhausted', 'stage_work_exhausted',
+              'quality_repeated', 'step_attempts_exhausted', 'report_retries_exhausted',
+              'timeout', 'worker_crash', 'upstream', 'rate_limit', 'quality', 'configuration',
+              'budget_exhausted', 'artifact', 'cancelled'}
+    result = {'policy_version': 'standard-live-v1', 'version': version, 'state': state,
+              'pause_reason': policy.get('pause_reason') if policy.get('pause_reason') in causes else None,
+              'money_hard_limit': False, 'token_hard_limit': False, 'search_hard_limit': False}
+    groups = {
+        'limits': ('step_max_attempts', 'report_max_retries', 'same_quality_failures',
+                   'attempt_deadline_seconds', 'task_work_seconds', 'stage_work_seconds', 'wall_seconds'),
+        'usage': ('attempts_total', 'retries', 'work_seconds', 'current_stage_work_seconds',
+                  'current_step_attempts', 'quality_failures', 'quality_since_ack'),
+        'remaining': ('task_seconds', 'stage_seconds', 'wall_seconds', 'step_attempts', 'retries'),
+    }
+    for group, keys in groups.items():
+        value = policy.get(group)
+        result[group] = {key: value[key] for key in keys if isinstance(value, dict)
+                         and type(value.get(key)) in (int, float)
+                         and math.isfinite(value[key]) and value[key] >= 0}
+    return result
+
+
+def _held_city_request(request, rows):
+    return any(isinstance(other, dict) and other.get('id') != request.get('id')
+               and other.get('engine') == ENGINE and other.get('status') in ('paused', 'pause_requested')
+               and (other.get('city'), other.get('province')) == (request.get('city'), request.get('province'))
+               for other in rows)
+
+
 def _monthly_request_id(city, project_key, month):
     scope = hashlib.sha256((city + '\0' + project_key).encode()).hexdigest()[:24]
     return 'rrmonthly' + scope + month.replace('-', '')
@@ -161,12 +201,14 @@ other sync fields continue through the existing merge policy unchanged.
                 raise SyncWriteConflict('server-owned report cannot be claimed through sync')
             value = copy.deepcopy(saved)
             value['engine'] = ENGINE
-            if r.get('status') == 'cancelled' and saved.get('status') != 'cancelled':
+            if r.get('status') == 'cancelled' and saved.get('status') in ('pending', 'running', 'paused', 'pause_requested', 'failed'):
                 value.update(status='cancelled', cancelledTs=int(time.time() * 1000))
             rows.append(value)
         elif not saved:
             if not valid_request(r) or r.get('status') != 'pending':
                 raise ValueError('new report must be a valid pending request')
+            if _held_city_request(r, old.values()):
+                raise ValueError('city report is paused; process the retained request first')
             # Never accept client progress, artifacts or a forged completion.
             rows.append({k: r[k] for k in ('id', 'city', 'province', 'mode', 'by', 'ts', 'projectKey') if k in r}
                         | {'status': 'pending', 'engine': ENGINE})
@@ -280,6 +322,24 @@ class WebsiteQueue:
     def __init__(self, store, session):
         self.store, self.session = store, session
 
+    def _held_engine_city_request(self, request, rows):
+        # The website mirror may lag a control transaction. Never let a new
+        # request bypass a retained pause in the authoritative engine.
+        if _held_city_request(request, rows):
+            return True
+        read_status = getattr(self.store, 'policy_status', None)
+        if read_status is None:
+            return False
+        for other in rows:
+            if (not isinstance(other, dict) or other.get('id') == request.get('id')
+                    or other.get('engine') != ENGINE or not valid_request(other)
+                    or (other.get('city'), other.get('province')) != (request.get('city'), request.get('province'))):
+                continue
+            status = read_status(TENANT, report_id(other['id']))
+            if status and status.get('status') in ('paused', 'pause_requested'):
+                return True
+        return False
+
     def _save(self, session, state):
         if not session.write(json.dumps(state, ensure_ascii=False)):
             raise OSError('website storage unavailable')
@@ -349,6 +409,12 @@ class WebsiteQueue:
                 if r.get('engine') == ENGINE and r.get('status') == 'cancelled':
                     self.store.cancel(TENANT, report_id(r['id']))
                 elif r.get('status') == 'pending' and r.get('engine') in (None, ENGINE):
+                    if self._held_engine_city_request(r, state.get('REPORT_REQUESTS') or []):
+                        waiting = '同城已有暂停报告，请先处理原任务'
+                        if r.get('step') != waiting:
+                            r['step'] = waiting
+                            changed = True
+                        continue
                     from .user_materials import MaterialsPendingRepair, snapshot
                     try:
                         materials = snapshot(state, r)
@@ -361,8 +427,18 @@ class WebsiteQueue:
                             changed = True
                         continue
                     options = {'input_context': materials} if materials is not None else {}
-                    job = self.store.create(TENANT, r['province'], r['city'], r['id'],
-                                            synthetic=False, mode=r.get('mode', 'standard'), **options)
+                    from .full_store import Conflict
+                    try:
+                        job = self.store.create(TENANT, r['province'], r['city'], r['id'],
+                                                synthetic=False, mode=r.get('mode', 'standard'), **options)
+                    except Conflict:
+                        if not self._held_engine_city_request(r, state.get('REPORT_REQUESTS') or []):
+                            raise
+                        waiting = '同城已有暂停报告，请先处理原任务'
+                        if r.get('step') != waiting:
+                            r['step'] = waiting
+                            changed = True
+                        continue
                     r.update(engine=ENGINE, engineReportId=job['id'], status='running',
                              total=job['stages_total'], done=job['stages_done'],
                              step='正在准备报告输入')
@@ -391,15 +467,23 @@ class WebsiteQueue:
                         self._save(session, state)
 
     def _mirror_request(self, r):
-        if r.get('engine') != ENGINE or not valid_request(r) or r.get('status') == 'cancelled':
+        if r.get('engine') != ENGINE or not valid_request(r):
             return
+        rid = report_id(r['id'])
+        if r.get('status') == 'cancelled':
+            # Completion may have won in the engine before a stale website
+            # cancellation arrived. Do not permanently hide that delivery.
+            # A successful native cancel can never take this branch.
+            read_status = getattr(self.store, 'policy_status', None)
+            native = read_status(TENANT, rid) if read_status else None
+            if not native or native.get('status') != 'completed':
+                return
         if r.get('deliveryRetryAt', 0) > time.time():
             return
         wants_publication = r.get('pushRequested') or _automatic_publication(r)
         if (r.get('status') == 'done' and r.get('files')
                 and (not wants_publication or r.get('pushed') or r.get('publicationSkipped'))):
             return
-        rid = report_id(r['id'])
         job = self.store.get(TENANT, rid)
         if not job or job['synthetic']:
             return
@@ -417,7 +501,7 @@ class WebsiteQueue:
             state = json.loads(session.read())
             target = next((x for x in state.get('REPORT_REQUESTS') or []
                            if x.get('id') == r['id'] and x.get('engine') == ENGINE), None)
-            if not target or target.get('status') == 'cancelled':
+            if not target or (target.get('status') == 'cancelled' and job['status'] != 'completed'):
                 return
             before = copy.deepcopy(target)
             current = job['current'] or {}
@@ -427,8 +511,15 @@ class WebsiteQueue:
                           engineStatus=job['status'], progressAt=job['progress_at'],
                           failureCode=job['failure_code'], retryAt=current.get('next_at'),
                           stage=current.get('stage'), attempts=current.get('attempts', 0))
+            policy_view = _execution_policy_view(job)
+            if policy_view is not None:
+                target['executionPolicy'] = policy_view
             target['step'] = ('研究中断，已保存成果，将自动接续' if job['status'] == 'retry_wait'
                               else current.get('part') or '报告交付校验')
+            if job['status'] in ('paused', 'pause_requested'):
+                target['retryAt'] = None
+                target['step'] = ('已暂停，成果和累计用量已保留，等待管理员明确继续'
+                                  if job['status'] == 'paused' else '正在暂停，当前步骤正在收尾')
             if job['progress_at'] is not None:
                 target['progressTs'] = int(job['progress_at'] * 1000)
             target.pop('deliveryError', None)
@@ -437,7 +528,7 @@ class WebsiteQueue:
                 target.update(status='done', files=files)
                 if not target.get('doneTs'):
                     target['doneTs'] = int(time.time() * 1000)
-            elif job['status'] in ('failed', 'cancelled'):
+            elif job['status'] in ('failed', 'cancelled', 'paused', 'pause_requested'):
                 target['status'] = job['status']
             else:
                 target['status'] = 'running'

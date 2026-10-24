@@ -43,13 +43,24 @@ function _rrCacheRequests(){
     localStorage.setItem(key,JSON.stringify(cached));
   }catch(_){}
 }
+function _rrPolicyVersion(row){
+  var p=row&&row.executionPolicy;
+  return p&&p.policy_version==='standard-live-v1'&&Number.isSafeInteger(p.version)&&p.version>=0?p.version:-1;
+}
 function _rrMergeRequests(srv){
-  var rank={pending:0,running:1,failed:2,done:3,cancelled:4},changed=false;
+  var rank={pending:0,running:1,pause_requested:1,paused:1,failed:2,done:3,cancelled:4},changed=false;
   (srv||[]).forEach(function(sr){
     if(!sr||!sr.id||!Object.prototype.hasOwnProperty.call(rank,sr.status)) return;
     var loc=REPORT_REQUESTS.find(function(r){return r.id===sr.id;});
     if(!loc){REPORT_REQUESTS.push(sr);changed=true;}
     else{
+      if(loc.engine==='full-v1'&&sr.engine===loc.engine){
+        if(loc.engineReportId&&sr.engineReportId&&loc.engineReportId!==sr.engineReportId)return;
+        var beforeVersion=_rrPolicyVersion(loc),nextVersion=_rrPolicyVersion(sr);
+        if(beforeVersion>=0&&(nextVersion<beforeVersion||
+          (nextVersion===beforeVersion&&((loc.status==='paused'&&['running','pause_requested'].indexOf(sr.status)>=0)||
+            (loc.status==='pause_requested'&&sr.status==='running')))))return;
+      }
       // A repaired native job may resume from a retained configuration failure.
       // Keep cancellation terminal and never accept another engine/job's resume.
       var resumed=loc.engine==='full-v1'&&sr.engine===loc.engine&&loc.status==='failed'&&loc.failureCode==='configuration'&&sr.status==='running'&&sr.failureCode!=='configuration'&&
@@ -82,7 +93,7 @@ function _rrFlushOutbox(){
       var state=_rrServerState(raw);
       if(!state||typeof state!=='object') throw new Error('invalid-receipt');
       var receipt=(state.REPORT_REQUESTS||[]).find(function(r){return r.id===id;});
-      if(receipt&&['pending','running','failed','done','cancelled'].indexOf(receipt.status)<0) throw new Error('invalid-receipt-state');
+      if(receipt&&['pending','running','pause_requested','paused','failed','done','cancelled'].indexOf(receipt.status)<0) throw new Error('invalid-receipt-state');
       if(receipt&&(receipt.city!==request.city||receipt.province!==request.province)){
         var conflict=new Error('任务标识冲突，请刷新后检查申请');conflict.blocked=true;throw conflict;
       }
@@ -110,7 +121,7 @@ function _rrFlushOutbox(){
     }).then(function(receipt){
       _rrMergeRequests([receipt]);
       delete _rrOutbox[id];_rrSaveOutbox();
-      var label={pending:'排队中',running:'研判进行中',done:'已完成',failed:'生成失败，需检查执行器',cancelled:'已取消'};
+      var label={pending:'排队中',running:'研判进行中',pause_requested:'正在暂停',paused:'已暂停，待管理员处理',done:'已完成',failed:'生成失败，需检查执行器',cancelled:'已取消'};
       toast('「'+request.city+'」申请已确认保存，当前状态：'+label[receipt.status]);
     }).catch(function(error){
       entry.nextAt=Date.now()+(entry.attempts===1?30000:120000);
@@ -134,7 +145,7 @@ function submitReportRequest(){
   var city=($('#rrCity')&&$('#rrCity').value||'').trim();
   var prov=($('#rrProv')&&$('#rrProv').value||'').trim();
   if(!city||!prov){toast('请填写省份和城市');return;}
-  if(REPORT_REQUESTS.concat(_rrOutboxRows()).some(function(r){return !r.submissionBlocked&&r.city===city&&(r.status==='pending'||r.status==='running');})){
+  if(REPORT_REQUESTS.concat(_rrOutboxRows()).some(function(r){return !r.submissionBlocked&&r.city===city&&['pending','running','pause_requested','paused'].indexOf(r.status)>=0;})){
     toast(city+' 已有进行中的申请');return;
   }
   var id='rr'+Date.now().toString(36)+Math.random().toString(36).slice(2,10);
@@ -203,7 +214,7 @@ setInterval(function(){
   if(!_rrAdminReady())return;
   _rrFlushOutbox();
   if(!REPORT_REQUESTS.length) return;
-  var active=REPORT_REQUESTS.some(function(r){return r.status==='pending'||r.status==='running'||(r.engine==='full-v1'&&((r.status==='done'&&r.pushRequested&&!r.pushed)||(r.status==='failed'&&r.failureCode==='configuration')));});
+  var active=REPORT_REQUESTS.some(function(r){return ['pending','running','pause_requested','paused'].indexOf(r.status)>=0||(r.engine==='full-v1'&&((r.status==='done'&&r.pushRequested&&!r.pushed)||(r.status==='failed'&&r.failureCode==='configuration')));});
   if(!active) return;
   var changed=false;
   var sync=_rrJson('/api/sync?raw=1').then(function(raw){
@@ -224,6 +235,8 @@ setInterval(function(){
 },30000);
 function rrStatusBadge(s,r){
   if(r&&r.engine==='full-v1'){
+    if(s==='paused') return '<span class="ops-badge orange">已暂停·等待管理员继续</span>';
+    if(s==='pause_requested') return '<span class="ops-badge orange">正在暂停·当前步骤收尾</span>';
     if(s==='done') return '<span class="ops-badge '+(r.pushed?'green':'blue')+'">'+(r.pushed?'已完成·RAG已发布':r.pushRequested?'Word已生成·发布中':'Word已生成·待发布')+'</span>';
     if(s==='failed'&&r.failureCode==='configuration') return '<span class="ops-badge orange">配置/认证异常·待管理员处理</span>';
     if(s==='pending'&&_rrEngineHealth&&_rrEngineHealth.configured===false) return '<span class="ops-badge orange">报告服务未就绪</span>';

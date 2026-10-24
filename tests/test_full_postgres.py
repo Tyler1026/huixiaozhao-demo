@@ -12,6 +12,7 @@ from unittest.mock import Mock, patch
 
 from report_service.full_postgres import PostgresFullStore
 from report_service.full_worker import run_once
+from report_service.full_store import Conflict
 
 TINY = ({'id':'one','filename':'one.md','parts':('first','second')},)
 
@@ -41,6 +42,51 @@ class PostgresReportTests(unittest.TestCase):
         self.store=PostgresFullStore(self.url,artifact_root=self.root,stages=TINY,backoff=(0,0))
         with self.store.db() as c:
             c.execute('TRUNCATE full_reports,full_steps,full_events,full_artifact_bytes CASCADE')
+
+    def test_v1_pause_read_and_concurrent_continue_preserve_checkpoint_and_single_grant(self):
+        report = self.store.create('offline-test', '测试省', '测试区', 'v1-control', False)
+        first = self.store.claim(synthetic=False, timeout=300)
+        self.assertTrue(self.store.finish_part(first['step_id'], first['token'], {'text': 'OFFLINE retained', 'metadata': {}}))
+        self.store.pause_report('offline-test', report['id'], expected_version=1,
+                                idempotency_key='pause', actor='offline', reason='fixture')
+        before = self.store.policy_status('offline-test', report['id'])
+        self.assertEqual(before['status'], 'paused')
+        self.assertIsNone(self.store.claim(synthetic=False))
+        def resume(_):
+            return self.store.continue_report('offline-test', report['id'],
+                expected_version=before['policy_projection']['version'],
+                idempotency_key='one-grant', actor='offline', reason='reviewed', grant={'extra_retries': 1})
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+            results = list(pool.map(resume, range(10)))
+        self.assertTrue(all(r == results[0] for r in results))
+        self.assertEqual(self.store.parts(report['id'])['one'][0]['text'], 'OFFLINE retained')
+        after = self.store.policy_status('offline-test', report['id'])
+        self.assertEqual(after['policy_projection']['usage']['attempts_total'], 1)
+        self.assertEqual(after['policy_projection']['limits']['report_max_retries'], 25)
+        with self.store.db() as c:
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM full_execution_actions WHERE report_id=?', (report['id'],)).fetchone()[0], 2)
+
+    def test_v1_city_hold_is_atomic_at_create_and_claim(self):
+        one = self.store.create('offline-test', '测试省', '测试区', 'held', False)
+        two = self.store.create('offline-test', '测试省', '测试区', 'queued-before-pause', False)
+        self.store.pause_report('offline-test', one['id'], expected_version=1,
+                                idempotency_key='pause', actor='offline', reason='fixture')
+        with self.assertRaises(Conflict):
+            self.store.create('offline-test', '测试省', '测试区', 'third', False)
+        self.assertIsNone(self.store.claim(synthetic=False))
+        self.assertEqual(self.store.policy_status('offline-test', two['id'])['policy_projection']['usage']['attempts_total'], 0)
+        self.store.cancel('offline-test', one['id'])
+        self.assertEqual(self.store.claim(synthetic=False)['report_id'], two['id'])
+
+    def test_v1_policy_read_does_not_recover_expired_lease(self):
+        report = self.store.create('offline-test', '测试省', '测试区', 'read-only', False)
+        lease = self.store.claim(ttl=.01, timeout=300, synthetic=False)
+        time.sleep(.03)
+        state = self.store.policy_status('offline-test', report['id'])
+        self.assertEqual(state['status'], 'running')
+        with self.store.db() as c:
+            saved = c.execute('SELECT status,consumed,token FROM full_steps WHERE id=?', (lease['step_id'],)).fetchone()
+            self.assertEqual((saved['status'], saved['consumed'], saved['token']), ('running', 0, lease['token']))
 
     def test_twenty_concurrent_creates_and_claims_have_one_effective_lease(self):
         def create(n):return self.store.create('offline-test','测试省','测试区','same',True)

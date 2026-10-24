@@ -185,11 +185,13 @@ class ReportUserMaterialsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             store = FullStore(Path(folder) / 'jobs.db', stages=[{'id': 'one', 'parts': ['one']}])
             bad = store.create('t', '省', '离线测试市', 'bad', False, input_context=value)
-            good = store.create('t', '省', '离线测试市', 'good', False, input_context=value)
+            # A retained same-city pause deliberately blocks other v1 jobs.
+            # The unrelated tenant still progresses without the corrupt job.
+            good = store.create('other-tenant', '省', '离线测试市', 'good', False, input_context=value)
             with store.db() as c:
                 c.execute('UPDATE full_input_context SET payload=? WHERE report_id=?', ('corrupt', bad['id']))
             self.assertEqual(store.claim(synthetic=False)['report_id'], good['id'])
-            self.assertEqual(store.get('t', bad['id'])['status'], 'failed')
+            self.assertEqual(store.get('t', bad['id'])['status'], 'paused')
             self.assertEqual(store.get('t', bad['id'])['failure_code'], 'artifact')
 
 
