@@ -355,6 +355,90 @@ test('RAG poll retains drafts only in their original workspace and resets scroll
   }
 });
 
+// Browser I/O for the RAG page: replacing root.innerHTML creates fresh form
+// elements from the actual rendered markup. Capture/restore, renderOpsV2 and
+// the button handlers all remain production code.
+function mountRagForm(h) {
+  let html = '', fields = [];
+  const attr = (source, name) => {
+    const match = source.match(new RegExp('\\b' + name + '="([^"]*)"'));
+    return match ? decode(match[1]) : '';
+  };
+  function field(tagName, attrs, value) {
+    const id = attr(attrs, 'id'); if (!id) return;
+    const node = h.input(id, value, {tagName, type: attr(attrs, 'type') || 'text', disabled: /\bdisabled\b/.test(attrs)});
+    let current = value;
+    Object.defineProperty(node, 'value', {get: () => current, set(next) {
+      current = String(next); node.selectionStart = Math.min(node.selectionStart, current.length); node.selectionEnd = Math.min(node.selectionEnd, current.length);
+    }});
+    node.setSelectionRange = (start, end) => {node.selectionStart = Math.min(start, current.length); node.selectionEnd = Math.min(end, current.length);};
+    fields.push(node);
+  }
+  Object.defineProperty(h.root, 'innerHTML', {configurable: true, get: () => html, set(value) {
+    html = value;
+    fields.forEach(node => delete h.nodes[node.id]); fields = []; h.document.activeElement = null;
+    for (const match of html.matchAll(/<input\b([^>]*)>/g)) field('INPUT', match[1], attr(match[1], 'value'));
+    for (const match of html.matchAll(/<textarea\b([^>]*)>([\s\S]*?)<\/textarea>/g)) field('TEXTAREA', match[1], decode(match[2]));
+    h.nodes.opsContent = {scrollTop: 0, querySelectorAll: () => fields};
+  }});
+  h.ctx.bind = () => {};
+  h.ctx.PROJECTS = {alpha: {city: '同城', kb: [{t: '甲资料', known: ['甲工作区材料']}]}, beta: {city: '同城', kb: [{t: '乙资料', known: ['乙工作区材料']}]}};
+  h.ctx.opsTab = 'rag'; h.ctx.OPS_UI.rag.tab = 'query'; h.ctx.ragCity = 'alpha';
+  h.ctx.renderOpsV2();
+  return label => {
+    const button = Array.from(html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)).find(match => decode(match[2].replace(/<[^>]*>/g, '')) === label);
+    assert.ok(button, 'rendered button: ' + label);
+    vm.runInContext(attr(button[1], 'onclick'), h.ctx);
+  };
+}
+
+test('clearing an empty RAG search clears the visible query through real capture/restore and later renders', async () => {
+  const h = await boot(); h.admin(); const click = mountRagForm(h);
+  h.ctx.PROJECTS.alpha.kb[0].known = []; h.ctx.renderOpsV2();
+  const projects = JSON.stringify(h.ctx.PROJECTS), callCount = h.calls.length;
+  h.nodes.ragQ.value = '工业用地价格 氢能补链'; h.nodes.ragQ.focus();
+  click('检索测试');
+  assert.equal(h.nodes.ragQ.value, '工业用地价格 氢能补链');
+  assert.ok(h.root.innerHTML.includes('本次检索未命中材料'), 'empty corpus renders the no-hit state');
+  click('清除');
+  assert.equal(h.nodes.ragQ.value, '');
+  assert.equal(h.ctx.ragQuery, ''); assert.equal(h.ctx.ragHits, null);
+  assert.doesNotMatch(h.root.innerHTML, /本次检索未命中材料|>清除<|工业用地价格 氢能补链/);
+  h.ctx.ragOverviewOpen = !h.ctx.ragOverviewOpen; h.ctx.renderOpsV2(); h.ctx.renderOpsV2();
+  assert.equal(h.nodes.ragQ.value, '', 'overview and poll must not resurrect the cleared draft');
+  assert.equal(h.document.activeElement, h.nodes.ragQ); assert.equal(h.nodes.ragQ.selectionStart, 0);
+  assert.equal(h.calls.length, callCount, 'local search and clearing do not make requests');
+  assert.equal(JSON.stringify(h.ctx.PROJECTS), projects);
+});
+
+test('clearing RAG search preserves another unfinished form and its focus, caret and scroll', async () => {
+  const h = await boot(); h.admin(); const click = mountRagForm(h);
+  h.nodes.ragQ.value = '未命中的关键词'; click('检索测试');
+  h.nodes.ragChatIn.value = '尚未发送的补充问题'; h.nodes.ragChatIn.focus(); h.nodes.ragChatIn.setSelectionRange(2, 5);
+  h.nodes.opsContent.scrollTop = 420;
+  click('清除');
+  assert.equal(h.nodes.ragQ.value, ''); assert.equal(h.ctx.ragHits, null);
+  assert.equal(h.nodes.ragChatIn.value, '尚未发送的补充问题'); assert.equal(h.document.activeElement, h.nodes.ragChatIn);
+  assert.equal(h.nodes.ragChatIn.selectionStart, 2); assert.equal(h.nodes.ragChatIn.selectionEnd, 5);
+  assert.equal(h.nodes.opsContent.scrollTop, 420);
+});
+
+test('ordinary RAG renders still preserve unsent drafts only within the active workspace', async () => {
+  const h = await boot(); h.admin(); mountRagForm(h);
+  h.nodes.ragQ.value = '甲工作区尚未检索'; h.nodes.ragQ.focus(); h.nodes.ragQ.setSelectionRange(1, 4);
+  h.nodes.ragChatIn.value = '甲工作区尚未发送'; h.nodes.opsContent.scrollTop = 175;
+  h.ctx.renderOpsV2();
+  assert.equal(h.nodes.ragQ.value, '甲工作区尚未检索'); assert.equal(h.document.activeElement, h.nodes.ragQ);
+  assert.equal(h.nodes.ragQ.selectionStart, 1); assert.equal(h.nodes.ragQ.selectionEnd, 4);
+  assert.equal(h.nodes.ragChatIn.value, '甲工作区尚未发送'); assert.equal(h.nodes.opsContent.scrollTop, 175);
+  h.ctx.ragSelectWorkspace('beta');
+  assert.equal(h.nodes.ragQ.value, ''); assert.equal(h.nodes.ragChatIn.value, '');
+  assert.equal(h.document.activeElement, null); assert.equal(h.nodes.opsContent.scrollTop, 0);
+  h.nodes.ragQ.value = '乙工作区尚未检索'; h.ctx.renderOpsV2();
+  assert.equal(h.nodes.ragQ.value, '乙工作区尚未检索');
+  assert.equal(h.ctx.ragCity, 'beta'); assert.equal(h.ctx.ragHits, null);
+});
+
 test('RAG workspace switching clears completed chat and rejects stale or mismatched commits', async () => {
   const h = await boot(); h.admin(); h.ctx.bind = () => {}; h.ctx.toast = () => {};
   h.ctx.PROJECTS = {alpha: {city: '同城', kb: [{t: '甲资料', known: []}]}, beta: {city: '同城', kb: [{t: '乙资料', known: []}]}};

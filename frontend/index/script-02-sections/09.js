@@ -99,17 +99,18 @@ function opsAction(id){
 }
 function brandLogo(){return 'data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50"><rect width="50" height="50" rx="25" fill="#0757ad"/><text x="25" y="33" font-size="22" fill="white" text-anchor="middle" font-family="sans-serif">慧</text></svg>')}
 function topbar(p){
+  var identity=currentAccountIdentity();
   return '<div class="topbar">'+
     '<div class="brand-block"><img src="data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"50\"><rect width=\"50\" height=\"50\" rx=\"25\" fill=\"%230757ad\"/><text x=\"25\" y=\"33\" font-size=\"22\" fill=\"white\" text-anchor=\"middle\" font-family=\"sans-serif\">慧</text></svg>')+'"><div><strong>慧小招</strong><span>AI 招商智能体</span></div></div>'+
     // 机构与身份固定（账号绑定，不可切换）；当前方向只读展示，切换在「招商对接」进行
     '<div class="org-block"><i class="i">🏛️</i>'+
-      '<strong style="font-weight:650">'+_authEscape(p.org)+' · '+_authEscape(p&&p.who||'—')+'</strong>'+
+      '<strong style="font-weight:650">'+_authEscape(identity.org)+' · '+_authEscape(identity.name)+'</strong>'+
       '<span style="margin:0 10px;color:#cbd7e6">/</span>'+
       '<strong id="topbarTopic" style="color:var(--blue-dark)">'+_authEscape((view==='home'||view==='docking')?'招商对接工作区':p.topic)+'</strong>'+
     '</div>'+
     '<div class="top-meta"><span><i class="i">🛰️</i>'+_authEscape(p.city)+'城市智库已连接</span><span><i class="i">🕒</i>当前时间 '+nowLabel()+'</span>'+
       '<span style="position:relative;cursor:pointer" onclick="toggleNotif(event)"><i class="i">🔔</i>'+
-        (unreadCount()>0?'<b style="position:absolute;top:-4px;right:-6px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:#c85b09;color:#fff;font-size:9px;line-height:15px;text-align:center;font-weight:700">'+unreadCount()+'</b>':'')+
+        '<b id="reminderUnreadBadge"'+(unreadCount()>0?'':' hidden')+' style="position:absolute;top:-4px;right:-6px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:#c85b09;color:#fff;font-size:9px;line-height:15px;text-align:center;font-weight:700">'+unreadCount()+'</b>'+
         '<div id="notifPanel" style="display:none;position:absolute;top:30px;right:0;width:380px;max-height:520px;overflow-y:auto;background:#fff;border:1px solid #d8e0ed;border-radius:12px;box-shadow:0 12px 32px rgba(11,24,59,.16);z-index:70;text-align:left;cursor:default" onclick="event.stopPropagation()">'+notifList()+'</div>'+
       '</span>'+
       (AUTH?'<button onclick="logout()" title="退出登录" style="display:inline-flex;align-items:center;gap:5px;min-height:32px;padding:0 11px;border:1px solid #f0d8d8;border-radius:8px;background:#fff;color:#b5504a;font-size:12.5px;cursor:pointer">\u21aa 退出</button>':'')+
@@ -222,6 +223,24 @@ function kbReadiness(){
     : (score>=80?'#2D5BE3':score>=50?'#f59e0b':score>=20?'#3b82f6':'#9aa5b5');
   return {score:score,rawScore:rawScore,total:warnTotal,confirmed:warnConfirmed,files:uploads,
           label:label,color:color,pendingWarn:pendingWarn};
+}
+
+/* Display-only summary: the existing quantity/confirmation score is not a section coverage rate. */
+function kbReadinessSummary(r){
+  r=r||kbReadiness();
+  var p=P(),sections=p&&Array.isArray(p.kb)?p.kb:[],filled=0;
+  sections.forEach(function(section,index){
+    var known=typeof kbEffectiveKnown==='function'?kbEffectiveKnown(p,index,cur):(section.known||[]);
+    if(known.some(function(item){
+      var text=_kbText(item);
+      return !!text&&!(typeof _isJunkKbItem==='function'&&_isJunkKbItem(text));
+    }))filled++;
+  });
+  return {
+    sectionText:'有材料板块 '+filled+'/'+sections.length,
+    statusText:(r.pendingWarn>0?r.pendingWarn+' 条待确认 · ':'')+'事实仍需逐项核验',
+    explanation:'评分仅反映现有材料量与确认进度，不代表板块覆盖率或事实正确率。'
+  };
 }
 
 
@@ -384,33 +403,35 @@ function unlockView(v){
    不描边、底色更淡、字号克制，够看清但不抢<h1>的视觉。 */
 function kbPageProgressInner(r){
   r=r||kbReadiness();
-  var warn='⚠️'; var info='ⓘ';
+  var summary=kbReadinessSummary(r),info='ⓘ';
   var tint=r.color+'0d'; // 更淡的底色（透明度从14降到0d）
   return '<div style="display:flex;align-items:center;gap:12px;margin-top:9px;padding:9px 14px;border-radius:8px;background:'+tint+'">'+
-    '<span style="font-size:14px;font-weight:650;color:'+r.color+';line-height:1;white-space:nowrap">材料覆盖 '+r.score+'%</span>'+
+    '<span style="font-size:14px;font-weight:650;color:'+r.color+';line-height:1;white-space:nowrap">材料量评分 '+r.score+'分</span>'+
     '<div style="flex:1;min-width:0">'+
       '<div style="background:#fff;border-radius:3px;height:6px;overflow:hidden;box-shadow:inset 0 0 0 1px '+r.color+'1f">'+
         '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:3px;transition:width .4s"></div>'+
       '</div>'+
-      '<div style="margin-top:4px;font-size:12px;font-weight:550;color:'+r.color+'">'+r.label+
-        '<span title="计算方式：智库覆盖度×80% + 上传材料×10%（上限 20%）+ 确认'+warn+'事项×20%"'+
+      '<div style="margin-top:4px;font-size:12px;font-weight:550;color:'+r.color+'">'+summary.sectionText+' · '+summary.statusText+
+        '<span title="'+summary.explanation+'"'+
           ' style="font-size:11px;color:#9aa5b5;cursor:help;margin-left:4px;font-weight:400">'+info+'</span>'+
       '</div>'+
     '</div>'+
   '</div>'+
-  (r.score<80?'<p style="font-size:11.5px;color:#a16207;margin:6px 0 0;padding:6px 12px;background:#fdf6e8;border-radius:6px">⚡ 补充材料、核查待确认项可完善覆盖；覆盖度不代表事实正确率（差 '+(80-r.score)+'% 自动解锁后续步骤）</p>':'');
+  (r.score<80?'<p style="font-size:11.5px;color:#a16207;margin:6px 0 0;padding:6px 12px;background:#fdf6e8;border-radius:6px">⚡ 可补充材料并核实待确认项；评分不能替代事实核验。</p>':'');
 }
 function kbProgressInner(r){
   r=r||kbReadiness();
+  var summary=kbReadinessSummary(r);
   return '<div style="padding:10px 14px 8px;border-top:1px solid #f0f4ff">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">'+
-      '<span style="font-size:10.5px;color:#9aa5b5;letter-spacing:.3px">城市智库材料覆盖</span>'+
-      '<span style="font-size:11px;font-weight:700;color:'+r.color+'">'+r.score+'%</span>'+
+      '<span style="font-size:10.5px;color:#9aa5b5;letter-spacing:.3px">材料量评分</span>'+
+      '<span style="font-size:11px;font-weight:700;color:'+r.color+'">'+r.score+'分</span>'+
     '</div>'+
     '<div style="height:4px;background:#f0f4ff;border-radius:2px;overflow:hidden">'+
       '<div style="height:100%;width:'+r.score+'%;background:'+r.color+';border-radius:2px;transition:width .4s"></div>'+
     '</div>'+
-    '<div style="font-size:10.5px;color:'+r.color+';margin-top:4px">'+r.label+
+    '<div style="font-size:10.5px;color:'+r.color+';margin-top:4px">'+summary.sectionText+'</div>'+
+    '<div style="font-size:10.5px;color:'+r.color+';margin-top:4px" title="'+summary.explanation+'">'+summary.statusText+
       ((UPLOADS[cur]||[]).length>0?' &middot; '+(UPLOADS[cur]||[]).length+'份材料':'')+'</div>'+
   '</div>';
 }
@@ -429,11 +450,8 @@ function sidebar(){
   var navMeta={
     knowledge: (function(){
       if(!p) return '完善材料·产业/园区/企业/政策';
-      var conf=r.confirmed||0;
-      var uploads=(UPLOADS[cur]||[]).length;
-      if(r.pendingWarn>0) return '⚠ '+r.pendingWarn+' 条待确认 · 数据覆盖 '+(r.rawScore!==undefined?r.rawScore:r.score)+'%';
-  if(r.score>=80) return '材料覆盖 '+r.score+'% · 事实仍需核验';
-      return conf>0?(conf+'条已确认 · '+uploads+'份材料 · '+r.score+'%'):'待完善 · 产业/园区/企业/政策';
+      var summary=kbReadinessSummary(r);
+      return '材料量评分 '+r.score+'分 · '+summary.sectionText+(r.pendingWarn>0?' · '+r.pendingWarn+' 条待确认':'');
     })(),
     report: '生成缺口分析与招引方向',
     home: '项目列表·对接进度',

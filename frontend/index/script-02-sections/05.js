@@ -30,6 +30,9 @@ function syncDetailPane(){
 }
 
 function render(){
+  if(typeof kbCancelStaleUploadedMaterialReader==='function')kbCancelStaleUploadedMaterialReader();
+  if(typeof cancelObsoleteFilePickers==='function')cancelObsoleteFilePickers();
+  if(typeof onbCancelHiddenRequests==='function')onbCancelHiddenRequests();
   document.body.classList.toggle('kb-view',view==='knowledge'&&!!AUTH);
   document.body.classList.toggle('industry-view',view==='report'&&!!AUTH);
   document.body.classList.toggle('docking-view',(view==='home'||view==='docking')&&!!AUTH);
@@ -68,6 +71,7 @@ function render(){
   }
   if(view==='setup'||!cur||!PROJECTS[cur]){var _root=$('#root');if(_root){_root.innerHTML='<div style="height:100vh;background:#f5f7fb">'+setupPage()+'</div>';bind();} return;}
   if(role==='ops')return renderOps();
+  if(typeof reminderEnsureLoaded==='function')reminderEnsureLoaded();
   var p=P();
   // 修复方向/报告错位：报告正文必须跟随当前方向 topic。刷新后缓存里 REPORTSTATE[cur].topic(旧方向)
   // 与 PROJECTS[cur].topic(当前方向) 可能不一致，导致标题显示当前方向、正文却是旧方向的报告。

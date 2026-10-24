@@ -153,6 +153,16 @@ var INVITE_CODES={};
 function canGenerateInviteCode(auth){ return false; }
 /* 组织成员管理权限：owner 可查看/移除同 projKey 下的其他账号，member 不可。 */
 function isOrgOwner(auth){ return !!(auth && auth.role==='owner'); }
+// Account labels come from the current authenticated session, never a shared
+// workspace's business contact (PROJECTS[cur].who).
+function currentAccountIdentity(){
+  var ready=AUTH&&_authState==='ready'&&AUTH.scope==='project'&&typeof AUTH.user==='string'&&AUTH.user.trim();
+  if(!ready)return {user:'',name:'未登录',org:'未填写',roleLabel:'未登录'};
+  var member=typeof AUTH.projKey==='string'&&Array.isArray(AUTH.projectKeys)&&AUTH.projectKeys.indexOf(AUTH.projKey)>=0;
+  return {user:AUTH.user,name:typeof AUTH.who==='string'&&AUTH.who.trim()?AUTH.who.trim():AUTH.user,
+    org:typeof AUTH.org==='string'&&AUTH.org.trim()?AUTH.org.trim():'未填写',
+    roleLabel:member&&AUTH.role==='owner'?'工作区负责人':member&&AUTH.role==='member'?'工作区成员':'身份待核验'};
+}
 function _authEscape(value){return String(value==null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function _safeProfiles(profiles){
   var result={}, fields=['name','phone','wechat','org','dept','title','city','ts','role','projKey','projectKeys','user','resident'];
@@ -173,6 +183,10 @@ function _purgeAuthCache(){
   try{var raw=localStorage.getItem('huixiaozhao_kb_v1');if(raw)localStorage.setItem('huixiaozhao_kb_v1',JSON.stringify(_safeSyncSnapshot(JSON.parse(raw))));}catch(_){}
 }
 function _authResetView(){
+  if(typeof resetOnboardingSession==='function')resetOnboardingSession();
+  if(typeof reminderResetSession==='function')reminderResetSession();
+  if(typeof resetOwnedFilePickers==='function')resetOwnedFilePickers();
+  if(typeof kbCloseUploadedMaterialReader==='function')kbCloseUploadedMaterialReader();
   if(typeof materialResetSession==='function')materialResetSession();
   if(typeof workspaceSyncReset==='function')workspaceSyncReset();
   if(typeof kbResetChatRequests==='function')kbResetChatRequests();

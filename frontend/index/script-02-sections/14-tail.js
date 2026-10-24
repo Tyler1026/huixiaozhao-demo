@@ -76,6 +76,7 @@ function restoreFromServer(callback){
     // Capture the live selection when the response arrives, not when the request
     // started: a user can change direction or page while the network is pending.
     var _userCur=cur,_userTopic=cur&&PROJECTS[cur]?PROJECTS[cur].topic:null,_userView=view;
+    var _editorBeforeRestore=typeof kbEditorSnapshotSession==='function'?kbEditorSnapshotSession():null;
     if(_acceptServerGeneration(srv)){_userCur=null;_userTopic=null;_userView=null;}
     // 服务器直接覆盖本地，不做合并——保证所有人看到同一份数据
     // 但保护本地刚提交的 isDemand 项目：5秒防抖内刷新时服务器尚无这些数据，直接覆盖会丢
@@ -254,6 +255,7 @@ function restoreFromServer(callback){
     }
     if(_userView)view=_userView;
     applyTopicStateIntegrity();
+    if(typeof kbEditorRestoreSnapshot==='function')kbEditorRestoreSnapshot(_editorBeforeRestore);
     // 写回 localStorage（统一扁平格式）
     var flat={cur:cur,view:view,PROJECTS:PROJECTS,UPLOADS:UPLOADS,
       KB_CONFIRMS:KB_CONFIRMS,KB_CONFIRM_TOMBS:KB_CONFIRM_TOMBS,KB_FILE_CHUNKS:KB_FILE_CHUNKS,
@@ -341,6 +343,7 @@ window.addEventListener('storage', function(e){
       data.DOCK_LOGS,data.KB_UNLOCKED,data.CITY_ACCOUNTS,data.USER_PROFILES,data.INVITE_CODES,data.CITY_BASE_PACKAGES]);
     if(window.__lastSyncFp===_fp){ return; }  // 业务数据无变化：跳过整体覆盖与 render()，消除空转闪烁
     window.__lastSyncFp=_fp;
+    var _editorBeforeStorage=typeof kbEditorSnapshotSession==='function'?kbEditorSnapshotSession():null;
     // 同步关键数据（保留当前 view/cur/topic/stage 等用户操作状态）
     var _keepTopic=(cur&&PROJECTS[cur])?PROJECTS[cur].topic:null;
     var _keepStage=(cur&&PROJECTS[cur])?PROJECTS[cur].stage:null;
@@ -432,6 +435,7 @@ window.addEventListener('storage', function(e){
     _mergeUploadTombs(data.UPLOAD_TOMBS);
     KB_CHAT=_mergeKbChat(data.KB_CHAT, KB_CHAT);
     _applyUploadTombs();
+    if(typeof kbEditorRestoreSnapshot==='function')kbEditorRestoreSnapshot(_editorBeforeStorage);
 
     // 重渲染（仅影响当前视图）
     // report 视图下若用户 1.5s 内有过滚动，延迟执行避免打断阅读
@@ -1769,20 +1773,50 @@ function confirmKbItem(kbIdx,itemIdx){
 }
 
 
+/* Keep native file pickers attached and owned until selection or cancellation. */
+var OWNED_FILE_PICKER=null, OWNED_FILE_PICKER_HOST=null;
+function resetOwnedFilePickers(){
+  var state=OWNED_FILE_PICKER;OWNED_FILE_PICKER=null;
+  if(!state)return;
+  state.settled=true;state.input.onchange=null;state.input.oncancel=null;
+  state.input.value='';
+  if(state.input.parentNode)state.input.parentNode.removeChild(state.input);
+}
+function cancelObsoleteFilePickers(){
+  if(OWNED_FILE_PICKER&&!OWNED_FILE_PICKER.options.isCurrent())resetOwnedFilePickers();
+}
+function openOwnedFilePicker(options){
+  resetOwnedFilePickers();
+  if(!options.isCurrent())return null;
+  if(!OWNED_FILE_PICKER_HOST){
+    OWNED_FILE_PICKER_HOST=document.createElement('div');
+    OWNED_FILE_PICKER_HOST.id='clientFilePickerHost';
+    OWNED_FILE_PICKER_HOST.setAttribute('aria-hidden','true');
+    OWNED_FILE_PICKER_HOST.style.cssText='position:fixed;left:-10000px;top:0;width:1px;height:1px;overflow:hidden;';
+  }
+  if(OWNED_FILE_PICKER_HOST.parentNode!==document.body)document.body.appendChild(OWNED_FILE_PICKER_HOST);
+  var input=document.createElement('input');
+  input.type='file';input.multiple=options.multiple;input.accept=options.accept;input.tabIndex=-1;
+  var state={input:input,options:options,settled:false};OWNED_FILE_PICKER=state;
+  input.onchange=function(){
+    if(OWNED_FILE_PICKER!==state||state.settled)return;
+    var files=Array.from(input.files||[]),current=options.isCurrent();
+    resetOwnedFilePickers();
+    if(current&&files.length)options.onFiles(files);
+  };
+  input.oncancel=function(){if(OWNED_FILE_PICKER===state)resetOwnedFilePickers();};
+  OWNED_FILE_PICKER_HOST.appendChild(input);
+  try{input.click();}catch(error){resetOwnedFilePickers();throw error;}
+  return input;
+}
+
 /* 编辑框附件上传：读取文本内容填充 textarea */
 function editPickFile(kbIdx,itemIdx){
   var session=kbEditSession;if(!kbEditorContextCurrent(session)||session.kbIdx!==kbIdx||session.itemIdx!==itemIdx)return;
   var locationVersion=session.segmentVersion;
-  var inp=document.createElement('input');
-  inp.type='file'; inp.multiple=true;
-  inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
-  inp.onchange=function(){
-    if(kbEditSession!==session||!kbEditorContextCurrent(session)||session.segmentVersion!==locationVersion)return;
-    var files=Array.from(inp.files||[]);
-    if(!files.length)return;
-    processEditFiles(files,kbIdx,itemIdx);
-  };
-  inp.click();
+  openOwnedFilePicker({multiple:true,accept:'.pdf,.docx,.txt,.md,.csv,.json',
+    isCurrent:function(){return kbEditSession===session&&kbEditorContextCurrent(session)&&session.segmentVersion===locationVersion;},
+    onFiles:function(files){processEditFiles(files,kbIdx,itemIdx);}});
 }
 
 function editDropFile(e,kbIdx,itemIdx){
@@ -1901,7 +1935,7 @@ function kbOpenEditor(kbIdx,itemIdx,isNew,selection){
   if(!revision&&!isNew)revision=kbSourceEdit(p,kbIdx,sourceIndex,cur);
   var orig=kbEditorNormalize(partIndex<0?source:parts[partIndex].draft);
   var meta=isNew?{title:'补充结论',source:k.t}:kbDetailMeta(raw,itemIdx);
-  kbEditSession={id:++kbEditSequence,key:cur,project:p,topic:k,known:k.known,kbIdx:kbIdx,itemIdx:itemIdx,isNew:!!isNew,raw:raw,snapshot:JSON.stringify(raw),sourceIndex:sourceIndex,sourceItem:sourceIndex===null?null:JSON.parse(JSON.stringify(k.known[sourceIndex])),editId:revision?revision.id:null,revision:revision?revision.revision:0,baseReportVersion:sourceIndex===null?null:JSON.parse(JSON.stringify(p.baseReportVersion||null)),initial:orig,source:source,segmentSource:source,parts:parts,blockMode:blockMode,segmentIndex:partIndex,segmentVersion:0,fullOrigin:source,fullDraft:source,epoch:originalUploadEpoch(),obscured:[]};
+  kbEditSession={id:++kbEditSequence,key:cur,project:p,topic:k,known:k.known,kbIdx:kbIdx,itemIdx:itemIdx,isNew:!!isNew,raw:raw,snapshot:JSON.stringify(raw),sourceIndex:sourceIndex,sourceItem:sourceIndex===null?null:JSON.parse(JSON.stringify(k.known[sourceIndex])),editId:revision?revision.id:null,revision:revision?revision.revision:0,baseReportVersion:sourceIndex===null?null:JSON.parse(JSON.stringify(p.baseReportVersion||null)),initial:orig,source:source,segmentSource:source,parts:parts,blockMode:blockMode,segmentIndex:partIndex,segmentVersion:0,fullOrigin:source,fullDraft:source,epoch:originalUploadEpoch(),authorization:kbEditorAuthorization(),resetGen:typeof RESET_GEN==='undefined'?null:RESET_GEN,projectVersion:JSON.stringify(p.baseReportVersion===undefined?null:p.baseReportVersion),recordSnapshot:revision?JSON.stringify(revision):null,obscured:[]};
   var panel=document.createElement('div');panel.id='kbEditorPanel';panel.className='kb-editor-panel';
   panel.setAttribute('role','region');panel.setAttribute('aria-label',isNew?'补充知识资料':'修改知识资料');
   panel.setAttribute('data-mode','edit');panel.setAttribute('onkeydown','kbEditKey(event)');
@@ -1919,8 +1953,30 @@ function kbOpenEditor(kbIdx,itemIdx,isNew,selection){
   var ta=document.getElementById('kb-edit-'+kbIdx+'-'+itemIdx);if(ta){ta.focus();ta.setSelectionRange(0,0);}
   return true;
 }
+function kbEditorAuthorization(){
+  var auth=typeof AUTH==='undefined'?null:AUTH;
+  return JSON.stringify(auth?[auth.user,auth.scope,auth.role,auth.projKey,Array.isArray(auth.projectKeys)?auth.projectKeys.slice().sort():null,typeof _authState==='undefined'?null:_authState]:null);
+}
 function kbEditorContextCurrent(session){
-  var p=P();return !!session&&kbEditSession===session&&cur===session.key&&p===session.project&&p.kb&&p.kb[session.kbIdx]===session.topic&&originalUploadSessionCurrent(session.epoch);
+  var p=P();return !!session&&kbEditSession===session&&cur===session.key&&p===session.project&&p.kb&&p.kb[session.kbIdx]===session.topic&&originalUploadSessionCurrent(session.epoch)&&session.authorization===kbEditorAuthorization()&&session.resetGen===(typeof RESET_GEN==='undefined'?null:RESET_GEN);
+}
+function kbEditorSnapshotSession(){
+  return kbEditorContextCurrent(kbEditSession)?kbEditSession:null;
+}
+function kbEditorRestoreSnapshot(session){
+  // Only an accepted sync may rebind object references. A stale session never
+  // becomes current again, and the opened source/revision stays unchanged.
+  if(!session||kbEditSession!==session||cur!==session.key||!originalUploadSessionCurrent(session.epoch)||session.authorization!==kbEditorAuthorization()||session.resetGen!==(typeof RESET_GEN==='undefined'?null:RESET_GEN))return false;
+  var p=P(),k=p&&p.kb&&p.kb[session.kbIdx];
+  if(!k||!Array.isArray(k.known)||p.city!==session.project.city||p.workspaceId!==session.project.workspaceId||k.t!==session.topic.t||(p.deletedTopics||[]).indexOf(k.t)>=0||p.kb.filter(function(topic){return topic&&topic.t===k.t;}).length!==1)return false;
+  if(!kbValueEqual(p.baseReportVersion===undefined?null:p.baseReportVersion,JSON.parse(session.projectVersion)))return false;
+  if(session.editId){
+    var records=materialEditRecords(session.key).filter(function(record){return record.id===session.editId;});
+    if(records.length!==1||!kbValueEqual(records[0],JSON.parse(session.recordSnapshot)))return false;
+  }
+  if(!kbEditorTargetUnchanged(session,kbEffectiveKnown(p,session.kbIdx,session.key)))return false;
+  session.project=p;session.topic=k;session.known=k.known;
+  return true;
 }
 function kbEditorChanged(){
   var s=kbEditSession;if(!s)return;
@@ -1958,6 +2014,7 @@ function kbCancelEdit(force,afterDiscard){
   var panel=document.getElementById('kbEditorPanel'),dialog=panel&&panel.parentNode;
   s.obscured.forEach(function(entry){if(!entry.inert)entry.node.removeAttribute('inert');});
   if(panel)panel.remove();if(dialog)dialog.classList.remove('is-editing');kbEditSession=null;
+  cancelObsoleteFilePickers();
   var trigger=document.querySelector('#kb-card-'+s.kbIdx+'-'+s.itemIdx+' .kb-detail-edit');if(trigger)trigger.focus();
   return true;
 }
@@ -1983,6 +2040,22 @@ function kbEditKey(event){
   if(event.key==='Escape'){event.preventDefault();event.stopPropagation();if(document.getElementById('kbEditorDiscard'))kbKeepEditing();else kbCancelEdit();}
   else if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();if(!document.getElementById('kbEditorDiscard'))saveKbEdit(kbEditSession.kbIdx,kbEditSession.itemIdx);}
 }
+function kbEditorTargetUnchanged(session,current){
+  if(session.isNew)return true;
+  var snapshot=JSON.parse(session.snapshot);
+  // Uploaded markers can precede an independent note without changing that note.
+  // Resolve live revisions by identity; still require their exact opened version.
+  if(session.editId&&session.raw&&session.raw._kbEditId===session.editId){
+    var matches=current.filter(function(item){return item&&typeof item==='object'&&item._kbEditId===session.editId;});
+    if(matches.length!==1||!kbValueEqual(matches[0],snapshot))return false;
+    var record=kbEditRecord(session.key,matches[0]);
+    return !!record&&record.id===session.editId&&record.revision===session.revision&&
+      record.sectionTitle===session.topic.t&&record.sourceIndex===session.sourceIndex&&
+      kbValueEqual(record.sourceItem,session.sourceItem)&&kbValueEqual(record.baseReportVersion,session.baseReportVersion);
+  }
+  // Raw source items (including restored originals) remain bound to their index.
+  return kbValueEqual(current[session.sourceIndex],snapshot);
+}
 function kbValidateEditReceipt(record,body){return materialValidateEditReceipt(record,body);}
 async function kbRequestEdit(body){return materialRequestEdit(body);}
 async function saveKbEdit(kbIdx,itemIdx){
@@ -1993,17 +2066,18 @@ async function saveKbEdit(kbIdx,itemIdx){
   var p=P(),k=p&&p.kb&&p.kb[kbIdx];
   if(!kbEditorContextCurrent(s)){toast('工作区或登录状态已变化，请保留草稿并重新打开资料。');return;}
   var current=kbEffectiveKnown(p,kbIdx,cur);
-  if(k.known!==s.known||(!s.isNew&&!kbValueEqual(current[itemIdx],JSON.parse(s.snapshot)))){toast('这条资料已更新，请保留草稿并重新打开后修改。');return;}
+  if(k.known!==s.known||!kbEditorTargetUnchanged(s,current)){toast('这条资料已更新，请保留草稿并重新打开后修改。');return;}
   if(!s.isNew&&newText===s.source){kbCancelEdit(true);toast('内容未修改');return;}
   var body={projectKey:s.key,sectionIndex:kbIdx,sectionTitle:k.t,baseReportVersion:s.baseReportVersion,sourceIndex:s.sourceIndex,sourceItem:s.sourceItem,editId:s.editId,expectedRevision:s.revision,text:newText,resetGen:typeof RESET_GEN==='undefined'?null:RESET_GEN};
   s.saving=true;s.saveError='';kbEditorChanged();
   var controls=Array.from(document.querySelectorAll('#kbEditorPanel button, #kbEditorPanel textarea'));controls.forEach(function(node){node.disabled=true;});
   try{
     var record=await kbRequestEdit(body);
-    if(!originalUploadSessionCurrent(s.epoch))return;
+    if(!originalUploadSessionCurrent(s.epoch)||s.authorization!==kbEditorAuthorization()||s.resetGen!==(typeof RESET_GEN==='undefined'?null:RESET_GEN))return;
     window._serverRestoreSeq=(window._serverRestoreSeq||0)+1;window._serverSyncLock=false;
     if(!KB_EDITS[s.key])KB_EDITS[s.key]={};KB_EDITS[s.key][record.id]=record;
     if(!kbEditorContextCurrent(s))return;
+    p=P();
     s.saving=false;persist();buildKBCorpus(p.city);kbCancelEdit(true);
     var sc=document.querySelector('#kbDetailModal .kb-detail-scroll'),st=sc?sc.scrollTop:0;
     kbDetail(kbIdx);var sc2=document.querySelector('#kbDetailModal .kb-detail-scroll');
@@ -2185,9 +2259,11 @@ function kbDetail(i){
   //   用户补充(全部) + 待确认⚠️(全部) + 精选6条(其余里挑)
   // 待确认与用户补充是「额外附加」，不占精选 6 条的名额；数据层 known 始终全量。
   var _rawKnown=kbEffectiveKnown(P(),i,cur);
+  var uploadedGroups=typeof kbUploadedMaterialGroups==='function'?kbUploadedMaterialGroups(cur,i):[];
   var _userPairs=[], _warnPairs=[], _donePairs=[], _normalPairs=[]; // [{text, origIdx}]
   for(var _di=0;_di<_rawKnown.length;_di++){
     var _draw=_rawKnown[_di];
+    if(uploadedGroups.length&&kbUploadedPlaceholder(_draw,uploadedGroups))continue;
     var _dt=_kbText(_draw);
     var _isUser=(_draw && typeof _draw==='object' && _draw.origin==='user');
     // 【2026-09-18 修复】用户主动补充/修改的条目不走垃圾过滤。
@@ -2247,7 +2323,7 @@ function kbDetail(i){
       '<div class="kb-detail-richtext">'+(needsReview?kbDetailTextHtml(raw.text):kbDetailEditableHtml(raw,i,pair.origIdx))+'</div>'+
       (duplicateCount&&warn&&!confirmed?'<p class="kb-detail-duplicate">合并了 '+(duplicateCount+1)+' 条同义表述，确认时将一并更新。</p>':'')+
       '<footer class="kb-detail-article-actions">'+confirm+manage+'</footer></section>';
-  }).join(''):'<p class="kb-detail-empty">暂无已知内容，可基于此主题提问或补充资料。</p>';
+  }).join(''):(uploadedGroups.length?'<p class="kb-detail-empty">上传文件的解析正文见下方“上传材料正文”。</p>':'<p class="kb-detail-empty">暂无已知内容，可基于此主题提问或补充资料。</p>');
   if(_moreCount>0)knownHtml+='<p class="kb-detail-more">还有 '+_moreCount+' 条基础数据未展示，当前展示待确认项与精选资料。</p>';
 
   // 数据来源标签
@@ -2271,7 +2347,7 @@ function kbDetail(i){
             '<small>标题与内容来自原始材料</small></aside>'+
           '<div class="kb-detail-scroll" onscroll="kbUpdateDetailIndex()">'+
             '<details class="kb-detail-mobile-index"><summary>本页目录 · '+_displayPairs.length+' 段资料</summary><nav aria-label="窄屏资料目录">'+indexHtml+'</nav></details>'+
-            '<div id="kbDetailList-'+i+'">'+knownHtml+'</div>'+
+            '<div id="kbDetailList-'+i+'">'+knownHtml+(typeof kbUploadedMaterialSection==='function'?kbUploadedMaterialSection(cur,i):'')+'</div>'+
             (callsHtml?'<div class="kb-detail-related"><h3>相关资料类别</h3>'+callsHtml+'</div>':'')+
             '<p class="kb-detail-disclaimer">公开信息用于辅助研判；来源编号沿用原始材料，事实与适用条件仍需核实。</p>'+
           '</div></div>'+
@@ -2355,17 +2431,9 @@ function askAboutKb(i){
 // 真实文件选择器：弹系统文件夹
 function pickLocalFile(kbTopicIdx){
   var key=cur,epoch=originalUploadEpoch();
-  var inp=document.createElement('input');
-  inp.type='file';inp.multiple=true;
-  inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
-  inp.onchange=function(){
-    if(cur!==key||!originalUploadSessionCurrent(epoch))return;
-    var files=Array.from(inp.files||[]);
-    if(!files.length)return;
-    closeKbDetail();
-    ingestFiles(files,kbTopicIdx);
-  };
-  inp.click();
+  openOwnedFilePicker({multiple:true,accept:'.pdf,.docx,.txt,.md,.csv,.json',
+    isCurrent:function(){return cur===key&&originalUploadSessionCurrent(epoch);},
+    onFiles:function(files){closeKbDetail();ingestFiles(files,kbTopicIdx);}});
 }
 
 /* ── 文件摄取：读取 → 切 chunk → 存 KB_FILE_CHUNKS → 更新 kb.known ── */
@@ -3319,17 +3387,12 @@ function uploadHint(){
 function doUpload(){
   var key=cur,epoch=originalUploadEpoch();
   closeModal();
-  var inp=document.createElement('input');
-  inp.type='file';inp.multiple=true;
-  inp.accept='.pdf,.docx,.txt,.md,.csv,.json';
-  inp.onchange=function(){
-    if(cur!==key||!originalUploadSessionCurrent(epoch))return;
-    var files=Array.from(inp.files||[]);
-    if(!files.length)return;
-    if(view!=='knowledge'){view='knowledge';render();}
-    setTimeout(function(){if(cur===key&&originalUploadSessionCurrent(epoch))ingestFiles(files,null);},100);
-  };
-  inp.click();
+  openOwnedFilePicker({multiple:true,accept:'.pdf,.docx,.txt,.md,.csv,.json',
+    isCurrent:function(){return cur===key&&originalUploadSessionCurrent(epoch);},
+    onFiles:function(files){
+      if(view!=='knowledge'){view='knowledge';render();}
+      setTimeout(function(){if(cur===key&&originalUploadSessionCurrent(epoch))ingestFiles(files,null);},100);
+    }});
 }
 function uploadParsed(fname){
   if(view!=='home'){view='home';render();}

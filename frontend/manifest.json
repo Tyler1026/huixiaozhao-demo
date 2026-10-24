@@ -1,6 +1,6 @@
 {
   "index.html": {
-    "sha256": "179047a6166f70359bfcaa95d4531da8eb04f6696bc886ca5923981c7f5dd2a2",
+    "sha256": "4726a8e05b53f865710c3607dcfe9a80ddf827ef8cf1ac4ad18b7af076c7c9c9",
     "parts": [
       "frontend/index/markup-01.html",
       "frontend/index/style-01.css",
@@ -28,6 +28,8 @@
       "frontend/index/script-02-sections/01.js",
       "frontend/index/script-02-sections/02.js",
       "frontend/index/script-02-sections/03.js",
+      "frontend/index/reminders.js",
+      "frontend/index/uploaded-materials.js",
       "frontend/index/script-02-sections/04.js",
       "frontend/index/script-02-sections/05.js",
       "frontend/index/script-02-sections/06.js",
@@ -62,7 +64,7 @@
     ]
   },
   "ops.html": {
-    "sha256": "f2e711549acd2666ac6e77f2a91be67b5e194237d50dd35207bd4a6caba9d3f7",
+    "sha256": "b577a411b2c1282bdd3b2890709a6cd6012cd84902bf037f935d981050134cb3",
     "parts": [
       "frontend/ops/markup-01.html",
       "frontend/ops/style-01.css",
