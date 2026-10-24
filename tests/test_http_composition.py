@@ -55,7 +55,7 @@ class CompositionTests(unittest.TestCase):
                 return r.status,r.read()
             finally:c.close()
         try:
-            for route,name in [('/','index.html'),('/ops','ops.html')]:
+            for route,name in [('/','frontend/public/landing.html'),('/welcome','frontend/public/landing.html'),('/app','index.html'),('/index.html','index.html'),('/client.html','index.html'),('/ops','ops.html')]:
                 status,body=request('GET',route)
                 self.assertEqual(status,200);self.assertEqual(body,(ROOT/name).read_bytes())
             # Exercise the real login/session code. No synthetic principal or

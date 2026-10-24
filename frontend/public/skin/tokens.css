@@ -1,0 +1,52 @@
+/* 慧小招 · 品牌变量（首页与 brandkit.html 共用）
+   来源：output/03_品牌与素材计划.json。改色、改字号只改这里。 */
+:root {
+  /* 色彩 */
+  --ink: #0B1830;          /* 标题、深色屏底 */
+  --text: #26354D;         /* 正文 */
+  --muted: #56637A;        /* 说明文字（白底约 6.0:1） */
+  --paper: #F5F7FA;        /* 页面主底 */
+  --surface: #FFFFFF;      /* 弹层、卡面 */
+  --mist: #E6ECF6;         /* 区块底、头像周边柔光 */
+  --line: rgba(11, 24, 48, 0.12);
+  --line-strong: rgba(11, 24, 48, 0.28);
+  --blue: #2D5BE3;         /* 主按钮、链接、人工实线（白字其上约 5.6:1） */
+  --blue-press: #1F46BF;
+  --signal: #8FB4FF;       /* 缺口与缝隙发光，只用于图形 */
+  --on-dark-text: #E8EEF8;
+  --on-dark-muted: #9AA8BF;
+  --on-dark-blue: #7FA8FF;
+  --on-dark-line: rgba(232, 238, 248, 0.22);
+
+  /* 字体：只用系统字体栈 */
+  --font-cjk: "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-num: system-ui, -apple-system, "Segoe UI", Roboto, var(--font-cjk);
+  --font-label: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* 字号 */
+  --fs-hero: clamp(46px, 6vw, 88px);      /* H1 第一层 */
+  --fs-hero-2: clamp(26px, 3vw, 44px);    /* H1 第二层 */
+  --fs-h2: clamp(30px, 3.4vw, 48px);
+  --fs-h3: clamp(20px, 1.7vw, 26px);
+  --fs-body: clamp(16px, 1.1vw, 17px);
+  --fs-label: 12px;
+
+  /* 线条系统 */
+  --hair: 0.75px;          /* AI / 数据：细线 */
+  --solid: 2px;            /* 团队 / 人：实线 */
+  --node: 3px;             /* 节点直径 */
+
+  /* 间距与形状 */
+  --space: 8px;
+  --gutter: clamp(20px, 6vw, 120px);
+  --section-pad: clamp(96px, 14vh, 160px);
+  --max: 1240px;
+  --r-card: 20px;
+  --r-dialog: 24px;
+  --r-pill: 999px;
+
+  /* 动效 */
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --t-reveal: 760ms;
+  --t-hover: 160ms;
+}

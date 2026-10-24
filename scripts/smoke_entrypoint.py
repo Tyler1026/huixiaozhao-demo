@@ -40,7 +40,7 @@ def main():
                 engine = json.loads(body)['report_engine']
                 assert engine['engine'] == 'standalone' and engine['supervisor_running']
                 assert not engine['configured'] and not engine['worker_running']
-                for path,name in [('/','index.html'),('/ops','ops.html')]:
+                for path,name in [('/','frontend/public/landing.html'),('/app','index.html'),('/ops','ops.html')]:
                     status,body=request(path);assert status==200 and body==(ROOT/name).read_bytes()
                 try:
                     request('/api/sync')

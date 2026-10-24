@@ -806,6 +806,10 @@ class Handler(BaseHTTPRequestHandler):
         # /ops 和 /ops.html 路径在两个端口都服务管理端
         # 5051 访问 / 也直接服务管理端（和 5050/ops 共享 origin→不行，但5050/ops 共享 origin 可以）
         path = self.path.split('?')[0]
+        if path.startswith('/static/skin/'):
+            from pathlib import Path
+            from backend.skin_assets import serve_skin_asset
+            return serve_skin_asset(self, path, Path(HTML_GOV).parent / 'frontend' / 'public' / 'skin')
         from backend.auth import AuthError, require_session
         from backend.auth_routes import dispatch_auth, error_response, load_state, require_admin
         from backend.access_control import scoped_sync_view
@@ -915,12 +919,15 @@ class Handler(BaseHTTPRequestHandler):
             from backend.report_route import report_file
             return report_file(self, True, lambda: json.dumps(self._scoped_state), SYNC_PATH)
         port = self.server.server_address[1]
-        if path in ("/", "/index.html"):
+        if path in ("/", "/welcome"):
             # 本地 5051 端口访问 / → 重定向到同 origin 的 /ops（云端单端口不触发）
             if port == PORT_OPS:
                 self.send_response(302)
                 self.send_header("Location", "/ops")
                 self.cors(); self.end_headers(); return
+            from pathlib import Path
+            html_path = Path(HTML_GOV).parent / 'frontend' / 'public' / 'landing.html'
+        elif path in ("/app", "/index.html", "/client.html"):
             html_path = HTML_GOV
         elif path in ("/ops", "/ops.html"):
             html_path = HTML_OPS  # 从 5050/ops 提供，共享 origin

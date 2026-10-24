@@ -1,6 +1,6 @@
 {
   "index.html": {
-    "sha256": "314949a2382a59aff8b2b0230e743e0404605cbe6e35615b6f10369079731022",
+    "sha256": "5cb45f2f176979a35d0c5863d797499a47be85b6e75223071d69d68c5c325756",
     "parts": [
       "frontend/index/markup-01.html",
       "frontend/index/style-01.css",
@@ -14,6 +14,7 @@
       "frontend/index/settings-brand.css",
       "frontend/index/kb-detail-brand.css",
       "frontend/index/kb-progress.css",
+      "frontend/index/full-skin.css",
       "frontend/index/markup-02.html",
       "frontend/index/brand-icons.js",
       "frontend/index/brand-assets.js",
@@ -54,19 +55,21 @@
       "frontend/index/script-02-sections/16.js",
       "frontend/index/script-02-sections/17.js",
       "frontend/index/client-icons.js",
+      "frontend/index/full-skin.js",
       "frontend/index/markup-04.html",
       "frontend/index/script-03.js",
       "frontend/index/markup-05.html"
     ]
   },
   "ops.html": {
-    "sha256": "6588369750479f0291b7c3015c4045b93a337b8ac064bcc22dec028e4daa3259",
+    "sha256": "0c1bba4ba4e4f86e83a70da4b29070cd4d90774a996dbf70baf591e8f36a2515",
     "parts": [
       "frontend/ops/markup-01.html",
       "frontend/ops/style-01.css",
       "frontend/ops/docking-receiving.css",
       "frontend/shared/industry-chain.css",
       "frontend/ops/brand.css",
+      "frontend/ops/full-skin.css",
       "frontend/ops/markup-02.html",
       "frontend/ops/script-01.js",
       "frontend/ops/markup-03.html",
@@ -106,6 +109,7 @@
       "frontend/ops/script-03-sections/17.js",
       "frontend/ops/docking-receiving.js",
       "frontend/ops/script-03-sections/18.js",
+      "frontend/ops/full-skin.js",
       "frontend/ops/markup-05.html"
     ]
   }
