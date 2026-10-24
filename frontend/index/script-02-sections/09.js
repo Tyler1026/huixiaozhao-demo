@@ -109,7 +109,7 @@ function topbar(p){
     '</div>'+
     '<div class="top-meta"><span><i class="i">🛰️</i>'+_authEscape(p.city)+'城市智库已连接</span><span><i class="i">🕒</i>当前时间 '+nowLabel()+'</span>'+
       '<span style="position:relative;cursor:pointer" onclick="toggleNotif(event)"><i class="i">🔔</i>'+
-        (unreadCount()>0?'<b style="position:absolute;top:-4px;right:-6px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:#c85b09;color:#fff;font-size:9px;line-height:15px;text-align:center;font-weight:700">'+unreadCount()+'</b>':'')+
+        '<b id="reminderUnreadBadge"'+(unreadCount()>0?'':' hidden')+' style="position:absolute;top:-4px;right:-6px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:#c85b09;color:#fff;font-size:9px;line-height:15px;text-align:center;font-weight:700">'+unreadCount()+'</b>'+
         '<div id="notifPanel" style="display:none;position:absolute;top:30px;right:0;width:380px;max-height:520px;overflow-y:auto;background:#fff;border:1px solid #d8e0ed;border-radius:12px;box-shadow:0 12px 32px rgba(11,24,59,.16);z-index:70;text-align:left;cursor:default" onclick="event.stopPropagation()">'+notifList()+'</div>'+
       '</span>'+
       (AUTH?'<button onclick="logout()" title="退出登录" style="display:inline-flex;align-items:center;gap:5px;min-height:32px;padding:0 11px;border:1px solid #f0d8d8;border-radius:8px;background:#fff;color:#b5504a;font-size:12.5px;cursor:pointer">\u21aa 退出</button>':'')+

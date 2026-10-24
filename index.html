@@ -5075,6 +5075,7 @@ function _purgeAuthCache(){
   try{var raw=localStorage.getItem('huixiaozhao_kb_v1');if(raw)localStorage.setItem('huixiaozhao_kb_v1',JSON.stringify(_safeSyncSnapshot(JSON.parse(raw))));}catch(_){}
 }
 function _authResetView(){
+  if(typeof reminderResetSession==='function')reminderResetSession();
   if(typeof materialResetSession==='function')materialResetSession();
   if(typeof workspaceSyncReset==='function')workspaceSyncReset();
   if(typeof kbResetChatRequests==='function')kbResetChatRequests();
@@ -5175,6 +5176,189 @@ function P(){return cur&&PROJECTS[cur]||{}}
 function cityKeys(){
   return Object.keys(PROJECTS).filter(function(k){return AUTH&&_authWorkspaceOf(k)===AUTH.projKey;});
 }
+/* Account preferences and workspace notifications come only from authenticated receipts. */
+var REMINDER_STATE=null, REMINDER_REQUEST_SEQ=0, REMINDER_POLL=null, REMINDER_PANEL_SEQ=0;
+var REMINDER_FIELDS=['statusChanges','overdue','dailyDigest'];
+function reminderContext(){
+  if(typeof AUTH==='undefined'||!AUTH||AUTH.scope!=='project'||typeof _authState==='undefined'||_authState!=='ready'||typeof AUTH.user!=='string'||!AUTH.user||typeof cur!=='string'||!cur)return null;
+  var workspace=typeof _authWorkspaceOf==='function'?_authWorkspaceOf(cur):null;
+  if(!workspace||!Array.isArray(AUTH.projectKeys)||AUTH.projectKeys.indexOf(workspace)<0)return null;
+  return {accountId:AUTH.user,projectKey:cur,workspaceId:workspace,epoch:_authEpoch,
+    key:JSON.stringify([_authEpoch,AUTH.user,cur,workspace])};
+}
+function reminderResetSession(){
+  REMINDER_STATE=null;
+  if(REMINDER_POLL){clearTimeout(REMINDER_POLL);REMINDER_POLL=null;}
+}
+function reminderState(){
+  var context=reminderContext();
+  if(!context){reminderResetSession();return null;}
+  if(!REMINDER_STATE||REMINDER_STATE.context.key!==context.key){
+    reminderResetSession();
+    REMINDER_STATE={context:context,loaded:false,loading:false,mutationPending:false,latestRequest:0,
+      accountEpoch:null,version:null,preferences:null,draft:null,dirty:false,error:'',notifications:[]};
+  }
+  return REMINDER_STATE;
+}
+function reminderCurrent(state){var context=reminderContext();return !!(context&&REMINDER_STATE===state&&context.key===state.context.key);}
+function reminderCopyPreferences(value){
+  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length!==3)return null;
+  var copy={};
+  for(var i=0;i<REMINDER_FIELDS.length;i++){var key=REMINDER_FIELDS[i];if(typeof value[key]!=='boolean')return null;copy[key]=value[key];}
+  return copy;
+}
+function reminderSamePreferences(a,b){return !!(a&&b&&REMINDER_FIELDS.every(function(key){return a[key]===b[key];}));}
+function reminderReceipt(data,state,requestId){
+  var context=state.context,preferences=reminderCopyPreferences(data&&data.preferences);
+  if(!data||data.ok!==true||data.requestId!==requestId||data.accountId!==context.accountId||
+    data.projectKey!==context.projectKey||data.workspaceId!==context.workspaceId||
+    typeof data.accountEpoch!=='string'||!data.accountEpoch||!Number.isSafeInteger(data.version)||data.version<0||
+    !preferences||!Array.isArray(data.notifications))throw new Error('提醒服务回执不完整，请重试');
+  if(state.accountEpoch!==null&&state.accountEpoch!==data.accountEpoch)throw new Error('提醒订阅已变化，请重新加载后再保存');
+  if(state.version!==null&&data.version<state.version)throw new Error('提醒服务返回旧版本，请重新加载');
+  var ids={};
+  data.notifications.forEach(function(item){
+    if(!item||typeof item.id!=='string'||!item.id||ids[item.id]||
+      ['status','verification','overdue','daily'].indexOf(item.type)<0||
+      typeof item.title!=='string'||typeof item.message!=='string'||
+      !Number.isFinite(item.createdAt)||item.createdAt<0||
+      !(item.readAt===null||(Number.isFinite(item.readAt)&&item.readAt>=0))||
+      item.workspaceId!==context.workspaceId||typeof item.projectKey!=='string'||!item.projectKey||
+      typeof item.sourceId!=='string')throw new Error('提醒列表回执不完整，请重试');
+    ids[item.id]=true;
+  });
+  return {accountEpoch:data.accountEpoch,version:data.version,preferences:preferences,
+    notifications:data.notifications.map(function(item){return Object.assign({},item);})};
+}
+function reminderRender(state){
+  if(!reminderCurrent(state))return;
+  // A reminder response must never rebuild a composer, page, or input node.
+  var badge=document.getElementById('reminderUnreadBadge'),count=state.loaded?state.notifications.filter(function(n){return n.readAt===null;}).length:0;
+  if(badge){badge.textContent=String(count);badge.hidden=count===0;}
+  var panel=document.getElementById('notifPanel');
+  if(panel&&typeof notifList==='function'){
+    var token=reminderPanelToken(state),header=panel.querySelector&&panel.querySelector('[data-reminder-panel-token]');
+    if(!header||header.getAttribute('data-reminder-panel-token')!==token){
+      var active=document.activeElement,focusId=active&&panel.contains(active)?active.id:null,scrollTop=panel.scrollTop;
+      panel.innerHTML=notifList();
+      if(focusId){var target=document.getElementById(focusId);if(target&&panel.contains(target)&&!target.disabled&&typeof target.focus==='function')target.focus({preventScroll:true});}
+      panel.scrollTop=scrollTop;
+    }
+  }
+  var section=document.getElementById('reminderPreferences');
+  if(section){
+    var loaded=state.loaded,draft=state.draft||state.preferences||{},disabled=!loaded||state.mutationPending;
+    REMINDER_FIELDS.forEach(function(key){var input=document.getElementById('reminder-'+key);if(input){if(input.checked!==(draft[key]===true))input.checked=draft[key]===true;if(input.disabled!==disabled)input.disabled=disabled;}});
+    var status=document.getElementById('reminderPreferencesStatus'),message=reminderStatusText(state);
+    if(status&&status.textContent!==message)status.textContent=message;
+    var save=document.getElementById('reminderPreferencesSave'),reload=document.getElementById('reminderPreferencesReload');
+    if(save){save.disabled=disabled;save.textContent=state.mutationPending?'正在保存…':'保存偏好';}
+    if(reload)reload.disabled=state.loading||state.mutationPending;
+  }
+}
+function reminderPanelToken(state){
+  if(!state)return 'none';
+  var signature=JSON.stringify([state.loaded,state.error,state.mutationPending,state.notifications.map(function(n){return [n.id,n.type,n.title,n.message,n.createdAt,n.readAt,typeof _fmtTimeAgo==='function'?_fmtTimeAgo(n.createdAt):''];})]);
+  if(signature!==state.panelSignature){state.panelSignature=signature;state.panelToken=String(++REMINDER_PANEL_SEQ);}
+  return state.panelToken;
+}
+function reminderStatusText(state){
+  return state&&state.error?state.error:!state||!state.loaded?'正在加载服务器保存的偏好…':state.mutationPending?'正在保存…':state.dirty?'有尚未保存的修改':'已加载服务器保存的偏好';
+}
+function reminderSchedule(state){
+  if(REMINDER_POLL){clearTimeout(REMINDER_POLL);REMINDER_POLL=null;}
+  if(!reminderCurrent(state))return;
+  REMINDER_POLL=setTimeout(function(){REMINDER_POLL=null;if(reminderCurrent(state))reminderLoad(true);},60000);
+}
+function reminderRequest(path,body,state){
+  var sequence=++REMINDER_REQUEST_SEQ,requestId='reminder-'+Date.now().toString(36)+'-'+sequence.toString(36);
+  state.latestRequest=sequence;
+  var options={credentials:'same-origin',headers:{Accept:'application/json'}},controller=typeof AbortController!=='undefined'?new AbortController():null,timer;
+  if(body){body=Object.assign({},body,{projectKey:state.context.projectKey,requestId:requestId});options.method='POST';options.headers['Content-Type']='application/json';options.body=JSON.stringify(body);}
+  else path+='?projectKey='+encodeURIComponent(state.context.projectKey)+'&requestId='+encodeURIComponent(requestId);
+  if(controller)options.signal=controller.signal;
+  var network=Promise.resolve().then(function(){return fetch(path,options);}).then(function(response){
+    return response.json().catch(function(){throw new Error('提醒服务响应异常，请重试');}).then(function(data){
+      if(response.ok!==true||!data||data.ok!==true){
+        var error=new Error(data&&data.message||'提醒服务暂时不可用，请重试');error.status=response.status;
+        if(response.status===401&&reminderCurrent(state)&&state.latestRequest===sequence&&typeof _authForget==='function'){_authForget();if(typeof render==='function')render();}
+        throw error;
+      }
+      if(!reminderCurrent(state)||state.latestRequest!==sequence)return null;
+      return reminderReceipt(data,state,requestId);
+    });
+  });
+  var timeout=new Promise(function(_,reject){timer=setTimeout(function(){if(controller)controller.abort();reject(new Error('提醒请求超时，请重试'));},20000);});
+  return Promise.race([network,timeout]).then(function(receipt){clearTimeout(timer);return receipt;},function(error){
+    clearTimeout(timer);
+    if(!reminderCurrent(state)||state.latestRequest!==sequence)return null;
+    throw error;
+  });
+}
+function reminderApply(state,receipt){
+  state.accountEpoch=receipt.accountEpoch;state.version=receipt.version;state.preferences=receipt.preferences;
+  state.notifications=receipt.notifications;state.loaded=true;state.error='';
+  if(!state.dirty)state.draft=Object.assign({},receipt.preferences);
+}
+function reminderLoad(force){
+  var state=reminderState();if(!state)return Promise.resolve(false);
+  if(state.loading||state.mutationPending||(!force&&state.loaded))return Promise.resolve(false);
+  state.loading=true;state.error='';
+  return reminderRequest('/api/reminders',null,state).then(function(receipt){
+    if(!receipt)return false;reminderApply(state,receipt);return true;
+  }).catch(function(error){if(reminderCurrent(state)){state.error=error.status===409?'提醒订阅或版本已变化，请重新加载后再保存':(error.message||'提醒加载失败，请重试');}return false;
+  }).then(function(ok){if(reminderCurrent(state)){state.loading=false;reminderRender(state);reminderSchedule(state);}return ok;});
+}
+function reminderEnsureLoaded(){var state=reminderState();if(state&&!state.loaded&&!state.loading&&!state.error)reminderLoad(false);}
+function reminderReload(){
+  var state=reminderState();if(!state||state.loading||state.mutationPending)return Promise.resolve(false);
+  // A fresh enrollment receipt may follow a server-side session/epoch change.
+  state.accountEpoch=null;state.version=null;
+  return reminderLoad(true);
+}
+function reminderEdit(key,checked){
+  var state=reminderState();if(!state||!state.loaded||state.mutationPending||REMINDER_FIELDS.indexOf(key)<0||typeof checked!=='boolean')return;
+  state.draft=Object.assign({},state.draft||state.preferences);state.draft[key]=checked;
+  state.dirty=!reminderSamePreferences(state.draft,state.preferences);state.error='';
+  reminderRender(state);
+}
+function reminderSave(){
+  var state=reminderState();if(!state||!state.loaded||state.mutationPending)return Promise.resolve(false);
+  var preferences=reminderCopyPreferences(state.draft);if(!preferences)return Promise.resolve(false);
+  var sentVersion=state.version,expectedVersion=sentVersion+(reminderSamePreferences(preferences,state.preferences)?0:1);
+  state.mutationPending=true;state.error='';reminderRender(state);
+  return reminderRequest('/api/reminder-preferences',{accountEpoch:state.accountEpoch,version:sentVersion,preferences:preferences},state).then(function(receipt){
+    if(!receipt)return false;
+    if(receipt.version!==expectedVersion||!reminderSamePreferences(preferences,receipt.preferences))throw new Error('保存回执与所选偏好或版本不一致，请重新加载确认');
+    state.dirty=false;reminderApply(state,receipt);if(typeof toast==='function')toast('站内提醒偏好已保存');return true;
+  }).catch(function(error){if(reminderCurrent(state))state.error=error.status===409?'偏好版本已变化，请重新加载后再保存':(error.message||'保存失败，请重试');return false;
+  }).then(function(ok){if(reminderCurrent(state)){state.mutationPending=false;reminderRender(state);reminderSchedule(state);}return ok;});
+}
+function reminderMarkRead(ids,all){
+  var state=reminderState();if(!state||!state.loaded||state.mutationPending)return Promise.resolve(false);
+  var requested=all?state.notifications.map(function(n){return n.id;}):(ids||[]).slice();
+  if(!requested.length)return Promise.resolve(true);
+  if(requested.some(function(id){return !state.notifications.some(function(n){return n.id===id;});}))return Promise.resolve(false);
+  state.mutationPending=true;state.error='';
+  var sentVersion=state.version,body={accountEpoch:state.accountEpoch,version:sentVersion};if(all)body.all=true;else body.ids=requested;
+  return reminderRequest('/api/reminders/read',body,state).then(function(receipt){
+    if(!receipt)return false;
+    if(receipt.version!==sentVersion||!reminderSamePreferences(state.preferences,receipt.preferences))throw new Error('提醒偏好或版本已变化，请重新加载');
+    if(requested.some(function(id){return !receipt.notifications.some(function(n){return n.id===id&&n.readAt!==null;});}))throw new Error('已读回执未确认，请重试');
+    reminderApply(state,receipt);return true;
+  }).catch(function(error){if(reminderCurrent(state))state.error=error.status===409?'提醒版本已变化，请重新加载后再试':(error.message||'已读状态保存失败，请重试');return false;
+  }).then(function(ok){if(reminderCurrent(state)){state.mutationPending=false;reminderRender(state);reminderSchedule(state);}return ok;});
+}
+function reminderNotifications(){var state=reminderState();return state&&state.loaded?state.notifications:[];}
+function reminderPreferencesSection(){
+  var state=reminderState(),loaded=!!(state&&state.loaded),draft=loaded?(state.draft||state.preferences):{},disabled=!loaded||state.mutationPending;
+  var rows=[['statusChanges','状态变化通知','需求阶段或核验结果有新进展时显示站内提醒'],['overdue','超时提醒','从启用跟踪或最近有效进展中较晚者起，3 个工作日无更新时显示站内提醒；仅按周一至周五计算，暂不处理法定节假日及调休'],['dailyDigest','每日摘要','服务器在北京时间 09:00 后保存当日一份站内摘要；首次启用从次日开始']];
+  return '<div class="settings-section" id="reminderPreferences"><h2>站内提醒偏好<span class="settings-editable-badge">账号全部工作区通用</span></h2>'+
+    '<p>首次启用后记录新事件，不追溯启用前的历史通知。提醒在本站铃铛中查看。</p>'+rows.map(function(row){return '<label class="toggle-row"><span><strong>'+row[1]+'</strong><small>'+row[2]+'</small></span><input id="reminder-'+row[0]+'" type="checkbox" aria-label="'+row[1]+'"'+(draft[row[0]]===true?' checked':'')+(disabled?' disabled':'')+' onchange="reminderEdit(\''+row[0]+'\',this.checked)"></label>';}).join('')+
+    '<p id="reminderPreferencesStatus" role="status" aria-live="polite">'+_authEscape(reminderStatusText(state))+'</p>'+
+    '<button type="button" id="reminderPreferencesSave" class="primary-button settings-save" onclick="reminderSave()"'+(disabled?' disabled':'')+'>'+(state&&state.mutationPending?'正在保存…':'保存偏好')+'</button> '+
+    '<button type="button" id="reminderPreferencesReload" class="secondary-button" onclick="reminderReload()"'+(state&&(state.loading||state.mutationPending)?' disabled':'')+'>重新加载</button></div>';
+}
 /* ===== 渲染骨架：用雷总真实DOM结构 ===== */
 var $=function(s){return document.querySelector(s)};
 function toast(t){var e=$('#toast');$('#toastMsg').textContent=t;e.classList.add('show');setTimeout(function(){e.classList.remove('show')},2200)}
@@ -5248,6 +5432,7 @@ function render(){
   }
   if(view==='setup'||!cur||!PROJECTS[cur]){var _root=$('#root');if(_root){_root.innerHTML='<div style="height:100vh;background:#f5f7fb">'+setupPage()+'</div>';bind();} return;}
   if(role==='ops')return renderOps();
+  if(typeof reminderEnsureLoaded==='function')reminderEnsureLoaded();
   var p=P();
   // 修复方向/报告错位：报告正文必须跟随当前方向 topic。刷新后缓存里 REPORTSTATE[cur].topic(旧方向)
   // 与 PROJECTS[cur].topic(当前方向) 可能不一致，导致标题显示当前方向、正文却是旧方向的报告。
@@ -6526,7 +6711,7 @@ function topbar(p){
     '</div>'+
     '<div class="top-meta"><span><i class="i">🛰️</i>'+_authEscape(p.city)+'城市智库已连接</span><span><i class="i">🕒</i>当前时间 '+nowLabel()+'</span>'+
       '<span style="position:relative;cursor:pointer" onclick="toggleNotif(event)"><i class="i">🔔</i>'+
-        (unreadCount()>0?'<b style="position:absolute;top:-4px;right:-6px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:#c85b09;color:#fff;font-size:9px;line-height:15px;text-align:center;font-weight:700">'+unreadCount()+'</b>':'')+
+        '<b id="reminderUnreadBadge"'+(unreadCount()>0?'':' hidden')+' style="position:absolute;top:-4px;right:-6px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:#c85b09;color:#fff;font-size:9px;line-height:15px;text-align:center;font-weight:700">'+unreadCount()+'</b>'+
         '<div id="notifPanel" style="display:none;position:absolute;top:30px;right:0;width:380px;max-height:520px;overflow-y:auto;background:#fff;border:1px solid #d8e0ed;border-radius:12px;box-shadow:0 12px 32px rgba(11,24,59,.16);z-index:70;text-align:left;cursor:default" onclick="event.stopPropagation()">'+notifList()+'</div>'+
       '</span>'+
       (AUTH?'<button onclick="logout()" title="退出登录" style="display:inline-flex;align-items:center;gap:5px;min-height:32px;padding:0 11px;border:1px solid #f0d8d8;border-radius:8px;background:#fff;color:#b5504a;font-size:12.5px;cursor:pointer">\u21aa 退出</button>':'')+
@@ -6900,147 +7085,56 @@ function progressFooter(p){
         (n<_shown.length?'<div class="progress-line"></div>':'');
     }).join('')+'</div><div class="progress-mobile">📂 '+p.topic+' · 当前「'+stageNameOf(p,p.stage)+'」· 第 '+p.stage+' 步（进度跟随所选产业方向）</div></div>';
 }
-/* ===== 通知：铃铛 + 面板 + 点击落回对应研判 ===== */
-/* 通知：从当前城市的 PROJECTS 动态派生，不再硬编码具体产业名/城市。
-   已读状态用 localStorage 独立记忆（HXZ_NOTIF_READ = {id:true}），render 后不重置。 */
-var NOTIFS_READ={};
-try{NOTIFS_READ=JSON.parse(localStorage.getItem('HXZ_NOTIF_READ')||'{}')||{};}catch(_){NOTIFS_READ={};}
-function _saveNotifRead(){try{localStorage.setItem('HXZ_NOTIF_READ',JSON.stringify(NOTIFS_READ));}catch(_){}}
+/* Server-owned account preferences and workspace notifications. */
 function _fmtTimeAgo(ts){
-  if(!ts) return '';
+  if(!ts)return '';
   var diff=(Date.now()-ts)/1000;
-  if(diff<60) return '刚刚';
-  if(diff<3600) return Math.floor(diff/60)+'分钟前';
-  if(diff<86400) return Math.floor(diff/3600)+'小时前';
-  var d=new Date(ts); var pad=function(n){return n<10?'0'+n:n;};
-  var today=new Date(); today.setHours(0,0,0,0);
-  if(ts>=today.getTime()) return '今天 '+pad(d.getHours())+':'+pad(d.getMinutes());
-  return (d.getMonth()+1)+'/'+d.getDate()+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+  if(diff<60)return '刚刚';
+  if(diff<3600)return Math.floor(diff/60)+'分钟前';
+  if(diff<86400)return Math.floor(diff/3600)+'小时前';
+  return new Date(ts).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})+' 北京时间';
 }
-function _buildNotifs(){
-  var arr=[];
-  try{
-    if(typeof cityKeys!=='function') return [];
-    // 与招商对接列表用同一过滤（isDemand===true），避免多出"父项目当前方向"这种幽灵条目
-    var _dirs=cityKeys().filter(function(k){var x=PROJECTS[k];return x && x.isDemand===true && x.topic;});
-    _dirs.forEach(function(k){
-      var p=PROJECTS[k]; if(!p||!p.topic) return;
-      var title=typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(p):p.topic;
-      var stage=p.stage||1;
-      var log=(p.stageLog||[]);
-      var lastTs=log.length?Number(log[log.length-1].at||log[log.length-1].ts||0):0;
-      // 状态变化通知：最近一次阶段推进
-      if(log.length && lastTs){
-        var last=log[log.length-1];
-        var toName=stageNameOf(p,last.to);
-        var idA='stage:'+k+':'+last.to;
-        arr.push({
-          id:idA,
-          type:'状态变化', icon:'🔵', proj:k,
-          title:title+' · 已进入「'+toName+'」',
-          desc:'该需求阶段已推进至「'+toName+'」，可打开需求查看下一步动作。',
-          ts:lastTs, read: !!NOTIFS_READ[idA]
-        });
-      }
-      // 超时提醒：进入某阶段后 >3 天无进一步推进
-      if(lastTs && (Date.now()-lastTs) > 3*86400*1000 && stage<projStages(p).length){
-        var idB='stale:'+k+':'+stage;
-        arr.push({
-          id:idB,
-          type:'超时提醒', icon:'🟠', proj:k,
-          title:title+' · 已3个工作日无更新',
-          desc:'该需求在「'+stageNameOf(p,stage)+'」阶段停留超过 3 天，建议跟进资源端核验进度。',
-          ts:lastTs, read: !!NOTIFS_READ[idB]
-        });
-      }
-      // 待确认提醒：阶段=2（AI研判/双确认前）且已生成报告
-      if(stage===2 && typeof REPORTSTATE!=='undefined' && REPORTSTATE[k] && REPORTSTATE[k].text){
-        var rts=Number(REPORTSTATE[k].ts||0);
-        var idC='confirm:'+k+':'+rts;
-        arr.push({
-          id:idC,
-          type:'待确认', icon:'🟡', proj:k,
-          title:title+' · 报告待你确认',
-          desc:'AI 研判已完成，请核对报告后进入双确认与需求提交。',
-          ts:rts||Date.now(), read: !!NOTIFS_READ[idC]
-        });
-      }
-    });
-    // 每日摘要
-    var keys=_dirs;
-    if(keys.length){
-      var today=new Date(); today.setHours(9,0,0,0);
-      var sumId='daily:'+today.toDateString();
-      var stageBreak={};
-      keys.forEach(function(k){var s=PROJECTS[k].stage||1; stageBreak[s]=(stageBreak[s]||0)+1;});
-      var parts=Object.keys(stageBreak).sort().map(function(s){
-        var sample=keys.find(function(k){return (PROJECTS[k].stage||1)==s;});
-        return stageNameOf(PROJECTS[sample],parseInt(s))+' '+stageBreak[s]+' 个';
-      });
-      arr.push({
-        id:sumId, type:'每日摘要', icon:'📋', proj:null,
-        title:'每日摘要 · '+keys.length+' 条招商需求进行中',
-        desc:parts.join('，')+'。点开查看各条需求进展。',
-        ts:today.getTime(), read: !!NOTIFS_READ[sumId]
-      });
-    }
-  }catch(e){console.warn('[notif] build failed',e);}
-  // 按时间倒序，最多显示 6 条
-  arr.sort(function(a,b){return (b.ts||0)-(a.ts||0);});
-  arr=arr.slice(0,6);
-  arr.forEach(function(n){n.time=_fmtTimeAgo(n.ts);});
-  return arr;
-}
-Object.defineProperty(window,'NOTIFS',{get:function(){return _buildNotifs();},configurable:true});
-function unreadCount(){return NOTIFS.filter(function(n){return !n.read}).length}
+function reminderTypeLabel(type){return {status:'状态变化',verification:'核验进展',overdue:'超时提醒',daily:'每日摘要'}[type]||'站内提醒';}
+function unreadCount(){return reminderNotifications().filter(function(n){return n.readAt===null;}).length;}
 function notifList(){
-  return '<div style="padding:11px 15px;border-bottom:1px solid #eef1f5;font-size:13px;font-weight:650;display:flex;justify-content:space-between;align-items:center">通知 <button style="border:0;background:none;color:#0757ad;font-size:11px;cursor:pointer" onclick="markAllRead(event)">全部已读</button></div>'+
-    NOTIFS.map(function(n){
-      return '<div onclick="openNotif(\''+n.id+'\')" style="padding:13px 16px;border-bottom:1px solid #f2f5f9;cursor:pointer;display:flex;gap:10px;align-items:flex-start;'+(n.read?'opacity:.55':'')+'" onmouseover="this.style.background=\'#f7f9fc\'" onmouseout="this.style.background=\'\'">'+
-        '<span style="font-size:15px;flex:0 0 auto;line-height:1.4;margin-top:1px">'+n.icon+'</span>'+
-        '<span style="flex:1;min-width:0;overflow:hidden">'+
-          '<span style="font-size:13px;font-weight:600;color:#0b183b;display:block;word-break:break-word;line-height:1.45">'+_authEscape(n.title)+(n.read?'':' <b style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#c85b09;vertical-align:middle;margin-left:2px"></b>')+'</span>'+
-          '<span style="font-size:11.5px;color:#667590;line-height:1.55;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:4px;word-break:break-word">'+_authEscape(n.desc)+'</span>'+
-          '<span style="font-size:10.5px;color:#a8b2c2;display:block;margin-top:5px">'+n.type+' · '+n.time+'</span>'+
-        '</span>'+
-      '</div>';
-    }).join('');
+  var state=reminderState(),items=reminderNotifications();
+  var status=state&&state.error?'<p role="alert" style="padding:12px 16px">'+_authEscape(state.error)+' <button onclick="reminderReload()">重试</button></p>':
+    !state||!state.loaded?'<p role="status" style="padding:12px 16px">正在加载站内提醒…</p>':
+    !items.length?'<p style="padding:12px 16px">当前工作区暂无站内提醒</p>':'';
+  return '<div data-reminder-panel-token="'+reminderPanelToken(state)+'" style="padding:11px 15px;border-bottom:1px solid #eef1f5;font-size:13px;font-weight:650;display:flex;justify-content:space-between;align-items:center">站内提醒 <button type="button" id="reminderMarkAllRead" style="border:0;background:none;color:#0757ad;font-size:11px;cursor:pointer" onclick="markAllRead(event)"'+(!state||!state.loaded||state.mutationPending?' disabled':'')+'>全部已读</button></div>'+status+
+    items.map(function(n){return '<button type="button" id="reminderNotice-'+_authEscape(n.id)+'" onclick="openNotif('+_authEscape(JSON.stringify(n.id))+')" style="width:100%;text-align:left;background:none;border:0;padding:13px 16px;border-bottom:1px solid #f2f5f9;cursor:pointer;display:block;'+(n.readAt!==null?'opacity:.65':'')+'">'+
+      '<span style="font-size:13px;font-weight:600;color:#0b183b;display:block;word-break:break-word;line-height:1.45">'+_authEscape(n.title)+(n.readAt===null?' · 未读':'')+'</span>'+
+      '<span style="font-size:11.5px;color:#667590;display:block;line-height:1.55;word-break:break-word">'+_authEscape(n.message)+'</span>'+
+      '<span style="font-size:10.5px;color:#8490a5;display:block;margin-top:5px">'+reminderTypeLabel(n.type)+' · '+_authEscape(_fmtTimeAgo(n.createdAt))+'</span></button>';}).join('');
 }
-function toggleNotif(e){e.stopPropagation();var m=$('#notifPanel');if(m)m.style.display=m.style.display==='none'?'block':'none'}
-function markAllRead(e){e.stopPropagation();NOTIFS.forEach(function(n){NOTIFS_READ[n.id]=true});_saveNotifRead();render()}
+function toggleNotif(e){
+  e.stopPropagation();var panel=$('#notifPanel');
+  if(panel){var opening=panel.style.display==='none';panel.style.display=opening?'block':'none';if(opening)reminderLoad(true);}
+}
+function markAllRead(e){if(e)e.stopPropagation();return reminderMarkRead([],true);}
 function openNotif(id){
-  var n=NOTIFS.find(function(x){return x.id===id});if(!n)return;NOTIFS_READ[n.id]=true;_saveNotifRead();
-  var np=$('#notifPanel');if(np)np.style.display='none';
-  render();
-  // 每日摘要 = 全局概览（不属于单个项目），点开列出各研判状态
-  if(!n.proj){
-    var _mkeys=cityKeys().filter(function(k){var x=PROJECTS[k];return x&&x.isDemand===true&&x.topic;});
-    var rows=_mkeys.map(function(k){var x=PROJECTS[k];var sc=stColor(x.stage);
-      return '<div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #f2f5f9;cursor:pointer" onclick="closeModal();gotoProjFromNotif(\''+k+'\')">'+
-        '<span style="font-size:16px">📍</span>'+
-        '<span style="flex:1;min-width:0"><strong style="font-size:13.5px;color:#0b183b;display:block">'+_authEscape(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(x):x.topic)+'</strong>'+
-        '<small style="font-size:11px;color:#667590">'+x.city+' · '+stageDescOf(x,x.stage)+'</small></span>'+
-        '<span class="status-tag" style="color:'+sc.c+';background:'+sc.bg+'">'+stageNameOf(x,x.stage)+'</span></div>';
-    }).join('');
-    var body='<p class="modal-intro">今天 09:00 · '+P().who+' 名下 '+_mkeys.length+' 条招商需求进展如下，点任意一条进入。</p>'+rows+
-      '<div class="boundary-note" style="margin-top:14px"><i class="i">📋</i>每日摘要为全局汇总，不属于单条需求；系统每天 09:00 自动生成。</div>';
-    openModal('每日摘要 · 今日需求概览',body,'<button class="primary-button" onclick="closeModal()">知道了</button>');
-    return;
-  }
-  // 事件通知（状态变化/超时）= 前往对应研判
-  var pj=PROJECTS[n.proj];
-  var body='<div style="display:flex;align-items:flex-start;gap:11px;margin-bottom:14px">'+
-      '<span style="font-size:20px">'+n.icon+'</span>'+
-      '<div><div style="font-size:15px;font-weight:650;color:#0b183b">'+_authEscape(n.title)+'</div>'+
-      '<div style="font-size:11px;color:#8490a5;margin-top:3px">'+n.type+' · '+n.time+'</div></div></div>'+
-    '<div class="info-callout" style="margin-top:0">'+_authEscape(n.desc)+'</div>'+
-    '<div class="kv" style="margin-top:14px"><span class="kk" style="width:70px;color:#8490a5">相关需求</span><span class="vv">'+_authEscape(pj.city)+' · '+_authEscape(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(pj):pj.topic)+'</span></div>'+
-    '<div class="kv"><span class="kk" style="width:70px;color:#8490a5">当前阶段</span><span class="vv">'+stageNameOf(pj,pj.stage)+'</span></div>';
-  var foot='<button class="secondary-button" onclick="closeModal()">知道了</button>'+
-    '<button class="primary-button" onclick="closeModal();gotoProjFromNotif(\''+n.proj+'\')">前往该需求 ➜</button>';
-  openModal('通知详情',body,foot);
+  var state=reminderState(),context=state&&state.context.key;
+  var notification=reminderNotifications().find(function(n){return n.id===id;});
+  if(!notification)return Promise.resolve(false);
+  return reminderMarkRead([id],false).then(function(ok){
+    if(!ok||!reminderCurrent(state)||state.context.key!==context)return false;
+    var panel=$('#notifPanel');if(panel)panel.style.display='none';
+    var project=PROJECTS[notification.projectKey];
+    var canOpen=notification.type!=='daily'&&project&&typeof _authWorkspaceOf==='function'&&_authWorkspaceOf(notification.projectKey)===state.context.workspaceId;
+    var body='<h3>'+_authEscape(notification.title)+'</h3><p style="white-space:pre-wrap;overflow-wrap:anywhere">'+_authEscape(notification.message)+'</p>'+
+      '<p>'+reminderTypeLabel(notification.type)+' · '+_authEscape(_fmtTimeAgo(notification.createdAt))+'</p>';
+    if(notification.type==='daily')body+='<p>这是服务器当时保存的摘要快照；当前项目进度可能已经更新。</p>';
+    else if(!canOpen)body+='<p>相关需求当前不可访问，通知保留事件发生时的记录。</p>';
+    var foot='<button class="secondary-button" onclick="closeModal()">知道了</button>'+
+      (canOpen?'<button class="primary-button" onclick="closeModal();gotoProjFromNotif('+_authEscape(JSON.stringify(notification.projectKey))+')">前往该需求 ➜</button>':'');
+    openModal('站内提醒详情',body,foot);return true;
+  });
 }
-function gotoProjFromNotif(pk){if(!PROJECTS[pk])return;cur=pk;view='home';detailData=null;window.__projOpen=pk;render();toast('已定位到「'+(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(PROJECTS[pk]):PROJECTS[pk].topic)+'」需求')}
+function gotoProjFromNotif(pk){
+  var state=reminderState();
+  if(!state||!PROJECTS[pk]||_authWorkspaceOf(pk)!==state.context.workspaceId)return;
+  cur=pk;view='home';detailData=null;window.__projOpen=pk;render();
+}
 function toggleSw(e){e.stopPropagation();var m=$('#swMenu');m.style.display=m.style.display==='none'?'block':'none'}
 function switchProj(k){cur=k;view='report';detailData=null;try{_sanitizeReportState();}catch(_){}render();toast('已进入「'+(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(PROJECTS[k]):PROJECTS[k].topic)+'」'+(PROJECTS[k].isDemand?'需求':'研判工作区'))}
 function newProj(){var m=$('#swMenu');if(m)m.style.display='none';newProjModal()}
@@ -11998,14 +12092,8 @@ function settingsPage(p){
       '<label>数据权限<input value="仅限 '+_authEscape(p.city)+' 城市智库" disabled></label></div>'+
       '<div class="boundary-note" style="margin-top:14px"><i class="i">🔒</i>账号的地区与身份在开通时绑定，用户不可自行更改；如需变更请联系系统管理员。</div></div>'+
     onboardingSettingsSection(p)+
-    '<div class="settings-section"><h2>提醒偏好<span class="settings-editable-badge">可自行调整</span></h2>'+
-      '<div class="toggle-row"><span><strong>状态变化通知</strong><small>需求进度更新时提醒我</small></span><input type="checkbox" checked></div>'+
-      '<div class="toggle-row"><span><strong>超时提醒</strong><small>3 个工作日无更新时提醒</small></span><input type="checkbox" checked></div>'+
-      '<div class="toggle-row"><span><strong>每日摘要</strong><small>每天 09:00 汇总进行中事项</small></span><input type="checkbox" checked></div>'+
-      '<button class="primary-button settings-save" onclick="toast(\'提醒偏好已保存\')">保存偏好</button></div>'+
-    '<div class="settings-section"><h2>系统会据此调整</h2><ul class="plain-list">'+
-      ['首页任务提示','报告中的产业关注顺序','进度提醒频率'].map(function(x){return '<li>'+x+'</li>'}).join('')+'</ul>'+
-      '<div class="boundary-note"><i class="i">🔒</i>干部与确认关口、资源核验责任和企业触达边界，不会因个人设置而跳过。</div></div>'+
+    reminderPreferencesSection()+
+    '<div class="settings-section"><h2>提醒范围</h2><p>上述偏好只控制站内通知的生成和展示；不改变产业分析内容、工作流确认关口或企业触达权限。</p></div>'+
     '</div></div>';
 }
 /* 招商偏好画像：设置页可查看+修改（收起展示，点「修改」重开问卷）*/
@@ -16487,11 +16575,9 @@ function doVerify(i){
   }
   // 漏斗 match+1
   var f=CITY_FUNNEL.find(function(x){return x.city===d.city});if(f)f.match++;
-  // 【回传政府端】给对应城市干部推一条通知（黄金演示动线第4步）
-  var pk=projKeyByCityTopic(d.city,d.topic);
-  NOTIFS.unshift({id:'n'+Date.now(),type:'状态变化',icon:'🔵',proj:pk,title:d.topic+' · 资源端已反馈',desc:'资源端核验通过 1 家脱敏候选企业（'+r.alias+'），已进入对接流程，建议准备承接材料。',time:'刚刚',read:false});
+  // This local legacy action has no server notification receipt.
   closeModal();render();
-  toast('已记录核验结论：'+r.alias+' 通过，进入对接看板，并已通知政府端');
+  toast('已在当前页面记录核验结论：'+r.alias+' 通过；尚未确认服务端保存或通知');
 }
 /* 按城市+课题反查政府端项目key（用于回传通知定位） */
 function projKeyByCityTopic(city,topic){
@@ -17372,7 +17458,7 @@ render();
       '</strong><small title="' + escape(p.org) + '">' + escape(p.city) + ' · <span id="topbarTopic">' + escape(topic) + '</span></small></div>' +
       '<div class="client-top-actions"><a href="/">首页</a><a href="/ops">运营端</a>' +
       '<div class="client-notification"><button class="client-icon-button" type="button" onclick="toggleNotif(event)" aria-label="通知中心">' +
-      icon('notification') + (unreadCount() ? '<b>' + unreadCount() + '</b>' : '') + '</button>' +
+      icon('notification') + '<b id="reminderUnreadBadge"'+(unreadCount()?'':' hidden')+'>' + unreadCount() + '</b></button>' +
       '<div id="notifPanel" class="client-notification-panel" style="display:none" onclick="event.stopPropagation()">' + notifList() + '</div></div>' +
       '<button class="client-account" type="button" onclick="go(\'settings\')" title="' + escape(p.org) + ' · 账号与协作">' +
       escape(p.who || '账号与协作') + '</button><button class="client-logout" type="button" onclick="logout()">退出</button></div></header>';
