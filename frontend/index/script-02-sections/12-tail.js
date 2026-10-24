@@ -28,7 +28,7 @@ function renderCluesTwoPanel(projKey){
   };
 
   var segMeta = {
-    teal:  {label:'可安排沟通', dot:'#22c55e', bg:'#f0fdf4', col:'#166534'},
+    teal:  {label:'可安排沟通', dot:'#2D5BE3', bg:'#EEF3FF', col:'#1C43B5'},
     amber: {label:'核验中',     dot:'#f59e0b', bg:'#fffbeb', col:'#92400e'},
     slate: {label:'待接触',     dot:'#9aa5b5', bg:'#f5f7fb', col:'#6b7280'}
   };
@@ -58,13 +58,13 @@ function renderCluesTwoPanel(projKey){
     '<span style="font-size:11px;padding:2px 7px;background:#eef2ff;color:#4338ca;border-radius:10px">共 '+all.length+' 家</span>'+
     '<div style="flex:1"></div>'+
     // 政府端不做企业扫描：候选企业由管理端 AI 漏斗精选推送，此处只保留手动录入
-    '<button onclick="addClueManual(\''+projKey+'\')" style="padding:4px 10px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:11.5px;color:#166534;cursor:pointer;font-weight:600">+ 录入</button>'+
+    '<button onclick="addClueManual(\''+projKey+'\')" style="padding:4px 10px;background:#EEF3FF;border:1.5px solid #B3C4E8;border-radius:8px;font-size:11.5px;color:#1C43B5;cursor:pointer;font-weight:600">+ 录入</button>'+
   '</div>';
 
   var empty = '<div style="text-align:center;padding:20px;background:#f9fafb;border-radius:10px;border:1px solid #e8edf5">'+
     '<div style="font-size:12.5px;color:#9aa5b5;margin-bottom:4px">暂无候选企业线索</div>'+
     '<div style="font-size:11.5px;color:#b0b8c4;margin-bottom:10px">待接触企业由资源端 AI 漏斗精选后推送，也可手动录入</div>'+
-    '<button onclick="addClueManual(\''+projKey+'\')" style="padding:6px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12px;color:#166534;cursor:pointer;font-weight:600">+ 手动录入企业</button>'+
+    '<button onclick="addClueManual(\''+projKey+'\')" style="padding:6px 14px;background:#EEF3FF;border:1.5px solid #B3C4E8;border-radius:8px;font-size:12px;color:#1C43B5;cursor:pointer;font-weight:600">+ 手动录入企业</button>'+
   '</div>';
 
   return '<div>'+tools+(all.length?sections:empty)+'</div>';
@@ -96,7 +96,7 @@ function clueCard(clue, projKey, idx){
   var toneMap = {
     slate: {bg:'#f5f7fb', border:'#e8edf5', dot:'#9aa5b5', label:'待接触'},
     amber: {bg:'#fffbeb', border:'#fde68a', dot:'#f59e0b', label:'核验中'},
-    teal:  {bg:'#f0fdf4', border:'#86efac', dot:'#22c55e', label:'可安排沟通'}
+    teal:  {bg:'#EEF3FF', border:'#B3C4E8', dot:'#2D5BE3', label:'可安排沟通'}
   };
   var t = toneMap[clue.tone] || toneMap.slate;
   var isExpanded = (window.__clueOpen === clue.id);
@@ -117,7 +117,7 @@ function clueCard(clue, projKey, idx){
           '<div style="font-size:11px;font-weight:650;color:#6b7280;letter-spacing:.3px;margin-bottom:4px">为什么值得核验</div>'+
           '<div style="font-size:13px;color:#1f2937;line-height:1.65">'+(clue.reason||clue.fit||('AI 漏斗按「'+(clue.gap||'该方向')+'」精筛，适配度 '+(clue.fit_score||0)+' 分，建议资源团队核验企业投资意向。'))+'</div>'+
           // 优质标注：有扩张需求 / 派系关联（无则不显示）
-          (clue.expansion?'<div style="font-size:12px;color:#166534;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:7px;padding:5px 9px;margin-top:6px;line-height:1.55">🚀 <strong>有扩张需求</strong>：'+clue.expansion+'</div>':'')+
+          (clue.expansion?'<div style="font-size:12px;color:#1C43B5;background:#EEF3FF;border:1px solid #CCD8EF;border-radius:7px;padding:5px 9px;margin-top:6px;line-height:1.55">🚀 <strong>有扩张需求</strong>：'+clue.expansion+'</div>':'')+
           (clue.faction?'<div style="font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:7px;padding:5px 9px;margin-top:6px;line-height:1.55">🤝 <strong>派系关联</strong>：'+clue.faction+'</div>':'')+
           // 评分卡分项构成（仅当有分项数据时展示）
           ((clue.score_match!=null||clue.score_relocate!=null||clue.score_strength!=null)?'<div style="font-size:11px;color:#9aa5b5;margin-top:6px">适配度构成：匹配 '+(clue.score_match||0)+' + 可招引 '+(clue.score_relocate||0)+' + 实力 '+(clue.score_strength||0)+' = '+(clue.fit_score||0)+' 分'+(clue.score_reason?' · '+clue.score_reason:'')+'</div>':'')+
@@ -134,10 +134,10 @@ function clueCard(clue, projKey, idx){
                 '🔍 请资源团队核验</button>'
             : clue.tone==='amber'
             ? '<button onclick="arrangeDocking(\''+projKey+'\',\''+clue.id+'\')" '+
-                'style="flex:1;padding:8px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12.5px;font-weight:600;color:#166534;cursor:pointer">'+
+                'style="flex:1;padding:8px;background:#EEF3FF;border:1.5px solid #B3C4E8;border-radius:8px;font-size:12.5px;font-weight:600;color:#1C43B5;cursor:pointer">'+
                 '✓ 核验通过，可安排沟通</button>'
             : '<button onclick="arrangeDocking(\''+projKey+'\',\''+clue.id+'\')" '+
-                'style="flex:1;padding:8px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:12.5px;font-weight:600;color:#166534;cursor:pointer">'+
+                'style="flex:1;padding:8px;background:#EEF3FF;border:1.5px solid #B3C4E8;border-radius:8px;font-size:12.5px;font-weight:600;color:#1C43B5;cursor:pointer">'+
                 '✓ 安排首次沟通</button>'
           )+
           '<button onclick="editClue(\''+projKey+'\',\''+clue.id+'\')" '+
@@ -322,7 +322,7 @@ function nextStepGuide(k,x,teal,amber,slate){
       _snote||('\u8be5\u65b9\u5411\u5df2\u63a8\u8fdb\u5230\u300c'+_cn+'\u300d\uff0c\u53ef\u5728\u4e0b\u65b9\u5bf9\u63a5\u8bb0\u5f55\u4e2d\u767b\u8bb0\u8fdb\u5c55\u3002'));
   }
   if(x.stage>=5){
-    return box('linear-gradient(135deg,#f0fdf4,#f0f9ff)','#86efac','#166534','\u2705','\u5f53\u524d\uff1a'+(teal||0)+' \u6761\u7ebf\u7d22\u53ef\u5b89\u6392\u6c9f\u901a','\u5c55\u5f00\u53ef\u6c9f\u901a\u7ebf\u7d22\u67e5\u770b\u300c\u5982\u4f55\u8054\u7cfb\u8fd9\u5bb6\u4f01\u4e1a\u300d\uff0c\u5e76\u5728\u4e0b\u65b9\u5bf9\u63a5\u8bb0\u5f55\u4e2d\u767b\u8bb0\u8fdb\u5c55\u3002');
+    return box('linear-gradient(135deg,#EEF3FF,#f0f9ff)','#B3C4E8','#1C43B5','\u2705','\u5f53\u524d\uff1a'+(teal||0)+' \u6761\u7ebf\u7d22\u53ef\u5b89\u6392\u6c9f\u901a','\u5c55\u5f00\u53ef\u6c9f\u901a\u7ebf\u7d22\u67e5\u770b\u300c\u5982\u4f55\u8054\u7cfb\u8fd9\u5bb6\u4f01\u4e1a\u300d\uff0c\u5e76\u5728\u4e0b\u65b9\u5bf9\u63a5\u8bb0\u5f55\u4e2d\u767b\u8bb0\u8fdb\u5c55\u3002');
   }
   return '';
 }
@@ -618,7 +618,7 @@ function dockingPage(p){
         '<div style="flex:1;min-width:0">'+
           '<div style="font-size:13px;font-weight:700;color:#0b183b;margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escapeChainText(industryDemandProjectTitle(x))+'</div>'+
           '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
-            (teal?'<span style="padding:1px 7px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:11px">'+teal+'条可沟通</span>':'')+
+            (teal?'<span style="padding:1px 7px;background:#EEF3FF;color:#1C43B5;border-radius:10px;font-size:11px">'+teal+'条可沟通</span>':'')+
             (amber?'<span style="padding:1px 7px;background:#fffbeb;color:#92400e;border-radius:10px;font-size:11px">'+amber+'条核验中</span>':'')+
             (!teal&&!amber?'<span style="padding:1px 7px;background:#f5f7fb;color:#6b7280;border-radius:10px;font-size:11px">'+xClues.length+'条待接触</span>':'')+
           '</div>'+
@@ -642,7 +642,7 @@ function dockingPage(p){
     ? '<div style="margin-bottom:20px">'+
         '<div style="font-size:12px;font-weight:650;color:#4a5568;letter-spacing:.3px;margin-bottom:10px">候选企业线索</div>'+
         clues.map(function(c){
-          var toneMap={slate:{bg:'#f5f7fb',dot:'#9aa5b5',label:'待接触'},amber:{bg:'#fffbeb',dot:'#f59e0b',label:'核验中'},teal:{bg:'#f0fdf4',dot:'#22c55e',label:'可安排沟通'}};
+          var toneMap={slate:{bg:'#f5f7fb',dot:'#9aa5b5',label:'待接触'},amber:{bg:'#fffbeb',dot:'#f59e0b',label:'核验中'},teal:{bg:'#EEF3FF',dot:'#2D5BE3',label:'可安排沟通'}};
           var t=toneMap[c.tone]||toneMap.slate;
           return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:'+t.bg+';border-radius:10px;margin-bottom:6px">'+
             '<span style="width:8px;height:8px;border-radius:50%;background:'+t.dot+';flex-shrink:0"></span>'+
@@ -726,8 +726,8 @@ function dockingPage(p){
       '<div style="font-size:12px;color:#4a5568;line-height:1.7">资源端已把该方向推进到「'+stageNameOf(px,px.stage)+'」，可在下方对接记录中登记进展。</div>'+
     '</div>';
   } else if(px.stage>=5){
-    nextStep='<div style="padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;margin-bottom:16px">'+
-      '<div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:6px">✓ 可安排首次沟通</div>'+
+    nextStep='<div style="padding:12px 14px;background:#EEF3FF;border:1.5px solid #B3C4E8;border-radius:12px;margin-bottom:16px">'+
+      '<div style="font-size:12px;font-weight:700;color:#1C43B5;margin-bottom:6px">✓ 可安排首次沟通</div>'+
       '<div style="font-size:12px;color:#4a5568;line-height:1.7">政府侧待办：确认<strong>接待时段</strong>、准备<strong>承接方案</strong>（园区/政策/配套）。在下方填写对接记录跟踪进展。</div>'+
     '</div>';
   }
@@ -781,7 +781,7 @@ function dockProgressInline(pk){
     ? '<div style="margin-bottom:18px">'+
         '<div style="font-size:12px;font-weight:650;color:#4a5568;letter-spacing:.3px;margin-bottom:10px">候选企业线索</div>'+
         clues.map(function(c){
-          var toneMap={slate:{bg:'#f5f7fb',dot:'#9aa5b5',label:'待接触'},amber:{bg:'#fffbeb',dot:'#f59e0b',label:'核验中'},teal:{bg:'#f0fdf4',dot:'#22c55e',label:'可安排沟通'}};
+          var toneMap={slate:{bg:'#f5f7fb',dot:'#9aa5b5',label:'待接触'},amber:{bg:'#fffbeb',dot:'#f59e0b',label:'核验中'},teal:{bg:'#EEF3FF',dot:'#2D5BE3',label:'可安排沟通'}};
           var t=toneMap[c.tone]||toneMap.slate;
           return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:'+t.bg+';border-radius:10px;margin-bottom:6px">'+
             '<span style="width:8px;height:8px;border-radius:50%;background:'+t.dot+';flex-shrink:0"></span>'+
@@ -861,8 +861,8 @@ function dockProgressInline(pk){
       '<div style="font-size:12px;color:#4a5568;line-height:1.7">资源端已把该方向推进到「'+stageNameOf(px,px.stage)+'」，可在下方对接记录中登记进展。</div>'+
     '</div>';
   } else if(px.stage>=5){
-    nextStep='<div style="padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;margin-bottom:16px">'+
-      '<div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:6px">✓ 可安排首次沟通</div>'+
+    nextStep='<div style="padding:12px 14px;background:#EEF3FF;border:1.5px solid #B3C4E8;border-radius:12px;margin-bottom:16px">'+
+      '<div style="font-size:12px;font-weight:700;color:#1C43B5;margin-bottom:6px">✓ 可安排首次沟通</div>'+
       '<div style="font-size:12px;color:#4a5568;line-height:1.7">政府侧待办：确认<strong>接待时段</strong>、准备<strong>承接方案</strong>（园区/政策/配套）。在下方填写对接记录跟踪进展。</div>'+
     '</div>';
   }
@@ -983,7 +983,7 @@ function composer(){
     }
   }
   var pillColors={'主导产业与产业链':'background:#eff6ff;color:#1d4ed8;border:1.5px solid #bfdbfe',
-    '园区与承载条件':'background:#f0fdf4;color:#166534;border:1.5px solid #bbf7d0',
+    '园区与承载条件':'background:#EEF3FF;color:#1C43B5;border:1.5px solid #CCD8EF',
     '链主与存量企业':'background:#fdf4ff;color:#6b21a8;border:1.5px solid #e9d5ff',
     '政策、规划与领导关注':'background:#fffbeb;color:#92400e;border:1.5px solid #fde68a'};
   var topicPill='';
@@ -1576,17 +1576,17 @@ function renderConfirmPanel(items, projKey){
     var isDone = item.status === 'confirmed' || item.status === 'edited';
     var displayText = item.editedText || item.text;
     var filesBadge = item.files && item.files.length
-      ? '<span style="margin-left:6px;padding:1px 7px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:10.5px;border:1px solid #86efac">'+item.files.length+' 个附件</span>'
+      ? '<span style="margin-left:6px;padding:1px 7px;background:#EEF3FF;color:#1C43B5;border-radius:10px;font-size:10.5px;border:1px solid #B3C4E8">'+item.files.length+' 个附件</span>'
       : '';
 
     if(isDone){
-      return '<div class="industry-confirm-row is-done" id="ci-'+projKey+'-'+idx+'" style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px">'+
-        '<span style="color:#22c55e;font-size:16px;flex-shrink:0;margin-top:1px">✓</span>'+
+      return '<div class="industry-confirm-row is-done" id="ci-'+projKey+'-'+idx+'" style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#EEF3FF;border:1.5px solid #B3C4E8;border-radius:12px">'+
+        '<span style="color:#2D5BE3;font-size:16px;flex-shrink:0;margin-top:1px">✓</span>'+
         '<div style="flex:1;min-width:0">'+
-          '<div class="industry-confirm-text" style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
-          (item.status==='edited'?'<div style="font-size:11px;color:#22c55e;margin-top:3px">已修改并确认</div>':'<div style="font-size:11px;color:#22c55e;margin-top:3px">已确认</div>')+
+          '<div class="industry-confirm-text" style="font-size:13px;color:#17243E;line-height:1.65">'+displayText+filesBadge+'</div>'+
+          (item.status==='edited'?'<div style="font-size:11px;color:#2D5BE3;margin-top:3px">已修改并确认</div>':'<div style="font-size:11px;color:#2D5BE3;margin-top:3px">已确认</div>')+
         '</div>'+
-        '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#22c55e;cursor:pointer;flex-shrink:0">撤回</button>'+
+        '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #B3C4E8;border-radius:6px;font-size:11px;color:#2D5BE3;cursor:pointer;flex-shrink:0">撤回</button>'+
       '</div>';
     }
 
@@ -1617,7 +1617,7 @@ function renderConfirmPanel(items, projKey){
       '</div>'+
       // 操作栏
       '<div class="industry-confirm-actions" style="padding:10px 15px;background:linear-gradient(135deg,#fefce8,#fef9c3);border-top:1px solid #fde68a;display:flex;gap:8px">'+
-        '<button onclick="cfmItem(\''+projKey+'\','+idx+')" style="flex:1;padding:8px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1.5px solid #86efac;border-radius:10px;font-size:12.5px;font-weight:700;color:#166534;cursor:pointer;transition:all .15s" onmouseenter="this.style.background=\'#dcfce7\'" onmouseleave="this.style.background=\'linear-gradient(135deg,#f0fdf4,#dcfce7)\'">✓ 确认</button>'+
+        '<button onclick="cfmItem(\''+projKey+'\','+idx+')" style="flex:1;padding:8px;background:linear-gradient(135deg,#EEF3FF,#E5EDFF);border:1.5px solid #B3C4E8;border-radius:10px;font-size:12.5px;font-weight:700;color:#1C43B5;cursor:pointer;transition:all .15s" onmouseenter="this.style.background=\'#E5EDFF\'" onmouseleave="this.style.background=\'linear-gradient(135deg,#EEF3FF,#E5EDFF)\'">✓ 确认</button>'+
         '<button onclick="ciShowEdit(\''+projKey+'\','+idx+')" style="flex:1;padding:8px;background:linear-gradient(135deg,#f5f3ff,#ede9fe);border:1.5px solid #c4b5fd;border-radius:10px;font-size:12.5px;font-weight:600;color:#6d28d9;cursor:pointer" onmouseenter="this.style.background=\'#ede9fe\'" onmouseleave="this.style.background=\'linear-gradient(135deg,#f5f3ff,#ede9fe)\'">✎ 修改内容</button>'+
       '</div>'+
     '</div>';
@@ -1640,18 +1640,18 @@ function renderConfirmPanel(items, projKey){
         '<div style="font-size:11px;color:#b45309;margin-top:1px">全部确认后方可生成产业研判报告</div>'+
       '</div>'+
       '<div style="display:flex;align-items:center;gap:8px">'+
-        '<span id="cp-progress-'+projKey+'" style="font-size:12px;font-weight:700;color:'+(allDone?'#166534':'#92400e')+'">'+done+' / '+total+'</span>'+
+        '<span id="cp-progress-'+projKey+'" style="font-size:12px;font-weight:700;color:'+(allDone?'#1C43B5':'#92400e')+'">'+done+' / '+total+'</span>'+
         '<div style="width:80px;height:6px;background:#fef3c7;border-radius:3px;overflow:hidden">'+
-          '<div id="cp-bar-'+projKey+'" style="height:100%;width:'+(total?Math.round(done/total*100):0)+'%;background:linear-gradient(90deg,#f59e0b,#22c55e);border-radius:3px;transition:width .5s"></div>'+
+          '<div id="cp-bar-'+projKey+'" style="height:100%;width:'+(total?Math.round(done/total*100):0)+'%;background:linear-gradient(90deg,#f59e0b,#2D5BE3);border-radius:3px;transition:width .5s"></div>'+
         '</div>'+
         '<span id="cp-caret-'+projKey+'" style="font-size:13px;color:#92400e;display:inline-block;transition:transform .18s;transform:rotate('+(collapsed?'0':'180')+'deg)">▾</span>'+
       '</div>'+
     '</div>'+
     '<div id="cp-body-'+projKey+'" style="display:'+(collapsed?'none':'block')+'">'+
       '<div class="industry-confirm-items" style="padding:12px 16px;display:flex;flex-direction:column;gap:8px;background:#fff" id="cp-items-'+projKey+'">'+rows+'</div>'+
-      '<div class="industry-confirm-foot" id="cp-unlock-'+projKey+'" style="padding:12px 18px;background:'+(allDone?'linear-gradient(135deg,#f0fdf4,#dcfce7)':'#f9fafb')+';border-top:1px solid '+(allDone?'#86efac':'#f0f4ff')+';display:flex;align-items:center;justify-content:center;gap:8px">'+
+      '<div class="industry-confirm-foot" id="cp-unlock-'+projKey+'" style="padding:12px 18px;background:'+(allDone?'linear-gradient(135deg,#EEF3FF,#E5EDFF)':'#f9fafb')+';border-top:1px solid '+(allDone?'#B3C4E8':'#f0f4ff')+';display:flex;align-items:center;justify-content:center;gap:8px">'+
         (allDone
-          ? '<span style="font-size:13px;font-weight:700;color:#166534">✓ 所有事项已确认，请点击下方蓝色按钮生成产业研判报告</span>'
+          ? '<span style="font-size:13px;font-weight:700;color:#1C43B5">✓ 所有事项已确认，请点击下方蓝色按钮生成产业研判报告</span>'
           : '<span style="font-size:12.5px;color:#9aa5b5">还有 <strong style="color:#f59e0b">'+(total-done)+'</strong> 条事项待确认</span>'
         )+
       '</div>'+
@@ -1681,10 +1681,10 @@ function updateConfirmProgress(projKey){
   if(bar) bar.style.width=(total?Math.round(done/total*100):0)+'%';
   var unlock=document.getElementById('cp-unlock-'+projKey);
   if(unlock){
-    unlock.style.background=allDone?'#f0fdf4':'#f9fafb';
-    unlock.style.borderColor=allDone?'#86efac':'#e8edf5';
+    unlock.style.background=allDone?'#EEF3FF':'#f9fafb';
+    unlock.style.borderColor=allDone?'#B3C4E8':'#e8edf5';
     unlock.innerHTML=allDone
-      ?'<span style="font-size:13px;font-weight:650;color:#166534">✓ 所有事项已确认，请点击下方蓝色按钮生成产业研判报告</span>'
+      ?'<span style="font-size:13px;font-weight:650;color:#1C43B5">✓ 所有事项已确认，请点击下方蓝色按钮生成产业研判报告</span>'
       :'<span style="font-size:13px;color:#9aa5b5">还剩 '+(total-done)+' 条待确认</span>';
   }
   // 始终强制重建底部操作栏
@@ -1697,7 +1697,7 @@ function updateConfirmProgress(projKey){
   // if(_p && !allDone && _p.stage===4){ _p.stage=3; }  // 已废弃：阶段只进不退
   if(allDone){
     bottomBar.innerHTML=
-      '<div style="flex:1;font-size:12.5px;color:#166534;background:#f0fdf4;padding:10px 14px;border-radius:10px;border:1px solid #86efac">✓ 所有待确认事项已完成</div>'+
+      '<div style="flex:1;font-size:12.5px;color:#1C43B5;background:#EEF3FF;padding:10px 14px;border-radius:10px;border:1px solid #B3C4E8">✓ 所有待确认事项已完成</div>'+
       '<button onclick="triggerReport(2)" style="padding:12px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:650;cursor:pointer;box-shadow:0 4px 16px rgba(26,86,219,.3)">生成产业研判报告 →</button>'+
       '<button onclick="doUpload()" style="padding:12px 14px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:12px;font-size:13px;color:#4a5568;cursor:pointer">📎 补充材料</button>';
   } else {
@@ -1730,14 +1730,14 @@ function cfmItem(projKey, idx){
   if(card){
     var item = PENDING_CONFIRMS[projKey][idx];
     var displayText = item.editedText || item.text;
-    var filesBadge = item.files&&item.files.length?'<span style="margin-left:6px;padding:1px 7px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:10.5px;border:1px solid #86efac">'+item.files.length+' 个附件</span>':'';
+    var filesBadge = item.files&&item.files.length?'<span style="margin-left:6px;padding:1px 7px;background:#EEF3FF;color:#1C43B5;border-radius:10px;font-size:10.5px;border:1px solid #B3C4E8">'+item.files.length+' 个附件</span>':'';
     if(card.classList){card.classList.remove('is-pending');card.classList.add('industry-confirm-row','is-done');}
-    card.style.cssText='display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px';
+    card.style.cssText='display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#EEF3FF;border:1.5px solid #B3C4E8;border-radius:12px';
     card.innerHTML=
-      '<span style="color:#22c55e;font-size:16px;flex-shrink:0;margin-top:1px">✓</span>'+
-      '<div style="flex:1;min-width:0"><div class="industry-confirm-text" style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
-      '<div style="font-size:11px;color:#22c55e;margin-top:3px">已确认</div></div>'+
-      '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#22c55e;cursor:pointer;flex-shrink:0">撤回</button>';
+      '<span style="color:#2D5BE3;font-size:16px;flex-shrink:0;margin-top:1px">✓</span>'+
+      '<div style="flex:1;min-width:0"><div class="industry-confirm-text" style="font-size:13px;color:#17243E;line-height:1.65">'+displayText+filesBadge+'</div>'+
+      '<div style="font-size:11px;color:#2D5BE3;margin-top:3px">已确认</div></div>'+
+      '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #B3C4E8;border-radius:6px;font-size:11px;color:#2D5BE3;cursor:pointer;flex-shrink:0">撤回</button>';
   }
   persist(); // 同步确认状态到服务器
   updateConfirmProgress(projKey);
@@ -1797,14 +1797,14 @@ function ciSave(projKey, idx){
   var card = document.getElementById('ci-'+projKey+'-'+idx);
   if(card){
     var displayText = item.editedText;
-    var filesBadge = item.files&&item.files.length?'<span style="margin-left:6px;padding:1px 7px;background:#f0fdf4;color:#166534;border-radius:10px;font-size:10.5px;border:1px solid #86efac">'+item.files.length+' 个附件</span>':'';
+    var filesBadge = item.files&&item.files.length?'<span style="margin-left:6px;padding:1px 7px;background:#EEF3FF;color:#1C43B5;border-radius:10px;font-size:10.5px;border:1px solid #B3C4E8">'+item.files.length+' 个附件</span>':'';
     if(card.classList){card.classList.remove('is-pending');card.classList.add('industry-confirm-row','is-done');}
-    card.style.cssText='display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px';
+    card.style.cssText='display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:#EEF3FF;border:1.5px solid #B3C4E8;border-radius:12px';
     card.innerHTML=
-      '<span style="color:#22c55e;font-size:16px;flex-shrink:0;margin-top:1px">✓</span>'+
-      '<div style="flex:1;min-width:0"><div class="industry-confirm-text" style="font-size:13px;color:#14532d;line-height:1.65">'+displayText+filesBadge+'</div>'+
-      '<div style="font-size:11px;color:#22c55e;margin-top:3px">已修改并确认</div></div>'+
-      '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #86efac;border-radius:6px;font-size:11px;color:#22c55e;cursor:pointer;flex-shrink:0">撤回</button>';
+      '<span style="color:#2D5BE3;font-size:16px;flex-shrink:0;margin-top:1px">✓</span>'+
+      '<div style="flex:1;min-width:0"><div class="industry-confirm-text" style="font-size:13px;color:#17243E;line-height:1.65">'+displayText+filesBadge+'</div>'+
+      '<div style="font-size:11px;color:#2D5BE3;margin-top:3px">已修改并确认</div></div>'+
+      '<button onclick="uncfmItem(\''+projKey+'\','+idx+')" style="padding:3px 8px;background:none;border:1px solid #B3C4E8;border-radius:6px;font-size:11px;color:#2D5BE3;cursor:pointer;flex-shrink:0">撤回</button>';
   }
   updateConfirmProgress(projKey);
   toast('修改已暂存，正在同步到云端');
@@ -2200,7 +2200,7 @@ function renderInterviewUI(){
         '<div style="flex:1"></div>'+
         '<button onclick="interviewSkip()" style="padding:10px 20px;background:#fff;border:1.5px solid #e8edf5;border-radius:10px;font-size:13px;color:#9aa5b5;cursor:pointer">跳过</button>'+
         (cur<total?'<button onclick="interviewNext()" style="padding:10px 24px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer">下一题 →</button>':
-        '<button onclick="interviewDone()" style="padding:10px 24px;background:linear-gradient(135deg,#059669,#10b981);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer">完成访谈，开始分析</button>')+
+        '<button onclick="interviewDone()" style="padding:10px 24px;background:linear-gradient(135deg,#2D5BE3,#2D5BE3);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:650;cursor:pointer">完成访谈，开始分析</button>')+
       '</div>'+
     '</div>';
 }
@@ -2969,7 +2969,7 @@ function chainNodeSourcesHtml(node){
 
 function actualWeaknessView(value){
   var j=value&&value.judgment;if(!value||value.contract!=='chain-assessment-v1'||!j||j.contract!=='chain-judgment-v3')return null;
-  var styles={strong:{label:'已有支撑',color:'#2c7951',bg:'#eaf7ef',border:'#8aba9e',card:'#f4faf6'},mid:{label:'存在短板',color:'#8f6416',bg:'#fff4cf',border:'#d8bc69',card:'#fffcef'},weak:{label:'明显薄弱',color:'#b24738',bg:'#fdebe5',border:'#db8d7e',card:'#fff6f3'},unknown:{label:'尚不能评价',color:'#738293',bg:'#f5f7fa',border:'#cbd4de',card:'#fff'}};
+  var styles={strong:{label:'已有支撑',color:'#536580',bg:'#EEF3FF',border:'#B3C4E8',card:'#F6F8FE'},mid:{label:'存在短板',color:'#8f6416',bg:'#fff4cf',border:'#d8bc69',card:'#fffcef'},weak:{label:'明显薄弱',color:'#b24738',bg:'#fdebe5',border:'#db8d7e',card:'#fff6f3'},unknown:{label:'尚不能评价',color:'#738293',bg:'#f5f7fa',border:'#cbd4de',card:'#fff'}};
   var valid=Object.prototype.hasOwnProperty.call(styles,j.level),level=valid?j.level:'unknown',s=styles[level];
   var scopes={local:'本地实际条件',local_enterprise:'关联企业风险',industry_shared:'行业共性约束'},dimensions={supply:'实际供给',dependency:'关键依赖',maturity:'工程成熟度',coordination:'配套协同'};
   var ids=Array.isArray(j.evidence_ids)?j.evidence_ids:[],facts={weak:'明显薄弱',attention:'存在短板',supported:'已有支撑',unknown:'证据不足'};
@@ -2978,7 +2978,7 @@ function actualWeaknessView(value){
 
 function chainAssessmentView(value){
   var actual=actualWeaknessView(value);if(actual)return actual;
-  var styles={strong:{label:'已有基础',color:'#2c7951',bg:'#eaf7ef',border:'#8aba9e',card:'#f4faf6'},mid:{label:'重点培育',color:'#8f6416',bg:'#fff4cf',border:'#d8bc69',card:'#fffcef'},weak:{label:'优先补链',color:'#b24738',bg:'#fdebe5',border:'#db8d7e',card:'#fff6f3'},unknown:{label:'待研判',color:'#738293',bg:'#f5f7fa',border:'#cbd4de',card:'#fff'}};
+  var styles={strong:{label:'已有基础',color:'#536580',bg:'#EEF3FF',border:'#B3C4E8',card:'#F6F8FE'},mid:{label:'重点培育',color:'#8f6416',bg:'#fff4cf',border:'#d8bc69',card:'#fffcef'},weak:{label:'优先补链',color:'#b24738',bg:'#fdebe5',border:'#db8d7e',card:'#fff6f3'},unknown:{label:'待研判',color:'#738293',bg:'#f5f7fa',border:'#cbd4de',card:'#fff'}};
   var factLabels={weak:'明显薄弱',attention:'存在短板',supported:'已有支撑',unknown:'证据不足'},materials={multiple_sources:'多源材料',single_source:'单源材料',insufficient:'待补证'};
   var container=value&&value.contract==='chain-assessment-v1',facts=container&&value.state==='ready';
   var judgment=container&&value.judgment&&['chain-judgment-v1','chain-judgment-v2'].indexOf(value.judgment.contract)>=0?value.judgment:null;
@@ -3360,7 +3360,7 @@ function reportHtml(p){
     '<div class="industry-report-head" style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
       '<span class="industry-report-title" style="font-size:12px;font-weight:650;color:#1a56db">'+(topicHasFullReport(p.topic)?(typeof reportPublicationLabel==='function'?reportPublicationLabel({state:rs,topic:p.topic,text:(typeof reportTextForTopic==='function'?reportTextForTopic(p.topic):null)||''},'完整产业报告'):'完整产业报告'):'初步研判草稿')+'</span>'+
       '<span class="industry-report-topic" style="font-size:11.5px;color:#4a5568">'+escapeChainText(p.topic)+'</span>'+
-      '<span class="industry-report-score" style="margin-left:auto;font-size:11px;color:'+(topicScore(p.topic)>=80?'#22c55e':'#f59e0b')+'">'+topicScoreDisplay(p.topic)+'</span>'+
+      '<span class="industry-report-score" style="margin-left:auto;font-size:11px;color:'+(topicScore(p.topic)>=80?'#2D5BE3':'#f59e0b')+'">'+topicScoreDisplay(p.topic)+'</span>'+
       '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
     '</div>'+
     '<div class="industry-prose" style="padding:16px 18px;font-size:13px;color:#1e293b;line-height:1.8">'+
@@ -3552,21 +3552,21 @@ function homePage(p){
 
   // ── 可靠性横幅 ──
   var reliabilityBanner=
-    '<div class="industry-readiness" style="display:flex;align-items:center;gap:12px;padding:12px 18px;background:'+(r.score>=80?'#f0fdf4':'#fffbeb')+';border-bottom:1px solid '+(r.score>=80?'#86efac':'#fde68a')+'">'+
+    '<div class="industry-readiness" style="display:flex;align-items:center;gap:12px;padding:12px 18px;background:'+(r.score>=80?'#EEF3FF':'#fffbeb')+';border-bottom:1px solid '+(r.score>=80?'#B3C4E8':'#fde68a')+'">'+
       '<div style="flex:1;min-width:0">'+
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'+
-          '<span style="font-size:12px;font-weight:650;color:'+(r.score>=80?'#166534':'#92400e')+'">从城市智库继承数据</span>'+
-          '<span style="font-size:11px;color:'+(r.score>=80?'#22c55e':'#f59e0b')+';font-weight:700">'+r.score+'%</span>'+
-          '<span style="font-size:11px;color:'+(r.score>=80?'#22c55e':'#f59e0b')+'">'+r.label+'</span>'+
+          '<span style="font-size:12px;font-weight:650;color:'+(r.score>=80?'#1C43B5':'#92400e')+'">从城市智库继承数据</span>'+
+          '<span style="font-size:11px;color:'+(r.score>=80?'#2D5BE3':'#f59e0b')+';font-weight:700">'+r.score+'%</span>'+
+          '<span style="font-size:11px;color:'+(r.score>=80?'#2D5BE3':'#f59e0b')+'">'+r.label+'</span>'+
           '<span title="仅表示材料覆盖与流程准备情况，不代表事实正确率。补充原始材料，并逐条核实待确认事项。" style="font-size:11px;color:#9aa5b5;cursor:help;text-decoration:underline dotted;margin-left:4px">ⓘ 如何提升</span>'+
         '</div>'+
-        '<div style="height:4px;background:'+(r.score>=80?'#dcfce7':'#fef3c7')+';border-radius:2px;overflow:hidden">'+
-          '<div style="height:100%;width:'+r.score+'%;background:'+(r.score>=80?'#22c55e':'#f59e0b')+';border-radius:2px;transition:width .4s"></div>'+
+        '<div style="height:4px;background:'+(r.score>=80?'#E5EDFF':'#fef3c7')+';border-radius:2px;overflow:hidden">'+
+          '<div style="height:100%;width:'+r.score+'%;background:'+(r.score>=80?'#2D5BE3':'#f59e0b')+';border-radius:2px;transition:width .4s"></div>'+
         '</div>'+
       '</div>'+
       (r.score<80
         ? '<button onclick="go(\'knowledge\')" style="flex-shrink:0;padding:6px 12px;background:#fff;border:1.5px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e;cursor:pointer;font-weight:600">补充城市智库 →</button>'
-        : '<span style="flex-shrink:0;font-size:12px;color:#22c55e">✓ 可直接生成产业分析</span>'
+        : '<span style="flex-shrink:0;font-size:12px;color:#2D5BE3">✓ 可直接生成产业分析</span>'
       )+
     '</div>';
 
@@ -3832,7 +3832,7 @@ function memFileView(){
     var pill=repairFailed?'<span style="background:#fef2f2;color:#b91c1c;padding:1px 8px;border-radius:10px;font-size:10.5px;font-weight:700">'+(repairOriginalUnknown?'片段补全失败，原件待检查':'原件保留，片段补全失败')+'</span>':repairRunning?'<span style="background:#fef9c3;color:#a16207;padding:1px 8px;border-radius:10px;font-size:10.5px">原件保留，正在补全片段</span>':u.pending
       ? '<span style="background:#fef9c3;color:#a16207;padding:1px 8px;border-radius:10px;font-size:10.5px;font-weight:700">\u23f3 解析中</span>'
       : (parsed
-        ? '<span style="background:#ecfdf5;color:#059669;padding:1px 8px;border-radius:10px;font-size:10.5px;font-weight:700">\u2713 已解析 '+chunks+' 片段</span>'
+        ? '<span style="background:#EEF3FF;color:#2D5BE3;padding:1px 8px;border-radius:10px;font-size:10.5px;font-weight:700">\u2713 已解析 '+chunks+' 片段</span>'
         : '<span style="background:#fef2f2;color:#dc2626;padding:1px 8px;border-radius:10px;font-size:10.5px;font-weight:700">\u26a0 仅记录文件名</span>');
     return '<div style="border:1px solid #eef2f7;border-radius:10px;padding:11px 13px;margin-bottom:9px;background:#fff;display:flex;align-items:flex-start;gap:11px">'+
       '<span style="font-size:26px;flex-shrink:0">'+fico+'</span>'+

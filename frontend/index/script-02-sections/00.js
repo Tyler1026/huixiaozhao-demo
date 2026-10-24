@@ -30,7 +30,7 @@ function viewCurrentReport(){
       '<div class="industry-report-head" style="padding:12px 16px;background:#f8faff;border-bottom:1px solid #e8edf5;display:flex;align-items:center;gap:8px">'+
         '<span class="industry-report-title" style="font-size:13px;font-weight:700;color:#1d4ed8">📊 '+(typeof reportPublicationLabel==='function'?reportPublicationLabel(context,'产业分析报告（当前正文）'):'产业分析报告（当前正文）')+'</span>'+
         '<span class="industry-report-topic" style="font-size:11.5px;color:#8492a6">'+context.topic.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>'+
-        '<span class="industry-report-score" style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f0fdf4;color:#166534">'+topicScoreDisplay(context.topic)+'</span>'+
+        '<span class="industry-report-score" style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#EEF3FF;color:#1C43B5">'+topicScoreDisplay(context.topic)+'</span>'+
         '<button onclick="downloadReport(\'full\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1a56db;cursor:pointer;font-weight:600;margin-left:6px">⬇ 下载</button>'+
       '</div>'+
       '<div class="industry-prose" style="padding:18px 20px;font-size:13px;line-height:1.85;color:#1e293b">'+

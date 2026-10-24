@@ -1,22 +1,22 @@
-/* Qingxu / investment cooperation.
+/* Blue client / investment cooperation.
    A visual layer only: the demand list, detail pane, saved data and actions keep
    the original application's layout and behavior. Load after docking.css. */
 body.docking-view .main-pane {
-  background: #f3f5ee;
+  background: var(--client-color-blue-wash);
 }
 .docking-workspace {
-  --dock-ink: #203d31;
-  --dock-text: #4c6255;
-  --dock-muted: #778576;
-  --dock-line: #dce4d6;
-  --dock-soft: #f2f5ec;
-  --dock-blue: #285e46;
-  --dock-copper: #9b8058;
-  --dock-paper: #fffefa;
+  --dock-ink: var(--client-color-blue-dark);
+  --dock-text: var(--client-color-secondary);
+  --dock-muted: var(--client-color-muted);
+  --dock-line: var(--client-color-blue-soft);
+  --dock-soft: var(--client-color-blue-wash);
+  --dock-blue: var(--client-color-blue);
+  --dock-copper: var(--client-color-muted);
+  --dock-paper: var(--client-color-surface);
   color: var(--dock-text);
   background:
-    radial-gradient(ellipse at 86% 0%, #dce8d862 0, #eaf0e600 43%),
-    linear-gradient(155deg, #f8f9f2, #f1f4eb 80%);
+    radial-gradient(ellipse at 86% 0%, #E5EDFF62 0, #EEF3FF00 43%),
+    linear-gradient(155deg, var(--client-color-paper), var(--client-color-blue-wash) 80%);
 }
 
 /* An edge-softened image sits behind the existing page header. The picture is
@@ -34,84 +34,84 @@ body.docking-view .main-pane {
   height: 175px;
   right: 90px;
   top: -48px;
-  background-image: var(--hxz-collaboration-image, none);
+  background-image: url("/static/skin/illustration-connect.svg");
   background-position: center 49%;
   background-size: cover;
   opacity: .24;
-  filter: saturate(.55) contrast(.85);
+
   -webkit-mask-image: radial-gradient(ellipse, #000c 0%, #0008 35%, #0000 72%);
   mask-image: radial-gradient(ellipse, #000c 0%, #0008 35%, #0000 72%);
 }
 .docking-kicker {
-  color: #87927e;
+  color: var(--client-color-subtle);
   font-size: 9px;
   font-weight: 500;
   letter-spacing: 1.8px;
 }
 .docking-header h1 {
-  color: #214735;
+  color: var(--client-color-blue-dark);
   font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
   font-weight: 500;
   letter-spacing: 1px;
 }
 .docking-header p {
-  color: #667c67;
+  color: var(--client-color-muted);
   letter-spacing: .1px;
 }
 .docking-button {
-  border-color: #d2ddca;
+  border-color: var(--client-color-line);
   border-radius: 7px;
-  color: #4d6b52;
-  background: #fffefa;
+  color: var(--client-color-secondary);
+  background: var(--client-color-surface);
   font-weight: 500;
   transition: background .16s, border-color .16s, box-shadow .16s;
 }
 .docking-button:hover {
-  border-color: #a9bea0;
-  color: #2c593e;
-  background: #f1f6e9;
-  box-shadow: 0 2px 7px #29462708;
+  border-color: var(--client-color-blue-border);
+  color: var(--client-color-blue);
+  background: var(--client-color-blue-wash);
+  box-shadow: 0 2px 7px #1C43B508;
 }
 .docking-button.is-primary {
-  border-color: #285e46;
-  color: #fffefa;
-  background: #285e46;
-  box-shadow: 0 2px 4px #1e443312;
+  border-color: var(--client-color-blue);
+  color: var(--client-color-surface);
+  background: var(--client-color-blue);
+  box-shadow: 0 2px 4px #1C43B512;
 }
 .docking-button.is-primary:hover {
-  border-color: #174932;
-  color: #fffefa;
-  background: #174932;
+  border-color: var(--client-color-blue-dark);
+  color: var(--client-color-surface);
+  background: var(--client-color-blue-dark);
 }
 .docking-button.is-quiet {
-  border-color: #d9e2d2;
-  color: #5a7259;
-  background: #fffefac7;
+  border-color: var(--client-color-line);
+  color: var(--client-color-secondary);
+  background: #FFFFFFc7;
 }
 .docking-button.is-quiet:hover {
-  border-color: #afc29f;
-  background: #eef4e6;
+  border-color: var(--client-color-blue-border);
+  background: var(--client-color-blue-pale);
 }
 .docking-workspace button:focus-visible,
 .docking-workspace input:focus-visible,
 .docking-workspace a:focus-visible,
 .docking-workspace summary:focus-visible,
 .docking-action-form :is(input, select, textarea, button):focus-visible {
-  outline-color: #729b7066;
+  outline-color: #8293AF66;
 }
 .docking-workspace .client-brand-icon { flex-shrink: 0; }
 
 /* Keep the four real metrics in their original strip. The fine top rule and
    tabular serif numbers provide hierarchy without inventing charts. */
 .docking-metrics {
-  border-color: #d9e2d2;
+  border-color: var(--client-color-line);
   border-radius: 11px;
-  background: #e1e7da;
-  box-shadow: 0 3px 12px #3a513706;
+  background: var(--client-color-blue-soft);
+  box-shadow: 0 3px 12px #35445D06;
 }
 .docking-metric {
   background:
-    linear-gradient(145deg, #fffefa 52%, #f5f8ee);
+    linear-gradient(145deg, var(--client-color-surface) 52%, var(--client-color-paper));
 }
 .docking-metric::before {
   content: "";
@@ -121,88 +121,88 @@ body.docking-view .main-pane {
   width: 24px;
   height: 2px;
   border-radius: 0 0 2px 2px;
-  background: #76956a;
+  background: var(--client-color-muted);
 }
-.docking-metric:nth-child(2)::before { background: #4a8570; }
-.docking-metric:nth-child(3)::before { background: #a48a5f; }
-.docking-metric:nth-child(4)::before { background: #7b9676; }
-.docking-metric small { color: #5f785d; font-weight: 500; }
+.docking-metric:nth-child(2)::before { background: var(--client-color-secondary); }
+.docking-metric:nth-child(3)::before { background: var(--client-color-muted); }
+.docking-metric:nth-child(4)::before { background: var(--client-color-subtle); }
+.docking-metric small { color: var(--client-color-secondary); font-weight: 500; }
 .docking-metric strong {
-  color: #275d43;
+  color: var(--client-color-blue);
   font-family: "Georgia", "Songti SC", serif;
   font-weight: 400;
   letter-spacing: -.8px;
 }
-.docking-metric:nth-child(3) strong { color: #927448; }
-.docking-metric > span { color: #899581; }
+.docking-metric:nth-child(3) strong { color: var(--client-color-secondary); }
+.docking-metric > span { color: var(--client-color-subtle); }
 
 /* Demand navigation: quiet paper, legible selected state, no new navigation. */
 .docking-list-panel {
-  border-color: #d9e2d2;
+  border-color: var(--client-color-line);
   border-radius: 11px;
-  background: #f7f9f1;
+  background: var(--client-color-paper);
 }
 .docking-list-tools {
-  border-color: #e1e7d8;
-  background: #fffefa;
+  border-color: var(--client-color-blue-soft);
+  background: var(--client-color-surface);
 }
-.docking-list-tools > label { color: #5a7055; font-weight: 500; }
+.docking-list-tools > label { color: var(--client-color-secondary); font-weight: 500; }
 .docking-list-tools input {
-  border-color: #dce4d4;
+  border-color: var(--client-color-line);
   border-radius: 7px;
-  color: #35573d;
-  background: #f6f8f0;
+  color: var(--client-color-copy);
+  background: var(--client-color-paper);
 }
-.docking-list-tools input::placeholder { color: #96a18d; }
+.docking-list-tools input::placeholder { color: var(--client-color-subtle); }
 .docking-list-tools input:focus {
-  border-color: #8eac7e;
-  background: #fffefa;
+  border-color: var(--client-color-subtle);
+  background: var(--client-color-surface);
 }
 .docking-filters {
   padding: 3px;
-  border: 1px solid #e6eadf;
+  border: 1px solid var(--client-color-blue-soft);
   border-radius: 7px;
-  background: #f4f6ee;
+  background: var(--client-color-blue-wash);
 }
-.docking-filters button { color: #7b8a73; border-radius: 4px; }
-.docking-filters button:hover { color: #477048; background: #eaf0e0; }
+.docking-filters button { color: var(--client-color-muted); border-radius: 4px; }
+.docking-filters button:hover { color: var(--client-color-secondary); background: var(--client-color-blue-pale); }
 .docking-filters button.is-active {
-  color: #3e6541;
-  background: #fffefa;
-  box-shadow: 0 1px 4px #4153360c;
+  color: var(--client-color-copy);
+  background: var(--client-color-surface);
+  box-shadow: 0 1px 4px #35445D0c;
   font-weight: 500;
 }
 .docking-demand-list,
-.docking-detail-panel { scrollbar-color: #cad8be transparent; }
+.docking-detail-panel { scrollbar-color: var(--client-color-line-strong) transparent; }
 .docking-demand-row {
   border-radius: 8px;
-  border-bottom-color: #e6ebdd;
+  border-bottom-color: var(--client-color-blue-soft);
 }
-.docking-demand-row:hover { background: #f0f5e8; }
+.docking-demand-row:hover { background: var(--client-color-blue-wash); }
 .docking-demand-row.is-active {
-  border-color: #c9d9bd;
-  background: linear-gradient(110deg, #e9f1df, #f1f6e9);
-  box-shadow: 0 2px 6px #3f5f3405;
+  border-color: var(--client-color-line-strong);
+  background: linear-gradient(110deg, var(--client-color-blue-pale), var(--client-color-blue-wash));
+  box-shadow: 0 2px 6px #2D5BE305;
 }
-.docking-demand-row.is-active::before { background: #608756; }
-.docking-row-title { color: #395b3b; font-weight: 500; }
-.docking-row-meta { color: #929d87; }
-.docking-row-summary { color: #74886c; }
-.docking-row-summary > span { color: #bac5b0; }
+.docking-demand-row.is-active::before { background: var(--client-color-secondary); }
+.docking-row-title { color: var(--client-color-copy); font-weight: 500; }
+.docking-row-meta { color: var(--client-color-subtle); }
+.docking-row-summary { color: var(--client-color-muted); }
+.docking-row-summary > span { color: var(--client-color-line-strong); }
 
 /* Status color is retained as meaning, with restrained Qingxu tones. */
 .docking-badge {
-  border-color: #dce4d5;
+  border-color: var(--client-color-blue-soft);
   border-radius: 4px;
-  color: #7d8b73;
-  background: #f2f5ec;
+  color: var(--client-color-muted);
+  background: var(--client-color-blue-wash);
   font-weight: 400;
 }
 .docking-badge[data-tone="slate"],
 .docking-badge[data-tone="neutral"] {
-  border-color: #dce4d5;
-  color: #7d8b73;
-  background: #f2f5ec;
+  border-color: var(--client-color-blue-soft);
+  color: var(--client-color-muted);
+  background: var(--client-color-blue-wash);
 }
 .docking-badge[data-tone="amber"] {
   border-color: #e9dfc6;
@@ -210,14 +210,14 @@ body.docking-view .main-pane {
   background: #f8f3e7;
 }
 .docking-badge[data-tone="blue"] {
-  border-color: #d1e0d7;
-  color: #4a7863;
-  background: #edf4ee;
+  border-color: var(--client-color-line);
+  color: var(--client-color-secondary);
+  background: var(--client-color-blue-wash);
 }
 .docking-badge[data-tone="green"] {
-  border-color: #d4e0c9;
-  color: #557e43;
-  background: #f0f6e7;
+  border-color: var(--client-color-line);
+  color: var(--client-color-secondary);
+  background: var(--client-color-blue-wash);
 }
 .docking-badge[data-tone="rose"] {
   border-color: #e8d7cc;
@@ -226,129 +226,129 @@ body.docking-view .main-pane {
 }
 
 .docking-detail-panel {
-  border-color: #dae2d1;
+  border-color: var(--client-color-line);
   border-radius: 11px;
-  background: #fffefa;
-  box-shadow: 0 3px 12px #3a513705;
+  background: var(--client-color-surface);
+  box-shadow: 0 3px 12px #35445D05;
 }
-.docking-detail-head { border-color: #e6ebdf; }
+.docking-detail-head { border-color: var(--client-color-blue-soft); }
 .docking-detail-head h2 {
-  color: #284d34;
+  color: var(--client-color-blue-dark);
   font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
   font-weight: 500;
   letter-spacing: .25px;
 }
-.docking-detail-meta > span:not(.docking-badge) { color: #88967d; }
-.docking-detail-head .docking-kicker { color: #a08f72; }
+.docking-detail-meta > span:not(.docking-badge) { color: var(--client-color-subtle); }
+.docking-detail-head .docking-kicker { color: var(--client-color-subtle); }
 .docking-block {
   position: relative;
-  border-color: #e0e6d6;
+  border-color: var(--client-color-blue-soft);
   border-radius: 8px;
-  background: linear-gradient(140deg, #fafbf5, #fffefa);
+  background: linear-gradient(140deg, var(--client-color-paper), var(--client-color-surface));
 }
-.docking-block h3 { color: #59734e; font-weight: 500; }
-.docking-block > p { color: #55694e; }
-.docking-block dt { color: #95a087; }
-.docking-block dd { color: #5a7251; }
-.docking-condition { border-color: #e3e9d8; }
-.docking-condition strong { color: #899878; font-weight: 400; }
-.docking-condition p { color: #637957; }
+.docking-block h3 { color: var(--client-color-secondary); font-weight: 500; }
+.docking-block > p { color: var(--client-color-secondary); }
+.docking-block dt { color: var(--client-color-subtle); }
+.docking-block dd { color: var(--client-color-secondary); }
+.docking-condition { border-color: var(--client-color-blue-soft); }
+.docking-condition strong { color: var(--client-color-subtle); font-weight: 400; }
+.docking-condition p { color: var(--client-color-secondary); }
 .docking-workspace summary {
-  color: #628557;
+  color: var(--client-color-secondary);
   text-underline-offset: 4px;
 }
-.docking-workspace summary:hover { color: #315d3a; }
-.docking-workspace summary::marker { color: #91ab7d; font-size: .8em; }
-.docking-source { border-color: #e5ebdc; }
-.docking-source p { color: #748469; }
-.docking-evidence-link { color: #658756; }
-.docking-section-head h3 { color: #3c5d3a; font-weight: 500; }
+.docking-workspace summary:hover { color: var(--client-color-blue); }
+.docking-workspace summary::marker { color: var(--client-color-subtle); font-size: .8em; }
+.docking-source { border-color: var(--client-color-blue-soft); }
+.docking-source p { color: var(--client-color-muted); }
+.docking-evidence-link { color: var(--client-color-secondary); }
+.docking-section-head h3 { color: var(--client-color-copy); font-weight: 500; }
 .docking-section-head h3 > span {
-  color: #8e987d;
-  background: #f0f3e9;
+  color: var(--client-color-subtle);
+  background: var(--client-color-blue-pale);
   font-weight: 400;
 }
-.docking-section-head p { color: #8b977f; }
+.docking-section-head p { color: var(--client-color-subtle); }
 
 /* Candidate cards keep every factual field and existing action in place. */
 .docking-clue-card {
   position: relative;
-  border-color: #dce5d2;
+  border-color: var(--client-color-line);
   border-radius: 9px;
-  background: linear-gradient(160deg, #fffefa 74%, #f8faf2);
-  box-shadow: 0 2px 7px #3b523004;
+  background: linear-gradient(160deg, var(--client-color-surface) 74%, var(--client-color-paper));
+  box-shadow: 0 2px 7px #35445D04;
 }
-.docking-clue-card:hover { border-color: #bdcfac; }
-.docking-clue-card > header strong { color: #3f623c; font-weight: 500; }
-.docking-clue-meta { color: #91a080; }
+.docking-clue-card:hover { border-color: var(--client-color-line-strong); }
+.docking-clue-card > header strong { color: var(--client-color-copy); font-weight: 500; }
+.docking-clue-meta { color: var(--client-color-subtle); }
 .docking-clue-reason {
-  border-left: 2px solid #b8caa5;
+  border-left: 2px solid var(--client-color-blue-border);
   border-radius: 0 6px 6px 0;
-  background: #f2f6eb;
+  background: var(--client-color-blue-wash);
 }
 .docking-clue-reason small {
-  color: #8b9d79;
+  color: var(--client-color-subtle);
   font-weight: 400;
   letter-spacing: .4px;
 }
-.docking-clue-reason p { color: #5e7950; }
-.docking-clue-evidence ul { color: #7b906a; }
-.docking-clue-state { color: #98a18c; }
-.docking-clue-actions { border-color: #e9eddf; }
-.docking-clue-actions .docking-button { background: #fffefa; }
-.docking-clue-actions .docking-button:hover { background: #f0f5e7; }
+.docking-clue-reason p { color: var(--client-color-secondary); }
+.docking-clue-evidence ul { color: var(--client-color-muted); }
+.docking-clue-state { color: var(--client-color-subtle); }
+.docking-clue-actions { border-color: var(--client-color-blue-soft); }
+.docking-clue-actions .docking-button { background: var(--client-color-surface); }
+.docking-clue-actions .docking-button:hover { background: var(--client-color-blue-pale); }
 .docking-clue-actions .docking-button:not(.is-quiet) {
-  color: #466d43;
-  border-color: #c6d7b8;
-  background: #f0f5e9;
+  color: var(--client-color-secondary);
+  border-color: var(--client-color-line-strong);
+  background: var(--client-color-blue-wash);
 }
 
 /* Reception, verification and saved follow-up records. */
 .docking-receiving {
-  border-color: #dbe5d0;
+  border-color: var(--client-color-line);
   border-radius: 9px;
   background:
-    radial-gradient(ellipse at 100% 0%, #e4edd66b, #e4edd600 68%),
-    #f7f9f0;
+    radial-gradient(ellipse at 100% 0%, #E5EDFF6b, #E5EDFF00 68%),
+    var(--client-color-paper);
 }
-.docking-receiving .docking-kicker { color: #929f80; }
-.docking-receiving h3 { color: #517447; font-weight: 500; }
-.docking-receiving-reply { color: #617855; }
-.docking-receiving dt { color: #909e7e; }
-.docking-receiving dd { color: #5b7451; }
+.docking-receiving .docking-kicker { color: var(--client-color-subtle); }
+.docking-receiving h3 { color: var(--client-color-secondary); font-weight: 500; }
+.docking-receiving-reply { color: var(--client-color-secondary); }
+.docking-receiving dt { color: var(--client-color-subtle); }
+.docking-receiving dd { color: var(--client-color-secondary); }
 .docking-receiving[data-status="needs_info"] {
   border-color: #e6ddc4;
   background: linear-gradient(120deg, #faf5e9, #fffdf6);
 }
 .docking-receiving[data-status="needs_info"] h3 { color: #927448; }
 .docking-receiving[data-status="feedback"] {
-  border-color: #ccdfca;
-  background: linear-gradient(120deg, #f1f7e9, #fcfdf7);
+  border-color: var(--client-color-line);
+  background: linear-gradient(120deg, var(--client-color-blue-wash), var(--client-color-surface));
 }
 .docking-verification-reply {
-  border-color: #d8e3ce;
-  background: #f5f8ef;
+  border-color: var(--client-color-line);
+  background: var(--client-color-paper);
 }
-.docking-verification-reply strong { color: #658557; font-weight: 500; }
-.docking-verification-reply p { color: #6e835e; }
-.docking-verification-reply small { color: #94a185; }
-.docking-records { border-color: #e5ebdc; }
-.docking-timeline > article { border-color: #dce7cf; }
+.docking-verification-reply strong { color: var(--client-color-secondary); font-weight: 500; }
+.docking-verification-reply p { color: var(--client-color-muted); }
+.docking-verification-reply small { color: var(--client-color-subtle); }
+.docking-records { border-color: var(--client-color-blue-soft); }
+.docking-timeline > article { border-color: var(--client-color-line); }
 .docking-timeline > article::before {
-  border-color: #fffefa;
-  background: #8ca17a;
-  box-shadow: 0 0 0 1px #d3dfc6;
+  border-color: var(--client-color-surface);
+  background: var(--client-color-subtle);
+  box-shadow: 0 0 0 1px var(--client-color-line);
 }
 .docking-timeline > article:first-child::before {
-  background: #678b56;
-  box-shadow: 0 0 0 1px #b9cfa6, 0 0 0 4px #edf3e5;
+  background: var(--client-color-muted);
+  box-shadow: 0 0 0 1px var(--client-color-line-strong), 0 0 0 4px var(--client-color-blue-pale);
 }
-.docking-event-kind { color: #57784b; font-weight: 500; }
-.docking-event-top time { color: #9da68f; }
-.docking-event-company { color: #647e55; font-weight: 500; }
-.docking-timeline article > p { color: #7b8b6c; }
-.docking-event-actor { color: #a0a994; }
-.docking-muted { color: #94a087 !important; }
+.docking-event-kind { color: var(--client-color-secondary); font-weight: 500; }
+.docking-event-top time { color: var(--client-color-subtle); }
+.docking-event-company { color: var(--client-color-secondary); font-weight: 500; }
+.docking-timeline article > p { color: var(--client-color-muted); }
+.docking-event-actor { color: var(--client-color-subtle); }
+.docking-muted { color: var(--client-color-subtle) !important; }
 
 /* Empty states carry a feathered brand illustration; data remains honestly
    empty and the existing CTA is still the only way to create a demand. */
@@ -356,11 +356,11 @@ body.docking-view .main-pane {
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  border-color: #dce5d2;
+  border-color: var(--client-color-line);
   border-radius: 11px;
   background:
-    radial-gradient(ellipse at 50% 20%, #e8f0dd85, #e8f0dd00 64%),
-    #fffefac9;
+    radial-gradient(ellipse at 50% 20%, #EEF3FF85, #EEF3FF00 64%),
+    #FFFFFFc9;
 }
 .docking-empty::before {
   content: "";
@@ -368,84 +368,84 @@ body.docking-view .main-pane {
   z-index: -1;
   inset: 0;
   pointer-events: none;
-  background-image: var(--hxz-collaboration-image, none);
+  background-image: url("/static/skin/illustration-connect.svg");
   background-repeat: no-repeat;
   background-size: min(780px, 100%) auto;
   background-position: center 42%;
   opacity: .15;
-  filter: saturate(.55) contrast(.85);
+
   -webkit-mask-image: radial-gradient(ellipse at 50% 42%, #000 5%, #0007 40%, #0000 72%);
   mask-image: radial-gradient(ellipse at 50% 42%, #000 5%, #0007 40%, #0000 72%);
 }
-.docking-empty .docking-kicker { color: #929c80; }
+.docking-empty .docking-kicker { color: var(--client-color-subtle); }
 .docking-empty h2 {
-  color: #41693c;
+  color: var(--client-color-blue);
   font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
   font-weight: 500;
   letter-spacing: .4px;
 }
-.docking-empty > p { color: #7f906f; }
+.docking-empty > p { color: var(--client-color-muted); }
 .docking-inline-empty {
-  border-color: #d9e3cd;
+  border-color: var(--client-color-line);
   border-radius: 8px;
   background:
-    radial-gradient(ellipse at 100% 100%, #eaf1df88, #eaf1df00 60%),
-    #f8faf2;
+    radial-gradient(ellipse at 100% 100%, #EEF3FF88, #EEF3FF00 60%),
+    var(--client-color-paper);
 }
-.docking-inline-empty > strong { color: #738963; font-weight: 500; }
-.docking-inline-empty > p { color: #96a188; }
+.docking-inline-empty > strong { color: var(--client-color-muted); font-weight: 500; }
+.docking-inline-empty > p { color: var(--client-color-subtle); }
 .docking-detail-panel > .docking-empty { background: transparent; }
 
 /* The native action dialogs receive the same paper, rules and field states. */
 .docking-action-form,
-.docking-log-form { color: #617752; }
+.docking-log-form { color: var(--client-color-secondary); }
 .docking-action-form label,
 .docking-log-form > label,
-.docking-form-columns label { color: #607b51; font-weight: 500; }
+.docking-form-columns label { color: var(--client-color-secondary); font-weight: 500; }
 .docking-action-form :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea),
 .docking-log-form :is(select, textarea, input[type="file"]),
 .docking-log-form input:not([type="file"]) {
-  border-color: #d8e3cd;
-  color: #4e6e40;
-  background: #fcfdf7;
+  border-color: var(--client-color-line);
+  color: var(--client-color-secondary);
+  background: var(--client-color-surface);
 }
 .docking-action-form :is(input, select, textarea):focus,
 .docking-log-form :is(input, select, textarea):focus-visible {
-  border-color: #94b17f;
-  background: #fffefa;
-  outline-color: #729b704d;
+  border-color: var(--client-color-subtle);
+  background: var(--client-color-surface);
+  outline-color: #8293AF4d;
 }
 .docking-action-form :is(input, textarea)::placeholder,
-.docking-log-form textarea::placeholder { color: #a0ac93; }
+.docking-log-form textarea::placeholder { color: var(--client-color-subtle); }
 .docking-action-form :is(small, .hint),
 .docking-form-help,
 .docking-log-form > label > span,
-.docking-form-columns label span { color: #96a489; }
+.docking-form-columns label span { color: var(--client-color-subtle); }
 .docking-log-context {
-  border-color: #dce6d1;
-  background: #f4f8ec;
+  border-color: var(--client-color-line);
+  background: var(--client-color-blue-wash);
 }
-.docking-log-context > span { color: #91a07f; }
-.docking-log-context > strong { color: #557c43; font-weight: 500; }
-.docking-log-context > p { color: #8b9d78; }
-.docking-log-form input[type="file"] { color: #91a080; }
+.docking-log-context > span { color: var(--client-color-subtle); }
+.docking-log-context > strong { color: var(--client-color-secondary); font-weight: 500; }
+.docking-log-context > p { color: var(--client-color-subtle); }
+.docking-log-form input[type="file"] { color: var(--client-color-subtle); }
 .docking-log-form input[type="file"]::file-selector-button {
-  border-color: #d0dfc0;
-  color: #64844f;
-  background: #edf4e4;
+  border-color: var(--client-color-line);
+  color: var(--client-color-secondary);
+  background: var(--client-color-blue-pale);
 }
-.docking-log-form input[type="file"]::file-selector-button:hover { background: #e4eed8; }
-.docking-draft-file { border-color: #e0e8d5; background: #f9fbf4; }
-.docking-draft-file > span { color: #6c8a57; }
-.docking-draft-file small { color: #9dab8e; }
-.docking-contact-material { color: #6d8658; }
-.docking-contact-material > p { color: #8a9e78; }
-.docking-contact-material > section { border-color: #dce6d0; background: #fafcf5; }
-.docking-contact-material h3 { color: #5c8148; font-weight: 500; }
-.docking-contact-material > section > p { color: #879b73; }
-.docking-contact-person { border-color: #e0e9d5; }
-.docking-contact-person span { color: #98a787; }
-.docking-contact-person strong { color: #6c8758; }
+.docking-log-form input[type="file"]::file-selector-button:hover { background: var(--client-color-blue-soft); }
+.docking-draft-file { border-color: var(--client-color-blue-soft); background: var(--client-color-paper); }
+.docking-draft-file > span { color: var(--client-color-muted); }
+.docking-draft-file small { color: var(--client-color-subtle); }
+.docking-contact-material { color: var(--client-color-secondary); }
+.docking-contact-material > p { color: var(--client-color-subtle); }
+.docking-contact-material > section { border-color: var(--client-color-line); background: var(--client-color-paper); }
+.docking-contact-material h3 { color: var(--client-color-secondary); font-weight: 500; }
+.docking-contact-material > section > p { color: var(--client-color-subtle); }
+.docking-contact-person { border-color: var(--client-color-blue-soft); }
+.docking-contact-person span { color: var(--client-color-subtle); }
+.docking-contact-person strong { color: var(--client-color-secondary); }
 
 /* Small supporting copy still needs to be readable on the warm paper. */
 .docking-kicker,
@@ -466,9 +466,9 @@ body.docking-view .main-pane {
 .docking-empty .docking-kicker,
 .docking-empty > p,
 .docking-inline-empty > p {
-  color: #6b795f;
+  color: var(--client-color-secondary);
 }
-.docking-muted { color: #738164 !important; }
+.docking-muted { color: var(--client-color-muted) !important; }
 
 @media (max-width: 1190px) {
   .docking-header::before { width: 340px; right: 50px; opacity: .19; }

@@ -16,7 +16,7 @@
   var initialAuthScreen = new URLSearchParams(location.search).get('screen');
   var moduleNames = {
     home: '需求与建联', docking: '企业对接', report: 'AI 匹配研判',
-    knowledge: '招商资料库', settings: '账号与协作', subwork: '项目推进'
+    knowledge: '城市智库', settings: '账号与协作', subwork: '项目推进'
   };
 
   function escape(value) {
@@ -61,7 +61,7 @@
   }
   function pathMarkup(active) {
     return '<nav class="client-workflow" aria-label="招商工作路径">' + [
-      ['knowledge', '01', '完善城市条件'], ['report', '02', 'AI 匹配研判'], ['home', '03', '真人建联跟进']
+      ['knowledge', '01', '城市智库'], ['report', '02', 'AI 匹配研判'], ['home', '03', '需求与建联']
     ].map(function (item) {
       return '<button type="button"' + (item[0] === active ? ' aria-current="step"' : '') +
         ' onclick="go(\'' + item[0] + '\')"><span>' + item[1] + '</span>' + item[2] + '</button>';
@@ -92,11 +92,13 @@
         '<span class="nav-copy"><strong>' + title + '</strong><small>' + description + '</small></span>' +
         (isLocked(id) ? '<span class="client-lock" title="请先完善工作区资料">待完善</span>' : '') + '</button>';
     }
-    return '<aside class="sidebar client-sidebar" aria-label="客户侧导航"><button type="button" class="client-create-demand" onclick="openDirectDemandComposer()"><span aria-hidden="true">＋</span> 提交招商需求</button>' +
-      '<nav class="nav-list client-navigation"><div class="client-nav-group"><p>招商工作</p>' +
-      item('home', '需求与建联', '受理反馈 · 企业 · 跟进', 'investment-docking') + item('report', 'AI 匹配研判', '匹配企业与对接方向', 'industry-analysis') + '</div>' +
-      '<div class="client-nav-group"><p>资料与协作</p>' + item('knowledge', '招商资料库', '产业链 · 园区 · 企业', 'knowledge-library') +
-      item('settings', '账号与协作', '工作区 · 偏好 · 提醒', 'settings') + '</div></nav>' +
+    return '<aside class="sidebar client-sidebar" aria-label="客户侧导航">' +
+      '<nav class="nav-list client-navigation"><div class="client-nav-group"><p>招商工作流程</p>' +
+      item('knowledge', '城市智库', '读懂城市 · 完善研判依据', 'knowledge-library') +
+      item('report', 'AI 匹配研判', '分析缺口 · 明确招引方向', 'industry-analysis') +
+      item('home', '需求与建联', '提交需求 · 真人建联跟进', 'investment-docking') + '</div>' +
+      '<div class="client-nav-group"><p>账号与协作</p>' + item('settings', '账号与协作', '工作区 · 偏好 · 提醒', 'settings') + '</div></nav>' +
+      '<button type="button" class="client-create-demand" onclick="openDirectDemandComposer()"><span aria-hidden="true">＋</span> 已有需求？直接提交</button>' +
       '<div class="client-sidebar-bottom"><div id="kbProgressBox">' + kbProgressInner(readiness) + '</div>' +
       '<div class="client-service-note"><strong>AI 研发 × 招商落地</strong><p>匹配有依据，建联有人跟进。</p></div>' +
       '<div class="system-status"><span></span>资料与进度以当前工作区为准</div></div></aside>';
@@ -111,20 +113,23 @@
       if (active !== 'settings') header.insertAdjacentHTML('afterend', pathMarkup(active));
     }
     if (active === 'knowledge') {
-      textAt(content, '.kb-heading .eyebrow', p.city + ' · 招商资料');
-      textAt(content, '.kb-heading h1', '招商资料库');
-      textAt(content, '#kbOverviewTitle', '汇集城市条件，匹配产业所需');
-      textAt(content, '.brand-slogan-lead', '整合产业链、园区与企业资料，');
-      textAt(content, '.brand-slogan-result', '为匹配与对接提供依据。');
+      textAt(content, '.kb-heading .eyebrow', p.city + ' · 城市智库');
+      textAt(content, '.kb-heading h1', '城市智库');
+      textAt(content, '#kbOverviewTitle', '城市知识全景');
+      textAt(content, '.brand-slogan-lead', '读懂城市，');
+      textAt(content, '.brand-slogan-result', '让招引更有方向。');
       textAt(content, '[data-kb-topic="0"] .kb-topic-material p', '整合产业链结构、关键环节与招引需求');
-      textAt(content, '#kbWelcome h2', '围绕本地条件，整理企业匹配依据。');
-      textAt(content, '#kbWelcome p', '先查阅与补充上方资料，也可以围绕产业需求、企业条件和对接方向提问。');
+      textAt(content, '#kbWelcome h2', '把城市资料，变成研判依据。');
+      textAt(content, '#kbWelcome p', '先查阅、补充城市资料，围绕产业与园区条件提问；再进入 AI 匹配研判，分析缺口并明确招引方向。');
       var welcome = content.querySelector('#kbWelcome');
-      if (welcome) welcome.insertAdjacentHTML('afterbegin', '<img class="client-welcome-art" src="/static/skin/illustration-match.svg" alt="" width="148" height="104">');
+      if (welcome) {
+        welcome.insertAdjacentHTML('afterbegin', '<img class="client-welcome-art" src="/static/skin/illustration-match.svg" alt="" width="148" height="104">');
+        welcome.insertAdjacentHTML('beforeend', '<button type="button" class="docking-button is-quiet" onclick="go(\'report\')">下一步：AI 匹配研判 →</button>');
+      }
     } else if (active === 'report') {
-      textAt(content, '.industry-kicker', '企业筛选与匹配依据');
+      textAt(content, '.industry-kicker', '基于城市智库 · 明确招引方向');
       textAt(content, '.industry-heading', 'AI 匹配研判');
-      textAt(content, '.industry-header p', '结合产业链需求与园区条件，匹配目标企业与对接方向。');
+      textAt(content, '.industry-header p', '基于城市智库研判产业链缺口、招引方向与目标企业，选择合适的建议形成招商需求。');
       var mark = content.querySelector('.industry-header-mark');
       if (mark) {
         mark.className = 'client-header-art';
@@ -132,8 +137,8 @@
       }
     } else if (active === 'home') {
       textAt(content, '.docking-header .docking-kicker', '需求受理 · 企业核验 · 建联跟进');
-      textAt(content, '.docking-header h1', '招商需求与建联');
-      textAt(content, '.docking-header p', '查看受理反馈与候选企业，由慧小招招商团队推进真实联系和后续落地。');
+      textAt(content, '.docking-header h1', '需求与建联');
+      textAt(content, '.docking-header p', '把研判方向转为具体需求，查看受理反馈与候选企业，由慧小招招商团队推进建联与落地。');
       textAt(content, '.docking-header-actions .is-quiet', '查看 AI 匹配研判 ↗');
       var filters = content.querySelector('.docking-filters');
       if (filters) [['verification', '待核验'], ['followed', '有跟进']].forEach(function (filter) {
@@ -147,7 +152,18 @@
       });
       content.querySelectorAll('.docking-empty').forEach(function (empty) {
         var firstDemand = empty.matches('#dockingWorkspace > .docking-empty');
-        if (firstDemand) empty.classList.add('client-demand-empty');
+        if (firstDemand) {
+          empty.classList.add('client-demand-empty');
+          textAt(empty, '.docking-kicker', 'AI 研判 → 提交需求 → 真人建联');
+          textAt(empty, 'h2', '把研判方向，推进为招商需求');
+          textAt(empty, 'p', '先在 AI 匹配研判中选择招引方向并形成需求；已有明确诉求，也可直接提交。提交后，在这里查看受理反馈与建联进度。');
+          var primary = empty.querySelector('button[onclick="openDirectDemandComposer()"]');
+          if (primary) {
+            primary.textContent = '查看 AI 匹配研判 →';
+            primary.setAttribute('onclick', "go('report')");
+            primary.insertAdjacentHTML('afterend', '<button type="button" class="docking-button is-quiet" onclick="openDirectDemandComposer()">已有需求，直接提交</button>');
+          }
+        }
         empty.insertAdjacentHTML('afterbegin', firstDemand
           ? '<img class="client-demand-empty-art" src="/static/skin/auth-city-connect.png" alt="" width="280" height="210">'
           : '<img class="client-empty-art" src="/static/skin/illustration-connect.svg" alt="" width="190" height="130">');
@@ -169,7 +185,7 @@
     return '<main class="client-auth"><section class="client-auth-story"><a class="client-auth-brand" href="/">' + avatar(48) +
       '<strong>慧小招</strong><span>AI 招商匹配 · 落地服务</span></a>' +
       '<div class="client-auth-intro"><p class="client-eyebrow">AI 研发团队 × 慧小招招商团队</p><h1>AI 精准招商，<br>真人建联落地。</h1>' +
-      '<p>按城区产业链需求与园区条件，精准匹配目标企业。提交需求后，慧小招招商团队跟进建联，你只需静候佳音。</p>' +
+      '<p>先通过城市智库读懂本地产业与园区条件，再由 AI 匹配研判明确招引方向。形成招商需求后，慧小招招商团队跟进企业建联与落地。</p>' +
       '<img class="client-auth-art" src="/static/skin/auth-city-connect.png" alt="" width="1448" height="1086">' +
       '<div class="client-auth-proof"><span>公网企业与人员关系数据</span><span>十多年积累 · 上万家企业数据</span></div></div><a class="client-back-home" href="/">← 返回首页</a></section>' +
       '<section class="client-auth-panel"><div class="client-auth-card"><p class="client-eyebrow">' + (register ? '加入你的招商团队' : '欢迎回到招商工作区') +

@@ -96,16 +96,16 @@ body.industry-view .nav-copy small{font-size:10px}
 .industry-page .industry-confirm-items{padding:17px!important;gap:11px!important;border-radius:0 0 10px 10px}
 .industry-page .industry-confirm-row{position:relative;border:1px solid #e3e9f0!important;border-radius:8px!important;overflow:visible!important;box-shadow:none!important;background:#fff!important}
 .industry-page .industry-confirm-row.is-pending{border-left:3px solid #d3b786!important}
-.industry-page .industry-confirm-row.is-done{border-left:3px solid #97baa9!important;padding:14px!important;background:#fcfefd!important}
+.industry-page .industry-confirm-row.is-done{border-left:3px solid var(--client-color-blue-border)!important;padding:14px!important;background:var(--client-color-surface)!important}
 .industry-page .industry-confirm-row.is-pending>div:first-child{padding:15px!important}
 .industry-page .industry-confirm-row.is-pending>div:first-child>div:first-child>span{width:22px!important;height:22px!important;border:0!important;background:#faf5e9!important;font-size:10px!important}
 .industry-page .industry-confirm-text{font-size:12px!important;line-height:1.9!important;color:#4b5f74!important;font-weight:400!important}
-.industry-page .industry-confirm-row.is-done>span{color:#70a58b!important}
-.industry-page .industry-confirm-row.is-done>div>div:nth-child(2){margin-top:5px!important;color:#8aa998!important;font-size:10px!important}
-.industry-page .industry-confirm-row.is-done>button{padding:4px 9px!important;border:1px solid #dce8e2!important;color:#6c8a7b!important;background:#fff!important;font-size:10px!important}
+.industry-page .industry-confirm-row.is-done>span{color:var(--client-color-subtle)!important}
+.industry-page .industry-confirm-row.is-done>div>div:nth-child(2){margin-top:5px!important;color:var(--client-color-subtle)!important;font-size:10px!important}
+.industry-page .industry-confirm-row.is-done>button{padding:4px 9px!important;border:1px solid var(--client-color-blue-soft)!important;color:var(--client-color-muted)!important;background:#fff!important;font-size:10px!important}
 .industry-page .industry-confirm-actions{justify-content:flex-end;flex-wrap:wrap;gap:8px!important;padding:10px 14px!important;border-top:1px solid #edf1f5!important;border-radius:0 0 8px 8px;background:#fafbfd!important}
 .industry-page .industry-confirm-actions button{flex:0 1 auto!important;min-width:81px;min-height:30px;padding:6px 12px!important;border:1px solid #d4e1ec!important;border-radius:5px!important;background:#fff!important;color:#58718a!important;font-size:11px!important;font-weight:500!important}
-.industry-page .industry-confirm-actions button:first-child{background:#edf5f1!important;color:#4a8469!important;border-color:#d4e4da!important}
+.industry-page .industry-confirm-actions button:first-child{background:var(--client-color-blue-wash)!important;color:var(--client-color-secondary)!important;border-color:var(--client-color-line)!important}
 .industry-page .industry-confirm-actions button:hover{box-shadow:0 2px 5px #28455b0c!important;border-color:#91b2cb!important}
 .industry-page .industry-confirm-edit textarea{padding:12px!important;border:1px solid #bacfe2!important;border-radius:6px!important;background:#fbfdff!important;color:#3d5770!important;font-size:12px!important;line-height:1.85!important}
 .industry-page .industry-confirm-edit>div[onclick]{padding:14px!important;border:1px dashed #c7d8e7!important;background:#f7fafe!important;border-radius:6px!important;color:#7894ad!important;font-size:11px!important}
@@ -135,12 +135,12 @@ body.industry-view .nav-copy small{font-size:10px}
 .industry-page .industry-chain-label>span:last-child:not(:first-child){color:#7993ad!important;opacity:.7!important;font-size:6px!important}
 .industry-page .industry-chain-nodes{min-width:0;gap:0!important;padding-bottom:5px!important;scrollbar-width:thin;scrollbar-color:#d0dce7 transparent}
 .industry-page .industry-chain-node{min-width:143px!important;padding:13px 10px!important;border:1px solid #dfe7ee!important;border-top-width:3px!important;border-radius:7px!important;background:#fff!important}
-.industry-page .industry-chain-node.is-strong{border-top-color:#91b6a0!important}
+.industry-page .industry-chain-node.is-strong{border-top-color:var(--client-color-blue-border)!important}
 .industry-page .industry-chain-node.is-mid{border-top-color:#ceb481!important}
 .industry-page .industry-chain-node.is-weak{border-top-color:#d2a298!important}
 .industry-page .industry-chain-node.is-unknown{border-top-color:#b4c3d2!important}
 .industry-page .industry-chain-node>span:first-child{padding:2px 6px!important;border-radius:4px!important;font-size:9px!important;font-weight:500!important}
-.industry-page .industry-chain-node.is-strong>span:first-child{background:#edf5ef!important;color:#638d73!important}
+.industry-page .industry-chain-node.is-strong>span:first-child{background:var(--client-color-blue-wash)!important;color:var(--client-color-muted)!important}
 .industry-page .industry-chain-node.is-mid>span:first-child{background:#faf5e9!important;color:#aa9061!important}
 .industry-page .industry-chain-node.is-weak>span:first-child{background:#faf0ed!important;color:#b57d70!important}
 .industry-page .industry-chain-node.is-unknown>span:first-child{background:#eff3f6!important;color:#7e94a9!important}
@@ -264,7 +264,7 @@ body.industry-view .nav-copy small{font-size:10px}
 /* Source-bound graph nodes are parallel material records, not inferred edges. */
 .industry-page .industry-chain-nodes{display:grid!important;align-items:start;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px!important;overflow:visible}
 .industry-page .industry-chain-node{min-width:0!important;text-align:left!important;align-self:start}
-.industry-page .industry-chain-head .industry-chain-legend .is-strong{background:#edf5ef!important;color:#638d73!important}
+.industry-page .industry-chain-head .industry-chain-legend .is-strong{background:var(--client-color-blue-wash)!important;color:var(--client-color-muted)!important}
 .industry-page .industry-chain-head .industry-chain-legend .is-mid{background:#faf5e9!important;color:#aa9061!important}
 .industry-page .industry-chain-head .industry-chain-legend .is-weak{background:#faf0ed!important;color:#b57d70!important}
 .industry-page .industry-chain-head .industry-chain-legend .is-unknown{background:#eff3f6!important;color:#65798d!important}
@@ -277,7 +277,7 @@ body.industry-view .nav-copy small{font-size:10px}
 /* Assessment and source coverage remain separate from material wording. */
 .industry-page .industry-chain-node.assessment-weak{border-top-color:#c97863!important}
 .industry-page .industry-chain-node.assessment-attention{border-top-color:#c7a264!important}
-.industry-page .industry-chain-node.assessment-supported{border-top-color:#7bab9d!important}
+.industry-page .industry-chain-node.assessment-supported{border-top-color:var(--client-color-subtle)!important}
 .industry-page .industry-chain-node.assessment-unknown{border-top-color:#8c9dc5!important}
 .industry-page .industry-chain-node.assessment-missing{border-top-color:#a9bacb!important}
 .industry-page .industry-chain-node .chain-node-name{font-size:13px!important;margin:0!important}
@@ -289,11 +289,11 @@ body.industry-view .nav-copy small{font-size:10px}
 .chain-assessment-tags .chain-evidence-badge{margin-left:0!important;font-weight:400}
 
 /* Three-color action judgment; factual evidence remains in disclosures. */
-.industry-page .industry-chain-node.judgment-strong{background:#f4faf6!important;border-color:#b9d5c5!important;border-top-color:#76ae8c!important}
+.industry-page .industry-chain-node.judgment-strong{background:var(--client-color-paper)!important;border-color:var(--client-color-line-strong)!important;border-top-color:var(--client-color-subtle)!important}
 .industry-page .industry-chain-node.judgment-mid{background:#fffcef!important;border-color:#e6d9a7!important;border-top-color:#d3b45d!important}
 .industry-page .industry-chain-node.judgment-weak{background:#fff6f3!important;border-color:#e9c9c0!important;border-top-color:#d38270!important}
 .industry-page .industry-chain-node.judgment-unknown{background:#fff!important;border-color:#d9e2e9!important;border-top-color:#c5d1da!important}
 .industry-page .chain-priority-panel{padding:13px 16px!important;background:#f8fbfd!important}
-.chain-priority-count.is-strong{color:#498262}.chain-priority-count.is-mid{color:#9a7629}.chain-priority-count.is-weak{color:#b35c4b}.chain-priority-count.is-unknown{color:#8b9aa7}
+.chain-priority-count.is-strong{color:var(--client-color-secondary)}.chain-priority-count.is-mid{color:#9a7629}.chain-priority-count.is-weak{color:#b35c4b}.chain-priority-count.is-unknown{color:#8b9aa7}
 .industry-page .industry-chain-node .chain-node-judgment-reason{font-size:11px!important;margin:8px 0!important;font-weight:400!important}
 .chain-priority-panel .chain-assessment-details>summary,.chain-priority-panel .chain-assessment-criteria>summary,.chain-priority-panel .chain-factual-dimensions>summary{font-size:10px;color:#70889c;font-weight:500!important}

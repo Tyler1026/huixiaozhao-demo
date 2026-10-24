@@ -146,7 +146,7 @@ function go(v){
   if(v==='report')cur=industryAnalysisWorkspaceKey(cur);
   if(isLocked(v)){
     var r=kbReadiness();
-    var vnames={report:'产业分析',home:'招商对接',docking:'招商对接'};
+    var vnames={report:'AI 匹配研判',home:'需求与建联',docking:'需求与建联'};
     var vn=vnames[v]||v;
     var tips=[];
     if(r.confirmed<r.total) tips.push('\u786e\u8ba4\u5269\u4f59 '+(r.total-r.confirmed)+' \u6761\u5f85\u786e\u8ba4\u7ed3\u8bba');

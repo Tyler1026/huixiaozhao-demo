@@ -523,15 +523,15 @@ function showSummaryModal(city2,sectors){
         '<div style="font-size:13px;font-weight:650;color:#0b183b;margin-bottom:3px">'+s.name+'</div>'+
         '<div style="font-size:12px;color:#4a5568;line-height:1.65">'+insights[i]+'</div>'+
       '</div>'+
-      '<span style="font-size:11px;color:'+(_hasUp2?'#22c55e':'#9aa5b5')+';background:'+(_hasUp2?'#f0fdf4':'#f1f5f9')+';padding:2px 8px;border-radius:20px;flex:0 0 auto;margin-top:2px;white-space:nowrap">'+(_hasUp2?'已就位':'待补充')+'</span>'+
+      '<span style="font-size:11px;color:'+(_hasUp2?'#2D5BE3':'#9aa5b5')+';background:'+(_hasUp2?'#EEF3FF':'#f1f5f9')+';padding:2px 8px;border-radius:20px;flex:0 0 auto;margin-top:2px;white-space:nowrap">'+(_hasUp2?'已就位':'待补充')+'</span>'+
     '</div>';
   }).join('');
 
   var modal='<div id="summaryModal" style="position:fixed;inset:0;background:rgba(11,24,59,.45);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)">'+
     '<div style="background:#fff;border-radius:22px;padding:36px 36px 28px;max-width:520px;width:92%;box-shadow:0 8px 60px rgba(11,24,59,.18);animation:fadeUp .35s ease">'+
       '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">'+
-        '<div style="width:10px;height:10px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.2)"></div>'+
-        '<span style="font-size:12px;font-weight:650;color:#22c55e;letter-spacing:.5px">分析完成</span>'+
+        '<div style="width:10px;height:10px;border-radius:50%;background:#2D5BE3;box-shadow:0 0 0 3px rgba(45,91,227,.2)"></div>'+
+        '<span style="font-size:12px;font-weight:650;color:#2D5BE3;letter-spacing:.5px">分析完成</span>'+
       '</div>'+
       '<h2 style="font-size:20px;font-weight:750;color:#0b183b;margin:0 0 4px">'+city2+' 城市智库已就位</h2>'+
       '<p style="font-size:13px;color:#8492a6;margin:0 0 20px">'+(_hasUp2?'以下为 AI 结合你上传材料的初步研判结论，⚠️ 标注项需结合政府材料确认':'城市智库已创建，暂无数据。请在城市智库上传政府工作报告/产业报告等材料，由 AI 生成研判结论。')+'</p>'+

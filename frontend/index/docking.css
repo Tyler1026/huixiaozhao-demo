@@ -176,7 +176,7 @@ body.docking-view .main-pane{flex:1 1 100%;width:100%;max-width:none;overflow:hi
 .docking-receiving dt{color:#8498aa}.docking-receiving dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
 .docking-receiving>.docking-button{margin-top:14px}
 .docking-receiving[data-status=needs_info]{border-color:#e7d6ae;background:linear-gradient(120deg,#fffaf0,#fffdf8)}
-.docking-receiving[data-status=feedback]{border-color:#c7e2dc;background:linear-gradient(120deg,#f2faf7,#fcfefd)}
+.docking-receiving[data-status=feedback]{border-color:var(--client-color-line);background:linear-gradient(120deg,var(--client-color-paper),var(--client-color-surface))}
 .docking-verification-reply{margin:13px 0;padding:13px 14px;border:1px solid #dbe7ef;border-radius:7px;background:#f7fafc}
 .docking-verification-reply strong{font-size:11px;color:#50728d}.docking-verification-reply p{font-size:12px;line-height:1.8;white-space:pre-wrap;margin:7px 0!important}.docking-verification-reply small{color:#869aab;font-size:10px}
 .docking-badge[data-tone=rose]{color:#a85159;background:#f9eeee;border-color:#ecd3d6}
