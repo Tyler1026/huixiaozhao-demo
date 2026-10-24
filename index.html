@@ -14954,6 +14954,22 @@ function kbEditKey(event){
   if(event.key==='Escape'){event.preventDefault();event.stopPropagation();if(document.getElementById('kbEditorDiscard'))kbKeepEditing();else kbCancelEdit();}
   else if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();if(!document.getElementById('kbEditorDiscard'))saveKbEdit(kbEditSession.kbIdx,kbEditSession.itemIdx);}
 }
+function kbEditorTargetUnchanged(session,current){
+  if(session.isNew)return true;
+  var snapshot=JSON.parse(session.snapshot);
+  // Uploaded markers can precede an independent note without changing that note.
+  // Resolve live revisions by identity; still require their exact opened version.
+  if(session.editId&&session.raw&&session.raw._kbEditId===session.editId){
+    var matches=current.filter(function(item){return item&&typeof item==='object'&&item._kbEditId===session.editId;});
+    if(matches.length!==1||!kbValueEqual(matches[0],snapshot))return false;
+    var record=kbEditRecord(session.key,matches[0]);
+    return !!record&&record.id===session.editId&&record.revision===session.revision&&
+      record.sectionTitle===session.topic.t&&record.sourceIndex===session.sourceIndex&&
+      kbValueEqual(record.sourceItem,session.sourceItem)&&kbValueEqual(record.baseReportVersion,session.baseReportVersion);
+  }
+  // Raw source items (including restored originals) remain bound to their index.
+  return kbValueEqual(current[session.sourceIndex],snapshot);
+}
 function kbValidateEditReceipt(record,body){return materialValidateEditReceipt(record,body);}
 async function kbRequestEdit(body){return materialRequestEdit(body);}
 async function saveKbEdit(kbIdx,itemIdx){
@@ -14964,7 +14980,7 @@ async function saveKbEdit(kbIdx,itemIdx){
   var p=P(),k=p&&p.kb&&p.kb[kbIdx];
   if(!kbEditorContextCurrent(s)){toast('工作区或登录状态已变化，请保留草稿并重新打开资料。');return;}
   var current=kbEffectiveKnown(p,kbIdx,cur);
-  if(k.known!==s.known||(!s.isNew&&!kbValueEqual(current[itemIdx],JSON.parse(s.snapshot)))){toast('这条资料已更新，请保留草稿并重新打开后修改。');return;}
+  if(k.known!==s.known||!kbEditorTargetUnchanged(s,current)){toast('这条资料已更新，请保留草稿并重新打开后修改。');return;}
   if(!s.isNew&&newText===s.source){kbCancelEdit(true);toast('内容未修改');return;}
   var body={projectKey:s.key,sectionIndex:kbIdx,sectionTitle:k.t,baseReportVersion:s.baseReportVersion,sourceIndex:s.sourceIndex,sourceItem:s.sourceItem,editId:s.editId,expectedRevision:s.revision,text:newText,resetGen:typeof RESET_GEN==='undefined'?null:RESET_GEN};
   s.saving=true;s.saveError='';kbEditorChanged();
