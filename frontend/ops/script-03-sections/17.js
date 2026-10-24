@@ -112,7 +112,7 @@ function opsLoginPage(){
       '<div class="ops-login-fields"><label class="ops-login-field" for="opsLoginUser"><span>管理员账号</span><input id="opsLoginUser" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="输入管理员账号" aria-describedby="opsLoginError"></label>'+
       '<label class="ops-login-field" for="opsLoginPwd"><span>登录密码</span><input id="opsLoginPwd" type="password" autocomplete="current-password" placeholder="输入密码" aria-describedby="opsLoginError" onkeydown="if(event.key===&quot;Enter&quot;)opsLogin()"></label></div>'+
       '<p id="opsLoginError" class="ops-login-error" role="alert" aria-live="polite"></p><button type="button" class="ops-login-submit" onclick="opsLogin()"><span>登录管理端</span>'+opsIcon('next',18)+'</button>'+
-      '<div class="ops-login-switch"><span>进入城市团队工作区</span><a href="/">前往政府端'+opsIcon('external',15)+'</a></div>'+
+      '<div class="ops-login-switch"><span>进入城市团队工作区</span><a href="/app">前往政府端'+opsIcon('external',15)+'</a></div>'+
       '<p class="ops-login-footnote">本入口面向已授权的管理人员</p>'+
     '</div></section></div></main>';
 }
@@ -131,7 +131,7 @@ function render(){
   if(_authState==='unknown'||_authState==='checking'){root.innerHTML='<div style="padding:60px;text-align:center">正在验证管理端登录状态…</div>';return;}
   if(_authState==='unavailable'){root.innerHTML='<div style="padding:60px;text-align:center">'+_authEscape(_authError||'认证服务暂时不可用')+'<p><button onclick="loadAuth()">重试</button></p></div>';return;}
   if(!AUTH){root.innerHTML=opsLoginPage();return;}
-  if(AUTH.scope!=='admin'){root.innerHTML='<div style="padding:60px;text-align:center"><h2>当前账号无管理权限</h2><p><a href="/">前往政府端</a> <button onclick="logout()">退出并切换账号</button></p></div>';return;}
+  if(AUTH.scope!=='admin'){root.innerHTML='<div style="padding:60px;text-align:center"><h2>当前账号无管理权限</h2><p><a href="/app">前往政府端</a> <button onclick="logout()">退出并切换账号</button></p></div>';return;}
   if(!window._opsDataReady){
     if(render._opsLoadError){root.innerHTML='<div style="padding:60px;text-align:center">工作区加载失败<p><button onclick="render._opsLoadError=null;render._opsRestored=false;render()">重试</button> <button onclick="logout()">退出登录</button></p></div>';return;}
     root.innerHTML='<div style="padding:60px;text-align:center">正在加载管理数据…</div>';

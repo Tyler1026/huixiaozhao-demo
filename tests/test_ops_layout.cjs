@@ -227,16 +227,47 @@ test('RAG workspace selector keeps all same-city roots, material counts and exac
   assert.doesNotMatch(html, /noKb|<B>/); assert.equal(h.ctx.ragProjKey(), oddKey);
 });
 
-test('overview uses live counts and short summaries without embedding a generation form', async () => {
+test('overview uses submitted work and current report states without embedding a generation form', async () => {
   const h = await boot(); h.admin(); seedInvites(h);
   h.ctx.USER_PROFILES = {one: {}, two: {}};
-  h.ctx.PROJECTS = {base: {city: '城市'}, one: {city: '城市', isDemand: true}, two: {city: '城市', isDemand: true}};
-  h.ctx.REPORT_REQUESTS = [{id: 'one', city: '城市', status: 'running'}, {id: 'two', city: '城市', status: 'done'}, {id: 'three', city: '城市', status: 'failed'}];
+  const verification = status => ({verificationRequest: {contract: 'docking-action-v1', id: 'check-' + status, status}});
+  h.ctx.PROJECTS = {
+    base: {city: '城市'},
+    one: {city: '城市', isDemand: true, submissionState: 'submitted', demandTitle: '设备 <核验>', clues: [verification('requested')]},
+    two: {city: '城市', isDemand: true, submissionState: 'submitted', intake: {contract: 'docking-action-v1', status: 'processing'}, clues: [verification('needs_info'), verification('completed')]},
+    draft: {city: '城市', isDemand: true, submissionState: 'pending', clues: [verification('requested')]},
+    failed: {city: '城市', isDemand: true, submissionState: 'failed', clues: [verification('requested')]},
+    archived: {city: '城市', isDemand: true, submissionState: 'submitted', archived: true, clues: [verification('requested')]},
+  };
+  h.ctx.OPS_ENT = [{id: 'enterprise-one'}, {id: 'enterprise-two'}];
+  h.ctx.REPORT_REQUESTS = [
+    {id: 'one', city: '城市', status: 'running'},
+    {id: 'two', city: '城市', status: 'done'},
+    {id: 'three', city: '城市', status: 'failed'},
+    {id: 'four', city: '城市', status: 'paused'},
+    {id: 'five', city: '城市', status: 'pause_requested'},
+  ];
   h.ctx.rrPanel = () => {throw new Error('overview must not render full report panel');};
+  const before = JSON.stringify(h.ctx.PROJECTS);
   const html = h.ctx.opsOverview();
-  assert.deepEqual(Array.from(html.matchAll(/class="ops-ui-stat-value">(\d+)</g), match => Number(match[1])), [3, 2, 2, 2]);
-  assert.match(html, /1 进行中 · 1 需处理/); assert.match(html, /最近报告任务/); assert.match(html, /最近邀请码/);
+  assert.deepEqual(Array.from(html.matchAll(/class="ops-ui-stat-value">(\d+)</g), match => Number(match[1])), [1, 2, 2, 2]);
+  assert.match(html, /2 项报告需处理/); assert.match(html, /近期报告任务/);
+  assert.match(html, /设备 &lt;核验&gt;/); assert.doesNotMatch(html, /设备 <核验>/);
+  assert.equal(JSON.stringify(h.ctx.PROJECTS), before, 'rendering must not update submission or verification state');
   assert.doesNotMatch(html, /id="rrProv"|id="rrCity"/);
+});
+
+test('overview empty state and all operational destinations remain available in the new shell', async () => {
+  const h = await boot(); h.admin();
+  h.ctx.OPS_ENT = [];
+  const html = h.ctx.opsOverview();
+  assert.deepEqual(Array.from(html.matchAll(/class="ops-ui-stat-value">(\d+)</g), match => Number(match[1])), [0, 0, 0, 0]);
+  assert.match(html, /当前没有待处理事项/); assert.match(html, /暂无报告任务/);
+  assert.doesNotMatch(html, /界面演示|虚构数据|本地预览/);
+  const nav = h.ctx.opsTabBar();
+  for (const id of ['overview', 'demands', 'enterprises', 'reports', 'profile', 'rag', 'invitations', 'users']) {
+    assert.ok(handlers(nav).includes('opsGo(' + JSON.stringify(id) + ')'), id + ' must remain reachable');
+  }
 });
 
 test('search updates only results and retains the focused input object and caret', async () => {
