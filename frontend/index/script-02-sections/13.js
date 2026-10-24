@@ -69,9 +69,10 @@ function detailNeeds(p){
 }
 // 设置页 → 右侧：账号与权限概览
 function detailSettings(p){
+  var identity=currentAccountIdentity();
   return '<div class="detail-header"><div><span class="eyebrow">ACCOUNT</span><h2>账号概览</h2><p>由系统开通 · 不可自行修改</p></div></div>'+
     '<div class="detail-scroll">'+
-      '<div class="detail-block"><h3>身份</h3><ul class="check-list"><li><i class="i">✔</i>'+_authEscape(p.org)+'</li><li><i class="i">✔</i>'+_authEscape(p.who)+' · 招商干部'+(AUTH&&AUTH.role==='owner'?' · 组织管理员':'')+'</li></ul></div>'+
+      '<div class="detail-block"><h3>身份</h3><ul class="check-list"><li><i class="i">✔</i>'+_authEscape(identity.org)+'</li><li><i class="i">✔</i>'+_authEscape(identity.name)+' · '+_authEscape(identity.roleLabel)+'</li><li><i class="i">✔</i>登录账号：'+_authEscape(identity.user)+'</li></ul></div>'+
       '<div class="detail-block"><h3>数据权限</h3><div class="info-callout" style="margin-top:0">仅可访问 <b>'+_authEscape(p.city)+'</b> 城市工作区；其他团队的数据需要单独授权。</div></div>'+
       orgMembersBlock()+
       '<div class="detail-block"><h3>安全边界</h3><div class="boundary-note" style="margin-top:0"><i class="i">🔒</i>确认关口、资源核验责任与企业触达边界，不因个人设置而跳过。</div></div>'+

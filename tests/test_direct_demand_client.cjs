@@ -16,7 +16,11 @@ function boot(){
       const textarea=markup.match(new RegExp('<textarea[^>]*id="'+id+'"[^>]*>([\\s\\S]*?)<\\/textarea>'));
       const input=markup.match(new RegExp('<input[^>]*id="'+id+'"[^>]*>'));
       const initial=textarea?decode(textarea[1]):input&&input[0].match(/\bvalue="([^"]*)"/);
-      dom[id]={value:typeof initial==='string'?initial:initial?decode(initial[1]):'',textContent:'',disabled:false,isConnected:true};
+      const tag=markup.match(new RegExp('<[^>]+\\bid="'+id+'"[^>]*>'));
+      const attributes=Object.fromEntries(Array.from(tag?tag[0].matchAll(/([\w-]+)="([^"]*)"/g):[],match=>[match[1],decode(match[2])]));
+      dom[id]={value:typeof initial==='string'?initial:initial?decode(initial[1]):'',textContent:'',disabled:false,isConnected:true,
+        getAttribute:name=>attributes[name]??null,setAttribute:(name,value)=>{attributes[name]=String(value);},removeAttribute:name=>{delete attributes[name];},
+        focus(options){events.focused=id;events.focusOptions=options;},scrollIntoView(options){events.scrolled=id;events.scrollOptions=options;}};
     }},
     fetch:async(url,options)=>{const request={url,options,body:JSON.parse(options.body)};events.posts.push(request);return transport?transport(request):{ok:true,status:200,json:async()=>receipt(request)};}
   };
@@ -96,6 +100,31 @@ for(const [name,corrupt] of Object.entries(corruptions))test('mismatched '+name+
 });
 for(const [field,value] of [['directDemandTitle',''],['directDemandTitle','x'.repeat(121)],['directDemandDescription',''],['directDemandDescription','x'.repeat(6001)],['directDemandConditions','x'.repeat(2001)],['directDemandContactName','x'.repeat(81)],['directDemandContactMethod','x'.repeat(241)]])test(field+' enforces server input limit before POST',async()=>{
   const e=boot();e.open();e.dom[field].value=value;assert.equal(await e.c.submitDirectDemand(),false);assert.equal(e.events.posts.length,0);assert.ok(e.dom.directDemandError.textContent);
+  assert.equal(e.events.focused,field);assert.equal(e.dom[field].getAttribute('aria-invalid'),'true');assert.equal(e.dom[field].getAttribute('aria-describedby'),'directDemandError');
+  assert.equal(e.events.scrolled,'directDemandError');assert.equal(e.events.scrollOptions.behavior,'auto');
+});
+test('blank form exposes the error before required fields and preserves the unsent draft',async()=>{
+  const e=boot();assert.equal(e.c.openDirectDemandComposer(),true);const draft=e.c.DIRECT_DEMAND_DRAFT,before=snapshot(e),markup=e.events.modals.at(-1)[1];
+  assert.ok(markup.indexOf('id="directDemandError"')<markup.indexOf('id="directDemandTitle"'));
+  assert.equal(e.dom.directDemandError.getAttribute('role'),'alert');assert.equal(e.dom.directDemandError.getAttribute('tabindex'),'-1');
+  assert.equal(await e.c.submitDirectDemand(),false);assert.equal(e.c.DIRECT_DEMAND_DRAFT,draft);assert.equal(snapshot(e),before);
+  assert.equal(e.events.posts.length,0);assert.equal(draft.attempt,null);assert.equal(draft.pending,false);assert.equal(e.events.closed,0);
+  assert.equal(e.events.focused,'directDemandTitle');assert.equal(e.dom.directDemandTitle.value,'');assert.equal(e.dom.directDemandDescription.value,'');
+  e.dom.directDemandTitle.value='只填写名称';assert.equal(await e.c.submitDirectDemand(),false);
+  assert.equal(e.events.focused,'directDemandDescription');assert.equal(e.dom.directDemandTitle.getAttribute('aria-invalid'),null);assert.equal(e.events.posts.length,0);
+});
+test('corrected validation clears field errors before a pending request without changing the request identity',async()=>{
+  const e=boot();e.open();e.dom.directDemandDescription.value='';assert.equal(await e.c.submitDirectDemand(),false);
+  const requestId=e.c.DIRECT_DEMAND_DRAFT.requestId;e.dom.directDemandDescription.value='已补充的真实需求';const g=gate();
+  e.setTransport(async request=>{await g.promise;return {ok:true,status:200,json:async()=>e.receipt(request)};});
+  const pending=e.c.submitDirectDemand();assert.equal(e.dom.directDemandError.textContent,'');assert.equal(e.dom.directDemandDescription.getAttribute('aria-invalid'),null);assert.equal(e.dom.directDemandDescription.getAttribute('aria-describedby'),null);
+  assert.equal(e.events.posts.length,1);assert.equal(e.events.posts[0].body.requestId,requestId);g.resolve();assert.equal(await pending,true);
+});
+test('transport failure focuses the visible alert while preserving entered values for retry',async()=>{
+  const e=boot();e.open();e.setTransport(()=>{throw new Error('lost response');});const before=snapshot(e);
+  assert.equal(await e.c.submitDirectDemand(),false);assert.equal(e.events.focused,'directDemandError');assert.equal(e.events.scrolled,'directDemandError');
+  assert.equal(snapshot(e),before);assert.equal(e.c.DIRECT_DEMAND_DRAFT.uncertain,true);assert.equal(e.dom.directDemandTitle.value,'生物制药滤器企业招引');
+  assert.equal(e.dom.directDemandSubmit.disabled,false);assert.equal(e.dom.directDemandTitle.getAttribute('aria-invalid'),null);
 });
 test('direct demand summary names direct submission without implying an analysis report',()=>{
   const e=boot();const html=e.c.industryDemandSummaryHtml({demandContract:'industry-demand-v1',demandOrigin:'direct',demandTitle:'<需求标题>',topic:'用户自填需求',demandSpec:{description:'<script>测试</script>',conditions:'现场承接条件',source:'user_direct'}});

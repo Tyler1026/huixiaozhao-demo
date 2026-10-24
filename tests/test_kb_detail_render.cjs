@@ -23,7 +23,7 @@ const actualFunctions=[fs.readFileSync(path.join(__dirname,'../frontend/shared/k
 function freeze(value){if(value&&typeof value==='object'){Object.values(value).forEach(freeze);Object.freeze(value);}return value;}
 function harness(kb=[]){
  const nodes=new Map(),actions=[],appended=[],project={city:'闵行区',kb};
- const body={appendChild(node){appended.push(node);if(node.id)nodes.set(node.id,node);return node;}};
+ const body={children:[],appendChild(node){appended.push(node);this.children.push(node);node.parentNode=this;if(node.id)nodes.set(node.id,node);return node;},removeChild(node){this.children=this.children.filter(x=>x!==node);node.parentNode=null;return node;}};
  const c={console,Math,Number,String,Object,Array,JSON,URL,AbortController,setTimeout,clearTimeout,cur:'workspace-a',curKb:null,KB_CONFIRMS:{},KB_EDITS:{},RESET_GEN:'test-generation',
   P:()=>project,_getDisplaySub:()=>'',kbCancelEdit:()=>true,kbEditSession:null,
   confirmKbItem:(...args)=>actions.push(['confirm',...args]),editKbItem:(...args)=>actions.push(['edit',...args]),deleteKbItem:(...args)=>actions.push(['delete',...args]),
@@ -174,6 +174,7 @@ function actionHarness(known){
    classList:{add:name=>names.add(name),remove:name=>names.delete(name),contains:name=>names.has(name)},
    focus(){this.focused=true;c.document.activeElement=this;},click(){this.clicked=true;},setSelectionRange(a,b){this.selectionStart=a;this.selectionEnd=b;},getClientRects(){return this.hidden?[]:[{top:0}];},getBoundingClientRect:()=>({top:120}),
    appendChild(child){child.parentNode=this;this.children.push(child);if(this.connected){const connect=n=>{n.connected=true;if(n.id)h.nodes.set(n.id,n);n.children.forEach(connect);};connect(child);}return child;},
+   removeChild(child){child.remove();return child;},
    remove(){for(const child of this.children)child.remove();if(this.parentNode)this.parentNode.children=this.parentNode.children.filter(x=>x!==this);if(h.nodes.get(this.id)===this)h.nodes.delete(this.id);this.parentNode=null;},
    matches(selector){
     if(selector.startsWith('.'))return (this.className||'').split(/\s+/).includes(selector.slice(1));
@@ -695,8 +696,8 @@ test('beforeunload warns only for a changed current draft and is registered on t
 
 test('file picker result opened by an old editor does not start ingestion after reopen',async()=>{
  const h=actionHarness(['原文']);h.c.editKbItem(0,0);let calls=0;h.c.ingestFiles=async()=>{calls++;return [];};
- h.c.editPickFile(0,0);const oldPicker=h.created.at(-1);assert.equal(oldPicker.clicked,true);oldPicker.files=[{name:'旧文件.txt'}];
- h.c.kbCancelEdit(true);h.c.editKbItem(0,0);oldPicker.onchange();await Promise.resolve();assert.equal(calls,0);assert.equal(h.textarea().value,'原文');
+ h.c.editPickFile(0,0);const oldPicker=h.created.at(-1);assert.equal(oldPicker.clicked,true);oldPicker.files=[{name:'旧文件.txt'}];const oldChange=oldPicker.onchange;
+ h.c.kbCancelEdit(true);assert.equal(oldPicker.onchange,null);h.c.editKbItem(0,0);oldChange();await Promise.resolve();assert.equal(calls,0);assert.equal(h.textarea().value,'原文');
  h.c.editPickFile(0,0);const current=h.created.at(-1);current.files=[{name:'新文件.txt'}];current.onchange();await Promise.resolve();assert.equal(calls,1);
 });
 
