@@ -78,7 +78,7 @@
       '</strong><small title="' + escape(p.org) + '">' + escape(p.city) + ' · <span id="topbarTopic">' + escape(topic) + '</span></small></div>' +
       '<div class="client-top-actions"><a href="/">首页</a><a href="/ops">运营端</a>' +
       '<div class="client-notification"><button class="client-icon-button" type="button" onclick="toggleNotif(event)" aria-label="通知中心">' +
-      icon('notification') + (unreadCount() ? '<b>' + unreadCount() + '</b>' : '') + '</button>' +
+      icon('notification') + '<b id="reminderUnreadBadge"'+(unreadCount()?'':' hidden')+'>' + unreadCount() + '</b></button>' +
       '<div id="notifPanel" class="client-notification-panel" style="display:none" onclick="event.stopPropagation()">' + notifList() + '</div></div>' +
       '<button class="client-account" type="button" onclick="go(\'settings\')" title="' + escape(p.org) + ' · 账号与协作">' +
       escape(p.who || '账号与协作') + '</button><button class="client-logout" type="button" onclick="logout()">退出</button></div></header>';

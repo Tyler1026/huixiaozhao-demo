@@ -1,144 +1,53 @@
-/* ===== 通知：铃铛 + 面板 + 点击落回对应研判 ===== */
-/* 通知：从当前城市的 PROJECTS 动态派生，不再硬编码具体产业名/城市。
-   已读状态用 localStorage 独立记忆（HXZ_NOTIF_READ = {id:true}），render 后不重置。 */
-var NOTIFS_READ={};
-try{NOTIFS_READ=JSON.parse(localStorage.getItem('HXZ_NOTIF_READ')||'{}')||{};}catch(_){NOTIFS_READ={};}
-function _saveNotifRead(){try{localStorage.setItem('HXZ_NOTIF_READ',JSON.stringify(NOTIFS_READ));}catch(_){}}
+/* Server-owned account preferences and workspace notifications. */
 function _fmtTimeAgo(ts){
-  if(!ts) return '';
+  if(!ts)return '';
   var diff=(Date.now()-ts)/1000;
-  if(diff<60) return '刚刚';
-  if(diff<3600) return Math.floor(diff/60)+'分钟前';
-  if(diff<86400) return Math.floor(diff/3600)+'小时前';
-  var d=new Date(ts); var pad=function(n){return n<10?'0'+n:n;};
-  var today=new Date(); today.setHours(0,0,0,0);
-  if(ts>=today.getTime()) return '今天 '+pad(d.getHours())+':'+pad(d.getMinutes());
-  return (d.getMonth()+1)+'/'+d.getDate()+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+  if(diff<60)return '刚刚';
+  if(diff<3600)return Math.floor(diff/60)+'分钟前';
+  if(diff<86400)return Math.floor(diff/3600)+'小时前';
+  return new Date(ts).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})+' 北京时间';
 }
-function _buildNotifs(){
-  var arr=[];
-  try{
-    if(typeof cityKeys!=='function') return [];
-    // 与招商对接列表用同一过滤（isDemand===true），避免多出"父项目当前方向"这种幽灵条目
-    var _dirs=cityKeys().filter(function(k){var x=PROJECTS[k];return x && x.isDemand===true && x.topic;});
-    _dirs.forEach(function(k){
-      var p=PROJECTS[k]; if(!p||!p.topic) return;
-      var title=typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(p):p.topic;
-      var stage=p.stage||1;
-      var log=(p.stageLog||[]);
-      var lastTs=log.length?Number(log[log.length-1].at||log[log.length-1].ts||0):0;
-      // 状态变化通知：最近一次阶段推进
-      if(log.length && lastTs){
-        var last=log[log.length-1];
-        var toName=stageNameOf(p,last.to);
-        var idA='stage:'+k+':'+last.to;
-        arr.push({
-          id:idA,
-          type:'状态变化', icon:'🔵', proj:k,
-          title:title+' · 已进入「'+toName+'」',
-          desc:'该需求阶段已推进至「'+toName+'」，可打开需求查看下一步动作。',
-          ts:lastTs, read: !!NOTIFS_READ[idA]
-        });
-      }
-      // 超时提醒：进入某阶段后 >3 天无进一步推进
-      if(lastTs && (Date.now()-lastTs) > 3*86400*1000 && stage<projStages(p).length){
-        var idB='stale:'+k+':'+stage;
-        arr.push({
-          id:idB,
-          type:'超时提醒', icon:'🟠', proj:k,
-          title:title+' · 已3个工作日无更新',
-          desc:'该需求在「'+stageNameOf(p,stage)+'」阶段停留超过 3 天，建议跟进资源端核验进度。',
-          ts:lastTs, read: !!NOTIFS_READ[idB]
-        });
-      }
-      // 待确认提醒：阶段=2（AI研判/双确认前）且已生成报告
-      if(stage===2 && typeof REPORTSTATE!=='undefined' && REPORTSTATE[k] && REPORTSTATE[k].text){
-        var rts=Number(REPORTSTATE[k].ts||0);
-        var idC='confirm:'+k+':'+rts;
-        arr.push({
-          id:idC,
-          type:'待确认', icon:'🟡', proj:k,
-          title:title+' · 报告待你确认',
-          desc:'AI 研判已完成，请核对报告后进入双确认与需求提交。',
-          ts:rts||Date.now(), read: !!NOTIFS_READ[idC]
-        });
-      }
-    });
-    // 每日摘要
-    var keys=_dirs;
-    if(keys.length){
-      var today=new Date(); today.setHours(9,0,0,0);
-      var sumId='daily:'+today.toDateString();
-      var stageBreak={};
-      keys.forEach(function(k){var s=PROJECTS[k].stage||1; stageBreak[s]=(stageBreak[s]||0)+1;});
-      var parts=Object.keys(stageBreak).sort().map(function(s){
-        var sample=keys.find(function(k){return (PROJECTS[k].stage||1)==s;});
-        return stageNameOf(PROJECTS[sample],parseInt(s))+' '+stageBreak[s]+' 个';
-      });
-      arr.push({
-        id:sumId, type:'每日摘要', icon:'📋', proj:null,
-        title:'每日摘要 · '+keys.length+' 条招商需求进行中',
-        desc:parts.join('，')+'。点开查看各条需求进展。',
-        ts:today.getTime(), read: !!NOTIFS_READ[sumId]
-      });
-    }
-  }catch(e){console.warn('[notif] build failed',e);}
-  // 按时间倒序，最多显示 6 条
-  arr.sort(function(a,b){return (b.ts||0)-(a.ts||0);});
-  arr=arr.slice(0,6);
-  arr.forEach(function(n){n.time=_fmtTimeAgo(n.ts);});
-  return arr;
-}
-Object.defineProperty(window,'NOTIFS',{get:function(){return _buildNotifs();},configurable:true});
-function unreadCount(){return NOTIFS.filter(function(n){return !n.read}).length}
+function reminderTypeLabel(type){return {status:'状态变化',verification:'核验进展',overdue:'超时提醒',daily:'每日摘要'}[type]||'站内提醒';}
+function unreadCount(){return reminderNotifications().filter(function(n){return n.readAt===null;}).length;}
 function notifList(){
-  return '<div style="padding:11px 15px;border-bottom:1px solid #eef1f5;font-size:13px;font-weight:650;display:flex;justify-content:space-between;align-items:center">通知 <button style="border:0;background:none;color:#0757ad;font-size:11px;cursor:pointer" onclick="markAllRead(event)">全部已读</button></div>'+
-    NOTIFS.map(function(n){
-      return '<div onclick="openNotif(\''+n.id+'\')" style="padding:13px 16px;border-bottom:1px solid #f2f5f9;cursor:pointer;display:flex;gap:10px;align-items:flex-start;'+(n.read?'opacity:.55':'')+'" onmouseover="this.style.background=\'#f7f9fc\'" onmouseout="this.style.background=\'\'">'+
-        '<span style="font-size:15px;flex:0 0 auto;line-height:1.4;margin-top:1px">'+n.icon+'</span>'+
-        '<span style="flex:1;min-width:0;overflow:hidden">'+
-          '<span style="font-size:13px;font-weight:600;color:#0b183b;display:block;word-break:break-word;line-height:1.45">'+_authEscape(n.title)+(n.read?'':' <b style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#c85b09;vertical-align:middle;margin-left:2px"></b>')+'</span>'+
-          '<span style="font-size:11.5px;color:#667590;line-height:1.55;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:4px;word-break:break-word">'+_authEscape(n.desc)+'</span>'+
-          '<span style="font-size:10.5px;color:#a8b2c2;display:block;margin-top:5px">'+n.type+' · '+n.time+'</span>'+
-        '</span>'+
-      '</div>';
-    }).join('');
+  var state=reminderState(),items=reminderNotifications();
+  var status=state&&state.error?'<p role="alert" style="padding:12px 16px">'+_authEscape(state.error)+' <button onclick="reminderReload()">重试</button></p>':
+    !state||!state.loaded?'<p role="status" style="padding:12px 16px">正在加载站内提醒…</p>':
+    !items.length?'<p style="padding:12px 16px">当前工作区暂无站内提醒</p>':'';
+  return '<div data-reminder-panel-token="'+reminderPanelToken(state)+'" style="padding:11px 15px;border-bottom:1px solid #eef1f5;font-size:13px;font-weight:650;display:flex;justify-content:space-between;align-items:center">站内提醒 <button type="button" id="reminderMarkAllRead" style="border:0;background:none;color:#0757ad;font-size:11px;cursor:pointer" onclick="markAllRead(event)"'+(!state||!state.loaded||state.mutationPending?' disabled':'')+'>全部已读</button></div>'+status+
+    items.map(function(n){return '<button type="button" id="reminderNotice-'+_authEscape(n.id)+'" onclick="openNotif('+_authEscape(JSON.stringify(n.id))+')" style="width:100%;text-align:left;background:none;border:0;padding:13px 16px;border-bottom:1px solid #f2f5f9;cursor:pointer;display:block;'+(n.readAt!==null?'opacity:.65':'')+'">'+
+      '<span style="font-size:13px;font-weight:600;color:#0b183b;display:block;word-break:break-word;line-height:1.45">'+_authEscape(n.title)+(n.readAt===null?' · 未读':'')+'</span>'+
+      '<span style="font-size:11.5px;color:#667590;display:block;line-height:1.55;word-break:break-word">'+_authEscape(n.message)+'</span>'+
+      '<span style="font-size:10.5px;color:#8490a5;display:block;margin-top:5px">'+reminderTypeLabel(n.type)+' · '+_authEscape(_fmtTimeAgo(n.createdAt))+'</span></button>';}).join('');
 }
-function toggleNotif(e){e.stopPropagation();var m=$('#notifPanel');if(m)m.style.display=m.style.display==='none'?'block':'none'}
-function markAllRead(e){e.stopPropagation();NOTIFS.forEach(function(n){NOTIFS_READ[n.id]=true});_saveNotifRead();render()}
+function toggleNotif(e){
+  e.stopPropagation();var panel=$('#notifPanel');
+  if(panel){var opening=panel.style.display==='none';panel.style.display=opening?'block':'none';if(opening)reminderLoad(true);}
+}
+function markAllRead(e){if(e)e.stopPropagation();return reminderMarkRead([],true);}
 function openNotif(id){
-  var n=NOTIFS.find(function(x){return x.id===id});if(!n)return;NOTIFS_READ[n.id]=true;_saveNotifRead();
-  var np=$('#notifPanel');if(np)np.style.display='none';
-  render();
-  // 每日摘要 = 全局概览（不属于单个项目），点开列出各研判状态
-  if(!n.proj){
-    var _mkeys=cityKeys().filter(function(k){var x=PROJECTS[k];return x&&x.isDemand===true&&x.topic;});
-    var rows=_mkeys.map(function(k){var x=PROJECTS[k];var sc=stColor(x.stage);
-      return '<div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #f2f5f9;cursor:pointer" onclick="closeModal();gotoProjFromNotif(\''+k+'\')">'+
-        '<span style="font-size:16px">📍</span>'+
-        '<span style="flex:1;min-width:0"><strong style="font-size:13.5px;color:#0b183b;display:block">'+_authEscape(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(x):x.topic)+'</strong>'+
-        '<small style="font-size:11px;color:#667590">'+x.city+' · '+stageDescOf(x,x.stage)+'</small></span>'+
-        '<span class="status-tag" style="color:'+sc.c+';background:'+sc.bg+'">'+stageNameOf(x,x.stage)+'</span></div>';
-    }).join('');
-    var body='<p class="modal-intro">今天 09:00 · '+P().who+' 名下 '+_mkeys.length+' 条招商需求进展如下，点任意一条进入。</p>'+rows+
-      '<div class="boundary-note" style="margin-top:14px"><i class="i">📋</i>每日摘要为全局汇总，不属于单条需求；系统每天 09:00 自动生成。</div>';
-    openModal('每日摘要 · 今日需求概览',body,'<button class="primary-button" onclick="closeModal()">知道了</button>');
-    return;
-  }
-  // 事件通知（状态变化/超时）= 前往对应研判
-  var pj=PROJECTS[n.proj];
-  var body='<div style="display:flex;align-items:flex-start;gap:11px;margin-bottom:14px">'+
-      '<span style="font-size:20px">'+n.icon+'</span>'+
-      '<div><div style="font-size:15px;font-weight:650;color:#0b183b">'+_authEscape(n.title)+'</div>'+
-      '<div style="font-size:11px;color:#8490a5;margin-top:3px">'+n.type+' · '+n.time+'</div></div></div>'+
-    '<div class="info-callout" style="margin-top:0">'+_authEscape(n.desc)+'</div>'+
-    '<div class="kv" style="margin-top:14px"><span class="kk" style="width:70px;color:#8490a5">相关需求</span><span class="vv">'+_authEscape(pj.city)+' · '+_authEscape(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(pj):pj.topic)+'</span></div>'+
-    '<div class="kv"><span class="kk" style="width:70px;color:#8490a5">当前阶段</span><span class="vv">'+stageNameOf(pj,pj.stage)+'</span></div>';
-  var foot='<button class="secondary-button" onclick="closeModal()">知道了</button>'+
-    '<button class="primary-button" onclick="closeModal();gotoProjFromNotif(\''+n.proj+'\')">前往该需求 ➜</button>';
-  openModal('通知详情',body,foot);
+  var state=reminderState(),context=state&&state.context.key;
+  var notification=reminderNotifications().find(function(n){return n.id===id;});
+  if(!notification)return Promise.resolve(false);
+  return reminderMarkRead([id],false).then(function(ok){
+    if(!ok||!reminderCurrent(state)||state.context.key!==context)return false;
+    var panel=$('#notifPanel');if(panel)panel.style.display='none';
+    var project=PROJECTS[notification.projectKey];
+    var canOpen=notification.type!=='daily'&&project&&typeof _authWorkspaceOf==='function'&&_authWorkspaceOf(notification.projectKey)===state.context.workspaceId;
+    var body='<h3>'+_authEscape(notification.title)+'</h3><p style="white-space:pre-wrap;overflow-wrap:anywhere">'+_authEscape(notification.message)+'</p>'+
+      '<p>'+reminderTypeLabel(notification.type)+' · '+_authEscape(_fmtTimeAgo(notification.createdAt))+'</p>';
+    if(notification.type==='daily')body+='<p>这是服务器当时保存的摘要快照；当前项目进度可能已经更新。</p>';
+    else if(!canOpen)body+='<p>相关需求当前不可访问，通知保留事件发生时的记录。</p>';
+    var foot='<button class="secondary-button" onclick="closeModal()">知道了</button>'+
+      (canOpen?'<button class="primary-button" onclick="closeModal();gotoProjFromNotif('+_authEscape(JSON.stringify(notification.projectKey))+')">前往该需求 ➜</button>':'');
+    openModal('站内提醒详情',body,foot);return true;
+  });
 }
-function gotoProjFromNotif(pk){if(!PROJECTS[pk])return;cur=pk;view='home';detailData=null;window.__projOpen=pk;render();toast('已定位到「'+(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(PROJECTS[pk]):PROJECTS[pk].topic)+'」需求')}
+function gotoProjFromNotif(pk){
+  var state=reminderState();
+  if(!state||!PROJECTS[pk]||_authWorkspaceOf(pk)!==state.context.workspaceId)return;
+  cur=pk;view='home';detailData=null;window.__projOpen=pk;render();
+}
 function toggleSw(e){e.stopPropagation();var m=$('#swMenu');m.style.display=m.style.display==='none'?'block':'none'}
 function switchProj(k){cur=k;view='report';detailData=null;try{_sanitizeReportState();}catch(_){}render();toast('已进入「'+(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(PROJECTS[k]):PROJECTS[k].topic)+'」'+(PROJECTS[k].isDemand?'需求':'研判工作区'))}
 function newProj(){var m=$('#swMenu');if(m)m.style.display='none';newProjModal()}

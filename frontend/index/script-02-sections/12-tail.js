@@ -4181,14 +4181,8 @@ function settingsPage(p){
       '<label>数据权限<input value="仅限 '+_authEscape(p.city)+' 城市智库" disabled></label></div>'+
       '<div class="boundary-note" style="margin-top:14px"><i class="i">🔒</i>账号的地区与身份在开通时绑定，用户不可自行更改；如需变更请联系系统管理员。</div></div>'+
     onboardingSettingsSection(p)+
-    '<div class="settings-section"><h2>提醒偏好<span class="settings-editable-badge">可自行调整</span></h2>'+
-      '<div class="toggle-row"><span><strong>状态变化通知</strong><small>需求进度更新时提醒我</small></span><input type="checkbox" checked></div>'+
-      '<div class="toggle-row"><span><strong>超时提醒</strong><small>3 个工作日无更新时提醒</small></span><input type="checkbox" checked></div>'+
-      '<div class="toggle-row"><span><strong>每日摘要</strong><small>每天 09:00 汇总进行中事项</small></span><input type="checkbox" checked></div>'+
-      '<button class="primary-button settings-save" onclick="toast(\'提醒偏好已保存\')">保存偏好</button></div>'+
-    '<div class="settings-section"><h2>系统会据此调整</h2><ul class="plain-list">'+
-      ['首页任务提示','报告中的产业关注顺序','进度提醒频率'].map(function(x){return '<li>'+x+'</li>'}).join('')+'</ul>'+
-      '<div class="boundary-note"><i class="i">🔒</i>干部与确认关口、资源核验责任和企业触达边界，不会因个人设置而跳过。</div></div>'+
+    reminderPreferencesSection()+
+    '<div class="settings-section"><h2>提醒范围</h2><p>上述偏好只控制站内通知的生成和展示；不改变产业分析内容、工作流确认关口或企业触达权限。</p></div>'+
     '</div></div>';
 }
 /* 招商偏好画像：设置页可查看+修改（收起展示，点「修改」重开问卷）*/

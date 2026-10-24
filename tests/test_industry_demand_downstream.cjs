@@ -19,6 +19,18 @@ function boot(){
  vm.runInContext([decl('frontend/shared/industry-demands.js','industryDemandProjectTitle'),decl(ops+'17.js','opsDemandSpecificationHtml'),decl(ops+'17.js','opsDemandResults'),decl(ops+'17.js','statCell'),decl(ops+'16.js','projKeyByCityTopic')].join('\n'),c);
  return c;
 }
+async function loadClientReminders(c){
+ c.AUTH={user:'recipient',scope:'project',projectKeys:['workspace'],projKey:'workspace'};c._authState='ready';c._authEpoch=1;c.cur='workspace';
+ c.PROJECTS.workspace.workspaceId='workspace';c.PROJECTS.a.workspaceId='workspace';c.PROJECTS.b.workspaceId='workspace';
+ c._authWorkspaceOf=key=>c.PROJECTS[key]&&c.PROJECTS[key].workspaceId;
+ c.document={getElementById:()=>null};c.setTimeout=()=>1;c.clearTimeout=()=>{};
+ c.fetch=async url=>{const q=new URL(url,'https://fixture.invalid').searchParams;return {ok:true,status:200,json:async()=>({ok:true,requestId:q.get('requestId'),accountId:'recipient',accountEpoch:'enrollment',projectKey:'workspace',workspaceId:'workspace',version:0,preferences:{statusChanges:true,overdue:true,dailyDigest:true},notifications:[
+   {id:'event-a',type:'status',title:'生物制药滤器 · 已进入「资源匹配」',message:'资源匹配',createdAt:100,readAt:null,projectKey:'a',workspaceId:'workspace',sourceId:'source-a'},
+   {id:'event-b',type:'status',title:'色谱填料 · 已进入「资源匹配」',message:'资源匹配',createdAt:101,readAt:null,projectKey:'b',workspaceId:'workspace',sourceId:'source-b'},
+   {id:'snapshot',type:'daily',title:'每日摘要 · 2 条招商需求',message:'2 条需求的保存快照',createdAt:102,readAt:null,projectKey:'workspace',workspaceId:'workspace',sourceId:'source-day'}
+ ]})};};
+ vm.runInContext(read('frontend/index/reminders.js'),c);assert.equal(await c.reminderLoad(),true);
+}
 test('same analysis produces two separately named project cards without changing report topic',()=>{
  const c=boot(),before=JSON.stringify(c.PROJECTS),html=c.opsDemandResults();
  assert.match(html,/2 个项目/);assert.match(html,/font-weight:700">生物制药滤器<\/div>/);assert.match(html,/font-weight:700">色谱填料<\/div>/);
@@ -53,10 +65,10 @@ test('source details retain scope and verified HTTPS source text with escaped ma
  const c=boot();c.PROJECTS.a.selectedPriority.scope='industry';c.PROJECTS.a.selectedPriority.sources=[{id:'S1',url:'https://example.org/report',title:'原文<标题>',quote:'原文<内容>'},{id:'S2',url:'javascript:alert(1)',quote:'unsafe'}];const html=c.opsDemandSpecificationHtml(c.PROJECTS.a);assert.match(html,/行业共性，非本地缺失/);assert.match(html,/https:\/\/example.org\/report/);assert.match(html,/原文&lt;内容&gt;/);assert.doesNotMatch(html,/javascript:|unsafe/);
 });
 
-test('client notifications name each independent demand and keep exact target IDs',()=>{
- const c=boot();c.NOTIFS_READ={};c.cityKeys=()=>Object.keys(c.PROJECTS);c.PROJECTS.a.stageLog=[{ts:Date.now(),to:4}];c.PROJECTS.b.stageLog=[{ts:Date.now(),to:4}];
- vm.runInContext([decl('frontend/index/script-02-sections/10.js','_fmtTimeAgo'),decl('frontend/index/script-02-sections/10.js','_buildNotifs')].join('\n'),c);
- const notifications=c._buildNotifs();assert.equal(notifications.find(n=>n.proj==='a').title,'生物制药滤器 · 已进入「资源匹配」');assert.equal(notifications.find(n=>n.proj==='b').title,'色谱填料 · 已进入「资源匹配」');assert.match(notifications.find(n=>!n.proj).title,/2 条招商需求/);
+test('server notification adapter retains each independent demand title and exact target ID',async()=>{
+ const c=boot();await loadClientReminders(c);
+ const notifications=c.reminderNotifications();assert.equal(notifications.find(n=>n.projectKey==='a').title,'生物制药滤器 · 已进入「资源匹配」');assert.equal(notifications.find(n=>n.projectKey==='b').title,'色谱填料 · 已进入「资源匹配」');assert.match(notifications.find(n=>n.type==='daily').title,/2 条招商需求/);
+ c.PROJECTS.a.demandTitle='新标题不应改写旧事件';assert.equal(c.reminderNotifications().find(n=>n.projectKey==='a').title,'生物制药滤器 · 已进入「资源匹配」');
 });
 test('client demand detail displays the selected requirement while summary counts only demands',()=>{
  const c=boot();c.escapeChainText=c._authEscape;c.demandEffectiveStage=(_k,p)=>p.stage;c.stageDescOf=()=> '资源核验';c.cityKeys=()=>Object.keys(c.PROJECTS);c.STAGES=[['资料'],['分析'],['确认'],['匹配']];c.__projOpen='b';
@@ -65,7 +77,8 @@ test('client demand detail displays the selected requirement while summary count
  c.__projOpen=null;html=c.detailNeeds(c.PROJECTS.workspace);assert.match(html,/2 条招商需求/);assert.doesNotMatch(html,/3 个产业方向|产业分析总数/);
  c.PROJECTS.workspace.stage=5;html=c.detailDocking(c.PROJECTS.workspace);assert.match(html,/资源匹配中：2 个/);assert.match(html,/已进入对接：0 个/);
 });
-test('opening a demand notification selects and expands that exact suggestion',()=>{
- const c=boot();let rendered=0;c.render=()=>rendered++;c.toast=()=>{};
+test('opening a demand notification selects and expands only an authorized exact suggestion',async()=>{
+ const c=boot();await loadClientReminders(c);let rendered=0;c.render=()=>rendered++;c.toast=()=>{};
  vm.runInContext(decl('frontend/index/script-02-sections/10.js','gotoProjFromNotif'),c);c.gotoProjFromNotif('b');assert.equal(c.cur,'b');assert.equal(c.__projOpen,'b');assert.equal(c.view,'home');assert.equal(rendered,1);assert.equal(c.PROJECTS.b.topic,'生物医药产业分析');
+ c.PROJECTS.foreign={workspaceId:'unauthorized'};c.gotoProjFromNotif('foreign');assert.equal(c.cur,'b');assert.equal(rendered,1);
 });
