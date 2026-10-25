@@ -552,3 +552,246 @@ test('enterprise cards escape imported attributes without losing indexed actions
   vm.runInContext(handlers(html).find(value => value.startsWith('opsEntManualEdit(')), h.ctx);
   assert.equal(target, 0);
 });
+
+function seedFunnelDemand(h, funnel, key = 'minhang-demand') {
+  h.ctx.PROJECTS = {
+    'minhang-root': {city: '闵行区', topic: '城市产业方向', kb: []},
+    [key]: {city: '闵行区', topic: '当前具体招引需求', workspaceId: 'minhang-root', isDemand: true, stage: 4, kb: [], clues: [], funnel},
+  };
+  h.ctx.DEMANDS = [{projKey: key}];
+  h.ctx.__opsProjOpen = {[key]: true};
+  h.ctx.runAIFunnel = () => {throw new Error('render may not start AI work');};
+  return key;
+}
+
+test('legacy funnel keeps all 50 names in a collapsed evidence list without scores or push controls', async () => {
+  const h = await boot(); h.admin();
+  const companies = Array.from({length: 50}, (_, i) => ({name: '历史企业' + (i + 1), fit_score: 99, expansion: '已确认投资扩张', fit: '已确认完全适配', listed: '历史上市信息'}));
+  const key = seedFunnelDemand(h, {topic: '旧产业范围', total: 46, companies});
+  const before = JSON.stringify(h.ctx.PROJECTS);
+  const html = h.ctx.opsDemandResults();
+  assert.match(html, /历史待补证 50 家/); assert.doesNotMatch(html, /材料待筛选 50 家/);
+  assert.match(html, /<details class="funnel-legacy-candidates"[^>]*>/); assert.doesNotMatch(html, /<details class="funnel-legacy-candidates"[^>]*\bopen\b/);
+  for (const company of companies) assert.ok(html.includes('<li>' + company.name + '</li>'));
+  assert.match(html, /原方向：旧产业范围/); assert.match(html, /不作为本次推荐，需补充企业全称、产品原文及对应网页链接后重新筛选/);
+  assert.doesNotMatch(html, /已确认投资扩张|已确认完全适配|历史上市信息|showFunnelPyramid|pushFunnelTopToGov/);
+  assert.match(html, /按材料筛选企业/); assert.match(html, /opsOpenFunnelMaterials/);
+  const legacy = h.ctx.renderCluesTwoPanel(key);
+  assert.match(legacy, /历史待补证 50 家/); assert.match(legacy, /<li>历史企业50<\/li>/);
+  assert.doesNotMatch(legacy, /showFunnelPyramid|pushFunnelTopToGov|已确认投资扩张/);
+  assert.equal(JSON.stringify(h.ctx.PROJECTS), before);
+});
+
+test('a completed empty funnel retains historic evidence work without suggesting the companies disappeared', async () => {
+  const h = await boot(); h.admin();
+  seedFunnelDemand(h, {topic: '当前具体招引需求', evidence_contract: 'saved-excerpts-v1', companies: [], legacyTopic: '旧产业范围', legacyCandidates: [{name: '历史企业'}]});
+  const html = h.ctx.opsDemandResults();
+  assert.match(html, /材料待筛选 0 家/); assert.match(html, /不代表现实中不存在相关企业/);
+  assert.match(html, /历史企业线索（来源待补） · 1 家/); assert.match(html, /原方向：旧产业范围/);
+  assert.match(html, /<li>历史企业<\/li>/); assert.doesNotMatch(html, /pushFunnelTopToGov/);
+});
+
+test('current verified candidates stay in the normal review flow and are removed from the historic list', async () => {
+  const h = await boot(); h.admin();
+  const key = seedFunnelDemand(h, {topic: '当前具体招引需求', evidence_contract: 'saved-excerpts-v1', total: 99,
+    companies: [{name: '杭州大立过滤设备股份有限公司', fit: '产品材料待核', evidence: [{urls: ['https://example.invalid/product']}]}],
+    legacyCandidates: [{name: ' 杭州 大立过滤设备股份有限公司 '}, {name: '待补企业'}, {name: '待补企业'}], legacyTopic: '原方向'});
+  const html = h.ctx.opsDemandResults(), historic = html.match(/<details class="funnel-legacy-candidates"[\s\S]*?<\/details>/)[0];
+  assert.match(html, /材料待筛选 1 家/); assert.match(html, /杭州大立过滤设备股份有限公司/);
+  assert.match(html, /pushFunnelTopToGov/); assert.match(html, /showFunnelPyramid/);
+  assert.match(historic, /历史企业线索（来源待补） · 1 家/); assert.match(historic, /<li>待补企业<\/li>/); assert.doesNotMatch(historic, /大立/);
+  h.ctx.PROJECTS[key].clues = [{name: '过时扫描结果', status: 'ai_scan', fit_score: 99}];
+  const legacy = h.ctx.renderCluesTwoPanel(key);
+  assert.match(legacy, /杭州大立过滤设备股份有限公司/); assert.doesNotMatch(legacy, /过时扫描结果/);
+});
+
+test('historic names and topics are escaped and action handlers retain the exact project key', async () => {
+  const h = await boot(); h.admin();
+  const key = "demand');globalThis.injected=true;//\"", payload = '<img src=x onerror=alert(1)>';
+  seedFunnelDemand(h, {topic: payload, companies: [{name: payload}]}, key);
+  const html = h.ctx.opsDemandResults(); assert.doesNotMatch(html, /<img|<script/); assert.match(html, /&lt;img/);
+  let selected; h.ctx.opsOpenFunnelMaterials = value => {selected = value;};
+  vm.runInContext(handlers(html).find(value => value.startsWith('opsOpenFunnelMaterials(')), h.ctx);
+  assert.equal(selected, key); assert.equal(h.ctx.injected, undefined);
+});
+
+test('material action uses the selected project workspace and preserves demand identity and topic', async () => {
+  const h = await boot(); h.admin(); const key = seedFunnelDemand(h, {companies: []});
+  h.ctx.PROJECTS.other = {city: '闵行区', topic: '另一个工作区', kb: [{known: ['别处材料']}]};
+  h.ctx.cur = key; h.ctx.ragCity = 'other'; h.ctx.ragTopic = 3; h.ctx.OPS_UI.rag.tab = 'query';
+  h.ctx.opsTab = 'demands'; let renders = 0; h.ctx.renderOpsV2 = () => {renders++;};
+  const before = JSON.stringify(h.ctx.PROJECTS);
+  h.ctx.opsOpenFunnelMaterials(key);
+  assert.equal(h.ctx.opsTab, 'rag'); assert.equal(h.ctx.ragCity, 'minhang-root'); assert.equal(h.ctx.ragProjKey(), 'minhang-root');
+  assert.equal(h.ctx.OPS_UI.rag.tab, 'upload'); assert.equal(h.ctx.ragTopic, 0); assert.equal(h.ctx.cur, key);
+  assert.equal(JSON.stringify(h.ctx.PROJECTS), before); assert.equal(renders, 1);
+});
+
+test('missing material workspace presents a precise checklist and never falls back to another workspace', async () => {
+  const h = await boot(); h.admin(); const key = seedFunnelDemand(h, {companies: []});
+  delete h.ctx.PROJECTS['minhang-root']; h.ctx.PROJECTS.other = {city: '闵行区', topic: '另一个工作区', kb: []};
+  h.ctx.opsTab = 'demands'; h.ctx.ragCity = 'other'; let renders = 0; h.ctx.renderOpsV2 = () => {renders++;};
+  h.ctx.opsOpenFunnelMaterials(key);
+  assert.equal(h.ctx.opsTab, 'demands'); assert.equal(h.ctx.ragCity, 'other'); assert.equal(renders, 0);
+  assert.match(h.modals.at(-1).body, /材料工作区尚不可用/); assert.match(h.modals.at(-1).body, /minhang-root/);
+  assert.match(h.modals.at(-1).body, /企业全称、产品原文及对应网页链接（可上传含这些内容的文件）/);
+});
+
+function assessedCompany(name, scores) {
+  const labels = ['match', 'relocate', 'strength'], max = [40, 30, 30], assessments = {};
+  labels.forEach((label, index) => {
+    assessments[label] = scores[index] == null ? null : {score: scores[index], max: max[index], reason: name + '的' + label + '评分理由',
+      evidence: [{id: label + '-source', quote: name + '的' + label + '原文依据', urls: ['https://example.invalid/' + label]}],
+      ...(label === 'match' ? {demand: {id: 'demand:description', kind: 'user_demand', quote: '客户确认的过滤设备招引需求'}} : {})};
+  });
+  return {name, assessment_contract: 'evidence-assessment-v1', assessments, fit_score: 100,
+    score_match: 40, score_relocate: 30, score_strength: 30,
+    evidence: [{id: 'product', quote: name + '产品资料原文', urls: ['https://example.invalid/product']}]};
+}
+
+function scoredFunnel(companies) {
+  return {topic: '当前具体招引需求', evidence_contract: 'saved-excerpts-v1', scoring_contract: 'evidence-assessment-v1', total_scanned: 999, companies};
+}
+
+test('complete evidence assessments restore the three weighted dimensions and source explanations', async () => {
+  const h = await boot(); h.admin(); const company = assessedCompany('完整评分企业', [36, 25, 27]);
+  const key = seedFunnelDemand(h, scoredFunnel([company]));
+  const score = h.ctx.funnelAssessment(company);
+  assert.equal(score.total, 88); assert.equal(score.tier, 'S');
+  const html = h.ctx.opsDemandResults();
+  assert.match(html, /S 级 · 88 分/); assert.match(html, /业务匹配 36 \/ 40/);
+  assert.match(html, /可招引性（布局\/拓展线索） 25 \/ 30/); assert.match(html, /企业实力 27 \/ 30/);
+  assert.match(html, /AI研判分，不代表已核实事实或投资承诺/); assert.match(html, /查看三维评分依据/);
+  assert.match(html, /完整评分企业的match评分理由/); assert.match(html, /完整评分企业的match原文依据/);
+  assert.match(html, /https:\/\/example.invalid\/strength/); assert.match(html, /demand:description/);
+  assert.match(html, /客户确认的过滤设备招引需求/); assert.doesNotMatch(html, /999 家/);
+  assert.match(h.ctx.renderCluesTwoPanel(key), /S 级 · 88 分/);
+});
+
+test('partial and unknown assessments keep missing values separate and never normalize to 100', async () => {
+  const h = await boot(); h.admin();
+  const partial = assessedCompany('部分评分企业', [35, null, 24]), unknown = assessedCompany('未知评分企业', [null, null, null]);
+  seedFunnelDemand(h, scoredFunnel([partial, unknown]));
+  const result = h.ctx.funnelAssessment(partial);
+  assert.equal(result.total, null); assert.equal(result.tier, 'pending'); assert.equal(result.assessedScore, 59); assert.equal(result.assessedMax, 70); assert.equal(result.upper, 89);
+  const html = h.ctx.opsDemandResults();
+  assert.match(html, /已评 59 \/ 70 分；总分待补/); assert.match(html, /总分范围 59–89 \/ 100/);
+  assert.match(html, /可招引性（布局\/拓展线索） 待补 \/ 30/); assert.match(html, /三项评分待补/);
+  assert.match(html, /完整评分 0 家 → S 0 \/ A 0 \/ B 0；待补评分 2 家/);
+  assert.doesNotMatch(html, /S 级 · 100 分|综合 59 \/ 100 分|综合 0 \/ 100 分/);
+});
+
+test('ranked companies use valid total scores, put pending last, and filtering only changes the view', async () => {
+  const h = await boot(); h.admin();
+  const companies = [assessedCompany('待补企业', [39, null, 29]), assessedCompany('B级企业', [20, 15, 20]), assessedCompany('S级企业', [36, 25, 27]), assessedCompany('A级企业', [30, 20, 25])];
+  const key = seedFunnelDemand(h, scoredFunnel(companies)), before = JSON.stringify(h.ctx.PROJECTS);
+  const html = h.ctx.opsDemandResults();
+  assert.ok(html.indexOf('>S级企业</strong>') < html.indexOf('>A级企业</strong>'));
+  assert.ok(html.indexOf('>A级企业</strong>') < html.indexOf('>B级企业</strong>'));
+  assert.ok(html.indexOf('>B级企业</strong>') < html.indexOf('>待补企业</strong>'));
+  assert.match(html, /有来源候选 4 家 → 完整评分 3 家 → S 1 \/ A 1 \/ B 1；待补评分 1 家/);
+  let renders = 0; h.ctx.renderOpsV2 = () => {renders++;};
+  const handler = handlers(html).find(value => value.startsWith('setFunnelTierFilter(') && value.endsWith(',"A")'));
+  assert.ok(handler); vm.runInContext(handler, h.ctx);
+  let filtered = h.ctx.opsDemandResults();
+  assert.match(filtered, /data-funnel-tier="A"/); assert.doesNotMatch(filtered, /data-funnel-tier="S"|data-funnel-tier="B"|data-funnel-tier="pending"/);
+  assert.match(filtered, /共 4 家 · 当前筛选 1 家 · 显示 1 家/);
+  h.ctx.setFunnelTierFilter(key, 'pending'); filtered = h.ctx.opsDemandResults();
+  assert.match(filtered, /data-funnel-tier="pending"/); assert.doesNotMatch(filtered, /data-funnel-tier="[SAB]"/);
+  assert.equal(renders, 2); assert.equal(JSON.stringify(h.ctx.PROJECTS), before);
+});
+
+test('a missing assessment never suppresses the whole pyramid and each tier retains its evidence', async () => {
+  const h = await boot(); h.admin(); const key = seedFunnelDemand(h, scoredFunnel([
+    assessedCompany('S级企业', [36, 25, 27]), assessedCompany('A级企业', [30, 20, 25]), assessedCompany('B级企业', [20, 15, 20]), assessedCompany('待补企业', [35, null, null]),
+  ]));
+  h.ctx.showFunnelPyramid(key); const modal = h.modals.at(-1);
+  assert.match(modal.title, /企业评分与分层/); assert.match(modal.body, /S 级 · 核心适配 · 1 家/);
+  assert.match(modal.body, /A 级 · 高适配 · 1 家/); assert.match(modal.body, /B 级 · 潜力观察 · 1 家/);
+  assert.match(modal.body, /待补评分 · 1 家/); assert.match(modal.body, /width:60%/); assert.match(modal.body, /width:80%/);
+  assert.match(modal.body, /查看三维评分依据/); assert.match(modal.body, /有来源候选 4 家/);
+  assert.doesNotMatch(modal.body, /尚未进行事实评分|综合 0 \/ 100/);
+});
+
+test('old scalar scores and malformed dimensions cannot become a new S/A/B assessment', async () => {
+  const h = await boot(); h.admin();
+  const old = assessedCompany('旧标量企业', [40, 30, 30]); delete old.assessment_contract;
+  const malformed = assessedCompany('不完整依据企业', [40, 30, 30]); malformed.assessments.match.demand = null; malformed.assessments.relocate.max = 40; malformed.assessments.strength.evidence = [];
+  const key = seedFunnelDemand(h, scoredFunnel([old, malformed]));
+  for (const company of [old, malformed]) {assert.equal(h.ctx.funnelAssessment(company).total, null); assert.equal(h.ctx.funnelAssessment(company).tier, 'pending');}
+  const html = h.ctx.opsDemandResults(); assert.match(html, /完整评分 0 家/); assert.doesNotMatch(html, /S 级 · 100 分/);
+  h.ctx.showFunnelPyramid(key); assert.match(h.modals.at(-1).body, /待补评分 · 2 家/);
+  const zero = assessedCompany('有效零分', [0, 0, 0]); assert.equal(h.ctx.funnelAssessment(zero).total, 0); assert.equal(h.ctx.funnelAssessment(zero).tier, 'B');
+});
+
+test('assessment text, evidence, names and pyramid titles are escaped without enabling unsafe links', async () => {
+  const h = await boot(); h.admin(); const payload = '<img src=x onerror=alert(1)>';
+  const company = assessedCompany(payload, [36, 25, 27]);
+  company.assessments.match.reason = payload; company.assessments.match.demand.quote = payload;
+  company.assessments.match.evidence[0].quote = payload; company.assessments.match.evidence[0].urls.push('javascript:alert(1)');
+  const key = seedFunnelDemand(h, {...scoredFunnel([company]), topic: payload});
+  const html = h.ctx.opsDemandResults(); assert.match(html, /&lt;img/); assert.doesNotMatch(html, /<img|href="javascript:/);
+  h.ctx.showFunnelPyramid(key); assert.match(h.modals.at(-1).title, /&lt;img/); assert.doesNotMatch(h.modals.at(-1).body, /<img|href="javascript:/);
+});
+
+test('high scores open the unchanged individual source and demand review without making a push request', async () => {
+  const h = await boot(); h.admin(); const high = assessedCompany('高分企业', [40, 30, 30]), low = assessedCompany('低分企业', [10, 10, 10]);
+  const key = seedFunnelDemand(h, scoredFunnel([low, high]));
+  Object.assign(h.ctx.PROJECTS[key], {demandContract: 'industry-demand-v1', demandSpec: {description: '具备过滤设备产品原文与技术规格的招引需求'}});
+  const requests = h.calls.length; h.ctx.pushFunnelTopToGov(key, 8);
+  assert.equal(h.ctx.pushFunnelTopToGov.review.companies[0].name, '高分企业');
+  assert.match(h.modals.at(-1).body, /企业产品或服务原句/); assert.match(h.modals.at(-1).body, /当前方向的需求原句/);
+  assert.match(h.modals.at(-1).body, /funnelReason-0/); assert.doesNotMatch(h.modals.at(-1).body, /checked/);
+  assert.equal(h.calls.length, requests); assert.equal(h.ctx.PROJECTS[key].clues.length, 0);
+});
+
+test('score thresholds keep 85 in S, 70 in A and lower valid totals in B', async () => {
+  const h = await boot(); h.admin();
+  for (const [values, total, tier] of [[[35, 25, 25], 85, 'S'], [[34, 25, 25], 84, 'A'], [[30, 20, 20], 70, 'A'], [[29, 20, 20], 69, 'B']]) {
+    const result = h.ctx.funnelAssessment(assessedCompany('临界企业', values));
+    assert.equal(result.total, total); assert.equal(result.tier, tier);
+  }
+});
+
+test('expanding and switching tiers keeps counts correct without reordering stored candidates', async () => {
+  const h = await boot(); h.admin();
+  const companies = Array.from({length: 10}, (_, index) => assessedCompany('企业' + index, [30, 20, index]));
+  const key = seedFunnelDemand(h, scoredFunnel(companies)), before = JSON.stringify(h.ctx.PROJECTS);
+  assert.match(h.ctx.opsDemandResults(), /当前筛选 10 家 · 显示 8 家/);
+  h.ctx.__funnelExpand = {[key]: true}; assert.match(h.ctx.opsDemandResults(), /当前筛选 10 家 · 显示 10 家/);
+  h.ctx.renderOpsV2 = () => {}; h.ctx.setFunnelTierFilter(key, 'S');
+  const html = h.ctx.opsDemandResults(); assert.match(html, /当前筛选 0 家 · 显示 0 家/); assert.match(html, /当前分级没有企业/);
+  assert.equal(h.ctx.__funnelExpand[key], false); assert.equal(JSON.stringify(h.ctx.PROJECTS), before);
+});
+
+test('stale S assessment moves to pending, exposes the reason and keeps historical scores out of current ranking', async () => {
+  const h = await boot(); h.admin();
+  const stale = {...assessedCompany('原S级企业', [40, 30, 30]), assessment_stale: true, assessment_stale_reason: '产品原文与需求已更新 <script>alert(1)</script>'};
+  const fresh = assessedCompany('有效A级企业', [30, 20, 25]);
+  const key = seedFunnelDemand(h, {...scoredFunnel([stale, fresh]), ts: Date.parse('2026-10-25T04:00:00Z')});
+  const before = JSON.stringify(h.ctx.PROJECTS), score = h.ctx.funnelAssessment(stale);
+  assert.equal(score.total, null); assert.equal(score.tier, 'pending'); assert.equal(score.assessedMax, 0);
+  assert.equal(h.ctx.funnelAssessment(fresh).total, 75); assert.equal(h.ctx.funnelTierCounts(h.ctx.PROJECTS[key].funnel).S, 0);
+  const html = h.ctx.opsDemandResults();
+  assert.ok(html.indexOf('>有效A级企业</strong>') < html.indexOf('>原S级企业</strong>'));
+  assert.match(html, /上次评分已过期，材料或需求已更新，请重新评分/);
+  assert.match(html, /产品原文与需求已更新 &lt;script&gt;/); assert.doesNotMatch(html, /<script>/);
+  assert.match(html, /查看已过期的历史评分与依据（不参与当前分级）/);
+  assert.match(html, /<details><summary[^>]*>查看已过期/); assert.doesNotMatch(html, /<details open[^>]*>.*查看已过期/);
+  assert.match(html, /完整评分 1 家 → S 0 \/ A 1 \/ B 0；待补评分 1 家/);
+  assert.match(html, /逐家复核此企业/); assert.match(html, /上次评估时间/); assert.match(html, /12:00/); assert.match(html, /基于当时资料快照/);
+  h.ctx.showFunnelPyramid(key); assert.match(h.modals.at(-1).body, /S 级 · 核心适配 · 0 家/); assert.match(h.modals.at(-1).body, /评分已过期 · 待补评分/);
+  assert.equal(JSON.stringify(h.ctx.PROJECTS), before);
+});
+
+test('snapshot time only appears for a valid saved timestamp and does not change a current assessment', async () => {
+  const h = await boot(); h.admin(); const company = assessedCompany('当前S级企业', [40, 25, 25]);
+  const key = seedFunnelDemand(h, {...scoredFunnel([company]), ts: 0});
+  assert.equal(h.ctx.funnelAssessment(company).tier, 'S'); assert.doesNotMatch(h.ctx.opsDemandResults(), /上次评估时间/);
+  for (const invalid of [NaN, -1, Infinity, 'invalid', 1e30]) {
+    h.ctx.PROJECTS[key].funnel.ts = invalid; assert.doesNotMatch(h.ctx.opsDemandResults(), /上次评估时间/);
+  }
+  h.ctx.PROJECTS[key].funnel.ts = Date.parse('2026-10-25T04:00:00Z');
+  assert.match(h.ctx.renderCluesTwoPanel(key), /上次评估时间/);
+  assert.match(h.ctx.opsDemandResults(), /S 级 · 90 分/); assert.doesNotMatch(h.ctx.opsDemandResults(), /上次评分已过期/);
+});

@@ -62,7 +62,7 @@ test('legacy convert action opens only the selected company review and changes n
  const h=boot(2);h.c.PROJECTS.p.clues=[{id:'old',name:'乙公司',status:'ai_scan'}];vm.runInContext(declaration(src,'convertToClue'),h.c);const before=JSON.stringify(h.c.PROJECTS.p.clues);h.c.convertToClue('p','old');assert.equal(JSON.stringify(h.c.PROJECTS.p.clues),before);assert.equal(h.c.pushFunnelTopToGov.review.companies.length,1);assert.equal(h.c.pushFunnelTopToGov.review.companies[0].name,'乙公司');assert.equal(h.calls.length,0);
 });
 test('completed empty material result shows no push button and does not imply absence',()=>{
- const h=boot(0);h.c.PROJECTS.p.clues=[];h.c._funnelRunning={};h.c.__funnelExpand={};vm.runInContext(declaration(src,'renderCluesTwoPanel'),h.c);const html=h.c.renderCluesTwoPanel('p');assert.match(html,/不代表现实中不存在/);assert.doesNotMatch(html,/onclick="pushFunnelTopToGov/);
+ const h=boot(0);h.c.PROJECTS.p.clues=[];h.c._funnelRunning={};h.c.__funnelExpand={};vm.runInContext(['funnelCurrentCompanies','funnelLegacyCandidates','renderFunnelLegacyCandidates','renderFunnelMaterialsAction','renderFunnelSnapshot','renderCluesTwoPanel'].map(name=>declaration(src,name)).join('\n'),h.c);const html=h.c.renderCluesTwoPanel('p');assert.match(html,/不代表现实中不存在/);assert.doesNotMatch(html,/onclick="pushFunnelTopToGov/);
 });
 
 for(const side of ['index/script-02-sections','ops/script-03-sections']){

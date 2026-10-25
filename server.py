@@ -1238,8 +1238,9 @@ class Handler(BaseHTTPRequestHandler):
                          'custom': json.dumps(ob.get('__custom') or {}, ensure_ascii=False)} if ob else {}
 
         from backend.evidence_grounding import (project_context, validate_confirmations,
-            evidence_catalog, bounded_catalog, model_catalog, ground_funnel, ground_profile, ground_chain,
-            enterprise_sources, ground_enterprise_draft, funnel_request_text)
+            evidence_catalog, bounded_catalog, funnel_catalog, model_catalog, ground_funnel, ground_profile, ground_chain,
+            enterprise_sources, ground_enterprise_draft, funnel_request_text, funnel_legacy_prompt, funnel_assessment_prompt,
+            funnel_demand_anchors)
         evidence_context = None
         catalog = []
         structured = mode in ('funnel', 'city_profile') or body.get('purpose') == 'chain_map'
@@ -1300,7 +1301,9 @@ class Handler(BaseHTTPRequestHandler):
             if isinstance(c, dict): return str(c.get("text", "") or "")
             return ""
         if structured:
-            catalog = bounded_catalog(evidence_catalog(chunks))
+            all_evidence = evidence_catalog(chunks)
+            catalog = (funnel_catalog(all_evidence, evidence_context) if mode == 'funnel'
+                       else bounded_catalog(all_evidence))
         ctx = "\n\n".join(
             f"[{(c.get('cite','') if isinstance(c, dict) else '')}·{(c.get('topic','') if isinstance(c, dict) else '')}]\n{_ctext(c)}"
             for c in used
@@ -1312,6 +1315,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if structured:
             ctx = model_catalog(catalog)
+            if mode == 'funnel':
+                ctx += funnel_assessment_prompt(evidence_context) + funnel_legacy_prompt(evidence_context)
 
         # —— 智库未命中：不要让用户自己去搜，后端直接把联网搜索补上 ——
         # chat/onboard_options 走 Responses API + web_search，平台自己会搜；
@@ -1409,12 +1414,13 @@ class Handler(BaseHTTPRequestHandler):
 
         if structured:
             if mode == 'funnel':
-                system_prompt = """你负责从当前工作区已保存的证据目录整理企业材料，供管理员逐家筛选。
-只输出 JSON 对象 {"companies": [{"name": "企业规范名称", "kind": "原文产品或服务", "evidence_ids": ["目录id"]}]}。
+                system_prompt = """你负责从当前工作区已保存的证据目录筛选企业，并给出有依据、可解释的AI研判评分，供管理员逐家筛选。
+只输出 JSON 对象 {"companies": [{"name": "企业规范名称", "kind": "原文产品或服务", "evidence_ids": ["目录id"], "assessments": {"match": {"score": 35, "reason": "根据产品原文与需求条件给出的AI业务匹配判断及限制", "evidence_ids": ["目录id"], "demand_anchor_id": "需求参照id"}, "relocate": null, "strength": null}}]}。
 先阅读当前方向与需求，再选择其产品或服务有直接业务关联且有带链接原文支持的企业。仅同城、仅出现在材料、属于大类产业或泛化“可合作”都不构成关联。
 不得补入常识名单，不设最低企业数量。没有直接相关的企业证据时，返回 {"companies": []}，这表示现有材料不足，不表示现实中不存在企业。
-不推算适配分数、实力、迁移意向或投资承诺。最终业务适配须管理员逐家核对产品原文与需求原文，不能自动确认。"""
-            system_prompt += "\n所有证据必须来自所给目录。每个客观条目或企业增加 evidence_ids 数组，引用目录中完整 id。不得发明企业、URL、数字或加强原文结论。保留待核、未见、有效期及政策适用条件。企业不足目标数量时按实数输出；无投资意向证据则 score_relocate=null。画像每个 objective 条目引用原句对应 id，偏好以已保存问卷为准，未知则留待补充。"
+评分是AI研判，不是事实认证。match业务匹配0–40：比较企业产品/技术原文与当前有效需求参照，引用该公司证据id及demand_anchor_id。relocate可招引研判0–30：只根据该公司公开扩产、扩建、投资、建厂或产能转移等线索评估接洽可能；没有这类原文时为null，不得把通用产品介绍当成投资线索，更不得宣称有本地投资意向。strength企业实力0–30：依据该公司规模、技术、资质或行业地位原文给出有区分度的判断。
+每维可独立为null，未知绝不能写成0。已评维度score必须为范围内的有限数值，reason为1至1000字符，清楚写出判断依据、推断及限制；evidence_ids为1至8个目录id，全部必须对应本企业名字和链接齐全的原句。缺任何必要依据，该维度留null。不要输出旧score_*或自行补齐总分；系统只在三维完整时求总分。需求参照仅用于对照，不是企业事实证据。最终业务适配和投资意向须管理员逐家核对，评分高也不能自动确认或推送。"""
+            system_prompt += "\n所有企业事实证据必须来自所给企业目录。每个客观条目或企业增加 evidence_ids 数组，引用目录中完整 id。不得发明企业、URL、数字或加强原文事实结论。保留待核、未见、有效期及政策适用条件。企业不足目标数量时按实数输出；投资意向未证实就保持未知。画像每个 objective 条目引用原句对应 id，偏好以已保存问卷为准，未知则留待补充。"
             # Structured output must be validated before any model text can
             # reach a consumer that might persist it as a completed result.
         upstream_stream = bool(stream and not structured)
@@ -1533,12 +1539,21 @@ class Handler(BaseHTTPRequestHandler):
                             fingerprint = lambda rows: hashlib.sha256(json.dumps(rows, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
                             if fingerprint(current['chunks']) != fingerprint(evidence_context['chunks']):
                                 raise AuthError(409, 'evidence_changed', '材料已更新，请重试')
+                            if (mode == 'funnel' and fingerprint(funnel_demand_anchors(current))
+                                    != fingerprint(funnel_demand_anchors(evidence_context))):
+                                raise AuthError(409, 'evidence_changed', '需求依据已更新，请重试')
                             p = live['PROJECTS'][current['projectKey']]
                             grounded['ts' if mode == 'funnel' else '__ts'] = int(time.time()*1000)
                             if mode == 'funnel':
                                 if p.get('topic') != current['topic']:
                                     raise AuthError(409, 'topic_changed', '当前方向已切换，请重试')
                                 grounded.update(total=len(grounded['companies']), pushed=False)
+                                # Carry the latest server-owned historical names
+                                # forward even if this run found no candidates.
+                                for field in ('legacyCandidates', 'legacyTopic'):
+                                    grounded.pop(field, None)
+                                    if field in current:
+                                        grounded[field] = current[field]
                             else:
                                 grounded.update(__chunks=len(current['chunks']), __hasOnboarding=bool(current['onboarding']))
                             p['funnel' if mode == 'funnel' else 'profile'] = grounded
