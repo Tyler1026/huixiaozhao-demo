@@ -15037,11 +15037,11 @@ async function kbRemoveRevision(kbIdx,itemIdx){
   var p=P(),item=p&&kbEffectiveKnown(p,kbIdx,cur)[itemIdx],record=item&&kbEditRecord(cur,item);
   if(!record||window._kbRemovingRevision)return;
   var note=record.sourceIndex===null,retained=item._kbEditStatus==='needs_review';
-  if(!confirm(retained?'删除这条待复核的旧修订？':note?'删除这条补充资料？':'恢复为报告原文？当前人工修订将停止用于问答。'))return;
+  if(!confirm(retained?'删除这条待复核的旧修订？':note?'删除这条补充资料？':'恢复为原始材料？当前修订将停止用于问答。'))return;
   var epoch=originalUploadEpoch(),key=cur;window._kbRemovingRevision=true;
   try{
     await materialDeleteRevision(key,record);if(!originalUploadSessionCurrent(epoch))return;
-    if(cur===key&&P()===p){kbDetail(kbIdx);if(typeof refreshKbProgress==='function')refreshKbProgress();toast(retained?'旧修订已删除。':note?'补充资料已删除。':'已恢复报告原文。');}
+    if(cur===key&&P()===p){kbDetail(kbIdx);if(typeof refreshKbProgress==='function')refreshKbProgress();toast(retained?'旧修订已删除。':note?'补充资料已删除。':'已恢复原始材料');}
   }catch(error){if(originalUploadSessionCurrent(epoch))toast(error&&error.message||'未完成，请重试。');}
   finally{window._kbRemovingRevision=false;}
 }
