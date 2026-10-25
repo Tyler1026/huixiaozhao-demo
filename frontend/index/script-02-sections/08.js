@@ -18,6 +18,49 @@ var _onbAfter=null;  // 完成后的回调（首次=进入分析动画；设置�
 var _onbOpts={};     // 本次问卷各题实际选项：AI 结合城市生成，回退到 ONBOARD_Q 静态
 var _onbCity='';     // 本次问卷针对的城市（动态，不硬编码）
 var _onbCanClose=false; // 本次问卷是否允许关闭：设置页修改=true(不论是否已填写过)；首次建项目=false(必须作答才能建项目)
+var _onbSession=null;
+var _onbRequest=null;
+var _onbSessionId=0;
+
+function onbWorkspaceKey(city){
+  if(typeof AUTH==='undefined'||!AUTH||typeof cur==='undefined'||!cur)return '';
+  var p=PROJECTS[cur];
+  if(!p||p.city!==city)return '';
+  if(AUTH.scope==='admin')return cur;
+  return typeof _authWorkspaceOf==='function'&&_authWorkspaceOf(cur)?cur:'';
+}
+function onbSessionCurrent(session){
+  return !!session&&_onbSession===session&&session.originKey===(typeof cur==='undefined'?null:cur)
+    &&session.view===(typeof view==='undefined'?null:view)
+    &&session.user===(typeof AUTH==='undefined'||!AUTH?'':AUTH.user)
+    &&session.authEpoch===(typeof _authEpoch==='undefined'?0:_authEpoch)
+    &&session.authState===(typeof _authState==='undefined'?'':_authState)
+    &&session.projectKey===onbWorkspaceKey(session.city);
+}
+function cancelOnbRecommend(){
+  var request=_onbRequest; _onbRequest=null;
+  if(!request)return;
+  request.cancelled=true; clearTimeout(request.timer);
+  if(request.controller)request.controller.abort();
+  if(request.reader){try{Promise.resolve(request.reader.cancel()).catch(function(){});}catch(_){}}
+}
+function resetOnboardingSession(){
+  cancelOnbRecommend(); _onbSession=null; _onbAfter=null;
+  var host=document.getElementById('onbModalHost');if(host)host.innerHTML='';
+  try{document.removeEventListener('keydown',_onbEscHandler);}catch(_){}
+}
+function onbCancelHiddenRequests(){
+  if(_onbSession&&!onbSessionCurrent(_onbSession))resetOnboardingSession();
+}
+function onbEscape(value){
+  return String(value==null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function updateOnbRecommendControls(){
+  var session=_onbSession,button=document.getElementById('onbRecommendBtn'),status=document.getElementById('onbRecommendStatus');
+  if(!session)return;
+  if(button){button.disabled=!!_onbRequest||session.recommended||!session.projectKey;button.textContent=_onbRequest?'正在获取AI推荐…':session.recommended?'已获取AI推荐':'获取AI推荐';}
+  if(status)status.textContent=session.status||(!session.projectKey?'请先进入已授权的城市工作区；当前仍可手动填写。':'可直接填写保存；需要时再主动获取联网AI推荐。');
+}
 
 /* The main industry navigation opens the authorized city workspace. A demand
  * keeps its independent report when opened directly through switchProj. */
@@ -45,20 +88,30 @@ function _resolveOnbCity(explicit){
 function _resetOnbOpts(){ _onbOpts={}; ONBOARD_Q.forEach(function(it){ _onbOpts[it.k]=it.opts.slice(); }); }
 
 function openOnboarding(existing, afterFn, city, canClose){
+  resetOnboardingSession();
   _onbSel={}; _onbAfter=afterFn||null;
   // 【2026-09-17】关闭权限与"是否已填写过"解耦：旧代码用 !!existing 兼作关闭条件，
   // 导致设置页首次「去填写」进来没有 ✕、无法退出。显式传入 canClose 决定。
   _onbCanClose=!!canClose;
   _onbCity=_resolveOnbCity(city);
   _resetOnbOpts();
+  _onbRecSet={};
+  _onbSession={id:++_onbSessionId,city:_onbCity,projectKey:onbWorkspaceKey(_onbCity),originKey:typeof cur==='undefined'?null:cur,
+    view:typeof view==='undefined'?null:view,user:typeof AUTH==='undefined'||!AUTH?'':AUTH.user,authEpoch:typeof _authEpoch==='undefined'?0:_authEpoch,
+    authState:typeof _authState==='undefined'?'':_authState,recommended:false,status:''};
   // 预填已有答案（设置页修改场景）
   ONBOARD_Q.forEach(function(item){
     var v=existing&&existing[item.k];
     _onbSel[item.k]=v?(Array.isArray(v)?v.slice():[v]):[];
+    var custom=existing&&existing.__custom&&existing.__custom[item.k];
+    if(item.allowText&&typeof custom==='string'){
+      _onbSel[item.k+'__txt']=custom;
+      _onbSel[item.k]=_onbSel[item.k].filter(function(value){return value!==custom;});
+    }
   });
   var host=document.getElementById('onbModalHost')||(function(){var d=document.createElement('div');d.id='onbModalHost';document.body.appendChild(d);return d;})();
   host.innerHTML=onboardingModalHtml(!!existing);
-  // 先拉 AI 结合城市生成的推荐选项，生成后再显示整个问卷；失败/超时回退静态
+  // 默认只展示手填表单；联网推荐必须由用户单独点击。
   // 允许关闭时：绑定 ESC，并支持点击遮罩空白处关闭（与站内其它弹窗一致）
   if(_onbCanClose){
     try{ document.removeEventListener('keydown', _onbEscHandler); }catch(_){}
@@ -68,95 +121,113 @@ function openOnboarding(existing, afterFn, city, canClose){
       if(_lay) _lay.addEventListener('mousedown', function(ev){ if(ev.target===_lay) closeOnboarding(); });
     }catch(_){}
   }
-  fetchOnbRecommend(_onbCity);
+  renderOnbBody(); updateOnbRecommendControls();
 }
-// 向后端请求"结合城市实情"的推荐选项（mode=onboard_options，走 flash+联网）
-function fetchOnbRecommend(city){
-  var body=document.getElementById('onbBody');
-  var submitBtn=document.getElementById('onbSubmitBtn');
-  if(!city){ renderOnbBody(); return; }   // 无城市：直接用静态选项
-  if(body) body.innerHTML=onbLoadingHtml(city);
-  if(submitBtn){ submitBtn.disabled=true; submitBtn.style.opacity='.5'; }
-  var corpus=[];
-  try{ if(typeof buildKBCorpus==='function'){ corpus=kbSearch(city+' 产业 园区 企业规模 投资', buildKBCorpus(city), 8)||[]; } }catch(e){}
-  var done=false;
-  function finish(txt){ if(done)return; done=true; clearTimeout(to); if(txt)applyOnbRecommend(txt); renderOnbBody(); enableOnbSubmit(); }
-  var to=setTimeout(function(){ finish(''); }, 90000); // 90s 兜底
-  // 流式：首字节尽早到达，避免网关/浏览器长请求超时；累积完整 SSE 文本后再解析 JSON
-  fetch('/api/kb-chat',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:'为'+city+'生成招商偏好问卷推荐选项', chunks:corpus, city:city, mode:'onboard_options', stream:true})})
+// 仅由“获取AI推荐”按钮调用。材料由服务端从授权工作区重建，不发送浏览器拼接语料。
+function fetchOnbRecommend(){
+  var session=_onbSession;
+  if(!onbSessionCurrent(session)){onbCancelHiddenRequests();return Promise.resolve(false);}
+  if(_onbRequest||session.recommended||!session.projectKey)return Promise.resolve(false);
+  if(typeof AbortController==='undefined'){session.status='当前浏览器无法取消联网请求，请先手动填写。';updateOnbRecommendControls();return Promise.resolve(false);}
+  var request={session:session,controller:new AbortController(),reader:null,timer:null,cancelled:false};
+  _onbRequest=request;session.status='正在获取推荐，您仍可手动填写或保存。';updateOnbRecommendControls();
+  function active(){return _onbRequest===request&&!request.cancelled&&onbSessionCurrent(session);}
+  function finish(txt){
+    if(!active()){if(_onbRequest===request)cancelOnbRecommend();return false;}
+    clearTimeout(request.timer);_onbRequest=null;request.cancelled=true;
+    var applied=applyOnbRecommend(txt);
+    if(!applied){
+      request.controller.abort();
+      if(request.reader)try{Promise.resolve(request.reader.cancel()).catch(function(){});}catch(_){}
+    }
+    session.recommended=applied;session.status=applied?'推荐已补充，已有选择和手填内容保留。':'未取得完整推荐，已保留手填内容，可再次尝试。';
+    renderOnbBody();updateOnbRecommendControls();return applied;
+  }
+  request.timer=setTimeout(function(){
+    if(!active()){if(_onbRequest===request)cancelOnbRecommend();onbCancelHiddenRequests();return;}
+    cancelOnbRecommend();session.status='推荐等待超时，已停止接收；您可继续手动填写。';updateOnbRecommendControls();
+  },90000);
+  return fetch('/api/kb-chat',{method:'POST',headers:{'Content-Type':'application/json'},signal:request.controller.signal,
+    body:JSON.stringify({question:'为'+session.city+'生成招商偏好问卷推荐选项',projectKey:session.projectKey,city:session.city,mode:'onboard_options',stream:true})})
     .then(function(resp){
+      if(!active()){if(_onbRequest===request)cancelOnbRecommend();if(resp.body&&resp.body.cancel)try{Promise.resolve(resp.body.cancel()).catch(function(){});}catch(_){}return false;}
       if(!resp.ok||!resp.body){ throw new Error('HTTP '+resp.status); }
-      var reader=resp.body.getReader(), dec=new TextDecoder(), buf='', acc='';
+      var reader=request.reader=resp.body.getReader(), dec=new TextDecoder(), buf='', acc='',terminal='';
       function pump(){
+        if(!active()){if(_onbRequest===request)cancelOnbRecommend();return Promise.resolve(false);}
         return reader.read().then(function(r){
-          if(r.done){ finish(acc); return; }
+          if(!active()){if(_onbRequest===request)cancelOnbRecommend();return false;}
+          if(r.done)return finish(terminal==='stop'?acc:'');
           buf+=dec.decode(r.value,{stream:true});
           var lines=buf.split('\n'); buf=lines.pop();
           lines.forEach(function(line){
             line=line.trim(); if(line.indexOf('data:')!==0)return;
             var d=line.slice(5).trim(); if(!d||d==='[DONE]')return;
-            try{ var j=JSON.parse(d); var delta=((j.choices||[{}])[0].delta||{}).content||''; if(delta)acc+=delta; }catch(e){}
+            var j;try{j=JSON.parse(d);}catch(_){return;}
+            if(j.error)throw new Error('recommendation_failed');
+            var choice=(j.choices||[{}])[0],delta=(choice.delta||{}).content||'';
+            if(delta)acc+=delta;if(acc.length>65536)throw new Error('recommendation_too_large');
+            if(choice.finish_reason)terminal=choice.finish_reason;
           });
           return pump();
         });
       }
       return pump();
     })
-    .catch(function(e){ finish(''); });
+    .catch(function(){return finish('');});
 }
-function enableOnbSubmit(){ var b=document.getElementById('onbSubmitBtn'); if(b){ b.disabled=false; b.style.opacity='1'; } }
 // 解析 AI 返回的 JSON，把推荐选项并入 _onbOpts（推荐项置顶；静态兜底项去重保留在后）
 function applyOnbRecommend(txt){
-  if(!txt) return;
+  if(!txt) return false;
   var jsonStr=txt.replace(/```json/gi,'').replace(/```/g,'').trim();
   var m=jsonStr.match(/\{[\s\S]*\}/); if(m)jsonStr=m[0];
-  var obj=null; try{ obj=JSON.parse(jsonStr); }catch(e){ return; }
+  var obj=null; try{ obj=JSON.parse(jsonStr); }catch(e){ return false; }
+  if(!obj||typeof obj!=='object'||Array.isArray(obj))return false;
+  var applied=false;
   ONBOARD_Q.forEach(function(it){
     var rec=obj[it.k];
     if(Array.isArray(rec) && rec.length){
-      var clean=rec.map(function(x){return String(x).trim();}).filter(Boolean).slice(0,6);
+      var clean=rec.filter(function(x){return typeof x==='string';}).map(function(x){return x.trim().slice(0,160);}).filter(Boolean).slice(0,6);
+      if(!clean.length)return;
       // AI 命中时以推荐项为主，仅补 1 个"兜底/无门槛"通用项（取静态列表最后一项），不再堆叠全部静态项
       var merged=clean.slice();
       var optOut=it.opts[it.opts.length-1];
       if(optOut && merged.indexOf(optOut)<0) merged.push(optOut);
       _onbOpts[it.k]=merged;
       _onbRecSet[it.k]=clean;   // 记录哪些是 AI 推荐，渲染时打⭐
+      applied=true;
     }
-  });
+  });return applied;
 }
 var _onbRecSet={};  // {k:[被AI推荐的选项...]}
-function onbLoadingHtml(city){
-  return '<div style="text-align:center;padding:46px 20px">'+
-    '<div class="gov-spin" style="width:26px;height:26px;border-width:3px;margin:0 auto 16px"></div>'+
-    '<div style="font-size:14px;font-weight:650;color:#0b183b;margin-bottom:6px">正在结合「'+city+'」实情生成推荐选项…</div>'+
-    '<div style="font-size:12px;color:#8492a6;line-height:1.6">AI 正在读取该市城市智库与公开信息，<br>为您预填贴合本地的园区与产业方向</div></div>';
-}
 function onboardingModalHtml(isEdit){
   return '<div class="modal-layer" id="onbLayer" style="z-index:200">'+
     '<div class="modal" style="width:min(600px,100%)">'+
-      '<header><div><span class="eyebrow">ONBOARDING</span><h2 style="margin:2px 0 0">'+(isEdit?'修改招商偏好':'先了解您的招商偏好')+'</h2></div>'+
+      '<header><div><span class="eyebrow">ONBOARDING</span><h2 style="margin:2px 0 0">'+(_onbCanClose?(isEdit?'修改招商偏好':'填写招商偏好'):'先了解您的招商偏好')+'</h2></div>'+
         (_onbCanClose?'<button onclick="closeOnboarding()" aria-label="关闭" title="关闭（不保存）">✕</button>':'')+'</header>'+
-      '<div class="modal-body" id="onbBody"></div>'+
+      '<div class="modal-body"><div style="margin-bottom:18px"><button type="button" class="secondary-button" id="onbRecommendBtn" onclick="fetchOnbRecommend()">获取AI推荐</button>'+
+        '<p id="onbRecommendStatus" role="status" style="font-size:12px;color:#64748b;margin:8px 0"></p>'+
+        '<small style="color:#8492a6">推荐会联网生成；关闭后本页停止接收，已开始的服务端生成可能继续。</small></div><div id="onbBody"></div></div>'+
       '<footer><small style="margin-right:auto;color:#8492a6;font-size:11px;padding-left:2px">这些偏好会指导 AI 的招商研判，稍后可在「设置」中随时修改</small>'+
-        '<button class="primary-button" id="onbSubmitBtn" onclick="submitOnboarding()" style="min-width:130px">'+(isEdit?'保存修改':'开始分析 →')+'</button></footer>'+
+        '<button class="primary-button" id="onbSubmitBtn" onclick="submitOnboarding()" style="min-width:130px">'+(_onbCanClose?(isEdit?'保存修改':'保存偏好'):'开始分析 →')+'</button></footer>'+
     '</div></div>';
 }
 function renderOnbBody(){
   var el=document.getElementById('onbBody'); if(!el)return;
   el.innerHTML=ONBOARD_Q.map(function(item,qi){
     var sel=_onbSel[item.k]||[];
-    var opts=(_onbOpts[item.k]&&_onbOpts[item.k].length)?_onbOpts[item.k]:item.opts;
+    var opts=((_onbOpts[item.k]&&_onbOpts[item.k].length)?_onbOpts[item.k]:item.opts).slice();
+    sel.forEach(function(value){if(opts.indexOf(value)<0)opts.push(value);});
     var recSet=_onbRecSet[item.k]||[];
     var chips=opts.map(function(o){
       var on=sel.indexOf(o)>=0;
       var rec=recSet.indexOf(o)>=0;
-      return '<button type="button" onclick="toggleOnb('+qi+',\''+o.replace(/'/g,"\\'")+'\')" '+
+      return '<button type="button" onclick="toggleOnb('+qi+','+onbEscape(JSON.stringify(o))+')" '+
         'style="text-align:left;padding:9px 13px;border:1.5px solid '+(on?'#1a56db':(rec?'#f0d99a':'#e3ebf6'))+';border-radius:9px;'+
         'background:'+(on?'#eef3ff':(rec?'#fffdf5':'#fff'))+';color:'+(on?'#1a3fae':'#40506a')+';font-size:13px;font-weight:'+(on?'650':'500')+';cursor:pointer;transition:all .12s">'+
-        (on?'✓ ':(rec?'<span title="AI 结合本地推荐" style="color:#e0a516">★ </span>':''))+o+'</button>';
+        (on?'✓ ':(rec?'<span title="AI 结合本地推荐" style="color:#e0a516">★ </span>':''))+onbEscape(o)+'</button>';
     }).join('');
-    var custom=item.allowText?('<input id="onbTxt'+qi+'" placeholder="或补充说明…" value="'+(_onbCustom(item.k)||'')+'" '+
+    var custom=item.allowText?('<input id="onbTxt'+qi+'" placeholder="或补充说明…" value="'+onbEscape(_onbCustom(item.k)||'')+'" '+
       'oninput="setOnbCustom(\''+item.k+'\',this.value)" '+
       'style="margin-top:8px;width:100%;padding:8px 11px;border:1px solid #e3ebf6;border-radius:8px;font-size:12.5px;box-sizing:border-box;outline:none">'):'';
     return '<div style="margin-bottom:'+(qi===ONBOARD_Q.length-1?'4':'22')+'px">'+
@@ -181,7 +252,7 @@ function collectOnboarding(){
   ONBOARD_Q.forEach(function(item){
     var arr=(_onbSel[item.k]||[]).slice();
     var txt=(_onbSel[item.k+'__txt']||'').trim();
-    if(txt){ arr.push(txt); custom[item.k]=txt; }   // 记录自定义文本（用于后续分析最高优先级强调）
+    if(txt){ if(arr.indexOf(txt)<0)arr.push(txt); custom[item.k]=txt; }   // 记录自定义文本（用于后续分析最高优先级强调）
     out[item.k]=item.multi?arr:(arr.join('，'));
   });
   out.__custom=custom;   // 用户自定义输入单独留存
@@ -190,14 +261,14 @@ function collectOnboarding(){
 function closeOnboarding(){
   // 不允许关闭的场景（首次建项目必须作答）直接忽略，防止 ESC/遮罩绕过
   if(!_onbCanClose) return;
-  var h=document.getElementById('onbModalHost'); if(h)h.innerHTML='';
-  try{ document.removeEventListener('keydown', _onbEscHandler); }catch(_){}
+  resetOnboardingSession();
 }
 // ESC 关闭（仅在允许关闭时生效）
 function _onbEscHandler(e){
   if(e && (e.key==='Escape'||e.keyCode===27)){ closeOnboarding(); }
 }
 function submitOnboarding(){
+  if(!onbSessionCurrent(_onbSession)){onbCancelHiddenRequests();return;}
   var ans=collectOnboarding();
   var after=_onbAfter;
   _onbCanClose=true; closeOnboarding();   // 提交是正常出口，不受关闭守卫限制
@@ -235,7 +306,7 @@ function createProject(){
   var city=_locked?AUTH.city:((document.getElementById('setupCity')||{}).value);
   if(!city||!city.trim())return;
   city=city.trim();
-  // 首次进入：先弹招商偏好问卷（AI 结合该城市生成推荐选项），作答后再建项目+跑动画
+  // 首次进入先手填招商偏好，作答后再建项目；AI推荐需已授权工作区与单独点击。
   openOnboarding(null, function(ans){
     _startProjectAnalysis(city, ans);
   }, city);
@@ -445,7 +516,7 @@ var _summaryTimer=null;
 /* ── 下载分析报告 Modal ── */
 function showDownloadReport(){
   var context=reportExportContext();
-  if(!context){toast('当前方向暂无报告，请先完成产业分析');return;}
+  if(!context){toast(typeof view!=='undefined'&&view==='knowledge'?'城市智库暂无已发布的城市报告，请联系管理员。':'当前方向暂无报告，请先完成产业分析');return;}
   var p=context.project;
   function esc(value){return String(value==null?'':value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
   var files=(p.reportFiles||[]).filter(function(file){

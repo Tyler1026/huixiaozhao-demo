@@ -6,7 +6,7 @@ const tail=read('frontend/index/script-02-sections/14-tail.js'),ops=read('fronte
 function between(source,start,end){const a=source.indexOf(start),b=source.indexOf(end,a+start.length);assert.ok(a>=0&&b>a,start);return source.slice(a,b);}
 function context(extra={}){
   const nodes={},posts=[],toasts=[];
-  function element(){return {style:{},children:[],textContent:'',setAttribute(){},appendChild(item){this.children.push(item);if(item.id)nodes[item.id]=item;},remove(){if(this.id)delete nodes[this.id];}};}
+  function element(){return {style:{},children:[],textContent:'',setAttribute(){},appendChild(item){this.children.push(item);item.parentNode=this;if(item.id)nodes[item.id]=item;},removeChild(item){this.children=this.children.filter(x=>x!==item);item.parentNode=null;return item;},remove(){if(this.id)delete nodes[this.id];}};}
   const c={console,JSON,Object,Array,Number,String,Math,Date,Promise,AbortController,TextDecoder,setTimeout,clearTimeout,
     AUTH:{user:'tester',scope:'user'},_authEpoch:1,_authState:'ready',cur:'a',RESET_GEN:'g1',
     PROJECTS:{a:{city:'测试区',kb:[{t:'园区',known:[{text:'产值10亿元',nature:'base'}]}]}},KB_EDITS:{},KB_FILE_CHUNKS:{},UPLOAD_TOMBS:{},KB_CONFIRMS:{},
@@ -123,8 +123,9 @@ test('file memory distinguishes retained-original parse failures from missing or
 test('a delayed file-picker completion cannot upload into a newly selected account or workspace',()=>{
   const h=context(),c=h.c,timers=[];let input,uploads=0;
   Object.assign(c,{view:'knowledge',originalUploadEpoch:()=>c._authEpoch,originalUploadSessionCurrent:epoch=>epoch===c._authEpoch,ingestFiles:()=>uploads++,setTimeout:fn=>timers.push(fn)});
-  c.document.createElement=()=>input={click(){}};
-  vm.runInContext(between(tail,'function doUpload(){','function uploadParsed('),c);
+  const createElement=c.document.createElement;
+  c.document.createElement=tag=>{const node=createElement(tag);node.click=()=>{};if(tag==='input')input=node;return node;};
+  vm.runInContext(between(tail,'var OWNED_FILE_PICKER=','/* 编辑框附件上传')+'\n'+between(tail,'function doUpload(){','function uploadParsed('),c);
   c.doUpload();input.files=[{name:'a.txt'}];c.cur='b';input.onchange();assert.equal(timers.length,0);
   c.cur='a';c.doUpload();input.files=[{name:'b.txt'}];input.onchange();assert.equal(timers.length,1);c._authEpoch++;timers[0]();assert.equal(uploads,0);
 });

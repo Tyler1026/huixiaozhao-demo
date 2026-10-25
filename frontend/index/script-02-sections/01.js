@@ -401,12 +401,19 @@ function _getDisplaySub(kbIdx){
   var p=P(), section=p&&p.kb&&p.kb[kbIdx];
   if(!section)return '';
   var effective=Object.assign({},section,{known:kbEffectiveKnown(p,kbIdx,cur)});
+  var uploads=typeof kbUploadedMaterialGroups==='function'?kbUploadedMaterialGroups(cur,kbIdx):[];
+  if(uploads.length){
+    effective.known=effective.known.filter(function(value){return !kbUploadedPlaceholder(value,uploads);});
+    var summary=typeof kbSectionSummary==='function'?kbSectionSummary(effective):{count:effective.known.length,sourceCount:0};
+    return summary.count+' 条知识内容 / '+summary.sourceCount+' 项来源记录 · 上传 '+uploads.length+' 个文件 / '+uploads.reduce(function(n,file){return n+file.items.length;},0)+' 个已保存片段 / '+uploads.length+' 项原件来源';
+  }
   return typeof kbSectionSummary==='function'?kbSectionSummary(effective).displaySub:(section.sub||'');
 }
 function _getDisplayTag(kbIdx){
   var p=P(), section=p&&p.kb&&p.kb[kbIdx];
   if(!section)return '';
   var effective=Object.assign({},section,{known:kbEffectiveKnown(p,kbIdx,cur)});
+  if(typeof kbUploadedMaterialGroups==='function'&&kbUploadedMaterialGroups(cur,kbIdx).length)return '有上传材料 · 内容待核';
   return typeof kbSectionSummary==='function'?kbSectionSummary(effective).displayTag:(section.tag||'');
 }
 function _kbMeta(x){ return (x&&typeof x==='object')?x:{text:String(x==null?'':x),origin:'ai',nature:'base'}; }
