@@ -372,6 +372,7 @@ function hashTopic(s){
 function isLocked(v){
   if(['report','home','docking'].indexOf(v)<0) return false;
   if(!cur) return true;
+  if((v==='home'||v==='docking')&&typeof hasServerSubmittedDemand==='function'&&hasServerSubmittedDemand())return false;
   var p=P();
   // 已移除"随州始终解锁"特权：随州与新城市一致，产业分析/招商对接默认上锁，
   // 待城市智库有真实数据且完成度达标(≥80%)自动解锁，或用户手动强制解锁。

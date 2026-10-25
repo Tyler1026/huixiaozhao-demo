@@ -5092,6 +5092,7 @@ function _purgeAuthCache(){
   try{var raw=localStorage.getItem('huixiaozhao_kb_v1');if(raw)localStorage.setItem('huixiaozhao_kb_v1',JSON.stringify(_safeSyncSnapshot(JSON.parse(raw))));}catch(_){}
 }
 function _authResetView(){
+  if(typeof resetSubmittedDemandAccess==='function')resetSubmittedDemandAccess();
   if(typeof resetOnboardingSession==='function')resetOnboardingSession();
   if(typeof reminderResetSession==='function')reminderResetSession();
   if(typeof resetOwnedFilePickers==='function')resetOwnedFilePickers();
@@ -5195,6 +5196,91 @@ function P(){return cur&&PROJECTS[cur]||{}}
 /* 政府端账号按城市独立：返回当前登录城市（cur所在城市）的项目key列表 */
 function cityKeys(){
   return Object.keys(PROJECTS).filter(function(k){return AUTH&&_authWorkspaceOf(k)===AUTH.projKey;});
+}
+/* Existing-demand navigation is based on this session's server receipts, not
+ * browser-restored drafts. This does not replace authorization at any API. */
+var SUBMITTED_DEMAND_ACCESS=null, SUBMITTED_DEMAND_READ_SERIAL=0;
+function submittedDemandAuthIdentity(){
+  if(typeof AUTH==='undefined'||!AUTH||AUTH.scope!=='project'||_authState!=='ready'||
+      typeof AUTH.user!=='string'||!AUTH.user||typeof AUTH.projKey!=='string'||!AUTH.projKey||
+      !Array.isArray(AUTH.projectKeys)||AUTH.projectKeys.indexOf(AUTH.projKey)<0)return null;
+  return JSON.stringify([_authEpoch,AUTH.user,AUTH.scope,AUTH.role,AUTH.projKey,
+    AUTH.projectKeys.slice().sort(),typeof RESET_GEN==='undefined'?null:RESET_GEN]);
+}
+function resetSubmittedDemandAccess(){SUBMITTED_DEMAND_ACCESS=null;SUBMITTED_DEMAND_READ_SERIAL++;}
+function submittedDemandReadToken(){return {identity:submittedDemandAuthIdentity(),serial:++SUBMITTED_DEMAND_READ_SERIAL};}
+function submittedDemandReadCurrent(token){return !!token&&!!token.identity&&token.identity===submittedDemandAuthIdentity()&&token.serial===SUBMITTED_DEMAND_READ_SERIAL;}
+function submittedDemandStable(value){
+  if(Array.isArray(value))return value.map(submittedDemandStable);
+  if(value&&typeof value==='object'){var result={};Object.keys(value).sort().forEach(function(k){result[k]=submittedDemandStable(value[k]);});return result;}
+  return value;
+}
+function submittedDemandProof(key,projects,demands,tombs){
+  var root=AUTH.projKey,p=projects&&projects[key],base=projects&&projects[root];
+  if(!p||!base||key===root||base.isDemand===true||base.deleted===true||base.archived===true||
+      (base.workspaceId!=null&&base.workspaceId!==root)||
+      !Array.isArray(demands)||!Array.isArray(tombs)||tombs.indexOf(key)>=0||tombs.indexOf(root)>=0||
+      p.id!==key||p.isDemand!==true||p.demandContract!=='industry-demand-v1'||p.submissionState!=='submitted'||
+      p.workspaceId!==root||p.parentProjectKey!==root||p.deleted===true||p.archived===true||p.cancelled===true||p.closed===true||p.completed===true||
+      typeof p.city!=='string'||!p.city||p.city!==base.city||typeof p.demandTitle!=='string'||!p.demandTitle||
+      !Number.isSafeInteger(p.submittedAt)||p.submittedAt<=0||typeof p.submittedBy!=='string'||!p.submittedBy||
+      !p.demandSpec||typeof p.demandSpec!=='object'||Array.isArray(p.demandSpec))return null;
+  var rows=demands.filter(function(d){return d&&d.projKey===key;});
+  if(rows.length!==1)return null;
+  var d=rows[0],spec=p.demandSpec;
+  if(typeof d.id!=='string'||!d.id||demands.filter(function(row){return row&&row.id===d.id;}).length!==1||
+      d.deleted===true||d.archived===true||d.demandContract!==p.demandContract||d.demandOrigin!==p.demandOrigin||
+      d.city!==p.city||d.demandTitle!==p.demandTitle||d.topic!==p.demandTitle||
+      d.submittedAt!==p.submittedAt||d.submittedBy!==p.submittedBy||spec.title!==p.demandTitle||
+      typeof spec.description!=='string'||!spec.description||d.need!==spec.description||d.note!==(spec.conditions||'')||
+      JSON.stringify(submittedDemandStable(d.demandSpec))!==JSON.stringify(submittedDemandStable(spec)))return null;
+  var lineage;
+  if(p.demandOrigin==='direct'){
+    if(spec.source!=='user_direct'||p.topic!==p.demandTitle||typeof p.directRequestId!=='string'||!p.directRequestId||
+        d.directRequestId!==p.directRequestId||!/^[0-9a-f]{64}$/.test(p.directRequestFingerprint||'')||
+        d.directRequestFingerprint!==p.directRequestFingerprint)return null;
+    lineage=[p.directRequestId,p.directRequestFingerprint];
+  }else if(p.demandOrigin==='report'){
+    if(spec.source!=='user_confirmed'||p.sourceProjectKey!==root||d.sourceProjectKey!==root||
+        typeof p.sourceAnalysisTopic!=='string'||!p.sourceAnalysisTopic||p.topic!==p.sourceAnalysisTopic||
+        d.analysisTopic!==p.sourceAnalysisTopic||typeof p.sourcePriorityKey!=='string'||!p.sourcePriorityKey||
+        d.sourcePriorityKey!==p.sourcePriorityKey||typeof p.sourceReportIdentity!=='string'||!p.sourceReportIdentity||
+        !/^[0-9a-f]{64}$/.test(p.sourceReportFingerprint||'')||
+        JSON.stringify(submittedDemandStable(d.selectedPriority))!==JSON.stringify(submittedDemandStable(p.selectedPriority)))return null;
+    lineage=[p.sourceProjectKey,p.sourceAnalysisTopic,p.sourcePriorityKey,p.sourceReportIdentity,p.sourceReportFingerprint,p.selectedPriority];
+  }else return null;
+  return JSON.stringify(submittedDemandStable([key,root,p.city,p.demandTitle,p.topic,p.submittedAt,p.submittedBy,p.demandOrigin,spec,d.id,lineage]));
+}
+function acceptSubmittedDemandSnapshot(server,token){
+  var identity=submittedDemandAuthIdentity();
+  if(!identity||!submittedDemandReadCurrent(token))return false;
+  var proofs=Object.create(null),projects=server&&server.PROJECTS,demands=server&&server.DEMANDS;
+  if(projects&&typeof projects==='object'&&!Array.isArray(projects)&&Array.isArray(demands)){
+    Object.keys(projects).forEach(function(key){var proof=submittedDemandProof(key,projects,demands,server.DELETED_PROJECTS||[]);if(proof)proofs[key]=proof;});
+  }
+  // A newer authoritative empty/deleted result revokes previous navigation proof.
+  SUBMITTED_DEMAND_ACCESS={identity:identity,proofs:proofs};return true;
+}
+function acceptSubmittedDemandCreated(result,identity){
+  if(!identity||identity!==submittedDemandAuthIdentity()||!result||!result.project||!result.demand)return false;
+  var projects=Object.assign({},PROJECTS);projects[result.projectKey]=result.project;
+  var proof=submittedDemandProof(result.projectKey,projects,[result.demand],typeof DELETED_PROJECTS==='undefined'?[]:DELETED_PROJECTS);
+  if(!proof)return false;
+  // A creation receipt is newer than any previously started full-state request.
+  SUBMITTED_DEMAND_READ_SERIAL++;
+  if(!SUBMITTED_DEMAND_ACCESS||SUBMITTED_DEMAND_ACCESS.identity!==identity)SUBMITTED_DEMAND_ACCESS={identity:identity,proofs:Object.create(null)};
+  SUBMITTED_DEMAND_ACCESS.proofs[result.projectKey]=proof;return true;
+}
+function hasServerSubmittedDemand(){
+  var identity=submittedDemandAuthIdentity(),access=SUBMITTED_DEMAND_ACCESS;
+  if(!identity||!access||access.identity!==identity||typeof cur!=='string'||
+      typeof _authWorkspaceOf!=='function'||_authWorkspaceOf(cur)!==AUTH.projKey)return false;
+  var tombs=typeof DELETED_PROJECTS==='undefined'?[]:DELETED_PROJECTS;
+  return Object.keys(access.proofs).some(function(key){
+    var proof=submittedDemandProof(key,PROJECTS,typeof DEMANDS==='undefined'?[]:DEMANDS,tombs);
+    if(proof===access.proofs[key])return true;
+    delete access.proofs[key];return false;
+  });
 }
 /* Account preferences and workspace notifications come only from authenticated receipts. */
 var REMINDER_STATE=null, REMINDER_REQUEST_SEQ=0, REMINDER_POLL=null, REMINDER_PANEL_SEQ=0;
@@ -7163,6 +7249,7 @@ function hashTopic(s){
 function isLocked(v){
   if(['report','home','docking'].indexOf(v)<0) return false;
   if(!cur) return true;
+  if((v==='home'||v==='docking')&&typeof hasServerSubmittedDemand==='function'&&hasServerSubmittedDemand())return false;
   var p=P();
   // 已移除"随州始终解锁"特权：随州与新城市一致，产业分析/招商对接默认上锁，
   // 待城市智库有真实数据且完成度达标(≥80%)自动解锁，或用户手动强制解锁。
@@ -7742,6 +7829,7 @@ function openIndustryDemandComposer(button){
 }
 async function submitIndustryDemand(){
   var draft=INDUSTRY_DEMAND_DRAFT;if(!draft||draft.pending)return false;
+  var demandNavigationIdentity=typeof submittedDemandAuthIdentity==='function'?submittedDemandAuthIdentity():null;
   var error=document.getElementById('industryDemandError'),button=document.getElementById('industryDemandSubmit');
   function fail(message){if(error)error.textContent=message;else toast(message);}
   var epoch=typeof _authEpoch==='number'?_authEpoch:0;
@@ -7760,6 +7848,7 @@ async function submitIndustryDemand(){
     if(!result.projectKey||!result.project||result.project.demandContract!=='industry-demand-v1'||result.project.sourceProjectKey!==draft.key||result.project.sourceAnalysisTopic!==draft.topic||result.project.sourcePriorityKey!==industryDemandPriorityKey(draft.priority)||!result.demand||result.demand.projKey!==result.projectKey||!result.reportState)throw new Error('服务端返回的需求与所选建议不一致，请刷新核对。');
     PROJECTS[result.projectKey]=result.project;REPORTSTATE[result.projectKey]=result.reportState;
     var index=DEMANDS.findIndex(function(row){return row.id===result.demand.id;});if(index<0)DEMANDS.push(result.demand);else DEMANDS[index]=result.demand;
+    if(typeof acceptSubmittedDemandCreated==='function')acceptSubmittedDemandCreated(result,demandNavigationIdentity);
     persist();
     if(INDUSTRY_DEMAND_DRAFT===draft){closeModal();INDUSTRY_DEMAND_DRAFT=null;render();}
     toast(result.created?'这条招商需求已提交，可在招商对接中单独查看':'这条建议已有需求，已保留原提交内容');return true;
@@ -7800,6 +7889,7 @@ function openDirectDemandComposer(context){
 }
 async function submitDirectDemand(){
   var draft=DIRECT_DEMAND_DRAFT;if(!draft||draft.pending)return false;
+  var demandNavigationIdentity=typeof submittedDemandAuthIdentity==='function'?submittedDemandAuthIdentity():null;
   var error=document.getElementById('directDemandError'),button=document.getElementById('directDemandSubmit');
   function fail(message,fieldId){
     ['Title','Description','Conditions','ContactName','ContactMethod'].forEach(function(name){
@@ -7833,6 +7923,7 @@ async function submitDirectDemand(){
     if(current&&(current.directRequestId!==body.requestId||current.workspaceId!==draft.key||current.demandOrigin!=='direct'))throw dockingActionError('已有需求与回执不一致，请刷新核对。');
     if(!current)PROJECTS[result.projectKey]=result.project;var index=DEMANDS.findIndex(function(row){return row.id===result.demand.id;});if(index<0)DEMANDS.push(result.demand);
     if(typeof REPORTSTATE!=='undefined'&&!REPORTSTATE[result.projectKey])REPORTSTATE[result.projectKey]=result.reportState||{};
+    if(typeof acceptSubmittedDemandCreated==='function')acceptSubmittedDemandCreated(result,demandNavigationIdentity);
     try{persist();}catch(_){}
     if(DIRECT_DEMAND_DRAFT===draft){DIRECT_DEMAND_DRAFT=null;closeModal();window.__projOpen=result.projectKey;if(typeof dockingViewState==='function'){dockingViewState().selected=result.projectKey;dockingViewState().filter='all';dockingViewState().search='';}view='home';render();}
     toast('招商需求已提交，等待管理端受理');return true;
@@ -12984,6 +13075,7 @@ var KB_CONFIRMS={};  // {projKey:{kbIdx:{itemIdx:{status,text,ts}}}}
 // A server reset starts a new data generation. Never merge earlier local data into it.
 function _acceptServerGeneration(srv){
   if(!srv.RESET_GEN||srv.RESET_GEN===RESET_GEN)return false;
+  if(typeof resetSubmittedDemandAccess==='function')resetSubmittedDemandAccess();
   ['PROJECTS','UPLOADS','KB_EDITS','KB_CONFIRMS','KB_CONFIRM_TOMBS','KB_ITEM_TOMBS','KB_FILE_CHUNKS','KB_UNLOCKED','REPORTSTATE','REPORT_HISTORY','PENDING_CONFIRMS','DOCK_LOGS','KB_CHAT','KB_CHAT_TOMBS','UPLOAD_TOMBS','CITY_BASE_PACKAGES','CITY_WORKSPACES','SUBPROJ'].forEach(function(key){if(typeof window[key]!=='undefined')window[key]={};});
   ['OPS_ENT','DEMANDS','REPORT_REQUESTS'].forEach(function(key){if(typeof window[key]!=='undefined')window[key]=[];});
   window.DELETED_PROJECTS=[];window.DELETED_CLUES=[];cur=null;
@@ -12995,6 +13087,7 @@ var _serverRestoreSeq=0;
 function restoreFromServer(callback){
   if(!AUTH||_authState!=='ready'){if(callback)callback(false);return Promise.resolve(false);}
   var authEpoch=_authEpoch;
+  var demandReadToken=typeof submittedDemandReadToken==='function'?submittedDemandReadToken():null;
   // 生成/访谈进行中不做全量覆盖同步——否则刚生成的REPORTSTATE/访谈状态被服务端旧数据冲掉，
   // 表现为"报告跑一半自己跳走/进行不下去"。完成后调用方会再触发同步。
   if(window._reportGenerating || (window._interviewState && _interviewState.active)){
@@ -13017,7 +13110,12 @@ function restoreFromServer(callback){
     // started: a user can change direction or page while the network is pending.
     var _userCur=cur,_userTopic=cur&&PROJECTS[cur]?PROJECTS[cur].topic:null,_userView=view;
     var _editorBeforeRestore=typeof kbEditorSnapshotSession==='function'?kbEditorSnapshotSession():null;
-    if(_acceptServerGeneration(srv)){_userCur=null;_userTopic=null;_userView=null;}
+    var demandReadCurrent=typeof submittedDemandReadCurrent==='function'&&submittedDemandReadCurrent(demandReadToken);
+    if(_acceptServerGeneration(srv)){
+      _userCur=null;_userTopic=null;_userView=null;
+      if(demandReadCurrent)demandReadToken=submittedDemandReadToken();
+    }
+    if(typeof acceptSubmittedDemandSnapshot==='function')acceptSubmittedDemandSnapshot(srv,demandReadToken);
     // 服务器直接覆盖本地，不做合并——保证所有人看到同一份数据
     // 但保护本地刚提交的 isDemand 项目：5秒防抖内刷新时服务器尚无这些数据，直接覆盖会丢
     var _localDemandProj={}, _localDemandRS={}, _localDemands=(typeof DEMANDS!=='undefined')?DEMANDS.slice():[];

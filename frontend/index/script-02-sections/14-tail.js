@@ -44,6 +44,7 @@ var KB_CONFIRMS={};  // {projKey:{kbIdx:{itemIdx:{status,text,ts}}}}
 // A server reset starts a new data generation. Never merge earlier local data into it.
 function _acceptServerGeneration(srv){
   if(!srv.RESET_GEN||srv.RESET_GEN===RESET_GEN)return false;
+  if(typeof resetSubmittedDemandAccess==='function')resetSubmittedDemandAccess();
   ['PROJECTS','UPLOADS','KB_EDITS','KB_CONFIRMS','KB_CONFIRM_TOMBS','KB_ITEM_TOMBS','KB_FILE_CHUNKS','KB_UNLOCKED','REPORTSTATE','REPORT_HISTORY','PENDING_CONFIRMS','DOCK_LOGS','KB_CHAT','KB_CHAT_TOMBS','UPLOAD_TOMBS','CITY_BASE_PACKAGES','CITY_WORKSPACES','SUBPROJ'].forEach(function(key){if(typeof window[key]!=='undefined')window[key]={};});
   ['OPS_ENT','DEMANDS','REPORT_REQUESTS'].forEach(function(key){if(typeof window[key]!=='undefined')window[key]=[];});
   window.DELETED_PROJECTS=[];window.DELETED_CLUES=[];cur=null;
@@ -55,6 +56,7 @@ var _serverRestoreSeq=0;
 function restoreFromServer(callback){
   if(!AUTH||_authState!=='ready'){if(callback)callback(false);return Promise.resolve(false);}
   var authEpoch=_authEpoch;
+  var demandReadToken=typeof submittedDemandReadToken==='function'?submittedDemandReadToken():null;
   // 生成/访谈进行中不做全量覆盖同步——否则刚生成的REPORTSTATE/访谈状态被服务端旧数据冲掉，
   // 表现为"报告跑一半自己跳走/进行不下去"。完成后调用方会再触发同步。
   if(window._reportGenerating || (window._interviewState && _interviewState.active)){
@@ -77,7 +79,12 @@ function restoreFromServer(callback){
     // started: a user can change direction or page while the network is pending.
     var _userCur=cur,_userTopic=cur&&PROJECTS[cur]?PROJECTS[cur].topic:null,_userView=view;
     var _editorBeforeRestore=typeof kbEditorSnapshotSession==='function'?kbEditorSnapshotSession():null;
-    if(_acceptServerGeneration(srv)){_userCur=null;_userTopic=null;_userView=null;}
+    var demandReadCurrent=typeof submittedDemandReadCurrent==='function'&&submittedDemandReadCurrent(demandReadToken);
+    if(_acceptServerGeneration(srv)){
+      _userCur=null;_userTopic=null;_userView=null;
+      if(demandReadCurrent)demandReadToken=submittedDemandReadToken();
+    }
+    if(typeof acceptSubmittedDemandSnapshot==='function')acceptSubmittedDemandSnapshot(srv,demandReadToken);
     // 服务器直接覆盖本地，不做合并——保证所有人看到同一份数据
     // 但保护本地刚提交的 isDemand 项目：5秒防抖内刷新时服务器尚无这些数据，直接覆盖会丢
     var _localDemandProj={}, _localDemandRS={}, _localDemands=(typeof DEMANDS!=='undefined')?DEMANDS.slice():[];
