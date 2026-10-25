@@ -97,6 +97,7 @@ function openIndustryDemandComposer(button){
 }
 async function submitIndustryDemand(){
   var draft=INDUSTRY_DEMAND_DRAFT;if(!draft||draft.pending)return false;
+  var demandNavigationIdentity=typeof submittedDemandAuthIdentity==='function'?submittedDemandAuthIdentity():null;
   var error=document.getElementById('industryDemandError'),button=document.getElementById('industryDemandSubmit');
   function fail(message){if(error)error.textContent=message;else toast(message);}
   var epoch=typeof _authEpoch==='number'?_authEpoch:0;
@@ -115,6 +116,7 @@ async function submitIndustryDemand(){
     if(!result.projectKey||!result.project||result.project.demandContract!=='industry-demand-v1'||result.project.sourceProjectKey!==draft.key||result.project.sourceAnalysisTopic!==draft.topic||result.project.sourcePriorityKey!==industryDemandPriorityKey(draft.priority)||!result.demand||result.demand.projKey!==result.projectKey||!result.reportState)throw new Error('服务端返回的需求与所选建议不一致，请刷新核对。');
     PROJECTS[result.projectKey]=result.project;REPORTSTATE[result.projectKey]=result.reportState;
     var index=DEMANDS.findIndex(function(row){return row.id===result.demand.id;});if(index<0)DEMANDS.push(result.demand);else DEMANDS[index]=result.demand;
+    if(typeof acceptSubmittedDemandCreated==='function')acceptSubmittedDemandCreated(result,demandNavigationIdentity);
     persist();
     if(INDUSTRY_DEMAND_DRAFT===draft){closeModal();INDUSTRY_DEMAND_DRAFT=null;render();}
     toast(result.created?'这条招商需求已提交，可在招商对接中单独查看':'这条建议已有需求，已保留原提交内容');return true;
@@ -155,6 +157,7 @@ function openDirectDemandComposer(context){
 }
 async function submitDirectDemand(){
   var draft=DIRECT_DEMAND_DRAFT;if(!draft||draft.pending)return false;
+  var demandNavigationIdentity=typeof submittedDemandAuthIdentity==='function'?submittedDemandAuthIdentity():null;
   var error=document.getElementById('directDemandError'),button=document.getElementById('directDemandSubmit');
   function fail(message,fieldId){
     ['Title','Description','Conditions','ContactName','ContactMethod'].forEach(function(name){
@@ -188,6 +191,7 @@ async function submitDirectDemand(){
     if(current&&(current.directRequestId!==body.requestId||current.workspaceId!==draft.key||current.demandOrigin!=='direct'))throw dockingActionError('已有需求与回执不一致，请刷新核对。');
     if(!current)PROJECTS[result.projectKey]=result.project;var index=DEMANDS.findIndex(function(row){return row.id===result.demand.id;});if(index<0)DEMANDS.push(result.demand);
     if(typeof REPORTSTATE!=='undefined'&&!REPORTSTATE[result.projectKey])REPORTSTATE[result.projectKey]=result.reportState||{};
+    if(typeof acceptSubmittedDemandCreated==='function')acceptSubmittedDemandCreated(result,demandNavigationIdentity);
     try{persist();}catch(_){}
     if(DIRECT_DEMAND_DRAFT===draft){DIRECT_DEMAND_DRAFT=null;closeModal();window.__projOpen=result.projectKey;if(typeof dockingViewState==='function'){dockingViewState().selected=result.projectKey;dockingViewState().filter='all';dockingViewState().search='';}view='home';render();}
     toast('招商需求已提交，等待管理端受理');return true;

@@ -183,6 +183,7 @@ function _purgeAuthCache(){
   try{var raw=localStorage.getItem('huixiaozhao_kb_v1');if(raw)localStorage.setItem('huixiaozhao_kb_v1',JSON.stringify(_safeSyncSnapshot(JSON.parse(raw))));}catch(_){}
 }
 function _authResetView(){
+  if(typeof resetSubmittedDemandAccess==='function')resetSubmittedDemandAccess();
   if(typeof resetOnboardingSession==='function')resetOnboardingSession();
   if(typeof reminderResetSession==='function')reminderResetSession();
   if(typeof resetOwnedFilePickers==='function')resetOwnedFilePickers();
