@@ -5,6 +5,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const dir = path.join(__dirname, '..', 'frontend', 'ops', 'script-03-sections');
+const funnelSource = fs.readFileSync(path.join(dir, '12-tail.js'), 'utf8');
+const funnelHelpers = funnelSource.slice(funnelSource.indexOf('function funnelCurrentCompanies('), funnelSource.indexOf('/* ── 企业线索两栏布局渲染'));
 
 function declaration(file, name) {
   const text = fs.readFileSync(path.join(dir, file), 'utf8');
@@ -26,7 +28,7 @@ function boot() {
     OPS_UI:{demands:{city:'',query:''}},
     STAGES:[['资料准备','上传材料'],['AI 研判','生成方向'],['确认需求','双确认'],
       ['资源匹配','资源核验'],['招商对接','安排沟通']],
-    window:{__opsProjOpen:{demand:true}}, Date, console,
+    window:{__opsProjOpen:{demand:true}}, Date, URL, console,
     document:{getElementById:k=>inputs[k]},
     _authEscape: v => String(v ?? '').replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;'),
     persist(){calls.persist++;},render(){calls.render++;},
@@ -37,6 +39,7 @@ function boot() {
   };
   vm.createContext(c);
   const parts = [
+    declaration('12-part-00.js', 'funnelEvidenceLinks'), funnelHelpers,
     ...['projStages','stageNameOf'].map(n=>declaration('01.js',n)),
     ...['demandSubmissionState','demandEffectiveStage','demandDisplayProject',
       'stageOptions','renderStageLog','advanceStage','advanceStageTo',

@@ -8,6 +8,8 @@ const root=path.join(__dirname,'..');
 const read=file=>fs.readFileSync(path.join(root,file),'utf8');
 function decl(file,name){const s=read(file),start=s.indexOf('function '+name+'('),end=s.indexOf('\nfunction ',start+1);assert.ok(start>=0,name);return s.slice(start,end<0?s.length:end);}
 const ops='frontend/ops/script-03-sections/';
+const funnelSource=read(ops+'12-tail.js');
+const funnelHelpers=funnelSource.slice(funnelSource.indexOf('function funnelCurrentCompanies('),funnelSource.indexOf('/* ── 企业线索两栏布局渲染'));
 function boot(){
  const topic='生物医药产业分析';
  const mk=(focus,key)=>({id:key,isDemand:true,demandContract:'industry-demand-v1',city:'闵行区',org:'招商部门',topic,demandTitle:focus,sourceAnalysisTopic:topic,sourceProjectKey:'workspace',sourcePriorityKey:key,stage:4,submissionState:'submitted',clues:[],selectedPriority:{focus,reason:focus+'的原建议依据',action:focus+'的原建议行动'},demandSpec:{description:'对接'+focus+'生产企业',conditions:'具备'+focus+'产业化能力'}});
@@ -16,7 +18,7 @@ function boot(){
   demandDisplayProject:(_k,p)=>p,projStages:()=>[['资料准备'],['产业分析'],['确认需求'],['资源匹配']],stageNameOf:()=> '资源匹配',stageOptions:()=>'',renderStageLog:()=>'',opsEmpty:(_a,b)=>b,
   URL,fetch:()=>assert.fail('render does not fetch'),persist:()=>assert.fail('render does not write'),console};
  c.window=c;c.__opsProjOpen={a:true,b:true};vm.createContext(c);
- vm.runInContext([decl('frontend/shared/industry-demands.js','industryDemandProjectTitle'),decl(ops+'17.js','opsDemandSpecificationHtml'),decl(ops+'17.js','opsDemandResults'),decl(ops+'17.js','statCell'),decl(ops+'16.js','projKeyByCityTopic')].join('\n'),c);
+ vm.runInContext([decl('frontend/shared/industry-demands.js','industryDemandProjectTitle'),decl(ops+'12-part-00.js','funnelEvidenceLinks'),funnelHelpers,decl(ops+'17.js','opsDemandSpecificationHtml'),decl(ops+'17.js','opsDemandResults'),decl(ops+'17.js','statCell'),decl(ops+'16.js','projKeyByCityTopic')].join('\n'),c);
  return c;
 }
 async function loadClientReminders(c){

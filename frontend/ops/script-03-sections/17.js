@@ -305,6 +305,16 @@ function ragCanCommitMessage(message,key){return !!message&&message.role==='assi
 
 /* 工作区总览与下拉框保留准确来源，只有服务端登记的项目是地区主工作区。 */
 function ragSelectWorkspace(key){ragCity=key;ragTopic=0;ragHits=null;renderOpsV2();}
+function opsOpenFunnelMaterials(key){
+  var project=PROJECTS[key];if(!project){toast('当前项目已不存在，请刷新后重试');return;}
+  var workspace=project.workspaceId||key,root=PROJECTS[workspace];
+  if(!root||!Array.isArray(root.kb)){
+    openModal('补充企业产品与来源','<p style="line-height:1.8">当前项目的材料工作区尚不可用，请联系管理员恢复工作区后补充：企业全称、产品原文及对应网页链接（可上传含这些内容的文件），以及与本条需求的关系。保存后返回本条需求，点击“按材料筛选企业”。</p><p>项目：'+_authEscape(key)+'</p><p>材料工作区：'+_authEscape(workspace)+'</p>');
+    return;
+  }
+  ragCity=workspace;ragTopic=0;ragHits=null;ragFilter='';
+  OPS_UI.rag.tab='upload';opsGo('rag');
+}
 function ragWorkspaceOverview(activeKey){
   var keys=Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&Array.isArray(p.kb);});
   if(keys.length<=1)return '';
@@ -1656,17 +1666,18 @@ function opsDemandResults(){
   function funnelBlock(k){
     var p=PROJECTS[k]; if(!p) return '';
     var fn=p.funnel; var running=(typeof _funnelRunning!=='undefined')&&_funnelRunning[k];
+    var currentCompanies=funnelCurrentCompanies(fn),legacyCompanies=funnelLegacyCandidates(fn);
     if(!window.__funnelCollapse) window.__funnelCollapse={};
     var collapsed=window.__funnelCollapse[k]===true;
     var head='<div style="padding:12px 20px 4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
       '<span onclick="toggleFunnelBlock('+_authEscape(JSON.stringify(k))+')" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none">'+'<span style="font-size:11px;color:#6d28d9;display:inline-block;transform:rotate('+(collapsed?'-90':'0')+'deg)">▼</span>'+'<span style="font-size:12.5px;font-weight:750;color:#0b183b">AI 企业漏斗</span>'+'</span>'+
-      (fn?'<span style="font-size:11px;padding:2px 8px;background:#f5f3ff;color:#6d28d9;border-radius:10px">材料待筛选 '+fn.companies.length+' 家</span>':'')+
+      (fn?'<span style="font-size:11px;padding:2px 8px;background:#f5f3ff;color:#6d28d9;border-radius:10px">'+(fn.evidence_contract==='saved-excerpts-v1'?'材料待筛选 '+currentCompanies.length:'历史待补证 '+legacyCompanies.length)+' 家</span>':'')+
       '<div style="flex:1"></div>'+
-      (fn&&fn.companies&&fn.companies.length?'<button onclick="showFunnelPyramid('+_authEscape(JSON.stringify(k))+')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:11.5px;color:#1a56db;cursor:pointer;font-weight:600;margin-right:8px"><span data-ops-icon="industry-analysis"></span> 分级图谱</button>':'')+
-      (running?'<span style="font-size:11.5px;color:#6d28d9"><span data-ops-icon="loading"></span> 分析中…</span>':'<button onclick="loadAIScanClues('+_authEscape(JSON.stringify(k))+')" style="padding:4px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:11.5px;color:#6d28d9;cursor:pointer;font-weight:600"><span data-ops-icon="refresh"></span> 重新分析</button>')+
-    '</div>';
+      (currentCompanies.length?'<button onclick="showFunnelPyramid('+_authEscape(JSON.stringify(k))+')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:11.5px;color:#1a56db;cursor:pointer;font-weight:600;margin-right:8px"><span data-ops-icon="industry-analysis"></span> 分级图谱</button>':'')+
+      (running?'<span style="font-size:11.5px;color:#6d28d9"><span data-ops-icon="loading"></span> 分析中…</span>':'<button onclick="loadAIScanClues('+_authEscape(JSON.stringify(k))+')" style="padding:4px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:11.5px;color:#6d28d9;cursor:pointer;font-weight:600"><span data-ops-icon="refresh"></span> 按材料筛选企业</button>')+
+    '</div>'+renderFunnelSnapshot(fn);
     if(collapsed) return head;
-    if(fn&&fn.evidence_contract!=='saved-excerpts-v1')return head+'<div style="padding:12px 20px;color:#92400e">此旧清单尚未逐条核对来源。请重新分析后查看和推送。</div>';
+    if(fn&&fn.evidence_contract!=='saved-excerpts-v1')return head+'<div style="padding:12px 20px;color:#92400e">历史名单尚未核对来源；可展开下方线索，补齐材料后重新筛选。</div>'+renderFunnelMaterialsAction(k)+renderFunnelLegacyCandidates(k,fn);
     var body;
     if(running && !fn){
       body='<div style="margin:6px 20px 14px;text-align:center;padding:20px;background:#faf9ff;border-radius:10px;border:1px solid #ede9fe;font-size:12.5px;color:#6d28d9">⏳ AI 正在整理本条需求相关的材料企业，尚未完成业务适配审核…</div>';
@@ -1676,50 +1687,9 @@ function opsDemandResults(){
         '<button onclick="loadAIScanClues('+_authEscape(JSON.stringify(k))+')" style="padding:6px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600"><span data-ops-icon="search"></span> 立即 AI 分析</button>'+
       '</div>';
     } else {
-      var pushedTip=fn.pushed?'<span style="font-size:11px;color:#166534;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:3px 9px"><span data-ops-icon="success"></span> 已推送 '+(fn.pushedNames?fn.pushedNames.length:0)+' 家到政府端</span>':'';
-      var pushBtn=fn.companies.length?'<button onclick="pushFunnelTopToGov('+_authEscape(JSON.stringify(k))+',8)" style="padding:7px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer">逐家核对产品与需求后推送</button>':'<div role="status" style="color:#92400e;line-height:1.7">当前材料没有足够的相关企业证据，请补充产品名录或原始来源后重新分析。这不代表现实中不存在相关企业。</div>';
-      if(!window.__funnelExpand) window.__funnelExpand={};
-      var expandAll=window.__funnelExpand[k]===true;
-      var COLLAPSE_N=8;
-      var showList=expandAll?fn.companies:fn.companies.slice(0,COLLAPSE_N);
-      var rows=showList.map(function(c,i){
-        var isTop=i<8;
-        return '<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid #f1f3f7">'+
-          '<span style="flex-shrink:0;width:22px;height:22px;background:'+(isTop?'#eef2ff':'#f5f7fb')+';color:'+(isTop?'#4338ca':'#9aa5b5')+';border-radius:50%;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">'+(i+1)+'</span>'+
-          '<div style="flex:1;min-width:0">'+
-            '<div style="font-size:12.5px;font-weight:650;color:#0b183b;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
-              '<span>'+_authEscape(c.name)+'</span>'+
-              (c.listed?'<span style="font-size:10px;color:#6d28d9;background:#f5f3ff;border-radius:6px;padding:1px 6px">'+_authEscape(c.listed)+'</span>':'')+
-              (isTop?'<span style="font-size:10px;color:#1a56db;background:#eff6ff;border-radius:6px;padding:1px 6px">待核候选</span>':'')+
-            '</div>'+
-            '<div style="font-size:11px;color:#8492a6;margin-top:2px">'+_authEscape(c.region||'')+(c.kind?' \u00b7 '+_authEscape(c.kind):'')+'</div>'+
-            (c.fit?'<div style="font-size:11px;color:#4a5568;margin-top:3px;line-height:1.5">'+_authEscape(c.fit)+'</div>':'')+
-            (c.signal
-              ? '<div style="font-size:10.5px;color:#b45309;margin-top:3px;line-height:1.5"><span data-ops-icon="notification"></span> '+_authEscape(c.signal)+'</div>'
-              : '<div style="font-size:10.5px;color:#b45309;margin-top:3px;line-height:1.5"><span data-ops-icon="document"></span> '+_authEscape(c.score_reason||c.fit||'仅为材料企业，需逐家核对业务适配和投资意向')+'</div>')+
-            // 优质标注：有扩张需求 / 派系关联（无则不显示）
-            (c.expansion?'<div style="font-size:10.5px;color:#166534;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:2px 7px;margin-top:4px;display:inline-block;line-height:1.5"><span data-ops-icon="progress"></span> 有扩张需求：'+_authEscape(c.expansion)+'</div>':'')+
-            (c.faction?'<div style="font-size:10.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:2px 7px;margin-top:4px;margin-left:4px;display:inline-block;line-height:1.5"><span data-ops-icon="investment-docking"></span> 派系关联：'+_authEscape(c.faction)+'</div>':'')+
-            // 评分卡分项构成
-            '<div style="font-size:10px;color:#9aa5b5;margin-top:4px">业务适配待核 · 投资意向未知 · 实力待核</div>'+
-            funnelEvidenceLinks(c)+
-          '</div>'+
-          '<span style="flex-shrink:0;font-size:13px;font-weight:800;color:'+(c.fit_score>=80?'#16a34a':c.fit_score>=60?'#d97706':'#6b7280')+'">'+_authEscape(c.fit_score==null?'待核':c.fit_score)+'<span style="font-size:10px;font-weight:600">'+(c.fit_score==null?'':'分')+'</span></span>'+
-        '</div>';
-      }).join('');
-      var toggle='';
-      if(fn.companies.length>COLLAPSE_N){
-        toggle=expandAll
-          ? '<div onclick="toggleFunnelExpand(' +_authEscape(JSON.stringify(k))+ ')" style="text-align:center;font-size:12px;color:#6d28d9;padding:10px 0 2px;cursor:pointer;font-weight:600">\u6536\u8d77 \u25b2</div>'
-          : '<div onclick="toggleFunnelExpand(' +_authEscape(JSON.stringify(k))+ ')" style="text-align:center;font-size:12px;color:#6d28d9;padding:10px 0 2px;cursor:pointer;font-weight:600">\u5c55\u5f00\u5168\u90e8 '+fn.companies.length+' \u5bb6 \u25bc</div>';
-      }
-      body='<div style="margin:6px 20px 14px;padding:12px 14px;background:#fbfcff;border:1px solid #e8edf5;border-radius:10px">'+
-        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">'+pushBtn+pushedTip+'</div>'+
-        rows+toggle+
-      '</div>';
-      '</div>';
+      body=renderFunnelCompanies(k,fn);
     }
-    return head+body;
+    return head+body+renderFunnelMaterialsAction(k)+renderFunnelLegacyCandidates(k,fn);
   }
 
   // 按城市分组

@@ -9,6 +9,7 @@ ROOT=Path(__file__).resolve().parents[1]
 NEW_FUNCTIONS_NOT_IN_BASELINE = {'_merge_invite_codes', '_chain_bundle', '_merge_chain_maps', '_chain_source_matches'}
 NEW_FUNCTIONS_NOT_IN_BASELINE.update({'_stamp', '_max_stamps', '_topic_lifecycle', '_report_stamp',
     '_merge_topic_project_map', '_merge_report_state', '_merge_report_history'})
+NEW_FUNCTIONS_NOT_IN_BASELINE.update({'_legacy_funnel_context', '_merge_funnel'})
 class SyncBoundaryTests(unittest.TestCase):
     def test_pure_merge_module_matches_original_definitions(self):
         from backend import sync_merge
@@ -31,6 +32,10 @@ class SyncBoundaryTests(unittest.TestCase):
                 if '_REPORT_MAPS' in ast.unparse(node.test) and '_merge_report_state' in ast.unparse(node):
                     return None  # Atomic per-topic merge has its own behavioral regression suite.
                 if ast.unparse(node.test) == "fk == 'historyDeletedAt'":
+                    return None
+                # Funnel history now has a server-owned merge boundary;
+                # test_funnel_recovery exercises it through real /api/sync.
+                if ast.unparse(node.test) in ("fk == 'funnel'", "'funnel' in v"):
                     return None
                 if (isinstance(node.test,ast.Compare) and isinstance(node.test.left,ast.Name)
                         and node.test.left.id=='fk' and any(isinstance(x,ast.Name) and x.id=='_CHAIN_MAPS' for x in node.test.comparators)):

@@ -10,6 +10,11 @@ const source = fs.readFileSync(path.join(__dirname, '../frontend/ops/script-03-s
 const renderer = source.slice(source.indexOf('function opsDemandResults(){'), source.indexOf('\nfunction toggleFunnelBlock('));
 const statRenderer = source.slice(source.indexOf('function statCell('), source.indexOf('\nfunction statCellClickable('));
 const demandSource = fs.readFileSync(path.join(__dirname, '../frontend/ops/script-03-sections/12-tail.js'), 'utf8');
+const funnelHelpers = demandSource.slice(demandSource.indexOf('function funnelCurrentCompanies('), demandSource.indexOf('/* ── 企业线索两栏布局渲染'));
+const evidenceSource = fs.readFileSync(path.join(__dirname, '../frontend/ops/script-03-sections/12-part-00.js'), 'utf8');
+const evidenceStart = evidenceSource.indexOf('function funnelEvidenceLinks(');
+const evidenceEnd = evidenceSource.indexOf('\nfunction ', evidenceStart + 1);
+const evidenceHelper = evidenceSource.slice(evidenceStart, evidenceEnd < 0 ? evidenceSource.length : evidenceEnd);
 const demandHelpers = ['demandSubmissionState', 'demandEffectiveStage', 'demandDisplayProject'].map(name => {
   const start = demandSource.indexOf('function ' + name + '(');
   const end = demandSource.indexOf('\nfunction ', start + 1);
@@ -23,7 +28,7 @@ function render(enterprises, key = 'proj_mv3i83ap') {
   };
   const before = JSON.stringify({projects, enterprises});
   const ctx = {
-    PROJECTS: projects, OPS_ENT: enterprises, OPS_UI: {demands: {city: '', query: projects[key].topic}},
+    URL, PROJECTS: projects, OPS_ENT: enterprises, OPS_UI: {demands: {city: '', query: projects[key].topic}},
     REPORTSTATE: {}, UPLOADS: {}, KB_CONFIRMS: {}, DEMANDS: [], PENDING_CONFIRMS: {},
     projStages: () => [['资料准备']], stageNameOf: () => '资料准备',
     stageOptions: () => '', renderStageLog: () => '', opsEmpty: () => 'EMPTY',
@@ -34,7 +39,7 @@ function render(enterprises, key = 'proj_mv3i83ap') {
   };
   ctx.window = ctx;
   vm.createContext(ctx);
-  vm.runInContext(demandHelpers + '\n' + statRenderer + '\n' + renderer, ctx);
+  vm.runInContext(demandHelpers + '\n' + evidenceHelper + '\n' + funnelHelpers + '\n' + statRenderer + '\n' + renderer, ctx);
   const stats = [];
   const actualStatCell = ctx.statCell;
   ctx.statCell = (label, value, color) => {stats.push({label, value, color}); return actualStatCell(label, value, color);};

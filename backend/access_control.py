@@ -305,7 +305,8 @@ def scoped_sync_view(state, principal):
                 result[field] = {user: safe_profile(record, user)
                                  for user, record in table.items()
                                  if isinstance(user, str) and isinstance(record, dict)}
-        return result
+        from .evidence_grounding import mark_stale_funnel_assessments
+        return mark_stale_funnel_assessments(result)
     allowed = allowed_project_keys(state, principal)
     project_roots = _project_roots(state, principal)
     roots = _member_roots(principal)
@@ -362,7 +363,8 @@ def scoped_sync_view(state, principal):
     profiles = _member_profiles(state, principal)
     if profiles:
         result['USER_PROFILES'] = profiles
-    return _redact(result)
+    from .evidence_grounding import mark_stale_funnel_assessments
+    return mark_stale_funnel_assessments(_redact(result))
 
 
 def _scan_payload(value, depth=0):

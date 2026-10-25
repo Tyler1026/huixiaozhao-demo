@@ -27,7 +27,8 @@ function _funnelClueId(projKey, name, idx){
 function pushFunnelTopToGov(projKey, n, onlyName, preview){
   var p=PROJECTS[projKey], fn=preview||(p&&p.funnel);
   if(!fn||fn.evidence_contract!=='saved-excerpts-v1'){toast('旧候选缺少逐条来源，请先重新分析');return;}
-  var top=(onlyName?fn.companies.filter(function(c){return c.name===onlyName;}):fn.companies).slice(0,Math.min(n||8,8));
+  var ordered=typeof funnelSortedCompanies==='function'?funnelSortedCompanies(fn):fn.companies;
+  var top=(onlyName?ordered.filter(function(c){return c.name===onlyName;}):ordered).slice(0,Math.min(n||8,8));
   if(!top.length){toast('当前材料没有可复核企业；这不代表现实中不存在相关企业');return;}
   var anchors=preview?preview.demandAnchors:funnelReviewDemandAnchors(projKey,fn.topic);
   if(!anchors.length){toast('请先完成当前方向报告或确认需求原句，再逐家核对企业');return;}
@@ -161,25 +162,178 @@ function computeScanClues(p){
   });
 }
 
+function funnelCurrentCompanies(funnel){
+  return funnel&&funnel.evidence_contract==='saved-excerpts-v1'&&Array.isArray(funnel.companies)?funnel.companies:[];
+}
+
+// A score is an evidence-backed AI assessment, never a verified investment commitment.
+function funnelAssessmentValues(company){
+  var score=0,max=0,count=0,contract=company&&company.assessment_contract==='evidence-assessment-v1';
+  var dimensions=[['match','业务匹配',40],['relocate','可招引性（布局/拓展线索）',30],['strength','企业实力',30]].map(function(spec){
+    var value=contract&&company.assessments&&company.assessments[spec[0]];
+    var valid=value&&typeof value.score==='number'&&isFinite(value.score)&&value.score>=0&&value.score<=spec[2]&&value.max===spec[2]&&
+      typeof value.reason==='string'&&value.reason.trim()&&Array.isArray(value.evidence)&&value.evidence.length&&value.evidence.every(function(ref){return ref&&typeof ref.id==='string'&&ref.id&&typeof ref.quote==='string'&&ref.quote.trim()&&Array.isArray(ref.urls)&&ref.urls.length;});
+    if(spec[0]==='match')valid=valid&&value.demand&&typeof value.demand.id==='string'&&typeof value.demand.quote==='string'&&value.demand.quote.trim();
+    if(valid){score+=value.score;max+=spec[2];count++;}
+    return {key:spec[0],label:spec[1],max:spec[2],assessment:valid?value:null};
+  });
+  var total=count===3?score:null;
+  return {dimensions:dimensions,total:total,assessedScore:score,assessedMax:max,upper:score+100-max,tier:total===null?'pending':total>=85?'S':total>=70?'A':'B'};
+}
+
+function funnelAssessment(company){
+  var result=funnelAssessmentValues(company);
+  if(company&&company.assessment_stale===true){
+    return {dimensions:result.dimensions.map(function(item){return {key:item.key,label:item.label,max:item.max,assessment:null};}),
+      total:null,assessedScore:0,assessedMax:0,upper:100,tier:'pending',stale:true};
+  }
+  return result;
+}
+
+function renderFunnelSnapshot(funnel){
+  var ts=funnel&&funnel.ts;
+  if(typeof ts!=='number'||!isFinite(ts)||ts<=0)return '';
+  var date=new Date(ts);if(isNaN(date.getTime()))return '';
+  var text=date.toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+  return '<div class="funnel-snapshot" style="margin:4px 20px 10px;font-size:11px;color:#64748b;line-height:1.7">上次评估时间：<time datetime="'+date.toISOString()+'">'+_authEscape(text)+'（北京时间）</time>。基于当时资料快照；材料或需求更新后需重新评分。</div>';
+}
+
+function funnelSortedCompanies(funnel){
+  return funnelCurrentCompanies(funnel).map(function(company,index){return {company:company,index:index,score:funnelAssessment(company)};}).sort(function(a,b){
+    if(a.score.total===null&&b.score.total===null)return a.index-b.index;
+    if(a.score.total===null)return 1;if(b.score.total===null)return -1;
+    return b.score.total-a.score.total||a.index-b.index;
+  }).map(function(row){return row.company;});
+}
+
+function funnelTierCounts(funnel){
+  var counts={all:0,S:0,A:0,B:0,pending:0};
+  funnelCurrentCompanies(funnel).forEach(function(company){counts.all++;counts[funnelAssessment(company).tier]++;});
+  return counts;
+}
+
+function setFunnelTierFilter(projKey,tier){
+  if(['all','S','A','B','pending'].indexOf(tier)<0||!PROJECTS[projKey])return;
+  if(!window.__funnelTierFilters)window.__funnelTierFilters=Object.create(null);
+  window.__funnelTierFilters[projKey]=tier;
+  if(!window.__funnelExpand)window.__funnelExpand=Object.create(null);
+  window.__funnelExpand[projKey]=false;
+  try{renderOpsV2();}catch(e){try{render();}catch(_){}}
+}
+
+function renderFunnelAssessment(company){
+  var result=funnelAssessment(company);
+  if(result.stale){
+    return '<div class="funnel-assessment-stale" style="margin-top:8px;padding:10px;border:1px solid #fbbf24;border-radius:8px;background:#fffbeb;color:#92400e;font-size:12px;line-height:1.7">'+
+      '<strong>上次评分已过期，材料或需求已更新，请重新评分。</strong>'+
+      (company.assessment_stale_reason?'<p style="white-space:pre-wrap">'+_authEscape(company.assessment_stale_reason)+'</p>':'')+
+      '<details><summary style="cursor:pointer">查看已过期的历史评分与依据（不参与当前分级）</summary>'+renderFunnelAssessmentValues(funnelAssessmentValues(company))+'</details></div>';
+  }
+  return renderFunnelAssessmentValues(result);
+}
+
+function renderFunnelAssessmentValues(result){
+  var headline=result.total===null?(result.assessedMax?'已评 '+result.assessedScore+' / '+result.assessedMax+' 分；总分待补':'三项评分待补'):'综合 '+result.total+' / 100 分 · '+result.tier+' 级';
+  var range=result.total===null&&result.assessedMax?'<div style="margin-top:4px;font-size:11px;color:#64748b">总分范围 '+result.assessedScore+'–'+result.upper+' / 100；缺失项不计为零，也不折算满分。</div>':'';
+  var metrics=result.dimensions.map(function(item){return '<span>'+item.label+' '+(item.assessment?item.assessment.score+' / '+item.max:'待补 / '+item.max)+'</span>';}).join(' · ');
+  var basis=result.dimensions.map(function(item){
+    var value=item.assessment;
+    if(!value)return '<section style="margin-top:10px"><strong>'+item.label+'（满分 '+item.max+'）</strong><p>评分依据待补，暂不计分。</p></section>';
+    var evidence=(Array.isArray(value.evidence)?value.evidence:[]).map(function(ref){
+      return '<div style="font-size:11px;color:#64748b">来源 '+_authEscape(ref.id||'')+'</div><blockquote style="margin:6px 0;padding-left:10px;border-left:2px solid #cbd5e1;white-space:pre-wrap">'+_authEscape(ref.quote||'')+'</blockquote>'+funnelEvidenceLinks({evidence:[ref]});
+    }).join('');
+    var demand=item.key==='match'&&value.demand?'<div style="margin-top:6px">需求对照：<span>'+_authEscape(value.demand.id||'')+'</span><blockquote style="white-space:pre-wrap">'+_authEscape(value.demand.quote||'')+'</blockquote></div>':'';
+    return '<section style="margin-top:10px"><strong>'+item.label+' '+value.score+' / '+item.max+' 分</strong><p style="white-space:pre-wrap">'+_authEscape(value.reason||'评分理由待补')+'</p>'+evidence+demand+'</section>';
+  }).join('');
+  return '<div class="funnel-assessment" style="margin-top:8px;padding:10px;background:#f8fafc;border-radius:8px;word-break:break-word"><strong>'+headline+'</strong>'+range+
+    '<div style="margin-top:5px;font-size:11.5px;color:#475569">'+metrics+'</div><details style="margin-top:8px;font-size:12px;line-height:1.7"><summary style="cursor:pointer;color:#1d4ed8">查看三维评分依据</summary>'+basis+'</details></div>';
+}
+
+function renderFunnelCompanyCard(projKey,company,index){
+  var score=funnelAssessment(company),label=score.stale?'评分已过期 · 待补评分':score.total===null?'待补评分':score.tier+' 级 · '+score.total+' 分';
+  return '<article class="funnel-company" data-funnel-tier="'+score.tier+'" style="padding:12px 0;border-bottom:1px solid #e2e8f0">'+
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:11px;color:#64748b">'+(index+1)+'</span><strong style="color:#0b183b">'+_authEscape(company.name||'')+'</strong><span style="margin-left:auto;font-size:12px;font-weight:700;color:#4338ca">'+label+'</span></div>'+
+    '<div style="font-size:11px;color:#64748b;margin-top:4px">'+_authEscape(company.region||'')+(company.kind?' · '+_authEscape(company.kind):'')+'</div>'+
+    (company.fit?'<p style="font-size:12px;line-height:1.7;white-space:pre-wrap">'+_authEscape(company.fit)+'</p>':'')+
+    (company.signal?'<p style="font-size:12px;color:#92400e;white-space:pre-wrap">材料信号：'+_authEscape(company.signal)+'</p>':'')+
+    renderFunnelAssessment(company)+funnelEvidenceLinks(company)+
+    '<button style="margin-top:8px;padding:5px 10px;background:#fff;border:1px solid #bfdbfe;border-radius:7px;color:#1d4ed8;cursor:pointer" onclick="pushFunnelTopToGov('+_authEscape(JSON.stringify(projKey))+',1,'+_authEscape(JSON.stringify(company.name||''))+')">逐家复核此企业</button></article>';
+}
+
+function renderFunnelCompanies(projKey,funnel){
+  var companies=funnelSortedCompanies(funnel),counts=funnelTierCounts(funnel);
+  var filter=window.__funnelTierFilters&&window.__funnelTierFilters[projKey]||'all';
+  if(['all','S','A','B','pending'].indexOf(filter)<0)filter='all';
+  var filtered=companies.filter(function(company){return filter==='all'||funnelAssessment(company).tier===filter;});
+  var expanded=window.__funnelExpand&&window.__funnelExpand[projKey]===true,shown=expanded?filtered:filtered.slice(0,8);
+  var filters=[['all','全部'],['S','S 级'],['A','A 级'],['B','B 级'],['pending','待补评分']].map(function(item){
+    return '<button aria-pressed="'+(filter===item[0]?'true':'false')+'" onclick="setFunnelTierFilter('+_authEscape(JSON.stringify(projKey))+','+_authEscape(JSON.stringify(item[0]))+')" style="padding:5px 10px;border:1px solid '+(filter===item[0]?'#6366f1':'#cbd5e1')+';border-radius:7px;background:'+(filter===item[0]?'#eef2ff':'#fff')+';color:#334155;cursor:pointer">'+item[1]+' '+counts[item[0]]+' 家</button>';
+  }).join('');
+  var push=companies.length&&filter==='all'?'<button onclick="pushFunnelTopToGov('+_authEscape(JSON.stringify(projKey))+',8)" style="padding:7px 12px;background:#1a56db;color:#fff;border:0;border-radius:8px;cursor:pointer">逐家核对产品与需求后推送</button><span style="font-size:11px;color:#64748b">按当前总分排序，最多复核前 8 家；也可逐家选择。</span>':'';
+  var empty=companies.length?'当前分级没有企业。':'当前材料没有足够的相关企业证据，请补充企业产品原文及对应网页链接后重新筛选。这不代表现实中不存在相关企业。';
+  var toggle=filtered.length>8?'<button onclick="toggleFunnelExpand('+_authEscape(JSON.stringify(projKey))+')" style="display:block;margin:10px auto;border:0;background:none;color:#4338ca;cursor:pointer">'+(expanded?'收起 ▲':'展开全部 '+filtered.length+' 家 ▼')+'</button>':'';
+  var pushed=funnel&&funnel.pushed?'<span style="font-size:11px;color:#166534">已推送 '+(Array.isArray(funnel.pushedNames)?funnel.pushedNames.length:0)+' 家人工待核线索</span>':'';
+  return '<div class="funnel-current-companies" style="margin:6px 20px 14px;padding:12px 14px;border:1px solid #e2e8f0;border-radius:10px;background:#fff">'+
+    '<p class="funnel-score-notice" style="font-size:12px;color:#64748b;line-height:1.7">AI研判分，不代表已核实事实或投资承诺。业务匹配 40 分 + 可招引性（布局/拓展线索）30 分 + 企业实力 30 分；仅三项完整时计算总分与 S/A/B 分级。</p>'+
+    '<div class="funnel-stage-counts" style="margin-bottom:10px;font-size:12px;color:#475569;line-height:1.7">有来源候选 '+counts.all+' 家 → 完整评分 '+(counts.S+counts.A+counts.B)+' 家 → S '+counts.S+' / A '+counts.A+' / B '+counts.B+'；待补评分 '+counts.pending+' 家。展开依据，再逐家人工复核。</div>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap" aria-label="企业评分分级筛选">'+filters+'</div>'+
+    '<div style="margin:9px 0;font-size:11px;color:#64748b">共 '+companies.length+' 家 · 当前筛选 '+filtered.length+' 家 · 显示 '+shown.length+' 家</div>'+
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+push+pushed+'</div>'+
+    (shown.length?shown.map(function(company){return renderFunnelCompanyCard(projKey,company,companies.indexOf(company));}).join(''):'<p role="status" style="font-size:12px;color:#92400e;line-height:1.7">'+empty+'</p>')+toggle+'</div>';
+}
+
+// Historic names remain useful for collecting evidence, but are never current recommendations.
+function funnelLegacyCandidates(funnel){
+  if(!funnel)return [];
+  var current=Object.create(null),seen=Object.create(null),names=[];
+  funnelCurrentCompanies(funnel).forEach(function(company){
+    if(company&&typeof company.name==='string')current[company.name.replace(/\s/g,'')]=true;
+  });
+  var rows=(Array.isArray(funnel.legacyCandidates)?funnel.legacyCandidates:[]).concat(
+    funnel.evidence_contract!=='saved-excerpts-v1'&&Array.isArray(funnel.companies)?funnel.companies:[]);
+  rows.forEach(function(company){
+    if(!company||typeof company.name!=='string')return;
+    var name=company.name.trim(),key=name.replace(/\s/g,'');
+    if(!key||current[key]||seen[key])return;
+    seen[key]=true;names.push({name:name});
+  });
+  return names;
+}
+
+function renderFunnelLegacyCandidates(projKey,funnel){
+  var names=funnelLegacyCandidates(funnel);if(!names.length)return '';
+  var topic=funnel.legacyTopic||(funnel.evidence_contract!=='saved-excerpts-v1'?funnel.topic:'')||'';
+  return '<details class="funnel-legacy-candidates" style="margin:8px 20px 14px;padding:12px 14px;border:1px solid #fcd34d;border-radius:10px;background:#fffbeb">'+
+    '<summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:#92400e">历史企业线索（来源待补） · '+names.length+' 家</summary>'+
+    '<p style="font-size:12px;color:#92400e;line-height:1.7">不作为本次推荐，需补充企业全称、产品原文及对应网页链接后重新筛选。历史评分、投资意向与适配结论不沿用。</p>'+
+    (topic?'<div style="font-size:12px;color:#64748b;line-height:1.7">原方向：'+_authEscape(topic)+'</div>':'')+
+    '<ol style="font-size:12px;color:#334155;line-height:1.9;padding-left:22px">'+names.map(function(company){return '<li>'+_authEscape(company.name)+'</li>';}).join('')+'</ol></details>';
+}
+
+function renderFunnelMaterialsAction(projKey){
+  return '<div style="margin:8px 20px 14px;font-size:12px;color:#64748b;line-height:1.7">补充企业全称、产品原文及对应网页链接（可上传含这些内容的文件），并标明与本条需求的关系；保存后再按材料筛选企业。'+
+    '<button onclick="opsOpenFunnelMaterials('+_authEscape(JSON.stringify(projKey))+')" style="display:block;margin-top:7px;padding:6px 12px;background:#fff;border:1px solid #cbd5e1;border-radius:8px;color:#1d4ed8;cursor:pointer">补充企业产品与来源</button></div>';
+}
+
 /* ── 企业线索两栏布局渲染 ── */
 function renderCluesTwoPanel(projKey){
   var p = PROJECTS[projKey]; if(!p) return '';
   var manualClues = (p.clues||[]).filter(function(c){return c.status!=='ai_scan';});
-  var aiClues     = (p.clues||[]).filter(function(c){return c.status==='ai_scan';});
 
   // AI 企业漏斗栏
   var fn = p.funnel;
+  var currentCompanies=funnelCurrentCompanies(fn),legacyCompanies=funnelLegacyCandidates(fn);
   var running = _funnelRunning[projKey];
   var funnelHead = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'+
       '<div style="display:flex;align-items:center;gap:6px">'+
         '<span style="width:8px;height:8px;border-radius:50%;background:#6366f1"></span>'+
         '<span style="font-size:12px;font-weight:750;color:#0b183b;letter-spacing:.3px">AI 企业漏斗</span>'+
       '</div>'+
-      (fn?'<span style="font-size:11px;padding:2px 7px;background:#f5f3ff;color:#6d28d9;border-radius:10px">材料待筛选 '+fn.companies.length+' 家</span>':'')+
+      (fn?'<span style="font-size:11px;padding:2px 7px;background:#f5f3ff;color:#6d28d9;border-radius:10px">'+(fn.evidence_contract==='saved-excerpts-v1'?'材料待筛选 '+currentCompanies.length:'历史待补证 '+legacyCompanies.length)+' 家</span>':'')+
       '<div style="flex:1"></div>'+
-      (fn&&fn.companies&&fn.companies.length?'<button onclick="showFunnelPyramid(\''+projKey+'\')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:11.5px;color:#1a56db;cursor:pointer;font-weight:600;margin-right:8px">📊 分级图谱</button>':'')+
-      (running?'<span style="font-size:11.5px;color:#6d28d9">⏳ 分析中…</span>':'<button onclick="loadAIScanClues(\''+projKey+'\')" style="padding:4px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:11.5px;color:#6d28d9;cursor:pointer;font-weight:600">🔄 重新分析</button>')+
-    '</div>';
+      (currentCompanies.length?'<button onclick="showFunnelPyramid('+_authEscape(JSON.stringify(projKey))+')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:11.5px;color:#1a56db;cursor:pointer;font-weight:600;margin-right:8px">📊 分级图谱</button>':'')+
+      (running?'<span style="font-size:11.5px;color:#6d28d9">⏳ 分析中…</span>':'<button onclick="loadAIScanClues('+_authEscape(JSON.stringify(projKey))+')" style="padding:4px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:11.5px;color:#6d28d9;cursor:pointer;font-weight:600">🔄 按材料筛选企业</button>')+
+    '</div>'+renderFunnelSnapshot(fn);
   var funnelBody;
   if(running && !fn){
     funnelBody='<div style="text-align:center;padding:22px;background:#faf9ff;border-radius:10px;border:1px solid #ede9fe;font-size:12.5px;color:#6d28d9">⏳ AI 正在整理当前工作区材料中的企业，业务适配仍需逐家核对…</div>';
@@ -188,18 +342,14 @@ function renderCluesTwoPanel(projKey){
       '<div style="font-size:12.5px;color:#9aa5b5;margin-bottom:8px">尚未生成企业漏斗</div>'+
       '<button onclick="loadAIScanClues(\''+projKey+'\')" style="padding:6px 14px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:12px;color:#6d28d9;cursor:pointer;font-weight:600">🔍 立即 AI 分析</button>'+
     '</div>';
-  } else if(!fn.companies.length){
+  } else if(fn.evidence_contract!=='saved-excerpts-v1'){
+    funnelBody='<div style="padding:12px 20px;color:#92400e">历史名单尚未核对来源；可展开下方线索，补齐材料后重新筛选。</div>';
+  } else if(!currentCompanies.length){
     funnelBody='<div style="padding:18px;background:#f9fafb;border-radius:10px;color:#64748b">当前材料不足以形成有来源的企业候选。请补充当前方向的企业产品与需求材料；这不代表现实中不存在相关企业。</div>';
   } else {
-    var pushedTip = fn.pushed
-      ? '<span style="font-size:11px;color:#166534;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:3px 9px">✓ 已推送 '+(fn.pushedNames?fn.pushedNames.length:0)+' 家到政府端</span>'
-      : '';
-    var pushBtn = '<button onclick="pushFunnelTopToGov(\''+projKey+'\',8)" style="padding:7px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer">逐家核对产品与需求后推送</button>';
-    funnelBody='<div style="margin-bottom:10px;display:flex;align-items:center;gap:10px">'+pushBtn+pushedTip+'</div>'+
-      aiClues.slice(0,20).map(function(c,ci){ return scanClueCard(c, projKey, ci); }).join('')+
-      (aiClues.length>20?'<div style="text-align:center;font-size:11.5px;color:#9aa5b5;padding:8px">共 '+aiClues.length+' 家，当前展示前 20 家材料企业</div>':'');
+    funnelBody=renderFunnelCompanies(projKey,fn);
   }
-  var aiPanel = '<div>'+funnelHead+funnelBody+'</div>';
+  var aiPanel = '<div>'+funnelHead+funnelBody+renderFunnelMaterialsAction(projKey)+renderFunnelLegacyCandidates(projKey,fn)+'</div>';
 
   // 手动录入栏
   var manualPanel = '<div style="margin-top:20px">'+
@@ -337,18 +487,16 @@ function loadAIScanClues(projKey){
 /* ── AI 漏斗分析完成提醒弹窗 ── */
 function showFunnelDoneModal(projKey, funnel){
   var p=PROJECTS[projKey]||{};
-  var total=funnel.companies.length;
-  var n=funnel.companies.length;
-  var top=funnel.companies.slice(0,3);
-  var withSignal=funnel.companies.filter(function(c){return c.expansion||c.signal;}).length;
-  var withFaction=funnel.companies.filter(function(c){return c.faction;}).length;
+  var companies=funnelSortedCompanies(funnel),counts=funnelTierCounts(funnel),n=companies.length;
+  var top=companies.slice(0,3);
   var esc=function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
   var topRows=top.map(function(c,i){
+    var score=funnelAssessment(c);
     return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f1f3f7">'+
       '<span style="flex:0 0 22px;width:22px;height:22px;background:#eef2ff;color:#4338ca;border-radius:50%;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">'+(i+1)+'</span>'+
       '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:650;color:#0b183b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.name)+'</div>'+
         '<div style="font-size:11px;color:#8492a6">'+esc(c.region||'')+(c.kind?' \u00b7 '+esc(c.kind):'')+'</div></div>'+
-      '<span style="flex:0 0 auto;font-size:13px;font-weight:800;color:'+(c.fit_score>=80?'#16a34a':c.fit_score>=60?'#d97706':'#6b7280')+'">'+(c.fit_score==null?'待核':c.fit_score)+'<span style="font-size:10px;font-weight:600">'+(c.fit_score==null?'':'分')+'</span></span>'+
+      '<span style="flex:0 0 auto;font-size:13px;font-weight:800;color:#4338ca">'+(score.total===null?'待补评分':score.tier+' 级 · '+score.total+' 分')+'</span>'+
     '</div>';
   }).join('');
   var modal='<div id="funnelDoneModal" style="position:fixed;inset:0;background:rgba(11,24,59,.45);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)" onclick="if(event.target.id===\'funnelDoneModal\')closeFunnelDoneModal()">'+
@@ -358,7 +506,7 @@ function showFunnelDoneModal(projKey, funnel){
         '<span style="font-size:12px;font-weight:650;color:#22c55e;letter-spacing:.5px">材料企业已整理</span>'+
       '</div>'+
       '<h2 style="font-size:20px;font-weight:750;color:#0b183b;margin:0 0 4px">\u300c'+esc(funnel.topic||p.topic||'\u8be5\u65b9\u5411')+'\u300d材料企业已整理</h2>'+
-      '<p style="font-size:13px;color:#8492a6;margin:0 0 18px">已整理 '+n+' 家材料企业；业务适配需逐条核对，投资意向未知。</p>'+
+      '<p style="font-size:13px;color:#8492a6;margin:0 0 18px">有来源候选 '+n+' 家 → 完整评分 '+(counts.S+counts.A+counts.B)+' 家；待补评分 '+counts.pending+' 家。AI研判分，不代表已核实事实或投资承诺。</p>'+
       '<div style="font-size:12px;font-weight:650;color:#4a5568;margin-bottom:2px">候选预览</div>'+
       topRows+
       '<div style="margin-top:22px;display:flex;gap:10px;align-items:center">'+
@@ -390,12 +538,12 @@ function showFunnelProgressModal(projKey){
         '<span style="font-size:13px;font-weight:700;color:#4338ca;letter-spacing:.3px">AI 企业漏斗分析中</span>'+
       '</div>'+
       '<h2 style="font-size:18px;font-weight:750;color:#0b183b;margin:0 0 4px">「'+esc(p.topic||'该方向')+'」</h2>'+
-      '<p id="funnelProgPhase" style="font-size:13px;color:#8492a6;margin:0 0 18px">正在核对当前方向的来源材料…</p>'+
+      '<p id="funnelProgPhase" style="font-size:13px;color:#8492a6;margin:0 0 18px">正在按当前材料筛选企业，并整理有依据的三维评分；缺失依据的项目将保留待补。</p>'+
       '<div style="height:8px;background:#eef1f6;border-radius:6px;overflow:hidden">'+
         '<div id="funnelProgBar" style="height:100%;width:0%;background:linear-gradient(90deg,#1a56db,#6366f1);border-radius:6px;transition:width .5s ease"></div>'+
       '</div>'+
       '<div style="display:flex;justify-content:space-between;margin-top:8px"><span id="funnelProgPct" style="font-size:12px;color:#4338ca;font-weight:650">等待来源校验</span>'+
-        '<span style="font-size:11px;color:#9aa5b5">完成后立即显示，期间可继续查看材料</span></div>'+
+        '<span style="font-size:11px;color:#9aa5b5">等待模型返回后显示实际结果</span></div>'+
     '</div>'+
   '</div>';
   if(!document.getElementById('fadeUpStyle')){var st=document.createElement('style');st.id='fadeUpStyle';st.textContent='@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes fspin{to{transform:rotate(360deg)}}.funnelSpin{animation:fspin .8s linear infinite}';document.head.appendChild(st);}
@@ -412,7 +560,7 @@ function showFunnelProgressModal(projKey){
 }
 function updateFunnelProgress(pct){
   var bar=document.getElementById('funnelProgBar'), text=document.getElementById('funnelProgPct');
-  if(pct===100){if(bar)bar.style.width='100%';if(text)text.textContent='来源校验完成';}
+  if(pct===100){if(bar)bar.style.width='100%';if(text)text.textContent='本次筛选完成';}
 }
 
 function closeFunnelProgressModal(){
@@ -422,61 +570,31 @@ function closeFunnelProgressModal(){
 
 /* ── AI 漏斗企业分级金字塔可视化 ── */
 function showFunnelPyramid(k){
-  var p=PROJECTS[k]||{}; var fn=p.funnel;
-  if(fn&&fn.evidence_contract!=='saved-excerpts-v1'){toast('旧材料清单未核对来源，请重新分析');return;}
-  if(!fn||!fn.companies||!fn.companies.length){ toast('暂无漏斗数据'); return; }
-  if(fn.companies.some(function(c){return c.fit_score==null;})){
-    openModal('材料待筛选 · 尚未进行事实评分','<p>没有可追溯的综合评分依据，不将未知值当作零分或分为 S/A/B 级。</p>'+fn.companies.map(function(c){return '<section><strong>'+_authEscape(c.name)+'</strong><p>'+_authEscape(c.fit||'')+'</p>'+funnelEvidenceLinks(c)+'</section>';}).join(''),'<button class="ghost-button" onclick="closeModal()">关闭</button>');
-    return;
-  }
-
-  var esc=function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
-  var S=[],A=[],B=[];
-  fn.companies.forEach(function(c){ var sc=c.fit_score||0; if(sc>=85)S.push(c); else if(sc>=70)A.push(c); else B.push(c); });
-  [S,A,B].forEach(function(arr){ arr.sort(function(a,b){return (b.fit_score||0)-(a.fit_score||0);}); });
+  var project=PROJECTS[k]||{},funnel=project.funnel;
+  if(!funnel||funnel.evidence_contract!=='saved-excerpts-v1'){toast('历史名单请补齐来源后重新筛选');return;}
+  var companies=funnelSortedCompanies(funnel),counts=funnelTierCounts(funnel);
+  if(!companies.length){toast('暂无有来源的企业候选');return;}
   var tiers=[
-    {name:'S 级 · 核心适配',hint:'评分 ≥85，优先重点对接',accent:'#c2740a',bar:'linear-gradient(135deg,#fbbf24,#f59e0b)',soft:'#fffdf6',border:'#f6d79b',w:60,list:S},
-    {name:'A 级 · 高适配',hint:'评分 70-84，积极跟进',accent:'#2f54d6',bar:'linear-gradient(135deg,#60a5fa,#5b6ef0)',soft:'#f6f9ff',border:'#c8d6fb',w:80,list:A},
-    {name:'B 级 · 潜力观察',hint:'评分 <70，储备观察',accent:'#5c6b7a',bar:'linear-gradient(135deg,#a4b0be,#6b7684)',soft:'#f9fafb',border:'#e3e8ef',w:100,list:B}
+    {key:'S',name:'S 级 · 核心适配',hint:'综合评分 ≥85',width:60,color:'#a16207',background:'#fffbeb'},
+    {key:'A',name:'A 级 · 高适配',hint:'综合评分 70–84',width:80,color:'#1d4ed8',background:'#eff6ff'},
+    {key:'B',name:'B 级 · 潜力观察',hint:'综合评分 <70',width:100,color:'#475569',background:'#f1f5f9'},
+    {key:'pending',name:'待补评分',hint:'有未评维度，不计为零或折算满分',width:100,color:'#7c3aed',background:'#f5f3ff'}
   ];
-  var body=tiers.map(function(t){
-    var chips = t.list.length ? t.list.map(function(c){
-      return '<span title="'+esc((c.region||'')+(c.region?' · ':'')+(c.name||''))+'" style="display:inline-flex;align-items:center;gap:7px;padding:6px 11px;background:#fff;border:1px solid '+t.border+';border-radius:999px;font-size:12px;line-height:1.15;box-shadow:0 1px 2px rgba(11,24,59,.04)">'+
-        '<span style="font-weight:600;color:#0b183b">'+esc(c.name)+'</span>'+
-        '<span style="font-weight:800;color:'+t.accent+'">'+(c.fit_score||0)+'</span>'+
-      '</span>';
-    }).join('') : '<span style="font-size:12px;color:#b0bac8;padding:2px 4px">该级暂无企业</span>';
-    return '<div style="width:'+t.w+'%;margin:0 auto 12px;border:1px solid '+t.border+';border-radius:16px;overflow:hidden;background:'+t.soft+';box-shadow:0 3px 14px rgba(11,24,59,.06);transition:width .2s">'+
-      '<div style="background:'+t.bar+';color:#fff;padding:9px 16px;display:flex;align-items:center;gap:9px">'+
-        '<span style="font-size:13.5px;font-weight:750;letter-spacing:.2px">'+t.name+'</span>'+
-        '<span style="font-size:11px;opacity:.92;font-weight:500">'+t.hint+'</span>'+
-        '<span style="margin-left:auto;font-size:12.5px;font-weight:800;background:rgba(255,255,255,.22);padding:1px 10px;border-radius:999px">'+t.list.length+' 家</span>'+
-      '</div>'+
-      '<div style="padding:13px 15px;display:flex;flex-wrap:wrap;gap:8px">'+chips+'</div>'+
-    '</div>';
+  var body=tiers.map(function(tier){
+    var rows=companies.filter(function(company){return funnelAssessment(company).tier===tier.key;});
+    return '<section class="funnel-pyramid-tier" data-funnel-tier="'+tier.key+'" style="width:'+tier.width+'%;margin:12px auto;border:1px solid #cbd5e1;border-radius:12px;overflow:hidden">'+
+      '<div style="padding:10px;background:'+tier.background+';color:'+tier.color+'"><strong>'+tier.name+' · '+rows.length+' 家</strong><div style="font-size:11px;margin-top:3px">'+tier.hint+'</div></div>'+
+      '<div style="padding:10px">'+(rows.length?rows.map(function(company){
+        var result=funnelAssessment(company),label=result.stale?'评分已过期 · 待补评分':result.total===null?'待补评分':result.total+' 分';
+        return '<details class="funnel-pyramid-company" style="margin-bottom:7px"><summary style="cursor:pointer;font-size:12px;color:'+tier.color+'">'+_authEscape(company.name)+' · '+label+'</summary>'+renderFunnelAssessment(company)+'</details>';
+      }).join(''):'<span style="font-size:12px;color:#94a3b8">该级暂无企业</span>')+'</div></section>';
   }).join('');
-  var modal='<div id="funnelPyramidModal" style="position:fixed;inset:0;background:rgba(11,24,59,.5);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px);padding:22px" onclick="if(event.target.id===\'funnelPyramidModal\')closeFunnelPyramid()">'+
-    '<div style="background:#fff;border-radius:22px;max-width:660px;width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 12px 64px rgba(11,24,59,.28);animation:fadeUp .32s ease;overflow:hidden">'+
-      '<div style="padding:22px 26px 16px;border-bottom:1px solid #f1f3f7">'+
-        '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">'+
-          '<div><div style="font-size:11.5px;font-weight:700;color:#5b6ef0;letter-spacing:.6px">企业适配分级图谱</div>'+
-          '<h2 style="font-size:18px;font-weight:750;color:#0b183b;margin:3px 0 0;line-height:1.35">「'+esc(fn.topic||p.topic||'该方向')+'」</h2></div>'+
-          '<button onclick="closeFunnelPyramid()" style="flex:0 0 auto;width:32px;height:32px;border:none;background:#f2f4f8;border-radius:9px;font-size:15px;color:#64748b;cursor:pointer;line-height:1">✕</button>'+
-        '</div>'+
-        '<div style="display:flex;align-items:center;gap:8px;margin-top:11px;flex-wrap:wrap">'+
-          '<span style="font-size:12px;color:#8492a6">共 '+fn.companies.length+' 家 · 按综合评分自动分级</span>'+
-          '<span style="font-size:11px;font-weight:700;color:#c2740a;background:#fffbeb;border:1px solid #fbe6c0;border-radius:999px;padding:2px 9px">S '+S.length+'</span>'+
-          '<span style="font-size:11px;font-weight:700;color:#2f54d6;background:#f0f5ff;border:1px solid #d3ddfb;border-radius:999px;padding:2px 9px">A '+A.length+'</span>'+
-          '<span style="font-size:11px;font-weight:700;color:#5c6b7a;background:#f4f6f9;border:1px solid #e3e8ef;border-radius:999px;padding:2px 9px">B '+B.length+'</span>'+
-        '</div>'+
-      '</div>'+
-      '<div style="padding:22px 24px;overflow:auto;background:linear-gradient(180deg,#fcfdff,#f7f9fc)">'+body+'</div>'+
-    '</div>'+
-  '</div>';
-  if(!document.getElementById('fadeUpStyle')){var st=document.createElement('style');st.id='fadeUpStyle';st.textContent='@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes fspin{to{transform:rotate(360deg)}}.funnelSpin{animation:fspin .8s linear infinite}';document.head.appendChild(st);}
-  var old=document.getElementById('funnelPyramidWrap'); if(old)old.remove();
-  var wrap=document.createElement('div'); wrap.id='funnelPyramidWrap'; wrap.innerHTML=modal; document.body.appendChild(wrap);
+  var overview='有来源候选 '+counts.all+' 家 → 完整评分 '+(counts.S+counts.A+counts.B)+' 家 → S '+counts.S+' / A '+counts.A+' / B '+counts.B+'；待补评分 '+counts.pending+' 家';
+  openModal('企业评分与分层 · '+_authEscape(funnel.topic||project.topic||''),
+    '<p style="font-size:12px;line-height:1.7">AI研判分，不代表已核实事实或投资承诺。'+overview+'。展开企业查看每项依据，再逐家复核产品与需求。</p>'+body,
+    '<button class="ghost-button" onclick="closeModal()">关闭</button>');
 }
+
 function closeFunnelPyramid(){
   var wrap=document.getElementById('funnelPyramidWrap'); if(wrap)wrap.remove();
 }

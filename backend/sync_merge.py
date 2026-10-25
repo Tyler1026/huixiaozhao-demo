@@ -195,6 +195,81 @@ def _merge_clues(old_clues, new_clues):
 import json as _chain_json
 import math as _chain_math
 import time as _chain_time
+import unicodedata as _funnel_unicode
+
+
+def _legacy_funnel_context(project):
+    """Project saved history to bounded names, never old scores or sources.
+
+    Kept in this pure module so sync and generation share one normalization
+    rule without importing each other's routes or authorization machinery.
+    Once archived, names and their original topic survive later list changes.
+    """
+    funnel = project.get('funnel')
+    if not isinstance(funnel, dict):
+        return {}
+    archived = isinstance(funnel.get('legacyCandidates'), list) and bool(funnel['legacyCandidates'])
+    current = funnel.get('evidence_contract') == 'saved-excerpts-v1'
+    rows = funnel.get('legacyCandidates') if archived or current else funnel.get('companies')
+    if not isinstance(rows, list):
+        return {}
+    candidates, seen = [], set()
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get('name'), str):
+            continue
+        name = ' '.join(_funnel_unicode.normalize('NFKC', row['name']).split())
+        key = _re_clue.sub(r'[\W_]', '', name).casefold()
+        if not key or len(name) > 240 or key in seen:
+            continue
+        seen.add(key)
+        candidates.append({'name': name})
+        if len(candidates) == 200:
+            break
+    if not candidates:
+        return {}
+    topic = funnel.get('legacyTopic') if archived or current else funnel.get('topic')
+    return {'legacyCandidates': candidates,
+            'legacyTopic': topic.strip() if isinstance(topic, str) else ''}
+
+
+def _merge_funnel(existing, incoming):
+    """Client snapshots may update current candidates, never historical names."""
+    history = _legacy_funnel_context({'funnel': existing})
+    # Scored funnels are generated and committed through the server route.
+    # A stale browser must neither erase them nor inject replacement scores.
+    if isinstance(existing, dict) and existing.get('scoring_contract') == 'evidence-assessment-v1':
+        result = dict(existing)
+        result.update(history)
+        return result
+    value = _keep_nonempty(existing, incoming)
+    if not isinstance(value, dict):
+        # A malformed whole-funnel replacement must not erase saved history.
+        value = existing if history else value
+    if not isinstance(value, dict):
+        return value
+    result = dict(value)
+    client_scored = result.pop('scoring_contract', None) is not None
+    result.pop('rubric_version', None)
+    if isinstance(result.get('companies'), list):
+        companies = []
+        for company in result['companies']:
+            if not isinstance(company, dict):
+                companies.append(company)
+                continue
+            candidate = dict(company)
+            generated = client_scored or 'assessment_contract' in candidate or 'assessments' in candidate
+            for field in ('assessment_contract', 'assessments', 'assessment_notice',
+                          'assessed_score', 'assessed_max', 'score_range', 'score_status'):
+                candidate.pop(field, None)
+            if generated:
+                for field in ('score_match', 'score_relocate', 'score_strength', 'fit_score', 'score_reason'):
+                    candidate.pop(field, None)
+            companies.append(candidate)
+        result['companies'] = companies
+    for field in ('legacyCandidates', 'legacyTopic'):
+        result.pop(field, None)
+    result.update(history)
+    return result
 
 _CHAIN_MAPS = ("chainByTopic", "chainEvidenceByTopic", "chainStatusByTopic",
                "chainUnclassifiedByTopic", "chainErrorByTopic")
@@ -295,7 +370,8 @@ def _merge_report_state(old, new, project=None):
     out = dict(old)
     for field, value in new.items():
         if field not in skip:
-            out[field] = _keep_nonempty(out.get(field), value)
+            out[field] = (_merge_funnel(out.get(field), value) if field == 'funnel'
+                          else _keep_nonempty(out.get(field), value))
     deleted, created = _topic_lifecycle(project, old, new)
     out['topicDeletedAt'], out['topicCreatedAt'] = deleted, created
     out['historyDeletedAt'] = _max_stamps(old.get('historyDeletedAt'), new.get('historyDeletedAt'))
@@ -450,12 +526,17 @@ def _merge_map(old, new, *, chain_projects=None):
     merged = {k: (dict(v) if isinstance(v, dict) else v) for k, v in (old or {}).items()}
     for k, v in (new or {}).items():
         if not isinstance(v, dict):
-            if isinstance(merged.get(k), dict) and any(field in merged[k] for field in _CHAIN_MAPS):
+            if isinstance(merged.get(k), dict) and (any(field in merged[k] for field in _CHAIN_MAPS)
+                                                   or _legacy_funnel_context(merged[k])
+                                                   or isinstance(merged[k].get('funnel'), dict)
+                                                   and merged[k]['funnel'].get('scoring_contract') == 'evidence-assessment-v1'):
                 continue
             merged[k] = v; continue
         base = merged.get(k)
         if not isinstance(base, dict):
             merged[k] = dict(v)
+            if 'funnel' in v:
+                merged[k]['funnel'] = _merge_funnel(None, v['funnel'])
             if any(field in v for field in _CHAIN_MAPS):
                 for field in _CHAIN_MAPS:
                     merged[k].pop(field, None)
@@ -465,6 +546,9 @@ def _merge_map(old, new, *, chain_projects=None):
             continue
         for fk, fv in v.items():
             if fk in _CHAIN_MAPS:
+                continue
+            if fk == 'funnel':
+                base[fk] = _merge_funnel(base.get(fk), fv)
                 continue
             if fk == 'historyDeletedAt':
                 base[fk] = _max_stamps(base.get(fk), fv)
