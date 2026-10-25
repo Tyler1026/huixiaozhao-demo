@@ -1239,7 +1239,8 @@ class Handler(BaseHTTPRequestHandler):
 
         from backend.evidence_grounding import (project_context, validate_confirmations,
             evidence_catalog, bounded_catalog, funnel_catalog, model_catalog, ground_funnel, ground_profile, ground_chain,
-            enterprise_sources, ground_enterprise_draft, funnel_request_text, funnel_legacy_prompt, funnel_assessment_prompt)
+            enterprise_sources, ground_enterprise_draft, funnel_request_text, funnel_legacy_prompt, funnel_assessment_prompt,
+            funnel_demand_anchors)
         evidence_context = None
         catalog = []
         structured = mode in ('funnel', 'city_profile') or body.get('purpose') == 'chain_map'
@@ -1538,6 +1539,9 @@ class Handler(BaseHTTPRequestHandler):
                             fingerprint = lambda rows: hashlib.sha256(json.dumps(rows, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
                             if fingerprint(current['chunks']) != fingerprint(evidence_context['chunks']):
                                 raise AuthError(409, 'evidence_changed', '材料已更新，请重试')
+                            if (mode == 'funnel' and fingerprint(funnel_demand_anchors(current))
+                                    != fingerprint(funnel_demand_anchors(evidence_context))):
+                                raise AuthError(409, 'evidence_changed', '需求依据已更新，请重试')
                             p = live['PROJECTS'][current['projectKey']]
                             grounded['ts' if mode == 'funnel' else '__ts'] = int(time.time()*1000)
                             if mode == 'funnel':

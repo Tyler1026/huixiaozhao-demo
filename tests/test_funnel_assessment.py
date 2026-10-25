@@ -5,7 +5,7 @@ import unittest
 
 from backend.auth import AuthError
 from backend.evidence_grounding import (
-    evidence_catalog, funnel_demand_anchors, ground_funnel, project_context, review_and_push,
+    evidence_catalog, funnel_assessment_prompt, funnel_demand_anchors, ground_funnel, project_context, review_and_push,
 )
 from tests import test_interactive_evidence_boundary as http_fixture
 
@@ -55,6 +55,28 @@ def grounded(raw, context, catalog):
 
 
 class FunnelAssessmentTests(unittest.TestCase):
+    def test_long_report_prompt_bounds_whole_anchors_but_validates_full_collection(self):
+        _, _, context, catalog, refs = fixture()
+        lines = [DEMAND + '边界条件' * 500 + str(index) for index in range(180)]
+        context['reportState']['aiReportByTopic'][TOPIC] = '\n'.join(lines)
+        all_anchors = funnel_demand_anchors(context)
+        prompt = funnel_assessment_prompt(context)
+        encoded = prompt.split('：\n', 1)[1].split('\nmatch.demand_anchor_id', 1)[0]
+        shown = json.loads(encoded)
+        self.assertLessEqual(len(shown), 32)
+        self.assertLessEqual(len(encoded), 16000)
+        self.assertTrue(shown)
+        self.assertTrue(all(anchor in all_anchors for anchor in shown))
+        omitted = next(anchor for anchor in all_anchors if anchor not in shown)
+        raw = raw_company(refs)
+        raw['assessments']['match']['demand_anchor_id'] = omitted['id']
+        self.assertEqual(grounded(raw, context, catalog)['assessments']['match']['demand'], omitted)
+        context.update(demandContract='industry-demand-v1',
+                       demandSpec={'description': DEMAND * 20, 'conditions': '生产条件仍需逐项核查。' * 20})
+        direct_prompt = funnel_assessment_prompt(context)
+        direct_encoded = direct_prompt.split('：\n', 1)[1].split('\nmatch.demand_anchor_id', 1)[0]
+        self.assertEqual(json.loads(direct_encoded), funnel_demand_anchors(context))
+
     def test_three_dimensions_can_total_100_but_remain_ai_judgments_with_unknown_intent(self):
         _, _, context, catalog, refs = fixture()
         raw = raw_company(refs)
@@ -243,6 +265,41 @@ class FunnelAssessmentHttpTests(unittest.TestCase):
         self.assertIn(DEMAND, message)
         self.assertIn('不是企业事实证据', prompt)
         self.assertEqual(result['companies'][0]['investment_intent'], 'unknown')
+
+    def test_changed_confirmation_anchor_rejects_inflight_score_even_when_chunks_match(self):
+        for change in ('quote', 'status'):
+            with self.subTest(change=change):
+                state, body, _, _, refs = fixture()
+                state['REPORTSTATE']['a']['pendingByTopic'] = {
+                    TOPIC: [{'text': DEMAND, 'status': 'confirmed'}]}
+                previous = {'topic': TOPIC, 'companies': [{'name': '原有待核企业'}]}
+                state['PROJECTS']['a']['funnel'] = copy.deepcopy(previous)
+                saved = self.h.state()
+                saved.update(state)
+                self.h.replace(saved)
+                initial = project_context(body, saved)
+                company = raw_company(refs)
+                company['assessments']['match']['demand_anchor_id'] = 'confirmation:0'
+                raw = json.dumps({'choices': [{'message': {'content': json.dumps({'companies': [company]})},
+                                               'finish_reason': 'stop'}]}).encode()
+
+                def complete(*args, **kwargs):
+                    latest = self.h.state()
+                    confirmation = latest['REPORTSTATE']['a']['pendingByTopic'][TOPIC][0]
+                    if change == 'quote':
+                        confirmation['text'] = DEMAND + ' 确认事项已经修改。'
+                    else:
+                        confirmation['status'] = 'pending'
+                    self.assertEqual(project_context(body, latest)['chunks'], initial['chunks'])
+                    self.h.replace(latest)
+                    return http_fixture.FakeResponse(raw)
+
+                self.h.ns['DS_OPENER'].open.side_effect = complete
+                status, data = self.request(raw, 'funnel', body)
+                self.assertEqual(status, 409)
+                self.assertIn('evidence_changed', data)
+                self.assertEqual(self.h.state()['PROJECTS']['a']['funnel'], previous)
+                self.h.ns['DS_OPENER'].open.side_effect = None
 
     def test_real_handler_keeps_partial_score_unknown_when_source_or_anchor_invalid(self):
         def change(company, refs):
