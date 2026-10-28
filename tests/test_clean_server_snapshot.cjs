@@ -14,8 +14,8 @@ function fn(text, name) {
   return text.slice(at).match(/^function [\s\S]*?^}/m)[0];
 }
 function context() {
-  const disk = new Map([['hxz_reportstate', 'old']]);
-  const ctx = {RESET_GEN: 'old', cur: 'old-project', console, AUTH: {scope: 'admin', user: 'admin'},
+  const disk = new Map([['hxz_reportstate', 'old']]), timers = new Map();let timerId=0;
+  const ctx = {AbortController,setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,ms});return id;},clearTimeout(id){timers.delete(id);},RESET_GEN: 'old', cur: 'old-project', console, AUTH: {scope: 'admin', user: 'admin'},
     _authEpoch: 4, view: 'ops', localStorage: {removeItem: k => disk.delete(k),setItem:(k,v)=>disk.set(k,v)},
     _authReadSync: r => r.json(), _safeSyncSnapshot: x => x, _safeProfiles: x => x || {},
     _mergeKbItemTombs() {}, _applyKbItemTombs() {}, _mergeTombs() {}, _mergeConfirms: x => x,
@@ -27,7 +27,7 @@ function context() {
   ctx.window = ctx; vm.createContext(ctx);
   const helpers=fs.readFileSync(path.join(__dirname,'../frontend/ops/script-03-sections/12-tail.js'),'utf8');
   vm.runInContext(helpers.slice(helpers.indexOf('function reportStateFields('),helpers.indexOf('function selectTopic(')),ctx);
-  return {ctx,disk};
+  return {ctx,disk,timers};
 }
 for (const app of ['ops','index']) test(app + ' clears cached business data across reset generations only', () => {
   const {ctx,disk}=context(); vm.runInContext(fn(source(app), '_acceptServerGeneration'),ctx);
@@ -40,12 +40,12 @@ for (const app of ['ops','index']) test(app + ' clears cached business data acro
   assert.equal(ctx.AUTH.user,'admin');
 });
 test('ops accepts authoritative empty server state without restoring or uploading local enterprise data', async () => {
-  const {ctx}=context(); const text=source('ops');
+  const {ctx,timers}=context(); const text=source('ops');
   const clean={PROJECTS:{},OPS_ENT:[],DEMANDS:[],REPORT_REQUESTS:[],RESET_GEN:'new',CITY_WORKSPACES:{},CITY_BASE_PACKAGES:{}};
   ctx.fetch=async()=>({json:async()=>clean});
   vm.runInContext(fn(text,'_acceptServerGeneration')+'\n'+fn(text,'restoreFromServer'),ctx);
   let loaded=false; await ctx.restoreFromServer(ok=>{loaded=ok;});
-  assert.equal(loaded,true); assert.equal(ctx._opsDataReady,true);
+  assert.equal(loaded,true); assert.equal(ctx._opsDataReady,true);assert.equal(timers.size,0,'completed reads clear their deadline');
   assert.equal(ctx.OPS_ENT.length,0);assert.equal(Object.keys(ctx.PROJECTS).length,0);
   assert.equal(ctx.DEMANDS.length,0);assert.equal(ctx.REPORT_REQUESTS.length,0);
   assert.equal(Object.keys(ctx.CITY_BASE_PACKAGES).length,0);assert.equal(ctx.cur,null);

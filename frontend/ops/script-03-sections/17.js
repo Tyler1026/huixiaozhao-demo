@@ -21,6 +21,7 @@ function _purgeAuthCache(){
   try{var raw=localStorage.getItem('huixiaozhao_kb_v1');if(raw)localStorage.setItem('huixiaozhao_kb_v1',JSON.stringify(_safeSyncSnapshot(JSON.parse(raw))));}catch(_){}
 }
 function _authJson(path,body){
+  var requestEpoch=_authEpoch;
   var controller=typeof AbortController!=='undefined'?new AbortController():null;
   var timer;
   var options={credentials:'same-origin',headers:{'Accept':'application/json'}};
@@ -30,13 +31,13 @@ function _authJson(path,body){
     return response.json().catch(function(){throw new Error('服务响应异常，请重试');}).then(function(data){
       if(response.ok===false||!data||data.ok!==true){
         var error=new Error(data&&data.message||'服务暂时不可用，请稍后重试');error.status=response.status;error.code=data&&data.error;
-        if(response.status===401&&path!=='/api/auth/login'&&path!=='/api/auth/register'&&path!=='/api/auth/session'){_authForget();if(typeof render==='function')render();}
+        if(response.status===401&&requestEpoch===_authEpoch&&path!=='/api/auth/login'&&path!=='/api/auth/register'&&path!=='/api/auth/session'){_authForget();if(typeof render==='function')render();}
         throw error;
       }
       return data;
     });
   });
-  var deadline=new Promise(function(_,reject){timer=setTimeout(function(){if(controller)controller.abort();reject(new Error('请求超时，请重试'));},20000);});
+  var deadline=new Promise(function(_,reject){timer=setTimeout(function(){if(controller)controller.abort();reject(Object.assign(new Error('请求超时，请重试'),{code:'request_timeout'}));},20000);});
   return Promise.race([request,deadline]).then(function(data){clearTimeout(timer);return data;},function(error){clearTimeout(timer);throw error;});
 }
 function loadAuth(){
@@ -69,6 +70,11 @@ function _authReadSync(response){
   return response.json();
 }
 function _authResetView(){
+  if(typeof restoreFromServer==='function'){
+    var read=restoreFromServer._flight;if(read&&read.controller)read.controller.abort();
+    restoreFromServer._flight=null;restoreFromServer._retryAt=0;restoreFromServer._failures=0;
+  }
+  if(typeof opsLoadNotice==='function')opsLoadNotice('');
   if(typeof materialResetSession==='function')materialResetSession();
   if(typeof workspaceSyncReset==='function')workspaceSyncReset();
   PROJECTS={};USER_PROFILES={};CITY_ACCOUNTS={};INVITE_CODES={};REPORT_REQUESTS=[];
@@ -133,17 +139,36 @@ function render(){
   if(!AUTH){root.innerHTML=opsLoginPage();return;}
   if(AUTH.scope!=='admin'){root.innerHTML='<div style="padding:60px;text-align:center"><h2>当前账号无管理权限</h2><p><a href="/app">前往政府端</a> <button onclick="logout()">退出并切换账号</button></p></div>';return;}
   if(!window._opsDataReady){
-    if(render._opsLoadError){root.innerHTML='<div style="padding:60px;text-align:center">工作区加载失败<p><button onclick="render._opsLoadError=null;render._opsRestored=false;render()">重试</button> <button onclick="logout()">退出登录</button></p></div>';return;}
+    if(render._opsLoadError){root.innerHTML='<div style="padding:60px;text-align:center" role="status">暂时无法读取管理数据，将自动重试。<p>请检查网络连接；已有数据不会被删除。</p><p><button onclick="retryOpsLoad()">立即重试</button> <button onclick="logout()">退出登录</button></p></div>';return;}
     root.innerHTML='<div style="padding:60px;text-align:center">正在加载管理数据…</div>';
     if(!render._opsRestored){render._opsRestored=true;restoreFromServer(function(ok){if(!ok)render._opsLoadError='unavailable';render();});}
     return;
   }
   renderOpsV2();
 }
+function opsLoadNotice(message){
+  var box=document.getElementById('opsLoadStatus');
+  if(!message){if(box&&box.remove)box.remove();return;}
+  if(!document.body||!document.createElement)return;
+  if(!box){box=document.createElement('div');box.id='opsLoadStatus';box.setAttribute('role','status');document.body.appendChild(box);}
+  box.style.cssText='position:fixed;right:20px;top:90px;z-index:10040;max-width:420px;padding:12px 16px;border:1px solid #e6c87b;border-radius:10px;background:#fffbeb;color:#713f12;font-size:14px;box-shadow:0 4px 16px #0001';
+  box.textContent=message;
+  var retry=document.createElement('button');retry.type='button';retry.textContent='立即重试';retry.style.cssText='margin-left:10px;cursor:pointer';retry.onclick=retryOpsLoad;box.appendChild(retry);
+}
+function retryOpsLoad(){
+  restoreFromServer._retryAt=0;
+  if(window._opsDataReady)return opsRefreshData();
+  render._opsLoadError='';render._opsRestored=false;render();
+}
 function opsRefreshData(){
   if(opsEntImportFiles.pending||opsEntDelete.pending||(typeof WORKSPACE_SYNC!=='undefined'&&WORKSPACE_SYNC.pending))return;
-  if(AUTH&&AUTH.scope==='admin'&&window._opsDataReady)return restoreFromServer(function(ok){
-    if(ok){render._opsLoadError='';renderOpsV2();}
+  if(typeof document!=='undefined'&&document.hidden)return;
+  var flight=restoreFromServer._flight;
+  if(flight&&flight.seq===_serverRestoreSeq&&flight.epoch===_authEpoch)return;
+  if(Date.now()<(restoreFromServer._retryAt||0))return;
+  if(AUTH&&AUTH.scope==='admin'&&(window._opsDataReady||render._opsLoadError))return restoreFromServer(function(ok){
+    if(ok){render._opsLoadError='';if(typeof opsLoadNotice==='function')opsLoadNotice('');renderOpsV2();}
+    else if(window._opsDataReady){if(typeof opsLoadNotice==='function')opsLoadNotice('数据更新暂时中断，当前显示上次成功加载的内容，将自动重试。');}
     else{render._opsRestored=false;render._opsLoadError='unavailable';render();}
   });
 }
@@ -211,29 +236,100 @@ function opsMonthlyCell(city){
     (AUTH&&AUTH.scope==='admin'&&workspace&&typeof workspace.monthlyEnabled==='boolean'?'<button class="ops-ui-button" style="margin-top:8px" onclick="'+opsHandler('openMonthlyReportModal',city)+'">'+(workspace.monthlyEnabled?'停用月度更新':'启用月度更新')+'</button>':'');
 }
 var OPS_MONTHLY_DRAFT=null;
+function opsMonthlyDraftActive(draft){return !!(draft&&draft.epoch===_authEpoch&&AUTH&&AUTH.scope==='admin');}
+function opsMonthlyDraftFeedback(draft,message){
+  if(!opsMonthlyDraftActive(draft))return;
+  var error=OPS_MONTHLY_DRAFT===draft&&document.getElementById('opsMonthlyError');
+  if(error&&error.isConnected!==false)error.textContent=message;else if(message)toast(message);
+}
+function opsMonthlyDraftControls(draft){
+  if(OPS_MONTHLY_DRAFT!==draft||!opsMonthlyDraftActive(draft))return;
+  var button=document.getElementById('opsMonthlySave');
+  if(button&&button.isConnected!==false){button.disabled=!!draft.pending;button.textContent=draft.pending?(draft.uncertain?'正在检查保存状态…':'正在保存…'):(draft.uncertain?'检查保存状态':(draft.retry?'重试':'确认')+(draft.monthlyEnabled?'启用':'停用'));}
+}
+function opsMonthlyShowDraft(draft){
+  var enabled=draft.monthlyEnabled;
+  openModal((enabled?'启用':'停用')+'月度报告更新',
+    '<p><strong>'+_authEscape(draft.city)+'</strong> · 地区主工作区</p><p>'+(enabled?'启用后从下个月开始，每月 1 日 09:00（北京时间）自动更新报告。':'停用后不再自动安排新的月度报告。')+'</p><p class="ops-ui-muted">已排队或正在生成的报告继续处理，已有报告、邀请码和客户资料保留。</p><p id="opsMonthlyError" role="alert" style="color:#b91c1c">'+(draft.uncertain?'上次保存结果尚未确认，请检查保存状态，无需重复提交。':'')+'</p>',
+    '<button class="ghost-button" onclick="closeModal()">'+(draft.uncertain?'关闭':'取消')+'</button><button id="opsMonthlySave" class="primary-button" onclick="saveMonthlyReportSettings()">'+(draft.uncertain?'检查保存状态':(draft.retry?'重试':'确认')+(enabled?'启用':'停用'))+'</button>');
+}
 function openMonthlyReportModal(city){
   if(!AUTH||AUTH.scope!=='admin'){toast('需要管理员登录');return;}
-  if(OPS_MONTHLY_DRAFT&&OPS_MONTHLY_DRAFT.pending){toast('月度更新设置正在保存，请稍候');return;}
+  if(OPS_MONTHLY_DRAFT&&!opsMonthlyDraftActive(OPS_MONTHLY_DRAFT))OPS_MONTHLY_DRAFT=null;
+  if(OPS_MONTHLY_DRAFT&&OPS_MONTHLY_DRAFT.pending){toast('月度更新设置正在保存或检查，请稍候');return;}
+  if(OPS_MONTHLY_DRAFT&&OPS_MONTHLY_DRAFT.uncertain){opsMonthlyShowDraft(OPS_MONTHLY_DRAFT);return;}
   var workspace=opsCityWorkspace(city);if(!workspace||typeof workspace.monthlyEnabled!=='boolean'){toast('未找到地区主工作区，请刷新后重试');return;}
-  var enabled=!workspace.monthlyEnabled;
-  OPS_MONTHLY_DRAFT={city:city,projectKey:workspace.projectKey,monthlyEnabled:enabled,expectedMonthlyEnabled:workspace.monthlyEnabled,expectedNextReportAt:workspace.nextReportAt,epoch:_authEpoch,pending:false};
-  openModal((enabled?'启用':'停用')+'月度报告更新',
-    '<p><strong>'+_authEscape(city)+'</strong> · 地区主工作区</p><p>'+(enabled?'启用后从下个月开始，每月 1 日 09:00（北京时间）自动更新报告。':'停用后不再自动安排新的月度报告。')+'</p><p class="ops-ui-muted">已排队或正在生成的报告继续处理，已有报告、邀请码和客户资料保留。</p><p id="opsMonthlyError" role="alert" style="color:#b91c1c"></p>',
-    '<button class="ghost-button" onclick="closeModal()">取消</button><button id="opsMonthlySave" class="primary-button" onclick="saveMonthlyReportSettings()">确认'+(enabled?'启用':'停用')+'</button>');
+  OPS_MONTHLY_DRAFT={city:city,projectKey:workspace.projectKey,monthlyEnabled:!workspace.monthlyEnabled,expectedMonthlyEnabled:workspace.monthlyEnabled,expectedNextReportAt:workspace.nextReportAt,epoch:_authEpoch,pending:false,uncertain:false};
+  opsMonthlyShowDraft(OPS_MONTHLY_DRAFT);
+}
+function opsMonthlyReadStatus(draft){
+  var controller=typeof AbortController!=='undefined'?new AbortController():null,timer;
+  var options={credentials:'same-origin',headers:{'Accept':'application/json'}};if(controller)options.signal=controller.signal;
+  var path='/api/admin/city-workspaces?city='+encodeURIComponent(draft.city)+'&projectKey='+encodeURIComponent(draft.projectKey);
+  var request=fetch(path,options).then(function(response){
+    if(!opsMonthlyDraftActive(draft))throw new Error('会话已变化');
+    if(response.status===401){_authForget();if(typeof render==='function')render();throw new Error('登录已过期，请重新登录');}
+    return response.json().then(function(data){
+      if(response.ok===false||!data||data.ok!==true)throw new Error('暂时无法读取月度更新状态');
+      return data;
+    });
+  });
+  var deadline=new Promise(function(_,reject){timer=setTimeout(function(){if(controller)controller.abort();reject(new Error('状态检查超时'));},8000);});
+  return Promise.race([request,deadline]).then(function(data){clearTimeout(timer);return data;},function(error){clearTimeout(timer);throw error;});
+}
+function opsMonthlyReceipt(draft,data,isRead){
+  var saved=data&&data.cityWorkspace;
+  if(!data||data.city!==draft.city||data.projectKey!==draft.projectKey||(!isRead&&typeof data.changed!=='boolean')||!saved||saved.projectKey!==draft.projectKey||typeof saved.monthlyEnabled!=='boolean'||typeof saved.nextReportAt!=='number'||!Number.isFinite(saved.nextReportAt)||saved.nextReportAt<0)throw new Error('月度更新响应不完整');
+  return saved;
+}
+function opsMonthlyStoreStatus(draft,saved){
+  if(!opsMonthlyDraftActive(draft))return false;
+  var current=opsCityWorkspace(draft.city);
+  if(!current||current.projectKey!==draft.projectKey)throw new Error('地区主工作区已变化，请重新加载后检查');
+  // A full read begun before this receipt must not restore an older schedule.
+  window._serverRestoreSeq=(window._serverRestoreSeq||0)+1;
+  var read=typeof restoreFromServer==='function'&&restoreFromServer._flight;
+  if(read&&read.controller)read.controller.abort();
+  if(read&&restoreFromServer._flight===read)restoreFromServer._flight=null;
+  // The status endpoint deliberately omits registry secrets and owner metadata.
+  CITY_WORKSPACES[draft.city]=Object.assign({},current,{monthlyEnabled:saved.monthlyEnabled,nextReportAt:saved.nextReportAt});
+  return true;
+}
+function opsMonthlyApply(draft,saved){
+  if(!opsMonthlyStoreStatus(draft,saved))return false;
+  if(OPS_MONTHLY_DRAFT===draft){OPS_MONTHLY_DRAFT=null;if(document.getElementById('opsMonthlySave'))closeModal();}
+  render();toast(draft.monthlyEnabled?'月度报告更新已启用，下个月开始执行':'月度报告更新已停用');return true;
+}
+function opsMonthlyReconcile(draft){
+  draft.uncertain=true;opsMonthlyDraftControls(draft);
+  opsMonthlyDraftFeedback(draft,'保存请求未收到完整确认，正在检查服务器上的状态…');
+  return opsMonthlyReadStatus(draft).then(function(data){
+    if(!opsMonthlyDraftActive(draft))return false;
+    var saved=opsMonthlyReceipt(draft,data,true);
+    if(saved.monthlyEnabled!==draft.monthlyEnabled){
+      if(!opsMonthlyStoreStatus(draft,saved))return false;
+      draft.uncertain=false;draft.retry=true;
+      draft.expectedMonthlyEnabled=saved.monthlyEnabled;draft.expectedNextReportAt=saved.nextReportAt;
+      opsMonthlyDraftFeedback(draft,'服务器已确认当前仍为'+(saved.monthlyEnabled?'已启用':'已停用')+'，本次'+(draft.monthlyEnabled?'启用':'停用')+'尚未保存。可点击“重试'+(draft.monthlyEnabled?'启用':'停用')+'”再次提交。');return false;
+    }
+    return opsMonthlyApply(draft,saved);
+  }).catch(function(){opsMonthlyDraftFeedback(draft,'暂时无法确认此次保存结果。请稍后点击“检查保存状态”，无需重复提交。');return false;});
 }
 function saveMonthlyReportSettings(){
   var draft=OPS_MONTHLY_DRAFT;if(!draft||draft.pending)return Promise.resolve(false);
-  if(!AUTH||AUTH.scope!=='admin'||draft.epoch!==_authEpoch){toast('会话已变化，请重新登录');return Promise.resolve(false);}
-  var button=document.getElementById('opsMonthlySave'),error=document.getElementById('opsMonthlyError');
-  draft.pending=true;if(button)button.disabled=true;if(error)error.textContent='';
-  return _authJson('/api/admin/city-workspaces',{action:'set_monthly',city:draft.city,projectKey:draft.projectKey,monthlyEnabled:draft.monthlyEnabled,expectedMonthlyEnabled:draft.expectedMonthlyEnabled,expectedNextReportAt:draft.expectedNextReportAt}).then(function(data){
-    if(draft.epoch!==_authEpoch)return false;
-    var saved=data.cityWorkspace;
-    if(data.city!==draft.city||data.projectKey!==draft.projectKey||typeof data.changed!=='boolean'||!saved||saved.projectKey!==draft.projectKey||saved.monthlyEnabled!==draft.monthlyEnabled||typeof saved.nextReportAt!=='number'||!Number.isFinite(saved.nextReportAt)||saved.nextReportAt<0)throw new Error('保存响应不完整，请刷新后检查');
-    CITY_WORKSPACES[draft.city]=saved;
-    if(OPS_MONTHLY_DRAFT===draft){OPS_MONTHLY_DRAFT=null;if(document.getElementById('opsMonthlySave'))closeModal();}
-    render();toast(draft.monthlyEnabled?'月度报告更新已启用，下个月开始执行':'月度报告更新已停用');return true;
-  }).catch(function(failure){if(draft.epoch===_authEpoch){if(error&&error.isConnected!==false)error.textContent=failure.message||'尚未保存，请重试';else toast(failure.message||'尚未保存，请重试');}return false;}).then(function(result){draft.pending=false;if(button&&button.isConnected!==false)button.disabled=false;return result;});
+  if(!opsMonthlyDraftActive(draft)){toast('会话已变化，请重新登录');return Promise.resolve(false);}
+  draft.pending=true;opsMonthlyDraftControls(draft);opsMonthlyDraftFeedback(draft,'');
+  var request=draft.uncertain?opsMonthlyReconcile(draft):_authJson('/api/admin/city-workspaces',{action:'set_monthly',city:draft.city,projectKey:draft.projectKey,monthlyEnabled:draft.monthlyEnabled,expectedMonthlyEnabled:draft.expectedMonthlyEnabled,expectedNextReportAt:draft.expectedNextReportAt}).then(function(data){
+    if(!opsMonthlyDraftActive(draft))return false;
+    var saved=opsMonthlyReceipt(draft,data,false);
+    if(saved.monthlyEnabled!==draft.monthlyEnabled)throw new Error('保存结果与本次设置不一致');
+    return opsMonthlyApply(draft,saved);
+  }).catch(function(failure){
+    if(!opsMonthlyDraftActive(draft))return false;
+    if(!failure.status||failure.status===408||failure.status>=500)return opsMonthlyReconcile(draft);
+    opsMonthlyDraftFeedback(draft,failure.message||'设置未保存，请检查后重试');return false;
+  });
+  return request.then(function(result){draft.pending=false;opsMonthlyDraftControls(draft);return result;},function(){draft.pending=false;opsMonthlyDraftControls(draft);return false;});
 }
 function opsFilterChange(section,key,value){if(!OPS_UI[section])return;OPS_UI[section][key]=value;opsRefreshList(section);}
 function opsRefreshList(section){
@@ -415,7 +511,7 @@ function ragDoUpload(key, text, name, fileB64, epoch){
         if(res.ok){
           var extra=res.matched?('，命中已有 '+res.matched+' 条'):'';
           toast&&toast('已入库 '+res.chunks+' 条（'+(nature==='fix'?'修正':'佐证')+'）'+extra);
-          restoreFromServer(function(){if(originalUploadSessionCurrent(epoch))renderOpsV2();});
+          restoreFromServer(function(){if(originalUploadSessionCurrent(epoch))renderOpsV2();},{force:true});
         }
         else{toast&&toast('上传失败：'+(res.message||res.error||''));if(nm)nm.textContent=restLabel;}
       }).catch(function(e){if(!originalUploadSessionCurrent(epoch))return;toast&&toast('上传出错');if(nm)nm.textContent=restLabel;});
@@ -452,7 +548,7 @@ function ragSnapshot(key){
   fetch('/api/kb-version',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({action:'snapshot',projectKey:key,city:p.city,label:label})})
     .then(function(r){return r.json();}).then(function(res){
-      if(res.ok){toast&&toast('已存为 v'+res.ver);restoreFromServer(function(){renderOpsV2();});}
+      if(res.ok){toast&&toast('已存为 v'+res.ver);restoreFromServer(function(){renderOpsV2();},{force:true});}
       else{toast&&toast('快照失败：'+(res.error||''));}
     });
 }
@@ -462,7 +558,7 @@ function ragRollback(key,ver){
   fetch('/api/kb-version',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({action:'rollback',projectKey:key,city:p.city,ver:ver})})
     .then(function(r){return r.json();}).then(function(res){
-      if(res.ok){toast&&toast('已回滚到 v'+ver);restoreFromServer(function(){renderOpsV2();});}
+      if(res.ok){toast&&toast('已回滚到 v'+ver);restoreFromServer(function(){renderOpsV2();},{force:true});}
       else{toast&&toast('回滚失败：'+(res.error||''));}
     });
 }
@@ -619,7 +715,7 @@ function ragChatCommit(msgIdx, key){
             var extra=res.matched?('，命中已有 '+res.matched+' 条'):'';
             toast&&toast('已加入智库 '+res.chunks+' 条（'+(nature==='fix'?'修正':'佐证')+'）'+extra);
             m.committed=true;
-            restoreFromServer(function(){renderOpsV2();});
+            restoreFromServer(function(){renderOpsV2();},{force:true});
           } else { toast&&toast('入库失败：'+(res.error||'')); }
         }).catch(function(e){if(originalUploadSessionCurrent(commitEpoch)&&ragCanCommitMessage(m,key))toast&&toast('入库出错');});
     }

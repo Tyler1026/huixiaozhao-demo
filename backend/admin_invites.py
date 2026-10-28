@@ -162,6 +162,25 @@ def manage_invite(body, session, *, headers=None, token=None, admin_config=None,
     return result
 
 
+def read_monthly_report(query, state, *, headers=None, token=None, admin_config=None, now=None):
+    """Read one authenticated monthly schedule without copying its workspace.
+
+    This acknowledgement-recovery view deliberately excludes invitations,
+    members, report artifacts and all other cities. It never writes state.
+    """
+    actor = require_session(headers or {}, state, token=token, admin_config=admin_config, now=now)
+    if actor.get('scope') != 'admin':
+        raise AuthError(403, 'admin_required', '请使用管理端账号登录')
+    city = _text(query.get('city'), '城市', 128)
+    key = _text(query.get('projectKey'), '工作区', 256)
+    canonical = get_city_workspace(state, city)
+    if canonical is None or canonical['projectKey'] != key:
+        raise AuthError(404, 'city_workspace_not_found', '未找到对应地区主工作区，请刷新后重试')
+    fields = ('projectKey', 'province', 'monthlyEnabled', 'nextReportAt')
+    return dict(ok=True, city=city, projectKey=key,
+                cityWorkspace={field: canonical[field] for field in fields})
+
+
 def manage_monthly_report(body, session, *, headers=None, token=None, admin_config=None, now=None):
     """Change only an existing canonical workspace's future monthly schedule.
 

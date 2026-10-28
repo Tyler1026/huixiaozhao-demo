@@ -9,7 +9,7 @@ async function boot(){
   const root=path.join(__dirname,'..');
   const manifest=JSON.parse(fs.readFileSync(path.join(root,'frontend/manifest.json'),'utf8'));
   const html=manifest['ops.html'].parts.map(file=>fs.readFileSync(path.join(root,file),'utf8')).join('');
-  const nodes={},storage=new Map(),calls=[],toasts=[];
+  const nodes={},storage=new Map(),calls=[],toasts=[],timers=new Map();let timerId=0;
   const element=()=>({style:{},classList:{add(){},remove(){},contains(){return false;}},appendChild(){},setAttribute(){},remove(){},click(){}});
   const document={activeElement:null,getElementById:id=>nodes[id]||null,
     querySelector:selector=>selector[0]==='#'?nodes[selector.slice(1)]||null:null,
@@ -17,7 +17,7 @@ async function boot(){
   const ctx={console:{log(){},warn(){}},Date,Math,Promise,JSON,AbortController,TextEncoder,TextDecoder,URL,Uint8Array,Blob,
     location:{origin:'http://localhost',search:'',href:'http://localhost/ops'},navigator:{},performance:{now:()=>Date.now()},
     localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
-    document,setInterval(){},setTimeout(){},clearTimeout(){},addEventListener(){},
+    document,setInterval(){},setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,ms});return id;},clearTimeout(id){timers.delete(id);},addEventListener(){},
     fetch:async()=>({status:401,ok:false,json:async()=>({ok:false})})};
   ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);
   for(const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)){
@@ -32,7 +32,7 @@ async function boot(){
   ctx.FileReader=class{
     readAsText(file){queueMicrotask(()=>file.error?this.onerror():this.onload({target:{result:file.text}}));}
   };
-  return {ctx,calls,toasts,responder:fn=>{responder=fn;}};
+  return {ctx,calls,toasts,timers,responder:fn=>{responder=fn;}};
 }
 const file=(name,text)=>({name,text});
 
@@ -136,9 +136,13 @@ test('a server read started before an import cannot overwrite the new batch on l
   const h=await boot();let returnRead;
   const post=h.ctx.fetch;
   h.ctx.fetch=(url,options)=>options.method==='POST'?post(url,options):new Promise(resolve=>{returnRead=resolve;});
-  const read=h.ctx.restoreFromServer();
+  const read=h.ctx.restoreFromServer();await Promise.resolve();
+  assert.equal(typeof returnRead,'function','the background read has reached the network before the import');
+  const readSeq=h.ctx._serverRestoreSeq,readFlight=h.ctx.restoreFromServer._flight;
   await h.ctx.opsEntImportFiles([file('new.csv','企业名称\n新导入企业')]);
+  assert.ok(h.ctx._serverRestoreSeq>readSeq,'the import invalidates the outstanding read');
   returnRead({ok:true,status:200,json:async()=>({PROJECTS:h.ctx.PROJECTS,OPS_ENT:[]})});
   await read;
   assert.equal(h.ctx.OPS_ENT.length,1);assert.equal(h.ctx.OPS_ENT[0].name,'新导入企业');
+  assert.notEqual(h.ctx.restoreFromServer._flight,readFlight,'the obsolete read releases only its own flight');
 });

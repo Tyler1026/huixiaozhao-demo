@@ -128,8 +128,8 @@ test('a direction or module change starts at the top instead of inheriting old r
   root.scroll.scrollTop=700;c.view='home';c.render();h.flush();assert.equal(root.scroll.scrollTop,0);
 });
 function syncHarness(app='index'){
-  let resolve,request;
-  const c={AUTH:{user:'owner',scope:app==='ops'?'admin':'user'},_authState:'ready',_authEpoch:1,_serverRestoreSeq:0,window:null,console:{log(){},warn(){}},
+  let resolve,request;const timers=new Map();let timerId=0;
+  const c={AbortController,setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,ms});return id;},clearTimeout(id){timers.delete(id);},AUTH:{user:'owner',scope:app==='ops'?'admin':'user'},_authState:'ready',_authEpoch:1,_serverRestoreSeq:0,window:null,console:{log(){},warn(){}},
     cur:'p',view:'report',PROJECTS:{p:{topic:'甲方向'},q:{topic:'乙方向'}},REPORTSTATE:{},REPORT_HISTORY:{},PENDING_CONFIRMS:{},UPLOADS:{},KB_FILE_CHUNKS:{},KB_CONFIRMS:{},KB_CHAT:{},KB_CHAT_TOMBS:{},UPLOAD_TOMBS:{},KB_CONFIRM_TOMBS:{},DEMANDS:[],OPS_ENT:[],RESET_GEN:'r',CITY_BASE_PACKAGES:{},USER_PROFILES:{},INVITE_CODES:{},LS_KEY:'test',
     fetch(){request=new Promise(r=>resolve=r);return request;},_authReadSync:r=>r.json(),_authFilterProjects:x=>x,_acceptServerGeneration:()=>false,
     mergeTopicProjectLifecycle:(_local,x)=>x,mergeTopicReportStates:(_local,x)=>x||{},mergeTopicReportHistory:(_a,x)=>x||{},_mergeUploads:x=>x||{},_mergeChunks:x=>x||{},_mergeConfirms:x=>x||{},_mergeKbChat:x=>x||{},_safeProfiles:x=>x||{},_safeSyncSnapshot:x=>x,_slimUploads:()=>({}),
@@ -138,7 +138,7 @@ function syncHarness(app='index'){
   c.window=c;vm.createContext(c);
   const file=app==='index'?'frontend/index/script-02-sections/14-tail.js':'frontend/ops/script-03-sections/14-tail.js';
   vm.runInContext(declaration(read(file),'restoreFromServer').split('function clearPersist')[0],c);
-  return {c,respond:(data)=>resolve({json:async()=>data||({PROJECTS:{p:{topic:'甲方向'},q:{topic:'乙方向'}},cur:'p',view:'knowledge',RESET_GEN:'r'})})};
+  return {c,timers,respond:(data)=>resolve({json:async()=>data||({PROJECTS:{p:{topic:'甲方向'},q:{topic:'乙方向'}},cur:'p',view:'knowledge',RESET_GEN:'r'})})};
 }
 test('a pending client sync preserves a direction and module selected after the request started',async()=>{
   const h=syncHarness(),{c}=h,pending=c.restoreFromServer();c.PROJECTS.p.topic='丙方向';c.view='home';h.respond();await pending;
@@ -155,5 +155,5 @@ test('server-deleted projects and directions are not revived to preserve the vie
   assert.equal(d.c.PROJECTS.p.topic,'新方向');
 });
 test('a pending admin sync keeps the project selected after polling started',async()=>{
-  const h=syncHarness('ops'),{c}=h,pending=c.restoreFromServer();c.cur='q';h.respond();await pending;assert.equal(c.cur,'q');
+  const h=syncHarness('ops'),{c}=h,pending=c.restoreFromServer();await Promise.resolve();c.cur='q';h.respond();await pending;assert.equal(c.cur,'q');assert.equal(h.timers.size,0);
 });

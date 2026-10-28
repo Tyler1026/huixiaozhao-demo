@@ -92,19 +92,34 @@ function _acceptServerGeneration(srv){
 }
 
 var _serverRestoreSeq=0;
-function restoreFromServer(callback){
+function restoreFromServer(callback,options){
   if(!AUTH||AUTH.scope!=='admin'){if(callback)callback(false);return Promise.resolve(false);}
-  var authEpoch=_authEpoch,readSeq=window._serverRestoreSeq=(window._serverRestoreSeq||0)+1;
+  var authEpoch=_authEpoch,user=AUTH.user,active=restoreFromServer._flight;
+  function current(){return AUTH&&AUTH.scope==='admin'&&AUTH.user===user&&authEpoch===_authEpoch&&readSeq===_serverRestoreSeq;}
+  function notify(ok){if(current()&&callback)try{callback(ok);}catch(error){console.warn('[restoreFromServer render]',error);}}
+  // One read per session: a slow transfer must not be superseded every poll.
+  if(!(options&&options.force)&&active&&active.epoch===authEpoch&&active.user===user&&active.seq===_serverRestoreSeq){
+    var readSeq=active.seq;
+    return active.promise.then(function(ok){notify(ok);return ok;});
+  }
+  if(active&&active.controller)active.controller.abort();
+  var readSeq=window._serverRestoreSeq=(window._serverRestoreSeq||0)+1;
+  var controller=typeof AbortController==='function'?new AbortController():null;
+  var flight={epoch:authEpoch,user:user,seq:readSeq,controller:controller,promise:null},timer;
+  restoreFromServer._flight=flight;
   var localENT = OPS_ENT && OPS_ENT.length ? OPS_ENT.slice() : [];
-  return fetch('/api/sync?raw=1',{credentials:'same-origin',headers:{'X-HXZ-Report-Client':'website'}}).then(function(response){if(authEpoch!==_authEpoch||readSeq!==_serverRestoreSeq)throw new Error('同步请求已过期');return _authReadSync(response);}).then(function(raw){
-    if(authEpoch!==_authEpoch||readSeq!==_serverRestoreSeq)return;
-    if(!raw){ window._opsDataReady=false; if(callback)callback(false); return; }
+  var request;
+  try{request=Promise.resolve(fetch('/api/sync?raw=1',{credentials:'same-origin',headers:{'X-HXZ-Report-Client':'website'},signal:controller?controller.signal:undefined}));}catch(error){request=Promise.reject(error);}
+  request=request.then(function(response){if(!current())throw new Error('同步请求已过期');return _authReadSync(response);});
+  var deadline=new Promise(function(_,reject){timer=setTimeout(function(){if(controller)controller.abort();var error=new Error('读取管理数据超时');error.code='sync_timeout';reject(error);},45000);});
+  flight.promise=Promise.race([request,deadline]).then(function(raw){
+    if(!current())return false;
+    if(!raw)throw new Error('管理数据响应为空');
     var srv = (raw.huixiaozhao_kb_v1 && raw.huixiaozhao_kb_v1.PROJECTS)
               ? raw.huixiaozhao_kb_v1 : raw;
     if(!srv||!srv.PROJECTS){
-      window._opsDataReady=false;
       if(localENT.length && !OPS_ENT.length) OPS_ENT = localENT;
-      if(callback)callback(false); return;
+      throw new Error('管理数据响应不完整');
     }
     var currentProject=cur;
     if(_acceptServerGeneration(srv)){localENT=[];currentProject=null;}
@@ -154,8 +169,22 @@ function restoreFromServer(callback){
     window._opsServerHadData=true;
     window._opsDataReady=true;
 
-    if(callback) callback(true);
-  }).catch(function(e){if(authEpoch!==_authEpoch||readSeq!==_serverRestoreSeq)return;console.warn('[restoreFromServer]',e);window._opsDataReady=false;if(callback)callback(false);});
+    restoreFromServer._failures=0;restoreFromServer._retryAt=0;restoreFromServer._lastError='';
+    return true;
+  }).catch(function(e){
+    if(!current())return false;
+    console.warn('[restoreFromServer]',e);
+    // Keep the last loaded workspace and unfinished form on transient errors.
+    restoreFromServer._lastError=e.code==='sync_timeout'?'读取超时':'连接暂时中断';
+    restoreFromServer._failures=(restoreFromServer._failures||0)+1;
+    restoreFromServer._retryAt=Date.now()+Math.min(120000,30000*Math.pow(2,restoreFromServer._failures-1));
+    return false;
+  }).then(function(ok){
+    clearTimeout(timer);
+    if(restoreFromServer._flight===flight)restoreFromServer._flight=null;
+    return ok;
+  });
+  return flight.promise.then(function(ok){notify(ok);return ok;});
 }
 
 function clearPersist(){

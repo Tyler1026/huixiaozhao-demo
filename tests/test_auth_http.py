@@ -6,12 +6,14 @@ are the production implementations; only storage location/config are injected.
 """
 import ast
 import concurrent.futures
+import gzip
 import hashlib
 import http.client
 import json
 import tempfile
 import threading
 import unittest
+from urllib.parse import urlencode
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
@@ -284,6 +286,136 @@ class AuthHttpTests(unittest.TestCase):
         self.assertEqual(status, 503)
         self.assertFalse(json.loads(raw)['ok'])
         self.assertNotIn('Set-Cookie', headers)
+        self.assertEqual(before, self.http.path.read_bytes())
+
+    def create_monthly_workspace(self, cookie):
+        status, _, raw = self.http.request('POST', '/api/admin/invites', {
+            'action': 'create', 'city': '随州市', 'province': '湖北省'}, cookie=cookie)
+        self.assertEqual(status, 200, raw)
+        result = json.loads(raw)
+        path = '/api/admin/city-workspaces?' + urlencode({
+            'city': '随州市', 'projectKey': result['cityWorkspace']['projectKey']})
+        return path, result
+
+    def test_monthly_read_is_minimal_read_only_and_avoids_sync_projection_or_write_lock(self):
+        admin = self.http.admin()
+        path, created = self.create_monthly_workspace(admin)
+        before = self.http.path.read_bytes()
+        with patch.object(self.http.ns['Handler'], '_account_session',
+                          side_effect=AssertionError('read must not take the write lock')), \
+                patch('backend.access_control.scoped_sync_view',
+                      side_effect=AssertionError('read must not project all workspace data')):
+            status, headers, raw = self.http.request('GET', path, cookie=admin)
+        self.assertEqual(status, 200, raw)
+        workspace = created['cityWorkspace']
+        self.assertEqual(json.loads(raw), {
+            'ok': True, 'city': '随州市', 'projectKey': workspace['projectKey'],
+            'cityWorkspace': {key: workspace[key] for key in
+                              ('projectKey', 'province', 'monthlyEnabled', 'nextReportAt')}})
+        self.assertEqual(headers['Cache-Control'], 'no-store')
+        self.assertNotIn('Set-Cookie', headers)
+        self.assertLess(len(raw), 512)
+        for forbidden in ('inviteCode', created['invite']['code'], 'ownerUser', 'AUTH_SESSIONS',
+                          'USER_PROFILES', 'PROJECTS', 'reportFiles', ADMIN_PASSWORD):
+            self.assertNotIn(forbidden, raw.decode())
+        self.assertEqual(before, self.http.path.read_bytes())
+
+    def test_monthly_read_requires_live_admin_session(self):
+        admin = self.http.admin()
+        path, _ = self.create_monthly_workspace(admin)
+        member, _ = self.http.register()
+        before = self.http.path.read_bytes()
+        for cookie, expected in ((None, 401), ('hxz_session=forged', 401), (member, 403)):
+            with self.subTest(cookie=cookie):
+                status, _, raw = self.http.request('GET', path, cookie=cookie)
+                self.assertEqual(status, expected, raw)
+        self.assertEqual(before, self.http.path.read_bytes())
+        state = self.http.state()
+        for session in state['AUTH_SESSIONS'].values():
+            if session.get('source') == 'admin':
+                session['expires_at'] = 0
+        self.http.replace(state)
+        self.assertEqual(self.http.request('GET', path, cookie=admin)[0], 401)
+
+    def test_monthly_read_rejects_cross_origin_and_ambiguous_city_binding(self):
+        admin = self.http.admin()
+        path, created = self.create_monthly_workspace(admin)
+        before = self.http.path.read_bytes()
+        for extra in ({'Origin': 'https://other.invalid'}, {'Sec-Fetch-Site': 'cross-site'},
+                      {'Origin': 'null'}, {'Origin': 'http://[malformed'}):
+            self.assertEqual(self.http.request('GET', path, cookie=admin, headers=extra)[0], 403)
+        for query, expected in (({}, 400), ({'city': '随州市'}, 400),
+                                ({'city': '', 'projectKey': 'valid'}, 400),
+                                ({'city': '<invalid>', 'projectKey': 'valid'}, 400),
+                                ({'city': '另一城市', 'projectKey': created['cityWorkspace']['projectKey']}, 404),
+                                ({'city': '随州市', 'projectKey': 'another-project'}, 404)):
+            status, _, raw = self.http.request('GET', '/api/admin/city-workspaces?' + urlencode(query), cookie=admin)
+            self.assertEqual(status, expected, raw)
+        self.assertEqual(self.http.request('GET', path + '&' + urlencode({'city': '随州市'}), cookie=admin)[0], 400)
+        self.assertEqual(before, self.http.path.read_bytes())
+
+    def test_monthly_read_recovers_committed_setting_without_repeating_post(self):
+        admin = self.http.admin()
+        path, created = self.create_monthly_workspace(admin)
+        workspace = created['cityWorkspace']
+        status, _, raw = self.http.request('POST', '/api/admin/city-workspaces', {
+            'action': 'set_monthly', 'city': '随州市', 'projectKey': workspace['projectKey'],
+            'monthlyEnabled': False, 'expectedMonthlyEnabled': True,
+            'expectedNextReportAt': workspace['nextReportAt']}, cookie=admin)
+        self.assertEqual(status, 200, raw)
+        before = self.http.path.read_bytes()
+        status, _, raw = self.http.request('GET', path, cookie=admin)
+        self.assertEqual(status, 200, raw)
+        self.assertFalse(json.loads(raw)['cityWorkspace']['monthlyEnabled'])
+        self.assertEqual(json.loads(raw)['cityWorkspace']['nextReportAt'], 0)
+        self.assertEqual(before, self.http.path.read_bytes())
+
+    def test_monthly_read_reports_unavailable_storage_and_corrupt_binding(self):
+        admin = self.http.admin()
+        path, _ = self.create_monthly_workspace(admin)
+        before = self.http.path.read_bytes()
+        self.http.path.write_text('{invalid')
+        status, _, raw = self.http.request('GET', path, cookie=admin)
+        self.assertEqual(status, 503, raw)
+        self.assertNotIn('invalid', json.loads(raw)['message'])
+        self.http.path.write_bytes(before)
+        state = self.http.state()
+        state['CITY_WORKSPACES']['随州市']['monthlyEnabled'] = 'true'
+        self.http.replace(state)
+        before = self.http.path.read_bytes()
+        status, _, raw = self.http.request('GET', path, cookie=admin)
+        self.assertEqual(status, 503, raw)
+        self.assertEqual(json.loads(raw)['error'], 'city_workspace_unavailable')
+        self.assertEqual(before, self.http.path.read_bytes())
+
+    def test_sync_gzip_preserves_report_file_and_download_transport(self):
+        admin = self.http.admin()
+        import base64
+        original = b'offline-original-report\x00' * 2048
+        state = self.http.state()
+        state['REPORT_REQUESTS'] = [{'id': 'rr-legacy-completed', 'city': '测试甲市',
+                                    'status': 'done', 'files': [{
+                                        'kind': 'full', 'name': 'original.docx',
+                                        'b64': base64.b64encode(original).decode()}]}]
+        self.http.replace(state)
+        before = self.http.path.read_bytes()
+        status, plain_headers, plain = self.http.request('GET', '/api/sync', cookie=admin)
+        self.assertEqual(status, 200)
+        self.assertNotIn('Content-Encoding', plain_headers)
+        status, headers, compressed = self.http.request('GET', '/api/sync', cookie=admin,
+                                                       headers={'Accept-Encoding': 'gzip'})
+        self.assertEqual(status, 200)
+        self.assertEqual(headers['Content-Encoding'], 'gzip')
+        self.assertEqual(gzip.decompress(compressed), plain)
+        self.assertEqual(int(headers['Content-Length']), len(compressed))
+        self.assertEqual(base64.b64decode(json.loads(plain)['REPORT_REQUESTS'][0]['files'][0]['b64']), original)
+        status, headers, downloaded = self.http.request('GET', '/api/report-file?' +
+            urlencode({'city': '测试甲市', 'requestId': 'rr-legacy-completed', 'kind': 'full'}),
+            cookie=admin, headers={'Accept-Encoding': 'gzip'})
+        self.assertEqual(status, 200)
+        self.assertNotIn('Content-Encoding', headers)
+        self.assertEqual(downloaded, original)
+        self.assertEqual(int(headers['Content-Length']), len(original))
         self.assertEqual(before, self.http.path.read_bytes())
 
     def test_history_details_require_admin_and_never_return_credentials(self):
