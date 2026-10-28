@@ -7,8 +7,8 @@ const vm=require('node:vm');
 function source(app){return fs.readFileSync(path.join(__dirname,'../frontend',app,app==='ops'?'script-03-sections':'script-02-sections','14-tail.js'),'utf8');}
 function fn(text,name){const at=text.indexOf('function '+name+'(');assert.ok(at>=0);return text.slice(at).match(/^function [\s\S]*?^}/m)[0];}
 function boot(){
-  const disk=new Map(),listeners={},calls=[];
-  const ctx={console:{log(){},warn(){}},Date,Math,JSON,Promise,
+  const disk=new Map(),listeners={},calls=[],timers=new Map();let timerId=0;
+  const ctx={console:{log(){},warn(){}},Date,Math,JSON,Promise,AbortController,
     AUTH:{scope:'admin',user:'offline-admin',projectKeys:[]},_authState:'ready',_authEpoch:1,
     RESET_GEN:'new',cur:null,view:'knowledge',LS_KEY:'huixiaozhao_kb_v1',_lastUserScrollMs:0,
     localStorage:{getItem:k=>disk.get(k)||null,setItem:(k,v)=>disk.set(k,v),removeItem:k=>disk.delete(k)},
@@ -17,13 +17,13 @@ function boot(){
     _mergeKbItemTombs(){},_applyKbItemTombs(){},_mergeTombs(){},_mergeConfirms:x=>x,
     _mergeChunks:(a,b)=>a||b||{},_mergeUploads:(a,b)=>a||b||{},_mergeKbChatTombs(){},_mergeUploadTombs(){},
     _mergeKbChat:(a,b)=>a||b||{},_applyUploadTombs(){},_slimUploads:()=>({}),migrateKbChatToCity(){},
-    render(){calls.push('render');},setTimeout(){},syncDemandStage(){}};
+    render(){calls.push('render');},setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,ms});return id;},clearTimeout(id){timers.delete(id);},syncDemandStage(){}};
   for(const key of ['PROJECTS','UPLOADS','KB_CONFIRMS','KB_CONFIRM_TOMBS','KB_ITEM_TOMBS','KB_FILE_CHUNKS','KB_UNLOCKED','REPORTSTATE','REPORT_HISTORY','PENDING_CONFIRMS','DOCK_LOGS','KB_CHAT','KB_CHAT_TOMBS','UPLOAD_TOMBS','CITY_BASE_PACKAGES','CITY_WORKSPACES','SUBPROJ'])ctx[key]={};
   for(const key of ['OPS_ENT','DEMANDS','REPORT_REQUESTS','DELETED_PROJECTS','DELETED_CLUES'])ctx[key]=[];
   ctx.window=ctx;vm.createContext(ctx);
   const shared=fs.readFileSync(path.join(__dirname,'../frontend/index/script-02-sections/12-tail.js'),'utf8');
   vm.runInContext(shared.slice(shared.indexOf('function reportStateFields('),shared.indexOf('function selectTopic(')),ctx);
-  return {ctx,listeners,calls,disk};
+  return {ctx,listeners,calls,disk,timers};
 }
 function storageBoot(){const h=boot(),text=source('index');vm.runInContext(text.slice(text.indexOf("window.addEventListener('storage'"),text.indexOf('\nvar UPLOADS={}')),h.ctx);return h;}
 function event(generation='old',user='offline-admin'){const data={clientUser:user,PROJECTS:{old:{city:'OFFLINE old data',kb:[]}},REPORTSTATE:{old:{text:'OFFLINE old report'}}};if(generation!==undefined)data.RESET_GEN=generation;return {key:'huixiaozhao_kb_v1',newValue:JSON.stringify(data)};}
@@ -69,8 +69,10 @@ for(const app of ['ops','index']){
     const h=boot(),pending=[];h.ctx.RESET_GEN='old';h.ctx.fetch=()=>new Promise(resolve=>pending.push(resolve));
     vm.runInContext(fn(source(app),'_acceptServerGeneration')+'\n'+fn(source(app),'restoreFromServer'),h.ctx);
     const callbacks=[];
-    const first=h.ctx.restoreFromServer(ok=>callbacks.push(['first',ok]));
-    const second=h.ctx.restoreFromServer(ok=>callbacks.push(['second',ok]));
+    const first=h.ctx.restoreFromServer(ok=>callbacks.push(['first',ok]));await flush();
+    // A local mutation invalidates this earlier read; ordinary same-session calls share it.
+    h.ctx._serverRestoreSeq=(h.ctx._serverRestoreSeq||0)+1;
+    const second=h.ctx.restoreFromServer(ok=>callbacks.push(['second',ok]));await flush();
     pending[1]({json:async()=>snapshot('new')});await second;
     pending[0]({json:async()=>snapshot('old',true)});await first;
     assert.equal(h.ctx.RESET_GEN,'new');assert.deepEqual(Object.keys(h.ctx.PROJECTS),[]);
@@ -82,10 +84,13 @@ for(const app of ['ops','index']){
     h.ctx._opsDataReady=true;
     vm.runInContext(fn(source(app),'_acceptServerGeneration')+'\n'+fn(source(app),'restoreFromServer'),h.ctx);
     let staleCallback=false;
-    const first=h.ctx.restoreFromServer(()=>{staleCallback=true;}),second=h.ctx.restoreFromServer(()=>{});
+    const first=h.ctx.restoreFromServer(()=>{staleCallback=true;});await flush();
+    h.ctx._serverRestoreSeq=(h.ctx._serverRestoreSeq||0)+1;
+    const second=h.ctx.restoreFromServer(()=>{});await flush();
+    const activeFlight=h.ctx.restoreFromServer._flight;
     pending[0].reject(new Error('offline old failure'));await first;
     assert.equal(staleCallback,false);
-    if(app==='ops')assert.equal(h.ctx._opsDataReady,true);else assert.equal(h.ctx._serverSyncLock,true);
+    if(app==='ops'){assert.equal(h.ctx._opsDataReady,true);assert.equal(h.ctx.restoreFromServer._flight,activeFlight);}else assert.equal(h.ctx._serverSyncLock,true);
     pending[1].resolve({json:async()=>snapshot('new')});await second;
     assert.equal(h.ctx.RESET_GEN,'new');
   });
@@ -93,9 +98,10 @@ for(const app of ['ops','index']){
     const h=boot(),pending=[];let resolveJson;
     h.ctx.fetch=()=>new Promise(resolve=>pending.push(resolve));
     vm.runInContext(fn(source(app),'_acceptServerGeneration')+'\n'+fn(source(app),'restoreFromServer'),h.ctx);
-    const first=h.ctx.restoreFromServer(()=>{});
+    const first=h.ctx.restoreFromServer(()=>{});await flush();
     pending[0]({json:()=>new Promise(resolve=>{resolveJson=resolve;})});await flush();
-    const second=h.ctx.restoreFromServer(()=>{});pending[1]({json:async()=>snapshot('new')});await second;
+    h.ctx._serverRestoreSeq=(h.ctx._serverRestoreSeq||0)+1;
+    const second=h.ctx.restoreFromServer(()=>{});await flush();pending[1]({json:async()=>snapshot('new')});await second;
     resolveJson(snapshot('old',true));await first;
     assert.equal(h.ctx.RESET_GEN,'new');assert.deepEqual(Object.keys(h.ctx.PROJECTS),[]);
   });

@@ -260,6 +260,228 @@ test('monthly failures, invalid receipts and late responses never change saved U
   assert.equal(await pending, false); assert.equal(h.ctx.CITY_WORKSPACES['闵行区'], original);
 });
 
+test('monthly timeout reconciles a committed change through a minimal read without resubmitting', async () => {
+  const h = await boot(); h.admin(); const original = seedCity(h);
+  const notices = []; let closes = 0, writes = 0, reads = 0, postSignal;
+  h.ctx.toast = message => notices.push(message); h.ctx.render = () => {}; h.ctx.closeModal = () => {closes++;};
+  h.ctx.openMonthlyReportModal('闵行区');
+  const save = h.input('opsMonthlySave'); h.input('opsMonthlyError');
+  h.ctx.fetch = (url, options) => {
+    if (options.method === 'POST') {writes++; postSignal = options.signal; return new Promise(() => {});}
+    reads++;
+    assert.equal(url, '/api/admin/city-workspaces?city='+encodeURIComponent('闵行区')+'&projectKey=main');
+    assert.equal(options.credentials, 'same-origin');
+    return Promise.resolve(response(200, {ok: true, city: '闵行区', projectKey: 'main',
+      cityWorkspace: {projectKey: 'main', province: '上海市', monthlyEnabled: false, nextReportAt: 0}}));
+  };
+  const pending = h.ctx.saveMonthlyReportSettings();
+  assert.equal(save.disabled, true);
+  assert.equal(h.timeouts.at(-1).ms, 20000); h.timeouts.at(-1).fn();
+  assert.equal(await pending, true);
+  assert.equal(postSignal.aborted, true); assert.equal(writes, 1); assert.equal(reads, 1);
+  assert.equal(h.ctx.CITY_WORKSPACES['闵行区'].monthlyEnabled, false);
+  assert.equal(h.ctx.CITY_WORKSPACES['闵行区'].nextReportAt, 0);
+  assert.equal(h.ctx.CITY_WORKSPACES['闵行区'].ownerUser, original.ownerUser);
+  assert.equal(h.ctx.CITY_WORKSPACES['闵行区'].inviteCode, original.inviteCode);
+  assert.equal(h.ctx.OPS_MONTHLY_DRAFT, null); assert.equal(closes, 1);
+  assert.match(notices.at(-1), /已停用/);
+});
+
+test('monthly enabling reconciles a server error without losing the saved next run', async () => {
+  const h = await boot(); h.admin(); const original = seedCity(h);
+  original.monthlyEnabled = false; original.nextReportAt = 0;
+  const scheduled = Date.parse('2026-11-01T01:00:00Z');
+  const notices = []; let writes = 0, reads = 0;
+  h.ctx.toast = message => notices.push(message); h.ctx.render = () => {};
+  h.ctx.openMonthlyReportModal('闵行区'); h.input('opsMonthlySave'); h.input('opsMonthlyError');
+  h.ctx.fetch = async (url, options) => {
+    if (options.method === 'POST') {
+      writes++;
+      assert.equal(JSON.parse(options.body).monthlyEnabled, true);
+      return response(503, {ok: false, error: 'unavailable', message: 'service unavailable'});
+    }
+    reads++;
+    return response(200, {ok: true, city: '闵行区', projectKey: 'main',
+      cityWorkspace: {projectKey: 'main', monthlyEnabled: true, nextReportAt: scheduled}});
+  };
+  assert.equal(await h.ctx.saveMonthlyReportSettings(), true);
+  assert.equal(writes, 1); assert.equal(reads, 1);
+  assert.equal(h.ctx.CITY_WORKSPACES['闵行区'].monthlyEnabled, true);
+  assert.equal(h.ctx.CITY_WORKSPACES['闵行区'].nextReportAt, scheduled);
+  assert.match(h.ctx.opsMonthlyInfo('闵行区').next, /2026.11.01 09:00（北京时间）/);
+  assert.match(notices.at(-1), /已启用/);
+});
+
+test('a confirmed monthly change invalidates old full reads without clearing a newer read', async () => {
+  for (const recovery of [false, true]) {
+    const h = await boot(); h.admin(); const original = seedCity(h);
+    h.ctx.toast = () => {}; h.ctx.render = () => {};
+    let resolveOld, resolveNew, oldSignal, syncReads = 0, writes = 0, checks = 0;
+    const saved = {projectKey: 'main', monthlyEnabled: false, nextReportAt: 0};
+    h.ctx.fetch = (url, options) => {
+      if (url.startsWith('/api/sync')) {
+        syncReads++;
+        return new Promise(resolve => {
+          if (syncReads === 1) {resolveOld = resolve; oldSignal = options.signal;}
+          else resolveNew = resolve;
+        });
+      }
+      if (options.method === 'POST') {
+        writes++;
+        if (recovery) return Promise.reject(new TypeError('connection lost after save'));
+        return Promise.resolve(response(200, {ok: true, changed: true, city: '闵行区', projectKey: 'main', cityWorkspace: saved}));
+      }
+      checks++;
+      return Promise.resolve(response(200, {ok: true, city: '闵行区', projectKey: 'main', cityWorkspace: saved}));
+    };
+    const oldRead = h.ctx.restoreFromServer(); await flush();
+    const oldSeq = h.ctx._serverRestoreSeq;
+    h.ctx.openMonthlyReportModal('闵行区'); h.input('opsMonthlySave'); h.input('opsMonthlyError');
+    assert.equal(await h.ctx.saveMonthlyReportSettings(), true);
+    assert.equal(writes, 1); assert.equal(checks, recovery ? 1 : 0);
+    assert.ok(h.ctx._serverRestoreSeq > oldSeq); assert.equal(oldSignal.aborted, true);
+    assert.equal(h.ctx.restoreFromServer._flight, null);
+    const newRead = h.ctx.restoreFromServer(); await flush();
+    const currentFlight = h.ctx.restoreFromServer._flight;
+    resolveOld(response(200, {PROJECTS: h.ctx.PROJECTS, CITY_WORKSPACES: {'闵行区': original}, OPS_ENT: []}));
+    assert.equal(await oldRead, false);
+    assert.equal(h.ctx.restoreFromServer._flight, currentFlight);
+    assert.equal(h.ctx.CITY_WORKSPACES['闵行区'].monthlyEnabled, false);
+    resolveNew(response(200, {PROJECTS: h.ctx.PROJECTS, CITY_WORKSPACES: {'闵行区': {...original, ...saved}}, OPS_ENT: []}));
+    assert.equal(await newRead, true);
+    assert.equal(h.ctx.CITY_WORKSPACES['闵行区'].monthlyEnabled, false);
+  }
+});
+
+test('monthly unknown results expose bounded read-only checks and retain the original intent', async () => {
+  const h = await boot(); h.admin(); const original = seedCity(h);
+  h.ctx.toast = () => {}; h.ctx.render = () => {};
+  h.ctx.openMonthlyReportModal('闵行区');
+  const save = h.input('opsMonthlySave'), error = h.input('opsMonthlyError');
+  let writes = 0, reads = 0, readSignal;
+  h.ctx.fetch = (url, options) => {
+    if (options.method === 'POST') {writes++; return Promise.reject(new TypeError('Failed to fetch'));}
+    reads++; readSignal = options.signal; return new Promise(() => {});
+  };
+  const pending = h.ctx.saveMonthlyReportSettings(); await flush();
+  assert.equal(h.timeouts.at(-1).ms, 8000); h.timeouts.at(-1).fn();
+  assert.equal(await pending, false);
+  assert.equal(readSignal.aborted, true); assert.equal(writes, 1); assert.equal(reads, 1);
+  assert.equal(h.ctx.CITY_WORKSPACES['闵行区'], original);
+  assert.match(error.textContent, /无法确认此次保存结果/); assert.doesNotMatch(error.textContent, /未保存|保存失败/);
+  assert.equal(save.textContent, '检查保存状态'); assert.equal(save.disabled, false);
+  const draft = h.ctx.OPS_MONTHLY_DRAFT;
+  h.ctx.openMonthlyReportModal('闵行区');
+  assert.equal(h.ctx.OPS_MONTHLY_DRAFT, draft); assert.match(h.modals.at(-1).footer, /检查保存状态/);
+  h.ctx.fetch = async (url, options) => {
+    assert.equal(options.method, undefined); reads++;
+    throw new TypeError('status service is still unreachable');
+  };
+  assert.equal(await h.ctx.saveMonthlyReportSettings(), false);
+  assert.equal(draft.uncertain, true); assert.equal(save.textContent, '检查保存状态');
+  assert.equal(writes, 1); assert.equal(reads, 2);
+  h.ctx.fetch = async (url, options) => {
+    assert.equal(options.method, undefined); reads++;
+    return response(200, {ok: true, city: '闵行区', projectKey: 'main',
+      cityWorkspace: {projectKey: 'main', monthlyEnabled: true, nextReportAt: original.nextReportAt + 86400000}});
+  };
+  assert.equal(await h.ctx.saveMonthlyReportSettings(), false);
+  assert.equal(writes, 1); assert.equal(reads, 3); assert.equal(draft.monthlyEnabled, false);
+  assert.equal(draft.expectedMonthlyEnabled, true); assert.match(error.textContent, /已确认当前仍为已启用/);
+  assert.equal(draft.uncertain, false); assert.equal(save.textContent, '重试停用');
+  assert.equal(draft.expectedNextReportAt, original.nextReportAt + 86400000);
+  assert.equal(h.ctx.CITY_WORKSPACES['闵行区'].nextReportAt, draft.expectedNextReportAt);
+  h.ctx.fetch = async (url, options) => {
+    assert.equal(options.method, 'POST'); writes++;
+    const body = JSON.parse(options.body);
+    assert.equal(body.monthlyEnabled, false);
+    assert.equal(body.expectedMonthlyEnabled, true);
+    assert.equal(body.expectedNextReportAt, original.nextReportAt + 86400000);
+    return response(200, {ok: true, changed: true, city: '闵行区', projectKey: 'main',
+      cityWorkspace: {projectKey: 'main', monthlyEnabled: false, nextReportAt: 0}});
+  };
+  assert.equal(await h.ctx.saveMonthlyReportSettings(), true);
+  assert.equal(writes, 2); assert.equal(reads, 3);
+});
+
+test('a known not-applied monthly change permits an explicit retry or a different city', async () => {
+  for (const initiallyEnabled of [false, true]) {
+    const h = await boot(); h.admin(); const original = seedCity(h);
+    original.monthlyEnabled = initiallyEnabled;
+    original.nextReportAt = initiallyEnabled ? original.nextReportAt : 0;
+    h.ctx.CITY_WORKSPACES['随州市'] = {projectKey: 'suizhou', monthlyEnabled: false, nextReportAt: 0};
+    h.ctx.toast = () => {}; h.ctx.render = () => {};
+    h.ctx.openMonthlyReportModal('闵行区'); const save = h.input('opsMonthlySave'); h.input('opsMonthlyError');
+    let writes = 0, reads = 0;
+    h.ctx.fetch = async (url, options) => {
+      if (options.method === 'POST') {writes++; throw new TypeError('request never reached the server');}
+      reads++;
+      return response(200, {ok: true, city: '闵行区', projectKey: 'main', cityWorkspace: original});
+    };
+    assert.equal(await h.ctx.saveMonthlyReportSettings(), false);
+    assert.equal(writes, 1); assert.equal(reads, 1);
+    assert.equal(h.ctx.OPS_MONTHLY_DRAFT.uncertain, false);
+    assert.equal(save.textContent, initiallyEnabled ? '重试停用' : '重试启用');
+    assert.equal(h.ctx.CITY_WORKSPACES['闵行区'].inviteCode, original.inviteCode);
+    h.ctx.openMonthlyReportModal('随州市');
+    assert.equal(h.ctx.OPS_MONTHLY_DRAFT.city, '随州市');
+    assert.equal(h.ctx.OPS_MONTHLY_DRAFT.projectKey, 'suizhou');
+    assert.match(h.modals.at(-1).body, /随州市/);
+    assert.equal(writes, 1, 'opening another city does not retry the first mutation');
+  }
+});
+
+test('a late monthly write 401 cannot log out a newly authenticated admin', async () => {
+  const h = await boot(); h.admin(); seedCity(h);
+  h.ctx.toast = () => {}; h.ctx.render = () => {};
+  h.ctx.openMonthlyReportModal('闵行区'); h.input('opsMonthlySave'); h.input('opsMonthlyError');
+  let resolveWrite, reads = 0;
+  h.ctx.fetch = (url, options) => {
+    if (options.method === 'POST') return new Promise(done => {resolveWrite = done;});
+    reads++; return Promise.reject(new Error('unexpected read'));
+  };
+  const pending = h.ctx.saveMonthlyReportSettings();
+  h.ctx._authEpoch++;
+  const replacement = h.ctx.AUTH = {user: 'replacement-admin', scope: 'admin', projectKeys: []};
+  const replacementWorkspaces = h.ctx.CITY_WORKSPACES;
+  resolveWrite(response(401, {ok: false, error: 'not_authenticated', message: '请重新登录'}));
+  assert.equal(await pending, false);
+  assert.equal(h.ctx.AUTH, replacement); assert.equal(h.ctx.CITY_WORKSPACES, replacementWorkspaces);
+  assert.equal(reads, 0);
+});
+
+test('monthly recovery rejects wrong-workspace receipts and never mutates a replacement session', async () => {
+  for (const lateStatus of [200, 401]) {
+    const h = await boot(); h.admin(); const original = seedCity(h);
+    h.ctx.toast = () => {}; h.ctx.render = () => {};
+    h.input('opsMonthlySave'); h.input('opsMonthlyError'); h.ctx.openMonthlyReportModal('闵行区');
+    let resolveRead;
+    h.ctx.fetch = (url, options) => options.method === 'POST'
+      ? Promise.reject(new TypeError('network interrupted'))
+      : new Promise(done => {resolveRead = done;});
+    const pending = h.ctx.saveMonthlyReportSettings(); await flush();
+    h.ctx._authEpoch++;
+    const replacement = h.ctx.AUTH = {user: 'replacement-admin', scope: 'admin', projectKeys: []};
+    resolveRead(response(lateStatus, lateStatus === 200
+      ? {ok: true, city: '闵行区', projectKey: 'main', cityWorkspace: {projectKey: 'main', monthlyEnabled: false, nextReportAt: 0}}
+      : {ok: false, error: 'not_authenticated'}));
+    assert.equal(await pending, false);
+    assert.equal(h.ctx.AUTH, replacement); assert.equal(h.ctx.CITY_WORKSPACES['闵行区'], original);
+    h.ctx.openMonthlyReportModal('闵行区');
+    assert.equal(h.ctx.OPS_MONTHLY_DRAFT.epoch, h.ctx._authEpoch);
+  }
+  const h = await boot(); h.admin(); const original = seedCity(h);
+  h.ctx.toast = () => {}; h.ctx.render = () => {};
+  h.ctx.openMonthlyReportModal('闵行区'); h.input('opsMonthlySave'); h.input('opsMonthlyError');
+  h.ctx.fetch = async (url, options) => options.method === 'POST'
+    ? Promise.reject(new TypeError('network interrupted'))
+    : response(200, {ok: true, city: '其他市', projectKey: 'main',
+      cityWorkspace: {projectKey: 'main', monthlyEnabled: false, nextReportAt: 0}});
+  assert.equal(await h.ctx.saveMonthlyReportSettings(), false);
+  assert.equal(h.ctx.CITY_WORKSPACES['闵行区'], original);
+  assert.equal(h.nodes.opsMonthlySave.textContent, '检查保存状态');
+});
+
 test('RAG create entry uses the invitation service and does not write local synthetic workspaces', async () => {
   const h = await boot(); h.admin(); h.ctx.opsTab = 'rag'; h.ctx.toast = () => {};
   h.ctx.ragAddCityModal();

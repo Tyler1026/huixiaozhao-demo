@@ -247,7 +247,8 @@ class AdminInvitationTests(unittest.TestCase):
         handler = Handler(token)
         self.assertTrue(auth_routes.dispatch_auth(handler, 'GET', '/api/admin/city-workspaces',
                         b'', self.store.factory, admin_config=ADMIN))
-        self.assertEqual(handler.status, 405)
+        self.assertEqual(handler.status, 400)
+        self.assertEqual(handler.body['error'], 'invalid_input')
         result = self.http('/api/admin/city-workspaces', body, token)
         self.assertEqual(result.status, 200)
         self.assertTrue(result.body['changed'])

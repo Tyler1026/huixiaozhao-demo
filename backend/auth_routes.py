@@ -1,20 +1,55 @@
 """Small HTTP boundary for server-owned accounts, sessions and invitations."""
+import gzip
 import json
+import math
 from http.cookies import SimpleCookie
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from .auth import (AuthError, SESSION_COOKIE_NAME, SESSION_TTL_SECONDS,
                    handle_auth, require_session)
-from .admin_invites import manage_invite, manage_monthly_report, remove_member
+from .admin_invites import manage_invite, manage_monthly_report, read_monthly_report, remove_member
+
+
+def _accepts_gzip(headers):
+    """Honor explicit refusal of gzip, including when a wildcard is allowed."""
+    value = headers.get('Accept-Encoding', '')
+    if not isinstance(value, str):
+        return False
+    accepted = {}
+    for item in value.split(','):
+        parts = item.strip().lower().split(';')
+        coding = parts[0].strip()
+        if coding not in ('gzip', '*'):
+            continue
+        quality = 1.0
+        for parameter in parts[1:]:
+            name, separator, raw = parameter.strip().partition('=')
+            if name == 'q':
+                try:
+                    requested_quality = float(raw) if separator else 0
+                except ValueError:
+                    requested_quality = 0
+                if not math.isfinite(requested_quality) or not 0 <= requested_quality <= 1:
+                    requested_quality = 0
+                quality = min(quality, requested_quality)
+        accepted[coding] = min(accepted.get(coding, 1), quality)
+    return accepted.get('gzip', accepted.get('*', 0)) > 0
 
 
 def respond(handler, status, value, *, cookie=None):
     data = json.dumps(value, ensure_ascii=False).encode()
+    compressed = False
+    if len(data) >= 1024 and _accepts_gzip(getattr(handler, 'headers', {})):
+        candidate = gzip.compress(data, compresslevel=1, mtime=0)
+        if len(candidate) < len(data):
+            data, compressed = candidate, True
     handler.send_response(status)
     handler.send_header('Content-Type', 'application/json; charset=utf-8')
     handler.send_header('Content-Length', str(len(data)))
+    if compressed:
+        handler.send_header('Content-Encoding', 'gzip')
     handler.send_header('Cache-Control', 'no-store')
-    handler.send_header('Vary', 'Cookie, X-HXZ-Report-Client, Sec-Fetch-Site, Sec-Fetch-Dest, Sec-Fetch-Mode')
+    handler.send_header('Vary', 'Cookie, Accept-Encoding, X-HXZ-Report-Client, Sec-Fetch-Site, Sec-Fetch-Dest, Sec-Fetch-Mode')
     if cookie:
         handler.send_header('Set-Cookie', cookie)
     handler.cors()
@@ -98,23 +133,45 @@ _OPERATIONS = {
 }
 
 
-def dispatch_auth(handler, method, path, raw, session_factory, *, admin_config=None, secure=True):
+def dispatch_auth(handler, method, path, raw, session_factory, *, admin_config=None, secure=True,
+                  state_reader=None):
     """Return True for handled auth/admin requests, including safe failures."""
     operation = _OPERATIONS.get((method, path))
     admin_actions = {'/api/admin/invites': manage_invite,
                      '/api/admin/city-workspaces': manage_monthly_report,
                      '/api/auth/members': remove_member}
     admin_action = method == 'POST' and path in admin_actions
-    if operation is None and not admin_action:
+    monthly_read = method == 'GET' and path == '/api/admin/city-workspaces'
+    if operation is None and not admin_action and not monthly_read:
         if path.startswith('/api/auth/') or path in admin_actions:
             respond(handler, 405, {'ok': False, 'error': 'method_not_allowed', 'message': '请求方式不支持'})
             return True
         return False
     try:
-        if method == 'POST':
+        if method == 'POST' or monthly_read:
             check_origin(handler.headers)
         body = parse_body(raw) if method == 'POST' else {}
-        if admin_action:
+        if monthly_read:
+            query = parse_qs(urlsplit(getattr(handler, 'path', path)).query, keep_blank_values=True)
+            if set(query) != {'city', 'projectKey'} or any(len(values) != 1 for values in query.values()):
+                raise AuthError(400, 'invalid_input', '请指定唯一的城市和工作区')
+            body = {key: values[0] for key, values in query.items()}
+            try:
+                if state_reader is not None:
+                    state = state_reader()
+                else:
+                    # Non-HTTP callers may still provide only a session seam.
+                    with session_factory() as session:
+                        state = json.loads(session.read())
+                if not isinstance(state, dict):
+                    raise ValueError('invalid storage')
+                result = read_monthly_report(body, state, headers=handler.headers,
+                                             admin_config=admin_config)
+            except AuthError:
+                raise
+            except Exception:
+                raise AuthError(503, 'storage_unavailable', '月度更新状态暂不可用，请稍后重试') from None
+        elif admin_action:
             try:
                 with session_factory() as session:
                     action = admin_actions[path]

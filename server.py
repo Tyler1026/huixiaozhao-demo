@@ -814,7 +814,8 @@ class Handler(BaseHTTPRequestHandler):
         from backend.auth_routes import dispatch_auth, error_response, load_state, require_admin
         from backend.access_control import scoped_sync_view
         if dispatch_auth(self, 'GET', path, b'', self._account_session,
-                         admin_config=self._account_config(), secure=self._secure_cookie()):
+                         admin_config=self._account_config(), secure=self._secure_cookie(),
+                         state_reader=lambda: load_state(bool(_PG_AVAIL and DATABASE_URL), _db_get, SYNC_PATH)):
             return
         if path == '/api/reminders':
             from backend.reminders import handle_request

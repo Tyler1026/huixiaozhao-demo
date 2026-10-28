@@ -71,7 +71,7 @@ function confirmFunnelReview(projKey,n){
   confirmFunnelReview.pending=true;
   fetch('/api/funnel-review-push',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
   .then(function(resp){return resp.json().then(function(data){if(!resp.ok||!data.ok)throw new Error(data.message||'未保存，请重试');return data;});})
-  .then(function(data){if(pushFunnelTopToGov.review===review){closeModal();pushFunnelTopToGov.review=null;}toast('已推送 '+data.added.length+' 家人工待核线索；投资意向仍未知'+(data.skipped.length?'，跳过 '+data.skipped.length+' 家重复或已移除企业':''));if(typeof restoreFromServer==='function')restoreFromServer(function(){render();});})
+  .then(function(data){if(pushFunnelTopToGov.review===review){closeModal();pushFunnelTopToGov.review=null;}toast('已推送 '+data.added.length+' 家人工待核线索；投资意向仍未知'+(data.skipped.length?'，跳过 '+data.skipped.length+' 家重复或已移除企业':''));if(typeof restoreFromServer==='function')restoreFromServer(function(){render();},{force:true});})
   .catch(function(e){fail(e.message);})
   .then(function(){confirmFunnelReview.pending=false;});
 }
