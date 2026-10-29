@@ -11,6 +11,7 @@ from backend.topic_reports import TopicReportError, evidence_catalog, build_repo
 from backend.topic_report_route import serve_topic_report
 from backend.topic_chain_route import serve_topic_chain
 from backend.topic_chain import build_chain, chain_source_catalog
+from backend.city_chain_supplement import supplement_city_chain
 from test_topic_report_pipeline import Handler
 
 
@@ -38,6 +39,27 @@ def fixture():
 
 
 class CityReportEvidenceTests(unittest.TestCase):
+    def test_online_supplement_preserves_city_originals_and_rejects_bad_evidence(self):
+        context,state=fixture();base=load_city_package(context,state)
+        data=document()
+        data['stages']['06_supply_chain_gaps.md']['evidence'][0]['url']='https://www.suizhou.gov.cn/new'
+        extra=package_research(data,context['city'],context['topic'],'online',mode='chain')
+        merged=supplement_city_chain(base,extra,context)
+        self.assertEqual(merged['onlineSupplement']['added'],1)
+        self.assertTrue(set(base['sources'])<=set(merged['sources']))
+        self.assertEqual(len(base['sources']),1)
+        bad=json.loads(json.dumps(extra))
+        next(iter(bad['sources'].values()))['fulltext']='corrupted original'
+        self.assertEqual(supplement_city_chain(base,bad,context)['onlineSupplement']['added'],0)
+        extra['city']='其他市'
+        self.assertEqual(supplement_city_chain(base,extra,context)['onlineSupplement']['status'],'scope_mismatch')
+
+    def test_online_unavailable_keeps_usable_package(self):
+        context,state=fixture();base=load_city_package(context,state)
+        merged=supplement_city_chain(base,dict(context,status='unavailable',evidence=[],sources={}),context)
+        self.assertEqual(merged['sources'],base['sources'])
+        self.assertEqual(merged['evidence'],base['evidence'])
+
     def test_multi_city_same_pipeline_and_cross_city_delivery_refused(self):
         for city in ('随州市','武汉市','成都市'):
             data=document(city)
@@ -64,7 +86,7 @@ class CityReportEvidenceTests(unittest.TestCase):
              patch('backend.public_research.enrich_public_research') as archive:
             serve_topic_chain(handler,dict(context,purpose='chain_map',mode='chain',stream=True),
                 complete=lambda *args:{},audit=audits.append,package_loader=load_city_package,
-                research=lambda *a,**k:self.fail('external research must not replace city package'))
+                research=lambda *a,**k:dict(context,status='unavailable',evidence=[],sources={}))
         archive.assert_not_called()
         self.assertEqual(audits[-1]['outcome'],'completed')
         self.assertEqual(handler.writes,1)

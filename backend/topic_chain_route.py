@@ -162,6 +162,16 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
         try:
             if package_loader is not None:
                 findings = package_loader(dict(context, _researchMode='chain'), handler._scoped_state)
+                event('research.status', stage='online_supplement', message='城市材料已读取，正在联网补充产业链原始资料')
+                try:
+                    extra = research(context['city'], topic, mode='chain', basis=context['chunks'],
+                        deadline_seconds=60, progress=lambda value:event('research.status', **value))
+                except Exception:
+                    extra = {'city':context['city'],'topic':topic,'status':'unavailable',
+                             'evidence':[],'sources':{},'errors':[{'code':'online_supplement_failed',
+                             'message':'联网补充未完成，继续使用当前城市材料包'}]}
+                from .city_chain_supplement import supplement_city_chain
+                findings = supplement_city_chain(findings, extra, context)
             else:
                 findings = research(context['city'], topic, mode='chain', basis=context['chunks'], deadline_seconds=80,
                                     progress=lambda progress: event('research.status', **progress))
@@ -335,6 +345,7 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
                     'reviewDiagnostics': assessment_result.get('review_diagnostics', []),
                     'nodeResearch': findings.get('node_research', {}),
                     'publicResearch': findings.get('public_research', {}),
+                    'onlineSupplement': findings.get('onlineSupplement', {}),
                     'edges': []}
             # Authoritative writes happen only here, after rechecking access and
             # every effective input while holding the normal state transaction.
