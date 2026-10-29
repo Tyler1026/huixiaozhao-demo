@@ -19,7 +19,7 @@ from .topic_reports import build_report, TopicReportError
 
 
 def serve_topic_report(handler, body, *, read_state, complete, audit,
-                       research=research_topic, clock=time.monotonic):
+                       research=research_topic, clock=time.monotonic, package_loader=None):
     """No source or model error can produce a successful finish event."""
     mode = body.get('mode', 'full')
     phase = 1 if mode == 'draft' else 2
@@ -74,15 +74,20 @@ def serve_topic_report(handler, body, *, read_state, complete, audit,
             handler.cors(); handler.end_headers(); headers_sent = True
         event('research.status', message='正在按当前产业读取原始材料并检索公开来源', stage='retrieval',
               local_source_count=len(context['chunks']))
-        findings = research(context['city'], context['topic'], mode=mode,
-                            basis=context['chunks'], questions=context['confirmations'], progress=progress)
+        if package_loader is not None:
+            event('research.status', message='正在读取当前城市已发布材料包中的原始证据', stage='city_package')
+            findings = package_loader(context, handler._scoped_state)
+        else:
+            findings = research(context['city'], context['topic'], mode=mode,
+                                basis=context['chunks'], questions=context['confirmations'], progress=progress)
         # Archived public research is source material with preserved retrieval
         # dates, not a claim that those pages were fetched by this request.
         # Archive retrieval must also run when live retrieval has no sources.
         # The archive validates provenance and scope independently, while
         # preserving live errors/status so cached evidence is not called live.
         from .public_research import enrich_public_research
-        findings = enrich_public_research(findings, context['city'], context['topic'])
+        if package_loader is None:
+            findings = enrich_public_research(findings, context['city'], context['topic'])
         # Persist only bounded source/check metadata, never provider secrets.
         public_sources = findings.get('evidence') or []
         event('research.evidence', sources=public_sources,

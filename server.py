@@ -1209,10 +1209,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if mode in ('draft', 'full') and body.get('purpose') != 'chain_map':
             from backend.topic_report_route import serve_topic_report
+            from backend.city_report_evidence import load_city_package
             return serve_topic_report(
                 self, body,
                 read_state=lambda: load_state(bool(_PG_AVAIL and DATABASE_URL), _db_get, SYNC_PATH),
-                complete=_complete_topic_plan, audit=audit_log)
+                complete=_complete_topic_plan, audit=audit_log, package_loader=load_city_package)
 
         chat_request = mode == 'chat' and not enterprise_draft and body.get('purpose') != 'chain_map'
         chat_scope = {'projectKey': '', 'topic': ''}
