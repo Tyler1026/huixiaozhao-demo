@@ -437,6 +437,13 @@ MODEL       = "deepseek-v4-flash"
 # chat 模式另走 Responses API + 原生联网搜索（web_search 仅 flash 支持）。
 DS_RESP_URL = "https://api.deepseek.com/responses"
 MODEL_CHAT  = "deepseek-v4-flash"
+if os.environ.get('HXZ_PRIMARY_PROVIDER') == 'openai':
+    from report_service.model_routing import PrimaryModelOpener
+    DS_URL = 'https://api.openai.com/v1/chat/completions'
+    DS_RESP_URL = 'https://api.openai.com/v1/responses'
+    DS_KEY = os.environ.get('OPENAI_API_KEY','')
+    MODEL = MODEL_CHAT = os.environ.get('HXZ_PRIMARY_MODEL','gpt-5.5')
+    DS_OPENER = PrimaryModelOpener(DS_OPENER,os.environ)
 MAX_TOKENS_DRAFT = 800
 MAX_TOKENS_FULL  = 5000
 MAX_TOKENS_CHAT  = 400
@@ -989,6 +996,7 @@ class Handler(BaseHTTPRequestHandler):
             port = self.server.server_address[1]
             role = "ops" if port == PORT_OPS else "gov"
             body = json.dumps({"ok": True, "model": MODEL, "key": bool(DS_KEY),
+                               "fallback_model": os.environ.get('HXZ_FALLBACK_MODEL','') if os.environ.get('HXZ_PRIMARY_PROVIDER')=='openai' else '',
                                "role": role, "port": port,
                                "auxiliary_research": {
                                    "enabled": os.environ.get('HXZ_OPENAI_AUX_ENABLED') == '1',

@@ -405,11 +405,29 @@ class OpenAIResearchProvider:
             response.close()
 
     def _post_json(self, url, payload):
+        import os
+        if urllib.parse.urlsplit(url).hostname=='api.openai.com':
+            from .model_routing import openai_payload
+            original_payload=payload
+            payload=openai_payload(payload)
         data = json.dumps(payload).encode("utf-8")
         request = urllib.request.Request(url, data=data, method="POST")
         request.add_header("Content-Type", "application/json")
         request.add_header("Authorization", f"Bearer {self.api_key}")
-        return self._request(request, timeout=self.chat_timeout)
+        try:
+            result=self._request(request, timeout=self.chat_timeout)
+            if result[0]<400:return result
+        except ProviderError:
+            if urllib.parse.urlsplit(url).hostname!='api.openai.com':raise
+            result=None
+        if urllib.parse.urlsplit(url).hostname=='api.openai.com' and os.environ.get('HXZ_PRIMARY_PROVIDER')=='openai' and os.environ.get('DEEPSEEK_API_KEY'):
+            fallback=dict(original_payload,model=os.environ.get('HXZ_FALLBACK_MODEL','deepseek-v4-flash'),thinking={'type':'disabled'})
+            request=urllib.request.Request('https://api.deepseek.com/v1/chat/completions',
+                data=json.dumps(fallback).encode(),method='POST',headers={
+                'Content-Type':'application/json','Authorization':'Bearer '+os.environ['DEEPSEEK_API_KEY']})
+            return self._request(request,timeout=self.chat_timeout)
+        if result is None:raise ProviderError('primary model unavailable')
+        return result
 
     def _get_json(self, url):
         request = urllib.request.Request(url, method="GET")
