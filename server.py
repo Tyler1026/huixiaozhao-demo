@@ -990,6 +990,11 @@ class Handler(BaseHTTPRequestHandler):
             role = "ops" if port == PORT_OPS else "gov"
             body = json.dumps({"ok": True, "model": MODEL, "key": bool(DS_KEY),
                                "role": role, "port": port,
+                               "auxiliary_research": {
+                                   "enabled": os.environ.get('HXZ_OPENAI_AUX_ENABLED') == '1',
+                                   "configured": bool(os.environ.get('OPENAI_API_KEY') and os.environ.get('HXZ_OPENAI_AUX_MODEL')),
+                                   "model": os.environ.get('HXZ_OPENAI_AUX_MODEL',''),
+                                   "scope": "configuration_only"},
                                "report_engine": engine_status()}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")

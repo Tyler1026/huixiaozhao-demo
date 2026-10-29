@@ -338,7 +338,7 @@ class OpenAIResearchProvider:
             max_tokens = int(max_tokens_raw) if max_tokens_raw else DEFAULT_OUTPUT_TOKENS
         except ValueError:
             max_tokens = DEFAULT_OUTPUT_TOKENS
-        return cls(
+        instance = cls(
             model_url=env.get("HXZ_MODEL_URL", ""),
             api_key=env.get("HXZ_MODEL_KEY", ""),
             model_name=env.get("HXZ_MODEL_NAME", DEFAULT_MODEL_NAME),
@@ -349,6 +349,14 @@ class OpenAIResearchProvider:
             max_output_tokens=max_tokens,
             chat_timeout=env.get("HXZ_MODEL_CHAT_TIMEOUT") or DEFAULT_CHAT_TIMEOUT,
         )
+        if (env.get('HXZ_OPENAI_AUX_ENABLED')=='1' and env.get('OPENAI_API_KEY')
+                and env.get('HXZ_OPENAI_AUX_MODEL')):
+            import threading
+            from .openai_auxiliary import OpenAIAuxiliarySearch
+            instance._auxiliary=OpenAIAuxiliarySearch(env['OPENAI_API_KEY'],env['HXZ_OPENAI_AUX_MODEL'])
+            instance._auxiliary_lock=threading.Lock()
+            instance._auxiliary_last_call=float('-inf')
+        return instance
 
     # -- validation / plumbing ---------------------------------------------
 
@@ -434,6 +442,48 @@ class OpenAIResearchProvider:
         return f"{place} 招商 {label}"
 
     def _search(self, query, count):
+        primary_error=None
+        try:
+            payload=self._primary_search(query,count)
+        except ProviderError as error:
+            primary_error=error
+            payload={'results':[]}
+        auxiliary=getattr(self,'_auxiliary',None)
+        if auxiliary is not None and self.search_provider=='exa' and urllib.parse.urlsplit(self.search_url).hostname=='api.exa.ai':
+            with self._auxiliary_lock:
+                import time
+                now=time.monotonic()
+                selected=now-self._auxiliary_last_call>=60
+                if selected:
+                    self._auxiliary_last_call=now
+            if selected:
+                try:
+                    urls=auxiliary.discover(query,self._request)
+                    self._auxiliary_status='sources_discovered:'+str(len(urls))
+                    if urls:
+                        status,body,_=self._post_search_json('https://api.exa.ai/contents',
+                            {'ids':urls,'text':True},'x-api-key')
+                        if 200<=status<300:
+                            fetched=self._require_ok(status,body,'auxiliary originals')
+                        else:
+                            from .openai_auxiliary import fetch_government_originals
+                            fetched={'results':fetch_government_originals(urls)}
+                        # No generated OpenAI prose is accepted as a quote.
+                        rows=list(payload.get('results') or [])
+                        existing={row.get('url') for row in rows if isinstance(row,dict)}
+                        rows.extend(dict(row,retrieval_provider=row.get('retrieval_provider','openai_discovery_exa_original'))
+                            for row in fetched.get('results',[]) if isinstance(row,dict)
+                            and row.get('url') in urls and row.get('url') not in existing
+                            and isinstance(row.get('text'),str) and row['text'].strip())
+                        payload=dict(payload,results=rows)
+                        self._auxiliary_status='originals_added:'+str(len(rows))
+                except Exception as error:
+                    self._auxiliary_status='failed:'+type(error).__name__
+        if primary_error and not payload.get('results'):
+            raise primary_error
+        return payload
+
+    def _primary_search(self, query, count):
         if self.search_provider == "exa":
             import datetime
             recent_cutoff = (datetime.datetime.now(datetime.timezone.utc)
