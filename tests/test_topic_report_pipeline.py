@@ -171,6 +171,14 @@ class TopicProjectionTests(unittest.TestCase):
 
 
 class TopicRouteTests(unittest.TestCase):
+    def setUp(self):
+        # Route fixtures carry their own evidence; repository archives are
+        # covered separately and must not change these fixtures' source IDs.
+        archive_patch=patch('backend.public_research.enrich_public_research',
+                            side_effect=lambda b,*a:copy.deepcopy(b))
+        archive_patch.start()
+        self.addCleanup(archive_patch.stop)
+
     def body(self): return {'mode':'full','stream':True,'projectKey':'p','topic':'氢能','reportRequestId':'r1',
                             'confirmations':[{'text':'核实需求','status':'confirmed'}], 'clientMaterialFingerprint':'a'*64}
     def run_route(self, handler, *, current=None, research=None, complete=None):
@@ -218,11 +226,32 @@ class TopicRouteTests(unittest.TestCase):
         self.assertIn('不代表完整的产业普查',text)
 
     def test_missing_real_research_is_terminal_not_generic_fallback(self):
-        h=Handler(state());text,audits=self.run_route(h,research=lambda *args,**kwargs:{'status':'unavailable','evidence':[]})
+        h=Handler(state())
+        with patch('backend.public_research.enrich_public_research', side_effect=lambda b,*a:copy.deepcopy(b)):
+            text,audits=self.run_route(h,research=lambda *args,**kwargs:{'status':'unavailable','evidence':[]})
         self.assertIn('research_unavailable',text)
         self.assertNotIn('"finish_reason": "stop"',text)
         self.assertNotIn('[DONE]',text)
         self.assertEqual(audits[-1]['outcome'],'incomplete')
+
+    def test_empty_live_search_uses_validated_archive_without_hiding_failure(self):
+        failure={'code':'research_configuration','message':'公开调研服务未配置'}
+        archived=bundle();archived['status']='unavailable';archived['errors']=[failure]
+        archived['sources']={}
+        for i,row in enumerate(archived['evidence']):
+            row['source_id']='archive_'+str(i);row['archived']=True
+            archived['sources'][row['source_id']]={'url':row['url'],'fulltext':row['quote'],
+                'archived':True,'fulltext_sha256':hashlib.sha256(row['quote'].encode()).hexdigest()}
+        with patch('backend.public_research.enrich_public_research',return_value=archived) as enrich:
+            text,audits=self.run_route(Handler(state()),research=lambda *a,**kw:{
+                'status':'unavailable','evidence':[],'sources':{},'errors':[failure]})
+        enrich.assert_called_once()
+        self.assertEqual(audits[-1]['outcome'],'completed')
+        events=[json.loads(line[6:]) for line in text.splitlines() if line.startswith('data: {')]
+        completed=next(row for row in events if row.get('type')=='research.complete')
+        self.assertFalse(completed['researchCoverage']['complete'])
+        self.assertEqual(completed['errors'],[failure])
+        self.assertTrue(completed['sources'])
 
     def test_material_change_during_generation_rejects_all_final_text(self):
         h=Handler(state());changed=copy.deepcopy(h._scoped_state)

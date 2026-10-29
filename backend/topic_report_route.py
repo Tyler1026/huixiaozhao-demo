@@ -78,9 +78,11 @@ def serve_topic_report(handler, body, *, read_state, complete, audit,
                             basis=context['chunks'], questions=context['confirmations'], progress=progress)
         # Archived public research is source material with preserved retrieval
         # dates, not a claim that those pages were fetched by this request.
-        if findings.get('sources'):
-            from .public_research import enrich_public_research
-            findings = enrich_public_research(findings, context['city'], context['topic'])
+        # Archive retrieval must also run when live retrieval has no sources.
+        # The archive validates provenance and scope independently, while
+        # preserving live errors/status so cached evidence is not called live.
+        from .public_research import enrich_public_research
+        findings = enrich_public_research(findings, context['city'], context['topic'])
         # Persist only bounded source/check metadata, never provider secrets.
         public_sources = findings.get('evidence') or []
         event('research.evidence', sources=public_sources,
