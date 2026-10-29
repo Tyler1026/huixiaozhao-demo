@@ -59,7 +59,8 @@ def _keep_existing_chain(report, topic, identity, result):
 
 def serve_topic_chain(handler, body, *, complete, audit, research=research_topic,
                       build=None, assessment_builder=None, reasoning_builder=None,
-                      clock=time.monotonic, heartbeat_seconds=15, model_timeout_seconds=65):
+                      clock=time.monotonic, heartbeat_seconds=15, model_timeout_seconds=65,
+                      package_loader=None):
     if build is None:
         from .topic_chain import build_chain
         build = build_chain
@@ -156,10 +157,16 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
             handler.cors(); handler.end_headers(); headers_sent = True
             heartbeat_thread = threading.Thread(target=heartbeat, name='chain-stream-heartbeat', daemon=True)
             heartbeat_thread.start()
-        event('research.status', stage='retrieval', message='正在分别检索上游、中游和下游的公开原文')
+        event('research.status', stage='retrieval', message=('正在读取当前城市材料包中的产业链原文'
+              if package_loader else '正在分别检索上游、中游和下游的公开原文'))
         try:
-            findings = research(context['city'], topic, mode='chain', basis=context['chunks'], deadline_seconds=80,
-                                progress=lambda progress: event('research.status', **progress))
+            if package_loader is not None:
+                findings = package_loader(dict(context, _researchMode='chain'), handler._scoped_state)
+            else:
+                findings = research(context['city'], topic, mode='chain', basis=context['chunks'], deadline_seconds=80,
+                                    progress=lambda progress: event('research.status', **progress))
+        except TopicReportError:
+            raise
         except Exception:
             findings = {'city': context['city'], 'topic': topic, 'status': 'unavailable',
                         'evidence': [], 'sources': {}, 'queries': [],
@@ -176,7 +183,8 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
                     or re.sub(r'\s+', '', quote) not in re.sub(r'\s+', '', fulltext)):
                 raise TopicReportError('evidence_validation_failed', '图谱原文与检索归档不一致，结果未保存')
         from .public_research import enrich_public_research
-        findings = enrich_public_research(findings, context['city'], topic)
+        if package_loader is None:
+            findings = enrich_public_research(findings, context['city'], topic)
         event('research.status', stage='classification', message='正在核对原文、环节归类和规划状态')
         result = build(context, findings, bounded_complete)
         generation = result.get('generation') or {}
@@ -197,7 +205,8 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
         # Search missing comparisons, not every already-supported node. Leave
         # most of the request window for the actual comparison and review.
         targets = select_node_targets(result, assessment_result, limit=12, include_supported=False)
-        batches = [targets[i:i+6] for i in range(0, len(targets), 6)]
+        batches = ([targets[i:i+6] for i in range(0, len(targets), 6)]
+                   if package_loader is None else [])
         for batch_index, batch in enumerate(batches):
             budget = min(20, max(0, 140 - (clock() - started)))
             if budget < 5:

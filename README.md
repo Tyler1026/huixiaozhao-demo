@@ -43,6 +43,8 @@ python server.py
 
 ## 开发与验证
 
+政府端产业报告、产业链图谱与研判方向刷新统一读取当前工作区绑定发布版本的完整研究附件 `evidence.json`。服务端校验附件 SHA256、城市及报告版本后，按当前产业从整包原文检索；不以其他城市的公共归档替代。图谱缺少证据的环节保留待核，模型不可用时仅保留能够从原文直接提取的节点，不补造上下游连接或薄弱程度。缺少附件时需在管理端发布该城市完整材料包。
+
 `frontend/` 是前端源文件，`index.html`、`ops.html` 由 `scripts/build_frontend.py` 生成；修改源文件后更新 manifest 的 SHA256 并构建。`backend/` 是网站存储及接口边界，`report_service/` 是独立研究、恢复、Word 构建与发布服务。
 
 客户端青序视觉层位于 `frontend/index/*brand.css`、`qingxu.css` 与 `client-icons.js`。图标装饰不改写报告、问答正文、附件名或表单值；数据与业务处理仍由原模块负责。四张配图保存在 `frontend/index/assets/`，更换后先运行 `python scripts/build_client_brand_assets.py`，再构建前端。此生成器只嵌入视觉资源，不包含演示账号、数据或 API 替身。

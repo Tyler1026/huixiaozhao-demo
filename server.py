@@ -1201,11 +1201,15 @@ class Handler(BaseHTTPRequestHandler):
 
         if body.get('purpose') == 'report_priorities':
             from backend.topic_priorities_route import serve_topic_priorities
-            return serve_topic_priorities(self, body, complete=_complete_topic_plan, audit=audit_log)
+            from backend.city_report_evidence import load_city_package
+            return serve_topic_priorities(self, body, complete=_complete_topic_plan, audit=audit_log,
+                                          package_loader=load_city_package)
 
         if body.get('purpose') == 'chain_map':
             from backend.topic_chain_route import serve_topic_chain
-            return serve_topic_chain(self, body, complete=_complete_topic_plan, audit=audit_log)
+            from backend.city_report_evidence import load_city_package
+            return serve_topic_chain(self, body, complete=_complete_topic_plan, audit=audit_log,
+                                     package_loader=load_city_package)
 
         if mode in ('draft', 'full') and body.get('purpose') != 'chain_map':
             from backend.topic_report_route import serve_topic_report

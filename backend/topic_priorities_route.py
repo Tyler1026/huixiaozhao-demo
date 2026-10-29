@@ -93,7 +93,7 @@ def _merge_directions(metadata, text, topic, result, findings, verification, run
 
 def serve_topic_priorities(handler, body, *, complete, audit, research=research_topic,
                            build=None, enrich=None, clock=time.monotonic,
-                           total_seconds=330, model_seconds=65):
+                           total_seconds=330, model_seconds=65, package_loader=None):
     """One explicit request; public research and review precede atomic saving."""
     if build is None:
         from .topic_reports import build_priority_analysis
@@ -127,9 +127,12 @@ def serve_topic_priorities(handler, body, *, complete, audit, research=research_
 
         # Regenerate only the source-bound directions. A saved empty analysis
         # or legacy missing metadata does not require another full report.
-        findings = research(context['city'], topic, mode='full', basis=context['chunks'],
-                            questions=(), deadline_seconds=min(70, total_seconds))
-        findings = enrich(findings, context['city'], topic)
+        if package_loader is not None:
+            findings = package_loader(context, handler._scoped_state)
+        else:
+            findings = research(context['city'], topic, mode='full', basis=context['chunks'],
+                                questions=(), deadline_seconds=min(70, total_seconds))
+            findings = enrich(findings, context['city'], topic)
         if not evidence_catalog(findings):
             raise TopicReportError('research_unavailable', '本次未取得可核查原文，已有报告已保留；也可直接填写明确需求')
         result = build(context, findings, bounded_complete, phase=2)

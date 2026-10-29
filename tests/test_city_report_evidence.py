@@ -9,6 +9,8 @@ from unittest.mock import patch
 from backend.city_report_evidence import load_city_package, package_research
 from backend.topic_reports import TopicReportError, evidence_catalog, build_report
 from backend.topic_report_route import serve_topic_report
+from backend.topic_chain_route import serve_topic_chain
+from backend.topic_chain import build_chain, chain_source_catalog
 from test_topic_report_pipeline import Handler
 
 
@@ -19,7 +21,7 @@ def document(city='随州市'):
          'excerpt':'随州市专汽产业建设专用车供应链数据库，汇聚产品质量与企业信用信息，为企业提供供应链协同服务。'},
         {'url':'https://www.suizhou.gov.cn/mushroom','title':'随州市香菇原文',
          'retrieval':'exa_fulltext','retrieved_at':'2026-10-23T00:00:00Z',
-         'excerpt':'随州市香菇产业开展食用菌菌种研发和菌棒生产，培养基料的具体供需规模尚需另行核实。'}]}}}
+         'excerpt':'随州市香菇产业现有环节包括：菌种研发、菌棒生产、香菇加工。培养基料的具体供需规模尚需另行核实。'}]}}}
 
 
 def fixture():
@@ -36,6 +38,39 @@ def fixture():
 
 
 class CityReportEvidenceTests(unittest.TestCase):
+    def test_multi_city_same_pipeline_and_cross_city_delivery_refused(self):
+        for city in ('随州市','武汉市','成都市'):
+            data=document(city)
+            for stage in data['stages'].values():
+                for row in stage['evidence']:
+                    row['excerpt']=row['excerpt'].replace('随州市',city)
+            for topic in ('专用车供应链数据平台补链','香菇菌种与基料供应补链'):
+                out=package_research(data,city,topic,'r1',mode='chain')
+                context={'city':city,'topic':topic}
+                self.assertTrue(chain_source_catalog(out,context))
+                graph=build_chain(context,out,lambda *args:{})
+                self.assertTrue(any(group['nodes'] for group in graph['chain']) or graph['unclassified'])
+                self.assertTrue(all(row['city']==city for row in out['evidence']))
+            with self.assertRaises(TopicReportError):
+                package_research(data,'其他市','专用车','r1',mode='chain')
+
+    def test_chain_uses_same_published_package_and_saves_before_completion(self):
+        from test_topic_chain_route import Handler as ChainHandler
+        context,state=fixture();topic=context['topic']
+        state['PROJECTS']['p'].update(topic=topic,workspaceId='p')
+        state['REPORTSTATE']={'p':{'topic':topic,'aiReportByTopic':{topic:'已生成的当前方向报告'}}}
+        handler=ChainHandler(state);audits=[]
+        with patch('backend.topic_chain_route.require_session',return_value=handler._principal), \
+             patch('backend.public_research.enrich_public_research') as archive:
+            serve_topic_chain(handler,dict(context,purpose='chain_map',mode='chain',stream=True),
+                complete=lambda *args:{},audit=audits.append,package_loader=load_city_package,
+                research=lambda *a,**k:self.fail('external research must not replace city package'))
+        archive.assert_not_called()
+        self.assertEqual(audits[-1]['outcome'],'completed')
+        self.assertEqual(handler.writes,1)
+        self.assertIn('chain.result',handler.wfile.getvalue().decode())
+        self.assertIn('[DONE]',handler.wfile.getvalue().decode())
+
     def test_route_uses_city_package_without_public_search_or_global_archive(self):
         context,state=fixture()
         state['PROJECTS']['p']['topic']=context['topic']

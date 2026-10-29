@@ -30,6 +30,18 @@ class TopicChainError(ValueError):
 # These terms classify general industry roles, not cities, firms or investment
 # prospects. A name matching several lanes is deliberately not assigned one.
 _TAXONOMIES = (
+    {'id': 'special-vehicle-v1', 'label': '专用汽车与供应链服务', 'topic': r'专用车|专用汽车|专汽',
+     'description': '上游为底盘、部件和材料；中游为专用汽车制造与产业数据平台；下游为销售、运营和配套服务。分类不代表本地已有能力。',
+     'terms': {
+         '上游': ('底盘', '零部件', '汽车零部件', '钢材', '液压系统', '专用装置'),
+         '中游': ('专用车', '专用汽车', '专汽', '应急装备', '供应链平台', '供应链数据库', '数据平台', '数据治理', '数据资源池'),
+         '下游': ('售后服务', '物流服务', '供应链服务', '检验检测', '维修服务', '出口服务')}},
+    {'id': 'edible-fungi-v1', 'label': '食用菌与菌种基料', 'topic': r'香菇|食用菌|菌种|菌棒|基料',
+     'description': '上游为菌种研发、育种和培养基料；中游为菌棒生产与食用菌栽培；下游为加工、储运和销售。分类不代表本地已有能力。',
+     'terms': {
+         '上游': ('菌种', '育种', '菌种研发', '基料', '培养基料', '木屑', '培养基'),
+         '中游': ('菌棒', '菌棒生产', '香菇种植', '食用菌栽培', '香菇栽培', '食用菌生产'),
+         '下游': ('香菇加工', '食用菌加工', '冷链', '冷链物流', '出口', '销售', '交易市场')}},
     {'id': 'fusion-v1', 'label': '聚变能源', 'topic': r'聚变|托卡马克',
      'description': '上游为材料和关键部件；中游为聚变装置研制与集成；下游为聚变发电及能量应用。',
      'terms': {
@@ -76,6 +88,8 @@ _METRIC_NAME = re.compile(r'(?:规模|效率|增速|增长率|占比|比例|比�
 _DERIVED = {'report', 'generated_report', 'analysis', 'recommendation', 'derived', 'saved_note', 'uploaded_excerpt', 'user'}
 _PLATFORM_TERMS = {'商业火箭', '运载火箭', '商业卫星', '卫星平台', 'eVTOL', '生物药', '疫苗', '燃料电池', '液流电池', '储能电池', '储能系统', '聚变堆', '聚变装置', '托卡马克'}
 _DOMAIN_CUES = {
+    'special-vehicle-v1': r'专用车|专用汽车|专汽',
+    'edible-fungi-v1': r'香菇|食用菌|菌种|菌棒|基料',
     'aerospace-v1': r'火箭|卫星|航天|星载|星箭|箭体|星座|在轨|测运控',
     'aviation': r'航空(?!航天)|飞机|机载|大飞机|民航|航空动力',
     'low-altitude-v1': r'低空|无人机|eVTOL|通航|垂直起降',

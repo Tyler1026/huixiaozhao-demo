@@ -19,7 +19,7 @@ def _city_key(value):
     return value.strip().removesuffix('市') if isinstance(value,str) else ''
 
 
-def package_research(document, city, topic, request_id):
+def package_research(document, city, topic, request_id, *, mode='draft'):
     if (not isinstance(document, dict) or not _city_key(city)
             or _city_key(document.get('city')) != _city_key(city)
             or document.get('synthetic') is not False):
@@ -46,7 +46,7 @@ def package_research(document, city, topic, request_id):
                 continue
             if url in seen:
                 continue
-            paragraphs = select_source_paragraphs(text, topic, limit=4)
+            paragraphs = select_source_paragraphs(text, topic, limit=4, mode=mode)
             if not paragraphs:
                 continue
             sid = 'source_'+hashlib.sha256((canonical_url(url)+'\0'+text).encode()).hexdigest()[:20]
@@ -58,16 +58,18 @@ def package_research(document, city, topic, request_id):
             result['sources'][sid] = dict(meta, id=sid, fulltext=text,
                 fulltext_sha256=hashlib.sha256(text.encode()).hexdigest())
             for paragraph in paragraphs:
-                if len(result['evidence']) >= 48:
-                    break
                 quote = paragraph['quote']
                 eid = 'tr_'+hashlib.sha256((url+'\0'+quote).encode()).hexdigest()[:20]
                 result['evidence'].append(dict(meta, **paragraph, id=eid, source_id=sid, excerpt=quote))
             seen.add(url)
-            if len(result['evidence']) >= 48:
-                break
-        if len(result['evidence']) >= 48:
-            break
+    # Rank the complete package before applying the budget. Early economy
+    # chapters must not crowd out the actual supply-chain research later on.
+    result['evidence'].sort(key=lambda row: (
+        row['source_type'] not in ('government','disclosure','company','research'),
+        -row.get('relevance_score',0), row['id']))
+    result['evidence'] = result['evidence'][:96 if mode == 'chain' else 48]
+    used={row['source_id'] for row in result['evidence']}
+    result['sources']={sid:row for sid,row in result['sources'].items() if sid in used}
     if not result['evidence']:
         raise TopicReportError('city_topic_evidence_missing', '当前城市材料包中未找到该方向的可引用原文，请在管理端补充对应原始来源。')
     return result
@@ -99,4 +101,5 @@ def load_city_package(context, state):
             document = json.loads(archive.read(entries[0]))
     except (ValueError, KeyError, OSError, zipfile.BadZipFile, RuntimeError):
         raise TopicReportError('city_package_invalid', '当前城市研究附件校验失败，请联系管理员核对材料包。') from None
-    return package_research(document,context['city'],context['topic'],request_id)
+    return package_research(document,context['city'],context['topic'],request_id,
+                            mode=context.get('_researchMode','draft'))
