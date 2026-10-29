@@ -165,7 +165,9 @@ def chain_source_catalog(research, context=None, *, limit=MAX_SOURCES):
         if (not isinstance(quote, str) or not 20 <= len(quote) <= MAX_QUOTE_CHARS
                 or not isinstance(url, str) or row.get('retrieval') != 'fetched'
                 or source.get('retrieval') != 'fetched' or row.get('status') not in ('source', 'single_source', 'cross_checked')
-                or source.get('source_type') not in ('government', 'disclosure', 'company', 'research')
+                or (source.get('source_type') not in ('government', 'disclosure', 'company', 'research')
+                    and not (source.get('source_type')=='media' and source.get('city_package_original') is True
+                             and context and source.get('requestId')==context.get('reportRequestId')))
                 or any(isinstance(v.get(field), str) and v[field] in _DERIVED
                        for v in (row, source) for field in ('origin', 'sourceKind', 'source_kind'))):
             continue
@@ -510,7 +512,8 @@ def _literal_fallback(context, research, missing, *, limit_per_lane=1):
     catalog = chain_source_catalog(research, context)
     selected = []
     for lane in missing:
-        terms = sorted((term for term in taxonomy['terms'][lane] if len(term) >= 4), key=len, reverse=True)
+        compact_domain = taxonomy['id'] in ('edible-fungi-v1','special-vehicle-v1')
+        terms = sorted((term for term in taxonomy['terms'][lane] if len(term) >= (2 if compact_domain else 4)), key=len, reverse=True)
         lane_count = 0
         for term in terms:
             if classify_node(term, topic)['lane'] != lane:
@@ -528,6 +531,11 @@ def _literal_fallback(context, research, missing, *, limit_per_lane=1):
                 bounded = any((match.start() == 0 or _LITERAL_BOUNDARY.fullmatch(quote[match.start()-1]))
                               and (match.end() == len(quote) or _LITERAL_BOUNDARY.fullmatch(quote[match.end()]))
                               for match in re.finditer(re.escape(term), quote))
+                if compact_domain and not bounded:
+                    # These are complete domain nouns, often written without
+                    # spaces in Chinese. Do not turn sales metrics into nodes.
+                    bounded = any(not re.match(r'额|量|率|收入',quote[m.end():])
+                                  for m in re.finditer(re.escape(term),quote))
                 if not bounded or not _topic_supports(term, quote, topic):
                     continue
                 candidate = {'name': term, 'evidence_ids': [sid]}
@@ -751,6 +759,12 @@ def build_chain(context, research, complete):
     except Exception as error:
         return _source_only_chain(context, research, error)
     payload = json.loads(prompt)
+    if taxonomy_for_topic(context.get('topic'))['id'] in ('edible-fungi-v1','special-vehicle-v1'):
+        literal = _literal_fallback(context,research,result['coverage']['missing_lanes'],limit_per_lane=4)
+        if literal:
+            result = normalize_chain_plan({'nodes':_retained_selection(result)+literal},research,context)
+    if not any(group['nodes'] for group in result['chain']) and not result['unclassified']:
+        return _source_only_chain(context,research,TopicChainError('empty_chain_selection','模型未选出节点'))
     if context.get('_prefer_assessment'):
         # Reserve the interactive request for evaluation and its independent
         # review. Actual products are recovered from original text without

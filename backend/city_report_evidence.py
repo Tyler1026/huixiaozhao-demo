@@ -38,7 +38,7 @@ def package_research(document, city, topic, request_id, *, mode='draft'):
                 continue
             text, url = row.get('excerpt'), row.get('url')
             if (not isinstance(text, str) or not 20 <= len(text) <= 120000
-                    or city_label not in text or row.get('retrieval') not in ('exa_fulltext','fetched')):
+                    or row.get('retrieval') not in ('exa_fulltext','fetched')):
                 continue
             try:
                 validate_https_url(url)
@@ -50,9 +50,15 @@ def package_research(document, city, topic, request_id, *, mode='draft'):
             if not paragraphs:
                 continue
             sid = 'source_'+hashlib.sha256((canonical_url(url)+'\0'+text).encode()).hexdigest()[:20]
+            host=urlsplit(url).hostname or ''
+            kind=classify_source_type(host)
+            if any(host==domain or host.endswith('.'+domain) for domain in
+                   ('hubeidaily.net','cnhubei.com','people.com.cn','xinhuanet.com','gmw.cn','chinanews.com')):
+                kind='media'
             meta = {'url':url, 'title':row.get('title',''), 'published_at':row.get('published',''),
                     'retrieved_at':row.get('retrieved_at',''), 'retrieval':'fetched',
-                    'source_type':classify_source_type(urlsplit(url).hostname or ''),
+                    'source_type':kind, 'city_package_original':True,
+                    'source_scope':'city_related' if city_label in text else 'industry_background',
                     'publisher_id':urlsplit(url).hostname, 'status':'source', 'archived':True,
                     'origin_id':sid, 'city':city, 'requestId':request_id}
             result['sources'][sid] = dict(meta, id=sid, fulltext=text,
