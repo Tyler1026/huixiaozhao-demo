@@ -197,6 +197,9 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
             findings = enrich_public_research(findings, context['city'], topic)
         event('research.status', stage='classification', message='正在核对原文、环节归类和规划状态')
         result = build(context, findings, bounded_complete)
+        from .chain_node_analysis import analyze_nodes
+        event('research.status',stage='node_analysis',message='正在逐环节分析发展阶段、依据和下一步行动')
+        node_analysis = analyze_nodes(context,result,bounded_complete)
         generation = result.get('generation') or {}
         source_only = generation.get('mode') == 'source_only'
         from .chain_assessment import build_assessment, unavailable_assessment
@@ -346,6 +349,7 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
                     'nodeResearch': findings.get('node_research', {}),
                     'publicResearch': findings.get('public_research', {}),
                     'onlineSupplement': findings.get('onlineSupplement', {}),
+                    'nodeAnalysis': node_analysis,
                     'edges': []}
             # Authoritative writes happen only here, after rechecking access and
             # every effective input while holding the normal state transaction.

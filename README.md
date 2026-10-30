@@ -43,6 +43,8 @@ python server.py
 
 ## 开发与验证
 
+图谱逐节点生成 `development_analysis`：A已有运行支撑、B培育推进、C验证探索、P补证优先。该字段是有出处的暂定发展阶段分析，独立于严格复核的本地强弱 `assessment.judgment`；不能将P解释为本地薄弱。模型按每批10个节点分析理由及行动，记录总数与完成数；失败或遗漏节点保留明确未完成状态及补证事项，不伪装成分析完成。
+
 `HXZ_PRIMARY_PROVIDER=openai`、`HXZ_PRIMARY_MODEL=gpt-5.5` 将政府端模型切换为 GPT；管理端报告引擎对应设置 `HXZ_MODEL_URL`、`HXZ_MODEL_KEY`、`HXZ_MODEL_NAME`。保留 `DEEPSEEK_API_KEY` 与 `HXZ_FALLBACK_MODEL` 时，主模型连接失败或接口报错可在响应开始前转用 DeepSeek，流式输出开始后不切换拼接。OpenAI 使用适配后的 token 和 reasoning 参数，不发送 DeepSeek 专属 thinking 参数。
 
 可选 OpenAI 辅助检索通过服务端环境变量 `OPENAI_API_KEY`、`HXZ_OPENAI_AUX_MODEL`、`HXZ_OPENAI_AUX_ENABLED=1` 启用；DeepSeek 的主模型配置保持独立。辅助使用 Responses API `web_search` 发现公共来源，再通过现有 Exa 原文接口抓取，模型摘要不作为证据。每个检索实例最多每60秒发起一次辅助发现（最多2次搜索工具调用、4个补充原文链接），失败保留主检索结果。只发送公开检索主题，不发送客户上传全文、确认事项或账号凭据。缺少配置或检索后端不是官方 Exa 时不启用辅助请求。

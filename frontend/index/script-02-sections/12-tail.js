@@ -3237,9 +3237,12 @@ function chainLayoutExcerpt(text,name){
 function chainLayoutNodeHtml(node,index){
   if(!chainLayoutText(node.name))return '';
   var info=chainLayoutInfo(node),excerpt=chainLayoutExcerpt(info.excerpt,node.name);
+  var development=node.development_analysis,gradeLabels={A:'已有运行支撑',B:'培育推进',C:'验证探索',P:'补证优先'};
+  if(!info.assessed&&development&&gradeLabels[development.grade])info.ratingLabel='暂定 '+development.grade+' · '+gradeLabels[development.grade];
   return '<button type="button" class="chain-layout-node'+(info.assessed?'':' is-sparse')+'" data-chain-rating="'+info.ratingLevel+'" onclick="openChainLayoutNode(this,'+index+')" aria-haspopup="dialog" aria-expanded="false" aria-label="查看'+escapeChainText(node.name)+'的依据，薄弱评价：'+info.ratingLabel+'">'+
     '<span class="chain-layout-node-heading"><span class="chain-layout-node-name">'+escapeChainText(node.name)+'</span><span class="chain-layout-rating">'+info.ratingLabel+'</span></span>'+
     chainNodeEvidenceHtml(node)+
+    (development?'<span class="chain-layout-node-summary">'+escapeChainText(development.reason||'')+'</span><span class="chain-layout-node-summary">下一步：'+escapeChainText(development.action||'')+'</span><span class="chain-layout-fact-meta">发展阶段暂定分析，不等于本地强弱事实认证'+(development.status==='incomplete'?'；模型分析未完成':'')+'</span>':'')+
     (info.companies.length?'<span class="chain-layout-entity">关联企业：'+info.companies.map(escapeChainText).join('、')+'</span>':'')+
     (excerpt?'<span class="chain-layout-node-summary"><span class="chain-layout-quote-label">'+(excerpt===info.excerpt?'原文':'原文节选')+'</span>'+escapeChainText(excerpt)+'</span>':'')+
     '<span class="chain-layout-fact-meta"><span>'+escapeChainText(info.scope)+'</span>'+(info.date?'<span>资料日期 '+escapeChainText(info.date)+'</span>':'')+'</span>'+

@@ -227,7 +227,7 @@ class ChainRouteTests(unittest.TestCase):
              patch('backend.public_research.enrich_public_research', side_effect=lambda r,*a:r):
             serve_topic_chain(h, self.body(h), complete=unavailable, audit=lambda row: None,
                               research=lambda *args, **kwargs: copy.deepcopy(archived))
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls), 2)  # selection plus per-node development analysis
         self.assertIn('[DONE]', h.wfile.getvalue().decode())
         stored = h.data['REPORTSTATE']['p']
         self.assertEqual(stored['chainStatusByTopic']['商业火箭'], 'partial')
