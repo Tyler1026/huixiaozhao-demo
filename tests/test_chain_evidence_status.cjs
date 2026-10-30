@@ -24,7 +24,7 @@ for(const side of ['index','ops']){
  });
  test(side+' unknown and unavailable assessments offer an actionable update; completed summaries do not loop',()=>{
   const c=setup(side),n=node();let html=c.chainAssessmentPanel(n.assessment,[n],0);
-  assert.match(html,/待评环节：电解槽/);assert.match(html,/onclick="requestChainGeneration\(\)"/);assert.match(html,/补查材料并更新评价/);
+  assert.match(html,/待评环节：电解槽/);assert.match(html,/onclick="requestChainGeneration\((?:this)?\)"/);assert.match(html,/补查材料并更新评价/);
   n.assessment.judgment={contract:'chain-judgment-v3',level:'strong',status:'assessed',evidence_ids:['S1']};
   const overall={contract:'chain-assessment-v1',state:'ready',judgment:{contract:'chain-judgment-v3',level:'unknown',status:'summary'}};
   assert.equal(c.chainNeedsAssessment([n],overall),false);

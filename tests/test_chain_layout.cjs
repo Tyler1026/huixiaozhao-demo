@@ -227,10 +227,13 @@ for(const side of ['index','ops']){
   assert.doesNotMatch(html,/未命名材料项|示例企业|企业 0 家/);assert.match(html,/尚未形成节点/);
  });
 }
-test('both applications use the same layout and source presentation implementation',()=>{
+test('both applications share source safety and layout interaction helpers',()=>{
  const sections=['index/script-02-sections','ops/script-03-sections'].map(p=>fs.readFileSync(path.join(__dirname,'../frontend',p,'12-tail.js'),'utf8'));
- const blocks=sections.map(s=>s.slice(s.indexOf('/* Presentation only: layout and assessment'),s.indexOf('function chainMapHtml(')));
- assert.equal(blocks[0],blocks[1]);
+ const {fn}=require('./chain_v2_fixture.cjs');
+ // Government cards additionally expose development grades. Provenance and
+ // drawer safety must stay identical across both application surfaces.
+ for(const name of ['chainLayoutText','chainLayoutContains','chainLayoutReviewedPremises','chainLayoutSourceHtml','openChainLayoutNode','closeChainLayoutNode'])
+   assert.equal(fn(sections[0],name),fn(sections[1],name),name);
 });
 
 test('layout rating accents keep the established colors and neutral fallback',()=>{

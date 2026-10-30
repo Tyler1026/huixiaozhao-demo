@@ -2898,9 +2898,24 @@ function generateChainFromReport(topic, reportText, city, force){
   }).finally(function(){clearTimeout(timer);delete _chainGenInFlight[inflight];if(epoch===null||epoch===_authEpoch)show();});
 }
 
-function requestChainGeneration(){
-  var p=P();if(!p||!REPORTSTATE[cur])return Promise.resolve(false);
-  return generateChainFromReport(p.topic,null,p.city,true);
+function requestChainGeneration(button){
+  var p=P();
+  if(!p||!REPORTSTATE[cur]||!p.topic){if(typeof toast==='function')toast('请先打开当前产业方向的报告，再更新图谱。');return Promise.resolve(false);}
+  var key=cur,topic=p.topic,running=_chainGenInFlight[key+'|'+topic];
+  if(running){if(typeof toast==='function')toast(running.message||'图谱正在更新，请稍候。');return Promise.resolve(false);}
+  var label=button&&button.textContent,status=null;
+  if(button){
+    button.disabled=true;button.textContent='正在更新图谱与评价…';button.setAttribute('aria-busy','true');
+    if(button.ownerDocument&&button.parentNode){status=button.ownerDocument.createElement('span');status.setAttribute('role','status');status.style.cssText='display:block;margin-top:8px;font-size:12px;color:#60798b';status.textContent='更新任务已启动；材料保存、检索和逐环节评价可能需要几分钟，请勿重复点击。';button.parentNode.appendChild(status);}
+  }
+  if(button&&typeof toast==='function')toast('已开始更新图谱与评价，可在图谱顶部查看进度。');
+  return Promise.resolve().then(function(){return generateChainFromReport(p.topic,null,p.city,true);}).then(function(ok){
+    if(status)status.textContent=ok?'图谱与评价已更新。':((REPORTSTATE[key]||{}).chainErrorByTopic||{})[topic]||'本次更新未完成，请查看图谱中的提示后重试。';
+    if(button&&!ok&&typeof toast==='function')toast(status?status.textContent:'本次图谱更新未完成，请查看提示。');
+    return ok;
+  }).catch(function(error){if(status)status.textContent='图谱更新失败，请稍后重试。';if(typeof toast==='function')toast('图谱更新失败，请稍后重试。');return false;}).finally(function(){
+    if(button){button.disabled=false;button.textContent=label;button.removeAttribute('aria-busy');}
+  });
 }
 
 function _findPendingForTopic(rs, topic){
@@ -3066,7 +3081,7 @@ function chainAssessmentPanel(value,nodes,unclassifiedCount){
     (view.reason?'<p class="chain-priority-reason" style="font-size:12px;line-height:1.75;color:#506d84;margin:8px 0 9px">'+escapeChainText(view.reason)+'</p>':'')+
     '<div class="chain-assessment-distribution" style="display:flex;flex-wrap:wrap;gap:8px 17px;margin-top:8px">'+distribution+'<span style="font-size:10px;color:#93a1ad">本次 '+nodes.length+' 个材料节点'+(unclassifiedCount?'（含待归类 '+unclassifiedCount+' 项）':'')+'</span></div>'+
     '<div style="font-size:10px;color:#8a9aa7;margin-top:7px">'+(view.actual?'政策提及不参与主颜色。评价范围、比较基准、原文与相反证据见各节点详情。':'黄色表示规划培育或行业风险关注，不代表已确认本地缺口。引用材料对应时间及证据质量见详情。')+'</div>'+
-    (chainNeedsAssessment(nodes,value)?'<p style="font-size:11px;color:#60798b;margin:8px 0 0">待评环节：'+nodes.filter(function(node){return chainNeedsAssessment([node],node.assessment);}).map(function(node){return escapeChainText(node.name||'未命名环节');}).join('、')+'。可查看各环节缺少的条件，补充材料后更新。 <button class="chain-assessment-update" onclick="requestChainGeneration()" style="font-size:11px;padding:4px 9px;border:1px solid #d2dee7;border-radius:5px;color:#607f96;background:#fff">补查材料并更新评价</button></p>':'')+
+    (chainNeedsAssessment(nodes,value)?'<p style="font-size:11px;color:#60798b;margin:8px 0 0">待评环节：'+nodes.filter(function(node){return chainNeedsAssessment([node],node.assessment);}).map(function(node){return escapeChainText(node.name||'未命名环节');}).join('、')+'。可查看各环节缺少的条件，补充材料后更新。 <button type="button" class="chain-assessment-update" onclick="requestChainGeneration(this)" style="font-size:11px;padding:4px 9px;border:1px solid #d2dee7;border-radius:5px;color:#607f96;background:#fff">补查材料并更新评价</button></p>':'')+
     '<div class="chain-assessment-explain" style="display:flex;flex-wrap:wrap;gap:0 17px;align-items:flex-start">'+(details?'<div style="flex:1 1 220px;min-width:0">'+details+'</div>':'')+criteria+(view.actual?'':four)+'</div></section>';
 }
 
@@ -3324,14 +3339,14 @@ function chainMapHtml(p){
   var progressHtml=chainGenerationStatusHtml(job);
   var chain=currentEvidenceChain(topic,cur),error=(rs.chainErrorByTopic||{})[topic];
   var errorHtml=error?'<p role="alert" style="color:#92400e;font-size:12px">'+escapeChainText(error)+'</p>':'';
-  if(Array.isArray(chain)){var metadata=(rs.chainEvidenceByTopic||{})[topic]||{},allNodes=[];chain.forEach(function(segment){allNodes=allNodes.concat(segment.nodes||[]);});allNodes=allNodes.concat((rs.chainUnclassifiedByTopic||{})[topic]||[]);return progressHtml+errorHtml+(typeof chainExplorerHtml==='function'?chainExplorerHtml:_renderRichChain)(topic,chain,null,p,(rs.chainUnclassifiedByTopic||{})[topic],(rs.chainStatusByTopic||{})[topic],metadata)+'<div style="text-align:right;padding:10px 0"><button class="chain-generate-button" onclick="requestChainGeneration()">'+(chainNeedsAssessment(allNodes,metadata.assessment)?'更新图谱并评价':['empty','partial'].indexOf((rs.chainStatusByTopic||{})[topic])>=0?'补充材料后重新生成':'重新生成图谱')+'</button></div>'; }
+  if(Array.isArray(chain)){var metadata=(rs.chainEvidenceByTopic||{})[topic]||{},allNodes=[];chain.forEach(function(segment){allNodes=allNodes.concat(segment.nodes||[]);});allNodes=allNodes.concat((rs.chainUnclassifiedByTopic||{})[topic]||[]);return progressHtml+errorHtml+(typeof chainExplorerHtml==='function'?chainExplorerHtml:_renderRichChain)(topic,chain,null,p,(rs.chainUnclassifiedByTopic||{})[topic],(rs.chainStatusByTopic||{})[topic],metadata)+'<div style="text-align:right;padding:10px 0"><button type="button" class="chain-generate-button" onclick="requestChainGeneration(this)">'+(chainNeedsAssessment(allNodes,metadata.assessment)?'更新图谱并评价':['empty','partial'].indexOf((rs.chainStatusByTopic||{})[topic])>=0?'补充材料后重新生成':'重新生成图谱')+'</button></div>'; }
   var text=typeof reportTextForTopic==='function'?reportTextForTopic(topic):'',short=!text||text.trim().length<100;
   var legacy=!!((rs.chainByTopic||{})[topic]||(rs.chainEvidenceByTopic||{})[topic]),failed=(rs.chainStatusByTopic||{})[topic]==='failed';
   if(job&&!Array.isArray(chain))return progressHtml+errorHtml;
   return '<div style="margin-top:16px;padding:20px;border:1px dashed #cbd5e1;border-radius:12px;background:#f8fafc;color:#64748b;font-size:12px;line-height:1.8">'+errorHtml+
     '<strong>'+escapeChainText(topic)+'</strong> · '+(legacy?'材料或图谱版本已变化，请重新生成。':'尚未生成基于当前材料的图谱。')+
     '<p>依据本次公开原文检索及保存材料背景整理；计划与材料披露均不代表已经落地，没有证据的连接不会绘制。</p>'+
-    (short?'<p>当前报告正文不足 100 字，请先完善当前方向报告。</p>':'<button class="chain-generate-button" onclick="requestChainGeneration()">'+(legacy?'重新生成图谱':error||failed?'重试生成图谱':'生成产业链图谱')+'</button>')+'</div>';
+    (short?'<p>当前报告正文不足 100 字，请先完善当前方向报告。</p>':'<button type="button" class="chain-generate-button" onclick="requestChainGeneration(this)">'+(legacy?'重新生成图谱':error||failed?'重试生成图谱':'生成产业链图谱')+'</button>')+'</div>';
 }
 
 function chainPriorityMarkdown(){
