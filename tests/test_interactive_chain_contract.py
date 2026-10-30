@@ -21,6 +21,7 @@ class InteractiveChainContractTests(unittest.TestCase):
         original = topic_chain_route.serve_topic_chain
         def routed(*args, **kwargs):
             kwargs['research'] = lambda *args, **kwargs: bundle
+            kwargs['package_loader'] = None  # This fixture supplies its own source bundle.
             return original(*args, **kwargs)
         body={'question':'整理当前证据产业链','mode':'chain','purpose':'chain_map',
               'projectKey':'a','topic':'液体火箭','reportRequestId':'r1','stream':True}
@@ -41,11 +42,16 @@ class InteractiveChainContractTests(unittest.TestCase):
         self.assertEqual(self.h.state()['REPORTSTATE']['a']['chainByTopic']['液体火箭'],event['chain'])
         self.assertEqual(self.h.ns['DS_OPENER'].open.call_count,0)
 
-    def test_empty_nodes_return_explicit_empty_not_full_coverage(self):
+    def test_empty_model_nodes_recover_literals_without_full_coverage(self):
         status,text=self._request({'nodes':[]})
         self.assertEqual(status,200)
         event=next(json.loads(line[6:]) for line in text.splitlines() if line.startswith('data: {') and json.loads(line[6:]).get('type')=='chain.result')
-        self.assertEqual(event['status'],'empty');self.assertEqual(event['coverage']['missing_lanes'],['上游','中游','下游'])
+        self.assertEqual(event['status'],'partial')
+        self.assertIn('上游',event['coverage']['missing_lanes'])
+        self.assertIn('下游',event['coverage']['missing_lanes'])
+        node=event['chain'][1]['nodes'][0]
+        self.assertEqual(node['name'],'液体火箭总装测试平台')
+        self.assertIn(node['name'],node['sources'][0]['quote'])
         self.assertIn('[DONE]',text)
 
     def test_bad_model_plan_keeps_only_source_bound_literal_nodes(self):

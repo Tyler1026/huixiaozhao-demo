@@ -32,6 +32,10 @@ class SyncBoundaryTests(unittest.TestCase):
                     return None  # Atomic per-topic merge has its own behavioral regression suite.
                 if ast.unparse(node.test) == "fk == 'historyDeletedAt'":
                     return None
+                if ast.unparse(node.test) == "fk == 'funnel' and isinstance(base.get('funnel'), dict) and base['funnel'].get('researchEvidence')":
+                    # The intentional server-owned funnel branch is covered by
+                    # test_funnel_research; inherited merge branches stay exact.
+                    return None
                 if (isinstance(node.test,ast.Compare) and isinstance(node.test.left,ast.Name)
                         and node.test.left.id=='fk' and any(isinstance(x,ast.Name) and x.id=='_CHAIN_MAPS' for x in node.test.comparators)):
                     return None
