@@ -239,7 +239,9 @@ class StreamBoundaryTests(unittest.TestCase):
         raw=json.dumps({'choices':[{'message':{'content':'{"companies": []}'},'finish_reason':'stop'}]}).encode()
         status,data=self.request(raw,'funnel',{'projectKey':'a','topic':'液体火箭','reportRequestId':'r1'})
         self.assertEqual(status,200)
-        event=json.loads(next(line[6:] for line in data.splitlines() if line.startswith('data: {')))
+        events=[json.loads(line[6:]) for line in data.splitlines() if line.startswith('data: {')]
+        self.assertEqual(events[0]['type'],'funnel_progress')
+        event=next(e for e in events if 'error' in e)
         self.assertIn('error',event)
         self.assertIn('原候选清单已保留',event['error']['message'])
         self.assertNotIn('funnel',self.h.state()['PROJECTS']['a'])
