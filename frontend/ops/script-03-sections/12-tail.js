@@ -331,7 +331,7 @@ function loadAIScanClues(projKey){
     try{ renderOpsV2&&renderOpsV2(); }catch(e){ try{render();}catch(_){}}
     updateFunnelProgress(100);
     closeFunnelProgressModal();try{showFunnelDoneModal(projKey,funnel);}catch(e){toast('已整理 '+funnel.companies.length+' 家材料企业，待核对业务适配');}
-  }, function(pct){ updateFunnelProgress(pct); });
+  }, function(pct,event){ updateFunnelProgress(pct,event); });
 }
 
 /* ── AI 漏斗分析完成提醒弹窗 ── */
@@ -395,24 +395,29 @@ function showFunnelProgressModal(projKey){
         '<div id="funnelProgBar" style="height:100%;width:0%;background:linear-gradient(90deg,#1a56db,#6366f1);border-radius:6px;transition:width .5s ease"></div>'+
       '</div>'+
       '<div style="display:flex;justify-content:space-between;margin-top:8px"><span id="funnelProgPct" style="font-size:12px;color:#4338ca;font-weight:650">等待来源校验</span>'+
-        '<span style="font-size:11px;color:#9aa5b5">完成后立即显示，期间可继续查看材料</span></div>'+
+        '<button type="button" onclick="closeFunnelProgressModal()" style="border:0;background:none;font-size:12px;color:#64748b;cursor:pointer">收起窗口，任务继续</button></div>'+
     '</div>'+
   '</div>';
   if(!document.getElementById('fadeUpStyle')){var st=document.createElement('style');st.id='fadeUpStyle';st.textContent='@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes fspin{to{transform:rotate(360deg)}}.funnelSpin{animation:fspin .8s linear infinite}';document.head.appendChild(st);}
   var oldw=document.getElementById('funnelProgWrap'); if(oldw)oldw.remove();
   var oldd=document.getElementById('funnelDoneWrap'); if(oldd)oldd.remove();
   var wrap=document.createElement('div'); wrap.id='funnelProgWrap'; wrap.innerHTML=modal; document.body.appendChild(wrap);
-  _funnelProg.pct=0; _funnelProg.phase=0;
+  _funnelProg.pct=0; _funnelProg.phase=0; _funnelProg.message='等待服务器接收分析请求'; _funnelProg.lastEventAt=Date.now(); _funnelProg.finished=false;
   clearInterval(_funnelProg.timer);
   var started=Date.now();
   _funnelProg.timer=setInterval(function(){
     var text=document.getElementById('funnelProgPct');
-    if(text)text.textContent='已等待 '+Math.floor((Date.now()-started)/1000)+' 秒';
+    if(text&&!_funnelProg.finished)text.textContent='已运行 '+Math.floor((Date.now()-started)/1000)+' 秒';
+    var phase=document.getElementById('funnelProgPhase');
+    if(phase&&!_funnelProg.finished&&Date.now()-_funnelProg.lastEventAt>45000)phase.textContent='尚未收到新的服务端进度，可能是连接等待或服务繁忙；请勿重复点击。';
   },1000);
 }
-function updateFunnelProgress(pct){
-  var bar=document.getElementById('funnelProgBar'), text=document.getElementById('funnelProgPct');
-  if(pct===100){if(bar)bar.style.width='100%';if(text)text.textContent='来源校验完成';}
+function updateFunnelProgress(pct,event){
+  var bar=document.getElementById('funnelProgBar'), text=document.getElementById('funnelProgPct'),phase=document.getElementById('funnelProgPhase');
+  _funnelProg.pct=Math.max(_funnelProg.pct||0,Math.min(100,Math.max(0,Number(pct)||0)));
+  if(bar)bar.style.width=_funnelProg.pct+'%';
+  if(event){_funnelProg.lastEventAt=Date.now();_funnelProg.message=event.message||'服务端正在处理';if(phase)phase.textContent=_funnelProg.message;}
+  if(pct===100){_funnelProg.finished=true;clearInterval(_funnelProg.timer);if(text)text.textContent='企业排名已保存';}
 }
 
 function closeFunnelProgressModal(){

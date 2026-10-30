@@ -18,7 +18,8 @@ def input_fingerprint(context, state):
     return hashlib.sha256(json.dumps(value,ensure_ascii=False,sort_keys=True).encode()).hexdigest()
 
 
-def serve_funnel(handler, body, *, complete, audit, build=build_funnel, package_loader=None):
+def serve_funnel(handler, body, *, complete, audit, build=build_funnel, package_loader=None,
+                 heartbeat_seconds=12):
     from .access_control import scoped_sync_view
     try:
         context=project_context(body,handler._scoped_state)
@@ -31,8 +32,9 @@ def serve_funnel(handler, body, *, complete, audit, build=build_funnel, package_
     lock=threading.Lock();stop=threading.Event()
     run_id=uuid.uuid4().hex
     handler.send_response(200)
-    handler.send_header('Content-Type','text/event-stream' if stream else 'application/json')
-    handler.send_header('Cache-Control','no-store')
+    handler.send_header('Content-Type','text/event-stream; charset=utf-8' if stream else 'application/json; charset=utf-8')
+    handler.send_header('Cache-Control','no-store, no-transform')
+    handler.send_header('X-Accel-Buffering','no')
     handler.cors();handler.end_headers()
     def send(value):
         if not stream:
@@ -40,17 +42,27 @@ def serve_funnel(handler, body, *, complete, audit, build=build_funnel, package_
         with lock:
             handler.wfile.write(('data: '+(value if isinstance(value,str) else json.dumps(value,ensure_ascii=False))+'\n\n').encode())
             handler.wfile.flush()
+    started=time.monotonic()
+    latest={'stage':'materials','message':'已收到分析请求，正在核对当前城市资料与需求'}
+    def progress(value):
+        details=dict(value) if isinstance(value,dict) else {'message':value}
+        with lock:
+            latest.update(details)
+            status=dict(latest)
+        send(dict(status,type='funnel_progress',runId=run_id,elapsedSeconds=int(time.monotonic()-started)))
     def heartbeat():
-        while not stop.wait(12):
+        while not stop.wait(heartbeat_seconds):
             try:
                 with lock:
-                    handler.wfile.write(b': keep-alive\n\n');handler.wfile.flush()
+                    status=dict(latest)
+                send(dict(status,type='funnel_progress',runId=run_id,heartbeat=True,
+                          elapsedSeconds=int(time.monotonic()-started)))
             except OSError:
                 stop.set();return
     if stream:
         threading.Thread(target=heartbeat,daemon=True,name='company-research-heartbeat').start()
-    started=time.monotonic()
     try:
+        progress(latest)
         package=None
         if package_loader:
             try:
@@ -71,7 +83,8 @@ def serve_funnel(handler, body, *, complete, audit, build=build_funnel, package_
                 if getattr(error,'code','') not in ('city_package_missing','city_topic_evidence_missing'):
                     raise
         result=build(context,complete,package=package,
-            progress=lambda message: send({'type':'funnel_progress','message':message,'runId':run_id}))
+            progress=progress)
+        progress({'stage':'saving','message':'企业匹配分析完成，正在校验版本并保存排名'})
         with handler._account_session() as session:
             state=json.loads(session.read())
             principal=require_session(handler.headers,state,admin_config=handler._account_config())

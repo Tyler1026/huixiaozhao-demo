@@ -1,6 +1,7 @@
 import copy
 import json
 import unittest
+import time
 from unittest.mock import patch
 from backend.funnel_route import serve_funnel
 from backend.evidence_grounding import project_context
@@ -9,6 +10,32 @@ from tests.test_topic_priorities_route import Handler
 
 
 class FunnelRouteTests(unittest.TestCase):
+    def test_initial_progress_is_flushed_before_archive_read_and_heartbeat_retains_real_counts(self):
+        handler=Handler()
+        headers=[]
+        handler.send_header=lambda name,value:headers.append((name,value))
+        def package_loader(ctx,state):
+            self.assertIn('funnel_progress',handler.wfile.getvalue().decode())
+            self.assertIn('当前城市资料',handler.wfile.getvalue().decode())
+            return {}
+        def build(ctx,*args,**kwargs):
+            kwargs['progress']({'stage':'analysis','message':'已分析 1/9 批','completed':1,'total':9})
+            time.sleep(.04)
+            return self.output(ctx,*args,**kwargs)
+        with patch('backend.funnel_route.require_session',return_value=handler._principal),patch(
+                'backend.access_control.scoped_sync_view',side_effect=lambda state,principal:copy.deepcopy(state)):
+            serve_funnel(handler,{'projectKey':'p','topic':handler.data['PROJECTS']['p']['topic']},
+                complete=lambda *a:None,audit=lambda row:None,build=build,
+                package_loader=package_loader,heartbeat_seconds=.005)
+        events=[json.loads(line[6:]) for line in handler.wfile.getvalue().decode().splitlines() if line.startswith('data: {')]
+        heartbeats=[e for e in events if e.get('heartbeat') and e.get('stage')=='analysis']
+        self.assertTrue(heartbeats)
+        self.assertTrue(all(e['completed']==1 and e['total']==9 for e in heartbeats))
+        self.assertEqual(events[-1]['choices'][0]['finish_reason'],'stop')
+        self.assertEqual(handler.writes,1)
+        self.assertIn(('X-Accel-Buffering','no'),headers)
+        self.assertIn(('Cache-Control','no-store, no-transform'),headers)
+
     def run_route(self,handler,build,stream=True):
         request={'projectKey':'p','topic':handler.data['PROJECTS']['p']['topic'],'stream':stream}
         with patch('backend.funnel_route.require_session',return_value=handler._principal),patch(
