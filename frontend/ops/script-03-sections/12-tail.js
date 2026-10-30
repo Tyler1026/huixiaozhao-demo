@@ -35,16 +35,17 @@ function pushFunnelTopToGov(projKey, n, onlyName, preview){
     identity:savedEvidenceIdentity(projKey,fn.topic),funnel:JSON.stringify(fn),preview:preview||null};
   var list=top.map(function(c,i){
     var sources=(c.evidence||[]).filter(function(r){return r&&r.id&&r.quote&&Array.isArray(r.urls)&&r.urls.length;});
-    var products=sources.map(function(r,j){return '<option value="'+j+'">'+_authEscape(r.quote.slice(0,150))+'</option>';}).join('');
-    var demands=anchors.map(function(a,j){return '<option value="'+j+'">'+(a.kind==='report'?'报告':'已确认需求')+' · '+_authEscape(a.quote.slice(0,150))+'</option>';}).join('');
-    return '<li style="margin-bottom:18px;border-bottom:1px solid #e2e8f0;padding-bottom:16px"><strong>'+_authEscape(c.name)+'</strong>'+funnelEvidenceLinks(c)+
-      '<label style="display:block;margin-top:8px">1. 企业产品或服务原句<select id="funnelProduct-'+i+'" style="display:block;width:100%" onchange="funnelReviewAnchorChange('+i+')"><option value="">请选择并核对原文</option>'+products+'</select></label><p id="funnelProductText-'+i+'" style="white-space:pre-wrap;word-break:break-word"></p>'+
-      '<label style="display:block">2. 当前方向的需求原句<select id="funnelDemand-'+i+'" style="display:block;width:100%" onchange="funnelReviewAnchorChange('+i+')"><option value="">请选择对应需求</option>'+demands+'</select></label><p id="funnelDemandText-'+i+'" style="white-space:pre-wrap;word-break:break-word"></p>'+
-      '<label>3. 该企业如何对应这项需求（至少12字）<textarea id="funnelReason-'+i+'" style="display:block;width:100%;min-height:70px" placeholder="逐家说明产品、技术条件与需求的对应关系及待核缺口"></textarea></label>'+
-      '<label style="display:block;margin-top:8px"><input type="checkbox" id="funnelReview-'+i+'"> 我已对照上述两份原句，愿将该企业作为人工待核线索推送</label></li>';
+    var products=sources.map(function(r,j){return '<option value="'+j+'">原文 '+(j+1)+' · '+_authEscape(funnelReviewExcerpt(r.quote,c.name,40))+'</option>';}).join('');
+    var demands=anchors.map(function(a,j){return '<option value="'+j+'">'+(a.kind==='report'?'报告':'已确认需求')+' '+(j+1)+' · '+_authEscape(funnelReviewExcerpt(a.quote,'',40))+'</option>';}).join('');
+    return '<li class="funnel-review-card"><div class="funnel-review-card-head"><span class="funnel-review-number">'+(i+1)+'</span><h3>'+_authEscape(c.name)+'</h3></div>'+funnelEvidenceLinks(c)+
+      '<div class="funnel-review-fields"><div class="funnel-review-field"><label for="funnelProduct-'+i+'">1. 核对企业产品或服务</label><select id="funnelProduct-'+i+'" onchange="funnelReviewAnchorChange('+i+')"><option value="">请选择产品来源</option>'+products+'</select><div id="funnelProductPreview-'+i+'" class="funnel-review-preview">选择来源后显示阅读节选</div><details class="funnel-review-original"><summary>查看完整产品原文</summary><pre id="funnelProductText-'+i+'"></pre></details></div>'+
+      '<div class="funnel-review-field"><label for="funnelDemand-'+i+'">2. 核对对应招商需求</label><select id="funnelDemand-'+i+'" onchange="funnelReviewAnchorChange('+i+')"><option value="">请选择对应需求</option>'+demands+'</select><div id="funnelDemandPreview-'+i+'" class="funnel-review-preview">选择需求后显示阅读节选</div><details class="funnel-review-original"><summary>查看完整需求原文</summary><pre id="funnelDemandText-'+i+'"></pre></details></div></div>'+
+      '<label class="funnel-review-reason-label" for="funnelReason-'+i+'">3. 填写本企业的匹配理由</label><textarea id="funnelReason-'+i+'" rows="3" maxlength="1200" placeholder="12至1200字：说明具体产品如何对应需求，以及仍需核实的技术条件"></textarea>'+
+      '<label class="funnel-review-confirm"><input type="checkbox" id="funnelReview-'+i+'"><span>我已核对上述原文和需求，将这家企业作为待核线索推送</span></label></li>';
   }).join('');
-  var content='<p>这些企业仅出现在当前工作区材料中，尚未证明符合该需求。请逐家选择产品与需求的原句、写明对应关系并确认。推送后仍为待核线索，投资意向未知。</p><ul style="padding-left:20px">'+list+'</ul><p id="funnelReviewError" role="alert"></p>';
-  openModal('逐家核对产品与需求',content,'<button class="ghost-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="confirmFunnelReview('+_authEscape(JSON.stringify(projKey))+','+top.length+')">推送已逐家复核的待核线索</button>');
+  var content='<section class="funnel-review"><div class="funnel-review-notice"><strong>本次复核 '+top.length+' 家企业</strong><p>逐家选择产品与需求原文、填写匹配理由，再勾选需要推送的企业。节选仅便于阅读，完整原文保留供核对；推送后投资意向仍待核验。</p></div><ul class="funnel-review-list">'+list+'</ul><p id="funnelReviewError" class="funnel-review-error" role="alert" aria-live="polite"></p></section>';
+  openModal('核对企业与招商需求',content,'<button class="ghost-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="confirmFunnelReview('+_authEscape(JSON.stringify(projKey))+','+top.length+')">推送已勾选企业</button>');
+  if(typeof document.querySelector==='function'){var modal=document.querySelector('#modalLayer .modal');if(modal&&modal.classList){modal.classList.add('funnel-review-modal');if(modal.parentElement&&modal.parentElement.classList)modal.parentElement.classList.add('funnel-review-layer');}}
 }
 function confirmFunnelReview(projKey,n){
   var p=PROJECTS[projKey], review=pushFunnelTopToGov.review, fn=review&&review.preview||(p&&p.funnel), error=document.getElementById('funnelReviewError');
@@ -92,12 +93,22 @@ function funnelReviewDemandAnchors(key,topic){
   if(phase===2&&typeof report==='string')report.split('\n').forEach(function(line,i){var quote=line.trim();if(quote.length>=12&&quote.length<=3500)anchors.push({id:'report:'+i,kind:'report',quote:quote});});
   return anchors;
 }
+function funnelReviewExcerpt(quote,name,limit){
+  var raw=String(quote||''), lines=raw.split(/\r?\n/).map(function(line){return line.trim();}).filter(Boolean);
+  var business=/产品|研发|研制|生产|制造|供应|提供|主营|技术|服务|检测|需求|采购/;
+  var menu=/^(首页|关于我们|联系我们|组织机构|管理团队|文化理念|新闻中心|通知公告|媒体关注|行业动态|研究院概况|研究院要闻|研发平台)$/;
+  var ranked=lines.map(function(line,i){return {text:line,index:i,score:(business.test(line)?4:0)+(line.length>=24?2:0)+(name&&line.indexOf(name)>=0?1:0)-(menu.test(line)?10:0)};});
+  ranked.sort(function(a,b){return b.score-a.score||a.index-b.index;});
+  var chosen=ranked.length?ranked[0].text:raw;
+  var cap=limit||420;return chosen.length>cap?chosen.slice(0,cap)+'…':chosen;
+}
 function funnelReviewAnchorChange(i){
   var review=pushFunnelTopToGov.review;if(!review||!review.companies[i])return;
   var sources=(review.companies[i].evidence||[]).filter(function(r){return r&&r.id&&r.quote&&Array.isArray(r.urls)&&r.urls.length;});
   [['Product',sources],['Demand',review.anchors]].forEach(function(pair){
     var select=document.getElementById('funnel'+pair[0]+'-'+i),out=document.getElementById('funnel'+pair[0]+'Text-'+i);
     var value=select&&select.value!==''?pair[1][Number(select.value)]:null;if(out)out.textContent=value?value.quote:'';
+    var preview=document.getElementById('funnel'+pair[0]+'Preview-'+i);if(preview)preview.textContent=value?funnelReviewExcerpt(value.quote,pair[0]==='Product'?review.companies[i].name:'',420):'请选择并核对原文';
   });
 }
 

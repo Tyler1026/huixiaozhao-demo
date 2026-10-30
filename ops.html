@@ -2045,6 +2045,40 @@ body.ops-mode .ops-v3 .ops-ui-report-row .ops-badge.blue {background:#eef3ff;col
   .ops-v3 .ops-receiving-overview>:last-child {grid-column:1/-1}
   body.ops-mode :is(.ops-v3,.modal) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]),textarea,select),.ops-login-field input {font-size:16px}
 }
+
+/* Company review: keep long originals readable without stretching the dialog. */
+body.ops-mode .modal-layer .modal.funnel-review-modal{width:min(960px,calc(100vw - 56px));max-width:960px;max-height:calc(100dvh - 56px)}
+body.ops-mode .funnel-review-modal>.modal-body{min-width:0;min-height:0;overflow-x:hidden;overflow-y:auto;background:#f6f8fc;padding:18px 22px}
+body.ops-mode .funnel-review-modal>header,body.ops-mode .funnel-review-modal>footer{flex-shrink:0}
+body.ops-mode .funnel-review-modal>footer{flex-wrap:wrap;background:#fff}
+body.ops-mode .funnel-review{min-width:0;color:#334966;font-size:14px;line-height:1.65}
+body.ops-mode .funnel-review-notice{padding:12px 15px;margin-bottom:16px;border:1px solid #dce7fa;border-radius:10px;background:#edf3ff;color:#405c86}
+body.ops-mode .funnel-review-notice strong{font-size:14px;color:#2e486e}
+body.ops-mode .funnel-review-notice p{margin:4px 0 0;font-size:12px;line-height:1.7}
+body.ops-mode .funnel-review-list{list-style:none;padding:0;margin:0;display:grid;gap:16px}
+body.ops-mode .funnel-review-card{min-width:0;padding:18px;border:1px solid #dfe7f2;border-radius:12px;background:#fff;overflow-wrap:anywhere}
+body.ops-mode .funnel-review-card-head{display:flex;align-items:flex-start;gap:10px;min-width:0;margin-bottom:6px}
+body.ops-mode .funnel-review-card-head h3{min-width:0;margin:0;font-size:16px;line-height:1.6;color:#263e62;font-weight:650}
+body.ops-mode .funnel-review-number{display:inline-grid;place-items:center;flex:0 0 26px;height:26px;background:#eef3ff;border-radius:7px;font-size:12px;font-weight:700;color:#3960a8}
+body.ops-mode .funnel-review-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-top:14px}
+body.ops-mode .funnel-review-field{min-width:0}
+body.ops-mode .funnel-review-field>label,body.ops-mode .funnel-review-reason-label{display:block;margin:0 0 6px;font-size:13px;font-weight:650;color:#354e72}
+body.ops-mode .funnel-review-card select,body.ops-mode .funnel-review-card textarea{display:block;box-sizing:border-box;width:100%;min-width:0;max-width:100%;font:inherit;font-size:13px;border:1px solid #d6e0ee;border-radius:8px}
+body.ops-mode .funnel-review-card select{height:42px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body.ops-mode .funnel-review-preview{margin-top:9px;padding:10px 12px;min-height:64px;max-height:132px;overflow:auto;border:1px solid #e6ecf5;border-radius:8px;background:#f8faff;color:#536987;font-size:12px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
+body.ops-mode .funnel-review-original{margin-top:7px;color:#5b7194;font-size:12px}
+body.ops-mode .funnel-review-original>summary{cursor:pointer;user-select:none;padding:4px 0}
+body.ops-mode .funnel-review-original>pre{margin:6px 0 0;padding:11px;max-height:220px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;background:#f7f9fc;border:1px solid #e2e9f3;border-radius:8px;font:inherit;line-height:1.7}
+body.ops-mode .funnel-review-reason-label{margin-top:16px}
+body.ops-mode .funnel-review-card textarea{min-height:88px;resize:vertical}
+body.ops-mode .funnel-review-confirm{display:flex;align-items:flex-start;gap:9px;margin-top:13px;font-size:12px;line-height:1.7;color:#536987;cursor:pointer}
+body.ops-mode .funnel-review-confirm input[type=checkbox]{flex:0 0 16px;width:16px;height:16px;min-height:16px;padding:0;margin:3px 0 0;accent-color:#2d5be3}
+body.ops-mode .funnel-review-error:empty{display:none}
+body.ops-mode .funnel-review-error{position:sticky;bottom:0;padding:10px 12px;margin:12px 0 0;border:1px solid #f5c2c2;background:#fff1f1;border-radius:8px;color:#a13636;font-size:13px}
+@media(max-width:700px){body.ops-mode .modal-layer .modal.funnel-review-modal{width:calc(100vw - 24px);max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}body.ops-mode .funnel-review-modal>.modal-body{padding:12px}body.ops-mode .funnel-review-card{padding:13px}body.ops-mode .funnel-review-fields{grid-template-columns:minmax(0,1fr);gap:13px}body.ops-mode .funnel-review-modal>footer{padding:12px}body.ops-mode .funnel-review-modal>footer>button{flex:1;min-width:0}}
+
+body.ops-mode .modal-layer.funnel-review-layer{padding:28px}
+@media(max-width:700px){body.ops-mode .modal-layer.funnel-review-layer{padding:12px}}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>if(typeof pdfjsLib!=='undefined')pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
@@ -5597,16 +5631,17 @@ function pushFunnelTopToGov(projKey, n, onlyName, preview){
     identity:savedEvidenceIdentity(projKey,fn.topic),funnel:JSON.stringify(fn),preview:preview||null};
   var list=top.map(function(c,i){
     var sources=(c.evidence||[]).filter(function(r){return r&&r.id&&r.quote&&Array.isArray(r.urls)&&r.urls.length;});
-    var products=sources.map(function(r,j){return '<option value="'+j+'">'+_authEscape(r.quote.slice(0,150))+'</option>';}).join('');
-    var demands=anchors.map(function(a,j){return '<option value="'+j+'">'+(a.kind==='report'?'报告':'已确认需求')+' · '+_authEscape(a.quote.slice(0,150))+'</option>';}).join('');
-    return '<li style="margin-bottom:18px;border-bottom:1px solid #e2e8f0;padding-bottom:16px"><strong>'+_authEscape(c.name)+'</strong>'+funnelEvidenceLinks(c)+
-      '<label style="display:block;margin-top:8px">1. 企业产品或服务原句<select id="funnelProduct-'+i+'" style="display:block;width:100%" onchange="funnelReviewAnchorChange('+i+')"><option value="">请选择并核对原文</option>'+products+'</select></label><p id="funnelProductText-'+i+'" style="white-space:pre-wrap;word-break:break-word"></p>'+
-      '<label style="display:block">2. 当前方向的需求原句<select id="funnelDemand-'+i+'" style="display:block;width:100%" onchange="funnelReviewAnchorChange('+i+')"><option value="">请选择对应需求</option>'+demands+'</select></label><p id="funnelDemandText-'+i+'" style="white-space:pre-wrap;word-break:break-word"></p>'+
-      '<label>3. 该企业如何对应这项需求（至少12字）<textarea id="funnelReason-'+i+'" style="display:block;width:100%;min-height:70px" placeholder="逐家说明产品、技术条件与需求的对应关系及待核缺口"></textarea></label>'+
-      '<label style="display:block;margin-top:8px"><input type="checkbox" id="funnelReview-'+i+'"> 我已对照上述两份原句，愿将该企业作为人工待核线索推送</label></li>';
+    var products=sources.map(function(r,j){return '<option value="'+j+'">原文 '+(j+1)+' · '+_authEscape(funnelReviewExcerpt(r.quote,c.name,40))+'</option>';}).join('');
+    var demands=anchors.map(function(a,j){return '<option value="'+j+'">'+(a.kind==='report'?'报告':'已确认需求')+' '+(j+1)+' · '+_authEscape(funnelReviewExcerpt(a.quote,'',40))+'</option>';}).join('');
+    return '<li class="funnel-review-card"><div class="funnel-review-card-head"><span class="funnel-review-number">'+(i+1)+'</span><h3>'+_authEscape(c.name)+'</h3></div>'+funnelEvidenceLinks(c)+
+      '<div class="funnel-review-fields"><div class="funnel-review-field"><label for="funnelProduct-'+i+'">1. 核对企业产品或服务</label><select id="funnelProduct-'+i+'" onchange="funnelReviewAnchorChange('+i+')"><option value="">请选择产品来源</option>'+products+'</select><div id="funnelProductPreview-'+i+'" class="funnel-review-preview">选择来源后显示阅读节选</div><details class="funnel-review-original"><summary>查看完整产品原文</summary><pre id="funnelProductText-'+i+'"></pre></details></div>'+
+      '<div class="funnel-review-field"><label for="funnelDemand-'+i+'">2. 核对对应招商需求</label><select id="funnelDemand-'+i+'" onchange="funnelReviewAnchorChange('+i+')"><option value="">请选择对应需求</option>'+demands+'</select><div id="funnelDemandPreview-'+i+'" class="funnel-review-preview">选择需求后显示阅读节选</div><details class="funnel-review-original"><summary>查看完整需求原文</summary><pre id="funnelDemandText-'+i+'"></pre></details></div></div>'+
+      '<label class="funnel-review-reason-label" for="funnelReason-'+i+'">3. 填写本企业的匹配理由</label><textarea id="funnelReason-'+i+'" rows="3" maxlength="1200" placeholder="12至1200字：说明具体产品如何对应需求，以及仍需核实的技术条件"></textarea>'+
+      '<label class="funnel-review-confirm"><input type="checkbox" id="funnelReview-'+i+'"><span>我已核对上述原文和需求，将这家企业作为待核线索推送</span></label></li>';
   }).join('');
-  var content='<p>这些企业仅出现在当前工作区材料中，尚未证明符合该需求。请逐家选择产品与需求的原句、写明对应关系并确认。推送后仍为待核线索，投资意向未知。</p><ul style="padding-left:20px">'+list+'</ul><p id="funnelReviewError" role="alert"></p>';
-  openModal('逐家核对产品与需求',content,'<button class="ghost-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="confirmFunnelReview('+_authEscape(JSON.stringify(projKey))+','+top.length+')">推送已逐家复核的待核线索</button>');
+  var content='<section class="funnel-review"><div class="funnel-review-notice"><strong>本次复核 '+top.length+' 家企业</strong><p>逐家选择产品与需求原文、填写匹配理由，再勾选需要推送的企业。节选仅便于阅读，完整原文保留供核对；推送后投资意向仍待核验。</p></div><ul class="funnel-review-list">'+list+'</ul><p id="funnelReviewError" class="funnel-review-error" role="alert" aria-live="polite"></p></section>';
+  openModal('核对企业与招商需求',content,'<button class="ghost-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="confirmFunnelReview('+_authEscape(JSON.stringify(projKey))+','+top.length+')">推送已勾选企业</button>');
+  if(typeof document.querySelector==='function'){var modal=document.querySelector('#modalLayer .modal');if(modal&&modal.classList){modal.classList.add('funnel-review-modal');if(modal.parentElement&&modal.parentElement.classList)modal.parentElement.classList.add('funnel-review-layer');}}
 }
 function confirmFunnelReview(projKey,n){
   var p=PROJECTS[projKey], review=pushFunnelTopToGov.review, fn=review&&review.preview||(p&&p.funnel), error=document.getElementById('funnelReviewError');
@@ -5654,12 +5689,22 @@ function funnelReviewDemandAnchors(key,topic){
   if(phase===2&&typeof report==='string')report.split('\n').forEach(function(line,i){var quote=line.trim();if(quote.length>=12&&quote.length<=3500)anchors.push({id:'report:'+i,kind:'report',quote:quote});});
   return anchors;
 }
+function funnelReviewExcerpt(quote,name,limit){
+  var raw=String(quote||''), lines=raw.split(/\r?\n/).map(function(line){return line.trim();}).filter(Boolean);
+  var business=/产品|研发|研制|生产|制造|供应|提供|主营|技术|服务|检测|需求|采购/;
+  var menu=/^(首页|关于我们|联系我们|组织机构|管理团队|文化理念|新闻中心|通知公告|媒体关注|行业动态|研究院概况|研究院要闻|研发平台)$/;
+  var ranked=lines.map(function(line,i){return {text:line,index:i,score:(business.test(line)?4:0)+(line.length>=24?2:0)+(name&&line.indexOf(name)>=0?1:0)-(menu.test(line)?10:0)};});
+  ranked.sort(function(a,b){return b.score-a.score||a.index-b.index;});
+  var chosen=ranked.length?ranked[0].text:raw;
+  var cap=limit||420;return chosen.length>cap?chosen.slice(0,cap)+'…':chosen;
+}
 function funnelReviewAnchorChange(i){
   var review=pushFunnelTopToGov.review;if(!review||!review.companies[i])return;
   var sources=(review.companies[i].evidence||[]).filter(function(r){return r&&r.id&&r.quote&&Array.isArray(r.urls)&&r.urls.length;});
   [['Product',sources],['Demand',review.anchors]].forEach(function(pair){
     var select=document.getElementById('funnel'+pair[0]+'-'+i),out=document.getElementById('funnel'+pair[0]+'Text-'+i);
     var value=select&&select.value!==''?pair[1][Number(select.value)]:null;if(out)out.textContent=value?value.quote:'';
+    var preview=document.getElementById('funnel'+pair[0]+'Preview-'+i);if(preview)preview.textContent=value?funnelReviewExcerpt(value.quote,pair[0]==='Product'?review.companies[i].name:'',420):'请选择并核对原文';
   });
 }
 

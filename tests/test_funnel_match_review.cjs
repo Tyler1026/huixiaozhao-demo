@@ -23,6 +23,21 @@ test('review dialog shows source and demand choices with independent reasons, ne
  assert.equal(h.nodes['funnelReview-0'].checked,false);h.fill();h.c.funnelReviewAnchorChange(0);
  assert.equal(h.nodes.funnelProductText_0,undefined);assert.equal(h.nodes['funnelProductText-0'].textContent,h.product);assert.equal(h.nodes['funnelDemandText-0'].textContent,h.demand);
 });
+test('navigation-heavy originals have compact options and bounded reading panels without changing submitted evidence',async()=>{
+ const h=boot();
+ const raw='研发平台-甲公司\n首页\n关于我们\n联系我们\n'+('栏目导航\n'.repeat(80))+'甲公司研发生产核电换热器耐蚀管材，提供产品测试与技术适配服务，资质需进一步核查。';
+ h.c.PROJECTS.p.funnel.companies[0].evidence[0].quote=raw;
+ h.open();h.fill();h.nodes['funnelProductPreview-0']={};h.nodes['funnelDemandPreview-0']={};
+ h.c.funnelReviewAnchorChange(0);
+ assert.match(h.modal(),/class="funnel-review-card"/);assert.match(h.modal(),/<details class="funnel-review-original">/);
+ assert.doesNotMatch(h.modal(),/<details[^>]*\bopen\b/);
+ for(const option of h.modal().matchAll(/<option[^>]*>([^<]*)<\/option>/g))assert.ok(option[1].length<=55);
+ assert.match(h.nodes['funnelProductPreview-0'].textContent,/研发生产核电换热器/);
+ assert.doesNotMatch(h.nodes['funnelProductPreview-0'].textContent,/首页|栏目导航/);
+ assert.equal(h.nodes['funnelProductText-0'].textContent,raw);
+ h.c.confirmFunnelReview('p',1);await flush();
+ assert.equal(h.calls[0].body.reviews[0].product.quote,raw);
+});
 test('missing either anchor or per-company reason prevents any request',()=>{
  for(const field of ['product','demand','reason']){const h=boot();h.open();h.fill();h.nodes[{product:'funnelProduct-0',demand:'funnelDemand-0',reason:'funnelReason-0'}[field]].value='';h.c.confirmFunnelReview('p',1);assert.equal(h.calls.length,0);assert.match(h.nodes.funnelReviewError.textContent,/每家/);}
 });

@@ -359,3 +359,37 @@ body.ops-mode .ops-v3 .ops-ui-report-row .ops-badge.blue {background:#eef3ff;col
   .ops-v3 .ops-receiving-overview>:last-child {grid-column:1/-1}
   body.ops-mode :is(.ops-v3,.modal) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]),textarea,select),.ops-login-field input {font-size:16px}
 }
+
+/* Company review: keep long originals readable without stretching the dialog. */
+body.ops-mode .modal-layer .modal.funnel-review-modal{width:min(960px,calc(100vw - 56px));max-width:960px;max-height:calc(100dvh - 56px)}
+body.ops-mode .funnel-review-modal>.modal-body{min-width:0;min-height:0;overflow-x:hidden;overflow-y:auto;background:#f6f8fc;padding:18px 22px}
+body.ops-mode .funnel-review-modal>header,body.ops-mode .funnel-review-modal>footer{flex-shrink:0}
+body.ops-mode .funnel-review-modal>footer{flex-wrap:wrap;background:#fff}
+body.ops-mode .funnel-review{min-width:0;color:#334966;font-size:14px;line-height:1.65}
+body.ops-mode .funnel-review-notice{padding:12px 15px;margin-bottom:16px;border:1px solid #dce7fa;border-radius:10px;background:#edf3ff;color:#405c86}
+body.ops-mode .funnel-review-notice strong{font-size:14px;color:#2e486e}
+body.ops-mode .funnel-review-notice p{margin:4px 0 0;font-size:12px;line-height:1.7}
+body.ops-mode .funnel-review-list{list-style:none;padding:0;margin:0;display:grid;gap:16px}
+body.ops-mode .funnel-review-card{min-width:0;padding:18px;border:1px solid #dfe7f2;border-radius:12px;background:#fff;overflow-wrap:anywhere}
+body.ops-mode .funnel-review-card-head{display:flex;align-items:flex-start;gap:10px;min-width:0;margin-bottom:6px}
+body.ops-mode .funnel-review-card-head h3{min-width:0;margin:0;font-size:16px;line-height:1.6;color:#263e62;font-weight:650}
+body.ops-mode .funnel-review-number{display:inline-grid;place-items:center;flex:0 0 26px;height:26px;background:#eef3ff;border-radius:7px;font-size:12px;font-weight:700;color:#3960a8}
+body.ops-mode .funnel-review-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-top:14px}
+body.ops-mode .funnel-review-field{min-width:0}
+body.ops-mode .funnel-review-field>label,body.ops-mode .funnel-review-reason-label{display:block;margin:0 0 6px;font-size:13px;font-weight:650;color:#354e72}
+body.ops-mode .funnel-review-card select,body.ops-mode .funnel-review-card textarea{display:block;box-sizing:border-box;width:100%;min-width:0;max-width:100%;font:inherit;font-size:13px;border:1px solid #d6e0ee;border-radius:8px}
+body.ops-mode .funnel-review-card select{height:42px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body.ops-mode .funnel-review-preview{margin-top:9px;padding:10px 12px;min-height:64px;max-height:132px;overflow:auto;border:1px solid #e6ecf5;border-radius:8px;background:#f8faff;color:#536987;font-size:12px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
+body.ops-mode .funnel-review-original{margin-top:7px;color:#5b7194;font-size:12px}
+body.ops-mode .funnel-review-original>summary{cursor:pointer;user-select:none;padding:4px 0}
+body.ops-mode .funnel-review-original>pre{margin:6px 0 0;padding:11px;max-height:220px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;background:#f7f9fc;border:1px solid #e2e9f3;border-radius:8px;font:inherit;line-height:1.7}
+body.ops-mode .funnel-review-reason-label{margin-top:16px}
+body.ops-mode .funnel-review-card textarea{min-height:88px;resize:vertical}
+body.ops-mode .funnel-review-confirm{display:flex;align-items:flex-start;gap:9px;margin-top:13px;font-size:12px;line-height:1.7;color:#536987;cursor:pointer}
+body.ops-mode .funnel-review-confirm input[type=checkbox]{flex:0 0 16px;width:16px;height:16px;min-height:16px;padding:0;margin:3px 0 0;accent-color:#2d5be3}
+body.ops-mode .funnel-review-error:empty{display:none}
+body.ops-mode .funnel-review-error{position:sticky;bottom:0;padding:10px 12px;margin:12px 0 0;border:1px solid #f5c2c2;background:#fff1f1;border-radius:8px;color:#a13636;font-size:13px}
+@media(max-width:700px){body.ops-mode .modal-layer .modal.funnel-review-modal{width:calc(100vw - 24px);max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}body.ops-mode .funnel-review-modal>.modal-body{padding:12px}body.ops-mode .funnel-review-card{padding:13px}body.ops-mode .funnel-review-fields{grid-template-columns:minmax(0,1fr);gap:13px}body.ops-mode .funnel-review-modal>footer{padding:12px}body.ops-mode .funnel-review-modal>footer>button{flex:1;min-width:0}}
+
+body.ops-mode .modal-layer.funnel-review-layer{padding:28px}
+@media(max-width:700px){body.ops-mode .modal-layer.funnel-review-layer{padding:12px}}
