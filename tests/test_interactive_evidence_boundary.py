@@ -227,11 +227,13 @@ class StreamBoundaryTests(unittest.TestCase):
     def test_structured_output_guard_runs_before_sse_publishes(self):
         cat=evidence_catalog(context()['chunks']);ref=next(x for x in cat if '星河' in x['quote'])
         obj={'companies':[{'name':'星河动力公司','kind':'液氧甲烷','evidence_ids':[ref['id']]}]}
+        self.h.funnel_build_override=lambda ctx:ground_funnel(obj,evidence_catalog(ctx['chunks']),ctx)
         raw=json.dumps({'choices':[{'message':{'content':json.dumps(obj,ensure_ascii=False)},'finish_reason':'stop'}]}).encode()
         status,data=self.request(raw,'funnel',{'projectKey':'a','topic':'液体火箭','reportRequestId':'r1'})
         self.assertEqual(status,200);self.assertIn('saved-excerpts-v1',data);self.assertNotIn('液氧甲烷',data)
-        sent=json.loads(self.h.ns['DS_OPENER'].open.call_args.args[0].data)
-        self.assertFalse(sent['stream']);self.assertIn('液氧煤油',sent['messages'][-1]['content']);self.assertNotIn('OTHER_WORKSPACE_SECRET',sent['messages'][-1]['content'])
+        supplied=json.dumps(self.h.funnel_build_calls[0],ensure_ascii=False)
+        self.assertIn('液氧煤油',supplied);self.assertNotIn('OTHER_WORKSPACE_SECRET',supplied)
+        self.h.ns['DS_OPENER'].open.assert_not_called()
 
     def test_funnel_search_failure_is_explicit_and_never_empty_success(self):
         raw=json.dumps({'choices':[{'message':{'content':'{"companies": []}'},'finish_reason':'stop'}]}).encode()

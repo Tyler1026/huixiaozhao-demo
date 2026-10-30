@@ -74,6 +74,7 @@ class HttpFixture:
         real_topic_route = topic_report_route.serve_topic_report
         def offline_topic_route(*args, **kwargs):
             kwargs['research'] = offline_topic_research
+            kwargs['package_loader'] = None
             return real_topic_route(*args, **kwargs)
         self.topic_route_patch = patch.object(topic_report_route, 'serve_topic_report', offline_topic_route)
         self.topic_route_patch.start()
@@ -82,6 +83,8 @@ class HttpFixture:
         self.funnel_build_calls=[]
         def offline_funnel_build(context,*args,**kwargs):
             self.funnel_build_calls.append(context)
+            if callable(getattr(self,'funnel_build_override',None)):
+                return self.funnel_build_override(context)
             raise AssertionError('No real company search is allowed in the HTTP fixture')
         def offline_funnel_route(*args,**kwargs):
             kwargs.update(build=offline_funnel_build,package_loader=None)
