@@ -98,6 +98,7 @@ focus、name和product必须逐字出现在所引原文里；企业须为明确�
 questions也只能给focus/evidence_ids/action三字段，不能输出自由事实。focus必须是原文中出现的名词短语，不含建设完成、投资承诺等结论。原文的未来计划不等于已经完成，注册地不等于办公地。
 有具体产品能力和应用背景但没有现实短板时，允许capability_collaboration：使用已绑定主体的产品原文，以技术交流、应用适配或供需访谈为行动，不宣称已有新采购或投资。存在明确中试、产品检测、工程验证、技术转让或合作开发任务时，允许validation_collaboration，以validation_ids引用原文；不能把验证阶段写成已成熟量产。四类方向均须有具体对象和可执行步骤，无依据才留空，不把“没有已证实缺口”误当“没有任何可推进方向”。
 禁止输出报告正文、Markdown、额外字段。"""
+    system += '\n另允许project_followup：当前城市原文明示具体项目、平台、建设或研发任务，可提出项目跟进与需求核实建议，不要求已核实采购需求或完整企业产品画像。focus须逐字来自本地原文，附evidence_ids；comparison说明已披露阶段和仍缺的条件，reason解释与当前产业的关系，action写清访谈/核实/对接对象及下一步。不得宣称存在本地缺口、已确认采购或投资意向。没有现实缺口时优先检查是否有可跟进的本地项目线索。'
     payload = {'city': context['city'], 'topic': context['topic'], 'phase': phase,
                'research_coverage':research_coverage(research),
                'evidence': evidence,
@@ -317,10 +318,11 @@ def _supplement_priority_candidates(plan, context, catalog, complete, review_fee
 无现实短板不等于无合作机会。合作方向不能声称本地缺失、已有新客户/订单或投资意向，研发中试不能改写成成熟量产。不能重复被否决的无依据主张。
 每项字段：focus(原文中的具体产品/技术/任务)，entity(原文完整主体名，没有留空)，opportunity_type，scope(local/local_enterprise/industry/project)，supply_ids，validation_ids，constraint_ids，demand_ids，policy_ids，counter_ids，comparison，reason，action。
 只引用提供的原文ID；能力方向须使用已验证company_profiles中的产品主体和supply_ids；验证方向须有validation_ids明确任务原文。比较、理由和行动都必须具体，交代技术对象、下一步以及实施条件；不编造数字、市场、地方缺口、采购需求或投资意向。没有真实依据可返回空数组。'''
+    system += '\n另允许project_followup：从本地原文明示的具体项目、平台、建设/研发任务提出跟进建议，focus逐字引用，evidence_ids指向本地原文。comparison区分已披露阶段与待核需求，reason解释当前产业关联，action写具体核实、访谈或对接步骤。不要求先形成已量产企业画像，但不得把报道、规划或意向写成已确认采购、投资或本地缺口。'
     payload = {'city': context.get('city'), 'topic': context.get('topic'), 'sources': sources,
                'company_profiles': plan['companies'], 'previous_review': review_feedback}
     try:
-        raw = complete(system, json.dumps(payload, ensure_ascii=False), 3600)
+        raw = complete(system, json.dumps(payload, ensure_ascii=False), 6400)
         if isinstance(raw, str):
             raw = json.loads(raw.strip().removeprefix('```json').removesuffix('```').strip())
         rows = raw.get('priorities') if isinstance(raw, dict) else None
@@ -339,8 +341,8 @@ def _supplement_priority_candidates(plan, context, catalog, complete, review_fee
         return candidates, result
     except (BrokenPipeError, ConnectionResetError):
         raise
-    except Exception:
-        return [], dict(result, status='supplement_unavailable')
+    except Exception as error:
+        return [], dict(result, status='supplement_unavailable', error_type=type(error).__name__)
 
 
 def build_priority_analysis(context, research, complete, *, phase=2, on_progress=None):

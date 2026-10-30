@@ -77,6 +77,11 @@ def _merge_directions(metadata, text, topic, result, findings, verification, run
             if key.endswith('_ids') and isinstance(value, list):
                 row[key] = [remap.get(sid, sid) for sid in value]
     analysis = copy.deepcopy(saved.get('analysis')) if isinstance(saved.get('analysis'), dict) else {}
+    new_focus={row['focus'] for row in priorities}
+    priorities += [copy.deepcopy(row) for row in (analysis.get('priorities') or [])
+                   if isinstance(row,dict) and row.get('state')=='reviewed_inference'
+                   and row.get('focus') not in new_focus and row.get('evidence_ids')
+                   and all(sid in by_id for sid in row['evidence_ids'])]
     analysis.update(contract='topic-report-analysis-v2', priorities=priorities,
                     status='supported_analysis',
                     review_diagnostics=copy.deepcopy(result.get('review_diagnostics') or []),
@@ -96,8 +101,8 @@ def serve_topic_priorities(handler, body, *, complete, audit, research=research_
                            total_seconds=330, model_seconds=65, package_loader=None):
     """One explicit request; public research and review precede atomic saving."""
     if build is None:
-        from .topic_reports import build_priority_analysis
-        build = build_priority_analysis
+        from .direction_suggestions import build_direction_suggestions
+        build = build_direction_suggestions
     if enrich is None:
         from .public_research import enrich_public_research
         enrich = enrich_public_research
@@ -137,6 +142,12 @@ def serve_topic_priorities(handler, body, *, complete, audit, research=research_
             raise TopicReportError('research_unavailable', '本次未取得可核查原文，已有报告已保留；也可直接填写明确需求')
         result = build(context, findings, bounded_complete, phase=2)
         priorities = result['plan'].get('analytical_priorities') or []
+        generation=result.get('direction_generation') or {}
+        reviews=result.get('review_diagnostics') or []
+        if not priorities and (generation.get('status')=='supplement_unavailable'
+                or any(row.get('code')=='review_unavailable' for row in reviews)):
+            raise TopicReportError('direction_generation_incomplete',
+                '本轮方向生成或来源复核未完成，不能据此认定没有招商机会。请重试；已有报告和建议已保留。')
         selected = evidence_catalog(findings)
         ids = {sid for row in priorities for sid in row.get('evidence_ids', [])}
         factual_text = '\n'.join(selected[sid]['quote'].replace('\n', ' ') + ' [' + sid + ']'

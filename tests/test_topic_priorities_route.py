@@ -79,6 +79,15 @@ def body(handler):
 
 
 class PriorityRefreshTests(unittest.TestCase):
+    def test_review_outage_is_not_reported_as_no_business_opportunity(self):
+        handler=Handler();before=copy.deepcopy(handler.data)
+        result,_=self.run_route(handler,build=lambda *a,**k:{'plan':{'analytical_priorities':[]},
+            'review_diagnostics':[{'code':'review_unavailable'}]})
+        self.assertEqual(handler.status,422)
+        self.assertEqual(result['error'],'direction_generation_incomplete')
+        self.assertEqual(handler.writes,0)
+        self.assertEqual(handler.data,before)
+
     def run_route(self, handler, *, request=None, build=plan, research=None, **options):
         audit = []
         with patch('backend.topic_priorities_route.require_session', return_value=handler._principal):

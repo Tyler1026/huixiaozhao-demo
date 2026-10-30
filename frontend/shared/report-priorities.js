@@ -5,7 +5,8 @@ function reportOpportunityInfo(type){
     constraint:{label:'约束补链',boundary:'基于原文披露的实际需求或约束，提交时仍需明确具体诉求和适用条件。'},
     planned_development:{label:'规划培育',boundary:'依据正式规划形成的培育机会，不表示本地存在现实供给缺口。'},
     capability_collaboration:{label:'产业协作',boundary:'依据已有产品和能力形成的协作方向，不表示本地存在供给缺口，也不表示企业已有投资或采购意向。'},
-    validation_collaboration:{label:'联合验证',boundary:'围绕研发或应用验证形成的合作方向，不表示已量产或已有采购订单。'}
+    validation_collaboration:{label:'联合验证',boundary:'围绕研发或应用验证形成的合作方向，不表示已量产或已有采购订单。'},
+    project_followup:{label:'项目跟进',boundary:'根据本地已披露的项目或建设线索提出对接建议；须核实当前进展和具体需求，不表示已确认采购、投资意向或本地产业缺口。'}
   };
   return Object.prototype.hasOwnProperty.call(kinds,type)?kinds[type]:null;
 }

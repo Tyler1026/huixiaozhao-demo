@@ -48,7 +48,7 @@ async function refreshReportPriorities(){
       REPORTSTATE[key].researchByTopic[topic]=JSON.parse(JSON.stringify(next));
       try{persist();}catch(error){job.error=true;job.message='研判方向已在服务端更新，本机保存未完成，请刷新查看。';return false;}
     }
-    job.message=result.updated?'研判方向已更新，请选择具体建议或自行填写需求。':'本次没有新增可用方向；已有明确诉求时，可以自行填写招商需求。';
+    job.message=result.updated?'研判方向已更新，请选择具体建议或自行填写需求。':(typeof result.message==='string'&&result.message?result.message:'当前材料尚未形成可复核建议，请补充项目进展或具体合作需求后重试；这不代表没有招商机会。也可自行填写招商需求。');
     return result.updated;
   }catch(error){
     job.error=true;job.message=error&&error.name==='AbortError'?'研判方向更新超时，请重试或先填写明确需求。':error&&error.message||'研判方向更新未完成，请重试。';return false;

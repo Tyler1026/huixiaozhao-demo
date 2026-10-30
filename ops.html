@@ -5013,7 +5013,8 @@ function reportOpportunityInfo(type){
     constraint:{label:'约束补链',boundary:'基于原文披露的实际需求或约束，提交时仍需明确具体诉求和适用条件。'},
     planned_development:{label:'规划培育',boundary:'依据正式规划形成的培育机会，不表示本地存在现实供给缺口。'},
     capability_collaboration:{label:'产业协作',boundary:'依据已有产品和能力形成的协作方向，不表示本地存在供给缺口，也不表示企业已有投资或采购意向。'},
-    validation_collaboration:{label:'联合验证',boundary:'围绕研发或应用验证形成的合作方向，不表示已量产或已有采购订单。'}
+    validation_collaboration:{label:'联合验证',boundary:'围绕研发或应用验证形成的合作方向，不表示已量产或已有采购订单。'},
+    project_followup:{label:'项目跟进',boundary:'根据本地已披露的项目或建设线索提出对接建议；须核实当前进展和具体需求，不表示已确认采购、投资意向或本地产业缺口。'}
   };
   return Object.prototype.hasOwnProperty.call(kinds,type)?kinds[type]:null;
 }
@@ -5108,7 +5109,7 @@ async function refreshReportPriorities(){
       REPORTSTATE[key].researchByTopic[topic]=JSON.parse(JSON.stringify(next));
       try{persist();}catch(error){job.error=true;job.message='研判方向已在服务端更新，本机保存未完成，请刷新查看。';return false;}
     }
-    job.message=result.updated?'研判方向已更新，请选择具体建议或自行填写需求。':'本次没有新增可用方向；已有明确诉求时，可以自行填写招商需求。';
+    job.message=result.updated?'研判方向已更新，请选择具体建议或自行填写需求。':(typeof result.message==='string'&&result.message?result.message:'当前材料尚未形成可复核建议，请补充项目进展或具体合作需求后重试；这不代表没有招商机会。也可自行填写招商需求。');
     return result.updated;
   }catch(error){
     job.error=true;job.message=error&&error.name==='AbortError'?'研判方向更新超时，请重试或先填写明确需求。':error&&error.message||'研判方向更新未完成，请重试。';return false;

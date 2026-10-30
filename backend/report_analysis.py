@@ -27,7 +27,8 @@ _GUARANTEE = re.compile(r'必然|落地即|保证.{0,15}(?:订单|采购|收益)
 _NUMBER = re.compile(r'\d+(?:[.,]\d+)*\s*(?:%|％|亿元|万元|万|亿|吨|家|年|月|日|MW|MWh|GW|GWh|套|架|台)?', re.I)
 OPPORTUNITY_LABELS = {'constraint': '需求与约束方向', 'planned_development': '规划培育方向',
                       'capability_collaboration': '能力与应用协同方向',
-                      'validation_collaboration': '验证与技术合作方向'}
+                      'validation_collaboration': '验证与技术合作方向',
+                      'project_followup': '项目跟进与需求核实方向'}
 _APPLICATION = re.compile(r'应用|适用|用于|服务于|面向|配套|交付|出口|示范|合作|对接|产品性能检测|工程化实证')
 _VALIDATION_TASK = re.compile(r'中试阶段|仍需.{0,20}验证|尚待.{0,20}验证|(?:正在|目前|正|已开展).{0,20}(?:检测|验证|实证)|合作开发|技术转让|许可使用|工程化实证|产品性能检测')
 _VALIDATION_DENIAL = re.compile(r'无需|不需要|不开展|不提供|未开展|没有.{0,8}(?:验证|合作)需求')
@@ -622,6 +623,24 @@ def analytical_priority(item, catalog, context, profiles):
     if not isinstance(item, dict):
         return None
     opportunity_type = item.get('opportunity_type', 'constraint')
+    if opportunity_type == 'project_followup':
+        focus=item.get('focus')
+        if not isinstance(focus,str) or not 2<=len(focus)<=60 or _GUARANTEE.search(focus):return None
+        values=item.get('evidence_ids') or item.get('policy_ids') or item.get('supply_ids') or []
+        if not isinstance(values,list):return None
+        ids=[sid for sid in dict.fromkeys(v for v in values if isinstance(v,str)) if sid in catalog
+             and focus in catalog[sid]['quote']
+             and any(alias in catalog[sid]['quote'] for alias in _aliases(context.get('city')))
+             and re.search(r'项目|平台|建设|场景|基地|园区|研发|培育',catalog[sid]['quote'])][:4]
+        texts=_priority_texts(item,catalog,ids) if ids else None
+        if not texts or not re.search(r'核实|访谈|调研|对接|摸排',texts['action']):return None
+        # A reported city project is a lead, not proof of a shortage or order.
+        explanation=' '.join(texts.values())
+        unsupported=re.compile(r'本地.{0,12}(?:缺失|缺口|短板)|已确认.{0,12}(?:采购|订单)|保证|必然')
+        if any(not _assertion_is_negated(explanation,match.start()) for match in unsupported.finditer(explanation)):return None
+        return dict(focus=focus,scope='project',opportunity_type=opportunity_type,
+            evidence_ids=ids,local_evidence_ids=ids,state='pending_review',
+            missing=['核实项目当前进展、具体需求、责任主体和合作条件；报道与规划不等于采购承诺'],**texts)
     if opportunity_type == 'planned_development':
         return _planned_priority(item, catalog, context)
     if opportunity_type in ('capability_collaboration', 'validation_collaboration'):
@@ -694,6 +713,7 @@ opportunity_type=constraint必须有实际需求或约束原文。opportunity_ty
     system += '''
 opportunity_type=capability_collaboration以已绑定主体和具体产品的现有能力、实际应用关系为依据，可提出产品交流、应用适配、供需访谈；不要求原文已证明一个新采购订单，但不能宣称已存在新客户、采购或投资意向。必须核对产品及主体，已有能力不等于本地工厂。
 opportunity_type=validation_collaboration以原文明确的中试、工程验证、技术转让或合作开发任务为依据，可提出具体验证与技术合作。研究阶段不能升级为成熟量产，行业验证任务不能升级为本地缺口。两类均需具体对象、先后步骤和合作条件，不能用通用的“加强合作”口号充数。'''
+    system += '\nproject_followup为项目跟进与需求核实：本地原文已披露具体项目、平台、场景或建设任务即可作为线索，不要求先有完整企业产品画像或正式产业规划。核对focus确实来自该本地原文、建议对象具体、action有访谈/核实/对接步骤且不虚构现状缺口或采购意向；报道中的计划只能作为待跟进事项。符合这些条件时可通过，不要套用capability_collaboration的已量产产品门槛。'
     payload = {'city':context.get('city'),'topic':context.get('topic'),'proposals':proposals,
                'sources':[{'id':sid, **{k:row.get(k) for k in ('title','quote','url','published_at','source_type')}} for sid,row in catalog.items()]}
     try:

@@ -8,6 +8,15 @@ const context={URL};
 vm.createContext(context);
 vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend/shared/report-priorities.js'),'utf8'),context);
 const read=(state,topic='方向甲')=>JSON.parse(JSON.stringify(context.reportAnalyticalPriorities(state,topic)));
+test('reviewed project followup renders with explicit boundary and can be selected',()=>{
+  const data=fixture(),row=data.researchByTopic.方向甲.analysis.priorities[0];
+  row.opportunity_type='project_followup';row.scope='project';
+  const suggestion=read(data)[0];
+  assert.equal(suggestion.opportunityLabel,'项目跟进');
+  assert.match(suggestion.opportunityBoundary,/不表示已确认采购/);
+  assert.equal(suggestion.scope,'project');assert.equal(suggestion.sources.length,1);
+  row.state='pending_review';assert.equal(read(data).length,1);
+});
 function fixture(){
   const priority=(focus,ids)=>({focus,state:'reviewed_inference',scope:'industry',comparison:'全国行业口径，不能推断本地供应。',reason:'原文披露了实际需求与供给约束。',action:'核实当地采购需求和供应主体。',evidence_ids:ids,missing:['本地供需数据']});
   return {aiReportByTopic:{方向甲:'报告正文'},researchByTopic:{方向甲:{topic:'方向甲',reportText:'报告正文',analysis:{contract:'topic-report-analysis-v2',priorities:[priority('产品甲',['a']),priority('产品乙',['b','a'])]},sources:[{id:'a',url:'https://example.gov.cn/a',quote:'产品甲的实际原文。',title:'来源甲',archived:true,archive_retrieved_at:'2026-10-17',pdf_page:3},{id:'b',url:'https://example.gov.cn/b',quote:'产品乙的实际原文。'}]}}};
