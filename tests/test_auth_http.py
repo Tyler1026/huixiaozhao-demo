@@ -77,6 +77,17 @@ class HttpFixture:
             return real_topic_route(*args, **kwargs)
         self.topic_route_patch = patch.object(topic_report_route, 'serve_topic_report', offline_topic_route)
         self.topic_route_patch.start()
+        from backend import funnel_route
+        real_funnel_route=funnel_route.serve_funnel
+        self.funnel_build_calls=[]
+        def offline_funnel_build(context,*args,**kwargs):
+            self.funnel_build_calls.append(context)
+            raise AssertionError('No real company search is allowed in the HTTP fixture')
+        def offline_funnel_route(*args,**kwargs):
+            kwargs.update(build=offline_funnel_build,package_loader=None)
+            return real_funnel_route(*args,**kwargs)
+        self.funnel_route_patch=patch.object(funnel_route,'serve_funnel',offline_funnel_route)
+        self.funnel_route_patch.start()
         self.ns.update({name: getattr(sync_merge, name) for name in dir(sync_merge)
                         if name.startswith('_') and not name.startswith('__')})
         exec(compile(ast.Module(body=nodes, type_ignores=[]), 'isolated-auth-handler', 'exec'), self.ns)
@@ -91,6 +102,7 @@ class HttpFixture:
         self.server.server_close()
         self.thread.join()
         self.topic_route_patch.stop()
+        self.funnel_route_patch.stop()
         self.tmp.cleanup()
 
     def replace(self, state):

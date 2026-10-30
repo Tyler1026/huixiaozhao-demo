@@ -164,13 +164,13 @@ class DirectDemandFunnelHttpTests(unittest.TestCase):
         status, data = self.request(raw, 'funnel', body)
         self.assertEqual(status, 200)
         self.assertIn('[DONE]', data)
-        sent = json.loads(self.h.ns['DS_OPENER'].open.call_args.args[0].data)
-        prompt = sent['messages'][-1]['content']
+        self.assertEqual(len(self.h.funnel_build_calls),1)
+        context=self.h.funnel_build_calls[0]
+        prompt=funnel_request_text(context)
         self.assertIn(intake_fixture.request()['demand']['description'], prompt)
         self.assertIn('不是已经证实的当地缺口', prompt)
         self.assertNotIn('该企业产品适合全部需求', prompt)
-        result = self.h.state()['PROJECTS'][body['projectKey']]['funnel']
-        self.assertEqual(result['companies'], [])
-        self.assertEqual(result['source_records'], 0)
-        self.assertEqual(result['reportRequestId'], body['reportRequestId'])
-        self.assertEqual(self.audits[-1]['evidence_records'], 0)
+        self.assertNotIn('funnel',self.h.state()['PROJECTS'][body['projectKey']])
+        self.assertEqual(context['reportRequestId'],body['reportRequestId'])
+        self.assertIn('"error"',data)
+        self.h.ns['DS_OPENER'].open.assert_not_called()

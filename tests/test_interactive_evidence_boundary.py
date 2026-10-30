@@ -233,20 +233,17 @@ class StreamBoundaryTests(unittest.TestCase):
         sent=json.loads(self.h.ns['DS_OPENER'].open.call_args.args[0].data)
         self.assertFalse(sent['stream']);self.assertIn('液氧煤油',sent['messages'][-1]['content']);self.assertNotIn('OTHER_WORKSPACE_SECRET',sent['messages'][-1]['content'])
 
-    def test_funnel_allows_authoritative_empty_result_without_padding(self):
+    def test_funnel_search_failure_is_explicit_and_never_empty_success(self):
         raw=json.dumps({'choices':[{'message':{'content':'{"companies": []}'},'finish_reason':'stop'}]}).encode()
         status,data=self.request(raw,'funnel',{'projectKey':'a','topic':'液体火箭','reportRequestId':'r1'})
         self.assertEqual(status,200)
         event=json.loads(next(line[6:] for line in data.splitlines() if line.startswith('data: {')))
-        value=json.loads(event['choices'][0]['delta']['content'])
-        self.assertEqual(value['companies'], [])
-        self.assertEqual(value['total_scanned'], 0)
+        self.assertIn('error',event)
+        self.assertIn('原候选清单已保留',event['error']['message'])
+        self.assertNotIn('funnel',self.h.state()['PROJECTS']['a'])
         self.assertIn('[DONE]',data)
-        sent=json.loads(self.h.ns['DS_OPENER'].open.call_args.args[0].data)
-        prompt=sent['messages'][0]['content']
-        self.assertIn('不设最低企业数量',prompt)
-        self.assertNotIn('至少 30 家',prompt)
-        self.assertIn('有直接业务关联',prompt)
+        self.assertEqual(len(self.h.funnel_build_calls),1)
+        self.h.ns['DS_OPENER'].open.assert_not_called()
 
     def test_full_gate_rejects_unconfirmed_before_upstream_call(self):
         status,data=self.request(b'',mode='full',extra={'purpose':'topic_full','projectKey':'a','topic':'液体火箭','reportRequestId':'r1','confirmations':[]})

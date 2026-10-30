@@ -182,7 +182,7 @@ function renderCluesTwoPanel(projKey){
     '</div>';
   var funnelBody;
   if(running && !fn){
-    funnelBody='<div style="text-align:center;padding:22px;background:#faf9ff;border-radius:10px;border:1px solid #ede9fe;font-size:12.5px;color:#6d28d9">⏳ AI 正在整理当前工作区材料中的企业，业务适配仍需逐家核对…</div>';
+    funnelBody='<div style="text-align:center;padding:22px;background:#faf9ff;border-radius:10px;border:1px solid #ede9fe;font-size:12.5px;color:#6d28d9">⏳ AI 正在联网检索全国企业、核对产品原文并分析排名…</div>';
   } else if(!fn){
     funnelBody='<div style="text-align:center;padding:20px;background:#f9fafb;border-radius:10px;border:1px solid #e8edf5">'+
       '<div style="font-size:12.5px;color:#9aa5b5;margin-bottom:8px">尚未生成企业漏斗</div>'+
@@ -358,7 +358,7 @@ function showFunnelDoneModal(projKey, funnel){
         '<span style="font-size:12px;font-weight:650;color:#22c55e;letter-spacing:.5px">材料企业已整理</span>'+
       '</div>'+
       '<h2 style="font-size:20px;font-weight:750;color:#0b183b;margin:0 0 4px">\u300c'+esc(funnel.topic||p.topic||'\u8be5\u65b9\u5411')+'\u300d材料企业已整理</h2>'+
-      '<p style="font-size:13px;color:#8492a6;margin:0 0 18px">已整理 '+n+' 家材料企业；业务适配需逐条核对，投资意向未知。</p>'+
+      '<p style="font-size:13px;color:#8492a6;margin:0 0 18px">已整理 '+n+' 家候选企业；按AI匹配研判排序，投资意向未知。</p><p style="font-size:12px;color:#64748b">'+esc(funnel.notice||'')+'</p>'+
       '<div style="font-size:12px;font-weight:650;color:#4a5568;margin-bottom:2px">候选预览</div>'+
       topRows+
       '<div style="margin-top:22px;display:flex;gap:10px;align-items:center">'+
@@ -425,6 +425,10 @@ function showFunnelPyramid(k){
   var p=PROJECTS[k]||{}; var fn=p.funnel;
   if(fn&&fn.evidence_contract!=='saved-excerpts-v1'){toast('旧材料清单未核对来源，请重新分析');return;}
   if(!fn||!fn.companies||!fn.companies.length){ toast('暂无漏斗数据'); return; }
+  if(fn.companies.some(function(c){return c.ranking_status==='ai_inference';})){
+    openModal('企业匹配排名 · AI研判', '<p>'+_authEscape(fn.notice||'分数用于候选跟进排序；投资意向和企业实力未核实。')+'</p>'+fn.companies.map(function(c,i){return '<section style="padding:12px 0;border-bottom:1px solid #e2e8f0"><strong>#'+(i+1)+' '+_authEscape(c.name)+' · '+_authEscape(c.ranking_score)+'分</strong><p>'+_authEscape(c.score_reason||'')+'</p><p>待核：'+_authEscape(c.verification_gaps||'')+'</p>'+funnelEvidenceLinks(c)+'</section>';}).join(''),'<button class="ghost-button" onclick="closeModal()">关闭</button>');
+    return;
+  }
   if(fn.companies.some(function(c){return c.fit_score==null;})){
     openModal('材料待筛选 · 尚未进行事实评分','<p>没有可追溯的综合评分依据，不将未知值当作零分或分为 S/A/B 级。</p>'+fn.companies.map(function(c){return '<section><strong>'+_authEscape(c.name)+'</strong><p>'+_authEscape(c.fit||'')+'</p>'+funnelEvidenceLinks(c)+'</section>';}).join(''),'<button class="ghost-button" onclick="closeModal()">关闭</button>');
     return;
@@ -2524,7 +2528,7 @@ async function readTopicReportStream(response, onText, onEvent){
       reportStreamMetadataEvent(metadata,event);
       if(typeof onEvent==='function')onEvent(event,metadata);
     }
-    if(/^chain\.(result|status)$/.test(event.type||'')&&typeof onEvent==='function')onEvent(event);
+    if((/^chain\.(result|status)$/.test(event.type||'')||event.type==='funnel_progress')&&typeof onEvent==='function')onEvent(event);
     var choice=(event.choices||[])[0]||{};
     var delta=(choice.delta||{}).content;
     if(typeof delta!=='string')delta=(choice.message||{}).content;

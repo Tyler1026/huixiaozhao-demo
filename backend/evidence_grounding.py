@@ -482,6 +482,9 @@ def review_and_push(body, state, actor):
     demand_anchors = {a['id']: a for a in funnel_demand_anchors(context)}
     candidates = {c.get('name'): c for c in funnel.get('companies', []) if isinstance(c, dict)}
     catalog = {c['id']: c for c in evidence_catalog(context['chunks'])}
+    if not resource_mode:
+        from .funnel_research import verified_catalog
+        catalog.update({r['id']: r for r in verified_catalog(funnel, context)})
     checked = []
     for name in names:
         c = candidates.get(name)

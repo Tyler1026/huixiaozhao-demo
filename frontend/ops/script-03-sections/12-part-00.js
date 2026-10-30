@@ -91,7 +91,7 @@ function runAIFunnel(projKey, done, onProgress){
   _funnelRunning[projKey]=run;
   function current(){return PROJECTS[projKey]&&(PROJECTS[projKey].topic||'')===topic&&savedEvidenceIdentity(projKey,topic)===sourceIdentity&&(typeof _authEpoch==='number'?_authEpoch:0)===epoch;}
   function release(){if(_funnelRunning[projKey]===run)delete _funnelRunning[projKey];}
-  var q='针对当前方向 '+topic+'，从服务端提供的完整证据目录提取有来源的企业候选。每家必须给出 evidence_ids。只列材料中存在的企业，不为凑数量补入常识名单。业务匹配是待核推断；没有直接投资意向证据时 score_relocate=null。';
+  var q='针对当前方向 '+topic+'，读取当前城市资料和具体需求，联网召回全国企业，目标40–50家并按AI匹配研判分排名。每家必须给出 evidence_ids。只列材料中存在的企业，不为凑数量补入常识名单。业务匹配是待核推断；没有直接投资意向证据时 score_relocate=null。';
   fetch(KB_API_OPS,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,projectKey:projKey,topic:topic,reportRequestId:requestId,stream:true,mode:'funnel'})})
   .then(async function(resp){
     if(!resp.ok){
@@ -99,7 +99,7 @@ function runAIFunnel(projKey, done, onProgress){
       var reasons={evidence_changed:'材料已更新',topic_changed:'当前方向已切换',topic_mismatch:'当前方向已切换',report_changed:'报告版本已更新',evidence_missing:'当前方向缺少可核查材料'};
       throw new Error(reasons[failure.error]?reasons[failure.error]+'，原候选清单已保留；请刷新后重新分析。':'分析暂未完成（'+resp.status+'），原候选清单已保留；请稍后重试。');
     }
-    var result=await readTopicReportStream(resp,function(acc){if(onProgress&&current())onProgress(Math.min(90,5+Math.round(acc.length/15000*85)),acc);});
+    var result=await readTopicReportStream(resp,function(acc){if(onProgress&&current())onProgress(90,acc);},function(event){if(event.type==='funnel_progress'&&current()){var el=document.getElementById('funnelProgPhase');if(el)el.textContent=event.message||'正在检索与排名';if(onProgress)onProgress(50);}});
     if(!current())throw new Error('工作区、方向或报告版本已变化；旧响应未写入');
     var obj=_parseFunnelJson(result.text);
     if(!obj||!Array.isArray(obj.companies))throw new Error('返回结果不完整，原候选清单已保留');

@@ -1197,6 +1197,12 @@ class Handler(BaseHTTPRequestHandler):
         if not q:
             return error_response(self, AuthError(400, 'question_required', '请填写问题'))
 
+        if mode == 'funnel':
+            from backend.funnel_route import serve_funnel
+            from backend.city_report_evidence import load_city_package
+            return serve_funnel(self, body, complete=_complete_topic_plan,
+                                audit=audit_log, package_loader=load_city_package)
+
         if mode == 'onboard_options':
             from backend.kb_context import onboarding_request_context
             try:

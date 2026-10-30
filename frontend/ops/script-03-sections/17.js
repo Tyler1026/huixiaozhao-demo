@@ -1615,7 +1615,7 @@ function opsDemandResults(){
       '<div style="padding:10px 20px;background:#fbfcff;border-bottom:1px solid #f0f4ff;display:flex;flex-direction:column;gap:6px">' +
         '<div style="display:flex;align-items:flex-start;gap:7px;font-size:11.5px;color:#6b7280;line-height:1.6">' +
           '<span style="color:#6d28d9;font-weight:700;flex-shrink:0"><span data-ops-icon="search"></span> AI扫描线索</span>' +
-          '<span>从当前工作区材料整理的<b>待筛选企业</b>。有来源仅代表材料可追溯；须逐家核对产品、需求和适配理由后才能推送。</span>' +
+          '<span>结合当前城市资料和具体需求，联网召回全国<b>候选企业</b>，目标40–50家并按AI匹配研判分排名；推送前须核对产品与需求，投资意向未知。</span>' +
         '</div>' +
         '<div style="display:flex;align-items:flex-start;gap:7px;font-size:11.5px;color:#6b7280;line-height:1.6">' +
           '<span style="color:#b45309;font-weight:700;flex-shrink:0">资源待核</span>' +
@@ -1660,7 +1660,7 @@ function opsDemandResults(){
     var collapsed=window.__funnelCollapse[k]===true;
     var head='<div style="padding:12px 20px 4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
       '<span onclick="toggleFunnelBlock('+_authEscape(JSON.stringify(k))+')" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none">'+'<span style="font-size:11px;color:#6d28d9;display:inline-block;transform:rotate('+(collapsed?'-90':'0')+'deg)">▼</span>'+'<span style="font-size:12.5px;font-weight:750;color:#0b183b">AI 企业漏斗</span>'+'</span>'+
-      (fn?'<span style="font-size:11px;padding:2px 8px;background:#f5f3ff;color:#6d28d9;border-radius:10px">材料待筛选 '+fn.companies.length+' 家</span>':'')+
+      (fn?'<span style="font-size:11px;padding:2px 8px;background:#f5f3ff;color:#6d28d9;border-radius:10px">候选待核 '+fn.companies.length+' 家</span>':'')+
       '<div style="flex:1"></div>'+
       (fn&&fn.companies&&fn.companies.length?'<button onclick="showFunnelPyramid('+_authEscape(JSON.stringify(k))+')" style="padding:4px 10px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;font-size:11.5px;color:#1a56db;cursor:pointer;font-weight:600;margin-right:8px"><span data-ops-icon="industry-analysis"></span> 分级图谱</button>':'')+
       (running?'<span style="font-size:11.5px;color:#6d28d9"><span data-ops-icon="loading"></span> 分析中…</span>':'<button onclick="loadAIScanClues('+_authEscape(JSON.stringify(k))+')" style="padding:4px 10px;background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:8px;font-size:11.5px;color:#6d28d9;cursor:pointer;font-weight:600"><span data-ops-icon="refresh"></span> 重新分析</button>')+
@@ -1669,7 +1669,7 @@ function opsDemandResults(){
     if(fn&&fn.evidence_contract!=='saved-excerpts-v1')return head+'<div style="padding:12px 20px;color:#92400e">此旧清单尚未逐条核对来源。请重新分析后查看和推送。</div>';
     var body;
     if(running && !fn){
-      body='<div style="margin:6px 20px 14px;text-align:center;padding:20px;background:#faf9ff;border-radius:10px;border:1px solid #ede9fe;font-size:12.5px;color:#6d28d9">⏳ AI 正在整理本条需求相关的材料企业，尚未完成业务适配审核…</div>';
+      body='<div style="margin:6px 20px 14px;text-align:center;padding:20px;background:#faf9ff;border-radius:10px;border:1px solid #ede9fe;font-size:12.5px;color:#6d28d9">⏳ AI 正在联网检索全国企业、核对产品原文并分析排名，目标40–50家…</div>';
     } else if(!fn){
       body='<div style="margin:6px 20px 14px;text-align:center;padding:18px;background:#f9fafb;border-radius:10px;border:1px solid #e8edf5">'+
         '<div style="font-size:12.5px;color:#9aa5b5;margin-bottom:8px">尚未生成企业漏斗</div>'+
@@ -1701,7 +1701,7 @@ function opsDemandResults(){
             (c.expansion?'<div style="font-size:10.5px;color:#166534;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:2px 7px;margin-top:4px;display:inline-block;line-height:1.5"><span data-ops-icon="progress"></span> 有扩张需求：'+_authEscape(c.expansion)+'</div>':'')+
             (c.faction?'<div style="font-size:10.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:2px 7px;margin-top:4px;margin-left:4px;display:inline-block;line-height:1.5"><span data-ops-icon="investment-docking"></span> 派系关联：'+_authEscape(c.faction)+'</div>':'')+
             // 评分卡分项构成
-            '<div style="font-size:10px;color:#9aa5b5;margin-top:4px">业务适配待核 · 投资意向未知 · 实力待核</div>'+
+            '<div style="font-size:10px;color:#9aa5b5;margin-top:4px">'+(c.ranking_status==='ai_inference'?'AI匹配研判分 · 产品对应/60 + 原文具体性/25 + 交付依据/15':'业务适配待核')+' · 投资意向未知 · 实力待核</div>'+
             funnelEvidenceLinks(c)+
           '</div>'+
           '<span style="flex-shrink:0;font-size:13px;font-weight:800;color:'+(c.fit_score>=80?'#16a34a':c.fit_score>=60?'#d97706':'#6b7280')+'">'+_authEscape(c.fit_score==null?'待核':c.fit_score)+'<span style="font-size:10px;font-weight:600">'+(c.fit_score==null?'':'分')+'</span></span>'+
@@ -1715,7 +1715,7 @@ function opsDemandResults(){
       }
       body='<div style="margin:6px 20px 14px;padding:12px 14px;background:#fbfcff;border:1px solid #e8edf5;border-radius:10px">'+
         '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">'+pushBtn+pushedTip+'</div>'+
-        rows+toggle+
+        '<p style="font-size:12px;color:#64748b">'+_authEscape(fn.notice||'')+'</p>'+rows+toggle+
       '</div>';
       '</div>';
     }

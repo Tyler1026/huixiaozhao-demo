@@ -464,6 +464,11 @@ def _merge_map(old, new, *, chain_projects=None):
             merged[k] = _merge_report_state(base, v, (chain_projects or {}).get(k))
             continue
         for fk, fv in v.items():
+            if fk == 'funnel' and isinstance(base.get('funnel'), dict) and base['funnel'].get('researchEvidence'):
+                # Nationwide research and ranking are committed by the server.
+                # A stale tab must not replace fifty ranked companies with its
+                # previous two-company snapshot or modify signed originals.
+                continue
             if fk in _CHAIN_MAPS:
                 continue
             if fk == 'historyDeletedAt':

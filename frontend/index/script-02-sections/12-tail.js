@@ -2439,7 +2439,7 @@ async function readTopicReportStream(response, onText, onEvent){
       reportStreamMetadataEvent(metadata,event);
       if(typeof onEvent==='function')onEvent(event,metadata);
     }
-    if(/^chain\.(result|status)$/.test(event.type||'')&&typeof onEvent==='function')onEvent(event);
+    if((/^chain\.(result|status)$/.test(event.type||'')||event.type==='funnel_progress')&&typeof onEvent==='function')onEvent(event);
     var choice=(event.choices||[])[0]||{};
     var delta=(choice.delta||{}).content;
     if(typeof delta!=='string')delta=(choice.message||{}).content;
