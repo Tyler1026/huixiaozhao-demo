@@ -196,7 +196,11 @@ def _redact(value, depth=0):
         return [_redact(item, depth + 1) for item in value]
     encoded = _json_container(value)
     if encoded is not None:
-        return json.dumps(_redact(encoded, depth + 1), ensure_ascii=False)
+        cleaned = _redact(encoded, depth + 1)
+        # JSON-encoded business identifiers and signed payloads are opaque
+        # strings at this boundary. Preserve their bytes when no redaction was
+        # needed; adding spaces changes priority keys and invalidates HMACs.
+        return value if cleaned == encoded else json.dumps(cleaned, ensure_ascii=False)
     return copy.deepcopy(value)
 
 

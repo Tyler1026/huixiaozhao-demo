@@ -265,6 +265,18 @@ def _key(name):
     return re.sub(r'[\W_]', '', unicodedata.normalize('NFKC', name)).casefold()
 
 
+def canonical_priority_key(value):
+    """Only normalize serialization of the two-string demand identity tuple."""
+    if isinstance(value, str):
+        try:
+            parts=json.loads(value)
+            if isinstance(parts,list) and len(parts)==2 and all(isinstance(x,str) for x in parts):
+                return json.dumps(parts,ensure_ascii=False,separators=(',',':'))
+        except (ValueError,TypeError):
+            pass
+    return value
+
+
 def ground_funnel(obj, catalog, context):
     if not isinstance(obj, dict) or not isinstance(obj.get('companies'), list):
         raise ValueError('invalid funnel JSON')
@@ -465,9 +477,21 @@ def review_and_push(body, state, actor):
     funnel = resource_review_preview(body, state) if resource_mode else project.get('funnel') or {}
     if funnel.get('evidence_contract') != 'saved-excerpts-v1' or funnel.get('reportRequestId', '') != context['reportRequestId'] or funnel.get('topic') != context['topic']:
         raise AuthError(409, 'funnel_stale', '候选来源或报告版本已更新，请重新分析')
-    if (not resource_mode and context.get('demandContract') == 'industry-demand-v1'
-            and funnel.get('sourcePriorityKey') != context.get('sourcePriorityKey')):
-        raise AuthError(409, 'funnel_stale', '候选未绑定当前具体需求，请重新筛选')
+    trusted_research_catalog = []
+    repair_binding = False
+    if not resource_mode:
+        from .funnel_research import verified_catalog
+        trusted_research_catalog = verified_catalog(funnel, context)
+        if (context.get('demandContract') == 'industry-demand-v1'
+                and funnel.get('sourcePriorityKey') != context.get('sourcePriorityKey')):
+            # A public display field can be absent in older snapshots. Only
+            # the server signature over this exact project/city/demand/version
+            # may recover it; matching names or same-city data are insufficient.
+            if (canonical_priority_key(funnel.get('sourcePriorityKey')) != canonical_priority_key(context.get('sourcePriorityKey'))
+                    and not trusted_research_catalog):
+                raise AuthError(409, 'funnel_stale',
+                    '这份旧候选清单尚未绑定当前具体需求，并非核对项漏填。请关闭弹窗，在本条需求点击“重新分析”后再推送；只需核对并勾选你要推送的企业。')
+            repair_binding = True
     names = body.get('names')
     if not isinstance(names, list) or not 1 <= len(names) <= 8 or not all(isinstance(n, str) and n.strip() for n in names) or len(set(names)) != len(names):
         raise AuthError(400, 'invalid_selection', '每次请选择 1 至 8 家不同企业')
@@ -482,9 +506,7 @@ def review_and_push(body, state, actor):
     demand_anchors = {a['id']: a for a in funnel_demand_anchors(context)}
     candidates = {c.get('name'): c for c in funnel.get('companies', []) if isinstance(c, dict)}
     catalog = {c['id']: c for c in evidence_catalog(context['chunks'])}
-    if not resource_mode:
-        from .funnel_research import verified_catalog
-        catalog.update({r['id']: r for r in verified_catalog(funnel, context)})
+    catalog.update({r['id']: r for r in trusted_research_catalog})
     checked = []
     for name in names:
         c = candidates.get(name)
@@ -552,6 +574,13 @@ def review_and_push(body, state, actor):
             'reportRequestId': context['reportRequestId']})
         existing.add(nk); added.append(c['name'])
     if not resource_mode:
+        # Restore metadata only after every source and human review has passed.
+        # Invalid submissions must not mutate either binding or candidate data.
+        if repair_binding:
+            funnel.update(demandContract=context['demandContract'],
+                          sourcePriorityKey=context['sourcePriorityKey'],
+                          demandTitle=context.get('demandTitle', ''),
+                          binding_contract='demand-funnel-binding-v1')
         funnel['pushed'] = bool(added or skipped)
         funnel['pushedAt'] = now
         funnel['pushedNames'] = list(dict.fromkeys((funnel.get('pushedNames') or [])+added))

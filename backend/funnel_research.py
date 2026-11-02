@@ -10,7 +10,7 @@ import secrets
 import time
 from concurrent.futures import ThreadPoolExecutor, wait
 
-from .evidence_grounding import evidence_catalog, ground_funnel, funnel_request_text, _key
+from .evidence_grounding import evidence_catalog, ground_funnel, funnel_request_text, _key, canonical_priority_key
 
 TARGET = 50
 _PROCESS_KEY = secrets.token_bytes(32)
@@ -49,7 +49,13 @@ def seal_catalog(catalog, context):
 def verified_catalog(funnel, context):
     """Browser sync cannot create or alter an external product source."""
     saved = funnel.get('researchEvidence')
-    if not isinstance(saved, dict) or saved.get('scope') != _scope(context):
+    if not isinstance(saved, dict) or not isinstance(saved.get('scope'),dict):
+        return []
+    actual_scope=copy.deepcopy(saved['scope'])
+    expected_scope=_scope(context)
+    for scope in (actual_scope,expected_scope):
+        scope['sourcePriorityKey']=canonical_priority_key(scope.get('sourcePriorityKey',''))
+    if actual_scope != expected_scope:
         return []
     payload = {k: saved.get(k) for k in ('scope', 'catalog')}
     sig = saved.get('signature')

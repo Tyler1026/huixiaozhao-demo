@@ -97,6 +97,12 @@ def serve_funnel(handler, body, *, complete, audit, build=build_funnel, package_
                 raise AuthError(409,'topic_changed','方向已切换，请重新分析')
             # A partial run cannot erase a larger current, reviewed source pool.
             from .funnel_research import verified_catalog
+            if current.get('demandContract')=='industry-demand-v1':
+                if not verified_catalog(result,current):
+                    raise AuthError(409,'funnel_binding_invalid','候选尚未通过当前需求的来源绑定校验，原清单已保留，请重新分析。')
+                result.update(demandContract=current['demandContract'],
+                    sourcePriorityKey=current.get('sourcePriorityKey',''),
+                    demandTitle=current.get('demandTitle',''),binding_contract='demand-funnel-binding-v1')
             previous=project.get('funnel') or {}
             if result.get('status')=='partial' and len(previous.get('companies',[]))>len(result['companies']) and verified_catalog(previous,current):
                 raise AuthError(503,'company_analysis_incomplete','本轮分析未完成，已保留上次较完整清单，请重试')

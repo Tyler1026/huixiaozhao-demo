@@ -27,6 +27,9 @@ function _funnelClueId(projKey, name, idx){
 function pushFunnelTopToGov(projKey, n, onlyName, preview){
   var p=PROJECTS[projKey], fn=preview||(p&&p.funnel);
   if(!fn||fn.evidence_contract!=='saved-excerpts-v1'){toast('旧候选缺少逐条来源，请先重新分析');return;}
+  if(!preview&&p&&p.demandContract==='industry-demand-v1'&&typeof p.sourcePriorityKey==='string'&&!funnelReviewSamePriorityKey(fn.sourcePriorityKey,p.sourcePriorityKey)&&!fn.researchEvidence){
+    toast('这份旧清单尚未绑定本条具体需求。请先在本条需求点击“重新分析”，完成后只核对并勾选你要推送的企业。');return;
+  }
   var top=(onlyName?fn.companies.filter(function(c){return c.name===onlyName;}):fn.companies).slice(0,Math.min(n||8,8));
   if(!top.length){toast('当前材料没有可复核企业；这不代表现实中不存在相关企业');return;}
   var anchors=preview?preview.demandAnchors:funnelReviewDemandAnchors(projKey,fn.topic);
@@ -43,7 +46,7 @@ function pushFunnelTopToGov(projKey, n, onlyName, preview){
       '<label class="funnel-review-reason-label" for="funnelReason-'+i+'">3. 填写本企业的匹配理由</label><textarea id="funnelReason-'+i+'" rows="3" maxlength="1200" placeholder="12至1200字：说明具体产品如何对应需求，以及仍需核实的技术条件"></textarea>'+
       '<label class="funnel-review-confirm"><input type="checkbox" id="funnelReview-'+i+'"><span>我已核对上述原文和需求，将这家企业作为待核线索推送</span></label></li>';
   }).join('');
-  var content='<section class="funnel-review"><div class="funnel-review-notice"><strong>本次复核 '+top.length+' 家企业</strong><p>逐家选择产品与需求原文、填写匹配理由，再勾选需要推送的企业。节选仅便于阅读，完整原文保留供核对；推送后投资意向仍待核验。</p></div><ul class="funnel-review-list">'+list+'</ul><p id="funnelReviewError" class="funnel-review-error" role="alert" aria-live="polite"></p></section>';
+  var content='<section class="funnel-review"><div class="funnel-review-notice"><strong>本次展示 '+top.length+' 家候选企业</strong><p>只需为勾选的企业选择产品与需求原文、填写匹配理由；未勾选的企业无需填写。节选仅便于阅读，完整原文保留供核对；推送后投资意向仍待核验。</p></div><ul class="funnel-review-list">'+list+'</ul><p id="funnelReviewError" class="funnel-review-error" role="alert" aria-live="polite"></p></section>';
   openModal('核对企业与招商需求',content,'<button class="ghost-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="confirmFunnelReview('+_authEscape(JSON.stringify(projKey))+','+top.length+')">推送已勾选企业</button>');
   if(typeof document.querySelector==='function'){var modal=document.querySelector('#modalLayer .modal');if(modal&&modal.classList){modal.classList.add('funnel-review-modal');if(modal.parentElement&&modal.parentElement.classList)modal.parentElement.classList.add('funnel-review-layer');}}
 }
@@ -92,6 +95,10 @@ function funnelReviewDemandAnchors(key,topic){
   var report=(rs.aiReportByTopic||{})[topic]||(rs.topic===topic?rs.text:'');
   if(phase===2&&typeof report==='string')report.split('\n').forEach(function(line,i){var quote=line.trim();if(quote.length>=12&&quote.length<=3500)anchors.push({id:'report:'+i,kind:'report',quote:quote});});
   return anchors;
+}
+function funnelReviewSamePriorityKey(a,b){
+  if(a===b)return true;
+  try{var x=JSON.parse(a),y=JSON.parse(b);return Array.isArray(x)&&Array.isArray(y)&&x.length===2&&y.length===2&&x.every(function(v){return typeof v==='string';})&&y.every(function(v){return typeof v==='string';})&&x[0]===y[0]&&x[1]===y[1];}catch(e){return false;}
 }
 function funnelReviewExcerpt(quote,name,limit){
   var raw=String(quote||''), lines=raw.split(/\r?\n/).map(function(line){return line.trim();}).filter(Boolean);

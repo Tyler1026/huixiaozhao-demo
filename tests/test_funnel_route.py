@@ -10,6 +10,26 @@ from tests.test_topic_priorities_route import Handler
 
 
 class FunnelRouteTests(unittest.TestCase):
+    def test_new_report_funnel_is_stamped_from_verified_current_demand(self):
+        from backend.evidence_grounding import ground_funnel
+        from backend.funnel_research import originals_catalog
+        handler=Handler();handler.data['PROJECTS']['p'].update(demandContract='industry-demand-v1',
+            demandOrigin='report',sourcePriorityKey='["industry","储氢材料"]',
+            demandTitle='储氢材料适配',selectedPriority={'focus':'储氢材料'},
+            demandSpec={'description':'寻找储氢材料供应企业，并核实实际交付范围'})
+        handler._scoped_state=copy.deepcopy(handler.data)
+        def build(ctx,*args,**kwargs):
+            cat=originals_catalog([{'url':'https://official.example/product','text':
+                '甲科技有限公司研发生产储氢材料并提供产品适配验证服务，实际资质、规格和合作条件还需进一步核查。'}],ctx['topic'])
+            result=ground_funnel({'companies':[{'name':'甲科技有限公司','evidence_ids':[cat[0]['id']]}]},cat,ctx)
+            result['researchEvidence']=seal_catalog(cat,ctx);result.pop('sourcePriorityKey')
+            return result
+        events=self.run_route(handler,build)
+        self.assertEqual(events[-1]['choices'][0]['finish_reason'],'stop')
+        saved=handler.data['PROJECTS']['p']['funnel']
+        self.assertEqual(saved['sourcePriorityKey'],handler.data['PROJECTS']['p']['sourcePriorityKey'])
+        self.assertEqual(saved['binding_contract'],'demand-funnel-binding-v1')
+
     def test_initial_progress_is_flushed_before_archive_read_and_heartbeat_retains_real_counts(self):
         handler=Handler()
         headers=[]

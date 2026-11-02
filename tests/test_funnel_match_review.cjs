@@ -41,6 +41,16 @@ test('navigation-heavy originals have compact options and bounded reading panels
 test('missing either anchor or per-company reason prevents any request',()=>{
  for(const field of ['product','demand','reason']){const h=boot();h.open();h.fill();h.nodes[{product:'funnelProduct-0',demand:'funnelDemand-0',reason:'funnelReason-0'}[field]].value='';h.c.confirmFunnelReview('p',1);assert.equal(h.calls.length,0);assert.match(h.nodes.funnelReviewError.textContent,/每家/);}
 });
+test('unsigned legacy shortlist is rejected before the administrator fills the form',()=>{
+ const h=boot();h.c.PROJECTS.p.demandContract='industry-demand-v1';h.c.PROJECTS.p.sourcePriorityKey='current-demand';
+ h.open();assert.equal(h.modal(),'');assert.match(h.toasts.join(' '),/先在本条需求点击/);assert.equal(h.calls.length,0);
+});
+test('equivalent JSON demand identifiers do not reject an otherwise current shortlist',()=>{
+ const h=boot();h.c.PROJECTS.p.demandContract='industry-demand-v1';h.c.PROJECTS.p.sourcePriorityKey='["industry","滤器"]';
+ h.c.PROJECTS.p.demandSpec={description:h.demand,conditions:''};
+ h.c.PROJECTS.p.funnel.sourcePriorityKey='["industry", "滤器"]';h.open();
+ assert.match(h.modal(),/funnel-review-card/);assert.equal(h.toasts.length,0);
+});
 test('successful payload has exact source quote, demand anchor ID and individual human review',async()=>{
  const h=boot();h.open();h.fill();h.c.confirmFunnelReview('p',1);await flush();assert.equal(h.calls.length,1);const b=h.calls[0].body;
  assert.equal('reviewNote' in b,false);assert.deepEqual(b.names,['甲公司']);assert.equal(b.reviews[0].product.evidenceId,'src0');assert.equal(b.reviews[0].product.quote,h.product);assert.equal(b.reviews[0].demand.anchorId,'report:0');assert.equal(b.reviews[0].demand.quote,h.demand);assert.equal(b.reviews[0].confirmed,true);
