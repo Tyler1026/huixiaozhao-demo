@@ -12723,7 +12723,7 @@ function opsCityProfile(){
   var body='';
   if(prof.summary) body+='<div style="border:1px solid #bfdbfe;background:#f5f9ff;border-radius:10px;padding:14px 16px;margin-bottom:14px">'+
     '<div style="font-size:11px;font-weight:750;color:#1d4ed8;letter-spacing:.08em;margin-bottom:6px">画像总览</div>'+
-    '<div style="font-size:13.5px;color:#22364f;line-height:1.85">'+cpEsc(prof.summary)+'</div></div>';
+    '<div style="font-size:13.5px;color:#22364f;line-height:1.85">'+('当前画像包含 '+Object.keys(o).filter(function(k){return Array.isArray(o[k])&&o[k].length;}).length+' 类客观材料。偏好以已保存问卷为准，材料披露内容尚需核实。<details style="margin-top:10px"><summary style="cursor:pointer">展开总览原文与来源</summary><div style="margin-top:10px;line-height:1.9;overflow-wrap:anywhere">'+cpSourceText(prof.summary)+'</div></details>')+'</div></div>';
 
   // 一、数据图表（图最直观，放最前；细节文字在后）
   body+=cpChartsSection(prof);
@@ -14332,6 +14332,47 @@ opsEntDelete.unconfirmedIds=new WeakSet();
 function opsPushEntToCity(projKey){resourceReviewChooseResources(projKey);}
 
 function opsDoPushToCity(projKey, count){resourceReviewConfirmSelection(projKey);}
+
+/* Readable supplementary materials and source-bound profile presentation. */
+function ragReadSupplement(button){
+  var card=button.closest('[data-rag-readable]');if(!card)return;
+  var body=card.querySelector('[data-rag-reading-body]');if(!body)return;
+  openModal('补充材料 · 完整阅读','<div style="line-height:1.9;overflow-wrap:anywhere">'+body.innerHTML+'</div>','<button type="button" onclick="closeModal()">关闭</button>');
+}
+var _ragReadableChunk=ragRenderChunk;
+ragRenderChunk=function(raw,idx,hl){
+  var html=_ragReadableChunk(raw,idx,hl);
+  return '<article data-rag-readable style="margin-bottom:10px"><button type="button" class="ops-ui-button" onclick="ragReadSupplement(this)" style="margin-bottom:6px">展开完整阅读</button><div data-rag-reading-body>'+html+'</div></article>';
+};
+function cpSourceText(text){
+  return cpEsc(text).replace(/\[([^\]\n]{1,100})\]\((https?:\/\/[^\s)]+)\)/g,function(_,label,url){
+    try{var parsed=new URL(url.replace(/&amp;/g,'&'));if(parsed.username||parsed.password)return label;return '<a href="'+cpEsc(parsed.href)+'" target="_blank" rel="noopener noreferrer">'+label+' ↗</a>';}catch(e){return label;}
+  }).replace(/\n/g,'<br>');
+}
+var _cpReadableObject=cpObjBlock;
+cpObjBlock=function(title,icon,rows){
+  if(!Array.isArray(rows)||!rows.length)return '';
+  return '<section class="ops-ui-card" style="padding:16px"><h3>'+icon+' '+cpEsc(title)+'</h3>'+rows.map(function(row){
+    var text=String(row.value||'');return '<details style="padding:10px 0;border-bottom:1px solid #eef2f7"><summary style="cursor:pointer;line-height:1.8"><b>'+cpEsc(row.label||title)+'</b> · '+cpEsc(text.slice(0,110))+(text.length>110?'…':'')+'</summary><div style="line-height:1.9;overflow-wrap:anywhere;margin-top:10px">'+cpSourceText(text)+(row.detail?'<p>'+cpEsc(row.detail)+'</p>':'')+(row.evidence&&row.evidence.length?funnelEvidenceLinks({evidence:row.evidence}):row.cite?'<p>来源：'+cpSourceText(row.cite)+'</p>':'')+'</div></details>';
+  }).join('')+'</section>';
+};
+var _cpReadableCharts=cpChartsSection;
+cpChartsSection=function(prof){
+  var copy=Object.assign({},prof),charts=Object.assign({},prof.charts||{}),key=cpProjKey(),project=PROJECTS[key];
+  var records=(prof.evidence||[]).map(function(e){return {text:e.quote||'',cite:e.cite||((e.urls||[]).join('；'))};});
+  if(project&&typeof knowledgeMaterialCorpus==='function')records=records.concat(knowledgeMaterialCorpus(key,project).map(function(e){return {text:ragItemText(e),cite:e.sourceFile||e.cite||'当前城市已保存材料'};}));
+  var gdp=null;
+  records.some(function(record){
+    var text=record.text.replace(/\*\*/g,'').replace(/,/g,'');
+    var match=text.match(/(?:地区|全市|全区)?生产总值(?:为|达到|达)?\s*[（(]?(?:GDP[）)]?)?\s*([0-9]+(?:\.[0-9]+)?)\s*亿元/i);
+    if(match&&!gdp)gdp={value:Number(match[1]),cite:record.cite};
+    var structure=text.match(/三次产业(?:增加值)?结构[^。\n]{0,90}?(?:调整为|调整到|为|至)\s*(\d+(?:\.\d+)?)\s*[:：]\s*(\d+(?:\.\d+)?)\s*[:：]\s*(\d+(?:\.\d+)?)/);
+    if(structure&&!charts.structure){var values=structure.slice(1).map(Number);if(values.every(function(v){return v>=0&&v<=100;})&&Math.abs(values.reduce(function(a,b){return a+b;},0)-100)<0.3)charts.structure={primary:values[0],secondary:values[1],tertiary:values[2],cite:record.cite};}
+    return false;
+  });
+  copy.charts=charts;
+  return (gdp?'<div style="margin:14px 0">'+cpChartBox('材料披露 · 地区生产总值', '<strong style="font-size:26px;color:#1d4ed8">'+gdp.value+' <small>亿元</small></strong><p>按当前城市材料原值展示，统计年度和适用口径请核对原文；尚未独立核实。</p>',gdp.cite)+'</div>':'')+_cpReadableCharts(copy);
+};
 /* Receiving and responding are acknowledged workflow actions, not local status edits. */
 var OPS_DOCKING_DRAFTS=Object.create(null);
 function opsIsSubmittedDemand(key,project){
