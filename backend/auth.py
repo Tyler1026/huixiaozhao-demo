@@ -278,6 +278,17 @@ def _token_digest(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def session_cookie_scope(headers):
+    """Separate browser workbenches; scope never grants authorization."""
+    from urllib.parse import urlsplit
+    referer = next((v for k, v in (headers or {}).items() if k.lower() == 'referer'), '')
+    try:
+        path = urlsplit(referer).path
+    except (TypeError, ValueError):
+        return ''
+    return 'admin' if path == '/ops' or path.startswith('/ops/') else 'user' if path in ('/', '/app') or path.startswith('/app/') else ''
+
+
 def _cookie_token(headers, token):
     if token is not None:
         return token
@@ -290,6 +301,10 @@ def _cookie_token(headers, token):
             return None
         cookies = SimpleCookie()
         cookies.load(cookie_header)
+        scope = session_cookie_scope(headers)
+        scoped_name = SESSION_COOKIE_NAME + '_' + scope if scope else SESSION_COOKIE_NAME
+        if scoped_name in cookies:
+            return cookies[scoped_name].value
         return cookies[SESSION_COOKIE_NAME].value if SESSION_COOKIE_NAME in cookies else None
     except (AttributeError, CookieError, TypeError, ValueError):
         return None
@@ -339,6 +354,8 @@ def resolve_principal(headers, state, admin_config=None, *, token=None, now=None
                 config.username + '\0' + config.password, session.get('admin_config_fingerprint'))):
             return None
         return _admin_principal(config)
+    if session_cookie_scope(headers) == 'admin':
+        return None
     source = session.get('source')
     if source not in ('USER_PROFILES', 'CITY_ACCOUNTS'):
         return None

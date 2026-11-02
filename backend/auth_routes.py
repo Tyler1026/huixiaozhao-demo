@@ -4,7 +4,7 @@ from http.cookies import SimpleCookie
 from urllib.parse import urlsplit
 
 from .auth import (AuthError, SESSION_COOKIE_NAME, SESSION_TTL_SECONDS,
-                   handle_auth, require_session)
+                   handle_auth, require_session, session_cookie_scope)
 from .admin_invites import manage_invite, manage_monthly_report, remove_member
 
 
@@ -54,10 +54,11 @@ def parse_body(raw):
     return body
 
 
-def session_cookie(token='', *, secure=True, clear=False):
+def session_cookie(token='', *, secure=True, clear=False, scope=''):
     cookie = SimpleCookie()
-    cookie[SESSION_COOKIE_NAME] = token
-    item = cookie[SESSION_COOKIE_NAME]
+    name = SESSION_COOKIE_NAME + '_' + scope if scope else SESSION_COOKIE_NAME
+    cookie[name] = token
+    item = cookie[name]
     item['path'] = '/'
     item['httponly'] = True
     item['samesite'] = 'Strict'
@@ -131,8 +132,9 @@ def dispatch_auth(handler, method, path, raw, session_factory, *, admin_config=N
         result.pop('expires_at', None)
         if 'auth' in result:
             result['authenticated'] = True
-        cookie = (session_cookie(clear=True, secure=secure) if operation == 'logout' else
-                  session_cookie(token, secure=secure) if token else None)
+        scope = session_cookie_scope(handler.headers)
+        cookie = (session_cookie(clear=True, secure=secure, scope=scope) if operation == 'logout' else
+                  session_cookie(token, secure=secure, scope=scope) if token else None)
         respond(handler, 200, result, cookie=cookie)
     except AuthError as error:
         error_response(handler, error)
