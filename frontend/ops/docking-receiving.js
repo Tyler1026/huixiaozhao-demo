@@ -65,7 +65,7 @@ async function opsDockingSubmit(draft,body){
   var id=(draft.kind==='verification'?'verification':'receiving')+'-save-'+draft.key+(draft.clueId?'-'+draft.clueId:''),button=document.getElementById(id);if(button){button.disabled=true;button.textContent='正在保存…';}
   try{var result=await dockingSendWorkflow(body);if(!result)return false;delete OPS_DOCKING_DRAFTS[draft.mapKey];var note=document.getElementById((draft.kind==='verification'?'verification':'receiving')+'-note-'+draft.key+(draft.clueId?'-'+draft.clueId:''));if(note)note.value='';if(typeof renderOpsV2==='function')renderOpsV2();toast(result.created?'回复已保存，客户端可查看':'这条回复已保存，没有重复创建');return true;}
   catch(error){draft.uncertain=!error.definitive;opsDockingSetError(draft,error.message||'保存未完成，请按原内容重试。');return false;}
-  finally{draft.pending=false;if(button&&button.isConnected!==false){button.disabled=false;button.textContent=draft.kind==='verification'?'保存核验反馈':'保存并回复客户';}}
+  finally{draft.pending=false;button=document.getElementById(id);if(button&&button.isConnected!==false){button.disabled=false;button.textContent=draft.kind==='verification'?'保存核验反馈':'保存并回复客户';}}
 }
 function opsSaveReceiving(key){
   var draft=opsDockingDraft('intake',key,null);opsDockingReadFields(draft,['status','owner','nextStep','note'],'receiving');var v=draft.values;

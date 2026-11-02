@@ -8202,8 +8202,16 @@ function dockingIntakeStatus(project){
 }
 async function dockingSendWorkflow(body){
   var context=dockingActionContext(body.projectKey,body.clueId);if(!context)throw dockingActionError('需求或企业已变化，请刷新后重试。',true);
-  var response=await fetch('/api/docking-action',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  var result;try{result=await response.json();}catch(_){throw dockingActionError('未收到保存结果，请按原内容重试。');}
+  var controller=new AbortController(),timer,response,result;
+  try{
+    var timeout=new Promise(function(_,reject){timer=setTimeout(function(){reject(dockingActionError('保存请求超时，结果尚未确认，请按原内容重试。'));controller.abort();},20000);});
+    var saved=await Promise.race([(async function(){
+      var response=await fetch('/api/docking-action',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:controller.signal});
+      var result;try{result=await response.json();}catch(_){throw dockingActionError('未收到保存结果，请按原内容重试。');}
+      return {response:response,result:result};
+    })(),timeout]);
+    response=saved.response;result=saved.result;
+  }finally{clearTimeout(timer);}
   if(!response.ok||!result||result.ok!==true)throw dockingActionError(result&&result.message||result&&result.error||'操作尚未保存，请重试。',response.status>=400&&response.status<500&&response.status!==408);
   if(!dockingActionContextCurrent(context))return null;
   if(result.projectKey!==context.key||!result.project||dockingProjectIdentity(result.project)!==context.identity||!Array.isArray(result.logs))throw dockingActionError('返回的需求不一致，请刷新核对。');

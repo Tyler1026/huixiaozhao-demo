@@ -5228,7 +5228,7 @@ async function submitIndustryDemand(){
     if(INDUSTRY_DEMAND_DRAFT===draft){closeModal();INDUSTRY_DEMAND_DRAFT=null;render();}
     toast(result.created?'这条招商需求已提交，可在招商对接中单独查看':'这条建议已有需求，已保留原提交内容');return true;
   }catch(exception){if((typeof _authEpoch==='number'?_authEpoch:0)===draft.epoch&&INDUSTRY_DEMAND_DRAFT===draft)fail(exception.message||'提交未完成，请重试。');return false;}
-  finally{draft.pending=false;if(button&&button.isConnected!==false){button.disabled=false;button.textContent='确认提交本条需求';}}
+  finally{draft.pending=false;button=document.getElementById(id);if(button&&button.isConnected!==false){button.disabled=false;button.textContent='确认提交本条需求';}}
 }
 
 /* A known customer need can enter the same receiving queue without a report. */
@@ -5303,7 +5303,7 @@ async function submitDirectDemand(){
     if(DIRECT_DEMAND_DRAFT===draft){DIRECT_DEMAND_DRAFT=null;closeModal();window.__projOpen=result.projectKey;if(typeof dockingViewState==='function'){dockingViewState().selected=result.projectKey;dockingViewState().filter='all';dockingViewState().search='';}view='home';render();}
     toast('招商需求已提交，等待管理端受理');return true;
   }catch(exception){draft.uncertain=!exception.definitive;if(DIRECT_DEMAND_DRAFT===draft&&draft.epoch===dockingActionEpoch())fail(exception.message||'提交未完成，请重试。');return false;}
-  finally{draft.pending=false;if(button&&button.isConnected!==false){button.disabled=false;button.textContent='提交给管理端';}}
+  finally{draft.pending=false;button=document.getElementById(id);if(button&&button.isConnected!==false){button.disabled=false;button.textContent='提交给管理端';}}
 }
 /* Explicit docking receipts: a request or a note never certifies an enterprise. */
 var DOCKING_LOG_DRAFT=null;
@@ -5455,7 +5455,7 @@ async function submitDockingLog(){
     if(DOCKING_LOG_DRAFT===draft){DOCKING_LOG_DRAFT=null;closeModal();}
     if(typeof render==='function')render();toast(draft.operation==='supplement_demand'?'补充资料已提交，管理端可在该需求下继续处理':result.created?'跟进记录已保存':'这条跟进记录已保存，没有重复创建');return true;
   }catch(error){draft.uncertain=!error.definitive;if(DOCKING_LOG_DRAFT===draft&&draft.context.epoch===dockingActionEpoch())dockingLogError(error.message||'保存未完成，请按原内容重试。');return false;}
-  finally{draft.pending=false;if(button&&button.isConnected!==false){button.disabled=false;button.textContent=draft.operation==='supplement_demand'?'提交补充资料':'保存跟进记录';}}
+  finally{draft.pending=false;button=document.getElementById(id);if(button&&button.isConnected!==false){button.disabled=false;button.textContent=draft.operation==='supplement_demand'?'提交补充资料':'保存跟进记录';}}
 }
 async function requestDockingVerification(key,clueId){
   var context=dockingActionContext(key,clueId);if(!context)return false;
@@ -5549,7 +5549,7 @@ async function saveDockingClue(){
     if(DOCKING_CLUE_DRAFT===draft){DOCKING_CLUE_DRAFT=null;closeModal();}
     if(typeof render==='function')render();toast('企业资料已保存，后续仍需核验');return true;
   }catch(exception){if(DOCKING_CLUE_DRAFT===draft&&draft.context.epoch===dockingActionEpoch())fail(exception.message||'保存未完成，请重试。');return false;}
-  finally{draft.pending=false;if(button&&button.isConnected!==false){button.disabled=false;button.textContent='保存企业资料';}}
+  finally{draft.pending=false;button=document.getElementById(id);if(button&&button.isConnected!==false){button.disabled=false;button.textContent='保存企业资料';}}
 }
 
 /* Workflow acknowledgements merge only the server-owned state they changed. */
@@ -5564,8 +5564,16 @@ function dockingIntakeStatus(project){
 }
 async function dockingSendWorkflow(body){
   var context=dockingActionContext(body.projectKey,body.clueId);if(!context)throw dockingActionError('需求或企业已变化，请刷新后重试。',true);
-  var response=await fetch('/api/docking-action',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  var result;try{result=await response.json();}catch(_){throw dockingActionError('未收到保存结果，请按原内容重试。');}
+  var controller=new AbortController(),timer,response,result;
+  try{
+    var timeout=new Promise(function(_,reject){timer=setTimeout(function(){reject(dockingActionError('保存请求超时，结果尚未确认，请按原内容重试。'));controller.abort();},20000);});
+    var saved=await Promise.race([(async function(){
+      var response=await fetch('/api/docking-action',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:controller.signal});
+      var result;try{result=await response.json();}catch(_){throw dockingActionError('未收到保存结果，请按原内容重试。');}
+      return {response:response,result:result};
+    })(),timeout]);
+    response=saved.response;result=saved.result;
+  }finally{clearTimeout(timer);}
   if(!response.ok||!result||result.ok!==true)throw dockingActionError(result&&result.message||result&&result.error||'操作尚未保存，请重试。',response.status>=400&&response.status<500&&response.status!==408);
   if(!dockingActionContextCurrent(context))return null;
   if(result.projectKey!==context.key||!result.project||dockingProjectIdentity(result.project)!==context.identity||!Array.isArray(result.logs))throw dockingActionError('返回的需求不一致，请刷新核对。');
@@ -14391,7 +14399,7 @@ async function opsDockingSubmit(draft,body){
   var id=(draft.kind==='verification'?'verification':'receiving')+'-save-'+draft.key+(draft.clueId?'-'+draft.clueId:''),button=document.getElementById(id);if(button){button.disabled=true;button.textContent='正在保存…';}
   try{var result=await dockingSendWorkflow(body);if(!result)return false;delete OPS_DOCKING_DRAFTS[draft.mapKey];var note=document.getElementById((draft.kind==='verification'?'verification':'receiving')+'-note-'+draft.key+(draft.clueId?'-'+draft.clueId:''));if(note)note.value='';if(typeof renderOpsV2==='function')renderOpsV2();toast(result.created?'回复已保存，客户端可查看':'这条回复已保存，没有重复创建');return true;}
   catch(error){draft.uncertain=!error.definitive;opsDockingSetError(draft,error.message||'保存未完成，请按原内容重试。');return false;}
-  finally{draft.pending=false;if(button&&button.isConnected!==false){button.disabled=false;button.textContent=draft.kind==='verification'?'保存核验反馈':'保存并回复客户';}}
+  finally{draft.pending=false;button=document.getElementById(id);if(button&&button.isConnected!==false){button.disabled=false;button.textContent=draft.kind==='verification'?'保存核验反馈':'保存并回复客户';}}
 }
 function opsSaveReceiving(key){
   var draft=opsDockingDraft('intake',key,null);opsDockingReadFields(draft,['status','owner','nextStep','note'],'receiving');var v=draft.values;
