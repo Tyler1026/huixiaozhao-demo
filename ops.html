@@ -5228,7 +5228,7 @@ async function submitIndustryDemand(){
     if(INDUSTRY_DEMAND_DRAFT===draft){closeModal();INDUSTRY_DEMAND_DRAFT=null;render();}
     toast(result.created?'这条招商需求已提交，可在招商对接中单独查看':'这条建议已有需求，已保留原提交内容');return true;
   }catch(exception){if((typeof _authEpoch==='number'?_authEpoch:0)===draft.epoch&&INDUSTRY_DEMAND_DRAFT===draft)fail(exception.message||'提交未完成，请重试。');return false;}
-  finally{draft.pending=false;button=document.getElementById(id);if(button&&button.isConnected!==false){button.disabled=false;button.textContent='确认提交本条需求';}}
+  finally{draft.pending=false;if(button&&button.isConnected!==false){button.disabled=false;button.textContent='确认提交本条需求';}}
 }
 
 /* A known customer need can enter the same receiving queue without a report. */
@@ -5303,7 +5303,7 @@ async function submitDirectDemand(){
     if(DIRECT_DEMAND_DRAFT===draft){DIRECT_DEMAND_DRAFT=null;closeModal();window.__projOpen=result.projectKey;if(typeof dockingViewState==='function'){dockingViewState().selected=result.projectKey;dockingViewState().filter='all';dockingViewState().search='';}view='home';render();}
     toast('招商需求已提交，等待管理端受理');return true;
   }catch(exception){draft.uncertain=!exception.definitive;if(DIRECT_DEMAND_DRAFT===draft&&draft.epoch===dockingActionEpoch())fail(exception.message||'提交未完成，请重试。');return false;}
-  finally{draft.pending=false;button=document.getElementById(id);if(button&&button.isConnected!==false){button.disabled=false;button.textContent='提交给管理端';}}
+  finally{draft.pending=false;if(button&&button.isConnected!==false){button.disabled=false;button.textContent='提交给管理端';}}
 }
 /* Explicit docking receipts: a request or a note never certifies an enterprise. */
 var DOCKING_LOG_DRAFT=null;
@@ -5455,7 +5455,7 @@ async function submitDockingLog(){
     if(DOCKING_LOG_DRAFT===draft){DOCKING_LOG_DRAFT=null;closeModal();}
     if(typeof render==='function')render();toast(draft.operation==='supplement_demand'?'补充资料已提交，管理端可在该需求下继续处理':result.created?'跟进记录已保存':'这条跟进记录已保存，没有重复创建');return true;
   }catch(error){draft.uncertain=!error.definitive;if(DOCKING_LOG_DRAFT===draft&&draft.context.epoch===dockingActionEpoch())dockingLogError(error.message||'保存未完成，请按原内容重试。');return false;}
-  finally{draft.pending=false;button=document.getElementById(id);if(button&&button.isConnected!==false){button.disabled=false;button.textContent=draft.operation==='supplement_demand'?'提交补充资料':'保存跟进记录';}}
+  finally{draft.pending=false;if(button&&button.isConnected!==false){button.disabled=false;button.textContent=draft.operation==='supplement_demand'?'提交补充资料':'保存跟进记录';}}
 }
 async function requestDockingVerification(key,clueId){
   var context=dockingActionContext(key,clueId);if(!context)return false;
@@ -5549,7 +5549,7 @@ async function saveDockingClue(){
     if(DOCKING_CLUE_DRAFT===draft){DOCKING_CLUE_DRAFT=null;closeModal();}
     if(typeof render==='function')render();toast('企业资料已保存，后续仍需核验');return true;
   }catch(exception){if(DOCKING_CLUE_DRAFT===draft&&draft.context.epoch===dockingActionEpoch())fail(exception.message||'保存未完成，请重试。');return false;}
-  finally{draft.pending=false;button=document.getElementById(id);if(button&&button.isConnected!==false){button.disabled=false;button.textContent='保存企业资料';}}
+  finally{draft.pending=false;if(button&&button.isConnected!==false){button.disabled=false;button.textContent='保存企业资料';}}
 }
 
 /* Workflow acknowledgements merge only the server-owned state they changed. */
