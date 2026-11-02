@@ -30,6 +30,13 @@ class TopicChainError(ValueError):
 # These terms classify general industry roles, not cities, firms or investment
 # prospects. A name matching several lanes is deliberately not assigned one.
 _TAXONOMIES = (
+    {'id': 'food-digital-v1', 'label': '食品加工与数智化装备服务', 'topic': r'食品|农产品加工|粮油加工|肉制品|食品加工智改|食品.*数转',
+     'description': '上游为食品原辅料、传感控制与智能装备供给；中游为加工、分拣、抓取和包装生产应用；下游为质量追溯、冷链流通与验证服务。分类仅表示一般产业角色，外地案例和规划不代表本地已有能力。',
+     'terms': {
+         '上游': ('食品原料', '食品辅料', '原辅料', '传感器', '控制器', '工业机器人', '具身智能机器人', '加工设备', '包装设备'),
+         '中游': ('食品加工', '食品制造', '农产品加工', '精密分拣', '智能分选', '柔性抓取', '混线包装', '智能包装', '加工产线', '生产线', '试验线'),
+         '下游': ('质量追溯', '食品溯源', '冷链', '仓储物流', '销售渠道', '电商销售', '检测服务', '验证平台', '验证服务')}},
+
     {'id': 'special-vehicle-v1', 'label': '专用汽车与供应链服务', 'topic': r'专用车|专用汽车|专汽',
      'description': '上游为底盘、部件和材料；中游为专用汽车制造与产业数据平台；下游为销售、运营和配套服务。分类不代表本地已有能力。',
      'terms': {
