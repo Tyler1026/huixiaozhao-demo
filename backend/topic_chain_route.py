@@ -197,6 +197,9 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
             findings = enrich_public_research(findings, context['city'], topic)
         event('research.status', stage='classification', message='正在核对原文、环节归类和规划状态')
         result = build(context, findings, bounded_complete)
+        if not any(group.get('nodes') for group in result.get('chain', [])):
+            raise TopicChainError('chain_classification_unavailable',
+                '本轮未完成产业环节分类，未保存空图谱，已有图谱保留。请重试；若仍失败请补充该方向原始材料。')
         from .chain_node_analysis import analyze_nodes
         event('research.status',stage='node_analysis',message='正在逐环节分析发展阶段、依据和下一步行动')
         node_analysis = analyze_nodes(context,result,bounded_complete)
