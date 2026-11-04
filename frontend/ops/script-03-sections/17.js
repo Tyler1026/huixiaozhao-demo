@@ -305,20 +305,31 @@ function ragCanCommitMessage(message,key){return !!message&&message.role==='assi
 
 /* 工作区总览与下拉框保留准确来源，只有服务端登记的项目是地区主工作区。 */
 function ragSelectWorkspace(key){ragCity=key;ragTopic=0;ragHits=null;renderOpsV2();}
+function ragWorkspaceLabel(key){
+  var p=PROJECTS[key]||{},kind=opsWorkspaceKind(key),name=p.org||p.name||'';
+  if(kind==='旧工作区'){
+    var siblings=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k]&&PROJECTS[k].city===p.city&&Array.isArray(PROJECTS[k].kb)&&opsWorkspaceKind(k)==='旧工作区';}).sort();
+    kind+=' '+(siblings.indexOf(key)+1);
+  }
+  return kind+(name?' · '+name:'');
+}
 function ragWorkspaceOverview(activeKey){
-  var keys=Object.keys(PROJECTS).filter(function(k){var p=PROJECTS[k];return p&&Array.isArray(p.kb);});
+  var keys=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k]&&Array.isArray(PROJECTS[k].kb);});
   if(keys.length<=1)return '';
-  var byCity=Object.create(null);
-  keys.forEach(function(k){var c=PROJECTS[k].city||k;(byCity[c]=byCity[c]||[]).push(k);});
-  var rows=Object.keys(byCity).sort().map(function(city){
-    var workspace=opsCityWorkspace(city);
-    var items=byCity[city].map(function(key){
-      var p=PROJECTS[key],count=knowledgeMaterialCorpus(key,p).length,isOn=key===activeKey;
-      return '<button class="ops-ui-recent-row" onclick="'+opsHandler('ragSelectWorkspace',key)+'"'+(isOn?' aria-current="true"':'')+'><span><strong>'+_authEscape(opsWorkspaceKind(key))+'</strong><small>'+_authEscape(key)+'</small></span><span>'+count+' 条材料</span></button>';
+  var byCity=Object.create(null),currentCity=PROJECTS[activeKey]&&PROJECTS[activeKey].city;
+  keys.forEach(function(k){var city=PROJECTS[k].city||'未填写城市';(byCity[city]=byCity[city]||[]).push(k);});
+  var cities=Object.keys(byCity).sort(function(a,b){return (a===currentCity?-1:b===currentCity?1:a.localeCompare(b));});
+  var css='<style>.rag-workspace-panel{margin:14px 0 20px;border:1px solid #e3e9f2;border-radius:14px;background:#fff;overflow:hidden}.rag-workspace-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:15px 20px;border:0;background:#fff;color:#263b57;text-align:left;font:inherit;cursor:pointer}.rag-workspace-toggle small{display:block;margin-top:4px;font-size:12px;color:#718096}.rag-workspace-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:0 16px 16px;max-height:380px;overflow:auto}.rag-workspace-city{border:1px solid #e8edf5;border-radius:10px;overflow:hidden;align-self:start}.rag-workspace-city header{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#f7f9fc;padding:11px 14px}.rag-workspace-city header strong{font-size:14px;color:#263b57}.rag-workspace-city header small{font-size:11px;color:#718096}.rag-workspace-item{display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px;border:0;border-top:1px solid #edf1f6;background:#fff;padding:12px 14px;text-align:left;cursor:pointer;color:#334155;font:inherit}.rag-workspace-item:hover{background:#f5f7ff}.rag-workspace-item[aria-current="true"]{background:#eef2ff;box-shadow:inset 3px 0 #4b61e9}.rag-workspace-item strong{display:block;font-size:13px;font-weight:600}.rag-workspace-item small{display:block;font-size:11px;color:#718096;margin-top:4px;overflow-wrap:anywhere}.rag-workspace-count{white-space:nowrap;font-size:12px;color:#536984}.rag-workspace-current{color:#4b61e9;font-size:11px;margin-left:7px}@media(max-width:760px){.rag-workspace-grid{grid-template-columns:1fr}.rag-workspace-toggle{padding:13px 16px}}</style>';
+  var rows=ragOverviewOpen?cities.map(function(city){
+    var items=byCity[city].sort(function(a,b){return (a===activeKey?-1:b===activeKey?1:0)||(opsWorkspaceKind(a)==='地区主工作区'?-1:opsWorkspaceKind(b)==='地区主工作区'?1:a.localeCompare(b));}).map(function(key){
+      var p=PROJECTS[key],count=knowledgeMaterialCorpus(key,p).length,active=key===activeKey;
+      var detail=p.kbInitTs?'初始化：'+opsDate(p.kbInitTs):'已保存材料';
+      if(p.topic)detail+=' · '+p.topic;
+      return '<button type="button" class="rag-workspace-item" onclick="'+opsHandler('ragSelectWorkspace',key)+'"'+(active?' aria-current="true"':'')+' title="'+_authEscape('工作区编号：'+key)+'"><span><strong>'+_authEscape(ragWorkspaceLabel(key))+(active?'<span class="rag-workspace-current">当前</span>':'')+'</strong><small>'+_authEscape(detail)+'</small></span><span class="rag-workspace-count">'+count+' 条材料</span></button>';
     }).join('');
-    return '<section class="ops-ui-card" style="margin-bottom:10px"><div class="ops-ui-card-head"><h2>'+_authEscape(city)+'</h2><span class="ops-ui-muted">'+(workspace?'已设置地区主工作区':'未设置地区主工作区')+'</span></div>'+items+'</section>';
-  }).join('');
-  return '<div class="ops-ui-card" style="margin-bottom:16px"><button class="ops-ui-button" onclick="ragOverviewOpen=!ragOverviewOpen;renderOpsV2()">工作区与报告来源 · '+keys.length+' 项'+(ragOverviewOpen?' ▴':' ▾')+'</button>'+(ragOverviewOpen?'<div style="margin-top:12px;max-height:320px;overflow-y:auto">'+rows+'</div>':'')+'</div>';
+    return '<section class="rag-workspace-city"><header><strong>'+_authEscape(city)+'</strong><small>'+byCity[city].length+' 个工作区</small></header>'+items+'</section>';
+  }).join(''):'';
+  return css+'<section class="rag-workspace-panel"><button type="button" class="rag-workspace-toggle" aria-expanded="'+!!ragOverviewOpen+'" aria-controls="ragWorkspaceList" onclick="ragOverviewOpen=!ragOverviewOpen;renderOpsV2()"><span><strong>工作区与报告来源</strong><small>'+cities.length+' 个城市 · '+keys.length+' 个工作区 · 点击切换查看</small></span><span>'+(ragOverviewOpen?'收起 ▴':'展开 ▾')+'</span></button><div id="ragWorkspaceList"'+(ragOverviewOpen?' class="rag-workspace-grid"':' hidden')+'>'+rows+'</div></section>';
 }
 function ragProjKey(){
   // 【2026-09-18】放宽：原来要求 kb 里已有材料，导致「＋新增城市」建的空城市
@@ -343,7 +354,7 @@ function ragProjKey(){
 }
 function ragCityOptions(){
   var activeKey=ragProjKey();
-  return Object.keys(PROJECTS).filter(function(key){return PROJECTS[key]&&Array.isArray(PROJECTS[key].kb);}).sort(function(a,b){var x=PROJECTS[a].city||a,y=PROJECTS[b].city||b;return x.localeCompare(y)||a.localeCompare(b);}).map(function(key){var p=PROJECTS[key],count=knowledgeMaterialCorpus(key,p).length;return '<option value="'+_authEscape(key)+'"'+(key===activeKey?' selected':'')+'>'+_authEscape((p.city||key)+' · '+opsWorkspaceKind(key)+' · '+key+' · '+count+' 条材料')+'</option>';}).join('');
+  return Object.keys(PROJECTS).filter(function(key){return PROJECTS[key]&&Array.isArray(PROJECTS[key].kb);}).sort(function(a,b){var x=PROJECTS[a].city||'',y=PROJECTS[b].city||'';return x.localeCompare(y)||a.localeCompare(b);}).map(function(key){var p=PROJECTS[key],count=knowledgeMaterialCorpus(key,p).length;return '<option value="'+_authEscape(key)+'"'+(key===activeKey?' selected':'')+'>'+_authEscape((p.city||'未填写城市')+' · '+ragWorkspaceLabel(key)+' · '+count+' 条材料')+'</option>';}).join('');
 }
 function opsRagSelectTab(tab){if(['materials','upload','query','history'].indexOf(tab)<0)return;OPS_UI.rag.tab=tab;renderOpsV2();}
 function opsRag(){
@@ -356,7 +367,7 @@ function opsRag(){
   var tabs=[['materials','材料浏览'],['upload','上传补充'],['query','检索问答'],['history','版本与日志']];
   var tabbar='<div class="ops-ui-subnav" role="group" aria-label="智库功能">'+tabs.map(function(tab){return '<button class="ops-ui-subnav-button'+(current===tab[0]?' is-active':'')+'" aria-pressed="'+(current===tab[0]?'true':'false')+'" onclick="'+opsHandler('opsRagSelectTab',tab[0])+'">'+tab[1]+'</button>';}).join('')+'</div>';
   var body=current==='materials'?ragBaseVsSupportLayout(p,key):current==='upload'?ragUploadPanel(p,key):current==='query'?ragSearchBox()+ragChatBox(p,key):ragVersionPanel(p,key)+ragPushLog();
-  return '<div class="ops-ui-page">'+head+'<div class="ops-ui-workspacebar"><label class="ops-ui-filter">当前工作区<select id="opsRagWorkspace" onchange="ragCity=this.value;ragTopic=0;ragHits=null;renderOpsV2()">'+ragCityOptions()+'</select></label><span class="ops-ui-muted">'+_authEscape(opsWorkspaceKind(key))+' · '+_authEscape(p.org||'未填写单位')+' · 初始化于 '+opsDate(p.kbInitTs)+'</span></div>'+ragWorkspaceOverview(key)+'<div class="ops-ui-metric-grid">'+ragStatCard('<span data-ops-icon="resource"></span>','智库材料',total+' 条','当前工作区')+ragStatCard('<span data-ops-icon="folder"></span>','主题分区',p.kb.length+' 个','材料按主题整理')+ragStatCard('<span data-ops-icon="document"></span>','研判报告',rs.text?Math.round(rs.text.length/100)/10+'k 字':'未生成',rs.finalized?'已定稿 · 政府端可见':'')+ragStatCard('<span data-ops-icon="traceability"></span>','历史版本',(p.kbVersions||[]).length+' 版','可在版本与日志中查看')+'</div>'+tabbar+'<section class="ops-ui-section">'+body+'</section></div>';
+  return '<div class="ops-ui-page">'+head+'<div class="ops-ui-workspacebar"><label class="ops-ui-filter">当前工作区<select id="opsRagWorkspace" onchange="ragCity=this.value;ragTopic=0;ragHits=null;renderOpsV2()">'+ragCityOptions()+'</select></label><span class="ops-ui-muted">'+_authEscape(opsWorkspaceKind(key))+' · '+_authEscape(p.org||'未填写单位')+(p.kbInitTs?' · 初始化于 '+opsDate(p.kbInitTs):'')+'</span></div>'+ragWorkspaceOverview(key)+'<div class="ops-ui-metric-grid">'+ragStatCard('<span data-ops-icon="resource"></span>','智库材料',total+' 条','当前工作区')+ragStatCard('<span data-ops-icon="folder"></span>','主题分区',p.kb.length+' 个','材料按主题整理')+ragStatCard('<span data-ops-icon="document"></span>','研判报告',rs.text?Math.round(rs.text.length/100)/10+'k 字':'未生成',rs.finalized?'已定稿 · 政府端可见':'')+ragStatCard('<span data-ops-icon="traceability"></span>','历史版本',(p.kbVersions||[]).length+' 版','可在版本与日志中查看')+'</div>'+tabbar+'<section class="ops-ui-section">'+body+'</section></div>';
 }
 /* 城市入口与邀请码共用服务端创建逻辑，不能在浏览器另造同城主工作区。 */
 function ragAddCityModal(){openInviteCodeModal();}
