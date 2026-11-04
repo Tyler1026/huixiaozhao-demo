@@ -14334,16 +14334,6 @@ function opsPushEntToCity(projKey){resourceReviewChooseResources(projKey);}
 function opsDoPushToCity(projKey, count){resourceReviewConfirmSelection(projKey);}
 
 /* Readable supplementary materials and source-bound profile presentation. */
-function ragReadSupplement(button){
-  var card=button.closest('[data-rag-readable]');if(!card)return;
-  var body=card.querySelector('[data-rag-reading-body]');if(!body)return;
-  openModal('补充材料 · 完整阅读','<div style="line-height:1.9;overflow-wrap:anywhere">'+body.innerHTML+'</div>','<button type="button" onclick="closeModal()">关闭</button>');
-}
-var _ragReadableChunk=ragRenderChunk;
-ragRenderChunk=function(raw,idx,hl){
-  var html=_ragReadableChunk(raw,idx,hl);
-  return '<article data-rag-readable style="margin-bottom:10px"><button type="button" class="ops-ui-button" onclick="ragReadSupplement(this)" style="margin-bottom:6px">展开完整阅读</button><div data-rag-reading-body>'+html+'</div></article>';
-};
 function cpSourceText(text){
   return cpEsc(text).replace(/\[([^\]\n]{1,100})\]\((https?:\/\/[^\s)]+)\)/g,function(_,label,url){
     try{var parsed=new URL(url.replace(/&amp;/g,'&'));if(parsed.username||parsed.password)return label;return '<a href="'+cpEsc(parsed.href)+'" target="_blank" rel="noopener noreferrer">'+label+' ↗</a>';}catch(e){return label;}
