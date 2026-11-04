@@ -125,7 +125,9 @@ def dispatch_auth(handler, method, path, raw, session_factory, *, admin_config=N
             except Exception:
                 raise AuthError(503, 'storage_unavailable', '尚未保存，请稍后重试') from None
         else:
-            result = handle_auth(operation, body, session_factory, headers=handler.headers,
+            factory = (getattr(handler, '_account_read_session', session_factory)
+                       if operation in ('session', 'me', 'validate_invite', 'validate-invite') else session_factory)
+            result = handle_auth(operation, body, factory, headers=handler.headers,
                                  admin_config=admin_config)
         result = dict(result)
         token = result.pop('session_token', None)

@@ -16,7 +16,8 @@ class SyncWriteConflict(ValueError):
 
 
 class PostgresSession:
-    def __init__(self, connect, snapshot):
+    def __init__(self, connect, snapshot, *, read_only=False):
+        self.read_only = read_only
         self.connect = connect
         self.snapshot = snapshot
         self.connection = self.cursor = None
@@ -28,8 +29,10 @@ class PostgresSession:
             self.cursor = self.connection.cursor()
             self.cursor.execute("SET LOCAL lock_timeout = '5s'")
             self.cursor.execute("SET LOCAL statement_timeout = '15s'")
-            self.cursor.execute("INSERT INTO sync_data(id,data) VALUES(1,'{}') ON CONFLICT(id) DO NOTHING")
-            self.cursor.execute('SELECT data FROM sync_data WHERE id=1 FOR UPDATE')
+            self.cursor.execute("SET LOCAL idle_in_transaction_session_timeout = '60s'")
+            if not self.read_only:
+                self.cursor.execute("INSERT INTO sync_data(id,data) VALUES(1,'{}') ON CONFLICT(id) DO NOTHING")
+            self.cursor.execute('SELECT data FROM sync_data WHERE id=1' + ('' if self.read_only else ' FOR UPDATE'))
             row = self.cursor.fetchone()
             if row is None:
                 raise RuntimeError('storage unavailable')
@@ -44,6 +47,8 @@ class PostgresSession:
         return self.current
 
     def write(self, value):
+        if self.read_only:
+            raise RuntimeError('read-only session cannot write')
         try:
             self.snapshot(self.cursor)
             self.cursor.execute('UPDATE sync_data SET data=%s,updated_at=NOW() WHERE id=1', (value,))
@@ -68,11 +73,11 @@ class PostgresSession:
 
 
 @contextlib.contextmanager
-def postgres_session():
+def postgres_session(*, read_only=False):
     from . import storage
     def connect():
         return storage.psycopg2.connect(storage.DATABASE_URL, connect_timeout=10)
-    with PostgresSession(connect, storage._db_snapshot) as session:
+    with PostgresSession(connect, storage._db_snapshot, read_only=read_only) as session:
         yield session
 
 

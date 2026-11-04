@@ -802,6 +802,11 @@ class Handler(BaseHTTPRequestHandler):
         from backend.sync_transaction import file_session
         return file_session(SYNC_PATH, _file_snapshot)
 
+    def _account_read_session(self):
+        if _PG_AVAIL and DATABASE_URL:
+            return _sync_transaction(read_only=True)
+        return self._account_session()
+
     def _account_config(self):
         from backend.auth import admin_config_from_env
         return admin_config_from_env(os.environ)
