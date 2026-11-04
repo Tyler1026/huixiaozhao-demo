@@ -12018,15 +12018,15 @@ function ragBaseVsSupportLayout(p,key){
     '<div style="padding:24px 16px;text-align:center;color:#9aa5b5;font-size:12.5px">'+
       '该城市还没有基础包<br>请先在「报告任务」生成并发布报告，再为城市配置基础包。'+
     '</div>':
-    base.map(function(t){
-      return '<div style="padding:10px 14px;border-bottom:1px solid #eef2f7">'+
+    base.map(function(t,index){
+      return '<button type="button" class="rag-base-category" onclick="'+dockingActionCall('ragBaseOpenCategory',[key,index])+'" style="display:block;width:100%;text-align:left;background:#fff;border:0;padding:10px 14px;border-bottom:1px solid #eef2f7;cursor:pointer" aria-label="阅读'+ragEsc(t.t==='政策、规划与领导关注'?'政策、规划与国家战略':t.t)+'基础材料">'+
         '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">'+
           '<span style="font-size:13px">'+t.icon+'</span>'+
-          '<span style="font-size:12.5px;font-weight:650;color:#0b183b">'+ragEsc(t.t)+'</span>'+
+          '<span style="font-size:12.5px;font-weight:650;color:#0b183b">'+ragEsc(t.t==='政策、规划与领导关注'?'政策、规划与国家战略':t.t)+'</span>'+
           '<span style="font-size:10.5px;color:#9aa5b5;margin-left:auto">'+(t.known||[]).length+' 条</span>'+
         '</div>'+
         (t.sub?'<div style="font-size:10.5px;color:#7c8aa0">'+ragEsc(t.sub)+(t.tag?' · '+ragEsc(t.tag):'')+'</div>':'')+
-      '</div>';
+      '<div style="font-size:11px;color:#4b61e9;margin-top:4px">查看材料 →</div></button>';
     }).join('');
   var baseTotal=base?base.reduce(function(s,t){return s+(t.known||[]).length;},0):0;
   var left='<div style="border:1px solid #e3ebf6;border-radius:10px;background:#fff;overflow:hidden;align-self:start">'+
@@ -14373,6 +14373,20 @@ cpChartsSection=function(prof){
   copy.charts=charts;
   return (gdp?'<div style="margin:14px 0">'+cpChartBox('材料披露 · 地区生产总值', '<strong style="font-size:26px;color:#1d4ed8">'+gdp.value+' <small>亿元</small></strong><p>按当前城市材料原值展示，统计年度和适用口径请核对原文；尚未独立核实。</p>',gdp.cite)+'</div>':'')+_cpReadableCharts(copy);
 };
+
+function ragBaseOpenCategory(key,index){
+  if(!AUTH||AUTH.scope!=='admin'){toast('请先登录管理端');return;}
+  if(typeof ragProjKey==='function'&&ragProjKey()!==key){toast('当前城市已切换，请重新选择分类');return;}
+  var project=PROJECTS[key],base=project&&getCityBasePackage(project.city);
+  var category=Array.isArray(base)&&Number.isInteger(index)&&base[index];
+  if(!category){toast('该分类已更新，请刷新后重新打开');return;}
+  var rows=Array.isArray(category.known)?category.known:[];
+  var title=category.t==='政策、规划与领导关注'?'政策、规划与国家战略':category.t;
+  var renderChunk=typeof _ragReadableChunk==='function'?_ragReadableChunk:ragRenderChunk;
+  var body='<p style="color:#667590;line-height:1.7">'+ragEsc(project.city)+' · '+ragEsc(title)+' · '+rows.length+' 条基础材料</p>';
+  body+=rows.length?rows.map(function(row,i){return renderChunk(row,i+1,null);}).join(''):'<p style="padding:20px;color:#667590">当前分类暂无基础材料。</p>';
+  openModal(ragEsc(title)+' · 基础材料', '<div style="max-height:65vh;overflow-y:auto;overflow-wrap:anywhere">'+body+'</div>','<button type="button" class="ops-ui-button" onclick="closeModal()">关闭</button>');
+}
 /* Receiving and responding are acknowledged workflow actions, not local status edits. */
 var OPS_DOCKING_DRAFTS=Object.create(null);
 function opsIsSubmittedDemand(key,project){
