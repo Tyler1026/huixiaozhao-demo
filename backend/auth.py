@@ -573,7 +573,8 @@ def handle_auth(operation, body, session_factory, *, headers=None, token=None, a
             return function(body, session, headers=headers, token=token, admin_config=admin_config, now=now)
     except AuthError:
         raise
-    except Exception:
+    except Exception as error:
+        print('[account-service]', operation, type(error).__name__, getattr(error, 'pgcode', None), flush=True)
         raise AuthError(503, 'storage_unavailable', '账户服务暂不可用') from None
 
 

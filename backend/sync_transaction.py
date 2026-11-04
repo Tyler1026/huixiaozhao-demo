@@ -35,7 +35,8 @@ class PostgresSession:
                 raise RuntimeError('storage unavailable')
             self.current = row[0]
             return self
-        except Exception:
+        except Exception as error:
+            print('[account-storage] enter', type(error).__name__, getattr(error, 'pgcode', None), flush=True)
             self.__exit__(None, None, None)
             raise
 
@@ -49,7 +50,8 @@ class PostgresSession:
             self.connection.commit()
             self.committed = True
             return True
-        except Exception:
+        except Exception as error:
+            print('[account-storage] write', type(error).__name__, getattr(error, 'pgcode', None), flush=True)
             return False
 
     def __exit__(self, *args):
