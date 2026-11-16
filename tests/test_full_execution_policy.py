@@ -134,7 +134,7 @@ class ExecutionPolicyTests(unittest.TestCase):
         state = store.get('t', rid)
         self.assertEqual(state['status'], 'queued')
         self.assertEqual(state['parts_done'], 0)
-        self.assertEqual(state['events'][0]['kind'], 'citation_deferred')
+        self.assertEqual(state['events'][0]['kind'], 'quality_deferred')
         for part in ('second', 'later', 'first'):
             job = store.claim()
             self.assertEqual(job['part'], part)
@@ -143,6 +143,34 @@ class ExecutionPolicyTests(unittest.TestCase):
         self.assertEqual(store.claim()['part'], 'score')
         self.assertEqual([r['text'] for r in store.parts(rid)['population']], ['first', 'second'])
         self.assertEqual(store.get('t', rid)['policy_projection']['usage']['retries'], 2)
+
+    def test_failed_enterprise_batch_leaves_other_directions_runnable_and_draft_private(self):
+        stages = (
+            {'id': 'enterprises_1', 'filename': 'one.md', 'parts': ('候选池', '落地情况')},
+            {'id': 'enterprises_2', 'filename': 'two.md', 'parts': ('候选池',)},
+            {'id': 'scoring', 'filename': 'score.md', 'parts': ('评分',)},
+        )
+        store = FullStore(Path(self.tmp.name) / 'directions.sqlite', stages=stages,
+                          clock=self.clock, backoff=(0,))
+        rid = store.create('t', '江苏', '苏州', 'directions', False)['id']
+        for _ in range(2):
+            job = store.claim()
+            self.assertEqual((job['stage'], job['part']), ('enterprises_1', '候选池'))
+            store.fail_part(job['step_id'], job['token'], 'quality')
+        independent = store.claim()
+        self.assertEqual(independent['stage'], 'enterprises_2')
+        self.assertIsNone(store.research_draft('t', rid))
+        store.finish_part(independent['step_id'], independent['token'], OUTPUT)
+        repair = store.claim()
+        self.assertEqual((repair['stage'], repair['part']), ('enterprises_1', '候选池'))
+        store.fail_part(repair['step_id'], repair['token'], 'quality')
+        self.assertEqual(store.get('t', rid)['status'], 'paused')
+        self.assertIsNone(store.claim())
+        self.assertIsNone(store.research_draft('other', rid))
+        draft = store.research_draft('t', rid)
+        self.assertIn('第一招商方向 · 候选池（质量核验未通过）', draft)
+        self.assertIn('匹配评分 · 评分（尚未执行）', draft)
+        self.assertIn(OUTPUT['text'], draft)
 
     def test_ops_continue_can_add_one_start_for_an_exhausted_step(self):
         from backend.auth import AuthError

@@ -1042,7 +1042,9 @@ class Handler(BaseHTTPRequestHandler):
                 state = load_state(bool(_PG_AVAIL and DATABASE_URL), _db_get, SYNC_PATH)
                 self._principal = require_session(self.headers, state, admin_config=self._account_config())
                 if path in ('/api/admin-reset', '/api/kb-clean', '/api/kb-upload',
-                            '/api/kb-version', '/api/report-push-request', '/api/report-continue', '/api/funnel-review-push', '/api/funnel-resource-preview', '/api/enterprise-enrich'):
+                            '/api/kb-version', '/api/report-push-request', '/api/report-continue',
+                            '/api/report-pause', '/api/report-draft', '/api/funnel-review-push',
+                            '/api/funnel-resource-preview', '/api/enterprise-enrich'):
                     require_admin(self._principal)
                 self._scoped_state = scoped_sync_view(state, self._principal)
             except AuthError as error:
@@ -1157,17 +1159,19 @@ class Handler(BaseHTTPRequestHandler):
             from backend.kb_admin import handle_kb_admin
             return handle_kb_admin(self, raw, self._account_session, self._account_config(), operation='version')
 
-        if path == '/api/report-continue':
+        if path in ('/api/report-continue', '/api/report-pause', '/api/report-draft'):
             from backend.auth_routes import respond
             from report_service.full_postgres import PostgresFullStore
-            from report_service.website_queue import continue_website_report
+            from report_service.full_store import Conflict
+            from report_service.website_queue import TENANT, continue_website_report, report_id, website_report_for_admin
+            draft = path == '/api/report-draft'
             try:
                 body = json.loads(raw)
                 request_id = body.get('requestId') if isinstance(body, dict) else None
                 version = body.get('version') if isinstance(body, dict) else None
                 extra_attempt = body.get('extraAttempt', False) if isinstance(body, dict) else False
                 if (not isinstance(request_id, str) or not _re.fullmatch(r'rr[A-Za-z0-9_-]{1,64}', request_id)
-                        or type(version) is not int or not 1 <= version <= 2**53 - 1
+                        or (not draft and (type(version) is not int or not 1 <= version <= 2**53 - 1))
                         or type(extra_attempt) is not bool):
                     raise ValueError()
             except (ValueError, UnicodeError):
@@ -1176,14 +1180,34 @@ class Handler(BaseHTTPRequestHandler):
                 return error_response(self, AuthError(503, 'report_storage_unavailable', '报告服务暂不可用'))
             try:
                 store = PostgresFullStore(DATABASE_URL)
-                with _sync_transaction() as session:
+                with _sync_transaction(read_only=draft) as session:
                     state = json.loads(session.read())
                     principal = require_session(self.headers, state, admin_config=self._account_config())
                     require_admin(principal)
-                    result = continue_website_report(state, store, request_id, version, principal['user'],
-                                                     extra_attempt=extra_attempt)
+                    if path == '/api/report-continue':
+                        result = continue_website_report(state, store, request_id, version, principal['user'],
+                                                         extra_attempt=extra_attempt)
+                    else:
+                        website_report_for_admin(state, request_id)
+                        rid = report_id(request_id)
+                        if draft:
+                            content = store.research_draft(TENANT, rid)
+                            if content is None:
+                                raise AuthError(409, 'report_draft_unavailable', '报告状态已变化，暂无可下载草稿')
+                            result = {'ok': True, 'id': request_id, 'text': content}
+                        else:
+                            from hashlib import sha256
+                            actor = principal['user']
+                            actor_key = sha256(actor.encode()).hexdigest()[:24]
+                            paused = store.pause_report(
+                                TENANT, rid, expected_version=version,
+                                idempotency_key=f'ops-pause:{actor_key}:{version}',
+                                actor=actor, reason='管理员在报告任务中点击暂停')
+                            result = {'ok': True, 'id': request_id, 'status': paused['status']}
             except AuthError as error:
                 return error_response(self, error)
+            except Conflict:
+                return error_response(self, AuthError(409, 'report_state_changed', '任务状态已变化，请刷新报告任务'))
             except Exception:
                 return error_response(self, AuthError(503, 'report_continue_unavailable', '暂时无法接续，请刷新后重试'))
             return respond(self, 200, result)
