@@ -2,7 +2,7 @@ import json
 import pickle
 import unittest
 from unittest.mock import patch
-from report_service.providers import OpenAIResearchProvider
+from report_service.providers import OpenAIResearchProvider, ProviderError
 from report_service.openai_auxiliary import OpenAIAuxiliarySearch
 from report_service.openai_auxiliary import _government_url, _OriginalText
 
@@ -55,6 +55,18 @@ class OpenAIAuxiliaryTests(unittest.TestCase):
     def test_disabled_by_default(self):
         provider=OpenAIResearchProvider.from_env({})
         self.assertFalse(hasattr(provider,'_auxiliary'))
+
+    def test_openai_first_search_does_not_share_the_auxiliary_cooldown(self):
+        provider = self.provider()
+        provider._openai_search_first = True
+        source = {'url': 'https://www.gov.cn/a', 'text': 'verified original'}
+        with patch.object(provider._auxiliary, 'discover', return_value=[source['url']]) as discover, \
+             patch('report_service.openai_auxiliary.fetch_government_originals', return_value=[source]), \
+             patch.object(provider, '_primary_search', side_effect=ProviderError('upstream search HTTP 402')) as exa:
+            self.assertEqual(provider._search('first topic', 1), {'results': [source]})
+            exa.assert_not_called()
+            self.assertEqual(provider._search('second topic', 2), {'results': [source]})
+            self.assertEqual(discover.call_count, 2)
 
     def test_original_reader_rejects_private_resolution_and_non_government_host(self):
         with self.assertRaises(ValueError):_government_url('https://example.com/a')
