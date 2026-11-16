@@ -1042,7 +1042,7 @@ class Handler(BaseHTTPRequestHandler):
                 state = load_state(bool(_PG_AVAIL and DATABASE_URL), _db_get, SYNC_PATH)
                 self._principal = require_session(self.headers, state, admin_config=self._account_config())
                 if path in ('/api/admin-reset', '/api/kb-clean', '/api/kb-upload',
-                            '/api/kb-version', '/api/report-push-request', '/api/funnel-review-push', '/api/funnel-resource-preview', '/api/enterprise-enrich'):
+                            '/api/kb-version', '/api/report-push-request', '/api/report-continue', '/api/funnel-review-push', '/api/funnel-resource-preview', '/api/enterprise-enrich'):
                     require_admin(self._principal)
                 self._scoped_state = scoped_sync_view(state, self._principal)
             except AuthError as error:
@@ -1156,6 +1156,34 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/api/kb-version':
             from backend.kb_admin import handle_kb_admin
             return handle_kb_admin(self, raw, self._account_session, self._account_config(), operation='version')
+
+        if path == '/api/report-continue':
+            from backend.auth_routes import respond
+            from report_service.full_postgres import PostgresFullStore
+            from report_service.website_queue import continue_website_report
+            try:
+                body = json.loads(raw)
+                request_id = body.get('requestId') if isinstance(body, dict) else None
+                version = body.get('version') if isinstance(body, dict) else None
+                if (not isinstance(request_id, str) or not _re.fullmatch(r'rr[A-Za-z0-9_-]{1,64}', request_id)
+                        or type(version) is not int or not 1 <= version <= 2**53 - 1):
+                    raise ValueError()
+            except (ValueError, UnicodeError):
+                return error_response(self, AuthError(400, 'invalid_report_request', '报告任务参数无效'))
+            if not (_PG_AVAIL and DATABASE_URL):
+                return error_response(self, AuthError(503, 'report_storage_unavailable', '报告服务暂不可用'))
+            try:
+                store = PostgresFullStore(DATABASE_URL)
+                with _sync_transaction() as session:
+                    state = json.loads(session.read())
+                    principal = require_session(self.headers, state, admin_config=self._account_config())
+                    require_admin(principal)
+                    result = continue_website_report(state, store, request_id, version, principal['user'])
+            except AuthError as error:
+                return error_response(self, error)
+            except Exception:
+                return error_response(self, AuthError(503, 'report_continue_unavailable', '暂时无法接续，请刷新后重试'))
+            return respond(self, 200, result)
 
         # Report publication is consumed by the independent cloud worker.
         if self.path == '/api/report-push-request':

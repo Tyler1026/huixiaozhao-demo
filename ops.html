@@ -3851,6 +3851,7 @@ function rrPolicyInfo(r){
   var causes={manual:'管理员请求暂停',wall_time_exhausted:'已到无人介入期限',task_work_exhausted:'已到全包工作时间上限',stage_work_exhausted:'已到本章工作时间上限',quality_repeated:'连续质量核验未通过',step_attempts_exhausted:'已到本步骤启动次数上限',report_retries_exhausted:'已到全包自动重试上限',configuration:'配置需要处理',artifact:'交付需要处理'};
   var p=r.executionPolicy||{},u=p.usage||{};
   var text=r.status==='pause_requested'?'暂停已请求，当前步骤完成后停止领取新工作。':'已完成成果和累计用量已保留，等待管理员明确继续。';
+  if(r.status==='paused'&&r.engine==='full-v1'&&_rrPolicyVersion(r)>0)text='已保留成果和累计用量。点击「继续生成」接续原任务。';
   if(causes[p.pause_reason])text+=' '+causes[p.pause_reason]+'。';
   function number(value){return typeof value==='number'&&isFinite(value)&&value>=0?value:null;}
   var attempts=number(u.attempts_total),retries=number(u.retries),work=number(u.work_seconds);
@@ -3871,6 +3872,30 @@ function rrIssuesBanner(r){
         return '<div style="font-size:11.5px;color:#7a2836;line-height:1.5">'+
           '<b style="color:#b0364a">'+rrHtml(parts[0]||'')+'</b>'+(parts[1]?' — '+rrHtml(parts[1]):'')+'</div>';
       }).join('')+'</div></div>';
+}
+async function continueReportRequest(id, version, button){
+  if(!_rrAdminReady()){toast('请先登录管理员账号');return;}
+  button.disabled=true;
+  button.textContent='提交中…';
+  try {
+    var response=await fetch('/api/report-continue',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({requestId:id,version:version})
+    });
+    var receipt=await response.json();
+    if(!response.ok||!receipt.ok||receipt.id!==id||receipt.status!=='queued'){
+      toast(receipt.message||'未确认接续，请刷新报告任务后重试');
+      return;
+    }
+    toast('已接续原报告，等待报告服务领取');
+    var state=await _rrJson('/api/sync?raw=1').then(_rrServerState).catch(function(){return null;});
+    if(state&&_rrMergeRequests(state.REPORT_REQUESTS))render();
+  } catch(error) {
+    toast('未能确认接续结果，请刷新报告任务查看状态');
+  } finally {
+    button.disabled=false;
+    button.textContent='继续生成';
+  }
 }
 function rrPanel(options){
   options=options||{};
@@ -3920,6 +3945,10 @@ function rrPanel(options){
         pushCtrl='<button onclick="pushReportToRag(\''+rrInlineString(r.id)+'\',this)" style="flex-shrink:0;padding:6px 14px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap">发布到地区主工作区</button>';
       }
     }
+    var continueBtn='', version=_rrPolicyVersion(r);
+    if(r.engine==='full-v1'&&r.status==='paused'&&version>0&&!r.submissionPending){
+      continueBtn='<button class="primary-button" onclick="continueReportRequest(\''+rrInlineString(r.id)+'\','+version+',this)">继续生成</button>';
+    }
     var cancelBtn='';
     if(r.submissionBlocked){
       cancelBtn='<button onclick="_rrDiscardBlocked(\''+rrInlineString(r.id)+'\')" style="flex-shrink:0;padding:6px 12px;border:1px solid #fca5a5;border-radius:8px;background:#fff;color:#dc2626;cursor:pointer">移除未提交项</button>';
@@ -3931,7 +3960,7 @@ function rrPanel(options){
       '<div class="r-ic"><span data-ops-icon="report" data-ops-icon-size="20"></span></div>'+
       '<div class="r-main"><div class="ops-ui-report-title" style="display:flex;align-items:center;gap:8px"><strong>'+escape(r.province)+' · '+escape(r.city)+'</strong>'+(r.submissionPending?'<span class="ops-badge orange">等待保存确认</span>':rrStatusBadge(r.status,r))+'</div>'+
       '<small>'+escape(r.by)+' · '+tm+' 发起'+(r.autoPublish===true&&/^\d{4}-\d{2}$/.test(r.scheduledMonth||'')?' · '+escape(r.scheduledMonth)+' 月度更新':'')+escape(doneInfo+serviceInfo)+(r.publicationSkipped==='newer-report-already-published'?' · 已有更新版本，保留当前资料':'')+(r.submissionPending?' · '+escape(r.submissionError||'正在确认，暂未进入生成队列'):'')+(r.status==='failed'&&r.failReason&&!serviceInfo?' · '+escape(r.failReason):'')+'</small></div>'+
-      '<div class="ops-ui-report-actions" style="margin-left:auto;display:flex;align-items:center;gap:8px">'+dlBtn+pushCtrl+cancelBtn+'</div></div>'+
+      '<div class="ops-ui-report-actions" style="margin-left:auto;display:flex;align-items:center;gap:8px">'+dlBtn+pushCtrl+continueBtn+cancelBtn+'</div></div>'+
       rrProgress(r)+'</div>';
   }).join('')||'<div class="ops-ui-empty">'+(query||status!=='all'?'没有符合筛选条件的报告':'暂无申请记录')+'</div>';
   return '<div class="ops-ui-report-panel" style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:18px 20px;margin:0 0 16px">'+
