@@ -450,7 +450,7 @@ class EnterprisePartGateTests(unittest.TestCase):
 
     def _completion_fixture(self, initial, supplemental, saved=(), *,
                             first_text=None, extra_text=None, search_failure=False,
-                            chat_failure=False):
+                            chat_failure=False, allow_citation_correction=False):
         first_text = first_text if first_text is not None else '\n'.join(
             f'首次完整候选正文要点{i}' for i in range(16))
         extra_text = extra_text if extra_text is not None else '\n'.join(
@@ -472,7 +472,7 @@ class EnterprisePartGateTests(unittest.TestCase):
             chat_calls.append(request)
             if len(chat_calls) == 2 and chat_failure:
                 raise providers.ProviderError('upstream chat HTTP 503')
-            if len(chat_calls) > 2:
+            if len(chat_calls) > (3 if allow_citation_correction else 2):
                 raise AssertionError('candidate completion must not call chat a third time')
             data = {'text': first_text if len(chat_calls) == 1 else extra_text,
                     'candidates': initial if len(chat_calls) == 1 else supplemental,
@@ -609,13 +609,15 @@ class EnterprisePartGateTests(unittest.TestCase):
                   '不安全补齐来源 http://127.0.0.1/private', 'research citation reference is invalid')]
         for first_text, extra_text, message in cases:
             with self.subTest(message=message):
+                correction = message == 'research citation reference is invalid'
                 p, router, prior, _, _ = self._completion_fixture(
-                    initial, extra, saved, first_text=first_text, extra_text=extra_text)
+                    initial, extra, saved, first_text=first_text, extra_text=extra_text,
+                    allow_citation_correction=correction)
                 with self.assertRaises(fp.FullProviderError) as caught:
                     p.run_part('enterprises_1', '候选池2', {'city': '测试城', 'mode': 'deep'}, prior)
                 self.assertEqual(str(caught.exception), message)
                 self.assertEqual(caught.exception.failure_code, 'quality')
-                self.assertEqual(tuple(map(len, self._completion_calls(router))), (3, 2))
+                self.assertEqual(tuple(map(len, self._completion_calls(router))), (3, 3 if correction else 2))
         # The final floor applies to the complete merged body, without throwing
         # away a short but substantive first response.
         p, _, prior, first_text, extra_text = self._completion_fixture(

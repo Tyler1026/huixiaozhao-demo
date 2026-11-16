@@ -46,6 +46,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from report_service import providers
 from report_service import full_contract as contract
+from report_service.full_policy import POLICY_DIAGNOSTICS
 from report_service.full_contract import (
     LANDING_STATUSES as _LANDING_STATUSES,
     FACTUAL_LANDING_STATUSES,
@@ -86,7 +87,7 @@ class FullProviderError(providers.ProviderError):
         self.failure_code = failure_code
         self.safe_metrics = dict(safe_metrics) if isinstance(safe_metrics, dict) else {}
         self.diagnostic_reason = (diagnostic_reason if type(diagnostic_reason) is str and diagnostic_reason in
-                                  {'no_usable_search_evidence'} else None)
+                                  POLICY_DIAGNOSTICS | {'no_usable_search_evidence'} else None)
         super().__init__(message)
 
 
@@ -282,6 +283,11 @@ class FullLiveProvider:
                 # Semantic gaps are projected below rather than retried forever.
                 # Parse, length, URL and structural failures still fail closed.
         metadata = None
+        if mode == 'standard' and stage_id == 'fact_check' and part == '政策金额':
+            parsed, metadata = self._policy_amount_result(
+                parsed, place, prior, prior_text, self._usable_evidence(saved_evidence + evidence),
+                all_evidence, floor)
+            text = parsed['text']
         if stage_id.startswith('enterprises_') and part.startswith('候选池'):
             metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior, mode=mode)
             text, metadata, bound_segments = self._complete_candidate_batch(
@@ -1241,6 +1247,12 @@ class FullLiveProvider:
         if mode == 'standard' and stage_id == 'fact_check' and part == '政策金额':
             from .full_policy import POLICY_CHECK_PROMPT
             user_blocks.append(POLICY_CHECK_PROMPT)
+            if correction_feedback is not None and correction_feedback.get('kind') == 'policy_checks':
+                user_blocks.append(
+                    '上一版未通过政策原文绑定，诊断为 ' + correction_feedback['reason'] + '。'
+                    '用当前同一批材料重写本小节和整批 checks，只选能逐字定位的规范性条款。'
+                    '每条 claim 与 quote 完全一致，无法在对应同一摘录定位的字段填 null。'
+                    '若无法找到支持同一条款的第二原文，cross_source 留空。禁止改写或补造金额、条件和时限。')
         if stage_id == 'fact_check':
             quota = {'经济关键数字': '至少9条economic核验，分别针对不同的已研究经济主张',
                      '政策金额': '至少3条policy核验，针对已研究政策中的金额、条件或有效期',
@@ -1408,6 +1420,28 @@ class FullLiveProvider:
             error.safe_metrics.update(operation='chat', elapsed_ms=int((time.monotonic() - started) * 1000))
             raise error from None
 
+    def _policy_amount_result(self, parsed, place, prior, prior_text, sources, all_evidence, floor):
+        stage, part = 'fact_check', '政策金额'
+
+        def validate(value):
+            metadata = self._build_metadata(stage, part, place, all_evidence, value, prior, mode='standard')
+            errors = contract.fact_check_part_errors(part, metadata)
+            if errors:
+                raise FullProviderError('; '.join(errors), 'quality',
+                                        diagnostic_reason='policy_check_count')
+            return metadata
+
+        try:
+            return parsed, validate(parsed)
+        except FullProviderError as error:
+            reason = error.diagnostic_reason
+            if not reason or not reason.startswith('policy_'):
+                raise
+        payload = self._chat_part(stage, part, place, prior_text, sources, mode='standard',
+                                  min_lines=floor, correction_feedback={'kind': 'policy_checks', 'reason': reason})
+        corrected = self._parse_part(stage, part, payload, all_evidence, prior)
+        return corrected, validate(corrected)
+
     def _extract_text(self, data):
         """Return the raw text, flagging truncation/incomplete completion."""
         if isinstance(data, str):
@@ -1499,14 +1533,16 @@ class FullLiveProvider:
                 try:
                     raw_checks, policy_bindings = prepare_policy_checks(raw_checks, evidence)
                 except PolicyCheckError as exc:
-                    raise FullProviderError('policy check rejected: ' + str(exc), 'quality') from None
+                    raise FullProviderError('policy check rejected: ' + str(exc), 'quality',
+                                            diagnostic_reason=str(exc)) from None
             meta["checks"] = self._ground_checks(stage_id, raw_checks, evidence, prior=prior, place=place, mode=mode)
             if policy_bindings is not None:
                 from .full_policy import PolicyCheckError, attach_policy_bindings
                 try:
                     attach_policy_bindings(meta['checks'], policy_bindings)
                 except PolicyCheckError as exc:
-                    raise FullProviderError('policy check rejected: ' + str(exc), 'quality') from None
+                    raise FullProviderError('policy check rejected: ' + str(exc), 'quality',
+                                            diagnostic_reason=str(exc)) from None
             if parsed.get("high_star_unavailable") is True:
                 meta["high_star_unavailable"] = True
                 meta["high_star_note"] = parsed.get("high_star_note", "")

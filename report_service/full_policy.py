@@ -18,6 +18,26 @@ from .full_contract import _evidence_observations, canonical_url
 MAX_CHECKS = 64
 MAX_QUOTE = 2400
 FIELD_NAMES = ('issuer', 'beneficiary', 'benefit', 'conditions', 'validity', 'region')
+POLICY_DIAGNOSTICS = frozenset({
+    'policy_batch_contains_other_category',
+    'policy_benefit_not_operative',
+    'policy_check_count',
+    'policy_check_not_normative_clause',
+    'policy_checks_invalid_batch',
+    'policy_claim_differs_from_clause',
+    'policy_clause_document_ownership_ambiguous',
+    'policy_clause_not_in_saved_official_observation',
+    'policy_clause_schema_missing',
+    'policy_cross_source_different_clause',
+    'policy_document_unidentified',
+    'policy_duplicate_clause',
+    'policy_field_invalid',
+    'policy_field_not_in_same_observation',
+    'policy_field_not_specific',
+    'policy_grounding_changed_bound_clause',
+    'policy_grounding_dropped_clause',
+    'policy_validity_not_operative_period',
+})
 _DOCUMENT = re.compile(r'办法|细则|通知|意见|方案|规定|条例|目录|清单|决定|公告|政策|指引')
 _NON_DOCUMENT = re.compile(r'统计公报|统计年鉴|工作总结|情况通报|工作动态|新闻报道|活动简报')
 _SECONDARY = re.compile(r'解读|问答|新闻|报道|建议.*答复')

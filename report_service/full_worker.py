@@ -52,6 +52,10 @@ def _provider_issue(error):
     if type(reason) is str and reason == 'no_usable_search_evidence':
         return 'no_usable_search_evidence'
     raw_message = str(error)
+    if type(reason) is str and reason.startswith('policy_'):
+        from .full_policy import POLICY_DIAGNOSTICS
+        if reason in POLICY_DIAGNOSTICS:
+            return reason
     entity_issues = {
         'company identity needs a retrieved source URL': 'company_identity_source',
         'candidate part needs five new grounded companies': 'candidate_batch_identity',
