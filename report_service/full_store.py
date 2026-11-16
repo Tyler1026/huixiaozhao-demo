@@ -20,6 +20,12 @@ from . import full_execution_policy as execution_policy
 CODES = frozenset({'timeout', 'worker_crash', 'upstream', 'rate_limit', 'quality',
                    'configuration', 'budget_exhausted', 'artifact', 'cancelled'})
 
+# Finish independent research before revisiting deferred citations, then run
+# enterprise research and synthesis with the complete early-stage evidence.
+_EARLY_RESEARCH_SQL = "('economy','population','transport','life','industry','competition','policy','chain')"
+_STEP_PRIORITY = ("CASE WHEN {step}stage NOT IN " + _EARLY_RESEARCH_SQL
+                  + " THEN 2 WHEN {step}status='deferred' THEN 1 ELSE 0 END")
+
 
 class Conflict(ValueError):
     pass
@@ -279,7 +285,8 @@ class FullStore:
 
     def _policy_numbers(self, c, report, policy):
         steps = c.execute('''SELECT id,stage,part,status,attempts,consumed,deadline,started_at
-            FROM full_steps WHERE report_id=? ORDER BY ordinal''', (report['id'],)).fetchall()
+            FROM full_steps WHERE report_id=? ORDER BY ''' + _STEP_PRIORITY.format(step='') + ',ordinal',
+                          (report['id'],)).fetchall()
         current = next((s for s in steps if s['status'] != 'done'), None)
         # Include occupied in-flight time in projections, but only settlement
         # mutates consumed. This avoids double-counting on repeated reads.
@@ -417,18 +424,26 @@ class FullStore:
                       (rid, key, request, json.dumps(result, allow_nan=False), self.clock()))
             return result
 
-    def _fail(self, c, row, code, retryable):
+    def _fail(self, c, row, code, retryable, *, citation_reference=False):
         report = c.execute('SELECT * FROM full_reports WHERE id=?', (row['report_id'],)).fetchone()
         policy = self._policy(c, row['report_id'])
         if policy is not None:
             delay = self.backoff[min(max(row['attempts'] - 1, 0), len(self.backoff) - 1)]
             c.execute("UPDATE full_steps SET status='retry_wait',token=NULL,expires=NULL,consumed=consumed+?,next_at=?,failure_code=? WHERE id=?",
-                      (self._elapsed(row), self.clock() + delay, code, row['id']))
+                      (self._elapsed(row), self.clock() + delay,
+                       'citation_reference' if citation_reference else code, row['id']))
             quality = policy['quality'].setdefault(row['id'], {'total': 0, 'ack': 0})
             if code == 'quality':
                 quality['total'] += 1
             else:
                 quality['ack'] = quality['total']
+            if (citation_reference and retryable and policy['state'] == 'active'
+                    and row['failure_code'] in ('citation_reference', 'quality') and self._defer_citation(c, row)):
+                quality['ack'] = quality['total']
+                self._save_policy(c, policy)
+                c.execute("UPDATE full_reports SET status='queued',failure_code=NULL WHERE id=?", (row['report_id'],))
+                self._after_settlement(c, row['report_id'])
+                return
             self._save_policy(c, policy)
             c.execute("UPDATE full_reports SET status='retry_wait',failure_code=? WHERE id=?", (code, row['report_id']))
             self._event(c, row['report_id'], 'retry_wait', row['stage'], row['part'], code)
@@ -447,6 +462,18 @@ class FullStore:
         c.execute('UPDATE full_reports SET status=?,failure_code=? WHERE id=?',
                   (state, code, row['report_id']))
         self._event(c, row['report_id'], state, row['stage'], row['part'], code)
+
+    def _defer_citation(self, c, row):
+        rid, stage, part = row['report_id'], row['stage'], row['part']
+        later = c.execute("SELECT 1 FROM full_steps WHERE report_id=? AND ordinal>? "
+                          "AND status='pending' AND stage IN " + _EARLY_RESEARCH_SQL + " LIMIT 1",
+                          (rid, row['ordinal'])).fetchone()
+        if not later or c.execute("SELECT 1 FROM full_events WHERE report_id=? AND kind='citation_deferred' "
+                                  "AND stage=? AND part=? LIMIT 1", (rid, stage, part)).fetchone():
+            return False
+        c.execute("UPDATE full_steps SET status='deferred',next_at=0 WHERE id=?", (row['id'],))
+        self._event(c, rid, 'citation_deferred', stage, part, 'quality')
+        return True
 
     def _recover(self, c):
         expired = c.execute("SELECT * FROM full_steps WHERE status='running' AND (expires<=? OR deadline<=?)",
@@ -469,10 +496,14 @@ class FullStore:
         with self.db() as c:
             c.execute('BEGIN IMMEDIATE')
             self._recover(c)
-            rows = c.execute("""SELECT s.* FROM full_steps s JOIN full_reports r ON r.id=s.report_id
-                WHERE r.status NOT IN ('failed','completed','cancelled','paused','pause_requested') AND (? IS NULL OR r.synthetic=?) AND s.status IN ('pending','retry_wait')
+            current_priority = _STEP_PRIORITY.format(step='s.')
+            previous_priority = _STEP_PRIORITY.format(step='p.')
+            rows = c.execute(f"""SELECT s.* FROM full_steps s JOIN full_reports r ON r.id=s.report_id
+                WHERE r.status NOT IN ('failed','completed','cancelled','paused','pause_requested') AND (? IS NULL OR r.synthetic=?) AND s.status IN ('pending','retry_wait','deferred')
                 AND s.next_at<=? AND NOT EXISTS(SELECT 1 FROM full_steps p
-                  WHERE p.report_id=s.report_id AND p.ordinal<s.ordinal AND p.status!='done')
+                  WHERE p.report_id=s.report_id AND p.status!='done' AND
+                    (p.status='running' OR {previous_priority}<{current_priority} OR
+                     ({previous_priority}={current_priority} AND p.ordinal<s.ordinal)))
                 ORDER BY r.created_at,s.ordinal""", (synthetic, synthetic, self.clock())).fetchall()
             for row in rows:
                 report = dict(c.execute('SELECT * FROM full_reports WHERE id=?', (row['report_id'],)).fetchone())
@@ -523,8 +554,12 @@ class FullStore:
                             c.execute("UPDATE full_steps SET status='failed',token=NULL,expires=NULL,failure_code='artifact' WHERE id=?", (row['id'],))
                             self._event(c, row['report_id'], 'failed', row['stage'], row['part'], 'artifact')
                         continue
+                part_position = c.execute("SELECT COUNT(*) FROM full_steps WHERE report_id=? AND stage=? "
+                                          "AND ordinal<? AND status='done'",
+                                          (row['report_id'], row['stage'], row['ordinal'])).fetchone()[0]
                 return {'report_id': row['report_id'], 'step_id': row['id'], 'stage': row['stage'],
                         'part': row['part'], 'attempts': row['attempts'] + 1, 'token': token,
+                        'part_position': part_position,
                         'deadline': deadline, 'tenant': report['tenant'], 'province': report['province'],
                         'city': report['city'], 'synthetic': bool(report['synthetic']),
                         'request_key': report['request_key'],
@@ -567,7 +602,7 @@ class FullStore:
             self._after_settlement(c, row['report_id'])
             return True
 
-    def fail_part(self, sid, token, code, retryable=True):
+    def fail_part(self, sid, token, code, retryable=True, *, citation_reference=False):
         if code not in CODES:
             raise ValueError('unsafe failure code')
         with self.db() as c:
@@ -575,7 +610,7 @@ class FullStore:
             row = self._owned(c, sid, token)
             if not row:
                 return False
-            self._fail(c, row, code, retryable)
+            self._fail(c, row, code, retryable, citation_reference=citation_reference and code == 'quality')
             return True
 
     def repair_invalid_checkpoints(self, sid, token):
@@ -708,7 +743,8 @@ class FullStore:
             row = c.execute('SELECT * FROM full_reports WHERE id=? AND tenant=?', (rid, tenant)).fetchone()
             if not row:
                 return None
-            steps = c.execute('SELECT stage,part,status,attempts,next_at,failure_code FROM full_steps WHERE report_id=? ORDER BY ordinal', (rid,)).fetchall()
+            steps = c.execute('SELECT stage,part,status,attempts,next_at,failure_code FROM full_steps WHERE report_id=? ORDER BY '
+                              + _STEP_PRIORITY.format(step='') + ',ordinal', (rid,)).fetchall()
             current = next((dict(s) for s in steps if s['status'] != 'done'), None)
             research = [s for s in steps if s['stage'] != '__bundle__']
             stages = json.loads(row['definition'])
