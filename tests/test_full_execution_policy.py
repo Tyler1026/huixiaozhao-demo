@@ -117,6 +117,33 @@ class ExecutionPolicyTests(unittest.TestCase):
         with self.assertRaises(AuthError):
             continue_website_report(state, self.store, request_id, version, 'operator')
 
+    def test_repeated_citations_defer_one_part_until_later_research_is_saved(self):
+        stages = (
+            {'id': 'population', 'filename': 'population.md', 'parts': ('first', 'second')},
+            {'id': 'transport', 'filename': 'transport.md', 'parts': ('later',)},
+            {'id': 'scoring', 'filename': 'scoring.md', 'parts': ('score',)},
+        )
+        store = FullStore(Path(self.tmp.name) / 'deferred.sqlite', stages=stages,
+                          clock=self.clock, backoff=(0,))
+        report = store.create('t', 'p', 'c', 'deferred', False)
+        rid = report['id']
+        for _ in range(2):
+            job = store.claim()
+            self.assertEqual(job['part'], 'first')
+            store.fail_part(job['step_id'], job['token'], 'quality', citation_reference=True)
+        state = store.get('t', rid)
+        self.assertEqual(state['status'], 'queued')
+        self.assertEqual(state['parts_done'], 0)
+        self.assertEqual(state['events'][0]['kind'], 'citation_deferred')
+        for part in ('second', 'later', 'first'):
+            job = store.claim()
+            self.assertEqual(job['part'], part)
+            self.assertIsNone(store.claim())
+            store.finish_part(job['step_id'], job['token'], {'text': part, 'metadata': {}})
+        self.assertEqual(store.claim()['part'], 'score')
+        self.assertEqual([r['text'] for r in store.parts(rid)['population']], ['first', 'second'])
+        self.assertEqual(store.get('t', rid)['policy_projection']['usage']['retries'], 2)
+
     def test_inflight_pause_allows_checkpoint_but_not_next_claim(self):
         job = self.store.claim()
         self.clock.advance(4)

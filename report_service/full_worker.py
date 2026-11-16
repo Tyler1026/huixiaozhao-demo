@@ -277,7 +277,8 @@ def _child(provider, job, db_path, artifact_root, pipe, parent_pid, contract, pr
             phase = 'provider'
             result = provider.run_part(job['stage'], job['part'], safe_job, prior)
             definition = next(s for s in job['definition'] if s['id'] == job['stage'])
-            current = parts.get(job['stage'], []) + [result]
+            current = list(parts.get(job['stage'], []))
+            current.insert(job.get('part_position', len(current)), result)
             if len(current) == len(definition['parts']):
                 phase = 'stage_validation'
                 value = contract.assemble(job['stage'], current)
@@ -410,7 +411,11 @@ def run_once(store, provider, *, ttl=120, timeout=180, synthetic=True, contract=
         except Exception as error:
             code = _error_code(error)
     code = code or 'worker_crash'
-    store.fail_part(sid, token, code, retryable=code != 'configuration')
+    diagnostic = (envelope or {}).get('diagnostics') or {}
+    if code == 'quality' and diagnostic.get('issues') == ['citation_reference']:
+        store.fail_part(sid, token, code, citation_reference=True)
+    else:
+        store.fail_part(sid, token, code, retryable=code != 'configuration')
     # An absolute timeout expires the lease before fail_part. get() recovers it
     # transactionally, charging elapsed work and scheduling the bounded retry.
     state = store.get(job['tenant'], rid)
