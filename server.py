@@ -1043,7 +1043,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._principal = require_session(self.headers, state, admin_config=self._account_config())
                 if path in ('/api/admin-reset', '/api/kb-clean', '/api/kb-upload',
                             '/api/kb-version', '/api/report-push-request', '/api/report-continue',
-                            '/api/report-pause', '/api/report-draft', '/api/funnel-review-push',
+                            '/api/report-pause', '/api/report-draft', '/api/report-repair', '/api/funnel-review-push',
                             '/api/funnel-resource-preview', '/api/enterprise-enrich'):
                     require_admin(self._principal)
                 self._scoped_state = scoped_sync_view(state, self._principal)
@@ -1159,7 +1159,7 @@ class Handler(BaseHTTPRequestHandler):
             from backend.kb_admin import handle_kb_admin
             return handle_kb_admin(self, raw, self._account_session, self._account_config(), operation='version')
 
-        if path in ('/api/report-continue', '/api/report-pause', '/api/report-draft'):
+        if path in ('/api/report-continue', '/api/report-pause', '/api/report-draft', '/api/report-repair'):
             from backend.auth_routes import respond
             from report_service.full_postgres import PostgresFullStore
             from report_service.full_store import Conflict
@@ -1176,6 +1176,19 @@ class Handler(BaseHTTPRequestHandler):
                         or type(extra_attempt) is not bool or type(unverified) is not bool
                         or (extra_attempt and unverified)):
                     raise ValueError()
+                if path == '/api/report-repair':
+                    from urllib.parse import urlsplit
+                    from report_service.providers import validate_https_url
+                    sources = body.get('sources')
+                    if not isinstance(sources, list) or not 1 <= len(sources) <= 4:
+                        raise ValueError()
+                    for source in sources:
+                        if not isinstance(source, str) or len(source) > 1000:
+                            raise ValueError()
+                        validate_https_url(source)
+                        host = urlsplit(source).hostname or ''
+                        if not host.endswith('.gov.cn'):
+                            raise ValueError()
             except (ValueError, UnicodeError):
                 return error_response(self, AuthError(400, 'invalid_report_request', '报告任务参数无效'))
             if not (_PG_AVAIL and DATABASE_URL):
@@ -1192,7 +1205,11 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         website_report_for_admin(state, request_id)
                         rid = report_id(request_id)
-                        if draft:
+                        if path == '/api/report-repair':
+                            reopened = store.reopen_draft(TENANT, rid, expected_version=version,
+                                                         actor=principal['user'], urls=list(dict.fromkeys(sources)))
+                            result = {'ok': True, 'id': request_id, 'status': reopened['status']}
+                        elif draft:
                             content = store.research_draft(TENANT, rid)
                             if content is None:
                                 raise AuthError(409, 'report_draft_unavailable', '报告状态已变化，暂无可下载草稿')

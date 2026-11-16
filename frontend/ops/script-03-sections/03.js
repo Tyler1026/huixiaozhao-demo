@@ -65,7 +65,9 @@ function _rrMergeRequests(srv){
       // Keep cancellation terminal and never accept another engine/job's resume.
       var resumed=loc.engine==='full-v1'&&sr.engine===loc.engine&&loc.status==='failed'&&loc.failureCode==='configuration'&&sr.status==='running'&&sr.failureCode!=='configuration'&&
         (!loc.engineReportId||sr.engineReportId===loc.engineReportId)&&sr.city===loc.city&&sr.province===loc.province;
-      if(rank[sr.status]<(rank[loc.status]||0)&&!resumed) return;
+      var repaired=loc.engine==='full-v1'&&sr.engine===loc.engine&&loc.status==='draft_ready'&&sr.status==='running'&&
+        loc.engineReportId===sr.engineReportId&&_rrPolicyVersion(sr)>_rrPolicyVersion(loc);
+      if(rank[sr.status]<(rank[loc.status]||0)&&!resumed&&!repaired) return;
       var updated=Object.assign({},loc,sr);
       if(JSON.stringify(loc)!==JSON.stringify(updated)){Object.assign(loc,sr);changed=true;}
     }
