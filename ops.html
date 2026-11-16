@@ -3850,9 +3850,12 @@ function rrProgress(r){
 function rrPolicyInfo(r){
   var causes={manual:'管理员请求暂停',wall_time_exhausted:'已到无人介入期限',task_work_exhausted:'已到全包工作时间上限',stage_work_exhausted:'已到本章工作时间上限',quality_repeated:'连续质量核验未通过',step_attempts_exhausted:'已到本步骤启动次数上限',report_retries_exhausted:'已到全包自动重试上限',configuration:'配置需要处理',artifact:'交付需要处理'};
   var p=r.executionPolicy||{},u=p.usage||{};
-  var text=r.status==='pause_requested'?'暂停已请求，当前步骤完成后停止领取新工作。':'已完成成果和累计用量已保留，等待管理员明确继续。';
+  var text=r.status==='pause_requested'?'暂停已请求，当前步骤完成后停止领取新工作。':'已保留成果和累计用量。请部署人员在报告服务中接续原任务。';
   if(r.status==='paused'&&r.engine==='full-v1'&&_rrPolicyVersion(r)>0)text='已保留成果和累计用量。点击「继续生成」接续原任务。';
+  if(r.status==='paused'&&rrCanAddAttempt(r))text='已保留成果和累计用量。可点击「补 1 次并继续」重试当前小节。';
   if(causes[p.pause_reason])text+=' '+causes[p.pause_reason]+'。';
+  if(r.status==='paused'&&p.pause_reason==='configuration')text+=' 请先查看报告 worker 日志并修复配置或认证问题。';
+  if(r.status==='paused'&&/^rr[A-Za-z0-9_-]{1,64}$/.test(r.id))text+=' 请求编号 '+r.id+'。';
   function number(value){return typeof value==='number'&&isFinite(value)&&value>=0?value:null;}
   var attempts=number(u.attempts_total),retries=number(u.retries),work=number(u.work_seconds);
   if(attempts!==null&&retries!==null)text+=' 累计启动 '+attempts+' 次，自动重试 '+retries+' 次。';
@@ -3873,28 +3876,49 @@ function rrIssuesBanner(r){
           '<b style="color:#b0364a">'+rrHtml(parts[0]||'')+'</b>'+(parts[1]?' — '+rrHtml(parts[1]):'')+'</div>';
       }).join('')+'</div></div>';
 }
-async function continueReportRequest(id, version, button){
+function rrCanAddAttempt(row){
+  var policy=row.executionPolicy||{}, remaining=policy.remaining||{};
+  return policy.pause_reason==='step_attempts_exhausted'||policy.pause_reason==='report_retries_exhausted'||
+    (policy.pause_reason==='quality_repeated'&&(remaining.step_attempts===0||remaining.retries===0));
+}
+async function reportControl(id, version, operation, button){
   if(!_rrAdminReady()){toast('请先登录管理员账号');return;}
+  var label=button.textContent;
+  var extra=operation==='extra';
+  if(extra&&!confirm('确认给当前小节补 1 次并继续？已保存的成果和累计用量会保留。'))return;
+  var endpoint=operation==='pause'?'pause':operation==='draft'?'draft':'continue';
   button.disabled=true;
   button.textContent='提交中…';
   try {
-    var response=await fetch('/api/report-continue',{
+    var response=await fetch('/api/report-'+endpoint,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({requestId:id,version:version})
+      body:JSON.stringify({requestId:id,version:version,extraAttempt:extra})
     });
     var receipt=await response.json();
-    if(!response.ok||!receipt.ok||receipt.id!==id||receipt.status!=='queued'){
-      toast(receipt.message||'未确认接续，请刷新报告任务后重试');
+    if(!response.ok||!receipt.ok||receipt.id!==id){
+      toast(receipt.message||'操作未确认，请刷新报告任务后重试');
       return;
     }
-    toast('已接续原报告，等待报告服务领取');
+    if(operation==='draft'){
+      var link=document.createElement('a');
+      var url=URL.createObjectURL(new Blob([receipt.text],{type:'text/markdown;charset=utf-8'}));
+      link.href=url;link.download=id+'-招商研判草稿.md';
+      link.click();
+      setTimeout(function(){URL.revokeObjectURL(url);},1000);
+      return;
+    }
+    if(operation==='pause'){
+      toast(receipt.status==='pause_requested'?'暂停已请求，当前步骤将在收尾后停下':'已暂停报告');
+    }else{
+      toast(receipt.status==='queued'?'已接续原报告，等待报告服务领取':'仍有其他执行额度限制，请核对后再继续');
+    }
     var state=await _rrJson('/api/sync?raw=1').then(_rrServerState).catch(function(){return null;});
     if(state&&_rrMergeRequests(state.REPORT_REQUESTS))render();
   } catch(error) {
-    toast('未能确认接续结果，请刷新报告任务查看状态');
+    toast('未能确认操作结果，请刷新报告任务查看状态');
   } finally {
     button.disabled=false;
-    button.textContent='继续生成';
+    button.textContent=label;
   }
 }
 function rrPanel(options){
@@ -3946,8 +3970,17 @@ function rrPanel(options){
       }
     }
     var continueBtn='', version=_rrPolicyVersion(r);
-    if(r.engine==='full-v1'&&r.status==='paused'&&version>0&&!r.submissionPending){
-      continueBtn='<button class="primary-button" onclick="continueReportRequest(\''+rrInlineString(r.id)+'\','+version+',this)">继续生成</button>';
+    if(r.engine==='full-v1'&&version>0&&!r.submissionPending){
+      var buttonArgs=rrInlineString(r.id)+'\','+version+',';
+      if(r.status==='paused'){
+        var extra=rrCanAddAttempt(r), action=extra?'extra':'continue';
+        continueBtn='<button class="primary-button" onclick="reportControl(\''+buttonArgs+'\''+action+'\',this)">'+(extra?'补 1 次并继续':'继续生成')+'</button>';
+      }else if(r.status==='running'){
+        continueBtn='<button onclick="reportControl(\''+buttonArgs+'\'pause\',this)">暂停</button>';
+      }
+      if((r.status==='paused'||r.status==='failed')&&r.partsDone>0){
+        continueBtn+='<button onclick="reportControl(\''+buttonArgs+'\'draft\',this)">下载研判草稿</button>';
+      }
     }
     var cancelBtn='';
     if(r.submissionBlocked){

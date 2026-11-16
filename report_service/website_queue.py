@@ -318,22 +318,39 @@ def request_publication(handler, raw, session_factory):
         return reply(503, {'ok': False, 'error': '保存推送请求失败，请重试'})
 
 
-def continue_website_report(state, store, request_id, version, actor, *, extra_attempt=False):
-    """Continue one website-owned report through the versioned engine policy."""
+def website_report_for_admin(state, request_id):
     from backend.auth import AuthError
-    from .full_store import Conflict
 
     matches = [row for row in state.get('REPORT_REQUESTS') or []
                if valid_request(row) and row['id'] == request_id]
     if len(matches) != 1 or matches[0].get('engine') != ENGINE:
         raise AuthError(404, 'report_not_found', '未找到对应的独立报告任务')
-    if matches[0].get('status') not in ('paused', 'running'):
+    return matches[0]
+
+
+def continue_website_report(state, store, request_id, version, actor, *, extra_attempt=False):
+    """Continue one website-owned report through the versioned engine policy."""
+    from backend.auth import AuthError
+    from .full_store import Conflict
+
+    row = website_report_for_admin(state, request_id)
+    if row.get('status') not in ('paused', 'running'):
         raise AuthError(409, 'report_state_changed', '任务状态已变化，请刷新报告任务')
+    grant = {}
     if extra_attempt:
-        policy = matches[0].get('executionPolicy') or {}
-        if (matches[0]['status'] != 'paused' or policy.get('version') != version
-                or policy.get('pause_reason') != 'step_attempts_exhausted'):
+        policy = row.get('executionPolicy') or {}
+        reason = policy.get('pause_reason')
+        remaining = policy.get('remaining') or {}
+        exhausted_step = reason == 'step_attempts_exhausted' or remaining.get('step_attempts') == 0
+        exhausted_retries = reason == 'report_retries_exhausted' or remaining.get('retries') == 0
+        if (row['status'] != 'paused' or policy.get('version') != version
+                or reason not in ('step_attempts_exhausted', 'report_retries_exhausted', 'quality_repeated')
+                or not (exhausted_step or exhausted_retries)):
             raise AuthError(409, 'report_state_changed', '当前任务没有待补充的步骤次数，请刷新页面')
+        if exhausted_step:
+            grant['extra_attempts'] = 1
+        if exhausted_retries:
+            grant['extra_retries'] = 1
 
     # Reuse the receipt if a network retry arrives with the same policy version.
     actor_key = hashlib.sha256(actor.encode()).hexdigest()[:24]
@@ -342,7 +359,7 @@ def continue_website_report(state, store, request_id, version, actor, *, extra_a
             TENANT, report_id(request_id), expected_version=version,
             idempotency_key=f'ops-continue:{actor_key}:{version}:{int(extra_attempt)}',
             actor=actor, reason='管理员确认补一次启动机会' if extra_attempt else '管理员在报告任务中点击继续生成',
-            grant={'extra_attempts': 1} if extra_attempt else {})
+            grant=grant)
     except Conflict as error:
         if str(error).startswith('finite additional allowance required:'):
             raise AuthError(409, 'report_allowance_required',

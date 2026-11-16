@@ -20,11 +20,30 @@ from . import full_execution_policy as execution_policy
 CODES = frozenset({'timeout', 'worker_crash', 'upstream', 'rate_limit', 'quality',
                    'configuration', 'budget_exhausted', 'artifact', 'cancelled'})
 
-# Finish independent research before revisiting deferred citations, then run
-# enterprise research and synthesis with the complete early-stage evidence.
-_EARLY_RESEARCH_SQL = "('economy','population','transport','life','industry','competition','policy','chain')"
-_STEP_PRIORITY = ("CASE WHEN {step}stage NOT IN " + _EARLY_RESEARCH_SQL
-                  + " THEN 2 WHEN {step}status='deferred' THEN 1 ELSE 0 END")
+_EARLY_RESEARCH = frozenset(('economy', 'population', 'transport', 'life',
+                             'industry', 'competition', 'policy', 'chain'))
+_ENTERPRISE = frozenset(('enterprises_1', 'enterprises_2', 'enterprises_3'))
+_WAITING_FOR_REPAIR = frozenset(('deferred', 'needs_review'))
+
+
+def _next_step(steps):
+    """Choose work in original order, bypassing only deferred dependencies."""
+    unfinished = [step for step in steps if step['status'] != 'done']
+    running = next((step for step in unfinished if step['status'] == 'running'), None)
+    if running is not None:
+        return running
+    waiting = [step for step in unfinished if step['status'] in _WAITING_FOR_REPAIR]
+    waiting_stages = {step['stage'] for step in waiting}
+    for step in unfinished:
+        stage = step['stage']
+        if step['status'] in _WAITING_FOR_REPAIR:
+            continue
+        if (not waiting or stage in _EARLY_RESEARCH or
+                (stage in _ENTERPRISE and stage not in waiting_stages
+                 and not (waiting_stages & _EARLY_RESEARCH))):
+            return step
+    return next((step for step in waiting if step['status'] == 'deferred'),
+                waiting[0] if waiting else None)
 
 
 class Conflict(ValueError):
@@ -285,9 +304,9 @@ class FullStore:
 
     def _policy_numbers(self, c, report, policy):
         steps = c.execute('''SELECT id,stage,part,status,attempts,consumed,deadline,started_at
-            FROM full_steps WHERE report_id=? ORDER BY ''' + _STEP_PRIORITY.format(step='') + ',ordinal',
+            FROM full_steps WHERE report_id=? ORDER BY ordinal''',
                           (report['id'],)).fetchall()
-        current = next((s for s in steps if s['status'] != 'done'), None)
+        current = _next_step(steps)
         # Include occupied in-flight time in projections, but only settlement
         # mutates consumed. This avoids double-counting on repeated reads.
         def used(s):
@@ -307,6 +326,8 @@ class FullStore:
             limits, attempts=usage['current_step_attempts'], retries=usage['retries'],
             task_used=work, stage_used=usage['current_stage_work_seconds'],
             created_at=report['created_at'], now=self.clock(), quality_since_ack=usage['quality_since_ack'])
+        if not reason and current is not None and current['status'] == 'needs_review':
+            reason = 'quality_repeated'
         return current, limits, usage, reason
 
     def _policy_projection(self, c, report, policy=None):
@@ -411,6 +432,8 @@ class FullStore:
                 policy['grants'] = execution_policy.apply_grant(policy['grants'], grant, current['id'], current['stage'])
                 quality = policy['quality'].setdefault(current['id'], {'total': 0, 'ack': 0})
                 quality['ack'] = quality['total']
+                if current['status'] == 'needs_review':
+                    c.execute("UPDATE full_steps SET status='retry_wait',next_at=0 WHERE id=?", (current['id'],))
                 _, _, _, blocked = self._policy_numbers(c, report, policy)
                 if blocked and not any(grant.values()):
                     raise Conflict('finite additional allowance required: ' + blocked)
@@ -437,8 +460,7 @@ class FullStore:
                 quality['total'] += 1
             else:
                 quality['ack'] = quality['total']
-            if (citation_reference and retryable and policy['state'] == 'active'
-                    and row['failure_code'] in ('citation_reference', 'quality') and self._defer_citation(c, row)):
+            if retryable and code == 'quality' and policy['state'] == 'active' and self._defer_quality(c, row, policy, quality):
                 quality['ack'] = quality['total']
                 self._save_policy(c, policy)
                 c.execute("UPDATE full_reports SET status='queued',failure_code=NULL WHERE id=?", (row['report_id'],))
@@ -463,16 +485,31 @@ class FullStore:
                   (state, code, row['report_id']))
         self._event(c, row['report_id'], state, row['stage'], row['part'], code)
 
-    def _defer_citation(self, c, row):
+    def _defer_quality(self, c, row, policy, quality):
         rid, stage, part = row['report_id'], row['stage'], row['part']
-        later = c.execute("SELECT 1 FROM full_steps WHERE report_id=? AND ordinal>? "
-                          "AND status='pending' AND stage IN " + _EARLY_RESEARCH_SQL + " LIMIT 1",
-                          (rid, row['ordinal'])).fetchone()
-        if not later or c.execute("SELECT 1 FROM full_events WHERE report_id=? AND kind='citation_deferred' "
-                                  "AND stage=? AND part=? LIMIT 1", (rid, stage, part)).fetchone():
+        if stage not in _EARLY_RESEARCH | _ENTERPRISE:
+            return False
+        already_deferred = c.execute(
+            "SELECT 1 FROM full_events WHERE report_id=? AND kind IN ('citation_deferred','quality_deferred') "
+            "AND stage=? AND part=? LIMIT 1", (rid, stage, part)).fetchone()
+        if already_deferred:
+            c.execute("UPDATE full_steps SET status='needs_review' WHERE id=?", (row['id'],))
+            self._event(c, rid, 'deferred_repair_failed', stage, part, 'quality')
+            return True
+        retries = c.execute('SELECT COALESCE(SUM(CASE WHEN attempts>0 THEN attempts-1 ELSE 0 END),0) '
+                            'FROM full_steps WHERE report_id=?', (rid,)).fetchone()[0]
+        limits = execution_policy.effective_limits(policy['limits'], policy['grants'], row['id'], stage)
+        if (quality['total'] - quality['ack'] < limits['same_quality_failures']
+                and retries < limits['report_max_retries'] and row['attempts'] < limits['step_max_attempts']):
+            return False
+        steps = [dict(step) for step in c.execute(
+            'SELECT id,stage,status FROM full_steps WHERE report_id=? ORDER BY ordinal', (rid,)).fetchall()]
+        next(step for step in steps if step['id'] == row['id'])['status'] = 'deferred'
+        candidate = _next_step(steps)
+        if candidate is None or candidate['status'] not in ('pending', 'retry_wait'):
             return False
         c.execute("UPDATE full_steps SET status='deferred',next_at=0 WHERE id=?", (row['id'],))
-        self._event(c, rid, 'citation_deferred', stage, part, 'quality')
+        self._event(c, rid, 'quality_deferred', stage, part, 'quality')
         return True
 
     def _recover(self, c):
@@ -496,17 +533,17 @@ class FullStore:
         with self.db() as c:
             c.execute('BEGIN IMMEDIATE')
             self._recover(c)
-            current_priority = _STEP_PRIORITY.format(step='s.')
-            previous_priority = _STEP_PRIORITY.format(step='p.')
-            rows = c.execute(f"""SELECT s.* FROM full_steps s JOIN full_reports r ON r.id=s.report_id
-                WHERE r.status NOT IN ('failed','completed','cancelled','paused','pause_requested') AND (? IS NULL OR r.synthetic=?) AND s.status IN ('pending','retry_wait','deferred')
-                AND s.next_at<=? AND NOT EXISTS(SELECT 1 FROM full_steps p
-                  WHERE p.report_id=s.report_id AND p.status!='done' AND
-                    (p.status='running' OR {previous_priority}<{current_priority} OR
-                     ({previous_priority}={current_priority} AND p.ordinal<s.ordinal)))
-                ORDER BY r.created_at,s.ordinal""", (synthetic, synthetic, self.clock())).fetchall()
-            for row in rows:
-                report = dict(c.execute('SELECT * FROM full_reports WHERE id=?', (row['report_id'],)).fetchone())
+            reports = c.execute("""SELECT r.* FROM full_reports r
+                WHERE r.status NOT IN ('failed','completed','cancelled','paused','pause_requested')
+                AND (? IS NULL OR r.synthetic=?)
+                AND NOT EXISTS(SELECT 1 FROM full_steps s WHERE s.report_id=r.id AND s.status='running')
+                ORDER BY r.created_at""", (synthetic, synthetic)).fetchall()
+            for report in reports:
+                steps = c.execute('SELECT * FROM full_steps WHERE report_id=? ORDER BY ordinal',
+                                  (report['id'],)).fetchall()
+                row = _next_step(steps)
+                if row is None or row['status'] not in ('pending', 'retry_wait', 'deferred') or row['next_at'] > self.clock():
+                    continue
                 policy = self._policy(c, row['report_id'])
                 if policy is not None:
                     if self._city_held(c, report):
@@ -743,9 +780,10 @@ class FullStore:
             row = c.execute('SELECT * FROM full_reports WHERE id=? AND tenant=?', (rid, tenant)).fetchone()
             if not row:
                 return None
-            steps = c.execute('SELECT stage,part,status,attempts,next_at,failure_code FROM full_steps WHERE report_id=? ORDER BY '
-                              + _STEP_PRIORITY.format(step='') + ',ordinal', (rid,)).fetchall()
-            current = next((dict(s) for s in steps if s['status'] != 'done'), None)
+            steps = c.execute('SELECT stage,part,status,attempts,next_at,failure_code FROM full_steps WHERE report_id=? ORDER BY ordinal',
+                              (rid,)).fetchall()
+            current = _next_step(steps)
+            current = dict(current) if current is not None else None
             research = [s for s in steps if s['stage'] != '__bundle__']
             stages = json.loads(row['definition'])
             stage_done = sum(all(s['status'] == 'done' for s in research if s['stage'] == stage['id']) for stage in stages)
@@ -766,3 +804,38 @@ class FullStore:
         with self.db() as c:
             ids = [r[0] for r in c.execute('SELECT id FROM full_reports WHERE tenant=? ORDER BY created_at DESC LIMIT ?', (tenant, limit))]
         return [self.get(tenant, rid) for rid in ids]
+
+    def research_draft(self, tenant, rid):
+        """Read saved research only, without creating publishable artifacts."""
+        with self.db() as c:
+            report = c.execute('SELECT city,status,failure_code FROM full_reports WHERE id=? AND tenant=?',
+                               (rid, tenant)).fetchone()
+            if not report or report['status'] not in ('paused', 'failed'):
+                return None
+            steps = c.execute("SELECT stage,part,status,failure_code,output FROM full_steps "
+                              "WHERE report_id=? AND stage!='__bundle__' ORDER BY ordinal", (rid,)).fetchall()
+        from .providers import _STAGE_LABELS
+
+        stage_labels = dict(_STAGE_LABELS, enterprises_1='第一招商方向', enterprises_2='第二招商方向',
+                            enterprises_3='第三招商方向', fact_check='企业核验', scoring='匹配评分',
+                            action='行动计划', summary='综合结论', compact='精简报告')
+        reasons = {'citation_reference': '来源引用未通过', 'quality': '质量核验未通过',
+                   'configuration': '服务配置异常', 'upstream': '上游服务暂不可用',
+                   'timeout': '执行超时', 'artifact': '交付校验未通过'}
+        lines = [f"# {report['city']}招商研判草稿", '',
+                 '本草稿仅收录已保存的小节。待补证据影响的企业核验、排名和建议暂不出具。', '',
+                 '## 待补小节及原因', '']
+        for step in steps:
+            if step['status'] == 'done':
+                continue
+            label = stage_labels.get(step['stage'], step['stage'])
+            reason = reasons.get(step['failure_code'], '尚未执行')
+            lines.append(f"- {label} · {step['part']}（{reason}）")
+        if not any(step['status'] != 'done' for step in steps):
+            lines.append('- 正式报告交付待完成。')
+        lines.extend(('', '## 已保存研究'))
+        for step in steps:
+            if step['status'] == 'done':
+                label = stage_labels.get(step['stage'], step['stage'])
+                lines.extend(('', f"### {label} · {step['part']}", '', json.loads(step['output'])['text']))
+        return '\n'.join(lines) + '\n'
