@@ -94,6 +94,29 @@ class ExecutionPolicyTests(unittest.TestCase):
         self.assertEqual(c['status'], 'queued')
         self.assertIsNotNone(self.store.claim())
 
+    def test_ops_continue_reuses_original_report_and_receipt(self):
+        from backend.auth import AuthError
+        from report_service.website_queue import ENGINE, TENANT, continue_website_report
+
+        request_id = 'rrsuzhou'
+        report = self.store.create(TENANT, '江苏', '苏州', request_id, False)
+        paused = self.store.pause_report(
+            TENANT, report['id'], expected_version=report['policy_projection']['version'],
+            idempotency_key='pause', actor='operator', reason='reviewed')
+        row = {'id': request_id, 'province': '江苏', 'city': '苏州',
+               'engine': ENGINE, 'status': 'paused'}
+        state = {'REPORT_REQUESTS': [row]}
+        version = paused['policy_projection']['version']
+        with self.assertRaises(AuthError):
+            continue_website_report(state, self.store, request_id, version - 1, 'operator')
+        receipt = continue_website_report(state, self.store, request_id, version, 'operator')
+        self.assertEqual(receipt, {'ok': True, 'id': request_id, 'status': 'queued'})
+        row['status'] = 'running'
+        self.assertEqual(continue_website_report(state, self.store, request_id, version, 'operator'), receipt)
+        row['status'] = 'cancelled'
+        with self.assertRaises(AuthError):
+            continue_website_report(state, self.store, request_id, version, 'operator')
+
     def test_inflight_pause_allows_checkpoint_but_not_next_claim(self):
         job = self.store.claim()
         self.clock.advance(4)
