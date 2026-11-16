@@ -328,7 +328,7 @@ def website_report_for_admin(state, request_id):
     return matches[0]
 
 
-def continue_website_report(state, store, request_id, version, actor, *, extra_attempt=False):
+def continue_website_report(state, store, request_id, version, actor, *, extra_attempt=False, unverified=False):
     """Continue one website-owned report through the versioned engine policy."""
     from backend.auth import AuthError
     from .full_store import Conflict
@@ -355,11 +355,17 @@ def continue_website_report(state, store, request_id, version, actor, *, extra_a
     # Reuse the receipt if a network retry arrives with the same policy version.
     actor_key = hashlib.sha256(actor.encode()).hexdigest()[:24]
     try:
-        result = store.continue_report(
-            TENANT, report_id(request_id), expected_version=version,
-            idempotency_key=f'ops-continue:{actor_key}:{version}:{int(extra_attempt)}',
-            actor=actor, reason='管理员确认补一次启动机会' if extra_attempt else '管理员在报告任务中点击继续生成',
-            grant=grant)
+        if unverified:
+            result = store.continue_unverified(
+                TENANT, report_id(request_id), expected_version=version,
+                idempotency_key=f'ops-unverified:{actor_key}:{version}',
+                actor=actor, reason='管理员确认将未通过核验的小节列为待核实并继续')
+        else:
+            result = store.continue_report(
+                TENANT, report_id(request_id), expected_version=version,
+                idempotency_key=f'ops-continue:{actor_key}:{version}:{int(extra_attempt)}',
+                actor=actor, reason='管理员确认补一次启动机会' if extra_attempt else '管理员在报告任务中点击继续生成',
+                grant=grant)
     except Conflict as error:
         if str(error).startswith('finite additional allowance required:'):
             raise AuthError(409, 'report_allowance_required',
@@ -436,7 +442,7 @@ class WebsiteQueue:
                 if not valid_request(request):
                     continue
                 if any(isinstance(row, dict) and row.get('city') == city
-                       and row.get('status') not in ('done', 'cancelled') for row in rows):
+                       and row.get('status') not in ('done', 'cancelled', 'draft_ready') for row in rows):
                     continue
                 if not any(isinstance(row, dict) and row.get('id') == request['id'] for row in rows):
                     rows.append(request)
@@ -578,7 +584,7 @@ class WebsiteQueue:
                 target.update(status='done', files=files)
                 if not target.get('doneTs'):
                     target['doneTs'] = int(time.time() * 1000)
-            elif job['status'] in ('failed', 'cancelled', 'paused', 'pause_requested'):
+            elif job['status'] in ('failed', 'cancelled', 'paused', 'pause_requested', 'draft_ready'):
                 target['status'] = job['status']
             else:
                 target['status'] = 'running'

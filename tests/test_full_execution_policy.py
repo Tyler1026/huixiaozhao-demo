@@ -172,6 +172,32 @@ class ExecutionPolicyTests(unittest.TestCase):
         self.assertIn('匹配评分 · 评分（尚未执行）', draft)
         self.assertIn(OUTPUT['text'], draft)
 
+    def test_website_finishes_available_work_with_unverified_findings_in_the_draft(self):
+        from report_service.website_queue import TENANT
+
+        stages = (
+            {'id': 'fact_check', 'filename': 'check.md', 'parts': ('政策金额', '五星企业信号')},
+            {'id': 'scoring', 'filename': 'score.md', 'parts': ('评分',)},
+        )
+        store = FullStore(Path(self.tmp.name) / 'unverified.sqlite', stages=stages, clock=self.clock, backoff=(0,))
+        rid = store.create(TENANT, '江苏', '苏州', 'unverified', False)['id']
+        for _ in range(2):
+            job = store.claim()
+            self.assertEqual(job['part'], '政策金额')
+            store.fail_part(job['step_id'], job['token'], 'quality')
+        job = store.claim()
+        self.assertEqual(job['part'], '五星企业信号')
+        store.finish_part(job['step_id'], job['token'], OUTPUT)
+        state = store.get(TENANT, rid)
+        self.assertEqual(state['status'], 'draft_ready')
+        self.assertEqual(state['parts_done'], 1)
+        self.assertIsNone(store.claim())
+        self.assertIsNone(state['manifest'])
+        draft = store.research_draft(TENANT, rid)
+        self.assertIn('政策金额（质量核验未通过）', draft)
+        self.assertIn('评分（依赖的证据未核实', draft)
+        self.assertIn(OUTPUT['text'], draft)
+
     def test_ops_continue_can_add_one_start_for_an_exhausted_step(self):
         from backend.auth import AuthError
         from report_service.website_queue import ENGINE, TENANT, continue_website_report

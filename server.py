@@ -1170,9 +1170,11 @@ class Handler(BaseHTTPRequestHandler):
                 request_id = body.get('requestId') if isinstance(body, dict) else None
                 version = body.get('version') if isinstance(body, dict) else None
                 extra_attempt = body.get('extraAttempt', False) if isinstance(body, dict) else False
+                unverified = body.get('unverified', False) if isinstance(body, dict) else False
                 if (not isinstance(request_id, str) or not _re.fullmatch(r'rr[A-Za-z0-9_-]{1,64}', request_id)
                         or (not draft and (type(version) is not int or not 1 <= version <= 2**53 - 1))
-                        or type(extra_attempt) is not bool):
+                        or type(extra_attempt) is not bool or type(unverified) is not bool
+                        or (extra_attempt and unverified)):
                     raise ValueError()
             except (ValueError, UnicodeError):
                 return error_response(self, AuthError(400, 'invalid_report_request', '报告任务参数无效'))
@@ -1186,7 +1188,7 @@ class Handler(BaseHTTPRequestHandler):
                     require_admin(principal)
                     if path == '/api/report-continue':
                         result = continue_website_report(state, store, request_id, version, principal['user'],
-                                                         extra_attempt=extra_attempt)
+                                                         extra_attempt=extra_attempt, unverified=unverified)
                     else:
                         website_report_for_admin(state, request_id)
                         rid = report_id(request_id)
