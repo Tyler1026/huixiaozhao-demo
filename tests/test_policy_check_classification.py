@@ -241,7 +241,8 @@ class FakeLive:
     def _validate_endpoints(self): pass
     def _chat(self, messages, *args, **kwargs):
         self.calls.append(messages)
-        return {'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(self.payload)}}]}
+        payload = self.payload[min(len(self.calls) - 1, len(self.payload) - 1)] if isinstance(self.payload, list) else self.payload
+        return {'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(payload)}}]}
 
 
 class PolicyProductionEntryTests(unittest.TestCase):
@@ -274,6 +275,27 @@ class PolicyProductionEntryTests(unittest.TestCase):
         for part in ('policy_clause', 'claim必须逐字等于quote', '活动次数', '有效期', '至少3条'):
             self.assertIn(part, prompt)
         self.assertEqual(len(live.calls), 1)
+
+    def test_policy_amount_repairs_once_against_the_same_originals(self):
+        from report_service.full_worker import _provider_issue
+
+        evidence = [fixture(i)[0] for i in (1, 2, 3)]
+        checks = [fixture(i)[1] for i in (1, 2, 3)]
+        bad = copy.deepcopy(checks)
+        bad[0]['claim'] = '活动报道'
+        text = '\n'.join(f'OFFLINE政策条款{n}的独立待核资料清单' for n in range(40))
+        live = FakeLive([{'text': text, 'checks': bad}, {'text': text, 'checks': checks}])
+        provider = FullLiveProvider(live)
+        provider._gather_evidence = lambda *a, **kw: copy.deepcopy(evidence)
+        result = provider.run_part('fact_check', '政策金额', {'city': '测试市', 'mode': 'standard'}, {})
+        self.assertEqual(len(live.calls), 2)
+        self.assertEqual(len(result['metadata']['checks']), 3)
+        self.assertIn('policy_claim_differs_from_clause', live.calls[1][-1]['content'])
+        for item in evidence:
+            self.assertIn(item['excerpt'], live.calls[1][-1]['content'])
+        error = FullProviderError('policy check rejected', 'quality',
+                                  diagnostic_reason='policy_claim_differs_from_clause')
+        self.assertEqual(_provider_issue(error), 'policy_claim_differs_from_clause')
 
     def test_two_true_clauses_still_fail_unchanged_three_clause_quota(self):
         with self.assertRaisesRegex(FullProviderError, 'policy checks 2 < 3'):
