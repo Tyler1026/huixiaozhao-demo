@@ -156,17 +156,30 @@ class EnterpriseCitationTests(unittest.TestCase):
         self.assertEqual(assembled['metadata']['citation_finalizations'], [finalization])
         self.assertEqual(inputs, before)
 
+    def test_candidate_citation_correction_reuses_source_frame_and_keeps_candidate_records(self):
+        candidates = [company(i) for i in range(10, 15)]
+        transport = Transport([
+            {'text': body('first', '【来源:99】'), 'candidates': candidates},
+            {'text': body('first'), 'candidates': [company(0)]},
+        ])
+        out = live(transport).run_part('enterprises_1', '候选池', {'city': 'OFFLINE城'}, prior())
+        self.assertEqual(len(transport.chats), 2)
+        self.assertEqual(transport.chats[0]['messages'], transport.chats[1]['messages'][:-1])
+        self.assertEqual([r['name'] for r in out['metadata']['candidates']], [r['name'] for r in candidates])
+        self.assertEqual(out['metadata']['citation_frames'][0]['references'], [1])
+
     def test_supplement_invalid_marker_cannot_use_accumulated_or_guessed_sources(self):
         for marker in ('【来源:99】', '[1]', '来源1', ROOT + 'old'):
             with self.subTest(marker=marker):
                 transport = Transport([
                     {'text': body('first'), 'candidates': [company(i) for i in (0, 1, 10, 11, 12)]},
                     {'text': body('extra', marker), 'candidates': [company(i, extra=True) for i in (13, 14)]},
+                    {'text': body('extra', marker)},
                 ], completion=True)
                 with self.assertRaisesRegex(full_provider.FullProviderError, 'research citation reference is invalid'):
                     live(transport).run_part('enterprises_1', '候选池2', {'city': 'OFFLINE城', 'mode': 'deep'},
                                              prior([company(i) for i in range(5)]))
-                self.assertEqual(len(transport.chats), 2)
+                self.assertEqual(len(transport.chats), 3)
 
     def test_scoped_labels_do_not_hide_repetition_between_parts_or_completion_calls(self):
         raw = body('same')
