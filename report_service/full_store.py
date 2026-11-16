@@ -89,6 +89,10 @@ CREATE TABLE IF NOT EXISTS full_input_context (
  report_id TEXT PRIMARY KEY REFERENCES full_reports(id),
  payload TEXT NOT NULL, sha256 TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS full_verification_sources (
+ report_id TEXT PRIMARY KEY REFERENCES full_reports(id),
+ urls_json TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS full_checkpoint_archive (
  id INTEGER PRIMARY KEY AUTOINCREMENT,
  report_id TEXT NOT NULL REFERENCES full_reports(id),
@@ -427,6 +431,49 @@ class FullStore:
     def continue_unverified(self, tenant, rid, *, expected_version, idempotency_key, actor, reason):
         return self._control(tenant, rid, 'omit', expected_version, idempotency_key, actor, reason, None)
 
+    def reopen_draft(self, tenant, rid, *, expected_version, actor, urls):
+        """Reopen missing steps only, with a bounded reviewed repair budget."""
+        actor = _text(actor)
+        with self.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            report = c.execute('SELECT * FROM full_reports WHERE id=? AND tenant=?',
+                               (rid, tenant)).fetchone()
+            policy = self._policy(c, rid) if report else None
+            if (not report or report['status'] != 'draft_ready' or not policy
+                    or policy['control_version'] != expected_version):
+                raise Conflict('draft changed')
+            omitted = c.execute("SELECT id,stage,attempts FROM full_steps WHERE report_id=? AND status='omitted' ORDER BY ordinal",
+                                (rid,)).fetchall()
+            if not omitted:
+                raise Conflict('draft has no missing steps')
+            # Keep historic usage. Open at most two starts for a depleted
+            # subsection and at most four additional report-wide retries.
+            for step in omitted:
+                limits = execution_policy.effective_limits(policy['limits'], policy['grants'], step['id'], step['stage'])
+                extra = min(2, max(0, step['attempts'] + 2 - limits['step_max_attempts'])) if step['attempts'] else 0
+                if extra:
+                    grant = execution_policy.validate_grant({'extra_attempts': extra})
+                    policy['grants'] = execution_policy.apply_grant(policy['grants'], grant, step['id'], step['stage'])
+                if step['id'] in policy['quality']:
+                    policy['quality'][step['id']]['ack'] = policy['quality'][step['id']]['total']
+            policy['grants']['report_retries'] += 4
+            c.execute("INSERT INTO full_verification_sources(report_id,urls_json) VALUES (?,?) "
+                      "ON CONFLICT(report_id) DO UPDATE SET urls_json=excluded.urls_json",
+                      (rid, json.dumps(urls, ensure_ascii=False)))
+            c.execute("UPDATE full_steps SET status='pending',next_at=0,failure_code=NULL "
+                      "WHERE report_id=? AND status='omitted'", (rid,))
+            _, _, _, blocked = self._policy_numbers(c, report, policy)
+            if blocked:
+                raise Conflict('draft repair requires a different allowance')
+            policy.update(state='active', pause_reason=None)
+            self._save_policy(c, policy)
+            c.execute("UPDATE full_reports SET status='queued',failure_code=NULL WHERE id=?", (rid,))
+            self._event(c, rid, 'draft_reopened')
+            c.execute('INSERT INTO full_execution_actions(report_id,idempotency_key,request_json,result_json,at) VALUES(?,?,?,?,?)',
+                      (rid, f'draft-repair:{expected_version}', json.dumps({'actor': actor, 'action': 'draft_repair'}),
+                       json.dumps({'status': 'queued'}), self.clock()))
+            return {'status': 'queued'}
+
     def _control(self, tenant, rid, action, version, key, actor, reason, grant):
         tenant, rid, key, actor, reason = (_text(tenant), _text(rid), _text(key), _text(actor), _text(reason, 1000))
         if isinstance(version, bool) or not isinstance(version, int) or version < 1:
@@ -637,9 +684,16 @@ class FullStore:
                 part_position = c.execute("SELECT COUNT(*) FROM full_steps WHERE report_id=? AND stage=? "
                                           "AND ordinal<? AND status='done'",
                                           (row['report_id'], row['stage'], row['ordinal'])).fetchone()[0]
+                verification_sources = []
+                if (row['stage'], row['part']) == ('fact_check', '政策金额'):
+                    repair = c.execute('SELECT urls_json FROM full_verification_sources WHERE report_id=?',
+                                       (row['report_id'],)).fetchone()
+                    if repair:
+                        verification_sources = json.loads(repair['urls_json'])
                 return {'report_id': row['report_id'], 'step_id': row['id'], 'stage': row['stage'],
                         'part': row['part'], 'attempts': row['attempts'] + 1, 'token': token,
                         'part_position': part_position,
+                        'verification_sources': verification_sources,
                         'deadline': deadline, 'tenant': report['tenant'], 'province': report['province'],
                         'city': report['city'], 'synthetic': bool(report['synthetic']),
                         'request_key': report['request_key'],

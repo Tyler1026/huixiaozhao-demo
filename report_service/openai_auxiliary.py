@@ -10,12 +10,17 @@ from html.parser import HTMLParser
 class _OriginalText(HTMLParser):
     def __init__(self):
         super().__init__();self.parts=[];self.hidden=0
+        self.title_parts = []
+        self.in_title = False
     def handle_starttag(self,tag,attrs):
+        if tag == 'title': self.in_title = True
         if tag in ('script','style','noscript'):self.hidden+=1
         if tag in ('p','div','br','h1','h2','li'):self.parts.append('\n')
     def handle_endtag(self,tag):
+        if tag == 'title': self.in_title = False
         if tag in ('script','style','noscript'):self.hidden=max(0,self.hidden-1)
     def handle_data(self,data):
+        if self.in_title: self.title_parts.append(data)
         if not self.hidden:self.parts.append(data)
 
 
@@ -51,7 +56,8 @@ def fetch_government_originals(urls, *, limit=2):
             parser=_OriginalText();parser.feed(text)
             original='\n'.join(part.strip() for part in ''.join(parser.parts).splitlines() if part.strip())
             if len(original)>=40:
-                results.append({'url':url,'title':url,'text':original[:120000],
+                title = ''.join(parser.title_parts).strip()
+                results.append({'url':url,'title':title or url,'text':original[:120000],
                                 'retrieval_provider':'openai_discovery_government_original'})
         except Exception:
             continue

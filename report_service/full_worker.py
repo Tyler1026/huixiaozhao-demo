@@ -278,6 +278,8 @@ def _child(provider, job, db_path, artifact_root, pipe, parent_pid, contract, pr
             safe_job = {k: job[k] for k in ('city', 'province', 'synthetic')}
             safe_job['id'] = job['report_id']
             safe_job['mode'] = job.get('mode', 'standard')
+            if job.get('verification_sources'):
+                safe_job['verification_sources'] = job['verification_sources']
             phase = 'provider'
             result = provider.run_part(job['stage'], job['part'], safe_job, prior)
             definition = next(s for s in job['definition'] if s['id'] == job['stage'])

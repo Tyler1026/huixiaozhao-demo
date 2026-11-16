@@ -197,6 +197,16 @@ class ExecutionPolicyTests(unittest.TestCase):
         self.assertIn('政策金额（质量核验未通过）', draft)
         self.assertIn('评分（依赖的证据未核实', draft)
         self.assertIn(OUTPUT['text'], draft)
+        version = state['policy_projection']['version']
+        urls = ['https://www.suzhou.gov.cn/official-test']
+        store.reopen_draft(TENANT, rid, expected_version=version, actor='reviewer', urls=urls)
+        with self.assertRaises(Conflict):
+            store.reopen_draft(TENANT, rid, expected_version=version, actor='reviewer', urls=urls)
+        repaired = store.claim()
+        self.assertEqual(repaired['part'], '政策金额')
+        self.assertEqual(repaired['verification_sources'], urls)
+        self.assertEqual(repaired['attempts'], 3)
+        self.assertEqual(store.parts(rid)['fact_check'], [OUTPUT])
 
     def test_ops_continue_can_add_one_start_for_an_exhausted_step(self):
         from backend.auth import AuthError

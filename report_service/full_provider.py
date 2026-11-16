@@ -233,9 +233,17 @@ class FullLiveProvider:
         saved_evidence = self._selected_evidence(prior) if stage_id == 'fact_check' else []
 
         evidence = []
+        reviewed_policy = []
         if stage["research"]:
+            if (stage_id, part) == ('fact_check', '政策金额') and job.get('verification_sources'):
+                from .full_policy import verified_policy_excerpts
+                from .openai_auxiliary import fetch_government_originals
+                originals = fetch_government_originals(job['verification_sources'], limit=4)
+                evidence = verified_policy_excerpts(originals, place=place)
+                reviewed_policy = list(evidence)
             try:
-                evidence = self._gather_evidence(stage_id, part, place, prior, mode=mode)
+                if len(evidence) < contract.MIN_POLICY_CHECKS:
+                    evidence.extend(self._gather_evidence(stage_id, part, place, prior, mode=mode))
             except Exception as exc:
                 raise _to_provider_error(exc)
             if not evidence:
@@ -286,7 +294,7 @@ class FullLiveProvider:
         if mode == 'standard' and stage_id == 'fact_check' and part == '政策金额':
             parsed, metadata = self._policy_amount_result(
                 parsed, place, prior, prior_text, self._usable_evidence(saved_evidence + evidence),
-                all_evidence, floor)
+                all_evidence, floor, reviewed_policy=reviewed_policy)
             text = parsed['text']
         if stage_id.startswith('enterprises_') and part.startswith('候选池'):
             metadata = self._build_metadata(stage_id, part, place, all_evidence, parsed, prior, mode=mode)
@@ -462,6 +470,9 @@ class FullLiveProvider:
                 f'请对{names}核实项目所在地和行政范围，区分外地扩产与目标地区实际落地。',
                 f'请向{targets[-1]["name"]}核对规划产能、实际投产状态与公告日期，不能仅凭企业名称确认项目。',
                 f'{direction}后续应取得同一企业、同一项目的两份可核对原文；缺少对应原句时保留待核实。',
+                f'对{targets[0]["name"]}核对信息披露主体与项目实施主体是否一致，登记可能涉及的子公司。',
+                f'对{targets[-1]["name"]}区分意向协议、备案、开工和投产，按公开文件记录最新可证实节点。',
+                f'{direction}后续需记录证据发布日期与实际事件日期，防止把旧项目进展误当新增投资信号。',
             ])
             if refs:
                 lines.append(f'{direction}已保存的核查入口： ' + ' '.join(refs)
@@ -1420,7 +1431,7 @@ class FullLiveProvider:
             error.safe_metrics.update(operation='chat', elapsed_ms=int((time.monotonic() - started) * 1000))
             raise error from None
 
-    def _policy_amount_result(self, parsed, place, prior, prior_text, sources, all_evidence, floor):
+    def _policy_amount_result(self, parsed, place, prior, prior_text, sources, all_evidence, floor, *, reviewed_policy=()):
         stage, part = 'fact_check', '政策金额'
 
         def validate(value):
@@ -1440,7 +1451,35 @@ class FullLiveProvider:
         payload = self._chat_part(stage, part, place, prior_text, sources, mode='standard',
                                   min_lines=floor, correction_feedback={'kind': 'policy_checks', 'reason': reason})
         corrected = self._parse_part(stage, part, payload, all_evidence, prior)
-        return corrected, validate(corrected)
+        try:
+            return corrected, validate(corrected)
+        except FullProviderError as error:
+            if not reviewed_policy or not (error.diagnostic_reason or '').startswith('policy_'):
+                raise
+            from .full_policy import preserved_policy_checks
+            checks = preserved_policy_checks(reviewed_policy)
+            if len(checks) < contract.MIN_POLICY_CHECKS:
+                raise
+            lines = []
+            for check in checks:
+                clause = check['policy_clause']
+                title = clause['document_name']
+                lines.extend((
+                    f'{title}的核验原文见 {check["source"]}',
+                    f'{title}本次绑定的原文条款为：{clause["quote"]}',
+                    f'{title}的金额仅按上述条款口径记录，企业应享金额待核实。',
+                    f'{title}需向发文机关核对是否仍有效、是否有最新修订或替代文件。',
+                    f'{title}的主管部门和受理窗口需依据当期申报公告复核。',
+                    f'{title}的申报主体、注册地与实际经营地限制需逐项对照。',
+                    f'{title}涉及项目支出口径时，应核实可计入的费用类别和计费基数。',
+                    f'{title}涉及条件或等级认定时，应先保存认定结果和对应证明。',
+                    f'{title}的申报时间与政策生效日期需分别核查。',
+                    f'{title}的财政支持是否可以同其他补助叠加，需查正式执行文件。',
+                    f'{title}的原文核对仅采用已保存的政府页面，第二份同条款原文待核实。',
+                    f'{title}应在向企业反馈前补齐材料清单、资金兑现流程与责任联系人。',
+                ))
+            fallback = {'text': '\n'.join(lines), 'checks': checks}
+            return fallback, validate(fallback)
 
     def _extract_text(self, data):
         """Return the raw text, flagging truncation/incomplete completion."""

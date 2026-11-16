@@ -247,6 +247,48 @@ def prepare_policy_checks(raw, evidence):
     return prepared, bindings
 
 
+def verified_policy_excerpts(originals, *, place):
+    """Offer bounded, verbatim clauses from admin-supplied official originals."""
+    import datetime
+
+    results = []
+    for source in originals:
+        url, title = source['url'], source['title']
+        document = re.split(r'_| - |\s{2,}', title, maxsplit=1)[0].strip()
+        accepted = 0
+        for paragraph in source['text'].splitlines():
+            quote = paragraph.strip()
+            if not (_RULE.search(quote) and _TOOL.search(quote)):
+                continue
+            record = {'url': url, 'title': title, 'excerpt': quote, 'source': urlsplit(url).hostname,
+                      'published': '发布日期未知', 'retrieval': 'official_original',
+                      'source_type': 'government', 'search_query': '人工补充政策原文', 'search_place': place,
+                      'retrieved_at': datetime.datetime.now(datetime.timezone.utc).isoformat()}
+            try:
+                _bind({'document_name': document, 'quote': quote}, url, [record])
+            except PolicyCheckError:
+                continue
+            results.append(record)
+            accepted += 1
+            if accepted == 4:
+                break
+    return results
+
+
+def preserved_policy_checks(excerpts):
+    """Return independently validated single-source checks with unknown fields."""
+    checks, seen = [], set()
+    for item in excerpts:
+        url, quote = item['url'], item['excerpt']
+        if url in seen or not re.search(r'万元|亿元|[%％]', quote):
+            continue
+        doc = re.split(r'_| - |\s{2,}', item['title'], maxsplit=1)[0].strip()
+        checks.append({'claim': quote, 'source': url, 'cross_source': '', 'year': '年份未知',
+                       'category': 'policy', 'policy_clause': {'document_name': doc, 'quote': quote}})
+        seen.add(url)
+    return checks
+
+
 def attach_policy_bindings(checks, bindings):
     """Keep generic source status separate from unproven legal completeness."""
     if len(checks) != len(bindings):
