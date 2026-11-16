@@ -1,4 +1,5 @@
 import json
+import pickle
 import unittest
 from unittest.mock import patch
 from report_service.providers import OpenAIResearchProvider
@@ -33,7 +34,7 @@ class OpenAIAuxiliaryTests(unittest.TestCase):
             'OPENAI_API_KEY':'aux-key','HXZ_OPENAI_AUX_ENABLED':'1','HXZ_OPENAI_AUX_MODEL':'test-model'})
 
     def test_original_fetch_and_one_auxiliary_call_preserve_primary(self):
-        provider=self.provider()
+        provider=pickle.loads(pickle.dumps(self.provider()))
         with patch.object(provider,'_primary_search',return_value={'results':[{'url':'https://www.gov.cn/old','text':'original'}]}), \
              patch.object(provider._auxiliary,'discover',return_value=['https://www.gov.cn/new']) as discover, \
              patch.object(provider,'_post_search_json',return_value=(200,json.dumps({'results':[

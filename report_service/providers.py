@@ -358,6 +358,19 @@ class OpenAIResearchProvider:
             instance._auxiliary_last_call=float('-inf')
         return instance
 
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state.pop("_auxiliary_lock", None)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        if getattr(self, "_auxiliary", None) is not None:
+            import threading
+
+            # Each spawned report step owns its own search lock.
+            self._auxiliary_lock = threading.Lock()
+
     # -- validation / plumbing ---------------------------------------------
 
     def _validate_endpoints(self):
