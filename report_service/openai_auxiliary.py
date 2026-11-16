@@ -30,7 +30,7 @@ def _government_url(url):
         raise ValueError('non-public destination')
 
 
-def fetch_government_originals(urls):
+def fetch_government_originals(urls, *, limit=2):
     """No credentials are sent to cited websites; redirects are revalidated."""
     class Redirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self,req,fp,code,msg,headers,newurl):
@@ -38,7 +38,9 @@ def fetch_government_originals(urls):
             return super().redirect_request(req,fp,code,msg,headers,newurl)
     results=[]
     opener=urllib.request.build_opener(Redirect())
-    for url in urls[:2]:
+    candidates = [url for url in urls
+                  if (urlsplit(url).hostname or '').endswith(('.gov.cn', '.gov', '.gov.uk'))]
+    for url in candidates[:max(1, min(limit, 4))]:
         try:
             _government_url(url)
             req=urllib.request.Request(url,headers={'User-Agent':'HuixiaozhaoSourceReader/1.0'})

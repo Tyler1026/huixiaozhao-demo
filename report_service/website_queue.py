@@ -318,7 +318,7 @@ def request_publication(handler, raw, session_factory):
         return reply(503, {'ok': False, 'error': '保存推送请求失败，请重试'})
 
 
-def continue_website_report(state, store, request_id, version, actor):
+def continue_website_report(state, store, request_id, version, actor, *, extra_attempt=False):
     """Continue one website-owned report through the versioned engine policy."""
     from backend.auth import AuthError
     from .full_store import Conflict
@@ -329,14 +329,20 @@ def continue_website_report(state, store, request_id, version, actor):
         raise AuthError(404, 'report_not_found', '未找到对应的独立报告任务')
     if matches[0].get('status') not in ('paused', 'running'):
         raise AuthError(409, 'report_state_changed', '任务状态已变化，请刷新报告任务')
+    if extra_attempt:
+        policy = matches[0].get('executionPolicy') or {}
+        if (matches[0]['status'] != 'paused' or policy.get('version') != version
+                or policy.get('pause_reason') != 'step_attempts_exhausted'):
+            raise AuthError(409, 'report_state_changed', '当前任务没有待补充的步骤次数，请刷新页面')
 
     # Reuse the receipt if a network retry arrives with the same policy version.
     actor_key = hashlib.sha256(actor.encode()).hexdigest()[:24]
     try:
         result = store.continue_report(
             TENANT, report_id(request_id), expected_version=version,
-            idempotency_key=f'ops-continue:{actor_key}:{version}',
-            actor=actor, reason='管理员在报告任务中点击继续生成', grant={})
+            idempotency_key=f'ops-continue:{actor_key}:{version}:{int(extra_attempt)}',
+            actor=actor, reason='管理员确认补一次启动机会' if extra_attempt else '管理员在报告任务中点击继续生成',
+            grant={'extra_attempts': 1} if extra_attempt else {})
     except Conflict as error:
         if str(error).startswith('finite additional allowance required:'):
             raise AuthError(409, 'report_allowance_required',

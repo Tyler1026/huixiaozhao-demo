@@ -356,6 +356,7 @@ class OpenAIResearchProvider:
             instance._auxiliary=OpenAIAuxiliarySearch(env['OPENAI_API_KEY'],env['HXZ_OPENAI_AUX_MODEL'])
             instance._auxiliary_lock=threading.Lock()
             instance._auxiliary_last_call=float('-inf')
+            instance._openai_search_first = env.get('HXZ_PRIMARY_PROVIDER') == 'openai'
         return instance
 
     def __getstate__(self):
@@ -473,6 +474,8 @@ class OpenAIResearchProvider:
         return f"{place} 招商 {label}"
 
     def _search(self, query, count):
+        if getattr(self, '_openai_search_first', False):
+            return self._search_openai_first(query, count)
         primary_error=None
         try:
             payload=self._primary_search(query,count)
@@ -513,6 +516,31 @@ class OpenAIResearchProvider:
         if primary_error and not payload.get('results'):
             raise primary_error
         return payload
+
+    def _search_openai_first(self, query, count):
+        from .openai_auxiliary import fetch_government_originals
+
+        originals = []
+        try:
+            urls = self._auxiliary.discover(query, self._request, max_sources=8)
+            originals = fetch_government_originals(urls, limit=4)
+        except (OSError, ProviderError, ValueError):
+            pass
+        if len(originals) >= count:
+            return {'results': originals[:count]}
+        try:
+            fallback = self._primary_search(query, count)
+        except ProviderError:
+            if originals:
+                return {'results': originals}
+            raise
+        if not originals:
+            return fallback
+        known = {row['url'] for row in originals}
+        web = fallback.get('web') or {}
+        rows = [row for row in (fallback.get('results') or web.get('results') or [])
+                if isinstance(row, dict) and row.get('url') not in known]
+        return {'results': (originals + rows)[:count]}
 
     def _primary_search(self, query, count):
         if self.search_provider == "exa":

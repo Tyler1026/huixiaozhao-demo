@@ -144,6 +144,27 @@ class ExecutionPolicyTests(unittest.TestCase):
         self.assertEqual([r['text'] for r in store.parts(rid)['population']], ['first', 'second'])
         self.assertEqual(store.get('t', rid)['policy_projection']['usage']['retries'], 2)
 
+    def test_ops_continue_can_add_one_start_for_an_exhausted_step(self):
+        from backend.auth import AuthError
+        from report_service.website_queue import ENGINE, TENANT, continue_website_report
+
+        request_id = 'rrsuzhou'
+        report = self.store.create(TENANT, '江苏', '苏州', request_id, False)
+        self.store.cancel('t', self.rid)
+        for _ in range(3):
+            self.fail_attempt()
+        policy = self.store.policy_status(TENANT, report['id'])['policy_projection']
+        self.assertEqual(policy['pause_reason'], 'step_attempts_exhausted')
+        row = {'id': request_id, 'province': '江苏', 'city': '苏州', 'engine': ENGINE,
+               'status': 'paused', 'executionPolicy': policy}
+        state = {'REPORT_REQUESTS': [row]}
+        with self.assertRaises(AuthError):
+            continue_website_report(state, self.store, request_id, policy['version'], 'operator')
+        receipt = continue_website_report(state, self.store, request_id, policy['version'],
+                                          'operator', extra_attempt=True)
+        self.assertEqual(receipt['status'], 'queued')
+        self.assertEqual(self.store.claim()['attempts'], 4)
+
     def test_inflight_pause_allows_checkpoint_but_not_next_claim(self):
         job = self.store.claim()
         self.clock.advance(4)
