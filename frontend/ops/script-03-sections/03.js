@@ -48,7 +48,7 @@ function _rrPolicyVersion(row){
   return p&&p.policy_version==='standard-live-v1'&&Number.isSafeInteger(p.version)&&p.version>=0?p.version:-1;
 }
 function _rrMergeRequests(srv){
-  var rank={pending:0,running:1,pause_requested:1,paused:1,failed:2,done:3,cancelled:4},changed=false;
+  var rank={pending:0,running:1,pause_requested:1,paused:1,failed:2,done:3,draft_ready:3,cancelled:4},changed=false;
   (srv||[]).forEach(function(sr){
     if(!sr||!sr.id||!Object.prototype.hasOwnProperty.call(rank,sr.status)) return;
     var loc=REPORT_REQUESTS.find(function(r){return r.id===sr.id;});
@@ -235,6 +235,7 @@ setInterval(function(){
 },30000);
 function rrStatusBadge(s,r){
   if(r&&r.engine==='full-v1'){
+    if(s==='draft_ready') return '<span class="ops-badge orange">研判稿已生成 · 含待核实事项</span>';
     if(s==='paused') return '<span class="ops-badge orange">已暂停·等待管理员继续</span>';
     if(s==='pause_requested') return '<span class="ops-badge orange">正在暂停·当前步骤收尾</span>';
     if(s==='done') return '<span class="ops-badge '+(r.pushed?'green':'blue')+'">'+(r.pushed?'已完成·RAG已发布':r.pushRequested?'Word已生成·发布中':'Word已生成·待发布')+'</span>';

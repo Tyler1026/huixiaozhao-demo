@@ -221,14 +221,16 @@ async function reportControl(id, version, operation, button){
   if(!_rrAdminReady()){toast('请先登录管理员账号');return;}
   var label=button.textContent;
   var extra=operation==='extra';
+  var unverified=operation==='unverified';
   if(extra&&!confirm('确认给当前小节补 1 次并继续？已保存的成果和累计用量会保留。'))return;
+  if(unverified&&!confirm('将当前小节列为待核实，并继续可以独立生成的内容？'))return;
   var endpoint=operation==='pause'?'pause':operation==='draft'?'draft':'continue';
   button.disabled=true;
   button.textContent='提交中…';
   try {
     var response=await fetch('/api/report-'+endpoint,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({requestId:id,version:version,extraAttempt:extra})
+      body:JSON.stringify({requestId:id,version:version,extraAttempt:extra,unverified:unverified})
     });
     var receipt=await response.json();
     if(!response.ok||!receipt.ok||receipt.id!==id){
@@ -246,7 +248,8 @@ async function reportControl(id, version, operation, button){
     if(operation==='pause'){
       toast(receipt.status==='pause_requested'?'暂停已请求，当前步骤将在收尾后停下':'已暂停报告');
     }else{
-      toast(receipt.status==='queued'?'已接续原报告，等待报告服务领取':'仍有其他执行额度限制，请核对后再继续');
+      toast(receipt.status==='draft_ready'?'研判稿已生成，待核实事项已列入稿件':
+        receipt.status==='queued'?'已接续原报告，等待报告服务领取':'仍有其他执行额度限制，请核对后再继续');
     }
     var state=await _rrJson('/api/sync?raw=1').then(_rrServerState).catch(function(){return null;});
     if(state&&_rrMergeRequests(state.REPORT_REQUESTS))render();
@@ -264,7 +267,7 @@ function rrPanel(options){
   var requests=REPORT_REQUESTS.concat(_rrOutboxRows()).slice().reverse().filter(function(r){
     var matches=!query||[r.province,r.city,r.id,r.by].join(' ').toLowerCase().indexOf(query)!==-1;
     if(status==='active')matches=matches&&!r.submissionBlocked&&['pending','running','pause_requested'].indexOf(r.status)>=0;
-    else if(status==='done')matches=matches&&r.status==='done';
+    else if(status==='done')matches=matches&&['done','draft_ready'].indexOf(r.status)>=0;
     else if(status==='attention')matches=matches&&(r.submissionBlocked||['failed','cancelled','blocked','paused'].indexOf(r.status)!==-1);
     return matches;
   });
@@ -311,11 +314,15 @@ function rrPanel(options){
       if(r.status==='paused'){
         var extra=rrCanAddAttempt(r), action=extra?'extra':'continue';
         continueBtn='<button class="primary-button" onclick="reportControl(\''+buttonArgs+'\''+action+'\',this)">'+(extra?'补 1 次并继续':'继续生成')+'</button>';
+        if(r.failureCode==='quality'&&(extra||(r.executionPolicy||{}).pause_reason==='quality_repeated')){
+          continueBtn+='<button onclick="reportControl(\''+buttonArgs+'\'unverified\',this)">列为待核实并继续</button>';
+        }
       }else if(r.status==='running'){
         continueBtn='<button onclick="reportControl(\''+buttonArgs+'\'pause\',this)">暂停</button>';
       }
-      if((r.status==='paused'||r.status==='failed')&&r.partsDone>0){
-        continueBtn+='<button onclick="reportControl(\''+buttonArgs+'\'draft\',this)">下载研判草稿</button>';
+      if(r.status==='draft_ready'||((r.status==='paused'||r.status==='failed')&&r.partsDone>0)){
+        continueBtn+='<button onclick="reportControl(\''+buttonArgs+'\'draft\',this)">'+
+          (r.status==='draft_ready'?'下载研判稿':'下载研判草稿')+'</button>';
       }
     }
     var cancelBtn='';

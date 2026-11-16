@@ -24,23 +24,27 @@ _EARLY_RESEARCH = frozenset(('economy', 'population', 'transport', 'life',
                              'industry', 'competition', 'policy', 'chain'))
 _ENTERPRISE = frozenset(('enterprises_1', 'enterprises_2', 'enterprises_3'))
 _WAITING_FOR_REPAIR = frozenset(('deferred', 'needs_review'))
+_TERMINAL = ('cancelled', 'completed', 'draft_ready')
+_QUALITY_LIMITS = ('quality_repeated', 'step_attempts_exhausted', 'report_retries_exhausted')
 
 
 def _next_step(steps):
     """Choose work in original order, bypassing only deferred dependencies."""
-    unfinished = [step for step in steps if step['status'] != 'done']
+    unfinished = [step for step in steps if step['status'] not in ('done', 'omitted')]
     running = next((step for step in unfinished if step['status'] == 'running'), None)
     if running is not None:
         return running
     waiting = [step for step in unfinished if step['status'] in _WAITING_FOR_REPAIR]
-    waiting_stages = {step['stage'] for step in waiting}
+    waiting_stages = {step['stage'] for step in steps
+                      if step['status'] in _WAITING_FOR_REPAIR or step['status'] == 'omitted'}
     for step in unfinished:
         stage = step['stage']
         if step['status'] in _WAITING_FOR_REPAIR:
             continue
-        if (not waiting or stage in _EARLY_RESEARCH or
+        if (not waiting_stages or stage in _EARLY_RESEARCH or
                 (stage in _ENTERPRISE and stage not in waiting_stages
-                 and not (waiting_stages & _EARLY_RESEARCH))):
+                 and not (waiting_stages & _EARLY_RESEARCH))
+                or (stage == 'fact_check' and waiting_stages == {'fact_check'})):
             return step
     return next((step for step in waiting if step['status'] == 'deferred'),
                 waiting[0] if waiting else None)
@@ -303,7 +307,7 @@ class FullStore:
                    policy['state'], policy['pause_reason'], self.clock(), policy['report_id']))
 
     def _policy_numbers(self, c, report, policy):
-        steps = c.execute('''SELECT id,stage,part,status,attempts,consumed,deadline,started_at
+        steps = c.execute('''SELECT id,stage,part,status,attempts,consumed,deadline,started_at,failure_code
             FROM full_steps WHERE report_id=? ORDER BY ordinal''',
                           (report['id'],)).fetchall()
         current = _next_step(steps)
@@ -339,7 +343,7 @@ class FullStore:
                         applicability='not_applied' if report['synthetic'] or mode == 'deep' else 'legacy',
                         limits=None, usage=None, remaining=None, can_pause=False, can_continue=False)
         current, limits, usage, reason = self._policy_numbers(c, report, policy)
-        terminal = report['status'] in ('completed', 'cancelled')
+        terminal = report['status'] in _TERMINAL
         running = c.execute("SELECT COUNT(*) FROM full_steps WHERE report_id=? AND status='running'", (report['id'],)).fetchone()[0]
         remaining = {'task_seconds': max(0, limits['task_work_seconds'] - usage['work_seconds']),
                      'stage_seconds': max(0, limits['stage_work_seconds'] - usage['current_stage_work_seconds']),
@@ -365,14 +369,40 @@ class FullStore:
         if policy is None:
             return
         report = c.execute('SELECT * FROM full_reports WHERE id=?', (rid,)).fetchone()
-        if report['status'] in ('cancelled', 'completed'):
+        if report['status'] in _TERMINAL:
             return
         if policy['state'] == 'pause_requested':
             self._pause_policy(c, report, policy, policy['pause_reason'])
         else:
-            _, _, _, reason = self._policy_numbers(c, report, policy)
+            self._advance_after_quality(c, report, policy)
+
+    def _omit_unverified(self, c, rid, step):
+        c.execute("UPDATE full_steps SET status='omitted' WHERE id=?", (step['id'],))
+        self._event(c, rid, 'unverified_omitted', step['stage'], step['part'], step['failure_code'])
+
+    def _advance_after_quality(self, c, report, policy):
+        from .website_queue import TENANT
+
+        rid = report['id']
+        while True:
+            current, _, _, reason = self._policy_numbers(c, report, policy)
+            if current is None:
+                skipped = c.execute("SELECT 1 FROM full_steps WHERE report_id=? AND status='omitted' LIMIT 1",
+                                    (rid,)).fetchone()
+                if skipped:
+                    c.execute("UPDATE full_steps SET status='omitted',failure_code='dependency_unverified' "
+                              "WHERE report_id=? AND status NOT IN ('done','omitted')", (rid,))
+                    c.execute("UPDATE full_reports SET status='draft_ready',progress_at=?,failure_code=NULL WHERE id=?",
+                              (self.clock(), rid))
+                    self._event(c, rid, 'draft_ready')
+                return
+            if (report['tenant'] == TENANT and reason in _QUALITY_LIMITS
+                    and current['failure_code'] in ('quality', 'citation_reference')):
+                self._omit_unverified(c, rid, current)
+                continue
             if reason:
                 self._pause_policy(c, report, policy, reason)
+            return
 
     def policy_status(self, tenant, rid):
         """Pure SELECT: observing policy never recovers this or other jobs."""
@@ -394,6 +424,9 @@ class FullStore:
     def continue_report(self, tenant, rid, *, expected_version, idempotency_key, actor, reason, grant=None):
         return self._control(tenant, rid, 'continue', expected_version, idempotency_key, actor, reason, grant)
 
+    def continue_unverified(self, tenant, rid, *, expected_version, idempotency_key, actor, reason):
+        return self._control(tenant, rid, 'omit', expected_version, idempotency_key, actor, reason, None)
+
     def _control(self, tenant, rid, action, version, key, actor, reason, grant):
         tenant, rid, key, actor, reason = (_text(tenant), _text(rid), _text(key), _text(actor), _text(reason, 1000))
         if isinstance(version, bool) or not isinstance(version, int) or version < 1:
@@ -414,7 +447,7 @@ class FullStore:
             policy = self._policy(c, rid)
             if policy is None:
                 raise Conflict('legacy or ungoverned report')
-            if report['status'] in ('cancelled', 'completed'):
+            if report['status'] in _TERMINAL:
                 raise Conflict('terminal report')
             if policy['control_version'] != version:
                 raise Conflict('policy version mismatch')
@@ -429,18 +462,28 @@ class FullStore:
                 current, _, _, _ = self._policy_numbers(c, report, policy)
                 if current is None:
                     raise Conflict('no unfinished step')
-                policy['grants'] = execution_policy.apply_grant(policy['grants'], grant, current['id'], current['stage'])
-                quality = policy['quality'].setdefault(current['id'], {'total': 0, 'ack': 0})
-                quality['ack'] = quality['total']
-                if current['status'] == 'needs_review':
-                    c.execute("UPDATE full_steps SET status='retry_wait',next_at=0 WHERE id=?", (current['id'],))
-                _, _, _, blocked = self._policy_numbers(c, report, policy)
-                if blocked and not any(grant.values()):
-                    raise Conflict('finite additional allowance required: ' + blocked)
-                policy.update(state='paused' if blocked else 'active', pause_reason=blocked)
-                self._save_policy(c, policy)
-                c.execute('UPDATE full_reports SET status=?,failure_code=NULL WHERE id=?', ('paused' if blocked else 'queued', rid))
-                self._event(c, rid, 'allowance_granted' if blocked else 'continued', current['stage'], current['part'], blocked)
+                if action == 'omit':
+                    if (policy['pause_reason'] not in _QUALITY_LIMITS
+                            or current['failure_code'] not in ('quality', 'citation_reference')):
+                        raise Conflict('current step did not fail verification')
+                    self._omit_unverified(c, rid, current)
+                    policy.update(state='active', pause_reason=None)
+                    self._save_policy(c, policy)
+                    c.execute("UPDATE full_reports SET status='queued',failure_code=NULL WHERE id=?", (rid,))
+                    self._advance_after_quality(c, report, policy)
+                else:
+                    policy['grants'] = execution_policy.apply_grant(policy['grants'], grant, current['id'], current['stage'])
+                    quality = policy['quality'].setdefault(current['id'], {'total': 0, 'ack': 0})
+                    quality['ack'] = quality['total']
+                    if current['status'] == 'needs_review':
+                        c.execute("UPDATE full_steps SET status='retry_wait',next_at=0 WHERE id=?", (current['id'],))
+                    _, _, _, blocked = self._policy_numbers(c, report, policy)
+                    if blocked and not any(grant.values()):
+                        raise Conflict('finite additional allowance required: ' + blocked)
+                    policy.update(state='paused' if blocked else 'active', pause_reason=blocked)
+                    self._save_policy(c, policy)
+                    c.execute('UPDATE full_reports SET status=?,failure_code=NULL WHERE id=?', ('paused' if blocked else 'queued', rid))
+                    self._event(c, rid, 'allowance_granted' if blocked else 'continued', current['stage'], current['part'], blocked)
             report = c.execute('SELECT * FROM full_reports WHERE id=?', (rid,)).fetchone()
             result = {'id': rid, 'status': report['status'], 'policy_projection': self._policy_projection(c, report, policy)}
             c.execute('INSERT INTO full_execution_actions(report_id,idempotency_key,request_json,result_json,at) VALUES(?,?,?,?,?)',
@@ -521,7 +564,7 @@ class FullStore:
         # Do not interrupt a valid in-flight result; its fixed deadline already
         # includes the wall and remaining work limits.
         idle = c.execute("""SELECT r.* FROM full_reports r JOIN full_execution_policies p ON p.report_id=r.id
-            WHERE r.status NOT IN ('completed','cancelled') AND p.state='active'
+            WHERE r.status NOT IN ('completed','cancelled','draft_ready') AND p.state='active'
             AND NOT EXISTS(SELECT 1 FROM full_steps s WHERE s.report_id=r.id AND s.status='running')""").fetchall()
         for report in idle:
             self._after_settlement(c, report['id'])
@@ -534,7 +577,7 @@ class FullStore:
             c.execute('BEGIN IMMEDIATE')
             self._recover(c)
             reports = c.execute("""SELECT r.* FROM full_reports r
-                WHERE r.status NOT IN ('failed','completed','cancelled','paused','pause_requested')
+                WHERE r.status NOT IN ('failed','completed','cancelled','draft_ready','paused','pause_requested')
                 AND (? IS NULL OR r.synthetic=?)
                 AND NOT EXISTS(SELECT 1 FROM full_steps s WHERE s.report_id=r.id AND s.status='running')
                 ORDER BY r.created_at""", (synthetic, synthetic)).fetchall()
@@ -719,7 +762,7 @@ class FullStore:
         with self.db() as c:
             c.execute('BEGIN IMMEDIATE')
             row = c.execute('SELECT status FROM full_reports WHERE id=? AND tenant=?', (rid, tenant)).fetchone()
-            if not row or row['status'] in ('completed', 'cancelled'):
+            if not row or row['status'] in _TERMINAL:
                 return False
             if self._policy(c, rid) is not None:
                 active = c.execute("SELECT * FROM full_steps WHERE report_id=? AND status='running'", (rid,)).fetchall()
@@ -810,7 +853,7 @@ class FullStore:
         with self.db() as c:
             report = c.execute('SELECT city,status,failure_code FROM full_reports WHERE id=? AND tenant=?',
                                (rid, tenant)).fetchone()
-            if not report or report['status'] not in ('paused', 'failed'):
+            if not report or report['status'] not in ('paused', 'failed', 'draft_ready'):
                 return None
             steps = c.execute("SELECT stage,part,status,failure_code,output FROM full_steps "
                               "WHERE report_id=? AND stage!='__bundle__' ORDER BY ordinal", (rid,)).fetchall()
@@ -821,7 +864,8 @@ class FullStore:
                             action='行动计划', summary='综合结论', compact='精简报告')
         reasons = {'citation_reference': '来源引用未通过', 'quality': '质量核验未通过',
                    'configuration': '服务配置异常', 'upstream': '上游服务暂不可用',
-                   'timeout': '执行超时', 'artifact': '交付校验未通过'}
+                   'timeout': '执行超时', 'artifact': '交付校验未通过',
+                   'dependency_unverified': '依赖的证据未核实，本节暂不出具'}
         lines = [f"# {report['city']}招商研判草稿", '',
                  '本草稿仅收录已保存的小节。待补证据影响的企业核验、排名和建议暂不出具。', '',
                  '## 待补小节及原因', '']
