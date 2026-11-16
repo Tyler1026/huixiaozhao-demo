@@ -739,7 +739,6 @@ class FullLiveProvider:
                                       mode=mode, min_lines=min_lines,
                                       scoring_targets=targets, scoring_batch=(number, len(batches)))
             parsed = self._parse_part('scoring', part, payload, related_evidence, prior)
-            self._validate_part_text(parsed['text'], min_lines)
             records = parsed.get('scores')
             if not isinstance(records, list):
                 raise FullProviderError('score identity is absent from saved selections', 'quality')
@@ -758,7 +757,12 @@ class FullLiveProvider:
                 by_identity[(name, direction)] = record
             if len(records) != len(targets) or set(by_identity) != expected:
                 raise FullProviderError('score identity is absent from saved selections', 'quality')
-            return {'text': parsed['text'], 'scores': [by_identity[target] for target in targets]}
+            scores = [by_identity[target] for target in targets]
+            text = parsed['text']
+            if mode == 'standard' and contract._validate_urls(text):
+                text = self._render_verified_scores(scores)
+            self._validate_part_text(text, min_lines)
+            return {'text': text, 'scores': scores}
 
         # Default HTTP transport uses per-call requests/responses and readonly
         # provider configuration. No executor is kept on the pickled provider.
@@ -766,8 +770,27 @@ class FullLiveProvider:
             pending = [executor.submit(run_batch, index + 1, targets, rendered, related_evidence, floors[index])
                        for index, (targets, rendered, related_evidence) in enumerate(batches)]
             results = [future.result() for future in pending]
-        return json.dumps({'text': '\n\n'.join(result['text'] for result in results),
-                           'scores': [score for result in results for score in result['scores']]}, ensure_ascii=False)
+        text = '\n\n'.join(result['text'] for result in results)
+        scores = [score for result in results for score in result['scores']]
+        if mode == 'standard' and contract._validate_urls(text):
+            text = self._render_verified_scores(scores)
+        return json.dumps({'text': text, 'scores': scores}, ensure_ascii=False)
+
+    @staticmethod
+    def _render_verified_scores(scores):
+        """Describe validated scoring fields without model-generated links."""
+        lines = []
+        for record in scores:
+            name = record['name']
+            direction = record['direction']
+            d = record['dimensions']
+            lines.extend((
+                f'{name}（{direction}）吸引力 {d["attractiveness"]}，产业适配 {d["industry_fit"]}，'
+                f'政策支持 {d["policy_support"]}，落地可行性 {d["landing_feasibility"]}。',
+                f'{name}（{direction}）供应链适配 {d["supply_chain_fit"]}，竞争位置 {d["competitive_position"]}，'
+                f'风险分 {d["risk"]}，本项加权分 {contract.compute_weighted_score(d):.3f}；风险分按反向权重计入。',
+            ))
+        return '\n'.join(lines)
 
     def _complete_candidate_batch(self, stage_id, part, place, prior, prior_text,
                                   floor, mode, parsed, metadata, previous, evidence):

@@ -1842,6 +1842,23 @@ class ScoringIdentityGateTests(unittest.TestCase):
         prompt = json.loads(router.calls[0].data)['messages'][-1]['content']
         self.assertIn('评分身份允许名单仅来自前序enterprises_1/2/3的selected', prompt)
 
+    def test_standard_score_prose_recovers_when_model_prints_invalid_links(self):
+        scores = [self._score(number, index) for number in (1, 2, 3) for index in range(25)][:38]
+
+        def model(request):
+            reply = json.loads(self._reply_for_targets(request, scores))
+            payload = json.loads(reply['choices'][0]['message']['content'])
+            payload['text'] += '\nhttp://127.0.0.1/invalid'
+            reply['choices'][0]['message']['content'] = json.dumps(payload)
+            return json.dumps(reply)
+
+        router = RecordingRouter({'chat/completions': (200, model)})
+        output = self._provider(router).run_part('scoring', '评分维度与权重',
+                                                  {'city': '测试城'}, self._prior())
+        self.assertEqual(len(output['metadata']['scores']), len(scores))
+        self.assertIn('加权分 10.000', output['text'])
+        self.assertNotIn('127.0.0.1', output['text'])
+
     def test_compact_scoring_schema_preserves_all_thirty_eight_and_thirty_seven_identities_and_dimensions(self):
         all_scores = [{key: value for key, value in self._score(number, index).items()
                        if key in {'name', 'direction', 'dimensions'}}
