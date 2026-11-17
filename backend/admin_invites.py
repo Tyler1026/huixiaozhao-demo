@@ -7,7 +7,7 @@ import time
 import unicodedata
 
 from .auth import AuthError, require_session, _invitation
-from .city_workspaces import get_city_workspace, next_month_report_at
+from .city_workspaces import get_city_workspace, next_month_report_at, resolve_city_workspace
 
 
 def _text(value, name, limit=128, optional=False):
@@ -94,7 +94,7 @@ def manage_invite(body, session, *, headers=None, token=None, admin_config=None,
         if email and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email):
             raise AuthError(400, 'invalid_email', '请填写有效邮箱')
         now_seconds = time.time() if now is None else now
-        canonical = get_city_workspace(state, city)
+        city, canonical = resolve_city_workspace(state, city, province)
         if canonical is not None:
             current_code = canonical['inviteCode']
             current_invite = invitations.get(current_code)

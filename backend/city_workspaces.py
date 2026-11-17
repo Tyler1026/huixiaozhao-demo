@@ -1,5 +1,6 @@
 """Server-owned city workspace registry; no storage or network at import time."""
 import math
+import unicodedata
 from datetime import datetime, timedelta, timezone
 
 
@@ -47,6 +48,58 @@ def get_city_workspace(state, city):
             or project.get('workspaceId') != record['projectKey']):
         _invalid()
     return record
+
+
+def _region_text(value, suffixes):
+    value = unicodedata.normalize('NFKC', value or '').strip()
+    return value[:-1] if len(value) > 1 and value[-1] in suffixes else value
+
+
+def resolve_city_workspace(state, city, province='', *, project_key=None):
+    """Resolve display aliases within a province while preserving workspace IDs."""
+    from .auth import AuthError
+
+    registry = state.get('CITY_WORKSPACES', {})
+    if not isinstance(registry, dict):
+        _invalid()
+    city_name = _region_text(city, '市')
+    province_name = _region_text(province, '省市')
+    matches = []
+    exact_mismatch = False
+    for label in registry:
+        if _region_text(label, '市') != city_name:
+            continue
+        binding = get_city_workspace(state, label)
+        saved_province = _region_text(binding['province'], '省市')
+        if province_name and saved_province and province_name != saved_province:
+            exact_mismatch |= label == city
+            continue
+        if project_key is None or binding['projectKey'] == project_key:
+            matches.append((label, binding))
+    if project_key is not None and len(matches) != 1:
+        raise AuthError(409, 'city_workspace_changed', '指定的地区主工作区已变化，请刷新后重试')
+    if len(matches) > 1:
+        # A previously published primary can absorb a naming alias only
+        # when the other binding has no published report or active members.
+        from .auth import _memberships
+
+        projects = state.get('PROJECTS') or {}
+        published = [match for match in matches if projects[match[1]['projectKey']].get('baseReportVersion')]
+        if len(published) == 1:
+            other_keys = {binding['projectKey'] for _, binding in matches
+                          if binding['projectKey'] != published[0][1]['projectKey']}
+            active_keys = {key for table in ('USER_PROFILES', 'CITY_ACCOUNTS')
+                           for record in (state.get(table) or {}).values() if isinstance(record, dict)
+                           for key in _memberships(record)}
+            if not (other_keys & active_keys):
+                return published[0]
+        exact = next((match for match in matches if match[0] == city), None)
+        if exact is not None:
+            return exact
+        raise AuthError(409, 'city_workspace_ambiguous', '存在多个同名地区，请填写主工作区显示的准确地区名称')
+    if not matches and exact_mismatch:
+        raise AuthError(409, 'city_workspace_province_mismatch', '地区名称已绑定其他省份，请核对工作区')
+    return matches[0] if matches else (city, None)
 
 
 def canonical_invitation(state, city, code, project_key):

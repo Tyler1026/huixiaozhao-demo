@@ -42,18 +42,21 @@ def validate_snapshot(value):
 
 
 def snapshot(state, request):
-    from backend.city_workspaces import get_city_workspace
+    from backend.city_workspaces import resolve_city_workspace
     from backend.kb_context import saved_materials
     from backend.upload_repair import pending_legacy_uploads
     city = request['city']
-    binding = get_city_workspace(state, city)
+    label, binding = resolve_city_workspace(
+        state, city, request.get('province'),
+        project_key=request.get('targetWorkspaceKey') or
+        (request.get('projectKey') if request.get('autoPublish') is True else None))
     key = request.get('projectKey') or (binding or {}).get('projectKey')
     if not key:
         return None
     if binding and key != binding['projectKey']:
         raise ValueError('report workspace does not match city')
     project = (state.get('PROJECTS') or {}).get(key)
-    if not isinstance(project, dict) or project.get('city') != city:
+    if not isinstance(project, dict) or project.get('city') != label:
         raise ValueError('report workspace is unavailable')
     if pending_legacy_uploads(state, key):
         raise MaterialsPendingRepair('workspace originals are still being repaired')

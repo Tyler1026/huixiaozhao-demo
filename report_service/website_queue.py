@@ -12,7 +12,7 @@ import re
 import time
 from datetime import datetime, timedelta, timezone
 
-from backend.city_workspaces import get_city_workspace, next_month_report_at
+from backend.city_workspaces import get_city_workspace, next_month_report_at, resolve_city_workspace
 
 TENANT = 'website-report-queue'
 ENGINE = 'full-v1'
@@ -210,8 +210,10 @@ other sync fields continue through the existing merge policy unchanged.
             if _held_city_request(r, old.values()):
                 raise ValueError('city report is paused; process the retained request first')
             # Never accept client progress, artifacts or a forged completion.
-            rows.append({k: r[k] for k in ('id', 'city', 'province', 'mode', 'by', 'ts', 'projectKey') if k in r}
-                        | {'status': 'pending', 'engine': ENGINE})
+            _, binding = resolve_city_workspace(state, r['city'], r['province'])
+            rows.append({k: r[k] for k in ('id', 'city', 'province', 'mode', 'by', 'ts') if k in r}
+                        | {'status': 'pending', 'engine': ENGINE,
+                           'targetWorkspaceKey': binding['projectKey'] if binding else None})
         else:
             rows.append(r)
     incoming['REPORT_REQUESTS'] = rows
@@ -301,6 +303,14 @@ def request_publication(handler, raw, session_factory):
             if target.get('engine') != ENGINE and not target.get('pushed'):
                 return reply(409, {'ok': False, 'code': 'legacy-report-requires-regeneration',
                                    'error': '历史报告缺少独立发布所需的研究材料，请重新生成后推送'})
+            if target.get('engine') == ENGINE and not target.get('pushed'):
+                from backend.auth import AuthError
+                try:
+                    resolve_city_workspace(state, target['city'], target.get('province'),
+                                           project_key=target.get('targetWorkspaceKey') or
+                                           (target.get('projectKey') if _automatic_publication(target) else None))
+                except AuthError as error:
+                    return reply(error.status, {'ok': False, 'code': error.code, 'error': error.message})
             if target.get('publicationSkipped'):
                 return reply(200, {'ok': True, 'id': target['id'], 'city': city,
                                    'alreadyRequested': True, 'pushed': False,
@@ -639,7 +649,10 @@ class WebsiteQueue:
             if reqid in receipts:
                 return True
             projects = state.setdefault('PROJECTS', {})
-            binding = get_city_workspace(state, request['city'])
+            label, binding = resolve_city_workspace(
+                state, request['city'], request['province'],
+                project_key=target.get('targetWorkspaceKey') or
+                (target.get('projectKey') if _automatic_publication(target) else None))
             key = binding['projectKey'] if binding else 'report_' + reqid
             if _automatic_publication(target) and (not binding or target['projectKey'] != key):
                 raise ValueError('monthly report workspace changed')
@@ -668,7 +681,7 @@ class WebsiteQueue:
                                       'manifest': job['manifest']}
                     self._save(session, state)
                     return True
-                topic = request['city'] + '产业链招引'
+                topic = label + '产业链招引'
                 project['kb'] = _replace_base_topics(project.get('kb', []), topics)
                 project.update(reportRequestId=reqid, reportFiles=target['files'],
                                baseReportTopic=topic, baseReportVersion=version)
@@ -680,7 +693,9 @@ class WebsiteQueue:
                                  'org': '', 'who': '', 'topic': topic,
                                  'stage': 1, 'kb': topics, 'clues': [], 'report': None,
                                  'reportRequestId': reqid, 'reportFiles': target['files']}
-            state.setdefault('CITY_BASE_PACKAGES', {})[request['city']] = key
+            bases = state.setdefault('CITY_BASE_PACKAGES', {})
+            bases[label] = key
+            bases[request['city']] = key
             # The browser deliberately reads by exact topic to avoid showing a
             # different direction's report. Publish the saved compact verbatim
             # under this project's topic as well as the legacy text field.

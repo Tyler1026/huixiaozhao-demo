@@ -84,12 +84,13 @@ class CityWorkspaceTests(unittest.TestCase):
     def test_create_is_exact_city_idempotent_and_does_not_change_saved_fields(self):
         first = self.create(province='Original Province', distributedEmail='first@example.invalid')
         before = self.store.raw
-        again = self.create(city=' Exact City ', province='Another Province', distributedEmail='second@example.invalid')
+        again = self.create(city=' Exact City ', province='Original Province', distributedEmail='second@example.invalid')
         self.assertTrue(again['reused'])
         self.assertEqual(first['project'], again['project'])
         self.assertEqual(first['invite'], again['invite'])
         self.assertEqual(first['cityWorkspace'], again['cityWorkspace'])
         self.assertEqual(self.store.raw, before)
+        self.assert_denied(lambda: self.create(city='Exact City', province='Another Province'))
         different = self.create(city='Exact City District')
         self.assertNotEqual(first['invite']['projKey'], different['invite']['projKey'])
         self.assertEqual(set(self.store.state['CITY_WORKSPACES']), {'Exact City', 'Exact City District'})
@@ -102,6 +103,34 @@ class CityWorkspaceTests(unittest.TestCase):
         self.assertEqual(sum(not r['reused'] for r in results), 1)
         self.assertEqual(len(self.store.state['PROJECTS']), 1)
         self.assertEqual(len(self.store.state['INVITE_CODES']), 1)
+
+    def test_city_suffix_reuses_invite_and_fences_report_workspace(self):
+        from report_service.website_queue import fence_updates
+
+        main = self.create(city='苏州', province='江苏', monthlyEnabled=False)
+        alias = self.create(city='苏州市', province='江苏省', monthlyEnabled=False)
+        self.assertEqual(alias['project']['id'], main['project']['id'])
+        self.assertEqual(alias['invite']['code'], main['invite']['code'])
+        request = {'id': 'rrsuzhou', 'city': '苏州市', 'province': '江苏省',
+                   'status': 'pending', 'targetWorkspaceKey': 'untrusted-root'}
+        updated = json.loads(fence_updates(json.dumps({'REPORT_REQUESTS': [request]}), self.store.state))
+        row = updated['REPORT_REQUESTS'][0]
+        self.assertEqual(row['targetWorkspaceKey'], main['project']['id'])
+        self.assertEqual(row['city'], '苏州市')
+
+    def test_existing_inactive_alias_routes_to_published_main_workspace(self):
+        from backend.city_workspaces import resolve_city_workspace
+
+        primary = self.create(city='苏州', province='江苏')
+        legacy = self.create(city='旧名称', province='江苏')['project']['id']
+        state = self.store.state
+        state['CITY_WORKSPACES']['苏州市'] = state['CITY_WORKSPACES'].pop('旧名称')
+        state['PROJECTS'][legacy]['city'] = '苏州市'
+        state['PROJECTS'][primary['project']['id']]['baseReportVersion'] = {'requestId': 'rrpublished'}
+        state['USER_PROFILES']['legacy'] = {'projKey': legacy, 'memberships': {legacy: {'active': False}}}
+        self.assertEqual(resolve_city_workspace(state, '苏州市', '江苏省')[1]['projectKey'], primary['project']['id'])
+        state['USER_PROFILES']['legacy']['memberships'][legacy]['active'] = True
+        self.assertEqual(resolve_city_workspace(state, '苏州市', '江苏省')[1]['projectKey'], legacy)
 
     def test_real_file_transactions_serialize_city_creation_and_first_owner(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -173,7 +202,7 @@ class CityWorkspaceTests(unittest.TestCase):
         self.store.replace(state)
         self.revoke(first['invite']['code'])
         before = self.store.state
-        second = self.create(province='Ignored Province')
+        second = self.create()
         self.assertTrue(second['reused'])
         self.assertEqual(second['project'], before['PROJECTS'][first['project']['id']])
         self.assertNotEqual(first['invite']['code'], second['invite']['code'])
