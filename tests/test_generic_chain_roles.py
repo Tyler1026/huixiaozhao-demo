@@ -2,7 +2,7 @@ import unittest,hashlib
 from backend.topic_chain import normalize_chain_plan,chain_prompt,_retained_selection,chain_source_catalog
 class GenericChainTests(unittest.TestCase):
  def fixture(self,city,topic):
-  quote=city+'披露：高精度传感器、应急装备集成、应急救援服务均为规划方向，尚未完成建设。'
+  quote=city+'披露：'+topic+'方向的相关环节包括高精度传感器、应急装备集成、应急救援服务，目前均处于规划阶段。'
   from test_topic_chain import research
   bundle=research([quote],topic=topic);bundle['city']=city
   return bundle,bundle['evidence'][0]['id']
