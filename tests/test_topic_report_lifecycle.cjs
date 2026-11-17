@@ -433,10 +433,11 @@ test('busy view replaces stale failure and generation actions with status and a 
 
 test('sources panel binds to the exact report and escapes untrusted fields and credential URLs',()=>{
   const {c}=environment();c.REPORTSTATE.p.aiReportByTopic['核电配套']=fullText;
-  c.REPORTSTATE.p.researchByTopic={'核电配套':{topic:'核电配套',reportText:fullText,sources:[{id:'S1',title:'<script>x</script>',url:'https://user:pass@example.com/a',quote:'<img src=x onerror=x>'},{id:'S2',url:'https://official.example/a',title:'原始资料'}]}};
+  c.REPORTSTATE.p.researchByTopic={'核电配套':{topic:'核电配套',reportText:fullText,sources:[{id:'S1',title:'<script>x</script>',url:'https://user:pass@example.com/a',quote:'<img src=x onerror=x>'},{id:'S2',url:'https://official.example/a',title:'原始资料',quote:'有效期内方可申报。\n扫一扫在手机打开当前页\n网站导航：\n中国政府网'}]}};
   vm.runInContext(['reportSafeSourceUrl','reportSourceDate','reportResearchSourcesHtml'].map(n=>declaration(n)).join('\n'),c);
   const html=c.reportResearchSourcesHtml(c.PROJECTS.p);
   assert.match(html,/href="https:\/\/official.example\/a"/);assert.doesNotMatch(html,/<script>|<img|user:pass/);
+  assert.match(html,/有效期内方可申报/);assert.doesNotMatch(html,/扫一扫|网站导航|中国政府网/);
   assert.match(html,/&lt;script&gt;/);c.REPORTSTATE.p.researchByTopic['核电配套'].reportText='old';
   assert.equal(c.reportResearchSourcesHtml(c.PROJECTS.p),'');
 });

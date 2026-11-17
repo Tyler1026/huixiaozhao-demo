@@ -11,6 +11,23 @@ const other='https://gov.example/policy';
 const raw=`## 一、产业基础判断
 企业已披露产品，但本地产能仍待核实。[来源 S4](${url})
 
+相关文件
+
+扫一扫在手机打开当前页
+
+分享到：
+
+网站导航：
+
+中国政府网
+
+苏州辖市（区）网站
+苏州市政务网站
+省（区市）政府网站
+江苏省设区市网站
+张家港市人民政府
+常熟市人民政府
+
 沿用前文原始证据 [来源 S4](${url})；同一材料不重复计作新的独立来源。
 
 ## 二、产业链缺口分析
@@ -57,6 +74,7 @@ function browser(app){
 }
 function assertPublication(text){
   assert.doesNotMatch(text,/待确认事项|本轮确认输入|证据与核验边界|沿用前文原始证据|同一材料不重复/);
+  assert.doesNotMatch(text,/相关文件|扫一扫|分享到|网站导航|中国政府网|辖市|苏州市政务网站|省（区市）政府网站|江苏省设区市网站|张家港市人民政府|常熟市人民政府/);
   assert.match(text,/本地产能仍待核实/);assert.match(text,/未检索到不等于不存在/);
   assert.match(text,/投资意向未知/);assert.match(text,/仅适用于有效期内/);
   assert.equal((text.match(/(?:## |<h2>)参考文献/g)||[]).length,1);
@@ -79,7 +97,7 @@ test('only standalone bookkeeping paragraphs lose their links; inline claims and
   assert.equal(c.reportPublicationText(out,{phase:2}),out);
 });
 test('draft, missing phase and phase zero preserve the complete original byte-for-byte',()=>{
-  const c=pure(),text=raw.replace(/\n/g,'\r\n');
+  const c=pure(),text='## 一、结论\r\n工艺仍待核实。[来源 S4]('+url+')\r\n## 待确认事项\r\n保留待确认内容。';
   for(const phase of [undefined,0,1])assert.equal(c.reportPublicationText(text,{phase,sources}),text);
 });
 test('published text is idempotent, repeated source URLs share one reference, and absent metadata is not invented',()=>{
@@ -149,8 +167,24 @@ test('context transformation never changes raw state and refuses metadata from a
   const c=pure(),state={topic:'方向',phase:2,researchByTopic:{方向:{topic:'方向',reportText:'另一版本',sources}}};
   const context={text:raw,topic:'方向',state},before=JSON.stringify(context),out=c.reportPublicationForContext(context);
   assertPublication(out);assert.doesNotMatch(out,/企业年度报告/);assert.equal(JSON.stringify(context),before);
-  assert.equal(c.reportPublicationForContext({...context,phase:1}),raw);
-  state.phaseByTopic={方向:1};assert.equal(c.reportPublicationForContext(context),raw);
+  const draft=c.reportPublicationForContext({...context,phase:1});
+  assert.match(draft,/本轮确认输入/);assert.doesNotMatch(draft,/网站导航/);
+  state.phaseByTopic={方向:1};assert.equal(c.reportPublicationForContext(context),draft);
+});
+test('quoted webpage footers do not consume the trailing source or the next paragraph',()=>{
+  const c=pure(),text=['> 有效期内方可申报。',
+    '> **相关附件**','> 扫一扫在手机打开当前页','> 网站导航：',
+    '> [常熟市人民政府]('+other+') [来源 S4]('+url+')',
+    '', '## 二、实施建议','常熟市人民政府','下文保留独立核验条件。',
+    '相关文件','- [申报表]('+other+')'].join('\r\n');
+  const out=c.reportPublicationText(text,{phase:2});
+  assert.doesNotMatch(out,/相关附件|扫一扫|网站导航/);
+  assert.equal((out.match(/常熟市人民政府/g)||[]).length,1);
+  assert.match(out,/有效期内方可申报/);
+  assert.match(out,/\[1\]\(https:\/\/issuer.example\/report.pdf\)/);
+  assert.match(out,/相关文件[\s\S]*申报表/);
+  assert.match(out,/下文保留独立核验条件/);
+  assert.equal(c.reportPublicationText(out,{phase:2}),out);
 });
 test('review notes translate known diagnostics without exposing technical payloads and cap at twelve',()=>{
   const c=pure(),notes=c.reportCompositionNotes({diagnostics:[

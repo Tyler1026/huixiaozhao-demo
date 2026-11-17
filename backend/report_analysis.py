@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 
 from .topic_chain import _topic_supports
 from .chain_assessment import _aliases, _sentences
+from .source_article import source_article_body
 
 _POLICY = re.compile(r'征求意见|意见稿|规划|行动计划|行动方案|政策|若干(?:意见|措施)|操作细则|申报指南|通知')
 _DRAFT = re.compile(r'征求意见稿|公开征求意见|草案|讨论稿')
@@ -37,7 +38,8 @@ _VALIDATION_DENIAL = re.compile(r'无需|不需要|不开展|不提供|未开展
 def policy_context(source, as_of=None):
     """Expose draft status and whole condition/validity lines, never guess law."""
     title, quote = str(source.get('title') or ''), str(source.get('quote') or '')
-    full = str(source.get('source_excerpt') or quote)
+    full = source_article_body(str(source.get('source_excerpt') or quote))
+    quote = source_article_body(quote)
     formal_body = re.search(r'关于印发|关于发布|特制定.{0,15}(?:政策|意见|细则)|本(?:政策|意见|细则).{0,20}(?:适用于|施行|实施)',full[:500])
     if (not _POLICY.search(title) and not formal_body
             and not re.search(r'申报条件|支持标准|有效期|(?:给予|予以|支持).{0,55}(?:万元|亿元)|按实际.{0,40}(?:给予|支持|资助)', quote)):

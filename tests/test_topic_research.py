@@ -168,6 +168,14 @@ class TopicResearchTests(unittest.TestCase):
         self.assertIn(paragraphs[-1], saved)
         self.assertTrue(all(e['quote'] in saved for e in out['evidence']))
 
+    def test_web_footer_is_excluded_from_quotes_and_preserved_in_archive(self):
+        article = '氢能装备仅支持已完成中试验证的企业申报，申报材料包括能耗和安全记录。'
+        footer = '\n相关文件\n\n扫一扫在手机打开当前页\n分享到：\n网站导航：\n中国政府网\n苏州市政务网站'
+        original = result(article + footer)
+        out = research([original])
+        self.assertEqual([row['quote'] for row in out['evidence']], ['氢能装备产业。' + article])
+        self.assertEqual(next(iter(out['sources'].values()))['fulltext'], original['text'])
+
     def test_oversized_unsegmented_text_is_pending_not_fake_excerpt(self):
         out = research([result('氢能政策' + '很长且无段落分隔的原文' * 200)])
         self.assertFalse(out['evidence'])

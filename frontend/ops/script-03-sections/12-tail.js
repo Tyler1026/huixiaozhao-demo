@@ -2487,13 +2487,14 @@ function reportResearchSourcesHtml(p,key){
   if(!Array.isArray(record.sources)||!record.sources.length)return quality;
   var rows=record.sources.map(function(source,index){
     var url=reportSafeSourceUrl(source.url),label=escapeChainText(source.label||'S'+(index+1));
+    var quote=typeof source.quote==='string'?stripReportWebFooter(source.quote):'';
     var support={cross_checked:'交叉支持',single_source:'单源待复核'}[source.support_status]||'未核实';
     return '<li><div class="industry-source-heading"><span>'+label+'</span>'+
       (source.archived===true?'<div style="font-size:10px;color:#8294a5">公开原文库命中 · 非本次联网抓取'+(source.fulltext_scope?' · PDF摘录范围：'+escapeChainText(source.fulltext_scope):'')+'</div>':'')+
     (url?'<a href="'+escapeChainText(url)+'" target="_blank" rel="noopener noreferrer">'+escapeChainText(source.title||url)+'</a>':'<strong>'+escapeChainText(source.title||'来源未提供链接')+'</strong>')+'</div>'+
       '<div class="industry-source-date">'+(source.published_at?'发布：'+escapeChainText(reportSourceDate(source.published_at,false))+' · ':'')+
       (source.retrieved_at?'检索：'+escapeChainText(reportSourceDate(source.retrieved_at,true))+' · ':'')+support+'</div>'+
-      (source.quote?'<blockquote>'+escapeChainText(source.quote)+'</blockquote>':'')+'</li>';
+      (quote?'<blockquote>'+escapeChainText(quote)+'</blockquote>':'')+'</li>';
   }).join('');
   return quality+'<details class="industry-sources"><summary>本次报告来源 <span>'+record.sources.length+' 条</span></summary>'+
     '<p>以下为本次生成保存的来源与摘录；来源可追溯不等于事实已核验。检索时间为本地时间。</p><ol>'+rows+'</ol></details>';

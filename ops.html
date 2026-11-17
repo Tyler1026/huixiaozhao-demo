@@ -2370,8 +2370,33 @@ function reportKeepReviewed(context,incoming){
   return !!(((current&&current.status==='reviewed')||archived)&&next&&next.status==='limited');
 }
 
+function stripReportWebFooter(text){
+  var control=/^(?:扫一扫(?:在手机|用手机)?打开当前页|手机扫一扫打开当前页|分享到[：:]|网站导航[：:])$/;
+  var navigation=/^(?:中国政府网|国务院部门网站|[\u3400-\u9fff（）()]{1,28}(?:政府网站|政务网站|设区市网站|辖市[（(]区[）)]网站|人民政府)|打印本页|关闭窗口|返回顶部)$/;
+  var citation=/\s*(\[(?:来源\s*)?S?\d+\]\(https?:\/\/[^\s)]+\).*)$/i;
+  var rows=text.split(/\r\n?|\n/),footer=false,removed=false,lastContent=-1;
+  function label(line){
+    return line.trim().replace(/^(?:>\s*)+|^[-*]\s+/,'').replace(/^\*\*(.+)\*\*$/,'$1')
+      .replace(/^\[([^\]]+)\]\(https?:\/\/[^\s)]+\)$/,'$1').trim();
+  }
+  for(var i=0;i<rows.length;i++){
+    var ref=rows[i].match(citation),item=label(ref?rows[i].slice(0,ref.index):rows[i]);
+    if(control.test(item)){
+      if(lastContent>=0&&/^相关(?:文件|附件)[：:]?$/.test(label(rows[lastContent])))rows[lastContent]='';
+      footer=true;
+    }else if(!footer||!navigation.test(item)){
+      if(item||ref){footer=false;lastContent=i;}
+      continue;
+    }
+    rows[i]=ref?ref[1]:'';
+    if(ref){footer=false;lastContent=i;}
+    removed=true;
+  }
+  return removed?rows.join('\n').replace(/\n{3,}/g,'\n\n').trim():text;
+}
+
 function reportPublicationText(value,options){
-  var original=typeof value==='string'?value:String(value==null?'':value);
+  var original=stripReportWebFooter(typeof value==='string'?value:String(value==null?'':value));
   options=options||{};
   if(!(Number(options.phase)>=2))return original;
   var metadata=Object.create(null),labels=Object.create(null),references=Object.create(null);
@@ -8167,13 +8192,14 @@ function reportResearchSourcesHtml(p,key){
   if(!Array.isArray(record.sources)||!record.sources.length)return quality;
   var rows=record.sources.map(function(source,index){
     var url=reportSafeSourceUrl(source.url),label=escapeChainText(source.label||'S'+(index+1));
+    var quote=typeof source.quote==='string'?stripReportWebFooter(source.quote):'';
     var support={cross_checked:'交叉支持',single_source:'单源待复核'}[source.support_status]||'未核实';
     return '<li><div class="industry-source-heading"><span>'+label+'</span>'+
       (source.archived===true?'<div style="font-size:10px;color:#8294a5">公开原文库命中 · 非本次联网抓取'+(source.fulltext_scope?' · PDF摘录范围：'+escapeChainText(source.fulltext_scope):'')+'</div>':'')+
     (url?'<a href="'+escapeChainText(url)+'" target="_blank" rel="noopener noreferrer">'+escapeChainText(source.title||url)+'</a>':'<strong>'+escapeChainText(source.title||'来源未提供链接')+'</strong>')+'</div>'+
       '<div class="industry-source-date">'+(source.published_at?'发布：'+escapeChainText(reportSourceDate(source.published_at,false))+' · ':'')+
       (source.retrieved_at?'检索：'+escapeChainText(reportSourceDate(source.retrieved_at,true))+' · ':'')+support+'</div>'+
-      (source.quote?'<blockquote>'+escapeChainText(source.quote)+'</blockquote>':'')+'</li>';
+      (quote?'<blockquote>'+escapeChainText(quote)+'</blockquote>':'')+'</li>';
   }).join('');
   return quality+'<details class="industry-sources"><summary>本次报告来源 <span>'+record.sources.length+' 条</span></summary>'+
     '<p>以下为本次生成保存的来源与摘录；来源可追溯不等于事实已核验。检索时间为本地时间。</p><ol>'+rows+'</ol></details>';

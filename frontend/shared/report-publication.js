@@ -57,8 +57,33 @@ function reportKeepReviewed(context,incoming){
   return !!(((current&&current.status==='reviewed')||archived)&&next&&next.status==='limited');
 }
 
+function stripReportWebFooter(text){
+  var control=/^(?:扫一扫(?:在手机|用手机)?打开当前页|手机扫一扫打开当前页|分享到[：:]|网站导航[：:])$/;
+  var navigation=/^(?:中国政府网|国务院部门网站|[\u3400-\u9fff（）()]{1,28}(?:政府网站|政务网站|设区市网站|辖市[（(]区[）)]网站|人民政府)|打印本页|关闭窗口|返回顶部)$/;
+  var citation=/\s*(\[(?:来源\s*)?S?\d+\]\(https?:\/\/[^\s)]+\).*)$/i;
+  var rows=text.split(/\r\n?|\n/),footer=false,removed=false,lastContent=-1;
+  function label(line){
+    return line.trim().replace(/^(?:>\s*)+|^[-*]\s+/,'').replace(/^\*\*(.+)\*\*$/,'$1')
+      .replace(/^\[([^\]]+)\]\(https?:\/\/[^\s)]+\)$/,'$1').trim();
+  }
+  for(var i=0;i<rows.length;i++){
+    var ref=rows[i].match(citation),item=label(ref?rows[i].slice(0,ref.index):rows[i]);
+    if(control.test(item)){
+      if(lastContent>=0&&/^相关(?:文件|附件)[：:]?$/.test(label(rows[lastContent])))rows[lastContent]='';
+      footer=true;
+    }else if(!footer||!navigation.test(item)){
+      if(item||ref){footer=false;lastContent=i;}
+      continue;
+    }
+    rows[i]=ref?ref[1]:'';
+    if(ref){footer=false;lastContent=i;}
+    removed=true;
+  }
+  return removed?rows.join('\n').replace(/\n{3,}/g,'\n\n').trim():text;
+}
+
 function reportPublicationText(value,options){
-  var original=typeof value==='string'?value:String(value==null?'':value);
+  var original=stripReportWebFooter(typeof value==='string'?value:String(value==null?'':value));
   options=options||{};
   if(!(Number(options.phase)>=2))return original;
   var metadata=Object.create(null),labels=Object.create(null),references=Object.create(null);
