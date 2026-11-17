@@ -5,6 +5,7 @@ they do not claim to verify every business judgement or replace human review.
 """
 import re
 from decimal import Decimal
+from backend.source_article import source_article_spans
 from .full_contract import canonical_url
 
 _QUANTITY = re.compile(r'(?<![\d.])(\d[\d,]*(?:\.\d+)?)\s*(亿元|万元|元|万吨|吨|万亩|亩|%|％)')
@@ -485,9 +486,10 @@ def source_support(claim, observations, url, *, quote='', year=None, region='', 
     if not candidates:
         return {'supported': False, 'reason': 'source_not_saved'}
     for observation in candidates:
-        body = _eligible_body(observation['text'])
+        bodies = list(source_article_spans(_eligible_body(observation['text'])))
+        body = '\n\n'.join(bodies)
         if quote:
-            if _compact(quote) not in _compact(body):
+            if not any(_compact(quote) in _compact(part) for part in bodies):
                 continue
             spans = _claim_spans(quote)
         else:
@@ -742,7 +744,7 @@ def company_location_support(name, evidence, *, place='', address='', status='')
     observations = evidence_observations(evidence=evidence)
     subject = _compact(name)
     for observation in observations:
-        body = _eligible_body(observation['text'])
+        body = '\n\n'.join(source_article_spans(_eligible_body(observation['text'])))
         # Only a named issuer in the first heading can supply a document-wide
         # subject. A navigation/footer mention is insufficient.
         first_heading = next((line.strip().lstrip('#').strip() for line in body.splitlines() if line.strip()), '')

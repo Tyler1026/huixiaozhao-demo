@@ -79,6 +79,23 @@ function assertPublication(text){
   assert.match(text,/投资意向未知/);assert.match(text,/仅适用于有效期内/);
   assert.equal((text.match(/(?:## |<h2>)参考文献/g)||[]).length,1);
 }
+test('saved reports remove government headers and service menus across cities',()=>{
+  const c=pure(),before=[
+    '繁体','English','日本語','搜本站','搜本站','搜站群','成都概况','新闻中心','政务公开','办事服务','政民互动'
+  ].join('\n\n'),middle=[
+    '改革动态','新手指南','进入关怀模式','进度查询','办事预约','意见反馈','帮助中心','掌上办'
+  ].join('\n\n');
+  const text=['## 一、产业基础',before,'按规定保留企业申报条件。[来源 S4]('+url+')',
+    '## 二、产业链关系与机会分析',middle,'仅支持已通过中试的企业申报。',
+    '## 三、政务公开','政务公开','可在当地政府官网核对申报条件。',
+    '简体 | 繁体 | English','相关文件','- [申请表]('+other+')'].join('\n\n');
+  const out=c.reportPublicationText(text,{phase:2,sources});
+  assert.doesNotMatch(out,/繁体|English|日本語|搜本站|搜站群|成都概况|新闻中心|办事服务|政民互动|改革动态|新手指南|进入关怀模式|进度查询|办事预约|意见反馈|帮助中心|掌上办/);
+  assert.match(out,/## 二、产业链关系与机会分析\n\n仅支持已通过中试的企业申报。/);
+  assert.match(out,/## 三、政务公开\n\n政务公开\n\n可在当地政府官网核对申报条件。/);
+  assert.match(out,/相关文件\n\n- \[申请表\]/);
+  assert.match(out,/\[1\]\(https:\/\/issuer.example\/report.pdf\)/);
+});
 test('final publication removes only named process sections and preserves real conditions and uncertainty',()=>{
   const c=pure(),out=c.reportPublicationText(raw,{phase:2,sources});assertPublication(out);
   assert.match(out,/\[1\]\(https:\/\/issuer.example\/report.pdf\)/);

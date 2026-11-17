@@ -76,6 +76,19 @@ class OpenAIAuxiliaryTests(unittest.TestCase):
         self.assertIn('original body',''.join(parser.parts))
         self.assertNotIn('untrusted script',''.join(parser.parts))
 
+    def test_original_reader_excludes_navigation_and_retains_headline_and_eligibility(self):
+        parser = _OriginalText()
+        parser.feed('<title>项目申报通知</title><nav><a>繁体</a><a>English</a></nav>'
+                    '<div role="search"><div>搜本站</div>搜站群</div>'
+                    '<article><header><h1>新材料企业申报条件</h1></header>'
+                    '<p>完成中试是申报的必要条件。</p></article>')
+        text = ''.join(parser.parts)
+        self.assertEqual(''.join(parser.title_parts), '项目申报通知')
+        self.assertIn('新材料企业申报条件', text)
+        self.assertIn('完成中试是申报的必要条件。', text)
+        for label in ('繁体', 'English', '搜本站', '搜站群'):
+            self.assertNotIn(label, text)
+
     def test_exa_credit_failure_uses_only_separately_fetched_government_text(self):
         provider=self.provider()
         with patch.object(provider,'_primary_search',return_value={'results':[]}), \
