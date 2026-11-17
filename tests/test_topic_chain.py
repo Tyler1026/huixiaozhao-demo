@@ -508,6 +508,22 @@ class RoleRecoveryTests(unittest.TestCase):
                 self.assertEqual([n['name'] for n in result['unclassified']], [pitches[4]])
                 self.assertTrue(all(n['level'] == 'unknown' and n['status'] == 'planned' for n in nodes(result)))
 
+    def test_material_scope_keeps_the_full_equipment_phrase_and_excludes_unrelated_recycling(self):
+        topic = '先进材料外资增资承接'
+        whole = '材料的合成与加工设备'
+        bundle = research([
+            f'原文指出，{whole}相对落后，相关更新安排要结合具体技术条件讨论。',
+            '园区披露建筑垃圾、农业废弃物和废旧塑料三个资源循环利用产业，具体经营主体另行公布。',
+            '试点将废旧塑料作为制备再生材料的原料，具体适用范围及工艺条件另行公布。',
+        ], topic=topic)
+        raw = {'nodes': []}
+        for row, name in [(0, whole), (0, '材料的合成'), (1, '建筑垃圾'), (1, '农业废弃物'), (2, '废旧塑料')]:
+            raw['nodes'].append({'name': name, 'evidence_ids': [bundle['evidence'][row]['id']],
+                                 'lane': '上游', 'role_basis': '属于先进材料制备设备或可再利用的投入原料'})
+        result = normalize_chain_plan(raw, bundle, dict(CONTEXT, topic=topic))
+        self.assertEqual({node['name'] for node in result['chain'][0]['nodes']}, {whole, '废旧塑料'})
+        self.assertEqual({node['name'] for node in nodes(result)}, {whole, '废旧塑料'})
+
     def test_all_unclassified_get_one_role_review_using_only_existing_node_and_source_ids(self):
         topic = '文旅数字体验'
         names = ['沉浸式展陈服务', '预约核验系统']

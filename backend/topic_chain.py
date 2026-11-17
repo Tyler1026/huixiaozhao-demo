@@ -281,8 +281,24 @@ def _name_key(name):
     return re.sub(r'\s+', '', unicodedata.normalize('NFKC', name)).casefold()
 
 
+_MATERIAL_CONTEXT = re.compile(
+    r'先进材料|新材料|(?:功能|光学|高分子|半导体|纳米|复合|超导|金属|结构|再生)材料|'
+    r'材料(?:的)?(?:配方|合成|制备|加工|提纯|表征|中试|量产|工程应用)')
+_TOOL_FRAGMENT = re.compile(r'(?:合成|制备|加工|表征|检测|提纯)$')
+_TOOL_SUFFIX = r'\s*(?:与|和|及)[^，,。；;：:\n]{0,14}(?:设备|装备|装置|仪器)'
+
+
 def _topic_supports(name, quote, topic):
     current = taxonomy_for_topic(topic)['id']
+    if current == 'advanced-materials-v1':
+        # Require material context in the passage naming the node. Keep
+        # equipment phrases whole when a suffix governs coordinated verbs.
+        anchor = re.escape(name)
+        if _TOOL_FRAGMENT.search(name):
+            anchor += '(?!' + _TOOL_SUFFIX + ')'
+        recognized = classify_node(name, topic)['lane'] in LANES
+        return any(re.search(anchor, sentence) and (recognized or _MATERIAL_CONTEXT.search(sentence))
+                   for sentence in re.split(r'[。；;!?！？\n]', quote))
     if current not in _DOMAIN_CUES:
         return True
     foreign = [pattern for key, pattern in _DOMAIN_CUES.items()
