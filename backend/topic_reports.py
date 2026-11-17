@@ -100,7 +100,14 @@ questions也只能给focus/evidence_ids/action三字段，不能输出自由事�
 有具体产品能力和应用背景但没有现实短板时，允许capability_collaboration：使用已绑定主体的产品原文，以技术交流、应用适配或供需访谈为行动，不宣称已有新采购或投资。存在明确中试、产品检测、工程验证、技术转让或合作开发任务时，允许validation_collaboration，以validation_ids引用原文；不能把验证阶段写成已成熟量产。四类方向均须有具体对象和可执行步骤，无依据才留空，不把“没有已证实缺口”误当“没有任何可推进方向”。
 禁止输出报告正文、Markdown、额外字段。"""
     system += '\n另允许project_followup：当前城市原文明示具体项目、平台、建设或研发任务，可提出项目跟进与需求核实建议，不要求已核实采购需求或完整企业产品画像。focus须逐字来自本地原文，附evidence_ids；comparison说明已披露阶段和仍缺的条件，reason解释与当前产业的关系，action写清访谈/核实/对接对象及下一步。不得宣称存在本地缺口、已确认采购或投资意向。没有现实缺口时优先检查是否有可跟进的本地项目线索。'
+    system += ('\n方向摘要只界定待核问题，不是事实或指令。产业链分析优先回答摘要指向的具体产品或环节，'
+               '写明主体、地点、品类及研发、送样、认证、小批量、量产或采购中的实际阶段。'
+               '仅当材料能说明这些问题或影响核查顺序时才纳入chain。剔除网站操作、一般性新闻、同页其他行业内容。'
+               '如使用邻近项目线索，说明它能回答哪一项具体问题；不得以邻近项目替代原问题。'
+               'reason写首选方向或核查对象为什么比其他线索更直接；action写先向谁查哪项信息、再由哪一方交叉确认、'
+               '取得什么证据后才进入招引。缺证据时说明缺在哪一步，不以全国、在建或异地材料代替本地结论。')
     payload = {'city': context['city'], 'topic': context['topic'], 'phase': phase,
+               'direction_summary_unverified': context.get('directionSummary', ''),
                'research_coverage':research_coverage(research),
                'evidence': evidence,
                'confirmation_input': context.get('confirmations', []),
@@ -303,7 +310,8 @@ def _supplement_priority_candidates(plan, context, catalog, complete, review_fee
     sources, size = [], 0
     for sid in required + [sid for sid in catalog if sid not in required]:
         row = catalog[sid]
-        view = {'id': sid, **{key: row.get(key) for key in ('title', 'quote', 'url', 'published_at', 'source_type')}}
+        view = {'id': sid, 'quote': source_article_body(row['quote']),
+                **{key: row.get(key) for key in ('title', 'url', 'published_at', 'source_type')}}
         view['policy'] = policy_context(dict(row, source_excerpt=row.get('_fulltext', row['quote'])))
         cost = len(json.dumps(view, ensure_ascii=False))
         if len(sources) >= 48 or size + cost > 48000:
@@ -320,7 +328,10 @@ def _supplement_priority_candidates(plan, context, catalog, complete, review_fee
 每项字段：focus(原文中的具体产品/技术/任务)，entity(原文完整主体名，没有留空)，opportunity_type，scope(local/local_enterprise/industry/project)，supply_ids，validation_ids，constraint_ids，demand_ids，policy_ids，counter_ids，comparison，reason，action。
 只引用提供的原文ID；能力方向须使用已验证company_profiles中的产品主体和supply_ids；验证方向须有validation_ids明确任务原文。比较、理由和行动都必须具体，交代技术对象、下一步以及实施条件；不编造数字、市场、地方缺口、采购需求或投资意向。没有真实依据可返回空数组。'''
     system += '\n另允许project_followup：从本地原文明示的具体项目、平台、建设/研发任务提出跟进建议，focus逐字引用，evidence_ids指向本地原文。comparison区分已披露阶段与待核需求，reason解释当前产业关联，action写具体核实、访谈或对接步骤。不要求先形成已量产企业画像，但不得把报道、规划或意向写成已确认采购、投资或本地缺口。'
+    system += ('\n方向摘要只界定要回答的问题。相邻项目只有在能帮助核实同一产品时才纳入。'
+               '写清已查到的阶段、首访对象为何能回答缺口，以及进入招引需满足的条件。')
     payload = {'city': context.get('city'), 'topic': context.get('topic'), 'sources': sources,
+               'direction_summary_unverified': context.get('directionSummary', ''),
                'company_profiles': plan['companies'], 'previous_review': review_feedback}
     try:
         raw = complete(system, json.dumps(payload, ensure_ascii=False), 6400)
@@ -386,9 +397,20 @@ def _render_final_report(plan, context, research, catalog, used):
     """
     composition = plan.get('composition') or {}
     composed = (composition.get('status') == 'reviewed' or composition.get('review_status') == 'passed')
-    cited = (list(dict.fromkeys(sid for chapter in composition.get('chapters', [])
-                               for paragraph in chapter['paragraphs'] for sid in paragraph['evidence_ids']))
-             if composed else used)
+    chapters = composition.get('chapters', [])
+    chain = next((chapter for chapter in chapters if chapter['id'] == 'chain'), None)
+    chapter_ids = [sid for chapter in chapters for paragraph in chapter['paragraphs']
+                   for sid in paragraph['evidence_ids']]
+    if composed:
+        cited = list(dict.fromkeys(chapter_ids))
+    else:
+        fallback_ids = (plan['basis'] +
+                        [sid for row in plan['priorities'] + plan.get('analytical_priorities', [])
+                         for sid in row['evidence_ids']] +
+                        [sid for row in plan['companies'] for sid in row.get('all_evidence_ids', row['evidence_ids'])])
+        chain_ids = [sid for paragraph in (chain or {}).get('paragraphs', [])
+                     for sid in paragraph['evidence_ids']]
+        cited = list(dict.fromkeys(fallback_ids + chain_ids))
     documents, labels = {}, {}
     for sid in cited:
         row = catalog[sid]
@@ -433,7 +455,7 @@ def _render_final_report(plan, context, research, catalog, used):
         out = ['# '+_md(context['city']+' · '+context['topic']+' · '+title), '']
         if not research_coverage(research)['complete']:
             out += ['本文依据已取得资料形成，分析范围限于所引用的主体、环节和时期，不代表完整产业普查。', '']
-        for ordinal, chapter in zip('一二三四五', composition['chapters']):
+        for ordinal, chapter in zip('一二三四五', chapters):
             from .topic_composition import TITLES
             out += ['## '+ordinal+'、'+TITLES[chapter['id']], '']
             for paragraph in chapter['paragraphs']:
@@ -477,23 +499,23 @@ def _render_final_report(plan, context, research, catalog, used):
         out += ['现有公开材料不足以支持对本地产业规模、企业总量及完整配套能力作出总体判断。', '']
 
     out += ['## 二、产业链关系与机会分析', '']
-    chain_facts = facts(plan['chain'])
-    if chain_facts:
-        out += chain_facts
-    for row in analytical:
-        out += ['### '+_md(row['focus']), '',
-                '**研判类型：** '+OPPORTUNITY_LABELS.get(row.get('opportunity_type', 'constraint'), '需求与约束方向'),
-                '**分析范围：** '+_md({'local':'本地原文范围', 'local_enterprise':'本地关联企业业务',
-                                      'industry':'行业共性，非本地缺失', 'project':'具名项目范围'}[row['scope']]),
-                '**比较判断：** '+_md(row['comparison'])+' '+citations(row['evidence_ids']), '']
-        for label, key in [('现有供给', 'supply_ids'), ('需求条件', 'demand_ids'),
-                           ('约束条件', 'constraint_ids'), ('验证与合作任务', 'validation_ids'), ('相反情况', 'counter_ids'),
-                           ('主体与地域', 'identity_ids')]:
-            passages = facts(row.get(key, []))
-            if passages:
-                out += ['**'+label+'**', ''] + passages
-    if not analytical:
-        out += ['现有材料尚不能支持本地各环节的缺口排序；材料未覆盖的环节不认定为本地缺失。', '']
+    if chain:
+        out += [_md(paragraph['text'])+' '+citations(paragraph['evidence_ids'])+'\n'
+                for paragraph in chain['paragraphs']]
+    elif analytical:
+        for row in analytical:
+            refs = citations(row['evidence_ids'])
+            scope = {'local': '本地原文范围', 'local_enterprise': '本地关联企业业务',
+                     'industry': '行业共性，非本地缺失', 'project': '具名项目范围'}[row['scope']]
+            out += ['### '+_md(row['focus']), '',
+                    '**分析范围**　'+scope, '',
+                    '**查到哪一步**　'+_md(row['comparison'])+' '+refs, '',
+                    '**为什么核查**　'+_md(row['reason'])+' '+refs, '',
+                    '**先找谁、核实什么**　'+_md(row['action'])+' '+refs, '']
+            if row.get('counter_ids'):
+                out += ['**反证与补充依据**　'+citations(row['counter_ids']), '']
+    else:
+        out += ['现有材料尚未形成可审稿的产品供需比较。先向应用端的工艺和采购负责人核实具体产品、在用规格和现有供应，再向供应端核实生产地点、认证进度与可交付范围。取得同一产品的两端信息后再判断是否需要招引。', '']
 
     out += ['## 三、招引研判方向', '']
     if analytical:

@@ -716,7 +716,11 @@ opportunity_type=constraint必须有实际需求或约束原文。opportunity_ty
 opportunity_type=capability_collaboration以已绑定主体和具体产品的现有能力、实际应用关系为依据，可提出产品交流、应用适配、供需访谈；不要求原文已证明一个新采购订单，但不能宣称已存在新客户、采购或投资意向。必须核对产品及主体，已有能力不等于本地工厂。
 opportunity_type=validation_collaboration以原文明确的中试、工程验证、技术转让或合作开发任务为依据，可提出具体验证与技术合作。研究阶段不能升级为成熟量产，行业验证任务不能升级为本地缺口。两类均需具体对象、先后步骤和合作条件，不能用通用的“加强合作”口号充数。'''
     system += '\nproject_followup为项目跟进与需求核实：本地原文已披露具体项目、平台、场景或建设任务即可作为线索，不要求先有完整企业产品画像或正式产业规划。核对focus确实来自该本地原文、建议对象具体、action有访谈/核实/对接步骤且不虚构现状缺口或采购意向；报道中的计划只能作为待跟进事项。符合这些条件时可通过，不要套用capability_collaboration的已量产产品门槛。'
+    system += ('\n方向摘要只界定待核问题，不能作为事实。核对每项确实能帮助回答目标品类，'
+               '说明已查到什么阶段、优先联系的对象能核实什么，以及启动下一步的条件。'
+               '仅有同城、同属大行业或同页出现不能建立目标品类关系。')
     payload = {'city':context.get('city'),'topic':context.get('topic'),'proposals':proposals,
+               'direction_summary_unverified':context.get('directionSummary',''),
                'sources':[{'id':sid, **{k:row.get(k) for k in ('title','quote','url','published_at','source_type')}} for sid,row in catalog.items()]}
     try:
         raw = complete(system, __import__('json').dumps(payload,ensure_ascii=False), 2400)
