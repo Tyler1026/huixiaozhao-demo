@@ -42,6 +42,7 @@ import re
 import time
 import urllib.parse
 from collections import Counter
+from backend.source_article import source_article_body
 from concurrent.futures import ThreadPoolExecutor
 
 from report_service import providers
@@ -1204,11 +1205,11 @@ class FullLiveProvider:
                 "同一实际URL的多次摘录保留各次检索信息，不构成多个独立来源。"
             )
             for i, e in enumerate(evidence, 1):
-                evidence_text = e['excerpt']
+                evidence_text = source_article_body(e['excerpt'])
                 if isinstance(e.get('observations'), list):
                     snippets = {}
                     for observation, excerpt in contract._evidence_observations(e):
-                        snippets.setdefault(excerpt, []).append(observation)
+                        snippets.setdefault(source_article_body(excerpt), []).append(observation)
                     evidence_text = '\n'.join(
                         f'原摘录{number}：{excerpt}\n对应检索信息：' + json.dumps(records, ensure_ascii=False)
                         for number, (excerpt, records) in enumerate(snippets.items(), 1))
@@ -1219,6 +1220,9 @@ class FullLiveProvider:
                 )
             user_blocks.append("\n".join(ev_parts))
         user_blocks.append("本子章节任务：\n" + instructions)
+        user_blocks.append('只采用与当前地区、产业和小节直接相关的原文事实。'
+                           '网页菜单、语言切换、站内搜索和操作入口不属于正文，不得收录或当作事实依据。'
+                           '引用政策时保留发布日期、适用范围、资格条件和限制。')
         if bind_citations:
             user_blocks.append('来源编号仅对应本次上方列出的检索来源。引用时使用【来源:1】或【来源:1,2】，'
                                '编号须在本次列表范围内；不得使用裸[1]、前序章节的编号或自行编造编号。'
@@ -1541,14 +1545,16 @@ class FullLiveProvider:
             raise FullProviderError(
                 f"stage {stage_id!r} part {part!r}: model returned non-object JSON", "quality"
             )
+        from .full_citations import BoundPayload
         text = obj.get("text")
+        if isinstance(text, str) and not isinstance(payload, BoundPayload):
+            obj["text"] = text = source_article_body(text)
         if not isinstance(text, str) or not text.strip():
             raise FullProviderError(
                 f"stage {stage_id!r} part {part!r}: model JSON missing non-empty 'text'", "quality"
             )
         # Only the private return type created at the real chat boundary may
         # supply a frame. A similarly named field in model JSON is discarded.
-        from .full_citations import BoundPayload
         for field in ('_citation_frame', '_citation_frames', '_citation_finalization',
                       '_citation_finalizations', 'citation_frames', 'citation_finalizations'):
             obj.pop(field, None)

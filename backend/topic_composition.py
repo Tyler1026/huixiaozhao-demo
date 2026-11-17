@@ -10,6 +10,7 @@ import json
 import re
 
 from .report_analysis import policy_context
+from .source_article import source_article_body
 
 
 CHAPTERS = ('basis', 'chain', 'priorities', 'companies', 'actions')
@@ -54,7 +55,8 @@ def _parse(value):
 
 
 def _source_view(catalog):
-    return [dict(id=sid, **{key: row.get(key) for key in ('title', 'quote', 'url', 'published_at', 'source_type')},
+    return [dict(id=sid, quote=source_article_body(row['quote']),
+                 **{key: row.get(key) for key in ('title', 'url', 'published_at', 'source_type')},
                  policy=policy_context(dict(row, source_excerpt=row.get('_fulltext', row['quote']))))
             for sid, row in catalog.items()]
 

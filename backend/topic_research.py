@@ -29,7 +29,7 @@ from report_service import full_synthesis as grounding
 from report_service import providers
 from report_service.hosted import configured_environment
 from report_service.full_provider import FullLiveProvider
-from .source_article import source_article_body
+from .source_article import source_article_body, source_article_spans
 
 MAX_SOURCES = 20
 MAX_CHAIN_SOURCES = 48
@@ -330,8 +330,8 @@ def select_source_paragraphs(text, topic, *, limit=None, mode='draft', source_ti
     max_chars = 5000 if mode == 'chain' else MAX_EXCERPT_CHARS
     if not terms:
         return []
-    body = source_article_body(grounding._eligible_body(text)).strip()
-    blocks = re.split(r'\n\s*\n', body)
+    blocks = (block for span in source_article_spans(grounding._eligible_body(text))
+              for block in re.split(r'\n\s*\n', span.strip()))
     candidates, seen = [], set()
     for block in blocks:
         # Newlines already supplied by the source are valid boundaries. An
@@ -490,7 +490,7 @@ def research_topic(city, topic, *, mode='draft', questions=(), basis=(), provide
                 fulltext = grounding._eligible_body(raw_text).strip()
                 if len(fulltext) > MAX_FULLTEXT_CHARS:
                     continue
-                source_title = _document_title(item.get('title', ''), fulltext)
+                source_title = _document_title(item.get('title', ''), source_article_body(fulltext))
                 paragraphs = select_source_paragraphs(fulltext, topic, limit=per_url_limit,
                                                       mode=mode, source_title=source_title)
                 canonical = contract.canonical_url(url)
@@ -583,7 +583,9 @@ def _location_support(statement, evidence):
     place = _URL.sub('', place).split('[')[0].strip(' ：:|')
     field = r'注册(?:地址|地)|住所' if kind in ('注册地址', '注册地', '住所') else r'办公地址|总部'
     for entry in evidence:
-        body = grounding._eligible_body(entry['quote'])
+        body = source_article_body(grounding._eligible_body(entry['quote']))
+        if not body:
+            continue
         issuer = name in entry.get('title', '') or name in body.splitlines()[0]
         for paragraph in re.split(r'\n|[。；;]', body):
             if not (name in paragraph or issuer):

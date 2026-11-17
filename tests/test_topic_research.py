@@ -176,6 +176,18 @@ class TopicResearchTests(unittest.TestCase):
         self.assertEqual([row['quote'] for row in out['evidence']], ['氢能装备产业。' + article])
         self.assertEqual(next(iter(out['sources'].values()))['fulltext'], original['text'])
 
+    def test_website_menus_do_not_join_or_replace_original_topic_paragraphs(self):
+        first = '半导体电子化学品研发项目仅支持已完成中试验证的企业申报，申报材料包括产品纯度检测和安全生产记录。'
+        second = '半导体电子化学品研发项目须提供第三方检测报告和供样记录，主管部门审核通过后进入下一轮验证。'
+        menu = '改革动态\n新手指南\n进入关怀模式\n进度查询\n办事预约\n意见反馈\n帮助中心\n掌上办'
+        for city in ('苏州', '成都'):
+            with self.subTest(city=city):
+                header = f'繁体 | English | 日本語\n搜本站\n{city}概况\n新闻中心\n政务公开'
+                raw = '\n'.join((header, first, menu, second, '相关文件', '扫一扫在手机打开当前页'))
+                picked = select_source_paragraphs(raw, '半导体电子化学品补链', limit=3)
+                self.assertCountEqual([row['quote'] for row in picked], [first, second])
+                self.assertTrue(all(row['quote'] in raw for row in picked))
+
     def test_oversized_unsegmented_text_is_pending_not_fake_excerpt(self):
         out = research([result('氢能政策' + '很长且无段落分隔的原文' * 200)])
         self.assertFalse(out['evidence'])

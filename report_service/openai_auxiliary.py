@@ -9,19 +9,42 @@ from html.parser import HTMLParser
 
 class _OriginalText(HTMLParser):
     def __init__(self):
-        super().__init__();self.parts=[];self.hidden=0
+        super().__init__()
+        self.parts = []
+        self._ignored_tag = None
+        self._ignored_depth = 0
         self.title_parts = []
         self.in_title = False
+
     def handle_starttag(self,tag,attrs):
+        if self._ignored_tag:
+            if tag == self._ignored_tag:
+                self._ignored_depth += 1
+            return
+        role = (dict(attrs).get('role') or '').lower().split()
+        if tag in ('script', 'style', 'noscript', 'nav') or (
+                tag in ('div', 'section', 'form', 'aside') and
+                set(role).intersection(('navigation', 'search', 'contentinfo'))):
+            self._ignored_tag, self._ignored_depth = tag, 1
+            self.parts.append('\n')
+            return
         if tag == 'title': self.in_title = True
-        if tag in ('script','style','noscript'):self.hidden+=1
         if tag in ('p','div','br','h1','h2','li'):self.parts.append('\n')
+
     def handle_endtag(self,tag):
+        if self._ignored_tag:
+            if tag == self._ignored_tag:
+                self._ignored_depth -= 1
+                if not self._ignored_depth:
+                    self._ignored_tag = None
+            return
         if tag == 'title': self.in_title = False
-        if tag in ('script','style','noscript'):self.hidden=max(0,self.hidden-1)
+
     def handle_data(self,data):
+        if self._ignored_tag:
+            return
         if self.in_title: self.title_parts.append(data)
-        if not self.hidden:self.parts.append(data)
+        self.parts.append(data)
 
 
 def _government_url(url):

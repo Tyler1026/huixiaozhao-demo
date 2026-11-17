@@ -58,27 +58,40 @@ function reportKeepReviewed(context,incoming){
 }
 
 function stripReportWebFooter(text){
-  var control=/^(?:扫一扫(?:在手机|用手机)?打开当前页|手机扫一扫打开当前页|分享到[：:]|网站导航[：:])$/;
-  var navigation=/^(?:中国政府网|国务院部门网站|[\u3400-\u9fff（）()]{1,28}(?:政府网站|政务网站|设区市网站|辖市[（(]区[）)]网站|人民政府)|打印本页|关闭窗口|返回顶部)$/;
+  // Keep this vocabulary aligned with backend/source_article.py. Standalone
+  // headings like “政务公开” count as menu text only alongside other controls.
+  var control=/^(?:简体(?:中文)?|繁体(?:中文)?|English|日本語|한국어|搜本[站網网]|搜站群|站内搜索|搜索本站|(?:进入|开启|退出)(?:关怀|无障碍|长辈|适老)(?:模式|版)?|无障碍(?:阅读|浏览)|扫一扫(?:在手机|用手机)?打开当前页|手机扫一扫打开当前页|分享到[：:]?|网站导航[：:]?|网站地图|网站无障碍|打印本页|关闭窗口|返回顶部|政府网站找错|网站标识码[：:]\s*\d+|[\u3400-\u9fff]?ICP备\d+号(?:-\d+)?)$/i;
+  var menu=/^(?:首页|新闻中心|政务公开|政府信息公开|办事服务|政务服务|政民互动|互动交流|改革动态|新手指南|进度查询|办事预约|意见反馈|帮助中心|掌上办|个人中心|登录|注册|网站首页|机构概况|走进[\u3400-\u9fff]{2,10}|[\u3400-\u9fff]{2,10}概况|中国政府网|国务院部门网站|[\u3400-\u9fff（）()]{1,28}(?:政府网站|政务网站|设区市网站|辖市[（(]区[）)]网站|人民政府))$/;
+  var related=/^相关(?:文件|附件)[：:]?$/;
   var citation=/\s*(\[(?:来源\s*)?S?\d+\]\(https?:\/\/[^\s)]+\).*)$/i;
-  var rows=text.split(/\r\n?|\n/),footer=false,removed=false,lastContent=-1;
+  var rows=text.split(/\r\n?|\n/),run=[],labels=new Set(),hasControl=false,removed=false;
   function label(line){
-    return line.trim().replace(/^(?:>\s*)+|^[-*]\s+/,'').replace(/^\*\*(.+)\*\*$/,'$1')
-      .replace(/^\[([^\]]+)\]\(https?:\/\/[^\s)]+\)$/,'$1').trim();
+    return line.trim().replace(/^(?:>\s*)+|^[-*]\s+/,'').replace(/^\*+|\*+$/g,'')
+      .replace(/\[([^\]]+)\]\(https?:\/\/[^\s)]+\)/g,'$1').trim();
   }
-  for(var i=0;i<rows.length;i++){
-    var ref=rows[i].match(citation),item=label(ref?rows[i].slice(0,ref.index):rows[i]);
-    if(control.test(item)){
-      if(lastContent>=0&&/^相关(?:文件|附件)[：:]?$/.test(label(rows[lastContent])))rows[lastContent]='';
-      footer=true;
-    }else if(!footer||!navigation.test(item)){
-      if(item||ref){footer=false;lastContent=i;}
-      continue;
+  function flush(){
+    if(hasControl||labels.size>1){
+      while(run.length&&run[run.length-1].related)run.pop();
+      run.forEach(function(entry){rows[entry.index]=entry.reference;});
+      removed=true;
     }
-    rows[i]=ref?ref[1]:'';
-    if(ref){footer=false;lastContent=i;}
-    removed=true;
+    run=[];labels.clear();hasControl=false;
   }
+  rows.forEach(function(line,i){
+    var ref=rows[i].match(citation),item=label(ref?rows[i].slice(0,ref.index):rows[i]);
+    if(!item&&!ref)return;
+    var options=control.test(item)||menu.test(item)?[item]:item.split(/\s*[|｜·/／>]\s*|\s+/).filter(Boolean);
+    if((options.length&&options.every(function(value){return control.test(value)||menu.test(value);}))||related.test(item)){
+      run.push({index:i,reference:ref?ref[1]:'',related:related.test(item)});
+      options.forEach(function(value){
+        if(control.test(value))hasControl=true;
+        if(control.test(value)||menu.test(value))labels.add(value);
+      });
+    }else{
+      flush();
+    }
+  });
+  flush();
   return removed?rows.join('\n').replace(/\n{3,}/g,'\n\n').trim():text;
 }
 

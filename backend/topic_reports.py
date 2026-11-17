@@ -84,7 +84,7 @@ def research_coverage(research):
 
 def plan_prompt(context, research, phase):
     catalog = evidence_catalog(research)
-    evidence = [{'id': sid, 'title': r.get('title', ''), 'quote': r['quote'], 'url': r['url'],
+    evidence = [{'id': sid, 'title': r.get('title', ''), 'quote': source_article_body(r['quote']), 'url': r['url'],
                  'published_at':r.get('published_at'), 'source_type':r.get('source_type'),
                  'policy':policy_context(dict(r, source_excerpt=r.get('_fulltext',r['quote'])))}
                 for sid, r in catalog.items()]
