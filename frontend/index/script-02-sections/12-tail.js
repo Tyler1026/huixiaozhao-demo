@@ -2424,7 +2424,7 @@ function viewPartialReport(){
   var p=P(), rs=REPORTSTATE[cur]||{};
   var part=p && rs.partialByTopic && rs.partialByTopic[p.topic];
   if(!part){toast('暂无未完成内容');return;}
-  openModal('未完成内容 · 不作为正式报告', '<p>本次生成未完成，原正式报告已保留。</p><div>'+topicReportMarkup(part.text||'',part.phase)+'</div>', '<button class="primary-button" onclick="closeModal()">关闭</button>');
+  openModal('未完成内容 · 不作为正式报告', '<p>本次生成未完成，原正式报告已保留。</p>'+(part.reason?'<p>'+escapeChainText(part.reason)+'</p>':'')+'<div>'+topicReportMarkup(part.text||'',part.phase)+'</div>', '<button class="primary-button" onclick="closeModal()">关闭</button>');
 }
 
 async function readTopicReportStream(response, onText, onEvent){
@@ -2520,7 +2520,8 @@ function triggerReport(phase){
     refreshReportRunUi();
   }catch(error){delete window._topicReportJobs[jobKey];delete window._topicReportProgress[jobKey];updateReportBusy();toast('读取本地材料未完成，请重试');return Promise.resolve();}
   function active(){return PROJECTS[key] && (PROJECTS[key].reportRequestId||'')===requestId && ((PROJECTS[key].topicCreatedAt||{})[topic]||0)===topicBirth && ((PROJECTS[key].topicDeletedAt||{})[topic]||0)===topicDeath && (epoch===null || epoch===_authEpoch);}
-  function visible(){return active() && cur===key && P() && P().topic===topic;}
+  function showingTopic(){return (epoch===null || epoch===_authEpoch) && cur===key && P() && P().topic===topic;}
+  function visible(){return active() && showingTopic();}
   function materialsCurrent(){return reportMaterialIdentity(key,topic)===materialIdentity;}
   function changedError(){var e=new Error('材料或确认事项已更新，本次结果未写入，请按最新材料重新生成');e.sourceChanged=true;return e;}
   function showStatus(message){
@@ -2605,14 +2606,17 @@ function triggerReport(phase){
     },function(error){error.localReportSaved=true;throw error;});
   }).catch(function(error){
     if(error.localReportSaved){showStatus('报告已保存在本机，云端保存未确认；请重试同步。');if(visible())toast('报告已保存在本机，云端保存未确认；请重试同步。');return;}
-    if(!error.sourceChanged&&materialsCurrent())retainPartial(error.partialText||text,error.message,error.partialMetadata);
-    showStatus(error.sourceChanged?error.message:'本次生成未完成，原正式报告已保留；可重试。');
-    if(visible())toast(error.name==='AbortError'?'生成连接超时，未完成内容已保留':error.message);
+    var reason=error.name==='AbortError'?'生成连接超时':error.message;
+    if(!error.sourceChanged&&materialsCurrent())retainPartial(error.partialText||text,reason,error.partialMetadata);
+    if(visible())toast(reason);
   }).finally(function(){
     clearTimeout(timeout);delete window._topicReportJobs[jobKey];
     delete window._topicReportProgress[jobKey];
     updateReportBusy();
-    if(visible())render();
+    if(showingTopic()){
+      refreshReportRunUi();
+      render();
+    }
   });
 }
 
@@ -3700,7 +3704,7 @@ function reportBottomBarInner(p){
   // 检测该方向是否已完成草稿(phase1)但尚未生成产业研判报告
   var _hasDraft = !_hasFull && REPORTSTATE[cur] && REPORTSTATE[cur].phaseByTopic && REPORTSTATE[cur].phaseByTopic[p.topic]===1;
   var _rs=REPORTSTATE[cur]||{}, _partial=(_rs.partialByTopic||{})[p.topic];
-  var _partialNote=_partial?'<div role="status" style="color:#92400e">上次生成未完成，正式报告未覆盖。<button onclick="viewPartialReport()">查看未完成内容</button></div>':'';
+  var _partialNote=_partial?'<div role="status" style="color:#92400e">上次生成未完成，正式报告未覆盖。'+(_partial.reason?escapeChainText(_partial.reason)+'。':'')+'<button onclick="viewPartialReport()">查看未完成内容</button></div>':'';
   if(_hasDraft){
     var _gate=fullReportConfirmation(cur,p.topic);
     if(!_gate.ready) return _partialNote+'<div style="flex:1;color:#92400e">'+_gate.message+'</div><button disabled>完成确认后生成产业研判报告</button><button onclick="startAiInterview()">重新生成草稿</button>';

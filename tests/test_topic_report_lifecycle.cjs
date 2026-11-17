@@ -200,6 +200,32 @@ test('repeat click shares one current-topic job and failure releases the lock fo
   assert.deepEqual(Object.keys(c.window._topicReportJobs), []);
 });
 
+for (const surface of ['index', 'ops']) {
+  test(surface + ' clears terminal progress without a full render, including after a request revision', async () => {
+    const implementation = surface === 'index' ? source : fs.readFileSync(path.join(root, 'frontend/ops/script-03-sections/12-tail.js'), 'utf8');
+    for (const revised of [false, true]) {
+      let finish;
+      const {c, elements, events} = environment(() => new Promise(resolve => {finish = resolve;}), implementation);
+      elements.industryRunHost = {};
+      const detail = {};
+      c.document.querySelector = selector => selector === '.detail-page' ? detail : null;
+      c.detailReport = p => c.reportJobForTopic(c.cur, p.topic) ? 'generating' : 'ready';
+      const work = c.triggerReport(2);
+      await untilRequestStarted(() => typeof finish === 'function');
+      assert.match(elements.industryRunHost.innerHTML, /产业研判生成中/);
+      assert.equal(detail.innerHTML, 'generating');
+      if (revised) c.PROJECTS.p.reportRequestId = 'request-2';
+      finish(response(fullText, 'length'));
+      await work;
+      assert.equal(elements.industryRunHost.innerHTML, '');
+      assert.equal(detail.innerHTML, 'ready');
+      assert.equal(events.render, 1);
+      if (revised) assert.equal(c.REPORTSTATE.p.partialByTopic, undefined);
+      else assert.equal(c.REPORTSTATE.p.partialByTopic['核电配套'].reason, '生成提前结束（length）');
+    }
+  });
+}
+
 test('retry waits for delayed native fingerprint completion before resolving its response', async () => {
   let finish, fingerprints=0;
   const {c, events} = environment(() => new Promise(resolve => {finish = resolve;}));
