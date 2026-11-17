@@ -237,9 +237,14 @@ def topic_report_context(body, state, *, limit=16, char_limit=36000):
     unique = {row['id']: row for row in inventory}
     inventory = sorted(unique.values(), key=lambda row: row['id'])
     onboarding = project.get('onboarding') or {}
+    saved_topics = project.get('aiTopics')
+    saved_topics = saved_topics.get('list') if isinstance(saved_topics, dict) else None
+    direction_summary = next((_string(row.get('desc'))[:200] for row in (saved_topics if isinstance(saved_topics, list) else [])
+                              if isinstance(row, dict) and _string(row.get('label')) == topic), '')
     fingerprint = _digest({'contract': 'topic-evidence-v1', 'workspaceId': root,
                            'projectKey': key, 'topic': topic, 'requestId': request_id,
-                           'onboarding': onboarding, 'records': inventory})
+                           'onboarding': onboarding, 'records': inventory,
+                           **({'directionSummary': direction_summary} if direction_summary else {})})
     terms = topic_terms(topic)
     candidates = []
     for row in inventory:
@@ -278,6 +283,7 @@ def topic_report_context(body, state, *, limit=16, char_limit=36000):
     return {'projectKey': key, 'workspaceId': root, 'topic': topic,
             'city': project.get('city', ''), 'reportRequestId': request_id,
             'onboarding': onboarding, 'reportState': report, 'chunks': selected,
+            'directionSummary': direction_summary,
             'sourceFingerprint': fingerprint, 'evidenceContract': 'topic-evidence-v1',
             'availableChunkCount': len(inventory), 'relevantChunkCount': len(candidates),
             'topicTerms': terms}

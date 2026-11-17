@@ -58,8 +58,10 @@ class FinalReportPresentationTests(unittest.TestCase):
     def test_different_passages_in_one_document_share_one_bibliography_item(self):
         research = bundle()
         research['evidence'][1]['url'] = research['evidence'][0]['url'] + '#page=2'
+        raw = plan()
+        raw['basis'] = [row['id'] for row in research['evidence']]
         result = build_report({'city': '闵行区', 'topic': '氢能'}, research, 2,
-                              lambda *args: plan())
+                              lambda *args: raw)
         bibliography = result['text'].split('## 参考文献', 1)[1]
         self.assertEqual(bibliography.count('[1]'), 1)
         self.assertNotIn('[2]', bibliography)

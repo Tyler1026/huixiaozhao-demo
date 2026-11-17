@@ -3613,10 +3613,80 @@ function stripReportWebFooter(text){
   return removed?rows.join('\n').replace(/\n{3,}/g,'\n\n').trim():text;
 }
 
+// Editorial revision of the saved Suzhou draft. Match the legacy chapter and
+// its source, so a later generation with the same title takes precedence.
+function reviseSavedSuzhouCopperChapter(text){
+  if(!/^# 苏州(?:市)? · 半导体电子化学品补链 · 产业研判稿(?:\r?\n|$)/.test(text))return text;
+  var heading=/^## 二、产业链关系与机会分析[ \t]*$/m,next=/^## 三、招引研判方向[ \t]*$/m;
+  var source='https://www.sipac.gov.cn/xzspj/ywtbggdt/202507/9c7fbfc5238e42e19906f1d4324f55bd.shtml';
+  var annual='https://static.cninfo.com.cn/finalpage/2026-08-26/1225505856.PDF';
+  var kunshan='https://www.ks.gov.cn/kss/qzkx/202605/3b246b88df5b4f1da524f7433085dabf.shtml';
+  var rows=text.replace(/\r\n?/g,'\n'),start=rows.search(heading),end=rows.search(next);
+  if(start<0||end<=start)return text;
+  var previous=rows.slice(start,end);
+  if(!previous.includes(source)||!previous.includes('比较判断')||!previous.includes('先进半导体基材'))return text;
+  var revised=[
+    '## 二、产业链关系与机会分析',
+    '**阶段判断**　苏州的铜互连电镀液核查已找到具体供应线索。艾森股份在 2026 年半年报披露，28nm 大马士革铜互连用镀铜添加剂已在主流晶圆客户进入小批量量产。昆山市千灯镇政府也报道了该品类已获主流晶圆厂订单。[来源 S98]('+annual+')[来源 S99]('+kunshan+')',
+    '现有公开材料能确认添加剂的进展。整套铜电镀液还要核实配套基液是否一并供应、添加剂和基液各自在哪个厂区生产，以及苏州本地哪条晶圆产线已使用或通过认证。公司处于昆山与具体产品在昆山生产是两项需要分别核实的事实。',
+    '**首访艾森股份的晶圆材料产品和技术负责人**　这家公司有针对该工艺的具体产品和客户阶段披露，能直接核实配方供应范围、实际生产厂区，以及由送样、验证转入小批量的口径。请其提供可公开的产品、厂区和客户认证信息，或协助对接经客户同意的工艺负责人。',
+    '**再向苏州相关晶圆产线的工艺工程与采购负责人交叉核实**　先确认当地哪条线使用大马士革铜互连，再问在用规格、现供来源、第二供应商导入意愿和验证窗口。生益科技的基材项目及国创中心基地可协助找应用线索。把它们列为候选访谈对象之前，先确认是否涉及同一工艺与材料。',
+    '若应用端明确有规格、第二供应商需求和验证窗口，再筛选可供样的企业。若已有满足要求的稳定供应，则把后续走访聚焦于仍未覆盖的规格、认证或供货环节。'
+  ].join('\n\n');
+  var result=rows.slice(0,start)+revised+'\n\n'+rows.slice(end);
+  var background='https://www.sic.gov.cn/sic/608/611/0805/20240805093707646931105_pc.html';
+  var backgroundRef=/^\[\d+\] [^\n]*\[原文\]\(https:\/\/www\.sic\.gov\.cn\/sic\/608\/611\/0805\/20240805093707646931105_pc\.html\)[ \t]*\n?/m;
+  var withoutBackgroundRef=result.replace(backgroundRef,'');
+  if(!withoutBackgroundRef.includes(background))result=withoutBackgroundRef;
+  return result.trimEnd()+'\n[98] 艾森股份 2026 年半年度报告，2026-08-26。[原文]('+annual+')\n'+
+    '[99] 昆山市千灯镇人民政府关于艾森股份产品进展的报道，2026-05-18。[原文]('+kunshan+')';
+}
+
+// Older stage drafts repeated the research excerpts in chapter two. Reuse
+// their reviewed comparisons and their matching reasons/actions from III/V.
+function condenseSavedChainChapter(text){
+  if(!/^# [^\n]+ · 产业研判稿[ \t]*$/m.test(text))return text;
+  var lines=text.replace(/\r\n?/g,'\n').split('\n');
+  var chain=lines.indexOf('## 二、产业链关系与机会分析');
+  var priorities=lines.indexOf('## 三、招引研判方向');
+  var companies=lines.indexOf('## 四、目标企业画像');
+  var actions=lines.indexOf('## 五、实施建议');
+  if(chain<0||priorities<=chain||companies<=priorities||actions<=companies)return text;
+  var reasons=new Map(),steps=new Map(),comparisons=new Map(),focus='';
+  var citation=/\[(?:来源\s*)?S?\d+\]\(https?:\/\//i;
+  lines.slice(chain+1,priorities).forEach(function(line){
+    var title=line.match(/^### (.+)$/);
+    if(title)focus=title[1];
+    var match=line.match(/^\*\*比较判断：\*\*\s+(.+)$/);
+    if(focus&&match&&citation.test(match[1]))comparisons.set(focus,match[1]);
+  });
+  focus='';
+  lines.slice(priorities+1,companies).forEach(function(line){
+    var title=line.match(/^### \d+\. (.+)$/);
+    if(title)focus=title[1];
+    if(focus&&citation.test(line))reasons.set(focus,line);
+  });
+  var bibliography=lines.indexOf('## 参考文献',actions);
+  lines.slice(actions+1,bibliography<0?lines.length:bibliography).forEach(function(line){
+    var match=line.match(/^\d+\. \*\*(.+?)：\*\*\s+(.+)$/);
+    if(match&&citation.test(match[2]))steps.set(match[1],match[2]);
+  });
+  if(!comparisons.size||comparisons.size!==steps.size||
+     !Array.from(comparisons.keys()).every(function(name){return reasons.has(name)&&steps.has(name);}))return text;
+  var revised=[lines[chain],''];
+  comparisons.forEach(function(comparison,name){
+    revised.push('### '+name,'','**查到哪一步**　'+comparison,'',
+                 '**为什么核查**　'+reasons.get(name),'',
+                 '**先找谁、核实什么**　'+steps.get(name),'');
+  });
+  return lines.slice(0,chain).concat(revised,lines.slice(priorities)).join('\n');
+}
+
 function reportPublicationText(value,options){
   var original=stripReportWebFooter(typeof value==='string'?value:String(value==null?'':value));
   options=options||{};
   if(!(Number(options.phase)>=2))return original;
+  original=condenseSavedChainChapter(reviseSavedSuzhouCopperChapter(original));
   var metadata=Object.create(null),labels=Object.create(null),references=Object.create(null);
   function safeUrl(value){
     var url=typeof value==='string'?value.trim():'';

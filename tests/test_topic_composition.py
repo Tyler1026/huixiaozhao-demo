@@ -37,8 +37,8 @@ def fixture():
             paragraph('fact', catalog[ids[0]]['quote'].splitlines()[0], [ids[0]]),
             paragraph('analysis', '闵行区已具有相关企业登记基础，但登记地址不等于具体产品生产场所。', [ids[0]])]},
         'chain': {'id': 'chain', 'paragraphs': [
-            paragraph('fact', catalog[ids[2]]['quote'], [ids[2]]),
-            paragraph('analysis', '进口膜材与国内同类供给需要区分，国产化产品的存在不代表已完成相容性验证。', [ids[2], ids[3]])]},
+            paragraph('analysis', '进口膜材与国内同类供给需要区分，国产化产品的存在不代表已完成相容性验证。', [ids[2], ids[3]]),
+            paragraph('recommendation', '先与生物反应袋需求方明确膜材规格和验证要求，再比较国内供方的相容性资料。', [ids[2], ids[3]])]},
         'priorities': {'id': 'priorities', 'paragraphs': [
             paragraph('analysis', '膜材方向有明确的企业使用依据和国内供给线索，可优先开展产品适配研究；不得由此判断全区缺少供给。', [ids[2], ids[3]])]},
         'companies': {'id': 'companies', 'paragraphs': [
@@ -89,6 +89,29 @@ class TopicCompositionTests(unittest.TestCase):
         self.assertEqual(result['calls'], 0)
         self.assertTrue(any(row['chapter'] == 'priorities' for row in result['diagnostics']))
 
+    def test_reviewed_chain_is_rendered_when_company_chapter_lacks_evidence(self):
+        research, catalog, plan, context, chapters = fixture()
+        plan['companies'] = []
+
+        def complete(system, prompt, budget):
+            payload = json.loads(prompt)
+            if 'requested_chapters' in payload:
+                self.assertEqual(payload['requested_chapters'], ['chain'])
+                return {'chapters': [chapters['chain']]}
+            return approve(payload['chapters'])
+
+        result = compose_report(plan, context, catalog, complete)
+        self.assertEqual(result['status'], 'limited')
+        self.assertEqual(result['calls'], 2)
+        self.assertEqual([row['id'] for row in result['chapters']], ['chain'])
+        self.assertTrue(any(row['chapter'] == 'companies' for row in result['diagnostics']))
+        plan['composition'] = result
+        text, sources = render_report(plan, context, research, 2)
+        section = text.split('## 二、产业链关系与机会分析')[1].split('## 三、招引研判方向')[0]
+        self.assertIn(chapters['chain']['paragraphs'][1]['text'], section)
+        self.assertNotIn(catalog[plan['chain'][0]]['quote'], section)
+        self.assertTrue(all(row['cited_in_report'] for row in sources if row['id'] in plan['chain']))
+
     def test_new_number_triggers_one_targeted_repair_and_full_rereview(self):
         _, catalog, plan, context, chapters = fixture()
         bad = copy.deepcopy(chapters)
@@ -115,12 +138,12 @@ class TopicCompositionTests(unittest.TestCase):
             if 'requested_chapters' in payload:
                 return {'chapters': [chapters[cid] for cid in payload['requested_chapters']]}
             answer = approve(payload['chapters'])
-            answer['chapters'][0]['paragraphs'].pop()
+            next(row for row in answer['chapters'] if row['id'] == 'priorities')['paragraphs'].pop()
             return answer
         result = compose_report(plan, context, catalog, complete)
         self.assertEqual(result['status'], 'limited')
         self.assertEqual(result['calls'], 6)
-        self.assertEqual(result['chapters'], [])
+        self.assertEqual({row['id'] for row in result['chapters']}, {'basis', 'chain', 'companies', 'actions'})
 
     def test_source_ids_html_external_links_and_process_prose_are_not_publishable(self):
         _, catalog, plan, _, chapters = fixture()

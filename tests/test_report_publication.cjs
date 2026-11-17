@@ -96,6 +96,44 @@ test('saved reports remove government headers and service menus across cities',(
   assert.match(out,/相关文件\n\n- \[申请表\]/);
   assert.match(out,/\[1\]\(https:\/\/issuer.example\/report.pdf\)/);
 });
+test('legacy stage drafts reuse the cited comparison, reason, and action across cities',()=>{
+  const c=pure(),saved=[
+    '# 成都 · 半导体材料补链 · 产业研判稿','',
+    '## 一、产业基础判断','保留前章事实。',
+    '## 二、产业链关系与机会分析','无关的航空厂房内容。',
+    '### 湿电子化学品','**比较判断：** 已披露产品送样，客户端认证待核。[1]('+url+')',
+    '## 三、招引研判方向','### 1. 湿电子化学品','送样企业掌握产品规格和送样记录。[1]('+url+')',
+    '## 四、目标企业画像','待核。',
+    '## 五、实施建议','1. **湿电子化学品：** 先找供应方核实客户端认证。[1]('+url+')'
+  ].join('\n');
+  const out=c.reportPublicationText(saved,{phase:2});
+  const chain=out.split('## 二、产业链关系与机会分析')[1].split('## 三、招引研判方向')[0];
+  assert.doesNotMatch(chain,/无关的航空厂房/);
+  assert.match(chain,/查到哪一步.*已披露产品送样/);
+  assert.match(chain,/为什么核查.*送样企业掌握/);
+  assert.match(chain,/先找谁、核实什么.*先找供应方/);
+  assert.match(out,/保留前章事实/);
+  assert.equal(c.reportPublicationText(out,{phase:2}),out);
+});
+test('saved Suzhou chapter cites the direct product evidence and leaves later reports alone',()=>{
+  const c=pure(),park='https://www.sipac.gov.cn/xzspj/ywtbggdt/202507/9c7fbfc5238e42e19906f1d4324f55bd.shtml';
+  const saved=[
+    '# 苏州 · 半导体电子化学品补链 · 产业研判稿','',
+    '## 二、产业链关系与机会分析','旧稿里关于航空厂房的无关摘录。',
+    '### 先进半导体基材','**比较判断：** 旧稿中的建设线索。[4]('+park+')',
+    '## 三、招引研判方向','第三章原文继续保留。',
+    '## 参考文献','[4] 苏州工业园区原文。[原文]('+park+')'
+  ].join('\n');
+  const out=c.reportPublicationText(saved,{phase:2});
+  assert.doesNotMatch(out,/无关摘录|旧稿中的建设线索/);
+  assert.match(out,/28nm.*镀铜添加剂.*小批量量产/);
+  assert.match(out,/首访艾森股份/);
+  assert.match(out,/工艺工程与采购负责人交叉核实/);
+  assert.match(out,/2026 年半年度报告.*1225505856\.PDF/);
+  assert.match(out,/第三章原文继续保留/);
+  assert.equal(c.reportPublicationText(out,{phase:2}),out);
+  assert.doesNotMatch(c.reportPublicationText(saved.replace('旧稿中的建设线索。[4]('+park+')','新报告自己的分析。'),{phase:2}),/首访艾森股份/);
+});
 test('final publication removes only named process sections and preserves real conditions and uncertainty',()=>{
   const c=pure(),out=c.reportPublicationText(raw,{phase:2,sources});assertPublication(out);
   assert.match(out,/\[1\]\(https:\/\/issuer.example\/report.pdf\)/);

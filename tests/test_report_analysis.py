@@ -362,7 +362,8 @@ class ReportAnalysisTests(unittest.TestCase):
         out=build_report({'city':b['city'],'topic':b['topic']},b,2,complete)
         self.assertEqual(len(out['analysis']['priorities']),1)
         self.assertEqual(out['analysis']['priorities'][0]['state'],'reviewed_inference')
-        self.assertIn(b['evidence'][3]['quote'],out['text'])
+        self.assertIn('**反证与补充依据**　[3]('+b['evidence'][3]['url']+')',out['text'])
+        self.assertIn(b['evidence'][3]['quote'],[row['quote'] for row in out['sources']])
         self.assertIn('不能断言已经替代',out['text'])
         reviewed={r['id'] for r in calls[1][1]['sources']}
         self.assertTrue(set(ids).issubset(reviewed))
