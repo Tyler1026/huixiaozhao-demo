@@ -489,6 +489,57 @@ class ChainModelContractTests(unittest.TestCase):
                 self.assertEqual(raised.exception.code, 'chain_selection_unavailable')
 
 
+class RoleRecoveryTests(unittest.TestCase):
+    def test_advanced_materials_use_input_production_and_application_roles(self):
+        topic = '先进材料外资增资承接'
+        pitches = ['高纯石英砂', '高端功能材料绿色智造项目', '宽禁带半导体电力电子器件',
+                   '碱性水电解制氢编织网电极', '前沿新材料产业创新体系']
+        quote = ('行动方案提出以高纯石英砂作为原料，推进高端功能材料绿色智造项目，'
+                 '推动宽禁带半导体电力电子器件及碱性水电解制氢编织网电极研发，'
+                 '并探索建设前沿新材料产业创新体系。')
+        for city in ('苏州', '随州'):
+            with self.subTest(city=city):
+                bundle = research([quote], topic=topic)
+                bundle['city'] = city
+                result = normalize_chain_plan(plan(bundle, pitches), bundle, {'city': city, 'topic': topic})
+                self.assertEqual([[n['name'] for n in g['nodes']][:1] for g in result['chain']],
+                                 [[pitches[0]], [pitches[1]], [pitches[2]]])
+                self.assertIn(pitches[3], [n['name'] for n in result['chain'][2]['nodes']])
+                self.assertEqual([n['name'] for n in result['unclassified']], [pitches[4]])
+                self.assertTrue(all(n['level'] == 'unknown' and n['status'] == 'planned' for n in nodes(result)))
+
+    def test_all_unclassified_get_one_role_review_using_only_existing_node_and_source_ids(self):
+        topic = '文旅数字体验'
+        names = ['沉浸式展陈服务', '预约核验系统']
+        bundle = research([
+            '场馆计划开展沉浸式展陈服务，面向到场观众开展文化体验，具体运营安排另行公布。',
+            '方案同时提到预约核验系统，实际服务范围及承担主体有待进一步核对。',
+        ], topic=topic)
+        calls = []
+
+        def complete(system, payload, tokens):
+            calls.append(tokens)
+            if len(calls) == 1:
+                return plan(bundle, names)
+            candidates = {row['name']: row for row in json.loads(payload)['nodes']}
+            exhibit, booking = (candidates[name] for name in names)
+            return {'roles': [
+                {'id': exhibit['id'], 'lane': '下游', 'evidence_id': exhibit['evidence_id'],
+                 'role_basis': '面向到场观众提供沉浸式展陈与文化体验'},
+                {'id': booking['id'], 'lane': '中游', 'evidence_id': exhibit['evidence_id'],
+                 'role_basis': '使用预约核验系统支持展馆接待安排'},
+                {'id': 'unknown-node', 'lane': '上游', 'evidence_id': exhibit['evidence_id'],
+                 'role_basis': '应当在当前方向补充更多支撑服务'},
+            ]}
+
+        context = dict(CONTEXT, topic=topic, _prefer_assessment=True)
+        result = build_chain(context, bundle, complete)
+        self.assertEqual(calls, [4800, 1400])
+        self.assertEqual([node['name'] for node in result['chain'][2]['nodes']], [names[0]])
+        self.assertEqual([node['name'] for node in result['unclassified']], [names[1]])
+        self.assertEqual(result['chain'][2]['nodes'][0]['status'], 'planned')
+        self.assertEqual(result['edges'], [])
+
 class ConstraintSubjectSelectionTests(unittest.TestCase):
     def fixture(self, quote):
         return research([quote, '计划研制星载计算单元，建设商业火箭总装测试平台，发展卫星运营服务，实施条件仍待核实。'])
