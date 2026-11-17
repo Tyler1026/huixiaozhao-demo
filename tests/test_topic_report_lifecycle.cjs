@@ -167,6 +167,22 @@ test('length, transport EOF, or incomplete five chapters never overwrite a compl
   }
 });
 
+for (const surface of ['index', 'ops']) {
+  test(surface + ' uses the Markdown chapter outline instead of numbering quoted in the body', async () => {
+    const implementation = surface === 'index' ? source : fs.readFileSync(path.join(root, 'frontend/ops/script-03-sections/12-tail.js'), 'utf8');
+    const report = fullText.split('\n').map(line =>
+      /^[一二三四五]、/.test(line) ? '## ' + line : line
+    ).join('\n').replace('有来源的事实。', '有来源的事实。\n一、原文条目\n二、原文条目\n三、原文条目');
+    const {c} = environment(response(report), implementation);
+    assert.equal(c.isCompleteTopicReport(report), true);
+    assert.equal(c.isCompleteTopicReport(report.replace(/^## 四、.*\n[^\n]*\n/m, '')), false);
+    assert.equal(c.isCompleteTopicReport(report.replace('投资意向未知。', '')), false);
+    await c.triggerReport(2);
+    assert.equal(c.REPORTSTATE.p.phaseByTopic['核电配套'], 2);
+    assert.equal(c.REPORTSTATE.p.aiReportByTopic['核电配套'], report);
+  });
+}
+
 test('switching topic while streaming never replaces the current topic view or other-topic report', async () => {
   let finish;
   const {c} = environment(() => new Promise(resolve => {finish = resolve;}));

@@ -10836,10 +10836,12 @@ async function syncTopicReportInputs(capturedSnapshot){
 }
 
 function isCompleteTopicReport(text){
-  var pattern=/(?:^|\n)\s*#{0,3}\s*([一二三四五])[、.．][^\n]*\n/g, matches=[], match;
-  while((match=pattern.exec(text))!==null)matches.push({chapter:match[1],start:match.index,end:pattern.lastIndex});
-  if(matches.length!==5 || matches.map(function(m){return m.chapter;}).join('')!=='一二三四五')return false;
-  return matches.every(function(m,i){return /[a-z0-9\u3400-\u9fff]/i.test(text.slice(m.end,i+1<matches.length?matches[i+1].start:text.length));});
+  var pattern=/^[ \t]*(#{1,6})?[ \t]*([一二三四五])[、.．][^\r\n]*\r?$/gm, matches=[], match;
+  while((match=pattern.exec(text))!==null)matches.push({chapter:match[2],level:(match[1]||'').length,start:match.index,end:pattern.lastIndex});
+  var level=matches.reduce(function(outermost,m){return m.level?Math.min(outermost,m.level):outermost;},Infinity);
+  var chapters=level===Infinity?matches:matches.filter(function(m){return m.level===level;});
+  if(chapters.length!==5 || chapters.map(function(m){return m.chapter;}).join('')!=='一二三四五')return false;
+  return chapters.every(function(m,i){return /[a-z0-9\u3400-\u9fff]/i.test(text.slice(m.end,i+1<chapters.length?chapters[i+1].start:text.length));});
 }
 
 function updateReportBusy(){
