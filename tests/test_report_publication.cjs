@@ -96,6 +96,21 @@ test('saved reports remove government headers and service menus across cities',(
   assert.match(out,/相关文件\n\n- \[申请表\]/);
   assert.match(out,/\[1\]\(https:\/\/issuer.example\/report.pdf\)/);
 });
+test('saved government-site excerpts lose the portal header and breadcrumb with the article intact',()=>{
+  const c=pure(),title='AI高性能算力及先进半导体基材研发生产基地项目落户苏州';
+  const source='https://www.suzhou.gov.cn/example/article.shtml';
+  const menu=['老年服务','无障碍','关怀版','智能问答','政务邮箱','智能问答','政务邮箱登录','苏州概览','数据开放','当前位置：',
+    '首页&nbsp;&amp;gt;&nbsp;新闻中心&nbsp;&gt;&nbsp;苏州要闻'];
+  const raw=['## 一、产业基础判断',title+' - 苏州市人民政府',...menu,title,'时间：2026-07-25　来源：苏州日报','访问量：',
+    '报道披露项目签约，仍待核实投产。 [1]('+source+')','## 二、产业链关系与机会分析','继续查证。'].join('\n\n');
+  const out=c.reportPublicationText(raw,{phase:2});
+  assert.doesNotMatch(out,/老年服务|无障碍|关怀版|智能问答|政务邮箱|苏州概览|数据开放|当前位置|苏州要闻|访问量| - 苏州市人民政府/);
+  assert.equal(out.split(title).length,2);
+  assert.match(out,/时间：2026-07-25　来源：苏州日报/);
+  assert.match(out,/报道披露项目签约，仍待核实投产。 \[1\]/);
+  assert.match(out,/## 二、产业链关系与机会分析/);
+  assert.equal(c.stripReportWebFooter('## 老年服务\n\n老年服务\n\n承担辖区养老服务工作。'),'## 老年服务\n\n老年服务\n\n承担辖区养老服务工作。');
+});
 test('legacy stage drafts reuse the cited comparison, reason, and action across cities',()=>{
   const c=pure(),saved=[
     '# 成都 · 半导体材料补链 · 产业研判稿','',

@@ -2373,38 +2373,47 @@ function reportKeepReviewed(context,incoming){
 function stripReportWebFooter(text){
   // Keep this vocabulary aligned with backend/source_article.py. Standalone
   // headings like “政务公开” count as menu text only alongside other controls.
-  var control=/^(?:简体(?:中文)?|繁体(?:中文)?|English|日本語|한국어|搜本[站網网]|搜站群|站内搜索|搜索本站|(?:进入|开启|退出)(?:关怀|无障碍|长辈|适老)(?:模式|版)?|无障碍(?:阅读|浏览)|扫一扫(?:在手机|用手机)?打开当前页|手机扫一扫打开当前页|分享到[：:]?|网站导航[：:]?|网站地图|网站无障碍|打印本页|关闭窗口|返回顶部|政府网站找错|网站标识码[：:]\s*\d+|[\u3400-\u9fff]?ICP备\d+号(?:-\d+)?)$/i;
-  var menu=/^(?:首页|新闻中心|政务公开|政府信息公开|办事服务|政务服务|政民互动|互动交流|改革动态|新手指南|进度查询|办事预约|意见反馈|帮助中心|掌上办|个人中心|登录|注册|网站首页|机构概况|走进[\u3400-\u9fff]{2,10}|[\u3400-\u9fff]{2,10}概况|中国政府网|国务院部门网站|[\u3400-\u9fff（）()]{1,28}(?:政府网站|政务网站|设区市网站|辖市[（(]区[）)]网站|人民政府))$/;
+  var control=/^(?:简体(?:中文)?|繁体(?:中文)?|English|日本語|한국어|搜本[站網网]|搜站群|站内搜索|搜索本站|(?:进入|开启|退出)(?:关怀|无障碍|长辈|适老)(?:模式|版)?|无障碍(?:阅读|浏览)|扫一扫(?:在手机|用手机)?打开当前页|手机扫一扫打开当前页|分享到[：:]?|网站导航[：:]?|网站地图|网站无障碍|打印本页|关闭窗口|返回顶部|政府网站找错|网站纠错|政务邮箱登录|(?:当前|您所在)(?:所在)?位置[：:]?|(?:访问量|浏览量)\s*[：:]\s*[\d,]*|(?:政务服务|一网通办)(?:公众号|小程序)|网站标识码[：:]\s*\d+|[\u3400-\u9fff]?ICP备\d+号(?:-\d+)?)$/i;
+  var menu=/^(?:首页|新闻中心|政务公开|政府信息公开|办事服务|政务服务|政民互动|互动交流|改革动态|新手指南|进度查询|办事预约|意见反馈|帮助中心|掌上办|个人中心|登录|注册|网站首页|门户首页|机构概况|走进[\u3400-\u9fff]{2,10}|[\u3400-\u9fff]{2,10}(?:概况|概览|要闻)|新闻动态|区镇快讯|数据开放|老年服务|无障碍|关怀版|适老版|长者版|智能问答|智能客服|政务邮箱|了解详情|用户空间|在线客服|相关办事链接|办事平台|中国政府网|国务院部门网站|[\u3400-\u9fff（）()]{1,28}(?:政府网站|政务网站|设区市网站|辖市[（(]区[）)]网站|人民政府))$/;
+  var breadcrumb=/^(?:(?:当前|您所在)(?:所在)?位置\s*[：:]\s*)?(?:首页|网站首页|门户首页)(?:\s*[>›»→/／]\s*[\w\u3400-\u9fff（）() \u3000]{0,36}){1,8}$/;
   var related=/^相关(?:文件|附件)[：:]?$/;
   var citation=/\s*(\[(?:来源\s*)?S?\d+\]\(https?:\/\/[^\s)]+\).*)$/i;
   var rows=text.split(/\r\n?|\n/),run=[],labels=new Set(),hasControl=false,removed=false;
   function label(line){
     return line.trim().replace(/^(?:>\s*)+|^[-*]\s+/,'').replace(/^\*+|\*+$/g,'')
-      .replace(/\[([^\]]+)\]\(https?:\/\/[^\s)]+\)/g,'$1').trim();
+      .replace(/\[([^\]]+)\]\(https?:\/\/[^\s)]+\)/g,'$1')
+      .replace(/&(?:amp;)?(?:gt|#62|#x3e);/gi,'>').replace(/&(?:amp;)?(?:nbsp|#160|#xa0);/gi,' ').trim();
   }
-  function flush(){
+  function isControl(item){
+    return control.test(item)||breadcrumb.test(item.replace(/^#{1,6}\s+/,''));
+  }
+  function flush(nextTitle){
     if(hasControl||labels.size>1){
       while(run.length&&run[run.length-1].related)run.pop();
+      var before=run[0].index-1;
+      while(before>=0&&!rows[before].trim())before--;
+      var title=before>=0&&rows[before].trim().match(/^(.{8,180}?)\s+[-–—｜|]\s+[\u3400-\u9fff]{2,24}(?:人民政府|政府门户网站|政务服务网)$/);
+      if(hasControl&&title&&title[1]===nextTitle.replace(/^#{1,6}\s+/,''))rows[before]='';
       run.forEach(function(entry){rows[entry.index]=entry.reference;});
       removed=true;
     }
     run=[];labels.clear();hasControl=false;
   }
   rows.forEach(function(line,i){
-    var ref=rows[i].match(citation),item=label(ref?rows[i].slice(0,ref.index):rows[i]);
+    var ref=line.match(citation),item=label(ref?line.slice(0,ref.index):line);
     if(!item&&!ref)return;
-    var options=control.test(item)||menu.test(item)?[item]:item.split(/\s*[|｜·/／>]\s*|\s+/).filter(Boolean);
-    if((options.length&&options.every(function(value){return control.test(value)||menu.test(value);}))||related.test(item)){
+    var options=isControl(item)||menu.test(item)?[item]:item.split(/\s*[|｜·/／>›»→]\s*|\s+/).filter(Boolean);
+    if((options.length&&options.every(function(value){return isControl(value)||menu.test(value);}))||related.test(item)){
       run.push({index:i,reference:ref?ref[1]:'',related:related.test(item)});
       options.forEach(function(value){
-        if(control.test(value))hasControl=true;
-        if(control.test(value)||menu.test(value))labels.add(value);
+        if(isControl(value))hasControl=true;
+        if(isControl(value)||menu.test(value))labels.add(value);
       });
     }else{
-      flush();
+      flush(item);
     }
   });
-  flush();
+  flush('');
   return removed?rows.join('\n').replace(/\n{3,}/g,'\n\n').trim():text;
 }
 

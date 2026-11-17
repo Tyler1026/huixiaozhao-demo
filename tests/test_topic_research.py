@@ -176,6 +176,21 @@ class TopicResearchTests(unittest.TestCase):
         self.assertEqual([row['quote'] for row in out['evidence']], ['氢能装备产业。' + article])
         self.assertEqual(next(iter(out['sources'].values()))['fulltext'], original['text'])
 
+    def test_government_portal_header_is_removed_without_truncating_source_article(self):
+        from backend.source_article import source_article_body, source_article_spans
+        article = '半导体材料项目签约\n时间：2026-07-25　来源：当地日报'
+        body = '报道披露的是研发项目签约，后续投产还需要核实。'
+        raw = ('半导体材料项目签约 - 苏州市人民政府\n老年服务\n无障碍\n关怀版\n智能问答\n政务邮箱\n'
+               '政务邮箱登录\n苏州概览\n数据开放\n当前位置：\n'
+               '首页&nbsp;&amp;gt;&nbsp;新闻中心&nbsp;&gt;&nbsp;苏州要闻\n'
+               + article + '\n访问量：\n' + body)
+        spans = [span.strip() for span in source_article_spans(raw) if span.strip()]
+        self.assertEqual(spans, [article, body])
+        self.assertTrue(all(span in raw for span in spans))
+        self.assertEqual(source_article_body(raw), article + '\n\n' + body)
+        text = '## 老年服务\n\n老年服务\n\n承担辖区养老服务工作。'
+        self.assertEqual(source_article_body(text), text)
+
     def test_website_menus_do_not_join_or_replace_original_topic_paragraphs(self):
         first = '半导体电子化学品研发项目仅支持已完成中试验证的企业申报，申报材料包括产品纯度检测和安全生产记录。'
         second = '半导体电子化学品研发项目须提供第三方检测报告和供样记录，主管部门审核通过后进入下一轮验证。'
