@@ -296,7 +296,11 @@ function rrPanel(options){
     if(r.status==='done'){
       if(r.pushed){
         var workspace=typeof opsCityWorkspace==='function'?opsCityWorkspace(r.city):null;
-        var primary=workspace&&(r.projectKey===workspace.projectKey||r.account===workspace.projectKey);
+        var registered=typeof CITY_WORKSPACES!=='undefined'?CITY_WORKSPACES:{};
+        var primary=(workspace&&(r.projectKey===workspace.projectKey||r.account===workspace.projectKey))||
+          Object.keys(registered||{}).some(function(label){
+            return r.projectKey&&registered[label]&&registered[label].projectKey===r.projectKey;
+          });
         pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#166534;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:5px 11px;white-space:nowrap">'+'<span data-ops-icon="success" data-ops-icon-size="14"></span> '+(primary?'已发布至地区主工作区':'已发布 · 历史报告基础库')+'</span>';
       } else if(r.engine!=='full-v1'){
         pushCtrl='<span style="flex-shrink:0;font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:5px 11px;white-space:nowrap">需重新生成后发布</span>';
