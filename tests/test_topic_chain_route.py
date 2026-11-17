@@ -372,6 +372,68 @@ class ChainRouteTests(unittest.TestCase):
         self.assertIn('evidence_validation_failed', text); self.assertEqual(h.writes, 0)
         self.assertNotIn('chain.result', text)
 
+    def test_unclassified_nodes_are_saved_when_no_lane_has_enough_evidence(self):
+        from backend.topic_chain import normalize_chain_plan
+        from test_topic_chain import research as originals
+
+        for city, topic, name in (
+            ('苏州', '智能网联车数据合规承接', '汽车数据出境申报'),
+            ('随州', '食品外包装合规', '食品外包装标签备案'),
+        ):
+            with self.subTest(city=city, topic=topic):
+                current = state()
+                current['PROJECTS']['p'].update(city=city, topic=topic)
+                current['REPORTSTATE']['p'].update(topic=topic, aiReportByTopic={topic: '已有研判原文'})
+                handler = Handler(current)
+                quote = f'{city}已公布{name}的办理安排，各项条件及适用范围待进一步确认。'
+                archive = originals([quote], topic=topic)
+                archive['city'] = city
+                evidence_id = archive['evidence'][0]['id']
+                body = dict(self.body(handler), topic=topic,
+                            sourceIdentity=identity_json(chain_input_identity(handler._scoped_state, 'p', topic)))
+
+                def build(context, found, _):
+                    return normalize_chain_plan({'nodes': [{'name': name, 'evidence_ids': [evidence_id]}]},
+                                                found, context)
+
+                stream, _ = self.run_route(handler, body=body, build=build,
+                                           research=lambda *a, **k: archive)
+                self.assertIn('[DONE]', stream)
+                saved = handler.data['REPORTSTATE']['p']
+                self.assertTrue(all(not lane['nodes'] for lane in saved['chainByTopic'][topic]))
+                self.assertEqual(saved['chainStatusByTopic'][topic], 'partial')
+                self.assertEqual(saved['chainUnclassifiedByTopic'][topic][0]['name'], name)
+
+    def test_existing_graph_kept_when_retry_only_finds_archived_originals(self):
+        from backend.topic_chain import build_chain
+        from test_topic_chain import research as originals
+
+        current = state()
+        topic = '工业计量溯源服务'
+        current['PROJECTS']['p']['topic'] = topic
+        current['REPORTSTATE']['p'].update(topic=topic, aiReportByTopic={topic: '已有研判原文'})
+        handler = Handler(current)
+        archive = originals(['本文件介绍工业计量溯源工作，具体产业布局、执行方式和条件有待进一步核对。'], topic=topic)
+        body = dict(self.body(handler), topic=topic,
+                    sourceIdentity=identity_json(chain_input_identity(handler._scoped_state, 'p', topic)))
+        stream, _ = self.run_route(handler, body=body, build=build_chain, research=lambda *a, **k: archive)
+        self.assertIn('[DONE]', stream)
+        saved = handler.data['REPORTSTATE']['p']
+        provisional = saved['chainEvidenceByTopic'][topic]
+        self.assertEqual(provisional['generation']['mode'], 'evidence_only')
+        self.assertEqual(len(provisional['sources']), 1)
+        self.assertEqual(saved['chainStatusByTopic'][topic], 'partial')
+        self.assertTrue(all(not lane['nodes'] for lane in saved['chainByTopic'][topic]))
+        self.assertEqual(saved['chainUnclassifiedByTopic'][topic], [])
+        # Replaying the same weak evidence against a current, richer result
+        # must preserve the prior graph and its evaluation.
+        saved['chainByTopic'][topic] = diagram()['chain']
+        saved['chainEvidenceByTopic'][topic]['generation'] = {'mode': 'model'}
+        stream, _ = self.run_route(handler, body=body, build=build_chain, research=lambda *a, **k: archive)
+        self.assertIn('chain_existing_result_preserved', stream)
+        self.assertEqual(handler.writes, 1)
+        self.assertEqual(saved['chainByTopic'][topic], diagram()['chain'])
+
     def test_large_catalog_retains_archived_quotes_without_treating_them_as_report_claims(self):
         retrieved = findings()
         for number in range(81):

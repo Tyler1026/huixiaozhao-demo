@@ -37,6 +37,18 @@ function portalFixture(c){
  return {root,drawer,button,content,close,body:c.document.body,observer:()=>c._observers[c._observers.length-1]};
 }
 for(const side of ['index','ops']){
+ test(side+' shows archived sources or opens unclassified nodes when lanes are empty',()=>{
+  const c=setup(side);
+  const archived={generation:{mode:'evidence_only'},sources:[source,{quote:'无效链接不可展示',url:'javascript:alert(1)'}]};
+  const html=c.chainExplorerHtml('待归类方向',[],null,{},[],'partial',archived);
+  assert.match(html,/原文已保存，产业环节尚待归类/);
+  assert.match(html,/打开原文来源/);
+  assert.doesNotMatch(html,/无效链接不可展示|薄弱评价|产业链图谱/);
+  const provisional=c.chainExplorerHtml('待归类方向',[],null,{},[node()],'partial',{});
+  assert.match(provisional,/产业位置待确认/);
+  assert.match(provisional,/<details class="chain-layout-other" open>/);
+ });
+
  test(side+' layout counts actual records without mutating sources or assessment',()=>{
   const c=setup(side),groups=[{seg:'上游',nodes:[node()]},{seg:'中游',nodes:[node('strong')]},{seg:'下游',nodes:[]}],before=JSON.stringify(groups);
   const html=c.chainExplorerHtml('测试产业',groups,null,{},[],'partial',{});
