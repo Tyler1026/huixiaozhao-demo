@@ -54,6 +54,18 @@ class CityReportEvidenceTests(unittest.TestCase):
         extra['city']='其他市'
         self.assertEqual(supplement_city_chain(base,extra,context)['onlineSupplement']['status'],'scope_mismatch')
 
+    def test_identical_original_at_url_variants_keeps_quotes_bound_to_one_archive(self):
+        data = document()
+        rows = data['stages']['06_supply_chain_gaps.md']['evidence']
+        rows.append(dict(rows[0], url=rows[0]['url'] + '?from=search'))
+        context = {'city': '随州', 'topic': '专用车供应链数据平台补链'}
+        findings = package_research(data, context['city'], context['topic'], 'r1', mode='chain')
+        self.assertEqual(len(findings['evidence']), 1)
+        self.assertEqual(len(chain_source_catalog(findings, context)), 1)
+        row = findings['evidence'][0]
+        self.assertEqual(row['url'], rows[0]['url'])
+        self.assertEqual(row['url'], findings['sources'][row['source_id']]['url'])
+
     def test_online_unavailable_keeps_usable_package(self):
         context,state=fixture();base=load_city_package(context,state)
         merged=supplement_city_chain(base,dict(context,status='unavailable',evidence=[],sources={}),context)

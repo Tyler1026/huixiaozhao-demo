@@ -50,6 +50,10 @@ def package_research(document, city, topic, request_id, *, mode='draft'):
             if not paragraphs:
                 continue
             sid = 'source_'+hashlib.sha256((canonical_url(url)+'\0'+text).encode()).hexdigest()[:20]
+            # The same archived body can arrive with different queries or fragments.
+            # Keep its first URL so existing quotes still match the stored original.
+            if sid in result['sources']:
+                continue
             host=urlsplit(url).hostname or ''
             kind=classify_source_type(host)
             if any(host==domain or host.endswith('.'+domain) for domain in
