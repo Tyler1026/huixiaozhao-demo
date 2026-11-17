@@ -209,9 +209,20 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
                 raise
         has_lanes = any(group.get('nodes') for group in result.get('chain', []))
         generation = result.get('generation') or {}
-        if not has_lanes and not result.get('unclassified') and generation.get('mode') != 'evidence_only':
-            raise TopicChainError('chain_classification_unavailable',
-                '本轮未完成产业环节分类，也未取得可保存的相关原文。')
+        if not has_lanes and generation.get('mode') != 'evidence_only':
+            from .topic_chain import chain_source_catalog
+            catalog = chain_source_catalog(findings, context)
+            unclassified = result.get('unclassified') or []
+            if not unclassified or not all(
+                isinstance(node, dict) and isinstance(node.get('id'), str) and node['id']
+                and isinstance(node.get('name'), str) and node['name'].strip()
+                and isinstance(node.get('evidence_ids'), list) and node['evidence_ids']
+                and all(isinstance(sid, str) and sid in catalog and node['name'] in catalog[sid]['quote']
+                        for sid in node['evidence_ids'])
+                for node in unclassified
+            ):
+                raise TopicChainError('chain_classification_unavailable',
+                    '本轮未完成产业环节分类，也未取得可保存的相关原文。')
         node_analysis = {}
         if has_lanes:
             from .chain_node_analysis import analyze_nodes
