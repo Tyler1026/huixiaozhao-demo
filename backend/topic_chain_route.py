@@ -15,7 +15,7 @@ from .access_control import authorize_project, scoped_sync_view
 from .chain_identity import (chain_input_identity, chain_input_fingerprint,
                              chain_report_text, identity_json, identity_matches)
 from .topic_evidence import topic_report_context
-from .topic_research import research_topic, validate_report
+from .topic_research import research_topic
 from .topic_reports import TopicReportError
 from .topic_chain import TopicChainError
 
@@ -293,9 +293,10 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
         for row in assessment_result.get('sources', []):
             combined_sources[row['id']] = row
         result['sources'] = list(combined_sources.values())
-        # Validate every quote, including qualitative statements that do not
-        # trigger the numeric/policy claim checker below.
+        # These are verbatim source statements. Check their archive binding
+        # individually so a large collection of quotes is not treated as a report.
         retrieved = {row.get('id'): row for row in findings.get('evidence', [])}
+        archive_checks = []
         for row in result.get('sources', []):
             original = (findings.get('sources') or {}).get(row.get('source_id')) or {}
             source = retrieved.get(row.get('id')) or {}
@@ -306,12 +307,7 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
                     or original.get('fulltext_sha256') != hashlib.sha256(fulltext.encode()).hexdigest()
                     or re.sub(r'\s+', '', quote) not in re.sub(r'\s+', '', fulltext)):
                 raise TopicReportError('evidence_validation_failed', '图谱原文与检索归档不一致，结果未保存')
-        factual_text = '\n'.join(row['quote'].replace('\n', ' ')+' ['+row['id']+']'
-                                 for row in result.get('sources', []))
-        verification = validate_report(factual_text, findings, require_citations=False)
-        if verification.get('issues') or any(row['support_status'] == 'unsupported'
-                                             for row in verification.get('checks', [])):
-            raise TopicReportError('evidence_validation_failed', '图谱原文未通过核对，请补充来源后重试')
+            archive_checks.append({'kind': 'archive_match', 'evidence_id': row['id']})
         # Do not upgrade node status from archive matching or model confidence.
         # A source quote is a traceable record, not a finding about local strength.
         status = result.get('status', 'empty')
@@ -341,7 +337,7 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
                     'topic': topic, 'requestId': current['reportRequestId'],
                     'reportText': report_text, 'sourceIdentity': identity_json(current_identity),
                     'inputFingerprint': fingerprint, 'generatedAt': generated, 'runId': run_id,
-                    'sources': result.get('sources', []), 'checks': verification.get('checks', []),
+                    'sources': result.get('sources', []), 'checks': archive_checks,
                     'verificationStatus': 'unreviewed', 'researchStatus': findings.get('status'),
                     'queries': findings.get('queries', []),
                     'errors': list(findings.get('errors') or []) + list(generation.get('errors') or []) + generation_errors,

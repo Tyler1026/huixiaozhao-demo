@@ -372,6 +372,34 @@ class ChainRouteTests(unittest.TestCase):
         self.assertIn('evidence_validation_failed', text); self.assertEqual(h.writes, 0)
         self.assertNotIn('chain.result', text)
 
+    def test_large_catalog_retains_archived_quotes_without_treating_them_as_report_claims(self):
+        retrieved = findings()
+        for number in range(81):
+            url = f'https://www.shanghai.gov.cn/archive/{number}'
+            quote = (f'闵行区第{number + 1}个项目仍处于规划阶段，'
+                     + '相关通知列出须满足的项目条件和后续审核要求，具体实施情况有待核查。' * 85)
+            source_id = f'archive-{number}'
+            retrieved['evidence'].append({'id': f'tr_{number:020x}', 'url': url, 'quote': quote,
+                                          'source_id': source_id, 'status': 'source'})
+            retrieved['sources'][source_id] = {'url': url, 'fulltext': quote,
+                                                'fulltext_sha256': hashlib.sha256(quote.encode()).hexdigest()}
+        self.assertGreater(sum(len(row['quote']) for row in retrieved['evidence']), 200000)
+
+        def build(*_):
+            result = diagram()
+            result['sources'] = copy.deepcopy(retrieved['evidence'])
+            return result
+
+        handler = Handler(state())
+        stream, _ = self.run_route(handler, research=lambda *a, **k: retrieved, build=build)
+        self.assertIn('[DONE]', stream)
+        self.assertEqual(handler.writes, 1)
+        evidence = handler.data['REPORTSTATE']['p']['chainEvidenceByTopic']['商业火箭']
+        self.assertEqual(evidence['checks'], [
+            {'kind': 'archive_match', 'evidence_id': row['id']} for row in retrieved['evidence']
+        ])
+        self.assertEqual(evidence['verificationStatus'], 'unreviewed')
+
     def test_assessment_and_its_additional_sources_are_saved_together(self):
         h = Handler(state())
         extra = findings()
