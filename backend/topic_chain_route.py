@@ -17,12 +17,13 @@ from .chain_identity import (chain_input_identity, chain_input_fingerprint,
 from .topic_evidence import topic_report_context
 from .topic_research import research_topic
 from .topic_reports import TopicReportError
-from .topic_chain import TopicChainError
+from .topic_chain import TopicChainError, pending_chain_evidence
 
 
 def _keep_existing_chain(report, topic, identity, result):
     """A failed model retry must not replace a richer current saved graph."""
-    if (result.get('generation') or {}).get('mode') != 'source_only':
+    has_lanes = any(group.get('nodes') for group in result.get('chain', []))
+    if has_lanes and (result.get('generation') or {}).get('mode') != 'source_only':
         return False
     def value(field):
         table = report.get(field)
@@ -44,6 +45,8 @@ def _keep_existing_chain(report, topic, identity, result):
     old_extra = value('chainUnclassifiedByTopic') or []
     if not isinstance(old_chain, list) or not isinstance(old_extra, list):
         return False
+    if not has_lanes and nodes(old_chain, []):
+        return True
     previous = nodes(old_chain, old_extra)
     incoming = nodes(result.get('chain', []), result.get('unclassified', []))
     def identities(items):
@@ -196,15 +199,25 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
         if package_loader is None:
             findings = enrich_public_research(findings, context['city'], topic)
         event('research.status', stage='classification', message='正在核对原文、环节归类和规划状态')
-        result = build(context, findings, bounded_complete)
-        if not any(group.get('nodes') for group in result.get('chain', [])):
-            raise TopicChainError('chain_classification_unavailable',
-                '本轮未完成产业环节分类，未保存空图谱，已有图谱保留。请重试；若仍失败请补充该方向原始材料。')
-        from .chain_node_analysis import analyze_nodes
-        event('research.status',stage='node_analysis',message='正在逐环节分析发展阶段、依据和下一步行动')
-        node_analysis = analyze_nodes(context,result,bounded_complete)
+        try:
+            result = build(context, findings, bounded_complete)
+        except TopicChainError as error:
+            if error.code != 'chain_selection_unavailable':
+                raise
+            result = pending_chain_evidence(context, findings)
+            if result is None:
+                raise
+        has_lanes = any(group.get('nodes') for group in result.get('chain', []))
         generation = result.get('generation') or {}
-        source_only = generation.get('mode') == 'source_only'
+        if not has_lanes and not result.get('unclassified') and generation.get('mode') != 'evidence_only':
+            raise TopicChainError('chain_classification_unavailable',
+                '本轮未完成产业环节分类，也未取得可保存的相关原文。')
+        node_analysis = {}
+        if has_lanes:
+            from .chain_node_analysis import analyze_nodes
+            event('research.status', stage='node_analysis', message='正在逐环节分析发展阶段、依据和下一步行动')
+            node_analysis = analyze_nodes(context, result, bounded_complete)
+        source_only = not has_lanes or generation.get('mode') == 'source_only'
         from .chain_assessment import build_assessment, unavailable_assessment
         event('research.status', stage='assessment', message=('模型整理未完成，本轮只保留原文环节，不判定薄弱程度'
               if source_only else '正在逐环节研判已有基础、培育方向与补链短板'))
@@ -222,7 +235,7 @@ def serve_topic_chain(handler, body, *, complete, audit, research=research_topic
         # most of the request window for the actual comparison and review.
         targets = select_node_targets(result, assessment_result, limit=12, include_supported=False)
         batches = ([targets[i:i+6] for i in range(0, len(targets), 6)]
-                   if package_loader is None else [])
+                   if package_loader is None and has_lanes else [])
         for batch_index, batch in enumerate(batches):
             budget = min(20, max(0, 140 - (clock() - started)))
             if budget < 5:

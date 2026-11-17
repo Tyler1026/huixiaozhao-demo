@@ -406,6 +406,23 @@ class ChainModelContractTests(unittest.TestCase):
         self.assertEqual(calls[0][2], 4800)
         self.assertEqual(result['contract'], 'topic-chain-v1')
 
+    def test_selection_prompt_keeps_whole_quotes_under_budget_and_represents_each_role(self):
+        quotes = [
+            f'第{i}项星载芯片计划。' + '原文所列条件与交付要求应完整保留。' * 165
+            for i in range(32)
+        ]
+        quotes.extend([
+            '商业火箭总装测试已安排，文件逐项列出该环节的实施条件与负责机构。',
+            '卫星运营服务已安排，文件逐项列出应用范围及服务对象，具体执行另行公布。',
+        ])
+        bundle = research(quotes)
+        _, encoded = chain_prompt(CONTEXT, bundle)
+        payload = json.loads(encoded)
+        self.assertLess(len(encoded), 39000)
+        self.assertLess(len(payload['evidence']), len(quotes))
+        self.assertTrue(all(row['quote'] in quotes for row in payload['evidence']))
+        self.assertTrue(all(payload['facet_sources'][lane] for lane in ('上游', '中游', '下游')))
+
     def test_malformed_model_output_keeps_literal_source_nodes_and_marks_partial(self):
         bundle = research(['计划推进商业火箭总装测试平台建设，具体实施条件将另行研究并向社会发布。'])
         for raw in ('not-json', {'nodes': 'invalid'}, [], None):

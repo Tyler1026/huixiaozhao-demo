@@ -3269,7 +3269,7 @@ function chainLayoutDetailHtml(node,index){
 function chainLayoutMetaHtml(evidence,status,count,unclassifiedCount){
   var coverage=evidence.coverage&&typeof evidence.coverage==='object'?evidence.coverage:{},taxonomy=evidence.taxonomy&&typeof evidence.taxonomy==='object'?evidence.taxonomy:{};
   var partial=status==='partial'||coverage.status==='partial'||unclassifiedCount>0;
-  var label=!count?'尚未形成节点':partial?'部分材料已归类':'已整理本次材料';
+  var label=!count?'尚未形成节点':unclassifiedCount===count?'产业位置待确认':partial?'部分材料已归类':'已整理本次材料';
   var generation=evidence.generation&&typeof evidence.generation==='object'?evidence.generation:{};
   var sourceOnly=generation.mode==='source_only';
   var record=evidence.nodeResearch&&typeof evidence.nodeResearch==='object'?evidence.nodeResearch:null;
@@ -3291,7 +3291,15 @@ function chainLayoutMetaHtml(evidence,status,count,unclassifiedCount){
     (chainLayoutText(coverage.meaning)?'<p>'+escapeChainText(coverage.meaning)+'</p>':'')+(errorMessages.length?'<details class="chain-layout-research-errors"><summary>查看补充核验记录</summary><ul>'+errorMessages.map(function(message){return '<li>'+escapeChainText(message)+'</li>';}).join('')+'</ul></details>':'')+'</div>';
 }
 function chainExplorerHtml(topic,segments,recs,p,unclassified,status,evidence){
-  evidence=evidence||{};unclassified=(Array.isArray(unclassified)?unclassified:[]).filter(function(n){return n&&chainLayoutText(n.name);});
+  evidence=evidence||{};
+  if(evidence.generation&&evidence.generation.mode==='evidence_only'){
+    var originals=chainNodeSources({sources:evidence.sources}).filter(function(row){return row.urls.length&&chainLayoutText(row.quote);});
+    return '<section class="chain-explorer" aria-label="产业链原文依据"><div class="chain-explorer-title"><h2>'+escapeChainText(topic)+'</h2></div>'+
+      '<p role="status">原文已保存，产业环节尚待归类。补充明确的产品、工艺或服务依据后可重新生成。</p>'+
+      (originals.length?'<details class="chain-layout-other" open><summary>已核对的原文（'+originals.length+' 条）</summary>'+originals.map(chainLayoutSourceHtml).join('')+'</details>':'')+
+      '</section>';
+  }
+  unclassified=(Array.isArray(unclassified)?unclassified:[]).filter(function(n){return n&&chainLayoutText(n.name);});
   segments=(Array.isArray(segments)?segments:[]).map(function(s){return {seg:s.seg,nodes:(Array.isArray(s.nodes)?s.nodes:[]).filter(function(n){return n&&chainLayoutText(n.name);})};});
   var nodes=[];segments.forEach(function(s){nodes=nodes.concat(s.nodes);});nodes=nodes.concat(unclassified);
   var withOriginal=nodes.filter(function(n){return chainLayoutInfo(n).count>0;}).length,assessed=nodes.filter(function(n){return chainLayoutInfo(n).assessed;}).length;
@@ -3300,7 +3308,7 @@ function chainExplorerHtml(topic,segments,recs,p,unclassified,status,evidence){
   var lanes=['上游','中游','下游'].map(function(name,i){var group=segments.find(function(s){return s.seg===name;})||{nodes:[]};
     return '<section class="industry-chain-row"><div class="chain-lane-heading"><span class="chain-lane-index">0'+(i+1)+'</span><h3>'+name+'</h3><span class="chain-lane-total">'+group.nodes.length+' 个环节</span></div><div class="industry-chain-nodes">'+(group.nodes.length?group.nodes.map(card).join(''):'<div class="chain-layout-empty">本次材料未形成该组节点；不代表实际不存在。</div>')+'</div></section>';
   }).join('');
-  var other=unclassified.length?'<details class="chain-layout-other"><summary>待归类材料 <span>'+unclassified.length+' 项</span></summary><p>暂不放入上中下游；原文及分类依据保留供核对。</p><div class="industry-chain-nodes">'+unclassified.map(card).join('')+'</div></details>':'';
+  var other=unclassified.length?'<details class="chain-layout-other"'+(nodes.length===unclassified.length?' open':'')+'><summary>待归类材料 <span>'+unclassified.length+' 项</span></summary><p>暂不放入上中下游；原文及分类依据保留供核对。</p><div class="industry-chain-nodes">'+unclassified.map(card).join('')+'</div></details>':'';
   var metric=function(value,label){return '<div class="chain-overview-metric"><strong>'+value+'</strong><span>'+label+'</span></div>';};
   return '<section class="chain-explorer" data-chain-key="'+escapeChainText(key)+'" data-chain-mode="'+mode+'" aria-label="产业链布局与评价">'+
     '<div class="chain-explorer-toolbar"><div class="chain-explorer-title"><span>INDUSTRY LANDSCAPE</span><h2>'+escapeChainText(topic)+'<small>产业链图谱</small></h2><p>查看有出处的环节记录，评价与原文分开展示。</p></div><div class="chain-view-switch" aria-label="图谱视图"><button type="button" class="'+(mode==='layout'?'is-active':'')+'" data-chain-mode-button="layout" aria-pressed="'+(mode==='layout')+'" onclick="setChainExplorerMode(this,\'layout\')">产业布局</button><button type="button" class="'+(mode==='assessment'?'is-active':'')+'" data-chain-mode-button="assessment" aria-pressed="'+(mode==='assessment')+'" onclick="setChainExplorerMode(this,\'assessment\')">薄弱评价</button></div></div>'+
