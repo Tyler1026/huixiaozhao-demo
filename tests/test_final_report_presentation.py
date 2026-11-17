@@ -40,6 +40,21 @@ class FinalReportPresentationTests(unittest.TestCase):
         self.assertEqual(result['sources'][0]['quote'], quote)
         self.assertEqual(result['sources'][0]['label'], '1')
 
+    def test_saved_source_web_footer_is_omitted_without_changing_the_evidence_record(self):
+        research = bundle()
+        row = research['evidence'][0]
+        article = row['quote']
+        row['quote'] += '\n相关文件\n扫一扫在手机打开当前页\n分享到：\n网站导航：\n中国政府网'
+        original = copy.deepcopy(research)
+        for phase in (1, 2):
+            result = build_report({'city': '闵行区', 'topic': '氢能'}, research, phase,
+                                  lambda *args: plan())
+            self.assertIn(article, result['text'])
+            self.assertNotIn('扫一扫', result['text'])
+            self.assertNotIn('网站导航', result['text'])
+            self.assertEqual(result['sources'][0]['quote'], row['quote'])
+        self.assertEqual(research, original)
+
     def test_different_passages_in_one_document_share_one_bibliography_item(self):
         research = bundle()
         research['evidence'][1]['url'] = research['evidence'][0]['url'] + '#page=2'

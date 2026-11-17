@@ -14,6 +14,7 @@ import hashlib
 from urllib.parse import urlsplit
 from .report_analysis import company_profile, analytical_priority, policy_context, review_priorities, priority_feedback, OPPORTUNITY_LABELS
 from .topic_composition import compose_report
+from .source_article import source_article_body
 
 
 class TopicReportError(ValueError):
@@ -453,7 +454,8 @@ def _render_final_report(plan, context, research, catalog, used):
             policy = policy_context(dict(row, source_excerpt=row.get('_fulltext', row['quote'])))
             if policy:
                 out += ['**'+policy['label']+'**', '']
-            out += [_md(row['quote'])+' '+link(sid), '']
+            excerpt = source_article_body(row['quote'])
+            out += [(_md(excerpt)+' ' if excerpt else '')+link(sid), '']
             if policy:
                 for label, key in [('有效期与适用规则', 'validity'), ('适用条件与材料', 'conditions')]:
                     if policy[key]:
@@ -568,8 +570,10 @@ def render_report(plan, context, research, phase):
             policy = policy_context(dict(r,source_excerpt=r.get('_fulltext',r['quote'])))
             if policy:
                 out += ['**'+policy['label']+'**', '']
-            out += ['> '+_md(r['quote']).replace('\n', '\n> '),
-                    link(sid)+' · '+_md(r.get('published_at') or r.get('published') or '发布时间未确认')+' · '+state, '']
+            excerpt = source_article_body(r['quote'])
+            if excerpt:
+                out.append('> '+_md(excerpt).replace('\n', '\n> '))
+            out += [link(sid)+' · '+_md(r.get('published_at') or r.get('published') or '发布时间未确认')+' · '+state, '']
             if policy:
                 for label,key in [('有效期与通用规则','validity'),('相关适用条件与材料','conditions')]:
                     if policy[key]:

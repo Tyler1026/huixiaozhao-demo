@@ -29,6 +29,7 @@ from report_service import full_synthesis as grounding
 from report_service import providers
 from report_service.hosted import configured_environment
 from report_service.full_provider import FullLiveProvider
+from .source_article import source_article_body
 
 MAX_SOURCES = 20
 MAX_CHAIN_SOURCES = 48
@@ -329,7 +330,7 @@ def select_source_paragraphs(text, topic, *, limit=None, mode='draft', source_ti
     max_chars = 5000 if mode == 'chain' else MAX_EXCERPT_CHARS
     if not terms:
         return []
-    body = grounding._eligible_body(text).strip()
+    body = source_article_body(grounding._eligible_body(text)).strip()
     blocks = re.split(r'\n\s*\n', body)
     candidates, seen = [], set()
     for block in blocks:
