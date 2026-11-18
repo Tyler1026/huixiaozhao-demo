@@ -26,14 +26,16 @@ class PostgresSession:
     def __enter__(self):
         try:
             self.connection = self.connect()
+            # Configure the socket outside the state transaction. A statement
+            # timeout can abort that transaction while its reply is still stuck.
+            self.connection.autocommit = True
             self.cursor = self.connection.cursor()
+            self.cursor.execute("SET tcp_user_timeout = '20s'")
+            self.cursor.execute("SELECT set_config('application_name', COALESCE(NULLIF(current_setting('application_name'), ''), 'hxz-workspace'), false)")
+            self.connection.autocommit = False
             self.cursor.execute("SET LOCAL lock_timeout = '5s'")
             self.cursor.execute("SET LOCAL statement_timeout = '15s'")
             self.cursor.execute("SET LOCAL idle_in_transaction_session_timeout = '60s'")
-            # A lost receiver can block while the locked row is being sent.
-            # SQL and idle timeouts alone do not bound an unacknowledged send.
-            self.cursor.execute("SET LOCAL tcp_user_timeout = '20s'")
-            self.cursor.execute("SELECT set_config('application_name', COALESCE(NULLIF(current_setting('application_name'), ''), 'hxz-workspace'), true)")
             if not self.read_only:
                 self.cursor.execute("INSERT INTO sync_data(id,data) VALUES(1,'{}') ON CONFLICT(id) DO NOTHING")
             self.cursor.execute('SELECT data FROM sync_data WHERE id=1' + ('' if self.read_only else ' FOR UPDATE'))
