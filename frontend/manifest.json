@@ -65,7 +65,7 @@
     ]
   },
   "ops.html": {
-    "sha256": "e481c207976c7ca18b528f0d5d2d4e40af0ba749453cf577f53e15f29689c97f",
+    "sha256": "11f274232cc5076090657af0cd1ebdc22248c6c6ea2c76ba67187e35c1f90b5a",
     "parts": [
       "frontend/ops/markup-01.html",
       "frontend/ops/style-01.css",
@@ -110,6 +110,7 @@
       "frontend/ops/script-03-sections/15.js",
       "frontend/ops/script-03-sections/16.js",
       "frontend/ops/script-03-sections/17.js",
+      "frontend/ops/city-profile-v2.js",
       "frontend/ops/docking-receiving.js",
       "frontend/ops/script-03-sections/18.js",
       "frontend/ops/full-skin.js",

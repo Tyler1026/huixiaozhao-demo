@@ -514,75 +514,8 @@ SYSTEM_ONBOARD = """你是慧小招招商顾问。为某城市的招商偏好问
 - park 与 industry 必须尽量给该市真实的园区名/产业名；其余题结合该市体量给合理档位。
 - 若完全没有该城市信息，也要基于城市名和常识给出合理推荐，绝不留空。"""
 
-SYSTEM_CITY_PROFILE = """你是慧小招城市画像分析师。基于该城市智库(RAG)的全量材料，以及可能存在的招商偏好问卷answers，刻画这个城市的①客观自身条件 ②招商偏好。
+from backend.city_profile import SYSTEM_CITY_PROFILE
 
-## 铁律
-- 只能使用给定知识片段中的事实。每一条结论必须能在片段中找到依据。
-- 客观条件必须带具体数字/企业名/园区名；没有数据的字段留空字符串，绝不编造、绝不用"约""预计"糊过去。
-- 招商偏好分两类来源，必须区分标注：
-  · stated = 问卷明确作答 或 干部访谈明确表达的（confidence 高）
-  · inferred = 从产业基础/报告方向/政策材料反推出来的（confidence 中/低，必须在 basis 写清反推依据）
-- 若问卷与反推结论冲突，以问卷为准，并在 conflicts 中记录该冲突。
-- 访谈中"不知道""很一般""没有"这类未提供实质信息的答复，不得当作实质偏好，应记入 engagement。
-- **engagement 措辞铁律**（画像要给客户看，不得出现指责对方的词）：
-  · 只陈述「哪些信息尚未获取」，绝不评价人的态度、意愿或配合程度。
-  · 禁用词：配合度、敷衍、回避、不配合、消极、推诿。
-  · 不要原话引用干部的答复（如"你自己去想办法"），改写成中立的信息缺口描述。
-  · 正例："产业基础现状、专项政策额度、已接触目标企业三项访谈尚未取得具体信息，建议下轮对接补充"。
-  · 反例（禁止）："干部答不知道、很一般，配合度低"。
-  · level 只反映信息完备度：high=较完备 / medium=部分完备 / low=待补充。
-
-## 输出（严格只输出一个 JSON 对象，不要 markdown 围栏、不要任何解释文字）
-**JSON 合法性铁律**：字符串值内部严禁出现英文双引号 " —— 需要引用名称时一律用中文引号“”。
-反例（会导致解析失败）："summary": "随州是"中国专用汽车之都"，2024年…"
-正例："summary": "随州是“中国专用汽车之都”，2024年…"
-{
-  "summary": "150字内一段话总结这个城市是什么样的招商标的：底子、长板、短板、最该招什么",
-  "objective": {
-    "economy":   [{"label":"GDP总量","value":"1502.81亿元(2025)","cite":"片段来源标签"}],
-    "structure": [{"label":"三次产业结构","value":"14.1:38.5:47.4","cite":""}],
-    "industry":  [{"label":"主导产业","value":"专用汽车","detail":"全国占比/地位说明","cite":""}],
-    "park":      [{"label":"园区名称","value":"承载能力/厂房/用地现状","cite":""}],
-    "anchor":    [{"label":"链主企业","value":"产能/营收/在建","cite":""}],
-    "cost":      [{"label":"配套率","value":"41%","detail":"对比城市","cite":""}]
-  },
-  "preference": {
-    "industry": {"items":["优先产业方向"],"source":"stated|inferred","confidence":"high|medium|low","basis":"依据说明"},
-    "park":     {"items":[],"source":"","confidence":"","basis":""},
-    "scale":    {"items":[],"source":"","confidence":"","basis":""},
-    "invest":   {"items":[],"source":"","confidence":"","basis":""},
-    "capacity": {"items":[],"source":"","confidence":"","basis":""}
-  },
-  "strength":  ["不可复制的优势，带数据"],
-  "weakness":  ["真实短板/缺口，带数据"],
-  "conflicts": ["问卷与材料反推之间的矛盾点，没有则空数组"],
-  "engagement":{"level":"high|medium|low","signals":["尚未取得具体信息的访谈环节（中立表述，不评价态度）"]},
-  "gaps":      ["画像缺失项：还需要补什么材料才能把画像做实"],
-  "charts": {
-    "structure":  {"primary":14.1,"secondary":38.5,"tertiary":47.4,"year":"2024","cite":""},
-    "gdp_trend":  [{"year":"2020","value":1096.72},{"year":"2024","value":1442.35}],
-    "growth":     [{"label":"GDP增速","value":6.1,"unit":"%"},{"label":"规上工业增加值","value":9.9,"unit":"%"}],
-    "chain":      [{"node":"整车改装","status":"strong"},{"node":"动力电池电芯","status":"missing"}],
-    "compare":    {"metric":"配套率","self":{"label":"随州","value":41},
-                   "peers":[{"label":"十堰","value":75},{"label":"梁山","value":65}],"unit":"%"}
-  }
-}
-
-## charts 专项规则（这是纯图表区的数据源，必须尽力填满）
-- 只填能从材料里拿到**纯数字**的项；拿不到的整个键省略（不要填 0、不要填 null、不要猜）。
-- structure：三次产业占比，三个数加起来应≈100。取最新年份。
-- gdp_trend：GDP 总量时间序列，2-6 个点，按年份升序，value 单位统一为「亿元」。只有一个年份的数据就省略此键。
-- growth：增速类指标 2-6 条，value 为纯数字（% 值写 6.1 不写 "6.1%"）。
-- chain：产业链环节强弱，4-10 个节点。status 只能取 strong(本地强)/weak(薄弱)/missing(缺失)。
-  这是招商最关心的图——务必从"缺口/短板/配套"类材料里提取。
-- compare：本市 vs 竞争城市的同一可量化指标（如配套率、企业数、产值）。peers 1-4 个。
-  self 和 peers 必须是同一口径同一单位，否则省略此键。
-
-## 要求
-- objective 每个分组 0-6 条，有几条写几条，宁缺勿造。
-- cite 填知识片段前的来源标签（形如 [来源·主题]）中的可辨识信息，无法确定填空字符串。
-- preference 五个维度都要出现；完全无依据的维度 items 留空数组、confidence 填 "low"、basis 说明为何无法判断。
-- gaps 要具体可执行（如"缺2025年园区可供地块四至与亩数"），不要写"信息不足"。"""
 
 SYSTEM_FULL = """你是慧小招产业链研判师，结合城市智库数据完成完整的招商研判报告。
 
@@ -1403,7 +1336,15 @@ class Handler(BaseHTTPRequestHandler):
             if isinstance(c, dict): return str(c.get("text", "") or "")
             return ""
         if structured:
-            catalog = bounded_catalog(evidence_catalog(chunks))
+            if mode == 'city_profile':
+                from backend.city_profile import profile_catalog, profile_sources
+                try:
+                    originals = profile_sources(evidence_context, self._scoped_state)
+                except Exception:
+                    return error_response(self, AuthError(409, 'profile_source_invalid', '已发布研究附件校验未通过，旧画像已保留，请核对发布版本。'))
+                catalog = profile_catalog(originals + evidence_catalog(chunks), city)
+            else:
+                catalog = bounded_catalog(evidence_catalog(chunks))
         ctx = "\n\n".join(
             f"[{(c.get('cite','') if isinstance(c, dict) else '')}·{(c.get('topic','') if isinstance(c, dict) else '')}]\n{_ctext(c)}"
             for c in used
@@ -1624,6 +1565,9 @@ class Handler(BaseHTTPRequestHandler):
                     content = (choice.get('message') or {}).get('content', '')
                     model_obj = json.loads(content.strip().removeprefix('```json').removesuffix('```').strip())
                     grounder = ground_funnel if mode == 'funnel' else ground_chain if body.get('purpose') == 'chain_map' else ground_profile
+                    if mode == 'city_profile':
+                        from backend.city_profile import review_analysis
+                        model_obj = review_analysis(model_obj, catalog, evidence_context, _complete_topic_plan)
                     grounded = grounder(model_obj, catalog, evidence_context)
                     if mode in ('funnel', 'city_profile'):
                         # Commit before acknowledging completion, and recheck
@@ -1634,7 +1578,9 @@ class Handler(BaseHTTPRequestHandler):
                             scoped = scoped_sync_view(live, principal)
                             current = project_context(body, scoped)
                             fingerprint = lambda rows: hashlib.sha256(json.dumps(rows, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
-                            if fingerprint(current['chunks']) != fingerprint(evidence_context['chunks']):
+                            from backend.city_profile import profile_inputs
+                            profile_state = lambda ctx, view: profile_inputs(ctx, view)
+                            if fingerprint(profile_state(current, scoped) if mode == 'city_profile' else current['chunks']) != fingerprint(profile_state(evidence_context, self._scoped_state) if mode == 'city_profile' else evidence_context['chunks']):
                                 raise AuthError(409, 'evidence_changed', '材料已更新，请重试')
                             p = live['PROJECTS'][current['projectKey']]
                             grounded['ts' if mode == 'funnel' else '__ts'] = int(time.time()*1000)
@@ -1643,7 +1589,17 @@ class Handler(BaseHTTPRequestHandler):
                                     raise AuthError(409, 'topic_changed', '当前方向已切换，请重试')
                                 grounded.update(total=len(grounded['companies']), pushed=False)
                             else:
-                                grounded.update(__chunks=len(current['chunks']), __hasOnboarding=bool(current['onboarding']))
+                                grounded.update(__chunks=len(current['chunks']), __hasOnboarding=bool(current['onboarding']),
+                                    clientRevision=body.get('sourceRevision') if isinstance(body.get('sourceRevision'), str) and len(body['sourceRevision']) <= 80 else '',
+                                    sourceFingerprint=fingerprint(profile_state(current, scoped)))
+                            if mode == 'city_profile':
+                                previous = p.get('profile')
+                                if isinstance(previous, dict) and previous:
+                                    if previous.get('profile_contract') == 'city-profile-v2' and previous.get('analysis') and not grounded.get('analysis'):
+                                        raise AuthError(503, 'profile_analysis_incomplete', '研判复核尚未完成，旧画像已保留，请稍后重试。')
+                                    history = p.get('profileHistory')
+                                    history = history if isinstance(history, list) else []
+                                    p['profileHistory'] = history[-2:] + [previous]
                             p['funnel' if mode == 'funnel' else 'profile'] = grounded
                             if not session.write(json.dumps(live, ensure_ascii=False)):
                                 raise AuthError(503, 'storage_unavailable', '结果尚未保存，请重试')
