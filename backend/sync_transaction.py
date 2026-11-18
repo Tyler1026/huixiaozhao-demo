@@ -33,7 +33,7 @@ class PostgresSession:
             # A lost receiver can block while the locked row is being sent.
             # SQL and idle timeouts alone do not bound an unacknowledged send.
             self.cursor.execute("SET LOCAL tcp_user_timeout = '20s'")
-            self.cursor.execute("SET LOCAL application_name = 'hxz-workspace'")
+            self.cursor.execute("SELECT set_config('application_name', COALESCE(NULLIF(current_setting('application_name'), ''), 'hxz-workspace'), true)")
             if not self.read_only:
                 self.cursor.execute("INSERT INTO sync_data(id,data) VALUES(1,'{}') ON CONFLICT(id) DO NOTHING")
             self.cursor.execute('SELECT data FROM sync_data WHERE id=1' + ('' if self.read_only else ' FOR UPDATE'))

@@ -88,7 +88,7 @@ class SyncTransactionTests(unittest.TestCase):
             statements = [call.args[0] for call in cursor.execute.call_args_list]
             self.assertLess(statements.index("SET LOCAL tcp_user_timeout = '20s'"),
                             statements.index('SELECT data FROM sync_data WHERE id=1 FOR UPDATE'))
-            self.assertIn("SET LOCAL application_name = 'hxz-workspace'", statements)
+            self.assertTrue(any("set_config('application_name'" in sql for sql in statements))
         connection.rollback.assert_called_once()
         cursor.close.assert_called_once()
         connection.close.assert_called_once()
