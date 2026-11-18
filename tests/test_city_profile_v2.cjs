@@ -33,3 +33,9 @@ test('successful profile receipt does not re-post a complete browser snapshot',(
  const src=read('frontend/ops/script-03-sections/17.js'),start=src.indexOf('function cpFinish('),end=src.indexOf('/* ── 渲染',start);
  assert.doesNotMatch(src.slice(start,end),/persist\(/);
 });
+
+test('generic stored overview is replaced by reviewed implications and first verification action',()=>{
+ const c=boot(),prof={profile_contract:'city-profile-v2',summary:'已按六个维度整理当前工作区材料；披露内容尚需核对原始来源。',analysis:[{kind:'strength',implication:'研发载体适合作为访谈起点。',action:'先找园区核实空间。'},{kind:'constraint',implication:'具体供地条件仍待核。'}]};
+ const summary=c.cpProfileDisplaySummary(prof);assert.match(summary,/研发载体/);assert.match(summary,/供地条件/);assert.match(summary,/先找园区/);assert.doesNotMatch(summary,/已按六个维度/);
+ prof.summary='已有经过复核的完整总览';assert.equal(c.cpProfileDisplaySummary(prof),prof.summary);
+});

@@ -61,6 +61,8 @@ class CityProfileTests(unittest.TestCase):
   out=ground_city_profile(reviewed,rows,CTX)
   self.assertEqual(len(out['analysis']),1);self.assertEqual(len(out['strength']),1)
   self.assertIn('先联系',out['strength'][0])
+  self.assertIn(proposal['implication'],out['summary'])
+  self.assertIn(proposal['action'],out['summary'])
   self.assertEqual(out['analysis'][0]['evidence'][0]['quote'],rows[0]['quote'])
   self.assertEqual(calls[0]['sources'][0]['id'],rows[0]['id'])
 
