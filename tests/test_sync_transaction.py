@@ -80,6 +80,19 @@ class SyncTransactionTests(unittest.TestCase):
         self.assertTrue(any('FOR UPDATE' in s for s in sql))
         connection.rollback.assert_not_called(); cursor.close.assert_called_once(); connection.close.assert_called_once()
 
+    def test_lost_receiver_timeout_is_set_before_acquiring_the_workspace_lock(self):
+        connection = Mock()
+        cursor = connection.cursor.return_value
+        cursor.fetchone.return_value = ('{}',)
+        with PostgresSession(lambda: connection, lambda _: None):
+            statements = [call.args[0] for call in cursor.execute.call_args_list]
+            self.assertLess(statements.index("SET LOCAL tcp_user_timeout = '20s'"),
+                            statements.index('SELECT data FROM sync_data WHERE id=1 FOR UPDATE'))
+            self.assertTrue(any("set_config('application_name'" in sql for sql in statements))
+        connection.rollback.assert_called_once()
+        cursor.close.assert_called_once()
+        connection.close.assert_called_once()
+
     def test_commit_failure_rolls_back_and_does_not_acknowledge_success(self):
         connection = Mock(); connection.cursor.return_value.fetchone.return_value = ('{}',)
         connection.commit.side_effect = OSError('credential-shaped private detail')
@@ -128,6 +141,22 @@ class SyncTransactionTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get('HXZ_TEST_DATABASE_URL'), 'isolated PostgreSQL CI fixture only')
 class PostgresConcurrencyTests(unittest.TestCase):
+    def test_tcp_send_timeout_is_active_in_real_postgres(self):
+        import psycopg2
+        url = os.environ['HXZ_TEST_DATABASE_URL']
+        from urllib.parse import urlsplit
+        self.assertIn(urlsplit(url).hostname, ('localhost', '127.0.0.1'))
+        self.assertEqual(urlsplit(url).path, '/report_ci')
+        with psycopg2.connect(url, connect_timeout=3) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("CREATE TABLE IF NOT EXISTS sync_data(id INTEGER PRIMARY KEY,data TEXT NOT NULL,updated_at TIMESTAMP DEFAULT NOW())")
+                cursor.execute("INSERT INTO sync_data VALUES(1,'{}',NOW()) ON CONFLICT(id) DO NOTHING")
+        with PostgresSession(lambda: psycopg2.connect(url, connect_timeout=3), lambda _: None) as session:
+            session.cursor.execute("SELECT setting::int FROM pg_settings WHERE name = 'tcp_user_timeout'")
+            self.assertEqual(session.cursor.fetchone()[0], 20000)
+            session.cursor.execute("SHOW application_name")
+            self.assertEqual(session.cursor.fetchone()[0], 'hxz-workspace')
+
     def test_twenty_concurrent_real_postgres_syncs_preserve_every_report(self):
         import psycopg2
         url = os.environ['HXZ_TEST_DATABASE_URL']

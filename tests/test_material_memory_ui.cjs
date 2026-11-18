@@ -42,7 +42,7 @@ test('resegmented uploads replace duplicate legacy annotations without losing th
 test('admin material browser shows stored corrections and uploaded chunks with accurate totals',()=>{
   const h=context(),c=h.c;edit(c);c.KB_FILE_CHUNKS.a=[{text:'附件材料951',originalId:'file1',cite:'source.txt',account:'uploader'}];
   Object.assign(c,{getCityBasePackage:()=>null,ragEsc:c.materialEscape,ragRenderChunk:item=>'<article>'+item.text+'</article>',ragProjKey:()=> 'a',opsWorkspaceKind:()=> '地区主工作区',_authEscape:c.materialEscape});
-  vm.runInContext(between(ops,'function ragBaseVsSupportLayout(','/* 结构化渲染一条智库材料')+'\n'+between(ops,'function ragCityOptions(','function opsRagSelectTab('),c);
+  vm.runInContext(between(ops,'function ragBaseVsSupportLayout(','/* 结构化渲染一条智库材料')+'\n'+between(ops,'function ragWorkspaceLabel(','function ragWorkspaceOverview(')+'\n'+between(ops,'function ragCityOptions(','function opsRagSelectTab('),c);
   const html=c.ragBaseVsSupportLayout(c.PROJECTS.a,'a');
   assert.match(html,/白鹭842/);assert.match(html,/附件材料951/);assert.match(html,/uploader/);assert.doesNotMatch(html,/还没有账号补充过材料/);
   assert.match(c.ragCityOptions(),/2 条材料/);

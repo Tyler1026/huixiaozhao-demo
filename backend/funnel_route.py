@@ -29,6 +29,7 @@ def serve_funnel(handler, body, *, complete, audit, build=build_funnel, package_
     except AuthError as error:
         return error_response(handler,error)
     stream=body.get('stream',True)
+    persisted=False
     lock=threading.Lock();stop=threading.Event()
     run_id=uuid.uuid4().hex
     handler.send_response(200)
@@ -110,6 +111,7 @@ def serve_funnel(handler, body, *, complete, audit, build=build_funnel, package_
             project['funnel']=result
             if not session.write(json.dumps(state,ensure_ascii=False)):
                 raise AuthError(503,'storage_unavailable','结果尚未保存，原候选保留，请重试')
+            persisted=True
         response={'choices':[{'delta' if stream else 'message':{'content':json.dumps(result,ensure_ascii=False)},'finish_reason':'stop'}],'runId':run_id}
         if stream:
             send(response);send('[DONE]')
@@ -118,16 +120,23 @@ def serve_funnel(handler, body, *, complete, audit, build=build_funnel, package_
         audit({'runId':run_id,'purpose':'funnel','projectKey':context['projectKey'],
                'outcome':'completed','companies':len(result['companies']),'status':result.get('status'),
                'elapsed_ms':round((time.monotonic()-started)*1000)})
+    except (BrokenPipeError, ConnectionResetError):
+        audit({'runId':run_id,'purpose':'funnel','projectKey':context['projectKey'],
+               'outcome':'client_disconnected','persisted':persisted})
     except Exception as error:
         code=getattr(error,'code','company_research_incomplete')
         message=(str(error) if isinstance(error,AuthError) else
                  '企业检索或分析未完成，原候选清单已保留，请稍后重试；系统不会将服务失败当作没有相关企业。')
         response={'error':{'code':code,'message':message},'choices':[{'delta':{},'finish_reason':'error'}],'runId':run_id}
-        if stream:
-            send(response);send('[DONE]')
-        else:
-            handler.wfile.write(json.dumps(response,ensure_ascii=False).encode())
+        outcome='failed'
+        try:
+            if stream:
+                send(response);send('[DONE]')
+            else:
+                handler.wfile.write(json.dumps(response,ensure_ascii=False).encode())
+        except (BrokenPipeError, ConnectionResetError):
+            outcome='client_disconnected'
         audit({'runId':run_id,'purpose':'funnel','projectKey':context['projectKey'],
-               'outcome':'failed','code':code,'error_type':type(error).__name__})
+               'outcome':outcome,'persisted':persisted,'code':code,'error_type':type(error).__name__})
     finally:
         stop.set()

@@ -19,7 +19,12 @@ def respond(handler, status, value, *, cookie=None):
         handler.send_header('Set-Cookie', cookie)
     handler.cors()
     handler.end_headers()
-    handler.wfile.write(data)
+    try:
+        handler.wfile.write(data)
+    except (BrokenPipeError, ConnectionResetError):
+        # The browser can close after a committed operation. The lost reply
+        # does not reverse that operation or permit a second error response.
+        return
 
 
 def error_response(handler, error):

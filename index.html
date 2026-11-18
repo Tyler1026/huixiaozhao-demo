@@ -10969,6 +10969,7 @@ function triggerReport(phase){
     if(error.localReportSaved){showStatus('报告已保存在本机，云端保存未确认；请重试同步。');if(visible())toast('报告已保存在本机，云端保存未确认；请重试同步。');return;}
     var reason=error.name==='AbortError'?'生成连接超时':error.message;
     if(!error.sourceChanged&&materialsCurrent())retainPartial(error.partialText||text,reason,error.partialMetadata);
+    showStatus('本次生成未完成。'+reason);
     if(visible())toast(reason);
   }).finally(function(){
     clearTimeout(timeout);delete window._topicReportJobs[jobKey];
