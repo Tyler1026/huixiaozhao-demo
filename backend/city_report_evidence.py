@@ -85,7 +85,7 @@ def package_research(document, city, topic, request_id, *, mode='draft'):
     return result
 
 
-def load_city_package(context, state):
+def load_city_document(context, state):
     """State is the server-authenticated scoped snapshot, never browser input."""
     projects = state.get('PROJECTS') or {}
     request_id = context['reportRequestId']
@@ -111,5 +111,13 @@ def load_city_package(context, state):
             document = json.loads(archive.read(entries[0]))
     except (ValueError, KeyError, OSError, zipfile.BadZipFile, RuntimeError):
         raise TopicReportError('city_package_invalid', '当前城市研究附件校验失败，请联系管理员核对材料包。') from None
-    return package_research(document,context['city'],context['topic'],request_id,
+    if (not isinstance(document, dict) or document.get('synthetic') is not False
+            or _city_key(document.get('city')) != _city_key(context['city'])):
+        raise TopicReportError('city_package_mismatch', '城市研究材料与当前工作区不一致。')
+    return document
+
+
+def load_city_package(context, state):
+    document = load_city_document(context, state)
+    return package_research(document, context['city'], context['topic'], context['reportRequestId'],
                             mode=context.get('_researchMode','draft'))

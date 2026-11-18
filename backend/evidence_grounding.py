@@ -326,47 +326,8 @@ def ground_funnel(obj, catalog, context):
 
 
 def ground_profile(obj, catalog, context):
-    if not isinstance(obj, dict):
-        raise ValueError('invalid profile JSON')
-    result = {'objective': {}, 'preference': {}, 'strength': [], 'weakness': [], 'conflicts': [], 'gaps': [], 'charts': {}, 'evidence_contract': 'saved-excerpts-v1', 'projectKey': context['projectKey'], 'topic': context['topic'], 'reportRequestId': context['reportRequestId']}
-    ledger, seen = [], set()
-    for group in ('economy', 'structure', 'industry', 'park', 'anchor', 'cost'):
-        rows = []
-        for raw in (obj.get('objective') or {}).get(group) or []:
-            if not isinstance(raw, dict):
-                continue
-            refs = _refs(raw, catalog, str(raw.get('value') or ''))
-            for ref in refs[:1]:
-                if ref['id'] in seen:
-                    continue
-                seen.add(ref['id']); ledger.append(ref)
-                rows.append({'label': {'economy':'经济材料','structure':'结构材料','industry':'产业材料','park':'承载材料','anchor':'企业材料','cost':'成本材料'}[group], 'value': ref['quote'], 'detail': '待核查原始来源；保留材料原有条件、日期和不确定性。', 'cite': '；'.join(ref['urls']) or ref['cite'], 'status': ref['status'], 'evidence': _basis([ref])})
-        result['objective'][group] = rows
-    # Keep usable evidence even when a legacy model ignored the evidence schema.
-    if not ledger:
-        for ref in catalog:
-            if ref['urls'] and re.search(r'GDP|生产总值|亿元|产业|园区', ref['quote'], re.I):
-                ledger.append(ref)
-                result['objective']['economy'].append({'label': '材料摘录', 'value': ref['quote'], 'detail': '原始材料摘录，待核查其来源与有效期。', 'cite': '；'.join(ref['urls']), 'status': ref['status'], 'evidence': _basis([ref])})
-                if len(ledger) == 8:
-                    break
-    if not ledger:
-        raise ValueError('没有可追溯的画像材料，请补充原始来源')
-    result['summary'] = '依据当前工作区材料整理，尚未完成原始来源核验。'+ ' '.join(r['quote'] for r in ledger[:2])
-    stated = context.get('onboarding') or {}
-    for dimension in ('industry', 'park', 'scale', 'invest', 'capacity'):
-        raw = (obj.get('preference') or {}).get(dimension) or {}
-        value = stated.get(dimension)
-        items = [str(x) for x in value] if isinstance(value, list) else [value] if isinstance(value, str) and value.strip() else []
-        if items:
-            result['preference'][dimension] = {'items': items, 'source': 'stated', 'confidence': 'high', 'basis': '当前工作区已保存问卷；仅表示填写者的偏好。'}
-        else:
-            refs = _refs(raw, catalog, str(raw.get('basis') or ''))
-            result['preference'][dimension] = {'items': ['待补充'], 'source': 'unknown', 'confidence': 'low', 'basis': '尚无已保存的明确偏好；材料不能替代用户意愿。', 'evidence': _basis(refs[:2])}
-    result['engagement'] = {'level': 'low', 'signals': ['偏好以已保存问卷为准；其余维度尚需补充。']}
-    result['gaps'] = ['材料中的“未见”“待核”不代表现实中不存在；请核验原始来源、政策期限和适用条件。', '图表需要可追溯的同口径数值，未经核对不绘制。']
-    result['evidence'] = _basis(ledger)
-    return result
+    from .city_profile import ground_city_profile
+    return ground_city_profile(obj, catalog, context)
 
 
 def funnel_demand_anchors(context):

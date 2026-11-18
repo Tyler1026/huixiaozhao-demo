@@ -966,19 +966,22 @@ function cpInterviewCount(city){
 function cpGenerate(force){
   var key=cpProjKey();if(!key||cpBusy)return;
   var p=PROJECTS[key],city=p.city||key,topic=p.topic||'',requestId=p.reportRequestId||null,epoch=typeof _authEpoch==='number'?_authEpoch:0;
-  var sourceIdentity=savedEvidenceIdentity(key,topic);
-  function current(){return PROJECTS[key]&&(PROJECTS[key].topic||'')===topic&&savedEvidenceIdentity(key,topic)===sourceIdentity&&(typeof _authEpoch==='number'?_authEpoch:0)===epoch;}
+  var sourceIdentity=savedEvidenceIdentity(key,topic)+'|'+JSON.stringify(p.onboarding||{});
+  var revision=typeof cpProfileRevision==='function'?cpProfileRevision(key):'';
+  function current(){return PROJECTS[key]&&(PROJECTS[key].topic||'')===topic&&(savedEvidenceIdentity(key,topic)+'|'+JSON.stringify(PROJECTS[key].onboarding||{}))===sourceIdentity&&(typeof _authEpoch==='number'?_authEpoch:0)===epoch;}
   var corpus=cpCorpus(city);
   if(!corpus.length){cpErr='该城市暂无智库材料，无法生成画像';renderOpsV2();return;}
   cpBusy=true;cpErr='';cpRaw='';renderOpsV2();
   var ob=cpOnboarding(city);
-  var body={question:'为'+city+'生成城市画像：客观自身条件与招商偏好',projectKey:key,topic:topic,reportRequestId:requestId,mode:'city_profile',stream:true};
-  fetch('/api/kb-chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+  var body={question:'为'+city+'生成城市画像：客观自身条件与招商偏好',projectKey:key,topic:topic,reportRequestId:requestId,mode:'city_profile',stream:true,sourceRevision:revision};
+  var controller=typeof AbortController==='function'?new AbortController():null,timer=null;
+  if(controller&&typeof setTimeout==='function')timer=setTimeout(function(){controller.abort();},210000);
+  fetch('/api/kb-chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:controller?controller.signal:undefined})
     .then(async function(resp){
       if(!resp.ok){
         var problem={};try{var parsed=await resp.json();if(parsed&&typeof parsed==='object')problem=parsed;}catch(_){}
         var code=problem.code||(typeof problem.error==='string'?problem.error:(problem.error||{}).code)||'';
-        var known=['evidence_changed','report_changed','topic_mismatch','topic_changed','evidence_missing','confirmation_required','project_required','auth_required','workspace_forbidden','membership_disabled','session_unavailable','storage_unavailable'];
+        var known=['evidence_changed','report_changed','topic_mismatch','topic_changed','evidence_missing','confirmation_required','project_required','auth_required','workspace_forbidden','membership_disabled','session_unavailable','storage_unavailable','profile_analysis_incomplete'];
         var safeMessage=known.indexOf(code)>=0&&typeof problem.message==='string'?problem.message:'';
         if(!safeMessage&&resp.status===409)safeMessage='材料或方向已更新，旧画像已保留，请刷新后重新生成。';
         throw new Error(safeMessage||'画像生成未完成，旧结果已保留，请稍后重试（HTTP '+resp.status+'）');
@@ -988,7 +991,8 @@ function cpGenerate(force){
       var obj=JSON.parse(result.text);
       if(obj.projectKey!==key||obj.topic!==topic||(obj.reportRequestId||null)!==requestId)throw new Error('画像来源版本已变化，旧画像已保留');
       cpFinish(key,result.text,corpus.length,!!ob);
-    }).catch(function(e){cpBusy=false;cpErr='生成失败：'+e.message;renderOpsV2();});
+    }).catch(function(e){cpBusy=false;cpErr=e&&e.name==='AbortError'?'本次连接等待较久，已停止等待并保留旧画像；请刷新核对云端结果。':'生成失败：'+e.message;renderOpsV2();})
+    .then(function(){if(timer!==null&&typeof clearTimeout==='function')clearTimeout(timer);});
 }
 /* 【2026-09-17】JSON 保守修复：把字符串值内部的裸双引号替换成中文引号。
    逐字符扫描并跟踪是否处于字符串内；只有当一个双引号后面紧跟的不是
@@ -1033,12 +1037,11 @@ function cpFinish(key, txt, nChunks, hadOb){
     catch(e2){ cpErr='画像 JSON 解析失败：'+e.message+'（可重新生成）'; renderOpsV2(); return; }
   }
   if(!obj||typeof obj!=='object'||obj.evidence_contract!=='saved-excerpts-v1'||obj.projectKey!==key){ cpErr='画像来源校验未通过，旧画像已保留'; renderOpsV2(); return; }
-  obj.__ts=Date.now(); obj.__chunks=nChunks; obj.__hasOnboarding=!!hadOb;
+  if(!obj.__ts)obj.__ts=Date.now(); if(obj.__chunks==null)obj.__chunks=nChunks; if(obj.__hasOnboarding==null)obj.__hasOnboarding=!!hadOb;
   PROJECTS[key].profile=obj;
   cpErr='';
-  try{ persist(); }catch(e){}
   renderOpsV2();
-  try{ toast&&toast('城市画像已生成（消费 '+nChunks+' 条材料）'); }catch(e){}
+  try{ toast&&toast('城市画像已保存，覆盖 '+((obj.coverage||{}).groups||0)+'/6 类城市条件'); }catch(e){}
 }
 /* ── 渲染 ── */
 function cpEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -1081,7 +1084,7 @@ function cpPrefCard(label, icon, d){
   var isStated=(d.source==='stated');
   var conf=d.confidence||'low';
   var cc={high:['#0f766e','#e9f7f6','高'],medium:['#b45309','#fff7ed','中'],low:['#64748b','#f1f5f9','低']}[conf]||['#64748b','#f1f5f9','低'];
-  var sc=isStated?['#1d4ed8','#eff6ff','问卷明示']:['#7c3aed','#f5f3ff','材料反推'];
+  var sc=isStated?['#1d4ed8','#eff6ff','问卷明示']:d.source==='unknown'?['#64748b','#f1f5f9','待补充']:['#7c3aed','#f5f3ff','旧版推断 · 待核'];
   return '<div style="border:1px solid '+(isStated?'#bfdbfe':'#e8edf5')+';border-radius:10px;background:#fff;padding:12px 14px">'+
     '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px">'+
       '<span style="font-size:14px">'+icon+'</span>'+
@@ -1369,7 +1372,7 @@ function opsCityProfile(){
   var nItv=cpInterviewCount(city);
   var ts=prof&&prof.__ts?new Date(prof.__ts):null;
   var tsStr=ts?((ts.getMonth()+1)+'/'+ts.getDate()+' '+ts.getHours()+':'+('0'+ts.getMinutes()).slice(-2)):'—';
-  var stale=(prof&&prof.__chunks&&nChunks>prof.__chunks);
+  var stale=!!(prof&&(prof.profile_contract!=='city-profile-v2'||!prof.clientRevision||prof.clientRevision!==cpProfileRevision(key)));
 
   var action='<button class="ops-ui-button is-primary" onclick="cpGenerate(1)"'+(cpBusy?' disabled':'')+'>'+(cpBusy?'生成中…':prof?'重新生成':'生成城市画像')+'</button>';
   var head=opsPageHead('城市画像','查看城市客观条件、招商偏好及其依据。',action)+'<div class="ops-ui-workspacebar"><label class="ops-ui-filter">当前城市<select id="opsProfileCity" onchange="cpCity=this.value;cpErr=\'\';renderOpsV2()">'+cpCityOptions()+'</select></label><span class="ops-ui-muted">'+cpEsc(p.org||'')+(prof?' · 生成于 '+tsStr:'')+'</span></div>';
@@ -1377,16 +1380,16 @@ function opsCityProfile(){
   // 数据源条：明确告诉运营方这份画像吃了什么
   var srcBar='<div class="ops-ui-metric-grid">'+
     cpStat('<span data-ops-icon="resource"></span>','智库材料', nChunks+' 条', '画像事实底座')+
-    cpStat('<span data-ops-icon="demand"></span>','招商偏好问卷', ob?'已填写':'未填写', ob?'作为 stated 证据校准':'偏好只能反推')+
+    cpStat('<span data-ops-icon="demand"></span>','招商偏好问卷', ob?'已填写':'未填写', ob?'已保存用户陈述':'实际偏好待补')+
     cpStat('<span data-ops-icon="contact"></span>','干部访谈', nItv+' 条', nItv?'偏好与信息完备度参考':'暂无访谈记录')+
-    cpStat('<span data-ops-icon="traceability"></span>','画像状态', prof?(stale?'待更新':'已生成'):'未生成', stale?'材料已新增，建议重算':'')+
+    cpStat('<span data-ops-icon="traceability"></span>','画像状态', prof?(stale?'待更新':'已生成'):'未生成', stale?'来源或画像版本已变化，建议更新':'')+
   '</div>';
 
   if(cpErr) head+='<div style="padding:11px 14px;border:1px solid #fecaca;background:#fef2f2;border-radius:9px;color:#b91c1c;font-size:12.5px;margin-bottom:12px">'+cpEsc(cpErr)+'</div>';
 
   if(cpBusy) return '<div class="ops-ui-page">'+head+srcBar+
     '<div style="border:1px solid #e8edf5;border-radius:10px;background:#fff;padding:34px;text-align:center">'+
-      '<div style="font-size:13px;font-weight:700;color:#0b183b">正在读取 '+cpEsc(city)+' 全量智库材料并刻画画像…</div>'+
+      '<div style="font-size:13px;font-weight:700;color:#0b183b">正在整理 '+cpEsc(city)+' 六类材料并复核研判…</div>'+
       '<div style="font-size:12px;color:#9aa5b5;margin-top:6px;line-height:1.7">依据当前工作区 '+nChunks+' 条材料，保留可追溯的完整摘录<br>分析期间可继续查看材料，结果按当前版本校验</div>'+
     '</div></div>';
 
@@ -1395,7 +1398,7 @@ function opsCityProfile(){
       '<div style="font-size:30px;margin-bottom:8px"><span data-ops-icon="city" data-ops-icon-size="36"></span></div>'+
       '<div style="font-size:14px;font-weight:700;color:#0b183b">尚未生成 '+cpEsc(city)+' 的城市画像</div>'+
       '<div style="font-size:12.5px;color:#5a7398;margin-top:8px;line-height:1.8">画像会从 '+nChunks+' 条智库材料反推该市的客观条件（经济体量·产业结构·园区承载·链主·配套）<br>与招商偏好（产业方向·园区·企业规模·投资强度），每条结论标注来源与置信度'+
-      (ob?'<br>并用已填写的招商偏好问卷做校准':'<br><b style="color:#b45309">该市未填写招商偏好问卷，偏好部分将全部为「材料反推」</b>')+'</div>'+
+      (ob?'<br>并用已填写的招商偏好问卷做校准':'<br><b style="color:#b45309">该市未填写招商偏好问卷，实际偏好将标为待补充</b>')+'</div>'+
       '<button onclick="cpGenerate(1)" style="margin-top:16px;padding:10px 20px;border-radius:9px;border:none;cursor:pointer;font-size:13px;font-weight:650;color:#fff;background:linear-gradient(135deg,#1a56db,#6366f1)">开始生成</button>'+
     '</div></div>';
 
@@ -1403,26 +1406,29 @@ function opsCityProfile(){
   var body='';
   if(prof.summary) body+='<div style="border:1px solid #bfdbfe;background:#f5f9ff;border-radius:10px;padding:14px 16px;margin-bottom:14px">'+
     '<div style="font-size:11px;font-weight:750;color:#1d4ed8;letter-spacing:.08em;margin-bottom:6px">画像总览</div>'+
-    '<div style="font-size:13.5px;color:#22364f;line-height:1.85">'+('当前画像包含 '+Object.keys(o).filter(function(k){return Array.isArray(o[k])&&o[k].length;}).length+' 类客观材料。偏好以已保存问卷为准，材料披露内容尚需核实。<details style="margin-top:10px"><summary style="cursor:pointer">展开总览原文与来源</summary><div style="margin-top:10px;line-height:1.9;overflow-wrap:anywhere">'+cpSourceText(prof.summary)+'</div></details>')+'</div></div>';
+    '<div style="font-size:13.5px;color:#22364f;line-height:1.85">'+cpSourceText(prof.summary)+'</div></div>';
 
-  // 一、数据图表（图最直观，放最前；细节文字在后）
+  if(prof.profile_contract==='city-profile-v2')body+=cpProfileInsights(prof);
+  else body+='<p class="ops-ui-muted">这是旧版画像，建议重新生成以校验数字、来源和偏好分类。</p>';
+  // 一、可追溯数据图表
   body+=cpChartsSection(prof);
 
   // 二、客观自身条件
   var objBlocks=[
     cpObjBlock('经济体量','<span data-ops-icon="funding"></span>',o.economy), cpObjBlock('产业结构','<span data-ops-icon="industry-analysis"></span>',o.structure),
     cpObjBlock('主导产业','<span data-ops-icon="industry"></span>',o.industry), cpObjBlock('园区与承载','<span data-ops-icon="city"></span>',o.park),
-    cpObjBlock('链主企业','<span data-ops-icon="enterprise"></span>',o.anchor),   cpObjBlock('配套与成本','<span data-ops-icon="citation"></span>',o.cost)
+    cpObjBlock('企业与项目','<span data-ops-icon="enterprise"></span>',o.anchor),   cpObjBlock('配套与成本','<span data-ops-icon="citation"></span>',o.cost)
   ].filter(Boolean);
   body+='<div style="font-size:14px;font-weight:750;color:#0b183b;margin:18px 0 10px;padding-left:9px;border-left:3px solid #1d4ed8">二、客观自身条件</div>';
   body+= objBlocks.length
     ? '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">'+objBlocks.join('')+'</div>'
     : '<div style="font-size:12.5px;color:#a8b3c4;padding:12px 0">材料中未提取到可量化的客观条件</div>';
 
-  // 三、招商偏好
-  body+='<div style="font-size:14px;font-weight:750;color:#0b183b;margin:20px 0 4px;padding-left:9px;border-left:3px solid #7c3aed">三、招商偏好</div>';
+  body+=cpProfilePolicies(prof);
+  // 三、实际招商偏好
+  body+='<div style="font-size:14px;font-weight:750;color:#0b183b;margin:20px 0 4px;padding-left:9px;border-left:3px solid #7c3aed">三、实际招商偏好</div>';
   body+='<div style="font-size:11.5px;color:#8492a6;margin:0 0 10px 12px">'+
-    (prof.__hasOnboarding?'蓝框=问卷明示（stated），其余=材料反推（inferred）':'该市未填问卷，全部为材料反推，建议补填问卷提升置信度')+'</div>';
+    (prof.__hasOnboarding?'问卷回答为用户陈述；未填写的维度仍标待补，不用政策替代。':'该市未填问卷，实际偏好待补；公开政策导向在上一节单独展示。')+'</div>';
   body+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">'+
     cpPrefCard('优先产业方向','<span data-ops-icon="industry"></span>',pref.industry)+
     cpPrefCard('重点园区','<span data-ops-icon="city"></span>',pref.park)+
@@ -1433,8 +1439,8 @@ function opsCityProfile(){
 
   // 四、优劣势与缺口
   var lists=[
-    cpList('不可复制优势','<span data-ops-icon="success"></span>',prof.strength,'#0f766e','#e9f7f6'),
-    cpList('真实短板','<span data-ops-icon="warning"></span>',prof.weakness,'#b45309','#fff7ed'),
+    cpList('研判优势','<span data-ops-icon="success"></span>',prof.profile_contract==='city-profile-v2'?[]:prof.strength,'#0f766e','#e9f7f6'),
+    cpList('约束与待核项','<span data-ops-icon="warning"></span>',prof.profile_contract==='city-profile-v2'?[]:prof.weakness,'#b45309','#fff7ed'),
     cpList('问卷与材料冲突','<span data-ops-icon="warning"></span>',prof.conflicts,'#b91c1c','#fef2f2'),
     cpList('画像缺口·待补材料','<span data-ops-icon="attachment"></span>',prof.gaps,'#4f46e5','#f5f3ff')
   ].filter(Boolean);

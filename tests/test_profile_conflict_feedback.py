@@ -71,6 +71,13 @@ class ProfileConflictFeedbackTests(unittest.TestCase):
         self.assertEqual(status,409)
         self.assertEqual(json.loads(raw)['code'],'report_changed')
         self.assertEqual(self.audits[-1]['outcome'],'conflict')
+
+    def test_questionnaire_change_during_generation_preserves_old_profile(self):
+        status, raw, old = self._request_during_change(
+            lambda state: state['PROJECTS']['a'].update(onboarding={'industry':['已更新的实际偏好']}))
+        self.assertEqual(status,409)
+        self.assertEqual(json.loads(raw)['code'],'evidence_changed')
+        self.assertEqual(self.h.state()['PROJECTS']['a']['profile'],old)
         self.assertEqual(self.h.state()['PROJECTS']['a']['profile'],old)
 
     def test_changed_topic_returns_topic_mismatch_without_overwrite(self):
