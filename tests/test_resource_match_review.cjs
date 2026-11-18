@@ -48,3 +48,16 @@ test('resource target chooser lists only submitted demand children and displays 
  const h=boot();h.c.PROJECTS.p.demandContract='industry-demand-v1';h.c.PROJECTS.p.demandTitle='耐蚀换热管材';h.c.PROJECTS.workspace={topic:'宽泛城市产业分析',city:'闵行区',isDemand:false};h.c.opsEntManualPushModal(1);
  assert.deepEqual(Array.from(h.c.resourceReviewChooseProject.selection.keys),['p']);assert.match(h.modal(),/耐蚀换热管材/);assert.doesNotMatch(h.modal(),/宽泛城市产业分析/);
 });
+
+test('resource target labels hide opaque IDs but preserve exact IDs and distinguish duplicate titles',async()=>{
+ const h=boot();delete h.c.PROJECTS.p;
+ const first='proj_67fefcaef96b48b54b6c8915acbe',second='proj_another_opaque_id';
+ for(const key of [first,second])h.c.PROJECTS[key]={topic:'半导体电子化学品补链',isDemand:true,city:'苏州',demandContract:'industry-demand-v1',demandTitle:'铜互连电镀液',reportRequestId:'r1'};
+ h.c.opsEntManualPushModal(1);
+ const options=Array.from(h.modal().matchAll(/<option value="([^"]*)">([^<]*)<\/option>/g)).slice(1);
+ assert.deepEqual(options.map(m=>m[1]),[first,second]);
+ assert.deepEqual(options.map(m=>m[2]),['苏州 / 铜互连电镀液（同名项目 1）','苏州 / 铜互连电镀液（同名项目 2）']);
+ assert.ok(options.every(m=>!m[2].includes('proj_')));
+ h.nodes.resourceReviewProject={value:second};h.c.opsEntDoManualPush();await flush();
+ assert.equal(h.calls[0].body.projectKey,second);assert.deepEqual(h.calls[0].body.resourceIds,['e1']);
+});
