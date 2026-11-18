@@ -86,7 +86,7 @@ class SyncTransactionTests(unittest.TestCase):
         cursor.fetchone.return_value = ('{}',)
         with PostgresSession(lambda: connection, lambda _: None):
             statements = [call.args[0] for call in cursor.execute.call_args_list]
-            self.assertLess(statements.index("SET LOCAL tcp_user_timeout = '20s'"),
+            self.assertLess(statements.index("SET tcp_user_timeout = '20s'"),
                             statements.index('SELECT data FROM sync_data WHERE id=1 FOR UPDATE'))
             self.assertTrue(any("set_config('application_name'" in sql for sql in statements))
         connection.rollback.assert_called_once()
@@ -156,6 +156,14 @@ class PostgresConcurrencyTests(unittest.TestCase):
             self.assertEqual(session.cursor.fetchone()[0], 20000)
             session.cursor.execute("SHOW application_name")
             self.assertEqual(session.cursor.fetchone()[0], 'hxz-workspace')
+            # Simulate the aborted transaction that used to restore the
+            # unbounded socket default while the backend tried sending errors.
+            try:
+                session.cursor.execute("SELECT 1 / 0")
+            except psycopg2.Error:
+                session.connection.rollback()
+            session.cursor.execute("SELECT setting::int FROM pg_settings WHERE name = 'tcp_user_timeout'")
+            self.assertEqual(session.cursor.fetchone()[0], 20000)
 
     def test_twenty_concurrent_real_postgres_syncs_preserve_every_report(self):
         import psycopg2
