@@ -1,5 +1,7 @@
 """Small HTTP boundary for server-owned accounts, sessions and invitations."""
+import gzip
 import json
+import math
 from http.cookies import SimpleCookie
 from urllib.parse import urlsplit
 
@@ -8,13 +10,43 @@ from .auth import (AuthError, SESSION_COOKIE_NAME, SESSION_TTL_SECONDS,
 from .admin_invites import manage_invite, manage_monthly_report, remove_member
 
 
+def _accepts_gzip(headers):
+    value = headers.get('Accept-Encoding', '')
+    if not isinstance(value, str):
+        return False
+    accepted = {}
+    for item in value.lower().split(','):
+        parts = item.strip().split(';')
+        coding = parts[0].strip()
+        if coding not in ('gzip', '*'):
+            continue
+        quality = 1.0
+        for parameter in parts[1:]:
+            name, separator, raw = parameter.strip().partition('=')
+            if name == 'q':
+                try:
+                    value = float(raw) if separator else 0
+                except ValueError:
+                    value = 0
+                quality = min(quality, value if math.isfinite(value) and 0 <= value <= 1 else 0)
+        accepted[coding] = min(accepted.get(coding, 1), quality)
+    return accepted.get('gzip', accepted.get('*', 0)) > 0
+
+
 def respond(handler, status, value, *, cookie=None):
     data = json.dumps(value, ensure_ascii=False).encode()
+    compressed = False
+    if len(data) >= 1024 and _accepts_gzip(getattr(handler, 'headers', {})):
+        packed = gzip.compress(data, compresslevel=1, mtime=0)
+        if len(packed) < len(data):
+            data, compressed = packed, True
     handler.send_response(status)
     handler.send_header('Content-Type', 'application/json; charset=utf-8')
     handler.send_header('Content-Length', str(len(data)))
+    if compressed:
+        handler.send_header('Content-Encoding', 'gzip')
     handler.send_header('Cache-Control', 'no-store')
-    handler.send_header('Vary', 'Cookie, X-HXZ-Report-Client, Sec-Fetch-Site, Sec-Fetch-Dest, Sec-Fetch-Mode')
+    handler.send_header('Vary', 'Cookie, Accept-Encoding, X-HXZ-Report-Client, Sec-Fetch-Site, Sec-Fetch-Dest, Sec-Fetch-Mode')
     if cookie:
         handler.send_header('Set-Cookie', cookie)
     handler.cors()
