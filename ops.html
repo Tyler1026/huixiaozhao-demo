@@ -5920,7 +5920,10 @@ function resourceReviewChooseProject(resourceIds){
   if(!Array.isArray(resourceIds)||!resourceIds.length||resourceIds.some(function(id){return !id;})){toast('请先保存有唯一编号的资源企业');return;}
   var ids=resourceIds.map(String),keys=Object.keys(PROJECTS).filter(function(k){return PROJECTS[k]&&PROJECTS[k].isDemand&&PROJECTS[k].topic;});
   resourceReviewChooseProject.selection={ids:ids,keys:keys};
-  var options=keys.map(function(k){var p=PROJECTS[k];return '<option value="'+_authEscape(k)+'">'+_authEscape((p.city||'')+' / '+industryDemandProjectTitle(p)+' / '+k)+'</option>';}).join('');
+  var labels=keys.map(function(k){var p=PROJECTS[k];return [p.city,industryDemandProjectTitle(p)].filter(Boolean).join(' / ');});
+  var totals=Object.create(null),seen=Object.create(null);
+  labels.forEach(function(label){totals[label]=(totals[label]||0)+1;});
+  var options=keys.map(function(k,i){var label=labels[i];seen[label]=(seen[label]||0)+1;if(totals[label]>1)label+='（同名项目 '+seen[label]+'）';return '<option value="'+_authEscape(k)+'">'+_authEscape(label)+'</option>';}).join('');
   openModal('选择一个确切的需求项目','<p>请选择本次要复核的唯一项目。下一步会核对该工作区实际保存的产品与需求来源，不会直接推送。</p><select id="resourceReviewProject" style="width:100%"><option value="">请选择项目</option>'+options+'</select>',
     '<button class="ghost-button" onclick="closeModal()">取消</button><button class="primary-button" onclick="resourceReviewStartFromSelection()">核对当前材料</button>');
 }
