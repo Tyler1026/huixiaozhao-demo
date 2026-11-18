@@ -237,7 +237,10 @@ for (const surface of ['index', 'ops']) {
       assert.equal(detail.innerHTML, 'ready');
       assert.equal(events.render, 1);
       if (revised) assert.equal(c.REPORTSTATE.p.partialByTopic, undefined);
-      else assert.equal(c.REPORTSTATE.p.partialByTopic['核电配套'].reason, '生成提前结束（length）');
+      else {
+        assert.equal(c.REPORTSTATE.p.partialByTopic['核电配套'].reason, '生成提前结束（length）');
+        assert.match(elements.reportRunStatus.textContent, /本次生成未完成。生成提前结束/);
+      }
     }
   });
 }

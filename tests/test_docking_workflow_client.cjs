@@ -15,7 +15,7 @@ function bodyFor(action){
 function boot(){
   const events={posts:[],persists:0,toasts:[]};let transport=null;
   const project=id=>({id,workspaceId:'parent',parentProjectKey:'parent',isDemand:true,demandContract:'industry-demand-v1',demandOrigin:'direct',submissionState:'submitted',topic:'滤器',demandTitle:'滤器',stage:4,stageVersion:0,stageLog:[],intake:{contract,version:0,status:'needs_info',owner:'负责人甲'},clues:[{id:'c1',name:'企业甲',reason:'原匹配说明',tone:'slate',verificationRequest:{id:'verification-c1',contract,version:0,status:'requested'}},{id:'c2',name:'企业乙',tone:'slate'}]});
-  const c={PROJECTS:{a:project('a'),b:project('b')},DEMANDS:[{id:'d-a',projKey:'a',res:'none'},{id:'d-b',projKey:'b',res:'none'}],DOCK_LOGS:{a:[{id:'old-log',contract,kind:'contact_log',ts:100,note:'此前记录'}]},_authEpoch:1,console,Date,Math,Number,String,JSON,URL,document:{getElementById:()=>null},toast:message=>events.toasts.push(message),persist:()=>events.persists++};
+  const c={PROJECTS:{a:project('a'),b:project('b')},DEMANDS:[{id:'d-a',projKey:'a',res:'none'},{id:'d-b',projKey:'b',res:'none'}],DOCK_LOGS:{a:[{id:'old-log',contract,kind:'contact_log',ts:100,note:'此前记录'}]},_authEpoch:1,console,Date,Math,Number,String,JSON,URL,AbortController,setTimeout,clearTimeout,document:{getElementById:()=>null},toast:message=>events.toasts.push(message),persist:()=>events.persists++};
   function receipt(body){
     const p=clone(c.PROJECTS[body.projectKey]),version=body.expectedVersion+1,record=clone(body.record),event={id:'event-'+body.requestId,contract,requestId:body.requestId,projectKey:body.projectKey,kind:body.action,version,ts:1000,actor:'admin',actorRole:'admin',files:[],...record};
     if(body.clueId)event.clueId=body.clueId;

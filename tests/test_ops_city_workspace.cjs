@@ -281,12 +281,12 @@ test('RAG selector keeps historic sources but labels and prioritizes only the re
   assert.equal(h.ctx.ragProjKey(), 'main');
   h.ctx.ragCity = 'deleted-old-workspace'; assert.equal(h.ctx.ragProjKey(), 'main');
   const html = h.ctx.ragCityOptions();
-  assert.match(html, /地区主工作区 · main/); assert.match(html, /历史报告基础库 · report_legacy/); assert.match(html, /旧工作区 · old/);
+  assert.match(html, /value="main" selected>闵行区 · 地区主工作区 · 0 条材料/); assert.match(html, /value="report_legacy">闵行区 · 历史报告基础库 · 1 条材料/); assert.match(html, /value="old">闵行区 · 旧工作区 1 · 0 条材料/);
   h.ctx.ragOverviewOpen = true;
   const overview = h.ctx.ragWorkspaceOverview('main');
   assert.doesNotMatch(overview, /独立主账号|互不共享数据|邀请码 CURRENT/);
   assert.match(overview, /工作区与报告来源/);
-  assert.equal((overview.match(/<strong>地区主工作区<\/strong>/g) || []).length, 1);
+  assert.equal((overview.match(/<strong>地区主工作区(?:<span class="rag-workspace-current">当前<\/span>)?<\/strong>/g) || []).length, 1);
 });
 
 test('published reports use workspace labels and keep report identifiers out of recipient account labels', async () => {
