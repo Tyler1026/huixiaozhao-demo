@@ -296,8 +296,12 @@ def ground_city_profile(obj,catalog,context):
   if item['kind']=='strength':result['strength'].append(text)
   elif item['kind']=='constraint':result['weakness'].append(text)
  overview=next((a for a in analyses if a['kind']=='overview'),None)
+ priority=next((a for a in analyses if a['kind']=='strength'),analyses[0] if analyses else None)
+ constraint=next((a for a in analyses if a['kind']=='constraint'),None)
+ synthesis=' '.join(a['implication'] for a in (priority,constraint) if a)
+ if priority:synthesis+=' 优先核查：'+priority['action']
  uncertain=next((r['quote'] for r in ledger.values() if re.search(r'待核|未见|不代表',r['quote'])),'')
- result['summary']=overview['implication'] if overview else '已按六个维度整理当前工作区材料；披露内容尚需核对原始来源。'+('材料中的不确定性：'+uncertain if uncertain and not analyses else '')
+ result['summary']=overview['implication'] if overview else synthesis if synthesis else '已按六个维度整理当前工作区材料；披露内容尚需核对原始来源。'+('材料中的不确定性：'+uncertain if uncertain and not analyses else '')
  result['policyDirections']=[];seen_policy=set();raw_policies=obj.get('policyDirections') or []
  policy_refs=[r for raw in raw_policies if isinstance(raw,dict) for r in _refs(raw,catalog)] if isinstance(raw_policies,list) else []
  policy_refs += [r for r in catalog if usable(r) and POLICY.search(r['quote'])]

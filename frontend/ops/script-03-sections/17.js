@@ -1406,7 +1406,7 @@ function opsCityProfile(){
   var body='';
   if(prof.summary) body+='<div style="border:1px solid #bfdbfe;background:#f5f9ff;border-radius:10px;padding:14px 16px;margin-bottom:14px">'+
     '<div style="font-size:11px;font-weight:750;color:#1d4ed8;letter-spacing:.08em;margin-bottom:6px">画像总览</div>'+
-    '<div style="font-size:13.5px;color:#22364f;line-height:1.85">'+cpSourceText(prof.summary)+'</div></div>';
+    '<div style="font-size:13.5px;color:#22364f;line-height:1.85">'+cpSourceText(cpProfileDisplaySummary(prof))+'</div></div>';
 
   if(prof.profile_contract==='city-profile-v2')body+=cpProfileInsights(prof);
   else body+='<p class="ops-ui-muted">这是旧版画像，建议重新生成以校验数字、来源和偏好分类。</p>';

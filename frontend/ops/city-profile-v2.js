@@ -51,3 +51,13 @@ cpChartsSection=function(prof){
   if(!cards.length&&!missing.length)return '';
   return '<section style="margin:18px 0"><h2 style="font-size:16px">可追溯的城市指标</h2><p class="ops-ui-muted">仅展示原文明确的本市、年度、单位和数值；规划目标不当现状，不用外地数据补图。</p>'+(cards.length?'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">'+cards.join('')+'</div>':'')+(missing.length?'<p class="ops-ui-muted">待补数据：'+missing.map(cpEsc).join('；')+'。</p>':'')+'</section>';
 };
+
+function cpProfileDisplaySummary(prof){
+  var summary=String(prof.summary||'');
+  if(prof.profile_contract!=='city-profile-v2'||summary.indexOf('已按六个维度整理当前工作区材料')!==0)return summary;
+  var rows=Array.isArray(prof.analysis)?prof.analysis:[],overview=rows.find(function(a){return a.kind==='overview';});
+  if(overview)return overview.implication;
+  var first=rows.find(function(a){return a.kind==='strength';})||rows[0],constraint=rows.find(function(a){return a.kind==='constraint';});
+  if(!first)return summary;
+  return [first.implication,constraint&&constraint!==first?constraint.implication:'',first.action?'优先核查：'+first.action:''].filter(Boolean).join(' ');
+}
