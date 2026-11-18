@@ -65,7 +65,7 @@
     ]
   },
   "ops.html": {
-    "sha256": "98a1dd90c7fd0b372a9c722b3434ce236ba696a00f285be57e3393d7954120af",
+    "sha256": "217441d39468ba886689120caf982d6a5eb85a6398f46d591fa488ea8a905464",
     "parts": [
       "frontend/ops/markup-01.html",
       "frontend/ops/style-01.css",
@@ -73,6 +73,7 @@
       "frontend/shared/industry-chain.css",
       "frontend/ops/brand.css",
       "frontend/ops/full-skin.css",
+      "frontend/ops/city-profile.css",
       "frontend/ops/markup-02.html",
       "frontend/ops/script-01.js",
       "frontend/ops/markup-03.html",

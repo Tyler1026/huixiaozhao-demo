@@ -1402,6 +1402,8 @@ function opsCityProfile(){
       '<button onclick="cpGenerate(1)" style="margin-top:16px;padding:10px 20px;border-radius:9px;border:none;cursor:pointer;font-size:13px;font-weight:650;color:#fff;background:linear-gradient(135deg,#1a56db,#6366f1)">开始生成</button>'+
     '</div></div>';
 
+  if(prof.profile_contract==='city-profile-v2')return '<div class="ops-ui-page cp-profile">'+head+srcBar+cpProfileBody(prof)+'</div>';
+
   var o=prof.objective||{}, pref=prof.preference||{};
   var body='';
   if(prof.summary) body+='<div style="border:1px solid #bfdbfe;background:#f5f9ff;border-radius:10px;padding:14px 16px;margin-bottom:14px">'+
