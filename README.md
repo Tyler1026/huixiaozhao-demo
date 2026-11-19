@@ -18,6 +18,7 @@
 
 ```sh
 pip install psycopg2-binary esprima pdfplumber python-docx
+python scripts/build_frontend.py
 python scripts/build_frontend.py --check
 python server.py
 ```
@@ -59,7 +60,11 @@ Exa 原文接口返回错误时，辅助路径最多直接读取2个政府 HTTPS
 
 图谱在读取城市材料包后，还会在最多60秒的检索预算内联网补充当前产业原文。仅合入通过链接、原文与内容哈希校验的证据，保留来源及抓取时间，并区分城市相关原文与行业背景。联网不可用时继续使用城市材料包；联网补充不替代必读附件，也不证明当前城市已有异地项目或行业能力。
 
-`frontend/` 是前端源文件，`index.html`、`ops.html` 由 `scripts/build_frontend.py` 生成；修改源文件后更新 manifest 的 SHA256 并构建。`backend/` 是网站存储及接口边界，`report_service/` 是独立研究、恢复、Word 构建与发布服务。
+frontend/ 是前端源文件，index.html、ops.html 是构建产物。修改源码或 manifest 的文件顺序后，只运行 python scripts/build_frontend.py，脚本会同时生成两份页面并更新 frontend/manifest.json 的 SHA256，无需手工修改校验值。构建先校验并读完所有输入，再准备替换文件；缺文件、越界路径或重复片段会在写入前拒绝。未变化的文件不会重复写入。
+
+首次在一个 Git 工作副本中运行 python scripts/install_frontend_hooks.py，即可启用提交前自动同步。钩子只读取 Git 暂存区，把对应页面与清单一并暂存，不会把未暂存源码带进提交；遇到手工暂存的页面修改，或页面、清单中冲突的未暂存修改，会停止并保留原内容。已有自定义 hooks 配置会保留，不自动覆盖。.gitattributes 保持前端原始字节，防止 Windows 的换行转换破坏校验。
+
+CI 会在完整回归前快速检查构建流程和已提交快照；Railway 的 Docker 镜像再次从源码生成页面及清单，并通过一致性与 JavaScript 语法校验后才构建成功。通过 GitHub API 上传文件会绕过本地钩子，因此也必须先执行构建与 --check，并按磁盘原始字节上传生成文件，不能用字符串替换来拼装 HTML。`backend/` 是网站存储及接口边界，`report_service/` 是独立研究、恢复、Word 构建与发布服务。
 
 客户端青序视觉层位于 `frontend/index/*brand.css`、`qingxu.css` 与 `client-icons.js`。图标装饰不改写报告、问答正文、附件名或表单值；数据与业务处理仍由原模块负责。四张配图保存在 `frontend/index/assets/`，更换后先运行 `python scripts/build_client_brand_assets.py`，再构建前端。此生成器只嵌入视觉资源，不包含演示账号、数据或 API 替身。
 

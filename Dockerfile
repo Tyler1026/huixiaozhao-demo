@@ -11,7 +11,8 @@ COPY frontend/ ./frontend/
 COPY scripts/ ./scripts/
 COPY report_service/ ./report_service/
 COPY data/public-research/ ./data/public-research/
-RUN python3 scripts/build_frontend.py --check
+# Generate pages and checksums from source inside the image before syntax validation.
+RUN python3 scripts/build_frontend.py && python3 scripts/build_frontend.py --check
 
 # 语法门禁：ops.html/index.html 内联<script>语法错误直接fail build，
 # 防止2026-08-07那次白屏事故（重复粘贴+误插入闭合标签）再次上线。

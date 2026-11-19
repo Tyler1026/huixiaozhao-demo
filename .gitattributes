@@ -1,3 +1,7 @@
-# Extracted frontend fragments preserve baseline bytes, including legacy whitespace.
-# Build equivalence checks guard them; do not normalize their content.
-frontend/** -whitespace
+# Frontend inputs and generated pages must retain their exact source bytes on Windows and Linux.
+frontend/** -text
+/index.html -text
+/ops.html -text
+.githooks/* text eol=lf
+scripts/*.py text eol=lf
+.github/workflows/*.yml text eol=lf

@@ -36,11 +36,14 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Frontend build and staged commit regression tests
+        run: python3 -m unittest discover -s tests -p 'test_frontend_build_pipeline.py' -v
+
+      - name: Verify committed pages and checksums match frontend sources
+        run: python3 scripts/build_frontend.py --check
+
       - name: Install syntax and report test dependencies
         run: pip install esprima python-docx==1.1.2 psycopg2-binary boto3 cryptography
-
-      - name: Verify generated frontend is unchanged
-        run: python3 scripts/build_frontend.py --check
 
       - name: Backend reliability regression tests
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v

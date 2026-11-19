@@ -1,0 +1,14 @@
+#!/bin/sh
+# Git for Windows and Unix both use the interpreter recorded by the setup script.
+python_command=$(git config --get hxz.python)
+if [ -n "$python_command" ]; then
+  exec "$python_command" scripts/frontend_git_hook.py
+fi
+if command -v python3 >/dev/null 2>&1; then
+  exec python3 scripts/frontend_git_hook.py
+fi
+if command -v python >/dev/null 2>&1; then
+  exec python scripts/frontend_git_hook.py
+fi
+printf '%s\n' 'Python not found; run scripts/install_frontend_hooks.py with your Python interpreter.' >&2
+exit 1
