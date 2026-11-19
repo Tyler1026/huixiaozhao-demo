@@ -39,6 +39,6 @@ class DependencyContracts(unittest.TestCase):
     def test_docker_contains_every_runtime_python_boundary(self):
         docker=(ROOT/'Dockerfile').read_text()
         self.assertIn('COPY backend/ ./backend/',docker)
-        self.assertIn('scripts/build_frontend.py --check',docker)
+        self.assertIn('RUN python3 scripts/build_frontend.py && python3 scripts/build_frontend.py --check',docker)
         for path in (ROOT/'backend').glob('*.py'):
             compile(path.read_text(),str(path),'exec')
