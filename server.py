@@ -1203,7 +1203,7 @@ class Handler(BaseHTTPRequestHandler):
         # prefs = {"options": "选项类偏好文本", "custom": "用户自定义输入文本"}
         prefs  = body.get("prefs", {}) or {}
 
-        if mode not in ("chat", "draft", "full", "suggest", "research", "chain", "topics", "funnel", "onboard_options", "city_profile"):
+        if mode not in ("chat", "draft", "full", "suggest", "research", "chain", "topics", "funnel", "onboard_options", "city_profile", "verify"):
             mode = "full"
 
         if not q:
@@ -1250,8 +1250,18 @@ class Handler(BaseHTTPRequestHandler):
                 read_state=lambda: load_state(bool(_PG_AVAIL and DATABASE_URL), _db_get, SYNC_PATH),
                 complete=_complete_topic_plan, audit=audit_log, package_loader=load_city_package)
 
+        verification = None
+        if mode == 'verify':
+            from backend.material_verification import verification_context
+            try:
+                verification = verification_context(body, self._scoped_state)
+            except AuthError as error:
+                return error_response(self, error)
+            q, chunks, city = verification['question'], verification['chunks'], verification['city']
+            prefs, history = {}, []
+
         chat_request = mode == 'chat' and not enterprise_draft and body.get('purpose') != 'chain_map'
-        chat_scope = {'projectKey': '', 'topic': ''}
+        chat_scope = {'projectKey': body['projectKey'], 'topic': '本次上传材料校验'} if mode == 'verify' else {'projectKey': '', 'topic': ''}
         if chat_request:
             # Echo only request-local source records, and reject a claimed
             # workspace outside the authenticated snapshot. Legacy callers
@@ -1354,6 +1364,10 @@ class Handler(BaseHTTPRequestHandler):
         if chat_request:
             ctx = chat_context(selected_sources, persisted=bool(chat_scope['projectKey']))
 
+        if mode == 'verify':
+            used = verification['chunks']
+            selected_sources = chat_sources(used)
+            ctx = ''
         if structured:
             ctx = model_catalog(catalog)
 
@@ -1404,7 +1418,11 @@ class Handler(BaseHTTPRequestHandler):
             audit_log(dict(audit_entry, outcome=outcome, finish_reason=finish_reason, error_code=error_code,
                            elapsed_ms=round((time.monotonic()-request_started)*1000)))
 
-        if mode == "suggest":
+        if mode == "verify":
+            from backend.material_verification import SYSTEM_VERIFY
+            system_prompt = SYSTEM_VERIFY
+            max_tokens = 4500
+        elif mode == "suggest":
             system_prompt = SYSTEM_SUGGEST
             max_tokens    = 200
         elif mode == "chat":
@@ -1554,7 +1572,7 @@ class Handler(BaseHTTPRequestHandler):
             send_event({'error': {'code': code, 'message': message},
                         'choices': [{'delta': {}, 'finish_reason': code}], 'runId': request_run_id})
         try:
-            _timeout = 150 if mode in ("funnel", "chain", "research") else 90
+            _timeout = 60 if mode == "verify" else 150 if mode in ("funnel", "chain", "research") else 90
             with DS_OPENER.open(req, timeout=_timeout) as resp:
                 if structured:
                     result = json.loads(resp.read())
@@ -1619,7 +1637,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_header("Content-Type", "text/event-stream")
                     self.send_header("Cache-Control", "no-cache")
                     self.cors(); self.end_headers(); headers_sent = True
-                    if chat_request:
+                    if chat_request or mode == 'verify':
                         send_event({'type': 'kb_sources', 'runId': request_run_id,
                                     'sources': selected_sources, 'scope': chat_scope})
                     terminal = None
