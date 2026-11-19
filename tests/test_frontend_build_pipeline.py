@@ -121,6 +121,7 @@ class FrontendGitPipelineTests(unittest.TestCase):
         for name in ('build_frontend.py', 'frontend_git_hook.py', 'install_frontend_hooks.py'):
             shutil.copyfile(ROOT / 'scripts' / name, self.root / 'scripts' / name)
         shutil.copyfile(ROOT / '.githooks/pre-commit', self.root / '.githooks/pre-commit')
+        os.chmod(self.root / '.githooks/pre-commit', 0o755)
         shutil.copyfile(ROOT / '.gitattributes', self.root / '.gitattributes')
         (self.root / '.gitignore').write_text('__pycache__/\n', encoding='utf-8')
         (self.root / 'README.md').write_text('fixture\n', encoding='utf-8')
