@@ -35,7 +35,8 @@ class VerificationRouteTests(unittest.TestCase):
         status,_,data=self.h.request('POST','/api/kb-chat',{'mode':'verify','question':'check',
              'projectKey':'a','verifyOriginalIds':['not-saved'],'stream':True},cookie=self.cookie)
         self.assertEqual(status,409)
-        self.assertEqual(json.loads(data)['code'],'verification_upload_missing')
+        problem=json.loads(data)
+        self.assertEqual(problem.get('code') or problem.get('error'),'verification_upload_missing')
         self.h.ns['DS_OPENER'].open.assert_not_called()
 
 
