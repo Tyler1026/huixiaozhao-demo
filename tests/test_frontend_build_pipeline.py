@@ -178,6 +178,17 @@ class FrontendGitPipelineTests(unittest.TestCase):
         self.assertEqual(self.git('write-tree').stdout, before)
         self.assertEqual((self.root / 'ops.html').read_bytes(), b'important unstaged HTML edit')
 
+    def test_manual_staged_page_edit_is_preserved_even_when_sources_are_staged(self):
+        (self.root / 'frontend/index.js').write_bytes(b'const revised = true;\n')
+        (self.root / 'ops.html').write_bytes(b'important staged HTML edit')
+        self.git('add', 'frontend/index.js', 'ops.html')
+        before = self.git('write-tree').stdout
+        result = self.run_hook(check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(b'staged generated page edits in ops.html', result.stderr)
+        self.assertEqual(self.git('write-tree').stdout, before)
+        self.assertEqual((self.root / 'ops.html').read_bytes(), b'important staged HTML edit')
+
     def test_unstaged_manifest_edit_is_not_accidentally_included(self):
         path = self.root / builder.MANIFEST
         manifest = json.loads(path.read_text())

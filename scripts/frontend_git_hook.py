@@ -39,6 +39,12 @@ def synchronize(root):
     for name, expected in plan.items():
         path = root / name
         indexed = git(root, 'show', ':' + name)
+        if name in PAGES and name in names and indexed != expected:
+            previous = subprocess.run(['git', 'show', 'HEAD:' + name], cwd=root,
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if previous.returncode or previous.stdout != indexed:
+                raise ValueError('staged generated page edits in ' + name +
+                                 '; preserve/move them to frontend sources before committing')
         working = path.read_bytes() if path.is_file() else None
         if path.is_symlink() or (working != indexed and working != expected):
             raise ValueError('unstaged changes in ' + name +
