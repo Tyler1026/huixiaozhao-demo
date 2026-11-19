@@ -65,7 +65,7 @@ function harness(disk=new Map()){
   tail.slice(tail.indexOf('function kbLongTermButton('),tail.indexOf('// 招引方向派生')),
   tail.slice(tail.indexOf('var KB_API ='),tail.indexOf('/* ══ RAG ENGINE END')),
   tail.slice(tail.indexOf('function kbRefreshTopicScope('),tail.indexOf('// 真实文件选择器'))].join('\n');
- vm.runInContext(code,c);c.renderKbSessionBar=()=>{};
+ vm.runInContext(code+'\n'+fs.readFileSync(path.join(__dirname,'../frontend/index/material-verification.js'),'utf8'),c);c.renderKbSessionBar=()=>{};
  c.KB_CHAT={'workspace:a':{sessions:[{id:'s1',title:'已有会话',ts:1,messages:[]},{id:'s2',title:'会话二',ts:1,messages:[]}],activeId:'s1',selectedAt:1},'workspace:b':{sessions:[{id:'sb',messages:[]}],activeId:'sb',selectedAt:1}};
  return {c,nodes,api,sync,feeds,disk,clock,refreshes:()=>refreshes};
 }
@@ -363,4 +363,43 @@ test('stop before response headers cleans up immediately and late connection can
  assert.equal(transcript(h).length,2);assert.equal(transcript(h).at(-1).error,true);
  release();await flush();sendAnswer(f,'旧连接迟到的答案');await flush();
  assert.equal(transcript(h).length,2);assert.doesNotMatch(h.nodes.kbConv.innerHTML,/旧连接迟到的答案|kb-progress-message/);
+});
+
+function startMaterialCheck(h){
+ const c=h.c;c.document.querySelector=()=>null;c._kbText=x=>typeof x==='string'?x:x.text;
+ c._lastIngestChunks=[{text:'2025年GDP999亿元',originalId:'upload-1',cite:'测试.docx'}];c._lastIngestKbIdx=0;
+ vm.runInContext(tail.slice(tail.indexOf('var _VERIFY_ICON='),tail.indexOf('/* ── 校验发现矛盾后')),c);
+ c.kbConfirmOverwrite=()=>{};return c.kbVerifyMaterial();
+}
+test('material verification shows progress before headers and sends explicit saved-upload selection',async()=>{
+ const h=harness(),f=feed();h.feeds.push(f);startMaterialCheck(h);await flush();
+ assert.match(h.nodes.kbConv.innerHTML,/正在校验上传材料/);
+ assert.equal(h.api[0].mode,'verify');assert.deepEqual(Array.from(h.api[0].verifyOriginalIds),['upload-1']);
+ h.c.kbStopAnswer(pendingRequest(h).requestId);await flush();assert.equal(h.clock.pending(),0);
+});
+for(const ending of ['empty','eof','length'])test('verification '+ending+' never stores a passed check and always unlocks controls',async()=>{
+ const h=harness(),f=feed();h.feeds.push(f);startMaterialCheck(h);await flush();
+ if(ending!=='empty')f.push({choices:[{delta:{content:'✅ GDP：文件写999亿元，智库记录一致'}}]});
+ if(ending==='length')f.push({choices:[{delta:{},finish_reason:'length'}]});
+ f.eof();await flush();
+ assert.equal(h.c.kbIsRequestPending(),false);assert.equal(h.c._verifyInProgress,false);assert.equal(h.clock.pending(),0);
+ const answer=transcript(h).at(-1);assert.equal(answer.error,true);assert.doesNotMatch(answer.text,/本轮明细一致，真实性仍需核实/);assert.match(answer.text,/重新校验这批材料/);
+});
+test('verification has a bounded deadline even when fetch never resolves',async()=>{
+ const h=harness();h.c.fetch=(url,options)=>url==='/api/sync'?Promise.resolve({ok:true,json:async()=>({ok:true})}):new Promise(()=>{});
+ startMaterialCheck(h);await flush();h.clock.advance(120001);await flush();
+ assert.equal(h.c.kbIsRequestPending(),false);assert.equal(h.clock.pending(),0);assert.equal(h.c._verifyInProgress,false);assert.match(transcript(h).at(-1).text,/超时/);
+});
+test('complete verification preserves rows, sources and candid limits instead of a blanket true badge',async()=>{
+ const h=harness(),f=feed();h.feeds.push(f);startMaterialCheck(h);await flush();
+ f.push({type:'kb_sources',sources:[{id:'s1',cite:'保存的统计公报',text:'原文',urls:[]}]});
+ f.push({choices:[{delta:{content:'✅ GDP：文件写100亿元，智库记录一致'}}]});f.push({choices:[{delta:{},finish_reason:'stop'}]});f.done();await flush();
+ assert.equal(h.c.kbIsRequestPending(),false);assert.equal(h.clock.pending(),0);
+ const answer=transcript(h).at(-1);assert.equal(answer.error,undefined);assert.equal(answer.sources[0].id,'s1');assert.match(answer.text,/真实性仍需核实/);
+});
+test('verification survives same-session replay and stops without saving to a different session',async()=>{
+ const h=harness(),f=feed();h.feeds.push(f);startMaterialCheck(h);await flush();h.c.kbChatReplay();
+ assert.match(h.nodes.kbConv.innerHTML,/kb-progress-message/);
+ h.c.kbSwitchSession('s2');await flush();assert.equal(h.clock.pending(),0);assert.equal(h.c.kbIsRequestPending(),false);
+ f.push({choices:[{delta:{content:'迟到结果'}}]});f.done();await flush();assert.equal(h.c.KB_CHAT['workspace:a'].sessions[1].messages.length,0);
 });

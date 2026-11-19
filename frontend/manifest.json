@@ -1,6 +1,6 @@
 {
   "index.html": {
-    "sha256": "1559176ca56009802498e91d6ddf86c05eb130afdda3e30fd3a9386ef6aea457",
+    "sha256": "b1ca0d007d81e8867db377d7c8a070f872fd6bd824157b2a83231b0538e29342",
     "parts": [
       "frontend/index/markup-01.html",
       "frontend/index/style-01.css",
@@ -54,6 +54,7 @@
       "frontend/index/script-02-sections/14-part-00.js",
       "frontend/shared/_kbItemFp.js",
       "frontend/index/script-02-sections/14-tail.js",
+      "frontend/index/material-verification.js",
       "frontend/index/script-02-sections/15.js",
       "frontend/index/script-02-sections/16.js",
       "frontend/index/script-02-sections/17.js",

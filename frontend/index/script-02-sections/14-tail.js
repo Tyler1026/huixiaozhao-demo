@@ -672,7 +672,7 @@ function kbStopAnswer(requestId){
   ctx.cancelled=true;if(ctx.controller)ctx.controller.abort();kbProgressClear(ctx);
   var container=document.getElementById('kbConv')||ctx.container,node=ctx.answerNode,body=ctx.answerBody;
   if(container&&node&&body){
-    body.innerHTML=(ctx.outputText?'<p>'+renderMarkdown(ctx.outputText)+'</p>':'')+'<p class="kb-answer-stopped">已停止生成'+(ctx.outputText?'，以上为未完成内容。':'。')+'</p>'+kbRetryButton(ctx.query);
+    body.innerHTML=(ctx.outputText?'<p>'+renderMarkdown(ctx.outputText)+'</p>':'')+'<p class="kb-answer-stopped">已停止生成'+(ctx.outputText?'，以上为未完成内容。':'。')+'</p>'+(ctx.materialVerification?kbVerifyRetryButton():kbRetryButton(ctx.query));
     if(node.parentNode!==container)container.appendChild(node);
     kbChatPush('ai',node.outerHTML,{context:ctx,error:true,plainText:''});
   }
@@ -2689,11 +2689,12 @@ function kbVerifyMaterial(){
   var requestContext=kbBeginRequest('',requestContainer);if(!requestContext)return;
   function requestCurrent(){return !requestContext.cancelled&&kbContextCurrent(requestContext);}
   window._verifyRequestContext=requestContext;
+  try{
   // 只把校验按钮变为加载态，其他两个按钮保留
   window._verifyInProgress=true;
   var verifyBtn=document.querySelector('#kbIngestActions [data-action="verify"]'); if(verifyBtn){verifyBtn.disabled=true;verifyBtn.textContent='🔍 校验中…';}
 
-  var c=document.getElementById('kbConv'); if(!c) return;
+  var c=document.getElementById('kbConv'); if(!c)throw new Error('会话区域已变化');
 
   // 用户问句气泡
   var q='请校验这批新上传材料的可信度：有无错误信息、与已有结论矛盾处、或可疑数据？';
@@ -2822,14 +2823,8 @@ function kbVerifyMaterial(){
     +'⚠️ [指标名]：文件写 [XX]，智库无此数据\n\n'
     +'重要：\n'
     +'- 必须逐个数据点列出，不可跳过任何数字\n'
-    +'- 年份不同的同一指标视为矛盾（数据可能已更新）\n'
+    +'- 年份、主体、地区或口径不同先标待确认，不直接判矛盾\n'
     +'- 绝对不可只输出一句笼统总结';
-
-  // 思考气泡
-  var thinking=document.createElement('div');
-  thinking.className='message';
-  thinking.innerHTML='<img src="'+aiAvatar()+'"><div class="message-bubble"><span style="color:#9aa5b5;font-size:12px">🔍 正在校验材料可信度…</span></div>';
-  c.appendChild(thinking); c.scrollTop=c.scrollHeight;
 
   var ansNode=document.createElement('div');
   ansNode.className='message';
@@ -2842,32 +2837,18 @@ function kbVerifyMaterial(){
   ansNode.appendChild(imgEl);
   ansNode.appendChild(bubble);
 
-  var accText=''; window._liveAccText=null;
+  window._liveAccText=null;
   var t0=Date.now();
 
   // 涉 AI 必过 RAG：校验也要吃进该城市智库语料（否则无从比对）
   var _vChunks=[]; try{ _vChunks=kbSearch(prompt, buildKBCorpus(p.city), 6)||[]; }catch(e){ _vChunks=[]; }
-  function requestFailed(err){
-    thinking.remove();
-    if(requestCurrent()){c.appendChild(ansNode);bodyDiv.textContent='本次分析未完成，请重试。';}
-    kbFinishRequest(requestContext);
-  }
-  fetch(KB_API,{
-    signal:requestContext.controller?requestContext.controller.signal:undefined,
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question:prompt, chunks:_vChunks, city:p.city,projectKey:requestContext.projectKey,topic:topicLabel,stream:true, mode:'verify', prefs:curOnbPrefs()})
-  }).then(function(resp){
-    if(!requestCurrent()){thinking.remove();kbFinishRequest(requestContext);return;}
-    thinking.remove();
-    bodyDiv.innerHTML='<span style="color:#9aa5b5;font-size:12px"><span class="gov-spin" style="margin-right:6px"></span>AI 正在逐条核验数据点…</span>';
-    c.appendChild(ansNode); c.scrollTop=c.scrollHeight;
-    if(!resp.ok){requestFailed(new Error('http'));return;}
-    var reader=resp.body.getReader(), dec=new TextDecoder(), buf='', _firstChunk=true;
-    function pump(){
-      reader.read().then(function(d){
-        if(!requestCurrent()){if(reader.cancel)reader.cancel().catch(function(){});kbFinishRequest(requestContext);return;}
-        if(d.done){
+  requestContext.query=q;
+  return kbVerifyMaterialStream({context:requestContext,container:c,answer:ansNode,bubble:bubble,body:bodyDiv,
+    query:q,chunks:newChunks,
+    request:{question:prompt,chunks:_vChunks,city:p.city,projectKey:requestContext.projectKey,topic:topicLabel,stream:true,mode:'verify',
+      verifyOriginalIds:newChunks.map(function(row){return row.originalId;}).filter(function(v,i,a){return v&&a.indexOf(v)===i;}),
+      verifyFiles:newChunks.map(function(row){return row.sourceFile||row.file||row.cite;}).filter(function(v,i,a){return typeof v==='string'&&v&&a.indexOf(v)===i;})},
+    finish:function(accText){
           var elapsed=Date.now()-t0;
           // 判定优先级：先看 AI 首行的结构化结论标记，最可靠；关键词兜底只作为补充。
           // 关键修复：旧逻辑把"文件说A，智库记录B，不一致"这类真实矛盾误判为 allClear（因命中"未发现"字样），
@@ -2875,6 +2856,7 @@ function kbVerifyMaterial(){
           // 确保正文内容一定渲染到bodyDiv（不管后续判定结果如何）
           // ── 一次解析、单一裁决：正文/抬头/确认面板共用这一份结果（T2 修复）──
           var _parsed=parseVerifyDetail(accText);
+          if(!_parsed.rows.length)throw new Error("未收到逐条校验明细，请重试；未标记为已通过。");
           var _cntConflict=_parsed.conflict, _cntNewAdd=_parsed.newadd, _cntConsistent=_parsed.consistent;
           // 正文按裁决结果重写：行首图标归正 + 首行结论从明细实时汇总
           var _shownText=_parsed.rows.length?rewriteVerifyText(accText,_parsed):accText;
@@ -2889,10 +2871,10 @@ function kbVerifyMaterial(){
           var hasHighRisk=(_cntConflict>0);
           var allClear=!hasHighRisk && _cntNewAdd===0;
           var badgeText=hasHighRisk
-            ?'⚠ 发现 '+_cntConflict+' 处矛盾，建议人工核实'
+            ?'⚠ 发现疑似差异 '+_cntConflict+' 处矛盾，建议人工核实'
             :(_cntNewAdd>0
-                ?'✓ 未发现矛盾，'+_cntNewAdd+' 条待确认'
-                :'✓ 未发现明显错误');
+                ?'未见同口径差异，'+_cntNewAdd+' 条待确认'
+                :'本轮明细一致，真实性仍需核实');
           bubble.insertAdjacentHTML('beforeend',
             '<div style="margin-top:12px;padding:8px 12px;background:'+
             (hasHighRisk?'#fff1f2':(allClear?'#EEF3FF':'#fffbeb'))+
@@ -2915,33 +2897,9 @@ function kbVerifyMaterial(){
           if(_shownText && !bodyDiv.innerHTML.trim()){
             bodyDiv.innerHTML='<p style="margin:0;line-height:1.75;white-space:pre-wrap">'+_shownText.replace(/</g,'&lt;')+'</p>';
           }
-          // 校验完成：把按钮改为「已校验」
-          window._verifyInProgress=false;
-          if(verifyBtn){verifyBtn.disabled=false;verifyBtn.textContent='🔍 校验材料可信度';verifyBtn.style.background='#fff7ed';verifyBtn.style.color='#c2410c';verifyBtn.style.border='1.5px solid #fed7aa';}
-
           kbChatPush('ai', ansNode.outerHTML,{context:requestContext,plainText:accText,sources:requestContext.sources||[]});
-          kbFinishRequest(requestContext);
-          return;
-        }
-        buf+=dec.decode(d.value,{stream:true});
-        var ls=buf.split('\n'); buf=ls.pop();
-        ls.forEach(function(line){
-          if(!line.startsWith('data:'))return;
-          var data=line.slice(5).trim(); if(data==='[DONE]')return;
-          try{var j=JSON.parse(data);var dl=(j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content)||'';
-            if(dl){accText+=dl;
-              try{bodyDiv.innerHTML='<p style="margin:0;line-height:1.75">'+renderMarkdown(accText)+'</p>';}
-              catch(e2){bodyDiv.innerHTML='<p style="margin:0;line-height:1.75;white-space:pre-wrap">'+accText.replace(/</g,'&lt;')+'</p>';}
-              c.scrollTop=c.scrollHeight;}}catch(e){}
-          /* reasoning_content 阶段也显示进度 */
-          try{var j2=JSON.parse(data);var rc=(j2.choices&&j2.choices[0]&&j2.choices[0].delta&&j2.choices[0].delta.reasoning_content)||'';
-            if(rc && !accText){ bodyDiv.innerHTML='<span style="color:#9aa5b5;font-size:12px"><span class="gov-spin" style="margin-right:6px"></span>AI 深度推理中（已思考 '+Math.round((Date.now()-t0)/1000)+'s）…</span>'; c.scrollTop=c.scrollHeight; }}catch(e3){}
-        });
-        pump();
-      }).catch(requestFailed);
-    }
-    pump();
-  }).catch(requestFailed);
+    }});
+  }catch(error){kbVerifySetupFailure(requestContext,requestContainer,error);return Promise.resolve(false);}
 }
 
 /* ── 校验发现矛盾后：解析冲突项并弹出「是否覆盖原有数据」确认面板 ── */
