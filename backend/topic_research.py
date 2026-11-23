@@ -29,7 +29,7 @@ from report_service import full_synthesis as grounding
 from report_service import providers
 from report_service.hosted import configured_environment
 from report_service.full_provider import FullLiveProvider
-from .source_article import source_article_body, source_article_spans
+from .source_article import source_article_body, source_article_spans, source_publication_date
 
 MAX_SOURCES = 20
 MAX_CHAIN_SOURCES = 48
@@ -502,8 +502,8 @@ def research_topic(city, topic, *, mode='draft', questions=(), basis=(), provide
                     continue
                 source_id = 'source_' + _digest(canonical+'\0'+fulltext)[:20]
                 metadata = {'url': url, 'title': source_title,
-                         'published_at': item.get('published', '发布日期未知'),
-                         'published': item.get('published', '发布日期未知'), 'retrieved_at': stamp,
+                         'published_at': source_publication_date(fulltext, item.get('published')),
+                         'published': source_publication_date(fulltext, item.get('published')), 'retrieved_at': stamp,
                          'retrieval': 'fetched', 'retrieval_provider': live.search_provider,
                          'source_type': kind, 'source': urlsplit(url).hostname,
                          'search_query': query, 'search_place': city, 'status': 'source',

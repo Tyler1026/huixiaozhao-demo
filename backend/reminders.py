@@ -253,12 +253,12 @@ def _digest_message(state, keys, date):
     return '\n'.join(lines)
 
 
-def _generate(state, principal, account, root, now):
+def _generate(state, principal, account, root, now, *, keys=None):
     workspace = account['workspaces'][root]
     if (not isinstance(workspace, dict) or not isinstance(workspace.get('seen'), dict)
             or not isinstance(workspace.get('notifications'), dict)):
         _fail('storage_unavailable', '提醒记录暂不可用', 503)
-    keys = _workspace_keys(state, principal, root)
+    keys = _workspace_keys(state, principal, root) if keys is None else keys
     formal_keys = _formal_demand_keys(state, keys, root)
     events = _events(state, keys)
     preferences = account['preferences']
@@ -376,6 +376,7 @@ def apply_request(body, state, principal, *, operation='get', now=None):
     key = authorize_project(body['projectKey'], state, principal)
     roots = _project_roots(state, principal)
     root = roots.get(key)
+    keys = {k for k, owner in roots.items() if owner == root and k in (state.get('PROJECTS') or {})}
     if root not in _memberships(_identity(state, principal.get('user'))[3]):
         _fail('workspace_forbidden', '没有该工作区的访问权限', 403)
     account = _enroll(state, principal, now)
@@ -388,10 +389,10 @@ def apply_request(body, state, principal, *, operation='get', now=None):
     if root not in account['workspaces']:
         account['workspaces'][root] = {'root': root, 'joinedAt': now,
             'firstDigestDate': (datetime.fromtimestamp(now / 1000, SHANGHAI).date() + timedelta(days=1)).isoformat(),
-            'seen': {eid: True for eid, event in _events(state, _workspace_keys(state, principal, root)).items()
+            'seen': {eid: True for eid, event in _events(state, keys).items()
                      if event['ts'] <= now},
             'notifications': {}}
-    _generate(state, principal, account, root, now)
+    _generate(state, principal, account, root, now, keys=keys)
     if operation == 'preferences':
         if account['preferences'] != body['preferences']:
             account['preferences'] = copy.deepcopy(body['preferences'])
@@ -407,7 +408,7 @@ def apply_request(body, state, principal, *, operation='get', now=None):
     enabled = {'status': prefs['statusChanges'], 'verification': prefs['statusChanges'],
                'overdue': prefs['overdue'], 'daily': prefs['dailyDigest']}
     notifications = [copy.deepcopy(row) for row in workspace['notifications'].values()
-                     if enabled.get(row['type']) and row['projectKey'] in _workspace_keys(state, principal, root)]
+                     if enabled.get(row['type']) and row['projectKey'] in keys]
     notifications.sort(key=lambda row: (row['createdAt'], row['id']), reverse=True)
     return {'ok': True, 'requestId': body['requestId'], 'accountId': principal['user'],
             'accountEpoch': account['epoch'], 'projectKey': key, 'workspaceId': root,
@@ -431,9 +432,9 @@ def handle_request(handler, raw, session_factory, admin_config=None, *, operatio
                 _fail('storage_unavailable', '提醒记录暂不可用', 503)
             principal = require_session(handler.headers, state, admin_config=admin_config,
                                         now=None if now is None else now / 1000)
-            before = copy.deepcopy(state)
+            before = copy.deepcopy(state.get(TABLE))
             result = apply_request(body, state, principal, operation=operation, now=now)
-            if state != before and not session.write(json.dumps(state, ensure_ascii=False, allow_nan=False)):
+            if state.get(TABLE) != before and not session.write(json.dumps(state, ensure_ascii=False, allow_nan=False)):
                 _fail('storage_unavailable', '尚未保存，请稍后重试', 503)
         respond(handler, 200, result)
     except AuthError as error:
@@ -447,7 +448,7 @@ def run_once(session_factory, *, now=None):
     now = _now(now)
     with session_factory() as session:
         state = json.loads(session.read())
-        before = copy.deepcopy(state)
+        before = copy.deepcopy(state.get(TABLE))
         for account in _table(state).values():
             _validate_account(account)
             try:
@@ -465,7 +466,7 @@ def run_once(session_factory, *, now=None):
                 if error.status < 500:
                     continue
                 raise
-        if state != before and not session.write(json.dumps(state, ensure_ascii=False, allow_nan=False)):
+        if state.get(TABLE) != before and not session.write(json.dumps(state, ensure_ascii=False, allow_nan=False)):
             _fail('storage_unavailable', '提醒尚未保存', 503)
 
 

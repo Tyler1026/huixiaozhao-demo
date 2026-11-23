@@ -6,6 +6,7 @@ import json
 import zipfile
 from urllib.parse import urlsplit
 
+from .source_article import source_publication_date
 from .topic_reports import TopicReportError
 from .topic_research import select_source_paragraphs
 from report_service.providers import validate_https_url
@@ -59,7 +60,7 @@ def package_research(document, city, topic, request_id, *, mode='draft'):
             if any(host==domain or host.endswith('.'+domain) for domain in
                    ('hubeidaily.net','cnhubei.com','people.com.cn','xinhuanet.com','gmw.cn','chinanews.com')):
                 kind='media'
-            meta = {'url':url, 'title':row.get('title',''), 'published_at':row.get('published',''),
+            meta = {'url':url, 'title':row.get('title',''), 'published_at':source_publication_date(text, row.get('published_at') or row.get('published')),
                     'retrieved_at':row.get('retrieved_at',''), 'retrieval':'fetched',
                     'source_type':kind, 'city_package_original':True,
                     'source_scope':'city_related' if city_label in text else 'industry_background',

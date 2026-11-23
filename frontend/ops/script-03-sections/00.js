@@ -96,6 +96,7 @@ function reportMdToHtml(md){
   function inline(s){
     var links=[];
     s=s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,function(all,label,url){
+      url=url.replace(/\\([_.~-])/g,'$1');
       if(/[<>"'\\]/.test(url)||/@/.test(url.split('/').slice(0,3).join('/')))return all;
       var token='\u0000HXLINK'+links.length+'\u0000';
       var anchor='<a href="'+esc(url).replace(/"/g,'&quot;')+'" target="_blank" rel="noopener noreferrer">'+(/^\d+$/.test(label)?'['+esc(label)+']':esc(label))+'</a>';

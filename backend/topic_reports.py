@@ -14,7 +14,7 @@ import hashlib
 from urllib.parse import urlsplit
 from .report_analysis import company_profile, analytical_priority, policy_context, review_priorities, priority_feedback, OPPORTUNITY_LABELS
 from .topic_composition import compose_report
-from .source_article import source_article_body
+from .source_article import source_article_body, source_publication_date
 
 
 class TopicReportError(ValueError):
@@ -434,9 +434,12 @@ def _render_final_report(plan, context, research, catalog, used):
     def bibliography():
         lines = ['', '## 参考文献', '']
         for number, row in documents.values():
-            date = row.get('published_at') or row.get('published')
+            date = source_publication_date(row.get('_fulltext') or row.get('source_excerpt') or row.get('quote'), row.get('published_at') or row.get('published'))
             publisher = row.get('publisher') or row.get('source') or urlsplit(row['url']).hostname
-            description = '．'.join(_md(value) for value in (publisher, row.get('title'), date) if value)
+            title = row.get('title')
+            if isinstance(title, str) and _safe_url(re.sub(r'\\([_.~-])', r'\1', title)):
+                title = ''
+            description = '．'.join(_md(value) for value in (publisher, title, date) if value)
             if not description:
                 description = _md(row['url'])
             url = row['url'].replace(')', '%29').replace('(', '%28')
