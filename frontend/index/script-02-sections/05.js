@@ -64,6 +64,9 @@ function render(){
   }
   var workspace=cur&&_authWorkspaceOf(cur);
   if(workspace&&workspace!==AUTH.projKey){switchAuthWorkspace(workspace);return;}
+  // City materials and account settings always use the authorized root,
+  // including entry from an old demand link or a background render.
+  if(workspace&&(view==='knowledge'||view==='settings'))cur=workspace;
   if(!workspace)cur=AUTH.projKey||null;
   if(!cur||!PROJECTS[cur]){
     if(authRoot)authRoot.innerHTML='<div style="padding:60px;text-align:center;color:#667590">'+(render._serverSynced?'当前账号尚无可用工作区，请通过邀请码加入团队或联系管理员。':'工作区暂未加载，请重试。')+'<p><button onclick="openJoinWorkspace()">通过邀请码加入工作区</button> <button onclick="render._routed=false;render()">重新加载</button> <button onclick="logout()">退出登录</button></p></div>';

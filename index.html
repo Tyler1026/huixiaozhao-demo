@@ -5770,6 +5770,9 @@ function render(){
   }
   var workspace=cur&&_authWorkspaceOf(cur);
   if(workspace&&workspace!==AUTH.projKey){switchAuthWorkspace(workspace);return;}
+  // City materials and account settings always use the authorized root,
+  // including entry from an old demand link or a background render.
+  if(workspace&&(view==='knowledge'||view==='settings'))cur=workspace;
   if(!workspace)cur=AUTH.projKey||null;
   if(!cur||!PROJECTS[cur]){
     if(authRoot)authRoot.innerHTML='<div style="padding:60px;text-align:center;color:#667590">'+(render._serverSynced?'当前账号尚无可用工作区，请通过邀请码加入团队或联系管理员。':'工作区暂未加载，请重试。')+'<p><button onclick="openJoinWorkspace()">通过邀请码加入工作区</button> <button onclick="render._routed=false;render()">重新加载</button> <button onclick="logout()">退出登录</button></p></div>';
@@ -7574,7 +7577,7 @@ function toggleSw(e){e.stopPropagation();var m=$('#swMenu');m.style.display=m.st
 function switchProj(k){cur=k;view='report';detailData=null;try{_sanitizeReportState();}catch(_){}render();toast('已进入「'+(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(PROJECTS[k]):PROJECTS[k].topic)+'」'+(PROJECTS[k].isDemand?'需求':'研判工作区'))}
 function newProj(){var m=$('#swMenu');if(m)m.style.display='none';newProjModal()}
 function go(v){
-  if(v==='report')cur=industryAnalysisWorkspaceKey(cur);
+  if(v==='report'||v==='knowledge'||v==='settings')cur=industryAnalysisWorkspaceKey(cur);
   if(isLocked(v)){
     var r=kbReadiness();
     var summary=kbReadinessSummary(r);
@@ -12573,7 +12576,7 @@ function kbPage(p){
     '<nav class="kb-toolbar" aria-label="智库工具"><button type="button" id="kbToggle-topics" class="kb-nav-toggle" aria-controls="kbTopicsPanel" aria-expanded="false" onclick="kbTogglePanel(\'topics\')">历史对话</button>'+
     '<button type="button" onclick="uploadHint()">上传材料</button><button type="button" onclick="openMemoryBank()">记忆库</button><button type="button" onclick="showDownloadReport()">下载报告</button>'+
     '<button type="button" id="kbToggle-sources" class="kb-source-toggle" aria-controls="kbSourcesPanel" aria-expanded="false" onclick="kbTogglePanel(\'sources\')">回答依据</button></nav></header>'+
-    '<section class="kb-topic-overview" data-kb-many="'+(topicCount>4)+'" aria-labelledby="kbOverviewTitle"><div class="kb-overview-heading"><div><h2 id="kbOverviewTitle">城市知识全景</h2><p><span class="brand-slogan-lead">读懂城市，</span><span class="brand-slogan-result">让招引更有方向。</span></p></div><div class="kb-overview-actions"><button type="button" class="kb-overview-toggle" id="kbOverviewToggle" aria-controls="kbOverviewCards" aria-expanded="true" onclick="kbToggleOverview()">收起板块 ↑</button><button type="button" class="kb-global-scope" onclick="clearKbActiveTopic();kbClosePanels()">全库提问 <span aria-hidden="true">↗</span></button></div></div><div id="kbOverviewCards" class="kb-overview-body" aria-hidden="false"><div class="kb-overview-clip"><div class="kb-topic-grid" style="--kb-topic-columns:'+kbTopicColumns(topicCount)+';--kb-topic-mobile-columns:'+Math.min(2,Math.max(1,topicCount))+'">'+topics+'</div></div></div></section>'+
+    '<section class="kb-topic-overview" data-kb-many="'+(topicCount>4)+'" aria-labelledby="kbOverviewTitle"><div class="kb-overview-heading"><div><h2 id="kbOverviewTitle">城市知识全景</h2><p><span class="brand-slogan-lead">读懂城市，</span><span class="brand-slogan-result">让招引更有方向。</span></p></div><div class="kb-overview-actions"><button type="button" class="kb-overview-toggle" id="kbOverviewToggle" aria-controls="kbOverviewCards" aria-expanded="true" onclick="kbToggleOverview()">收起板块 ↑</button><button type="button" class="kb-global-scope" onclick="clearKbActiveTopic();kbClosePanels()">全库提问 <span aria-hidden="true">↗</span></button></div></div><div id="kbOverviewCards" class="kb-overview-body" aria-hidden="false"><div class="kb-overview-clip"><div class="kb-topic-grid" style="--kb-topic-columns:'+kbTopicColumns(topicCount)+';--kb-topic-mobile-columns:'+Math.min(2,Math.max(1,topicCount))+'">'+(topics||'<div class="kb-empty-state" role="status" style="grid-column:1/-1"><strong>尚未建立城市材料板块</strong><p>可上传城市材料，或联系管理员核对城市材料包的发布状态。</p></div>')+'</div></div></div></section>'+
     '<div class="kb-workbench-grid"><button class="kb-panel-backdrop" aria-label="关闭侧栏" onclick="kbClosePanels()"></button>'+
     '<aside id="kbTopicsPanel" class="kb-topics-panel" aria-label="历史会话"><div class="kb-pane-heading"><h2>历史对话</h2><button id="kbTopicsClose" class="kb-panel-close" type="button" onclick="kbClosePanels()" aria-label="关闭历史对话">×</button></div>'+
     '<button type="button" class="kb-new-conversation" onclick="kbNewSession(cur);kbClosePanels()"><span aria-hidden="true">＋</span> 新对话</button>'+
@@ -12725,7 +12728,25 @@ function dockingRefreshPanels(){
   if(list)list.innerHTML=dockingDemandListHtml(keys,key);if(detail&&detail.getAttribute('data-demand-key')!==String(key||'')){detail.innerHTML=dockingDetailHtml(key);detail.setAttribute('data-demand-key',key||'');detail.scrollTop=0;}
   Array.prototype.forEach.call(document.querySelectorAll('.docking-filters button'),function(button){var active=button.getAttribute('data-filter')===dockingViewState().filter;button.classList.toggle('is-active',active);button.setAttribute('aria-pressed',String(active));});
 }
-function dockingOpenReport(key){if(!PROJECTS[key])return;if(PROJECTS[key].demandOrigin==='direct'){toast('这条需求由机构直接提交，没有来源分析报告。');return;}cur=key;view='report';detailData=null;render();}
+function dockingOpenReport(key){
+  var project=PROJECTS[key];
+  if(!project||dockingDemandKeys().indexOf(key)<0){toast('该需求当前不可用，请刷新后重试。');return false;}
+  if(project.demandOrigin==='direct'||(project.demandSpec||{}).source==='user_direct'){toast('这条需求由机构直接提交，没有来源分析报告。');return false;}
+  var root=industryAnalysisWorkspaceKey(key);
+  if(root===key||!PROJECTS[root]){toast('来源工作区暂不可用，请刷新后重试。');return false;}
+  var state=REPORTSTATE[key]||{},topic=project.sourceAnalysisTopic||project.topic;
+  var text=(state.aiReportByTopic||{})[topic]||(state.topic===topic?state.text:'');
+  if(typeof text!=='string'||!text.trim()){toast('该需求的来源报告快照暂不可用，请刷新后重试。');return false;}
+  // Read the demand's saved version without adopting its project as the city
+  // workspace or copying an old report over the current city analysis.
+  var context={key:key,project:project,state:state,topic:topic,text:text,city:project.city};
+  var body=reportPublicationForContext(context);
+  if(cur===key){cur=root;detailData=null;render();}
+  openModal('来源报告 · '+dockingText(topic),
+    '<p class="industry-demand-boundary">需求提交时保存的报告版本，供回看原始依据。</p><div class="industry-prose">'+reportMdToHtml(body)+'</div>',
+    '<button class="secondary-button" onclick="closeModal()">关闭预览</button>');
+  return true;
+}
 function dockingDownloadEventFile(key,id,ts,index){
   var event=dockingEvents(key).find(function(e){return id?e.id===id:Number(e.ts)===ts;}),file=event&&event.files&&event.files[index];
   if(!file||typeof file.dataUrl!=='string'||!/^data:(application\/(?:pdf|msword|vnd\.[a-z0-9.+-]+)|text\/(?:plain|csv)|image\/(?:png|jpeg|webp));base64,/i.test(file.dataUrl)){toast('附件当前不可用');return;}

@@ -34,3 +34,10 @@ for(const side of ['index','ops']){
     assert.equal(c.industryAnalysisWorkspaceKey('demand'),'workspace');assert.equal(c.industryAnalysisWorkspaceKey('workspace'),'workspace');assert.equal(c.industryAnalysisWorkspaceKey('missing'),'missing');
   });
 }
+
+for(const side of ['index','ops'])for(const page of ['knowledge','settings']){
+ test(side+' '+page+' returns from the child to the authorized city root without copying data',()=>{
+  const c=boot(side),before=JSON.stringify([c.PROJECTS,c.REPORTSTATE]);c.go(page);
+  assert.equal(c.cur,'workspace');assert.equal(c.view,page);assert.equal(JSON.stringify([c.PROJECTS,c.REPORTSTATE]),before);
+ });
+}
