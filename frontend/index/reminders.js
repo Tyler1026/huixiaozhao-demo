@@ -18,7 +18,7 @@ function reminderState(){
   if(!REMINDER_STATE||REMINDER_STATE.context.key!==context.key){
     reminderResetSession();
     REMINDER_STATE={context:context,loaded:false,loading:false,mutationPending:false,latestRequest:0,
-      accountEpoch:null,version:null,preferences:null,draft:null,dirty:false,error:'',notifications:[]};
+      accountEpoch:null,version:null,preferences:null,draft:null,dirty:false,error:'',slow:false,failures:0,notifications:[]};
   }
   return REMINDER_STATE;
 }
@@ -85,17 +85,17 @@ function reminderPanelToken(state){
   return state.panelToken;
 }
 function reminderStatusText(state){
-  return state&&state.error?state.error:!state||!state.loaded?'正在加载服务器保存的偏好…':state.mutationPending?'正在保存…':state.dirty?'有尚未保存的修改':'已加载服务器保存的偏好';
+  return state&&state.error?state.error:state&&state.slow?'提醒服务响应较慢，仍在等待，请勿重复操作…':!state||!state.loaded?'正在加载服务器保存的偏好…':state.mutationPending?'正在保存…':state.dirty?'有尚未保存的修改':'已加载服务器保存的偏好';
 }
 function reminderSchedule(state){
   if(REMINDER_POLL){clearTimeout(REMINDER_POLL);REMINDER_POLL=null;}
   if(!reminderCurrent(state))return;
-  REMINDER_POLL=setTimeout(function(){REMINDER_POLL=null;if(reminderCurrent(state))reminderLoad(true);},60000);
+  REMINDER_POLL=setTimeout(function(){REMINDER_POLL=null;if(reminderCurrent(state))reminderLoad(true);},Math.min(300000,60000*Math.pow(2,state.failures||0)));
 }
 function reminderRequest(path,body,state){
   var sequence=++REMINDER_REQUEST_SEQ,requestId='reminder-'+Date.now().toString(36)+'-'+sequence.toString(36);
   state.latestRequest=sequence;
-  var options={credentials:'same-origin',headers:{Accept:'application/json'}},controller=typeof AbortController!=='undefined'?new AbortController():null,timer;
+  var options={credentials:'same-origin',headers:{Accept:'application/json'}},controller=typeof AbortController!=='undefined'?new AbortController():null,timer,slowTimer;
   if(body){body=Object.assign({},body,{projectKey:state.context.projectKey,requestId:requestId});options.method='POST';options.headers['Content-Type']='application/json';options.body=JSON.stringify(body);}
   else path+='?projectKey='+encodeURIComponent(state.context.projectKey)+'&requestId='+encodeURIComponent(requestId);
   if(controller)options.signal=controller.signal;
@@ -110,16 +110,17 @@ function reminderRequest(path,body,state){
       return reminderReceipt(data,state,requestId);
     });
   });
-  var timeout=new Promise(function(_,reject){timer=setTimeout(function(){if(controller)controller.abort();reject(new Error('提醒请求超时，请重试'));},20000);});
-  return Promise.race([network,timeout]).then(function(receipt){clearTimeout(timer);return receipt;},function(error){
-    clearTimeout(timer);
+  if(!body)slowTimer=setTimeout(function(){if(reminderCurrent(state)&&state.latestRequest===sequence){state.slow=true;reminderRender(state);}},12000);
+  var timeout=new Promise(function(_,reject){timer=setTimeout(function(){if(controller)controller.abort();reject(new Error(body?'保存结果尚未确认，请重新加载后核对':'提醒服务响应较慢，本次等待已结束，可稍后重新加载'));},body?20000:60000);});
+  return Promise.race([network,timeout]).then(function(receipt){clearTimeout(timer);clearTimeout(slowTimer);if(reminderCurrent(state)&&state.latestRequest===sequence)state.slow=false;return receipt;},function(error){
+    clearTimeout(timer);clearTimeout(slowTimer);if(reminderCurrent(state)&&state.latestRequest===sequence)state.slow=false;
     if(!reminderCurrent(state)||state.latestRequest!==sequence)return null;
     throw error;
   });
 }
 function reminderApply(state,receipt){
   state.accountEpoch=receipt.accountEpoch;state.version=receipt.version;state.preferences=receipt.preferences;
-  state.notifications=receipt.notifications;state.loaded=true;state.error='';
+  state.notifications=receipt.notifications;state.loaded=true;state.error='';state.failures=0;state.slow=false;
   if(!state.dirty)state.draft=Object.assign({},receipt.preferences);
 }
 function reminderLoad(force){
@@ -128,7 +129,7 @@ function reminderLoad(force){
   state.loading=true;state.error='';
   return reminderRequest('/api/reminders',null,state).then(function(receipt){
     if(!receipt)return false;reminderApply(state,receipt);return true;
-  }).catch(function(error){if(reminderCurrent(state)){state.error=error.status===409?'提醒订阅或版本已变化，请重新加载后再保存':(error.message||'提醒加载失败，请重试');}return false;
+  }).catch(function(error){if(reminderCurrent(state)){state.failures=Math.min(3,(state.failures||0)+1);state.error=error.status===409?'提醒订阅或版本已变化，请重新加载后再保存':(error.message||'提醒加载失败，请重试');}return false;
   }).then(function(ok){if(reminderCurrent(state)){state.loading=false;reminderRender(state);reminderSchedule(state);}return ok;});
 }
 function reminderEnsureLoaded(){var state=reminderState();if(state&&!state.loaded&&!state.loading&&!state.error)reminderLoad(false);}

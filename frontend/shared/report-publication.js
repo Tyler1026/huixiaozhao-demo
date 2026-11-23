@@ -60,9 +60,9 @@ function reportKeepReviewed(context,incoming){
 function stripReportWebFooter(text){
   // Keep this vocabulary aligned with backend/source_article.py. Standalone
   // headings like “政务公开” count as menu text only alongside other controls.
-  var control=/^(?:简体(?:中文)?|繁体(?:中文)?|English|日本語|한국어|搜本[站網网]|搜站群|站内搜索|搜索本站|(?:进入|开启|退出)(?:关怀|无障碍|长辈|适老)(?:模式|版)?|无障碍(?:阅读|浏览)|扫一扫(?:在手机|用手机)?打开当前页|手机扫一扫打开当前页|分享到[：:]?|网站导航[：:]?|网站地图|网站无障碍|打印本页|关闭窗口|返回顶部|政府网站找错|网站纠错|政务邮箱登录|(?:当前|您所在)(?:所在)?位置[：:]?|(?:访问量|浏览量)\s*[：:]\s*[\d,]*|(?:政务服务|一网通办)(?:公众号|小程序)|网站标识码[：:]\s*\d+|[\u3400-\u9fff]?ICP备\d+号(?:-\d+)?)$/i;
+  var control=/^(?:(?:字号\s*[：:]\s*(?:默认|小|中|大|\s)+[;；]?|【?字体\s*[：:]\s*[大中小\s]+】?|字体大小\s*[：:]\s*(?:放大|正常|缩小|\s)+|打印)|简体(?:中文)?|繁体(?:中文)?|English|日本語|한국어|搜本[站網网]|搜站群|站内搜索|搜索本站|(?:进入|开启|退出)(?:关怀|无障碍|长辈|适老)(?:模式|版)?|无障碍(?:阅读|浏览)|扫一扫(?:在手机|用手机)?打开当前页|手机扫一扫打开当前页|分享到[：:]?|网站导航[：:]?|网站地图|网站无障碍|打印本页|关闭窗口|返回顶部|政府网站找错|网站纠错|政务邮箱登录|(?:当前|您所在)(?:所在)?位置[：:]?\s*(?:首页|网站首页|门户首页)?|(?:访问量|浏览量)\s*[：:]\s*[\d,]*|(?:政务服务|一网通办)(?:公众号|小程序)|网站标识码[：:]\s*\d+|[\u3400-\u9fff]?ICP备\d+号(?:-\d+)?)$/i;
   var menu=/^(?:首页|新闻中心|政务公开|政府信息公开|办事服务|政务服务|政民互动|互动交流|改革动态|新手指南|进度查询|办事预约|意见反馈|帮助中心|掌上办|个人中心|登录|注册|网站首页|门户首页|机构概况|走进[\u3400-\u9fff]{2,10}|[\u3400-\u9fff]{2,10}(?:概况|概览|要闻)|新闻动态|区镇快讯|数据开放|老年服务|无障碍|关怀版|适老版|长者版|智能问答|智能客服|政务邮箱|了解详情|用户空间|在线客服|相关办事链接|办事平台|中国政府网|国务院部门网站|[\u3400-\u9fff（）()]{1,28}(?:政府网站|政务网站|设区市网站|辖市[（(]区[）)]网站|人民政府))$/;
-  var breadcrumb=/^(?:(?:当前|您所在)(?:所在)?位置\s*[：:]\s*)?(?:首页|网站首页|门户首页)(?:\s*[>›»→/／]\s*[\w\u3400-\u9fff（）() \u3000]{0,36}){1,8}$/;
+  var breadcrumb=/^(?:(?:当前|您所在)(?:所在)?位置\s*[：:]\s*)?(?:首页|网站首页|门户首页)(?:\s*(?:[>›»→/／]\s*)+[\w\u3400-\u9fff（）() \u3000]{0,36}){1,8}$/;
   var related=/^相关(?:文件|附件)[：:]?$/;
   var citation=/\s*(\[(?:来源\s*)?S?\d+\]\(https?:\/\/[^\s)]+\).*)$/i;
   var rows=text.split(/\r\n?|\n/),run=[],labels=new Set(),hasControl=false,removed=false;
@@ -72,7 +72,7 @@ function stripReportWebFooter(text){
       .replace(/&(?:amp;)?(?:gt|#62|#x3e);/gi,'>').replace(/&(?:amp;)?(?:nbsp|#160|#xa0);/gi,' ').trim();
   }
   function isControl(item){
-    return control.test(item)||breadcrumb.test(item.replace(/^#{1,6}\s+/,''));
+    return control.test(item)||breadcrumb.test(item.replace(/^#{1,6}\s+/,'').replace(/[;；/\s]*字号\s*[：:]\s*(?:默认|小|中|大|\s)+[;；]?[”\"]?$/,'').replace(/^[“\"]|[”\"]$/g,'').trim());
   }
   function flush(nextTitle){
     if(hasControl||labels.size>1){
@@ -80,6 +80,7 @@ function stripReportWebFooter(text){
       var before=run[0].index-1;
       while(before>=0&&!rows[before].trim())before--;
       var title=before>=0&&rows[before].trim().match(/^(.{8,180}?)\s+[-–—｜|]\s+[\u3400-\u9fff]{2,24}(?:人民政府|政府门户网站|政务服务网)$/);
+      if(!title&&before>=0)title=rows[before].trim().match(/^[\u3400-\u9fff]{2,24}(?:人民政府|政府门户网站|政务服务网)\s+(?:(?:地方动态|要闻动态|新闻中心|文件通知)\s+){0,3}(.{8,180})$/);
       if(hasControl&&title&&title[1]===nextTitle.replace(/^#{1,6}\s+/,''))rows[before]='';
       run.forEach(function(entry){rows[entry.index]=entry.reference;});
       removed=true;
@@ -89,6 +90,8 @@ function stripReportWebFooter(text){
   rows.forEach(function(line,i){
     var ref=line.match(citation),item=label(ref?line.slice(0,ref.index):line);
     if(!item&&!ref)return;
+    var trail=Array.from(labels).some(function(value){return /位置|首页/.test(value);})&&/[>›»→/／]/.test(item)&&/^(?:[>›»→/／]\s*)?[\w\u3400-\u9fff（）() \u3000]{1,36}(?:\s*(?:[>›»→/／]\s*)+[\w\u3400-\u9fff（）() \u3000]{1,36}){0,7}$/.test(item);
+    if(trail){run.push({index:i,reference:ref?ref[1]:'',related:false});labels.add(item);hasControl=true;return;}
     var options=isControl(item)||menu.test(item)?[item]:item.split(/\s*[|｜·/／>›»→]\s*|\s+/).filter(Boolean);
     if((options.length&&options.every(function(value){return isControl(value)||menu.test(value);}))||related.test(item)){
       run.push({index:i,reference:ref?ref[1]:'',related:related.test(item)});
@@ -173,6 +176,23 @@ function condenseSavedChainChapter(text){
   return lines.slice(0,chain).concat(revised,lines.slice(priorities)).join('\n');
 }
 
+
+// Dates come from saved source metadata or a labelled date in its original
+// excerpt. Policy effective dates and years embedded in URLs are not dates of publication.
+function reportSourcePublicationDate(source){
+  function date(value){
+    var m=String(value||'').match(/(20\d{2})[-年/](\d{1,2})[-月/](\d{1,2})/);
+    if(!m)return '';
+    var y=Number(m[1]),month=Number(m[2]),day=Number(m[3]),stamp=new Date(Date.UTC(y,month-1,day));
+    return stamp.getUTCFullYear()===y&&stamp.getUTCMonth()===month-1&&stamp.getUTCDate()===day?m[1]+'-'+String(month).padStart(2,'0')+'-'+String(day).padStart(2,'0'):'';
+  }
+  var explicit=source.published_at||source.published||'',supplied=!/未知|未确认|待核|不详/.test(explicit)&&date(explicit);
+  if(supplied)return supplied;
+  var original=String(source.source_excerpt||source.fulltext||source.quote||'').slice(0,6000);
+  var match=original.match(/(?:^|[^\w\u3400-\u9fff])(?:发布日期|发布时间|发文日期|成文日期|日期|时间)\s*[：:]?\s*(20\d{2}[-年/]\d{1,2}[-月/]\d{1,2}日?)/);
+  return match?date(match[1]):'';
+}
+
 function reportPublicationText(value,options){
   var original=stripReportWebFooter(typeof value==='string'?value:String(value==null?'':value));
   options=options||{};
@@ -180,7 +200,7 @@ function reportPublicationText(value,options){
   original=condenseSavedChainChapter(reviseSavedSuzhouCopperChapter(original));
   var metadata=Object.create(null),labels=Object.create(null),references=Object.create(null);
   function safeUrl(value){
-    var url=typeof value==='string'?value.trim():'';
+    var url=typeof value==='string'?value.trim().replace(/\\([_.~-])/g,'$1'):'';
     return /^https?:\/\/[^\s<>"'\\]+$/i.test(url)&&!/@/.test(url.split('/').slice(0,3).join('/'))?url:'';
   }
   function canonical(url){return url.split('#')[0];}
@@ -192,7 +212,7 @@ function reportPublicationText(value,options){
     if(!source||typeof source!=='object')return;
     var url=safeUrl(source.url);if(!url)return;
     var key=canonical(url);
-    if(!metadata[key])metadata[key]={title:plain(source.title),date:plain(source.published_at)};
+    if(!metadata[key])metadata[key]={title:safeUrl(source.title)?'':plain(source.title),date:reportSourcePublicationDate(source)};
     [source.label,source.id].forEach(function(label){if(typeof label==='string'&&label.trim())labels[label.trim().replace(/^来源\s*/,'')]=url;});
   });
   function heading(line){
@@ -231,7 +251,8 @@ function reportPublicationText(value,options){
             labels[ref[1]]=url;
             var description=ref[2].slice(0,link?link.index:bare.index);
             if(link&&link[1]!=='原文'&&link[1]!==url)description+=link[1]+ref[2].slice(link.index+link[0].length);
-            references[canonical(url)]=plain(description).replace(/[。．.]\s*$/,'');
+            description=description.replace(/https?:\/\/[^\s<>()。．；，]+/g,function(value){return canonical(safeUrl(value.replace(/[。．.；;,]+$/,'')))===canonical(url)?'':value;});
+            references[canonical(url)]=plain(description).replace(/(?:发布日期|发布时间)\s*(?:未知|未确认|不详)[。．]?/g,'').replace(/[。．.]\s*[。．.]/g,'．').replace(/[。．.]\s*$/,'');
             existingUrls.push(url);
           }else if(line.trim())unresolvedReferences.push(line);
         }else if(line.trim())unresolvedReferences.push(line);
@@ -267,7 +288,8 @@ function reportPublicationText(value,options){
   if(!ordered.length&&!unresolvedReferences.length)return text;
   var bibliography=ordered.map(function(url,index){
     var key=canonical(url),source=metadata[key]||{},description=references[key]||'';
-    if(!description){description=source.title;if(description&&source.date)description+='，'+source.date;}
+    if(!description)description=source.title;
+    if(source.date&&!/\b20\d{2}[-年/]\d{1,2}[-月/]\d{1,2}/.test(description))description+=(description?'，':'')+source.date;
     return '['+(index+1)+'] '+(description?description+'。 [原文]('+url+')':'['+url+']('+url+')');
   });
   return text+'\n\n## 参考文献\n\n'+bibliography.concat(unresolvedReferences).join('\n\n');

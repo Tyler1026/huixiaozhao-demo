@@ -104,7 +104,7 @@ for(const failure of ['http','network','json','timeout'])test('old '+failure+' p
     }
     return e.response(request);
   });
-  const pending=e.c.reminderLoad(true);await Promise.resolve();const oldTimeout=Array.from(e.timers.values()).find(timer=>timer.ms===20000);
+  const pending=e.c.reminderLoad(true);await Promise.resolve();const oldTimeout=Array.from(e.timers.values()).filter(timer=>timer.ms===60000).at(-1);
   e.c.reminderEdit('statusChanges',false);assert.equal(await e.c.reminderSave(),true);
   if(failure==='timeout')oldTimeout.fn();else g.resolve();
   assert.equal(await pending,false);assert.equal(e.c.REMINDER_STATE.error,'');assert.equal(e.c.REMINDER_STATE.preferences.statusChanges,false);assert.equal(e.toasts.length,1);g.resolve();
@@ -168,4 +168,35 @@ for(const change of ['account','workspace'])test('late poll cannot restore old k
   const h=await knowledgeDraftHarness();await h.c.reminderLoad(true);h.input.value='previous account draft';const g=gate();h.setReply(async()=>{await g.promise;return {ok:false,status:503,json:async()=>({ok:false,message:'old failure'})};});const pending=h.c.reminderLoad(true);await Promise.resolve();
   if(change==='account'){h.c.AUTH.user='bob';h.c._authEpoch++;}else{h.c.cur='q';h.c.AUTH.projKey='q';h.c._authEpoch++;}
   h.c.render();const current=h.input;assert.equal(current.value,'');current.value='new isolated page draft';const replacements=h.replacements;g.resolve();assert.equal(await pending,false);assert.equal(h.input,current);assert.equal(current.value,'new isolated page draft');assert.equal(h.replacements,replacements);
+});
+
+
+test('slow response body shows waiting and completes before the 60-second GET deadline',async()=>{
+  const e=boot(),g=gate();e.setTransport(request=>({...e.response(request),json:async()=>{await g.promise;return e.response(request).json();}}));
+  const pending=e.c.reminderLoad();await Promise.resolve();
+  assert.ok(Array.from(e.timers.values()).some(t=>t.ms===60000));
+  assert.ok(!Array.from(e.timers.values()).some(t=>t.ms===20000));
+  Array.from(e.timers.values()).find(t=>t.ms===12000).fn();
+  assert.match(e.c.reminderStatusText(e.c.REMINDER_STATE),/响应较慢，仍在等待/);
+  assert.equal(e.c.REMINDER_STATE.error,'');assert.equal(e.c.REMINDER_STATE.loading,true);
+  g.resolve();assert.equal(await pending,true);assert.equal(e.c.REMINDER_STATE.slow,false);assert.equal(e.c.REMINDER_STATE.failures,0);
+});
+test('GET timeout backs off 2, 4 and 5 minutes then resets after success',async()=>{
+  const e=boot();e.setTransport(()=>new Promise(()=>{}));
+  for(const delay of [120000,240000,300000]){
+    const pending=e.c.reminderLoad(true);await Promise.resolve();
+    Array.from(e.timers.values()).filter(t=>t.ms===60000).at(-1).fn();
+    assert.equal(await pending,false);assert.match(e.c.REMINDER_STATE.error,/本次等待已结束/);
+    assert.equal(e.timers.get(e.c.REMINDER_POLL).ms,delay);
+  }
+  e.setTransport(null);assert.equal(await e.c.reminderLoad(true),true);
+  assert.equal(e.timers.get(e.c.REMINDER_POLL).ms,60000);assert.equal(e.c.REMINDER_STATE.error,'');
+});
+test('a mutation deadline never retries or claims that an unconfirmed save failed',async()=>{
+  const e=boot();await e.c.reminderLoad();e.c.reminderEdit('overdue',false);e.setTransport(()=>new Promise(()=>{}));
+  const pending=e.c.reminderSave();await Promise.resolve();
+  Array.from(e.timers.values()).find(t=>t.ms===20000).fn();
+  assert.equal(await pending,false);assert.match(e.c.REMINDER_STATE.error,/保存结果尚未确认/);
+  assert.equal(e.toasts.length,0);assert.equal(e.c.REMINDER_STATE.dirty,true);
+  assert.equal(e.calls.filter(c=>c.body).length,1);
 });

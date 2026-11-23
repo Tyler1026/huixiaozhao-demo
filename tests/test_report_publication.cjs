@@ -302,3 +302,40 @@ for(const app of ['index','ops']){
     assert.doesNotMatch(fn,/: '请基于[^\n]+五、待确认事项/);
   });
 }
+
+
+test('scanner: split and flattened breadcrumbs and font widgets disappear with policy dates retained',()=>{
+  const c=pure(),fact='该政策自2025年7月1日起施行，有效期至2027年12月31日。';
+  for(const chrome of [
+    '当前位置：首页 / > 要闻动态 / > 地方动态 / 字号：默认 小大',
+    '当前位置：首页\n&gt; 要闻动态 &gt; 地方动态\n字号：默认 小 大',
+    '当前位置：首页\n>新闻中心>文件通知\n【字体：大 中 小】\n打印',
+    '当前位置：\n首页 &amp;gt; 要闻动态 &gt; 地方动态\n字体大小：放大 正常 缩小'
+  ]){
+    const out=c.reportPublicationText('## 一、产业基础\n政策名称\n'+chrome+'\n时间：2025-05-21 16:49\n'+fact,{phase:2});
+    assert.doesNotMatch(out,/当前位置|要闻动态|地方动态|文件通知|字号|字体|打印/);
+    assert.match(out,/政策名称/);assert.ok(out.includes(fact));assert.match(out,/2025-05-21/);
+    assert.equal(c.reportPublicationText(out,{phase:2}),out);
+  }
+});
+for(const app of ['index','ops'])test(app+' scanner: escaped reference URLs resolve without unknown dates across screen and downloads',()=>{
+  const h=browser(app),link='https://www.jiangsu.gov.cn/art/2025/5/21/art_33718_11569478.html';
+  const escaped=link.replaceAll('_','\\_'),text='## 一、产业基础\n政策条件仍需核实。[1]('+escaped+')\n\n## 参考文献\n[1] www.jiangsu.gov.cn．'+escaped+'．发布日期未知．[原文]('+escaped+')';
+  const records=[{label:'1',url:link,title:link,published_at:'发布日期未知',quote:'时间：2025-05-21 16:49\n该政策自2025年7月1日起施行。'}];
+  h.state.text=text;h.state.aiReportByTopic.方向=text;h.state.researchByTopic.方向={topic:'方向',reportText:text,sources:records};
+  const context={text,topic:'方向',phase:2,state:h.state},out=h.c.reportPublicationForContext(context),html=h.c.reportMdToHtml(out);
+  assert.doesNotMatch(out,/发布日期未知|\\_|＼/);assert.match(out,/2025-05-21/);
+  assert.ok(html.includes('href="'+link+'"'));assert.equal(h.state.text,text);
+  assert.equal(h.c.reportPublicationText(out,{phase:2,sources:records}),out);
+  const noDate=h.c.reportPublicationText(text,{phase:2,sources:records.map(r=>({...r,quote:'政策自2025年7月1日起施行。'}))});
+  assert.doesNotMatch(noDate,/发布日期未知|2025-07-01/);
+  assert.ok(h.c.reportMdToHtml('[原文]('+escaped+')').includes('href="'+link+'"'));
+  assert.doesNotMatch(h.c.reportMdToHtml('[错误](https://example.org/\\evil)'),/<a /);
+});
+
+test('matching duplicate provincial portal banners are removed with their location, preserving the real title',()=>{
+ const c=pure(),title='苏州出台20条新政推动智能车联网和新能源汽车产业发展';
+ const raw='江苏省人民政府 地方动态 '+title+'\n当前位置：首页\n&gt; 要闻动态 &gt; 地方动态\n'+title+'\n政策条件仍须核实。';
+ const out=c.stripReportWebFooter(raw);assert.equal(out,title+'\n政策条件仍须核实。');
+ assert.equal(c.stripReportWebFooter('江苏省人民政府 地方动态 '+title),'江苏省人民政府 地方动态 '+title);
+});
