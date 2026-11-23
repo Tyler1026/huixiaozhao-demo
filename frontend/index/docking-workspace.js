@@ -92,7 +92,25 @@ function dockingRefreshPanels(){
   if(list)list.innerHTML=dockingDemandListHtml(keys,key);if(detail&&detail.getAttribute('data-demand-key')!==String(key||'')){detail.innerHTML=dockingDetailHtml(key);detail.setAttribute('data-demand-key',key||'');detail.scrollTop=0;}
   Array.prototype.forEach.call(document.querySelectorAll('.docking-filters button'),function(button){var active=button.getAttribute('data-filter')===dockingViewState().filter;button.classList.toggle('is-active',active);button.setAttribute('aria-pressed',String(active));});
 }
-function dockingOpenReport(key){if(!PROJECTS[key])return;if(PROJECTS[key].demandOrigin==='direct'){toast('这条需求由机构直接提交，没有来源分析报告。');return;}cur=key;view='report';detailData=null;render();}
+function dockingOpenReport(key){
+  var project=PROJECTS[key];
+  if(!project||dockingDemandKeys().indexOf(key)<0){toast('该需求当前不可用，请刷新后重试。');return false;}
+  if(project.demandOrigin==='direct'||(project.demandSpec||{}).source==='user_direct'){toast('这条需求由机构直接提交，没有来源分析报告。');return false;}
+  var root=industryAnalysisWorkspaceKey(key);
+  if(root===key||!PROJECTS[root]){toast('来源工作区暂不可用，请刷新后重试。');return false;}
+  var state=REPORTSTATE[key]||{},topic=project.sourceAnalysisTopic||project.topic;
+  var text=(state.aiReportByTopic||{})[topic]||(state.topic===topic?state.text:'');
+  if(typeof text!=='string'||!text.trim()){toast('该需求的来源报告快照暂不可用，请刷新后重试。');return false;}
+  // Read the demand's saved version without adopting its project as the city
+  // workspace or copying an old report over the current city analysis.
+  var context={key:key,project:project,state:state,topic:topic,text:text,city:project.city};
+  var body=reportPublicationForContext(context);
+  if(cur===key){cur=root;detailData=null;render();}
+  openModal('来源报告 · '+dockingText(topic),
+    '<p class="industry-demand-boundary">需求提交时保存的报告版本，供回看原始依据。</p><div class="industry-prose">'+reportMdToHtml(body)+'</div>',
+    '<button class="secondary-button" onclick="closeModal()">关闭预览</button>');
+  return true;
+}
 function dockingDownloadEventFile(key,id,ts,index){
   var event=dockingEvents(key).find(function(e){return id?e.id===id:Number(e.ts)===ts;}),file=event&&event.files&&event.files[index];
   if(!file||typeof file.dataUrl!=='string'||!/^data:(application\/(?:pdf|msword|vnd\.[a-z0-9.+-]+)|text\/(?:plain|csv)|image\/(?:png|jpeg|webp));base64,/i.test(file.dataUrl)){toast('附件当前不可用');return;}

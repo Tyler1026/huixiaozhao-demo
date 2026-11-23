@@ -52,7 +52,7 @@ function toggleSw(e){e.stopPropagation();var m=$('#swMenu');m.style.display=m.st
 function switchProj(k){cur=k;view='report';detailData=null;try{_sanitizeReportState();}catch(_){}render();toast('已进入「'+(typeof industryDemandProjectTitle==='function'?industryDemandProjectTitle(PROJECTS[k]):PROJECTS[k].topic)+'」'+(PROJECTS[k].isDemand?'需求':'研判工作区'))}
 function newProj(){var m=$('#swMenu');if(m)m.style.display='none';newProjModal()}
 function go(v){
-  if(v==='report')cur=industryAnalysisWorkspaceKey(cur);
+  if(v==='report'||v==='knowledge'||v==='settings')cur=industryAnalysisWorkspaceKey(cur);
   if(isLocked(v)){
     var r=kbReadiness();
     var summary=kbReadinessSummary(r);
