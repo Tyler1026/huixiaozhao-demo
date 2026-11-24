@@ -7,7 +7,7 @@ function openModal(title,bodyHtml,footHtml){
   document.body.appendChild(l);
 }
 function closeModal(){
-  window._verifyInProgress=false;var l=$('#modalLayer');if(l)l.remove();var cm=$('#conflictModal');if(cm)cm.remove();}
+  window._verifyInProgress=false;var l=$('#modalLayer');if(l)l.remove();var cm=$('#conflictModal');if(cm)cm.remove();var cp=$('#kbConflictPanel');if(cp)cp.remove();}
 var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','产业分析','产业分析·可来回优化'],['home','🤝','招商对接','项目列表·对接进度'],['settings','⚙️','设置','账号与提醒']];
 
 function syncDetailPane(){

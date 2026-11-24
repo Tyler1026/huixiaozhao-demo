@@ -80,11 +80,11 @@ test('late material response after account change never loads the previous accou
   const h=context(),c=h.c;let resolve;c.fetch=async(url,options)=>new Promise(r=>resolve=()=>r({ok:true,json:async()=>({ok:true,record:receipt(JSON.parse(options.body))})}));
   const request=c.materialSaveText('a',0,null,'private previous account');c._authEpoch++;resolve();await assert.rejects(request,/登录状态已变化/);assert.deepEqual(Object.keys(c.KB_EDITS),[]);
 });
-test('bulk accepting an unmatched conflict creates a durable note without writing array[-1]',async()=>{
+test('unmatched conflicts cannot be bulk-written as unrelated new notes',async()=>{
   const h=context(),c=h.c;c._pendingConflicts={key:'a',epoch:1,kbIdx:0,conflicts:[{idx:-1,old:'未定位原文',new:'产值28亿元，白鹭842'}]};c.originalUploadEpoch=()=>c._authEpoch;
   c.fetch=async(url,options)=>{const body=JSON.parse(options.body);h.posts.push(body);return {ok:true,json:async()=>({ok:true,record:receipt(body)})};};
   vm.runInContext(between(tail,'async function kbSaveConflict(','/* 结合全库重新分析'),c);await c.resolveAllConflicts('new');
-  assert.equal(h.posts[0].sourceIndex,null);assert.equal(c.PROJECTS.a.kb[0].known[-1],undefined);assert.equal(c.materialEffectiveKnown(c.PROJECTS.a,0,'a').length,2);assert.match(h.toasts.at(-1),/全部保存到云端/);
+  assert.equal(h.posts.length,0);assert.equal(c.PROJECTS.a.kb[0].known[-1],undefined);assert.match(h.toasts.at(-1),/未定位/);
 });
 test('memory counts and lists current KB_EDITS once instead of only legacy confirmations',()=>{
   const h=context(),c=h.c;edit(c);c.KB_CONFIRMS.a={0:{0:{text:'old confirmation',status:'confirmed'}}};c.UPLOADS={};c.cityKeys=()=>['a'];c.kbSessionStore=()=>({sessions:[]});c._authEscape=c.materialEscape;c.fmtTs=()=> 'now';
