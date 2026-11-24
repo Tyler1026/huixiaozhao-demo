@@ -5713,7 +5713,7 @@ function openModal(title,bodyHtml,footHtml){
   document.body.appendChild(l);
 }
 function closeModal(){
-  window._verifyInProgress=false;var l=$('#modalLayer');if(l)l.remove();var cm=$('#conflictModal');if(cm)cm.remove();}
+  window._verifyInProgress=false;var l=$('#modalLayer');if(l)l.remove();var cm=$('#conflictModal');if(cm)cm.remove();var cp=$('#kbConflictPanel');if(cp)cp.remove();}
 var NAV=[['knowledge','📚','城市智库','完善材料·产业/园区/企业/政策'],['report','📝','产业分析','产业分析·可来回优化'],['home','🤝','招商对接','项目列表·对接进度'],['settings','⚙️','设置','账号与提醒']];
 
 function syncDetailPane(){
@@ -15952,128 +15952,16 @@ function kbVerifyMaterial(){
   var _ks=document.querySelector('.knowledge-scroll'); if(_ks) _ks.scrollTop=_ks.scrollHeight;
   kbChatPush('user', qd.outerHTML,{context:requestContext,plainText:q});
 
-  // 把新文件原文和智库结论都直接嵌入 question，让模型两份原文逐字对比
-  // 新文件原文
-  var newText=newChunks.map(function(ck){return ck.text;}).join('\n');
-
-    // 智能匹配：从全部智库条目中找与新文件内容最相关的条目对比
-  var _allKnown=[];
-  if(p.kb){
-    p.kb.forEach(function(t,sectionIndex){
-      kbEffectiveKnown(p,sectionIndex,cur).forEach(function(x){
-        var _xt=_kbText(x); if(_xt.indexOf('\ud83d\udcce')!==0){
-          var state=x&&x._kbEditStatus==='needs_review'?'【旧版本用户修订，待复核】':x&&x._kbUserEdited?'【用户修订，待核验】':'';
-          _allKnown.push(state+_xt.replace(/^[\u2705\u26a0\ufe0f\s]+/,''));
-        }
-      });
+  // Comparison selection belongs to the server. Capture identities only;
+  // never run BM25 over the entire uploaded document on the UI thread.
+  requestContext.verificationBaseline=[];
+  (p.kb||[]).forEach(function(section,sectionIndex){
+    materialEffectiveKnown(p,sectionIndex,cur).forEach(function(item,index){
+      var text=typeof item==='string'?item:item&&item.text;
+      if(typeof text==='string')requestContext.verificationBaseline.push({sectionIndex:sectionIndex,sectionTitle:section.t,index:index,text:text});
     });
-  }
-  /* 【2026-09-23 修复 T2-3】校验基准覆盖面：原来死板地 slice(0,12)，
-     松江真实智库 68 条 → 只带 18% 进 prompt。后果是智库里明明有的数据
-     （实测「昊海生科…2021年细分市场份额分别达51%/45%/29%」）没被带上，
-     AI 只能回答"智库无此数据"，把已有数据误报成 ⚠️ 新增——
-     于是「一致 / 新增」两类本身就不可信，比单纯漏报更误导干部。
-     另一个坑：原 `if(topicKnown.length<3) topicKnown=_allKnown.slice(0,10)`
-     会塞 10 条与新文件毫不相干的条目，等于拿错基准去核验。
-
-     现在改为三段式：
-     1) 定向检索：把新文件里的数字/百分比逐个抽出来，凡智库条目含同一数字的
-        一律优先入选——数值核验靠的就是这些条目，绝不能被名额挤掉；
-     2) 关键词召回：按命中关键词个数排序，多的优先；
-     3) 字符预算：按总长度上限（约 12000 字）动态放宽条数，不再固定 12 条；
-        无相关条目时宁可留空（prompt 里明确告知"智库暂无可比对结论"），
-        也不塞无关条目冒充基准。 */
-  // 1) 新文件中的数字/百分比/金额（核验的真正对象）
-  var _fileNums=(newText.match(/\d+(?:\.\d+)?\s*(?:%|万|亿|千|百分点)?/g)||[])
-    .map(function(s){ return s.replace(/\s+/g,''); })
-    .filter(function(s){ return /\d/.test(s) && s.replace(/[^\d]/g,'').length>=2; });  // 单个数字噪声太大
-  _fileNums=_fileNums.filter(function(w,i,a){ return a.indexOf(w)===i; }).slice(0,40);
-  // 2) 关键词（中文按 2-6 字切片，兼容无空格分隔的中文正文）
-  var _kwRaw=newText.replace(/[\d\.%+\-()\uff08\uff09\uff1a:\uff0c\u3002\u3001/\n\r\t]+/g,' ').split(/\s+/);
-  var _fileKeywords=[];
-  _kwRaw.forEach(function(seg){
-    if(!seg) return;
-    if(seg.length<=6){ if(seg.length>=2) _fileKeywords.push(seg); return; }
-    for(var i=0;i+2<=seg.length && i<40;i+=2){ _fileKeywords.push(seg.substr(i,4)); }
   });
-  _fileKeywords=_fileKeywords.filter(function(w,i,a){ return w.length>=2 && a.indexOf(w)===i; }).slice(0,60);
-  /* 打分：含相同数字权重最高，其次关键词命中数。
-     数字匹配必须避免子串误命中——裸「120」会命中「1200亿」「120万」，
-     食堂采购清单那种无关文件就会被误判成"与智库相关"。
-     因此只认两类：带单位的数字（51%、1850亿）原样匹配；
-     裸数字必须与智库里一个完整的「数字+单位」token 相等（见 _numHitsIn）。 */
-  function _numHitsIn(item, n){
-    if(/[%万亿千]|百分点/.test(n)) return item.indexOf(n)>=0?1:0;  // 带单位足够独特，原样匹配
-    /* 裸数字（2024、1850）必须对应智库里一个「完整的数」才算命中，否则：
-       食堂清单的 80 会命中「球管寿命突破 80 万秒次」、120 会命中 1200。
-       不能只看紧邻字符——真实文本有「80 万秒次」这种中间带空格的写法，
-       所以把条目里的「数字+单位」整体切成 token，要求 token 完全相等。 */
-    var toks=item.match(/\d+(?:\.\d+)?\s*(?:%|万|亿|千|百分点|[A-Za-z]+)?/g)||[];
-    for(var i=0;i<toks.length;i++){
-      // 带字母单位的（80kW、300mm）不是同一个量，裸数字不得与之相等
-      if(/[A-Za-z]/.test(toks[i])) continue;
-      if(toks[i].replace(/\s+/g,'')===n) return 1;
-    }
-    return 0;
-  }
-  var _scored=_allKnown.map(function(item, _i){
-    /* 强命中：带单位的数字相同（51%、1850亿）——这种巧合概率极低，足以证明同一指标。
-       弱命中：裸数字相同（80、2024）——「80斤白菜」和「80kW以上」会撞，
-       所以裸数字必须另有关键词支撑才算相关，单靠它不足以把条目拉进基准。 */
-    var strongHit=0, weakHit=0;
-    _fileNums.forEach(function(n){
-      if(_numHitsIn(item,n)<=0) return;
-      if(/[%万亿千]|百分点/.test(n)) strongHit++; else weakHit++;
-    });
-    var kwHit=0;
-    _fileKeywords.forEach(function(kw){ if(item.indexOf(kw)>=0) kwHit++; });
-    var numHit=strongHit+weakHit;
-    // 相关性门槛：有强命中 → 直接入选；否则需关键词命中 >=2（裸数字或单个泛词不够）
-    var relevant=(strongHit>0) || (kwHit>=2);
-    return {item:item, ord:_i,
-            score:(relevant?(strongHit*1000+weakHit*50+kwHit):0),
-            numHit:numHit, strongHit:strongHit, kwHit:kwHit};
-  }).filter(function(s){ return s.score>0; });
-  _scored.sort(function(a,b){ return (b.score-a.score)||(a.ord-b.ord); });
-  /* 3) 字符预算：按总长度动态放宽条数，不再固定 12 条。
-     注意这里不设"至少保 N 条"下限——无相关条目时必须真留空，
-     塞无关条目当基准会让 AI 拿错参照物做判定（原 slice(0,10) 兜底就是这个错）。 */
-  var _KB_BUDGET=12000, _used=0;
-  var topicKnown=[];
-  _scored.forEach(function(s){
-    if(_used+s.item.length>_KB_BUDGET) return;
-    topicKnown.push(s.item); _used+=s.item.length;
-  });
-  var _numHitCount=_scored.filter(function(s){ return s.strongHit>0; }).length;
-  var knownHint=topicKnown.length ? '（智库已有结论：'+topicKnown.join('；')+'）' : '';
-
-
-
-  var prompt=
-    '【新上传文件原文】\n'+newText+'\n\n'
-    +'【智库已有材料（保留用户修订状态）】\n'
-    +(topicKnown.length
-        ? (topicKnown.join('\n')
-           +'\n（以上为智库 '+_allKnown.length+' 条结论中与本文件相关的 '+topicKnown.length+' 条）')
-        : '（智库暂无与本文件相关的结论，本次无法做数值比对：请把文件中的数据点全部标记为 ⚠️ 新增数据，不要凭空判定"一致"）')
-    +'\n\n'
-    +'任务：逐条核验新上传文件中每一个数据点。\n\n'
-    +'核验方法：文件中的每个数字/百分比/数量，都去智库已有结论里找同一指标。\n'
-    +'- 用户修订尚待核验，旧版本用户修订尚待复核；保留其状态，不当作已核实事实。\n'
-    +'- 数值一致 → 标记 ✅\n'
-    +'- 数值不同 → 标记 ❌ 并写明双方数值\n'
-    +'- 智库无此数据无法核验 → 标记 ⚠️ 新增数据\n\n'
-    +'输出格式（严格遵守，不要多余文字）：\n'
-    +'第一行：「结论：发现矛盾N处」或「结论：未发现矛盾」\n'
-    +'然后逐条列出文件中的每个数据点：\n'
-    +'❌ [指标名]：文件写 [XX]，智库记录 [YY] → 不一致\n'
-    +'✅ [指标名]：文件写 [XX]，智库记录一致\n'
-    +'⚠️ [指标名]：文件写 [XX]，智库无此数据\n\n'
-    +'重要：\n'
-    +'- 必须逐个数据点列出，不可跳过任何数字\n'
-    +'- 年份、主体、地区或口径不同先标待确认，不直接判矛盾\n'
-    +'- 绝对不可只输出一句笼统总结';
-
+  var prompt=q,topicKnown=[],_allKnown=requestContext.verificationBaseline,_numHitCount=0;
   var ansNode=document.createElement('div');
   ansNode.className='message';
   var bubble=document.createElement('div');
@@ -16089,7 +15977,7 @@ function kbVerifyMaterial(){
   var t0=Date.now();
 
   // 涉 AI 必过 RAG：校验也要吃进该城市智库语料（否则无从比对）
-  var _vChunks=[]; try{ _vChunks=kbSearch(prompt, buildKBCorpus(p.city), 6)||[]; }catch(e){ _vChunks=[]; }
+  var _vChunks=[];
   requestContext.query=q;
   return kbVerifyMaterialStream({context:requestContext,container:c,answer:ansNode,bubble:bubble,body:bodyDiv,
     query:q,chunks:newChunks,
@@ -16114,6 +16002,7 @@ function kbVerifyMaterial(){
           }
           // 确认面板复用同一份 rows，不再自己重新扫 ❌（否则抬头报矛盾、面板捞不到）
           window._lastVerifyRows=_parsed.rows;
+          window._lastVerifyBinding={key:requestContext.projectKey,epoch:requestContext.epoch,baseline:requestContext.verificationBaseline};
 
           // badge 与正文同源：矛盾数 > 0 才算高危
           var hasHighRisk=(_cntConflict>0);
@@ -16131,7 +16020,7 @@ function kbVerifyMaterial(){
             ';font-size:12px;font-weight:650;color:'+
             (hasHighRisk?'#dc2626':(allClear?'#2D5BE3':'#d97706'))+
             '">'+badgeText+
-            '<span style="font-weight:400;color:#94a3b8;margin-left:8px">· 校验耗时 '+elapsed+'ms · 核验 '+_parsed.rows.length+' 个数据点 · 对比 '+topicKnown.length+'/'+_allKnown.length+' 条现有结论'+(_numHitCount?('（含 '+_numHitCount+' 条数值直接命中）'):'')+'</span>'+
+            '<span style="font-weight:400;color:#94a3b8;margin-left:8px">· 校验耗时 '+elapsed+'ms · 核验 '+_parsed.rows.length+' 个数据点 · 依据服务端选取的已保存原文'+'</span>'+
             (hasHighRisk?'<button onclick="kbConfirmOverwrite()" style="margin-left:12px;padding:4px 12px;background:#dc2626;color:#fff;border:none;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer">人工核实</button>':(allClear?'':'<button onclick="kbConfirmOverwrite()" style="margin-left:12px;padding:4px 12px;background:#d97706;color:#fff;border:none;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer">逐条确认</button>'))+
             '</div>');
                     // 发现矛盾或模糊信息：弹出逐条确认面板让用户核实
@@ -16179,37 +16068,19 @@ function kbConfirmOverwrite(){
     }
     if(!fileVal) return;
     var indicatorName=r.name||'数据项';
-    // 在智库known里用指标关键词模糊匹配
-    var idx=-1;
-    var keywords=indicatorName.replace(/[\s\d%+\-().（）]+/g,'');
-    (k.known||[]).forEach(function(existing,ei){
-      var ec=typeof existing==='string'?existing:(existing.text||'');
-      if(idx<0 && keywords.length>=2 && ec.indexOf(keywords)>=0) idx=ei;
-    });
-    // 如果关键词匹配失败，尝试用kbVal中的数字匹配
-    if(idx<0){
-      var numM=kbVal.match(/[\d.]+/);
-      if(numM){
-        (k.known||[]).forEach(function(existing,ei){
-          var ec=typeof existing==='string'?existing:(existing.text||'');
-          if(idx<0 && ec.indexOf(numM[0])>=0) idx=ei;
-        });
-      }
-    }
-    var oldClean, newClean;
-    if(idx>=0){
-      var _fullText=(typeof k.known[idx]==='string'?k.known[idx]:(k.known[idx].text||'')).replace(/^[\u2705\u26a0\ufe0f\s]+/,'');
-      // 只截取包含冲突数值的那一句（按句号/分号切分，找到含kbVal数字的句子）
-      var _numInKb=(kbVal.match(/[\d.]+/)||[''])[0];
-      var _sentences=_fullText.split(/[。；;]/);
-      var _relevantSentence=_sentences.find(function(s){ return _numInKb && s.indexOf(_numInKb)>=0; })||'';
-      oldClean=_relevantSentence.trim() || _fullText.substring(0,80);
-      newClean=indicatorName+'：'+fileVal+'（原记录：'+kbVal+'）';
-    } else {
-      oldClean=indicatorName+'：智库记录 '+kbVal;
-      newClean=indicatorName+'：新材料写 '+fileVal;
-    }
-    conflicts.push({idx:idx, old:oldClean, new:newClean});
+    var binding=window._lastVerifyBinding;
+    var quote=kbVal.replace(/^\s*\[|\]\s*$/g,'').trim();
+    var metric=indicatorName.replace(/[\[\]\s\d年（）()]/g,'').replace(/GDP/ig,'地区生产总值');
+    var valid=binding&&binding.key===cur&&binding.epoch===originalUploadEpoch();
+    var matches=valid?binding.baseline.filter(function(item){
+      var canonical=item.text.replace(/GDP/ig,'地区生产总值');
+      return quote.length>=8&&metric.length>=2&&canonical.indexOf(metric)>=0&&item.text.indexOf(quote)>=0;
+    }):[];
+    var match=matches.length===1?matches[0]:null;
+    conflicts.push({idx:match?match.index:-1,sectionIndex:match?match.sectionIndex:kbIdx,
+      sectionTitle:match?match.sectionTitle:null,full:match?match.text:null,unlocated:!match,
+      old:match?quote:'尚未定位到唯一原记录。模型对照值：'+kbVal,
+      new:indicatorName+'：'+fileVal});
   });
 
   if(!conflicts.length){
@@ -16412,8 +16283,8 @@ async function kbAppendNewFacts(kbIdx,facts,btnEl){
 /* 冲突确认面板：并列展示新旧数据 */
 function showConflictPanel(kbIdx, conflicts){
   closeModal();
-  var html='<div style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)closeModal()">'+
-    '<div style="background:#fff;border-radius:16px;width:640px;max-height:80vh;overflow-y:auto;padding:24px;box-shadow:0 12px 40px rgba(0,0,0,.15)">'+
+  var html='<details open class="kb-conflicts"><summary>查看／收起本次差异</summary><div>'+
+    '<div style="background:#fff;border:1px solid #d8e0ed;border-radius:12px;width:100%;max-width:100%;padding:16px;box-sizing:border-box;overflow-wrap:anywhere">'+
       '<div style="font-size:16px;font-weight:750;color:#0b183b;margin-bottom:4px">数据冲突确认</div>'+
       '<div style="font-size:12.5px;color:#8492a6;margin-bottom:16px">新上传材料中发现与现有数据不一致的内容，请逐条确认采用哪一项：</div>'+
       conflicts.map(function(c,ci){
@@ -16422,7 +16293,7 @@ function showConflictPanel(kbIdx, conflicts){
           // 提取两边所有数字+单位
           var nums=text.match(/[\d,.]+[亿万%元辆吨GWh千米平方公里个家条]+|\+[\d.]+%/g)||[];
           var otherNums=otherText.match(/[\d,.]+[亿万%元辆吨GWh千米平方公里个家条]+|\+[\d.]+%/g)||[];
-          var result=text;
+          var result=kbEscape(text);
           nums.forEach(function(n){
             if(otherNums.indexOf(n)<0){
               result=result.replace(n,'<b style="background:#fef08a;padding:1px 3px;border-radius:3px">'+n+'</b>');
@@ -16437,7 +16308,7 @@ function showConflictPanel(kbIdx, conflicts){
             '<div style="font-size:12px;font-weight:650;color:#475569">冲突 '+(ci+1)+'</div>'+
             '<div id="conflict-status-'+ci+'" style="margin-left:auto;font-size:11px;font-weight:600;color:#cbd5e1">未确认</div>'+
           '</div>'+
-          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+          '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:10px">'+
             '<div style="padding:12px;background:#fff5f5;border:1.5px solid #fecaca;border-radius:8px" id="conflict-old-'+ci+'">'+
               '<div style="font-size:11px;font-weight:600;color:#ef4444;margin-bottom:6px">智库现有数据</div>'+
               '<div style="font-size:13px;color:#1e293b;line-height:1.7;margin-bottom:10px">'+oldHighlighted+'</div>'+
@@ -16446,28 +16317,31 @@ function showConflictPanel(kbIdx, conflicts){
             '<div style="padding:12px;background:#EEF3FF;border:1.5px solid #B3C4E8;border-radius:8px" id="conflict-new-'+ci+'">'+
               '<div style="font-size:11px;font-weight:600;color:#1C43B5;margin-bottom:6px">新材料数据</div>'+
               '<div style="font-size:13px;color:#1e293b;line-height:1.7;margin-bottom:10px">'+newHighlighted+'</div>'+
-              '<button onclick="resolveConflict('+kbIdx+','+ci+',\'new\')" style="width:100%;padding:8px;background:#2D5BE3;border:none;border-radius:7px;font-size:12px;font-weight:600;color:#fff;cursor:pointer">采用新数据</button>'+
+              '<button '+(c.unlocated?'disabled title="未定位到唯一原记录，请在资料板块人工修订" ':'')+'onclick="resolveConflict('+kbIdx+','+ci+',\'new\')" style="width:100%;padding:8px;background:#2D5BE3;border:none;border-radius:7px;font-size:12px;font-weight:600;color:#fff;cursor:pointer">采用新数据</button>'+
             '</div>'+
           '</div>'+
         '</div>';
       }).join('')+
       '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'+
         '<button onclick="resolveAllConflicts(\'old\')" style="padding:8px 16px;background:#f5f7fb;border:1.5px solid #e8edf5;border-radius:8px;font-size:12.5px;color:#4a5568;cursor:pointer">全部保留旧数据</button>'+
-        '<button onclick="resolveAllConflicts(\'new\')" style="padding:8px 16px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;cursor:pointer;font-weight:600">全部采用新数据</button>'+
+        '<button '+(conflicts.some(function(c){return c.unlocated;})?'disabled ':'')+'onclick="resolveAllConflicts(\'new\')" style="padding:8px 16px;background:linear-gradient(135deg,#1a56db,#6366f1);color:#fff;border:none;border-radius:8px;font-size:12.5px;cursor:pointer;font-weight:600">全部采用新数据</button>'+
       '</div>'+
-    '</div></div>';
-  var d=document.createElement('div');d.id='conflictModal';d.innerHTML=html;
-  document.body.appendChild(d);
+    '</div></div></details>';
+  var d=document.createElement('div');d.id='kbConflictPanel';d.innerHTML=html;
+  var host=document.getElementById('kbConv');if(host)host.appendChild(d);
 }
 
 /* 单条冲突确认 */
 async function kbSaveConflict(index,conflict){
   var pending=window._pendingConflicts,key=pending.key||cur;
+  if(conflict.unlocated||conflict.idx<0)throw new Error('未定位到唯一原记录，请在资料板块人工核实修订。');
+  if(conflict.sectionIndex!==undefined)index=conflict.sectionIndex;
   if(key!==cur||(pending.epoch!==undefined&&pending.epoch!==originalUploadEpoch()))throw new Error('工作区已变化，请重新校验材料。');
   var current=materialEffectiveKnown(PROJECTS[key],index,key),text=conflict.new;
   if(conflict.idx>=0){
     var item=current[conflict.idx];if(item===undefined)throw new Error('原资料已变化，请重新校验。');
     var full=String(item&&typeof item==='object'?item.text:item);
+    if(conflict.full!==undefined&&(full!==conflict.full||PROJECTS[key].kb[index].t!==conflict.sectionTitle))throw new Error('原资料已变化，请重新校验。');
     if(!conflict.old||full.indexOf(conflict.old)<0)throw new Error('原资料已变化，请重新校验，避免覆盖新的修订。');
     text=full.replace(conflict.old,conflict.new);
   }
@@ -16487,6 +16361,7 @@ async function resolveConflict(kbIdx,conflictIdx,choice){
 async function resolveAllConflicts(choice){
   var pending=window._pendingConflicts;if(!pending||pending.saving)return;pending.saving=true;
   try{
+    if(choice==='new'&&pending.conflicts.some(function(c){return !c.resolved&&(c.unlocated||c.idx<0);}))throw new Error('存在未定位原记录的差异，请先人工核实。');
     for(var i=0;i<pending.conflicts.length;i++){
       var conflict=pending.conflicts[i];if(conflict.resolved)continue;
       if(choice==='new')await kbSaveConflict(pending.kbIdx,conflict);

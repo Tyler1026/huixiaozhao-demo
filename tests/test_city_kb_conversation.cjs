@@ -194,6 +194,9 @@ for(const name of ['kbVerifyMaterial','kbIncrementalAnalysis','kbRAGQueryFull'])
  if(name==='kbRAGQueryFull'){
   const corrected=h.api[0].chunks.find(x=>x.text.includes('白鹭842'));assert.ok(corrected);assert.equal(corrected.correction.status,replaced?'needs_review':'active');
   assert.ok(!h.api[0].chunks.some(x=>x.text==='园区产值10亿元'));
+ }else if(name==='kbVerifyMaterial'){
+  assert.equal(h.api[0].mode,'verify');assert.equal(h.api[0].chunks.length,0);
+  assert.ok(c._verifyRequestContext.verificationBaseline.some(x=>x.text.includes('白鹭842')));
  }else{
   assert.match(h.api[0].question,/园区产值28亿元，白鹭842/);assert.doesNotMatch(h.api[0].question,/园区产值10亿元/);
   assert.match(h.api[0].question,replaced?/【旧版本用户修订，待复核】/:/【用户修订，待核验】/);
@@ -402,4 +405,10 @@ test('verification survives same-session replay and stops without saving to a di
  assert.match(h.nodes.kbConv.innerHTML,/kb-progress-message/);
  h.c.kbSwitchSession('s2');await flush();assert.equal(h.clock.pending(),0);assert.equal(h.c.kbIsRequestPending(),false);
  f.push({choices:[{delta:{content:'迟到结果'}}]});f.done();await flush();assert.equal(h.c.KB_CHAT['workspace:a'].sessions[1].messages.length,0);
+});
+
+test('verification skips whole-document browser search and yields immediately with progress and duplicate protection',async()=>{
+ const h=harness(),f=feed();h.feeds.push(f);h.c.kbSearch=()=>{throw Error('browser search must not run');};h.c.buildKBCorpus=()=>{throw Error('browser corpus must not run');};
+ startMaterialCheck(h);await flush();assert.equal(h.api.length,1);assert.match(h.nodes.kbConv.innerHTML,/正在校验上传材料/);
+ startMaterialCheck(h);await flush();assert.equal(h.api.length,1);h.c.kbStopAnswer(pendingRequest(h).requestId);await flush();
 });
